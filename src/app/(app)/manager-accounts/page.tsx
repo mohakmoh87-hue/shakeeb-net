@@ -7,6 +7,16 @@ import OfficeChat from "@/components/OfficeChat";
 type WaOffice = { id: number; name: string | null; state: string };
 
 type MgrTx = { id: number; type: string; amount: number; notes: string | null; date: string };
+
+// سجل المبالغ اليومية: كل يوم بإجماليه وتفصيله حسب المكتب (البرج)
+type DayAgg = { moneyIn: number; moneyOut: number; net: number; count: number };
+type DayRow = DayAgg & { day: string; byOffice: Record<string, DayAgg> };
+type DailyLog = {
+  offices: { id: number; name: string }[];
+  days: DayRow[];
+  total: number;
+  totalByOffice: Record<string, number>;
+};
 type Data = {
   cumulativeDaily: number;
   totalAvailable: number;
@@ -36,11 +46,13 @@ export default function ManagerAccountsPage() {
   const [cardData, setCardData] = useState<{ packages: { id: number; name: string | null; priceDinar: number | null; cardCost: number | null }[]; canEdit: boolean } | null>(null);
   const [priceInputs, setPriceInputs] = useState<Record<number, string>>({});
   const [priceMsg, setPriceMsg] = useState("");
-  const [dailyLog, setDailyLog] = useState<{ days: { day: string; moneyIn: number; moneyOut: number; net: number; count: number }[]; total: number } | null>(null);
+  const [dailyLog, setDailyLog] = useState<DailyLog | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [logOffice, setLogOffice] = useState<number | "all">("all"); // المكتب المختار في السجل، all = الإجمالي
 
   function openDailyLog() {
     setShowLog(true);
+    setLogOffice("all");
     fetch("/api/manager-accounts/daily-log").then((r) => void (r.ok && r.json().then(setDailyLog)));
   }
 
@@ -222,36 +234,69 @@ export default function ManagerAccountsPage() {
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
               <div>
                 <h3 className="text-lg font-bold text-slate-800">سجل المبالغ اليومية</h3>
-                <p className="text-xs text-slate-500">كل يوم يُضاف صافي مبلغ التقرير إلى المجموع</p>
+                <p className="text-xs text-slate-500">كل يوم يُضاف صافي مبلغ التقرير إلى المجموع{logOffice !== "all" ? " — معروض لمكتب واحد" : ""}</p>
               </div>
               <button onClick={() => setShowLog(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
             </div>
+
+            {/* اختيار المكتب: الإجمالي أو كل مكتب على حِدة */}
+            {dailyLog && dailyLog.offices.length > 0 && (
+              <div className="flex flex-wrap gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
+                <button
+                  onClick={() => setLogOffice("all")}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logOffice === "all" ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                >
+                  الإجمالي
+                </button>
+                {dailyLog.offices.map((o) => (
+                  <button
+                    key={o.id}
+                    onClick={() => setLogOffice(o.id)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logOffice === o.id ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                  >
+                    {o.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="overflow-auto">
-              {!dailyLog ? (
-                <div className="p-8 text-center text-slate-400">جاري التحميل...</div>
-              ) : dailyLog.days.length === 0 ? (
-                <div className="p-8 text-center text-slate-400">لا توجد حركات بعد</div>
-              ) : (
-                <table className="w-full text-right text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-slate-600">
-                    <tr><th className="p-3">التاريخ</th><th className="p-3">قبض</th><th className="p-3">صرف</th><th className="p-3">صافي اليوم</th><th className="p-3">حركات</th></tr>
-                  </thead>
-                  <tbody>
-                    {dailyLog.days.map((d) => (
-                      <tr key={d.day} className="border-t border-slate-100">
-                        <td className="p-3 font-medium" dir="ltr">{d.day}</td>
-                        <td className="p-3 text-emerald-600">{d.moneyIn ? fmt(d.moneyIn) : "—"}</td>
-                        <td className="p-3 text-red-600">{d.moneyOut ? fmt(d.moneyOut) : "—"}</td>
-                        <td className={`p-3 font-bold ${d.net >= 0 ? "text-slate-800" : "text-red-600"}`}>{fmt(d.net)}</td>
-                        <td className="p-3 text-slate-400">{d.count}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="sticky bottom-0 bg-slate-100 font-bold">
-                    <tr><td className="p-3">المجموع الكلي</td><td colSpan={2}></td><td className="p-3 text-emerald-700">{fmt(dailyLog.total)}</td><td></td></tr>
-                  </tfoot>
-                </table>
-              )}
+              {(() => {
+                if (!dailyLog) return <div className="p-8 text-center text-slate-400">جاري التحميل...</div>;
+
+                // اختيار البيانات حسب المكتب المحدد (أو الإجمالي)
+                const rows = dailyLog.days
+                  .map((d) => {
+                    const agg: DayAgg = logOffice === "all" ? d : (d.byOffice[String(logOffice)] ?? { moneyIn: 0, moneyOut: 0, net: 0, count: 0 });
+                    return { day: d.day, ...agg };
+                  })
+                  .filter((d) => logOffice === "all" || d.count > 0);
+                const total = logOffice === "all" ? dailyLog.total : (dailyLog.totalByOffice[String(logOffice)] ?? 0);
+
+                if (rows.length === 0) return <div className="p-8 text-center text-slate-400">لا توجد حركات بعد</div>;
+
+                return (
+                  <table className="w-full text-right text-sm">
+                    <thead className="sticky top-0 bg-slate-50 text-slate-600">
+                      <tr><th className="p-3">التاريخ</th><th className="p-3">قبض</th><th className="p-3">صرف</th><th className="p-3">صافي اليوم</th><th className="p-3">حركات</th></tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((d) => (
+                        <tr key={d.day} className="border-t border-slate-100">
+                          <td className="p-3 font-medium" dir="ltr">{d.day}</td>
+                          <td className="p-3 text-emerald-600">{d.moneyIn ? fmt(d.moneyIn) : "—"}</td>
+                          <td className="p-3 text-red-600">{d.moneyOut ? fmt(d.moneyOut) : "—"}</td>
+                          <td className={`p-3 font-bold ${d.net >= 0 ? "text-slate-800" : "text-red-600"}`}>{fmt(d.net)}</td>
+                          <td className="p-3 text-slate-400">{d.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="sticky bottom-0 bg-slate-100 font-bold">
+                      <tr><td className="p-3">{logOffice === "all" ? "المجموع الكلي" : "مجموع المكتب"}</td><td colSpan={2}></td><td className="p-3 text-emerald-700">{fmt(total)}</td><td></td></tr>
+                    </tfoot>
+                  </table>
+                );
+              })()}
             </div>
           </div>
         </div>
