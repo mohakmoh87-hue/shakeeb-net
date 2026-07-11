@@ -17,7 +17,7 @@ const TILES = [
   { label: "حسابات المدير", icon: "🧾", color: "#3b82f6", href: "/manager-accounts", enabled: true },
   { label: "تقرير تفصيلي", icon: "🧾", color: "#8b5cf6", href: "/reports/detailed", enabled: true },
   { label: "التقرير الاجمالي", icon: "📊", color: "#10b981", href: "/reports/overall", enabled: true },
-  { label: "الصندوق", icon: "🧮", color: "#0ea5e9", href: "/cashbox", enabled: true },
+  { label: "إدارة الفنيين", icon: "🛠️", color: "#0ea5e9", href: "/field-management", enabled: true },
 ];
 
 export default async function DashboardPage() {

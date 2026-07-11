@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 
 // تنقّل الهاتف: ترويسة علوية ملتصقة + قائمة منزلقة (drawer). تظهر على الهاتف فقط (md:hidden).
 const NAV: { section: string; items: { label: string; icon: string; href: string; external?: boolean }[] }[] = [
-  { section: "الرئيسية", items: [{ label: "الشاشة الرئيسية", icon: "🏠", href: "/dashboard" }] },
+  { section: "الرئيسية", items: [{ label: "الشاشة الرئيسية", icon: "🏠", href: "/dashboard" }, { label: "إدارة الفنيين", icon: "🛠️", href: "/field-management" }] },
   {
     section: "العمليات",
     items: [

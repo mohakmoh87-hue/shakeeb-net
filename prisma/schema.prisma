@@ -523,3 +523,41 @@ model PushType {
 
   @@map("push_types")
 }
+
+// ===== إدارة الفنيين (لوحات كانبان على نمط Trello) — ميزة جديدة مستقلّة =====
+model TaskBoard {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  isDeleted Boolean  @default(false)
+
+  @@map("task_boards")
+}
+
+model TaskList {
+  id        Int      @id @default(autoincrement())
+  boardId   Int // اللوحة المالكة
+  name      String
+  position  Int      @default(0)
+  isDeleted Boolean  @default(false)
+
+  @@index([boardId])
+  @@map("task_lists")
+}
+
+model TaskCard {
+  id          Int       @id @default(autoincrement())
+  listId      Int // العمود المالك
+  title       String
+  description String?
+  assignee    String? // اسم الفني/الموظف (نصي مبدئياً؛ يُربط لاحقاً)
+  label       String? // لون/تصنيف
+  dueDate     DateTime?
+  position    Int       @default(0)
+  done        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  isDeleted   Boolean   @default(false)
+
+  @@index([listId])
+  @@map("task_cards")
+}

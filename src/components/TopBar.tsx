@@ -27,7 +27,8 @@ const GROUPS: {
   {
     title: "المصاريف",
     items: [
-      { label: "انشاء حساب مصروفات", icon: "🧮", href: "/accounts", enabled: true },
+      { label: "الصندوق", icon: "🧮", href: "/cashbox", enabled: true },
+      { label: "انشاء حساب مصروفات", icon: "🗂️", href: "/accounts", enabled: true },
       { label: "المصروفات والمقبوضات", icon: "💵", href: "/cashbox", enabled: true },
     ],
   },
