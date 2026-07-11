@@ -135,9 +135,9 @@ export default function OverallReport() {
               <button onClick={() => setOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
             </div>
 
-            <div className="flex flex-1 overflow-hidden">
+            <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
               {/* القائمة */}
-              <div className="flex-1 overflow-auto border-l border-slate-200">
+              <div className="flex-1 overflow-auto border-b border-slate-200 md:border-b-0 md:border-l">
                 <table className="w-full text-right text-xs">
                   <thead className="sticky top-0 bg-slate-100 text-slate-600">
                     <tr>
@@ -164,7 +164,7 @@ export default function OverallReport() {
               </div>
 
               {/* إرسال الرسالة */}
-              <div className="w-[300px] shrink-0 space-y-3 overflow-y-auto p-4">
+              <div className="w-full shrink-0 space-y-3 p-4 md:w-[300px] md:overflow-y-auto">
                 <div className="text-sm font-semibold text-slate-700">المحدّدون: <span className="text-mynet-blue">{checked.size}</span></div>
                 <div className="flex gap-1">
                   {(["SMS", "WHATSAPP", "TELEGRAM"] as const).map((c) => (

@@ -182,9 +182,9 @@ export default function ActivationModal({
           <button onClick={releaseAndClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          {/* يسار: صفحة SAS4 مضمّنة */}
-          <div className="flex flex-1 flex-col border-l border-slate-200">
+        <div className="flex flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+          {/* صفحة SAS4 مضمّنة (أعلى على الهاتف / يسار على الكمبيوتر) */}
+          <div className="flex h-[45vh] shrink-0 flex-col border-b border-slate-200 md:h-auto md:flex-1 md:border-b-0 md:border-l">
             <div className="flex items-center justify-between bg-slate-100 px-3 py-1.5 text-xs">
               <span className="font-semibold text-slate-600">صفحة تفعيل المشترك في SAS4 (دخول تلقائي)</span>
               {directLink && <a href={directLink} target="_blank" rel="noopener noreferrer" className="text-mynet-blue hover:underline">فتح بنافذة جديدة ↗</a>}
@@ -205,8 +205,8 @@ export default function ActivationModal({
             )}
           </div>
 
-          {/* يمين: أدوات التفعيل */}
-          <div className="w-[340px] shrink-0 space-y-4 overflow-y-auto p-4">
+          {/* أدوات التفعيل (أسفل على الهاتف / يمين على الكمبيوتر) */}
+          <div className="w-full shrink-0 space-y-4 p-4 md:w-[340px] md:overflow-y-auto">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">الفئة (السرعة)</label>
               <select value={packageId} onChange={(e) => setPackageId(Number(e.target.value) || "")} className="w-full rounded-lg border border-slate-300 px-3 py-2">

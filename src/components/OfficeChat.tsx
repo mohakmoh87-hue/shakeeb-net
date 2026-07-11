@@ -70,9 +70,9 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
             <div className="text-sm text-slate-500">اربطه بمسح رمز QR من صفحة <b>المكاتب</b> ← واتساب المكتب، ثم عُد هنا.</div>
           </div>
         ) : (
-        <div className="flex flex-1 overflow-hidden">
-          {/* قائمة المحادثات */}
-          <div className="w-[300px] shrink-0 overflow-y-auto border-l border-slate-200 bg-slate-50">
+        <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
+          {/* قائمة المحادثات (شريط أعلى على الهاتف / عمود جانبي على الكمبيوتر) */}
+          <div className="h-40 w-full shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 md:h-auto md:w-[300px] md:border-b-0 md:border-l">
             {loadingChats ? (
               <div className="p-4 text-center text-sm text-slate-400">جاري تحميل المحادثات...</div>
             ) : chats.length === 0 ? (
