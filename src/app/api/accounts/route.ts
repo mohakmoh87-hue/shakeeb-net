@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, guardAny } from "@/lib/guard";
+import { guard, guardAny, towerScope } from "@/lib/guard";
 
 const schema = z.object({
   name: z.string().min(1, "اسم الحساب مطلوب"),
   typeName: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   isEmployee: z.union([z.boolean(), z.string()]).optional().transform((v) => v === true || v === "1"),
+  towerId: z.coerce.number().nullable().optional(), // للمدير: اختيار مكتب الحساب
 });
 
 export async function GET() {
@@ -15,8 +16,9 @@ export async function GET() {
   const g = await guardAny("accounts.manage", "finance.view", "finance.manage");
   if (g.error) return g.error;
 
+  // قائمة حسابات مستقلة لكل مكتب؛ المدير يرى كل المكاتب
   const accounts = await prisma.account.findMany({
-    where: { isDeleted: false },
+    where: { isDeleted: false, ...towerScope(g.session) },
     orderBy: { id: "asc" },
   });
   return NextResponse.json(accounts);
@@ -34,6 +36,11 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const created = await prisma.account.create({ data: parsed.data });
+  // مستخدم المكتب: يُفرض مكتبه؛ المدير: يختار المكتب من الجسم
+  const towerId =
+    g.session && !g.session.isAdmin && g.session.towerId != null
+      ? g.session.towerId
+      : parsed.data.towerId ?? null;
+  const created = await prisma.account.create({ data: { ...parsed.data, towerId } });
   return NextResponse.json(created, { status: 201 });
 }

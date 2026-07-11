@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, towerScope } from "@/lib/guard";
 
 const schema = z.object({
   name: z.string().min(1, "اسم المادة مطلوب"),
@@ -11,14 +11,16 @@ const schema = z.object({
   priceDinar: z.coerce.number().nullable().optional(),
   count: z.coerce.number().nullable().optional(),
   barcode: z.string().nullable().optional(),
+  towerId: z.coerce.number().nullable().optional(), // للمدير: اختيار مكتب المخزن
 });
 
 export async function GET() {
   const g = await guard("inventory.manage");
   if (g.error) return g.error;
 
+  // مخزن مستقل لكل مكتب؛ المدير يرى كل المكاتب
   const items = await prisma.item.findMany({
-    where: { isDeleted: false },
+    where: { isDeleted: false, ...towerScope(g.session) },
     orderBy: { id: "asc" },
   });
   return NextResponse.json(items);
@@ -36,6 +38,11 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const created = await prisma.item.create({ data: parsed.data });
+  // مستخدم المكتب: يُفرض مكتبه دائماً؛ المدير: يختار المكتب من الجسم (أو بلا مكتب)
+  const towerId =
+    g.session && !g.session.isAdmin && g.session.towerId != null
+      ? g.session.towerId
+      : parsed.data.towerId ?? null;
+  const created = await prisma.item.create({ data: { ...parsed.data, towerId } });
   return NextResponse.json(created, { status: 201 });
 }

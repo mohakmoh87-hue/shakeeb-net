@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, ownsTower } from "@/lib/guard";
 
 const schema = z.object({
   name: z.string().min(1, "اسم الحساب مطلوب"),
@@ -26,6 +26,10 @@ export async function PUT(
       { status: 400 },
     );
   }
+  const existing = await prisma.account.findUnique({ where: { id: Number(id) }, select: { towerId: true } });
+  if (!existing || !ownsTower(g.session, existing.towerId)) {
+    return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+  }
   const updated = await prisma.account.update({
     where: { id: Number(id) },
     data: parsed.data,
@@ -41,6 +45,10 @@ export async function DELETE(
   if (g.error) return g.error;
 
   const { id } = await params;
+  const existing = await prisma.account.findUnique({ where: { id: Number(id) }, select: { towerId: true } });
+  if (!existing || !ownsTower(g.session, existing.towerId)) {
+    return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+  }
   await prisma.account.update({
     where: { id: Number(id) },
     data: { isDeleted: true },

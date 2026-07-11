@@ -193,8 +193,10 @@ model Account {
   typeName  String?
   userId    Int?
   isEmployee Boolean @default(false) // حساب موظف (تنظيمي) — يبقى يؤثر على التقرير اليومي
+  towerId   Int? // المكتب المالك للحساب (قائمة حسابات مستقلة لكل مكتب؛ المدير يرى الكل)
   isDeleted Boolean @default(false)
 
+  @@index([towerId])
   @@map("accounts")
 }
 
@@ -333,8 +335,10 @@ model Item {
   minCount    Int?
   color       String?
   size        String?
+  towerId     Int? // المكتب المالك للمخزن (مخزن مستقل لكل مكتب؛ المدير يرى الكل)
   isDeleted   Boolean @default(false)
 
+  @@index([towerId])
   @@map("items")
 }
 
