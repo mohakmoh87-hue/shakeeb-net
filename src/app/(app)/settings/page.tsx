@@ -1,0 +1,77 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import PageHeader from "@/components/PageHeader";
+import { usePermission } from "@/lib/usePermission";
+
+export default function SettingsPage() {
+  const { can, me } = usePermission();
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings").then((r) => void (r.ok && r.json().then(setForm)));
+  }, []);
+
+  if (!me) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
+  if (!can("settings.manage")) {
+    return <div className="p-6"><PageHeader title="الإعدادات" /><div className="rounded-lg bg-red-50 px-4 py-3 text-red-600">ليس لديك صلاحية الوصول إلى إعدادات المكتب.</div></div>;
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setSaved(false);
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    setSaving(false);
+    if (res.ok) setSaved(true);
+  }
+
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  return (
+    <div className="p-6">
+      <PageHeader title="الإعدادات العامة" subtitle="العملة ومواعيد التقارير — أما الواتساب وبيانات كل مكتب فمن صفحة المكاتب" />
+
+      <form onSubmit={save} className="max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <Field label="اسم النظام (الافتراضي في الوصولات)" value={form.office} onChange={(v) => set("office", v)} />
+        <Field label="سعر صرف الدولار (دينار)" value={form.dollar} onChange={(v) => set("dollar", v)} type="number" />
+        <Field label="هاتف عام" value={form.phone} onChange={(v) => set("phone", v)} />
+        <Field label="رمز الدولة" value={form.country} onChange={(v) => set("country", v)} placeholder="964" />
+        <Field label="وقت إرسال تذكير انتهاء الاشتراك (يومياً)" value={form.reminderTime || "13:00"} onChange={(v) => set("reminderTime", v)} type="time" />
+        <Field label="وقت إرسال تقرير المدير (يومياً)" value={form.reportTime || "23:55"} onChange={(v) => set("reportTime", v)} type="time" />
+
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-700">
+          ربط واتساب كل مكتب، وبيانات SAS، ورقم المدير، والإرسال الصامت — كلها من صفحة{" "}
+          <Link href="/towers" className="font-bold underline">المكاتب</Link>.
+        </div>
+
+        {saved && <div className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">✓ تم الحفظ</div>}
+        <button type="submit" disabled={saving} className="w-full rounded-lg bg-mynet-blue py-2.5 font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
+          {saving ? "جاري الحفظ..." : "حفظ الإعدادات"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function Field({ label, value, onChange, type = "text", placeholder }: { label: string; value?: string; onChange: (v: string) => void; type?: string; placeholder?: string }) {
+  return (
+    <div className="mb-4">
+      <label className="mb-1 block text-sm font-medium text-slate-700">{label}</label>
+      <input
+        type={type}
+        value={value ?? ""}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
+      />
+    </div>
+  );
+}

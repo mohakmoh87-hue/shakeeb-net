@@ -1,0 +1,521 @@
+// مخطط قاعدة البيانات - MyNet Web
+// المرحلة 1: نمذجة كاملة للجداول المقابلة لبرنامج MyNet.v4
+// ملاحظة: نحتفظ بالمعرّفات الأصلية (id) لتبقى العلاقات صحيحة بعد النقل.
+// المفاتيح الأجنبية حقول Int بسيطة (كما في الأصل) لضمان نقل مرن دون فشل بسبب سجلات يتيمة.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ===== المستخدمون والصلاحيات =====
+enum Role {
+  ADMIN
+  ACCOUNTANT
+  CASHIER
+  TECHNICIAN
+  VIEWER
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  fullName  String
+  username  String   @unique
+  password  String
+  role      Role     @default(VIEWER)
+  isAdmin   Boolean  @default(false) // مدير كامل الصلاحيات
+  permissions String? // صلاحيات مفصولة بفواصل
+  towerId   Int? // البرج الذي يتحكم به هذا المستخدم (المكتب)
+  managerPhone String? // رقم المدير لإرسال التقرير اليومي
+  isActive  Boolean  @default(true)
+  isDeleted Boolean  @default(false)
+  legacyId  Int? // معرّف المستخدم في البرنامج القديم
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  action    String
+  entity    String?
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ===== المجموعات (group_brig) =====
+model Group {
+  id        Int     @id @default(autoincrement())
+  name      String?
+  balance   Float   @default(0)
+  isDeleted Boolean @default(false)
+
+  @@map("groups")
+}
+
+// ===== الأبراج / القواطع (brig) =====
+model Tower {
+  id          Int     @id @default(autoincrement())
+  name        String?
+  address     String?
+  note        String?
+  phone       String?
+  loginUrl    String? // رابط لوحة SAS4 (الدخول)
+  activationTemplate String? // قالب رابط تفعيل المشترك، مثال: http://sas/admin?user={user}
+  username    String? // اسم مستخدم الدخول للوحة SAS4
+  password    String?
+  passOnline  String?
+  type        Int?
+  price       Int?
+  nesba       Int? // النسبة
+  groupId     Int?
+  isMain      Int?
+  allowAdd    Int?
+  allowSms    Int?
+  month       Int?
+  activationMode String? @default("month") // نظام التفعيل: month = نفس تاريخ اليوم بالشهر التالي، days30 = 30 يوماً
+  managerPhone String? // رقم مدير هذا المكتب (لإرسال التقرير اليومي)
+  silent      String? @default("1") // 1 = إرسال صامت افتراضي لهذا المكتب
+  waEnabled   String? @default("1") // 1 = تفعيل واتساب لهذا المكتب
+  syncEnabled String? @default("0") // 1 = تفعيل المزامنة اليومية التلقائية
+  syncTime    String? // وقت مزامنة الاشتراكات اليومية مع SAS (HH:MM)
+  lastReminderDate String? // آخر يوم (YYYY-MM-DD) أُرسل/عولج فيه تذكير الانتهاء (لمنطق الموافقة عند الدخول)
+  lastReportDate String? // آخر يوم (YYYY-MM-DD) أُرسل فيه التقرير اليومي للمدير (لمنع تكراره)
+  isDeleted   Boolean @default(false)
+
+  @@index([groupId])
+  @@map("towers")
+}
+
+// ===== معلومات البرج الفنية (brgInfo) =====
+model TowerInfo {
+  id         Int     @id @default(autoincrement())
+  sector     String?
+  towerId    Int? // brg_fk
+  ip         String?
+  username   String?
+  password   String?
+  type       String?
+  userCount  Int?
+  channel    String?
+  company    String?
+  address    String?
+  notes      String?
+  isDeleted  Boolean @default(false)
+
+  @@index([towerId])
+  @@map("tower_info")
+}
+
+// ===== الباقات (card) =====
+model Package {
+  id          Int     @id @default(autoincrement())
+  name        String?
+  priceDollar Float? // card_priceDO
+  priceDinar  Float?
+  addPrice    Float? // card_add
+  cardCost    Float? // سعر شراء/كلفة الكارت الواحد لهذه الفئة (لديون الكارتات)
+  towerId     Int? // card_brigfk
+  isDeleted   Boolean @default(false)
+
+  @@index([towerId])
+  @@map("packages")
+}
+
+// ===== المشتركون (costumer) =====
+model Subscriber {
+  id           Int       @id @default(autoincrement())
+  name         String?
+  phone        String?
+  address      String?
+  packageId    Int? // cost_cardFk
+  note         String?
+  dateFrom     DateTime?
+  dateTo       DateTime?
+  towerId      Int? // cost_bregFk
+  groupId      Int? // cost_GroupFk
+  month        Int?
+  money        Float?
+  wasel        Float? // المبلغ الواصل
+  carry        Float? // الدين المرحّل
+  sector       String?
+  state        String?
+  type         Int?
+  smsEnabled   Int? // cost_sms
+  waEnabled    Boolean @default(true) // إرسال واتساب لهذا المشترك (افتراضي مفعّل)
+  createdByUser String? // cost_user
+  createdByName String? // cost_userName
+  wifiUser     String?
+  wifiPass     String?
+  netUser      String? // اسم مستخدم المشترك في SAS4
+  sasId        Int? // معرّف المشترك في SAS4 (للربط والتفعيل)
+  cardCode     String? // cardID
+  // حقول شاشة المشترك التفصيلية
+  subPassword  String? // باسورد الاشتراك
+  userNano     String? // يوزر الناتو
+  passNano     String? // باسورد الناتو
+  ipNano       String? // ايبي الناتو
+  ftth         String? // معرّف ftth
+  telegram     String? // التلكرام
+  employee     String? // الموظف / قسم الحسابات
+  tele         String?
+  mac          String?
+  affiliate    String?
+  lastSmsDate  DateTime?
+  isDeleted    Boolean   @default(false)
+
+  @@index([packageId])
+  @@index([towerId])
+  @@index([groupId])
+  @@index([phone])
+  @@index([name])
+  @@map("subscribers")
+}
+
+// ===== الحسابات (acounts) =====
+model Account {
+  id        Int     @id @default(autoincrement())
+  name      String?
+  notes     String?
+  type      Int?
+  typeName  String?
+  userId    Int?
+  isEmployee Boolean @default(false) // حساب موظف (تنظيمي) — يبقى يؤثر على التقرير اليومي
+  isDeleted Boolean @default(false)
+
+  @@map("accounts")
+}
+
+// ===== وصولات التفعيل والتجديد (Sand) =====
+model SubscriptionEntry {
+  id           Int       @id @default(autoincrement())
+  date         DateTime?
+  notes        String?
+  dateFrom     DateTime?
+  dateTo       DateTime?
+  money        Float?
+  moneyIn      Float?
+  moneyCarry   Float?
+  moneyType    Int?
+  cardType     String?
+  withdrawal   Float?
+  priceDollar  Float?
+  deposit      Float?
+  balance      Float?
+  operation    String?
+  subscriberId Int? // Sand_cosFk
+  month        String?
+  card2        String?
+  withdrawalIq Float?
+  towerId      Int? // Sand_fkBrig
+  nextDate     DateTime?
+  userId       Int?
+  pushType     String?
+  createdByUser String? // sand_user
+  addPrice     Float? // Sand_add
+  isDeleted    Boolean   @default(false)
+
+  @@index([subscriberId])
+  @@index([towerId])
+  @@index([date])
+  @@map("subscription_entries")
+}
+
+// ===== الحركات المالية (money) =====
+model MoneyTx {
+  id         Int       @id @default(autoincrement())
+  moneyIn    Float?
+  moneyOut   Float?
+  accountId  Int? // money_acFk
+  userId     Int?
+  date       DateTime?
+  notes      String?
+  pc         String?
+  serverDate DateTime?
+  sourceType String? // مصدر الحركة: activation | invoice | debt | manual (لإلغائها عكسياً)
+  sourceId   Int? // معرّف المصدر (وصل التفعيل/الفاتورة/المشترك)
+  towerId    Int? // البرج/المكتب الذي تخصّه الحركة (لتقارير كل برج)
+  isDeleted  Boolean   @default(false)
+
+  @@index([accountId])
+  @@index([date])
+  @@index([sourceType, sourceId])
+  @@index([towerId])
+  @@map("money_tx")
+}
+
+// ===== الصندوق (box) =====
+model Box {
+  id        Int       @id @default(autoincrement())
+  userId    Int?
+  date      DateTime?
+  idFrom    Int?
+  idTo      Int?
+  money     Float?
+  type      Int?
+  oldMoney  Float?
+  notes     String?
+  isDeleted Boolean   @default(false)
+
+  @@map("boxes")
+}
+
+// ===== إيداعات/أقسام الصندوق (box_dep) =====
+model BoxDep {
+  id        Int     @id @default(autoincrement())
+  name      String?
+  type      Int?
+  money     Float?
+  isDeleted Boolean @default(false)
+
+  @@map("box_deps")
+}
+
+// ===== كروت التفعيل (cards) =====
+// ===== حساب مصروف/مقبوض المدير (لا يؤثر على التقرير اليومي) =====
+model ManagerTx {
+  id        Int      @id @default(autoincrement())
+  type      String // expense | receipt | card-payment
+  amount    Float
+  notes     String?
+  date      DateTime @default(now())
+  userId    Int?
+  isDeleted Boolean  @default(false)
+
+  @@index([type])
+  @@map("manager_tx")
+}
+
+model RechargeCard {
+  id           Int       @id @default(autoincrement())
+  number       String?
+  password     String?
+  serial       String? // سيريال الكارت
+  packageId    Int? // الفئة/الباقة (50/100/150 ميكا)
+  price        Float? // سعر شراء/كلفة الكارت الواحد (لحساب ديون الكارتات)
+  subscriberId Int? // المشترك الذي استُخدم له
+  reservedBy   Int? // مستخدم حجز الكارت مؤقتاً (سحب كارت)
+  reservedAt   DateTime? // وقت الحجز المؤقت
+  useDate      DateTime? // تاريخ الاستخدام النهائي (null = متاح)
+  addDate      DateTime?
+  userId       Int?
+  userName     String?
+
+  @@index([serial])
+  @@index([packageId, useDate])
+  @@map("recharge_cards")
+}
+
+// ===== المواد / المخزن (items) =====
+model Item {
+  id          Int     @id @default(autoincrement())
+  name        String?
+  category    String?
+  priceDinar  Float?
+  priceDollar Float?
+  priceSale   Float?
+  priceSale2  Float?
+  type        Int?
+  barcode     String?
+  count       Float?
+  minCount    Int?
+  color       String?
+  size        String?
+  isDeleted   Boolean @default(false)
+
+  @@map("items")
+}
+
+// ===== الفواتير (fatora) =====
+model Invoice {
+  id           Int       @id @default(autoincrement())
+  date         DateTime?
+  number       Int?
+  itemsCount   Float?
+  totalMy      Float?
+  waselHim     Float?
+  pushType     Int?
+  note         String?
+  user         String?
+  type         String?
+  subscriberId Int? // fatora_cosfk
+  towerId      Int? // البرج/المكتب (لتقارير كل برج)
+  isDeleted    Boolean   @default(false)
+
+  @@index([subscriberId])
+  @@index([towerId])
+  @@map("invoices")
+}
+
+// ===== أصناف الفاتورة (item_fatora) =====
+model InvoiceItem {
+  id        Int     @id @default(autoincrement())
+  invoiceId Int? // item_fatorafk
+  itemId    Int? // item_fatora_itemfk
+  count     Float?
+  price     Float?
+  buyPrice  Float?
+  note      String?
+  barcode   String?
+  color     String?
+  size      String?
+  isDeleted Boolean @default(false)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+// ===== التذاكر (tct) =====
+model Ticket {
+  id            Int       @id @default(autoincrement())
+  createdByUser String?
+  typeId        Int?
+  priorityId    Int?
+  statusId      Int?
+  desc          String?
+  note          String?
+  tower         String?
+  date          DateTime?
+  dateClose     DateTime?
+  isClosed      Int?
+  closedByUser  String?
+  depName       String?
+  isDeleted     Boolean   @default(false)
+
+  @@map("tickets")
+}
+
+model TicketType {
+  id        Int     @id @default(autoincrement())
+  name      String?
+  isDeleted Boolean @default(false)
+
+  @@map("ticket_types")
+}
+
+model TicketPriority {
+  id        Int     @id @default(autoincrement())
+  name      String?
+  isDeleted Boolean @default(false)
+
+  @@map("ticket_priorities")
+}
+
+model TicketState {
+  id        Int     @id @default(autoincrement())
+  name      String?
+  isDeleted Boolean @default(false)
+
+  @@map("ticket_states")
+}
+
+// ===== الأشهر (month) =====
+model Month {
+  id        Int       @id @default(autoincrement())
+  name      String?
+  notes     String?
+  user      String?
+  date      DateTime?
+  month     String?
+  money     Float?
+  isDeleted Boolean   @default(false)
+
+  @@map("months")
+}
+
+// ===== الملاحظات (notes) =====
+model Note {
+  id        Int       @id @default(autoincrement())
+  name      String?
+  text      String?
+  date      DateTime?
+  done      Int?
+  category  String?
+  desc      String?
+  dateAlert DateTime?
+  user      String?
+  isDeleted Boolean   @default(false)
+
+  @@map("notes")
+}
+
+// ===== الأحداث / التقويم (events) =====
+model Event {
+  id   Int       @id @default(autoincrement())
+  name String?
+  date DateTime?
+  desc String?
+  user String?
+
+  @@map("events")
+}
+
+// ===== إعدادات النظام (Setting_system) =====
+model SystemSetting {
+  id    Int     @id @default(autoincrement())
+  type  String?
+  value String?
+  text  String?
+
+  @@map("system_settings")
+}
+
+// ===== قوالب الرسائل (Setting_sms) =====
+model SmsTemplate {
+  id     Int     @id @default(autoincrement())
+  type   String?
+  text   String?
+  enable String?
+
+  @@map("sms_templates")
+}
+
+// ===== سجل الرسائل الصادرة (SMS / واتساب / تيليغرام) =====
+enum MessageChannel {
+  SMS
+  WHATSAPP
+  TELEGRAM
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Message {
+  id            Int            @id @default(autoincrement())
+  channel       MessageChannel @default(SMS)
+  subscriberId  Int?
+  phone         String?
+  text          String
+  status        MessageStatus  @default(PENDING)
+  error         String?
+  createdByUser String?
+  date          DateTime       @default(now())
+
+  @@index([subscriberId])
+  @@index([status])
+  @@map("messages")
+}
+
+// ===== أنواع الإشعار (pushType) =====
+model PushType {
+  id        Int     @id @default(autoincrement())
+  type      String?
+  isDeleted Boolean @default(false)
+
+  @@map("push_types")
+}

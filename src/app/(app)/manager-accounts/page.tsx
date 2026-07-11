@@ -1,0 +1,274 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import PageHeader from "@/components/PageHeader";
+import OfficeChat from "@/components/OfficeChat";
+
+type WaOffice = { id: number; name: string | null; state: string };
+
+type MgrTx = { id: number; type: string; amount: number; notes: string | null; date: string };
+type Data = {
+  cumulativeDaily: number;
+  totalAvailable: number;
+  cardDebtAdded: number;
+  cardPayments: number;
+  cardDebtRemaining: number;
+  managerExpenses: number;
+  managerReceipts: number;
+  employees: { id: number; name: string | null; withdrawn: number }[];
+  transactions: MgrTx[];
+};
+
+const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
+const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات" };
+
+export default function ManagerAccountsPage() {
+  const [data, setData] = useState<Data | null>(null);
+  const [denied, setDenied] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [waOffices, setWaOffices] = useState<WaOffice[]>([]);
+  const [chatOffice, setChatOffice] = useState<WaOffice | null>(null);
+  const [cardData, setCardData] = useState<{ packages: { id: number; name: string | null; priceDinar: number | null; cardCost: number | null }[]; canEdit: boolean } | null>(null);
+  const [priceInputs, setPriceInputs] = useState<Record<number, string>>({});
+  const [priceMsg, setPriceMsg] = useState("");
+  const [dailyLog, setDailyLog] = useState<{ days: { day: string; moneyIn: number; moneyOut: number; net: number; count: number }[]; total: number } | null>(null);
+  const [showLog, setShowLog] = useState(false);
+
+  function openDailyLog() {
+    setShowLog(true);
+    fetch("/api/manager-accounts/daily-log").then((r) => void (r.ok && r.json().then(setDailyLog)));
+  }
+
+  const load = useCallback(() => {
+    fetch("/api/manager-accounts").then((r) => {
+      if (r.status === 403) { setDenied(true); setLoaded(true); return; }
+      if (r.ok) r.json().then((d) => { setData(d); setLoaded(true); });
+      else setLoaded(true);
+    });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  // محادثات واتساب المكاتب (صلاحية whatsapp.chat)
+  useEffect(() => {
+    fetch("/api/whatsapp/offices").then((r) => void (r.ok && r.json().then((d) => setWaOffices(d.offices ?? []))));
+  }, []);
+
+  // أسعار الكارت لكل فئة (يظهر محرّرها لصاحب صلاحية cardprice.manage)
+  const loadPrice = useCallback(() => {
+    fetch("/api/card-price").then((r) => void (r.ok && r.json().then((d) => {
+      setCardData(d);
+      const inp: Record<number, string> = {};
+      for (const pk of (d.packages ?? [])) inp[pk.id] = String(pk.cardCost ?? 0);
+      setPriceInputs(inp);
+    })));
+  }, []);
+  useEffect(() => { loadPrice(); }, [loadPrice]);
+
+  async function savePrice(packageId: number) {
+    setPriceMsg("");
+    const res = await fetch("/api/card-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ packageId, price: Number(priceInputs[packageId]) || 0 }) });
+    if (res.ok) { setPriceMsg("✓ تم حفظ السعر (يُطبَّق على الكروت الجديدة فقط)"); loadPrice(); }
+    else { const d = await res.json().catch(() => ({})); setPriceMsg(d.error ?? "فشل"); }
+  }
+
+  async function submit(type: "expense" | "receipt" | "card-payment") {
+    setError("");
+    if (!amount || Number(amount) <= 0) { setError("أدخل مبلغاً صحيحاً"); return; }
+    if ((type === "expense" || type === "receipt") && !notes.trim()) { setError("اكتب سبب/ملاحظة الحركة"); return; }
+    setBusy(true);
+    const res = await fetch("/api/manager-accounts/tx", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, amount: Number(amount), notes: notes || null }),
+    });
+    setBusy(false);
+    if (res.ok) { setAmount(""); setNotes(""); load(); }
+    else { const d = await res.json().catch(() => ({})); setError(d.error ?? "فشل"); }
+  }
+
+  async function del(id: number) {
+    if (!window.confirm("حذف هذه الحركة؟")) return;
+    const res = await fetch(`/api/manager-accounts/tx?id=${id}`, { method: "DELETE" });
+    if (res.ok) load();
+  }
+
+  if (!loaded) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
+  // ممنوع تماماً فقط إذا لا حسابات ولا واتساب ولا صلاحية سعر الكارت
+  if (denied && waOffices.length === 0 && !cardData?.canEdit) return <div className="p-6"><PageHeader title="حسابات المدير" /><div className="rounded-lg bg-red-50 px-4 py-3 text-red-600">ليس لديك صلاحية الاطلاع على حسابات الإدارة.</div></div>;
+
+  return (
+    <div className="p-6">
+      <PageHeader title="حسابات المدير" subtitle="حسابات الإدارة وواتساب المكاتب" />
+
+      {/* واتساب المكاتب — فتح محادثات كل مكتب والرد عليها */}
+      {waOffices.length > 0 && (
+        <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <h3 className="mb-2 font-bold text-slate-800">💬 واتساب المكاتب</h3>
+          <p className="mb-3 text-xs text-slate-500">اضغط على مكتب لفتح محادثات واتساب الخاصة به (عرض، قراءة، ورد على رسائل المشتركين).</p>
+          <div className="flex flex-wrap gap-2">
+            {waOffices.map((o) => (
+              <button key={o.id} onClick={() => setChatOffice(o)} className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-emerald-100">
+                <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.state === "ready" ? "bg-emerald-500" : "bg-slate-300"}`} />
+                {o.name ?? `مكتب ${o.id}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {chatOffice && <OfficeChat officeId={chatOffice.id} officeName={chatOffice.name ?? `مكتب ${chatOffice.id}`} state={chatOffice.state} onClose={() => setChatOffice(null)} />}
+
+      {/* تحديد سعر الكارت لكل فئة (صلاحية cardprice.manage) — يُطبَّق على الكروت الجديدة فقط */}
+      {cardData?.canEdit && (
+        <div className="mb-6 max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="mb-1 font-bold text-slate-800">💳 سعر الكارت لكل فئة</h3>
+          <p className="mb-3 text-xs text-slate-500">حدّد سعر شراء الكارت الواحد لكل فئة. يُطبَّق تلقائياً عند إضافة كروت الفئة، وتغييره يشمل الكروت الجديدة فقط.</p>
+          {cardData.packages.length === 0 ? <div className="text-sm text-slate-400">لا توجد فئات بعد — أضِفها من صفحة الباقات.</div> : (
+            <div className="space-y-2">
+              {cardData.packages.map((pk) => (
+                <div key={pk.id} className="flex items-center gap-2">
+                  <div className="w-32 shrink-0 text-sm font-medium text-slate-700">{pk.name ?? `#${pk.id}`}</div>
+                  <input type="number" value={priceInputs[pk.id] ?? ""} onChange={(e) => setPriceInputs((m) => ({ ...m, [pk.id]: e.target.value }))} placeholder="سعر الكارت" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                  <button onClick={() => savePrice(pk.id)} className="shrink-0 rounded-lg bg-mynet-blue px-3 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">حفظ</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {priceMsg && <div className="mt-2 text-sm text-emerald-700">{priceMsg}</div>}
+        </div>
+      )}
+
+      {/* لا صلاحية مالية → اكتفِ بقسم الواتساب */}
+      {denied || !data ? null : (
+      <>
+      {/* البطاقات الرئيسية */}
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card label="المبلغ الكلي الموجود" value={fmt(data.totalAvailable)} color="text-emerald-700" bg="bg-emerald-50" big />
+        <Card label="مجموع المبالغ اليومية" value={fmt(data.cumulativeDaily)} color="text-slate-700" bg="bg-slate-50" onClick={openDailyLog} hint="اضغط لعرض السجل اليومي" />
+        <Card label="ديون الكارتات" value={fmt(data.cardDebtRemaining)} color="text-red-700" bg="bg-red-50" />
+        <Card label="مصروفات الإدارة" value={fmt(data.managerExpenses)} color="text-amber-700" bg="bg-amber-50" />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+        {/* نموذج حركة جديدة */}
+        <div className="space-y-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-3 font-bold text-slate-800">حركة جديدة (حساب المدير)</h3>
+            <label className="mb-1 block text-sm font-medium text-slate-700">المبلغ (د.ع)</label>
+            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2" />
+            <label className="mb-1 block text-sm font-medium text-slate-700">السبب / ملاحظة</label>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="مثال: إيجار المكتب" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2" />
+            {error && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => submit("expense")} disabled={busy} className="rounded-lg bg-red-600 py-2.5 font-semibold text-white hover:bg-red-700 disabled:opacity-60">− صرف</button>
+              <button onClick={() => submit("receipt")} disabled={busy} className="rounded-lg bg-emerald-600 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">+ قبض</button>
+            </div>
+            <button onClick={() => submit("card-payment")} disabled={busy} className="mt-2 w-full rounded-lg bg-mynet-blue py-2.5 font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">💳 تسديد ديون كارتات (متبقّي {fmt(data.cardDebtRemaining)})</button>
+          </div>
+
+          {/* الموظفون */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-2 font-bold text-slate-800">سحوبات الموظفين</h3>
+            <p className="mb-2 text-xs text-slate-500">مجموع ما سحبه كل موظف (حساب موظف) من التقرير اليومي — للعرض فقط.</p>
+            {data.employees.length === 0 ? <div className="text-sm text-slate-400">لا توجد حسابات موظفين</div> : (
+              <table className="w-full text-right text-sm">
+                <tbody>
+                  {data.employees.map((e) => (
+                    <tr key={e.id} className="border-t border-slate-100">
+                      <td className="py-1.5 font-medium">{e.name ?? "—"}</td>
+                      <td className="py-1.5 text-red-600">{fmt(e.withdrawn)} د.ع</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* سجل حركات المدير */}
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full text-right text-sm">
+            <thead className="bg-slate-50 text-slate-600">
+              <tr><th className="p-3">#</th><th className="p-3">التاريخ</th><th className="p-3">النوع</th><th className="p-3">المبلغ</th><th className="p-3">ملاحظة</th><th className="p-3"></th></tr>
+            </thead>
+            <tbody>
+              {data.transactions.length === 0 ? (
+                <tr><td colSpan={6} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
+              ) : data.transactions.map((t) => (
+                <tr key={t.id} className="border-t border-slate-100">
+                  <td className="p-3 text-slate-400">{t.id}</td>
+                  <td className="p-3" dir="ltr">{fmtDate(t.date)}</td>
+                  <td className="p-3">{TYPE_LABEL[t.type] ?? t.type}</td>
+                  <td className={`p-3 font-bold ${t.type === "receipt" ? "text-emerald-600" : "text-red-600"}`}>{fmt(t.amount)}</td>
+                  <td className="p-3 text-slate-600">{t.notes ?? "—"}</td>
+                  <td className="p-3"><button onClick={() => del(t.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-100">حذف</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </>
+      )}
+
+      {/* سجل مجموع المبالغ اليومية (كل يوم بتاريخه وصافي مبلغه) */}
+      {showLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowLog(false)}>
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">سجل المبالغ اليومية</h3>
+                <p className="text-xs text-slate-500">كل يوم يُضاف صافي مبلغ التقرير إلى المجموع</p>
+              </div>
+              <button onClick={() => setShowLog(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+            </div>
+            <div className="overflow-auto">
+              {!dailyLog ? (
+                <div className="p-8 text-center text-slate-400">جاري التحميل...</div>
+              ) : dailyLog.days.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">لا توجد حركات بعد</div>
+              ) : (
+                <table className="w-full text-right text-sm">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-600">
+                    <tr><th className="p-3">التاريخ</th><th className="p-3">قبض</th><th className="p-3">صرف</th><th className="p-3">صافي اليوم</th><th className="p-3">حركات</th></tr>
+                  </thead>
+                  <tbody>
+                    {dailyLog.days.map((d) => (
+                      <tr key={d.day} className="border-t border-slate-100">
+                        <td className="p-3 font-medium" dir="ltr">{d.day}</td>
+                        <td className="p-3 text-emerald-600">{d.moneyIn ? fmt(d.moneyIn) : "—"}</td>
+                        <td className="p-3 text-red-600">{d.moneyOut ? fmt(d.moneyOut) : "—"}</td>
+                        <td className={`p-3 font-bold ${d.net >= 0 ? "text-slate-800" : "text-red-600"}`}>{fmt(d.net)}</td>
+                        <td className="p-3 text-slate-400">{d.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="sticky bottom-0 bg-slate-100 font-bold">
+                    <tr><td className="p-3">المجموع الكلي</td><td colSpan={2}></td><td className="p-3 text-emerald-700">{fmt(dailyLog.total)}</td><td></td></tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Card({ label, value, color, bg, big, onClick, hint }: { label: string; value: string; color: string; bg: string; big?: boolean; onClick?: () => void; hint?: string }) {
+  return (
+    <div
+      onClick={onClick}
+      className={`rounded-xl border border-slate-200 ${bg} p-5 shadow-sm ${onClick ? "cursor-pointer transition hover:border-mynet-blue hover:shadow-md" : ""}`}
+    >
+      <div className="text-sm text-slate-600">{label}</div>
+      <div className={`${big ? "text-3xl" : "text-2xl"} font-extrabold ${color}`}>{value}</div>
+      <div className="text-xs text-slate-400">{hint ? <span className="text-mynet-blue">{hint} ↗</span> : "د.ع"}</div>
+    </div>
+  );
+}

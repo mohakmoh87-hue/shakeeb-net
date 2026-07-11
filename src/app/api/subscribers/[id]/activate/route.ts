@@ -1,0 +1,232 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { guard, ownsTower } from "@/lib/guard";
+import { getSession } from "@/lib/auth";
+import { computeDateTo } from "@/lib/subscription";
+import { renderTemplate, sendViaProvider } from "@/lib/messaging";
+import { formatDate } from "@/lib/format";
+import { sasBaseUrl, sasLogin, sasFetchUser } from "@/lib/sas4";
+
+const schema = z.object({
+  packageId: z.coerce.number(),
+  cardId: z.coerce.number().nullable().optional(),
+  paid: z.coerce.number().min(0).default(0), // المبلغ الواصل (الباقي دين)
+  months: z.coerce.number().min(1).default(1),
+  totalOverride: z.coerce.number().min(0).nullable().optional(), // تعديل يدوي لمبلغ التفعيل
+  delivery: z.coerce.number().min(0).default(0), // مبلغ التوصيل (يُضاف على مبلغ الاشتراك)
+  dateToOverride: z.string().nullable().optional(), // تعديل يدوي لتاريخ الانتهاء (ISO)
+});
+
+// تفعيل مشترك: استهلاك الكارت + تسجيل الاشتراك + الواصل/الدين + تمديد الانتهاء
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const g = await guard("subscriptions.manage");
+  if (g.error) return g.error;
+  const session = await getSession();
+
+  const { id } = await params;
+  const subscriberId = Number(id);
+  const body = await request.json().catch(() => null);
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" },
+      { status: 400 },
+    );
+  }
+  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride } = parsed.data;
+
+  const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
+  if (!subscriber || subscriber.isDeleted || !ownsTower(g.session, subscriber.towerId)) {
+    return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
+  }
+  const pkg = await prisma.package.findUnique({ where: { id: packageId } });
+  if (!pkg || pkg.isDeleted) {
+    return NextResponse.json({ error: "الفئة غير موجودة" }, { status: 404 });
+  }
+
+  // سيريال الكارت (للعرض في الوصل)
+  let cardSerial: string | null = null;
+  if (cardId) {
+    const c = await prisma.rechargeCard.findUnique({ where: { id: cardId }, select: { serial: true } });
+    cardSerial = c?.serial ?? null;
+  }
+
+  const price = pkg.priceDinar ?? 0;
+  const now = new Date();
+  const start = subscriber.dateTo && subscriber.dateTo > now ? subscriber.dateTo : now;
+
+  // بيانات المكتب (نظام التفعيل + بيانات دخول SAS4)
+  const tower = subscriber.towerId
+    ? await prisma.tower.findUnique({
+        where: { id: subscriber.towerId },
+        select: { activationMode: true, loginUrl: true, username: true, password: true },
+      })
+    : null;
+
+  // تاريخ الانتهاء:
+  // 1) عند سحب كارت: نقرأ تاريخ الانتهاء الفعلي من SAS4 لحظة التأكيد (يراعي قرض اليوم الواحد)
+  // 2) بدون كارت: التاريخ اليدوي إن حُدّد، وإلا الحساب الطبيعي حسب نظام المكتب
+  let dateTo: Date | null = null;
+
+  if (cardId && subscriber.sasId && tower?.loginUrl && tower.username && tower.password) {
+    try {
+      const base = sasBaseUrl(tower.loginUrl);
+      const token = await sasLogin(base, tower.username, tower.password);
+      const info = await sasFetchUser(base, token, subscriber.sasId);
+      if (info?.expiration) {
+        const d = new Date(info.expiration);
+        if (!isNaN(d.getTime())) dateTo = d;
+      }
+    } catch {
+      /* تعذّر قراءة SAS — نرجع للحساب الطبيعي أدناه */
+    }
+  }
+
+  if (!dateTo) {
+    if (dateToOverride) {
+      const d = new Date(dateToOverride);
+      if (isNaN(d.getTime())) {
+        return NextResponse.json({ error: "تاريخ الانتهاء غير صحيح" }, { status: 400 });
+      }
+      dateTo = d;
+    } else {
+      dateTo = computeDateTo(start, months, tower?.activationMode);
+    }
+  }
+
+  // مبلغ التفعيل (الاشتراك): يدوي إن حُدّد، وإلا سعر الباقة × عدد الأشهر
+  const total = totalOverride != null ? totalOverride : price * months;
+  // الإجمالي المستحق = الاشتراك + التوصيل؛ الواصل يُخصم منه والباقي دين
+  const grandTotal = total + delivery;
+  const newCarry = (subscriber.carry ?? 0) + grandTotal - paid;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // استهلاك الكارت ذرّياً عند التأكيد فقط (يمنع تعارض مكتبين)
+      if (cardId) {
+        const claim = await tx.rechargeCard.updateMany({
+          where: { id: cardId, useDate: null },
+          data: { useDate: now, subscriberId, userName: session?.fullName, reservedBy: null, reservedAt: null },
+        });
+        if (claim.count === 0) throw new Error("CARD_TAKEN");
+      }
+      await tx.subscriber.update({
+        where: { id: subscriberId },
+        data: { packageId, dateTo, carry: newCarry, wasel: paid, month: months },
+      });
+      const entry = await tx.subscriptionEntry.create({
+        data: {
+          subscriberId, date: now, dateFrom: start, dateTo, money: total, moneyIn: paid,
+          addPrice: delivery, // مبلغ التوصيل (للوصل والتقارير)
+          moneyCarry: newCarry, moneyType: 1, month: String(months), cardType: pkg.name,
+          card2: cardSerial, towerId: subscriber.towerId, createdByUser: session?.username,
+        },
+      });
+      if (paid > 0) {
+        await tx.moneyTx.create({
+          data: {
+            moneyIn: paid, moneyOut: 0,
+            notes: `تفعيل ${pkg.name} - ${subscriber.name ?? subscriberId}${delivery > 0 ? ` (توصيل ${delivery})` : ""}`,
+            date: now, serverDate: now, userId: session?.userId,
+            sourceType: "activation", sourceId: entry.id, towerId: subscriber.towerId,
+          },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          userId: session?.userId, action: "ACTIVATE", entity: "subscriber", entityId: String(subscriberId),
+          details: `تفعيل ${pkg.name} - كارت ${cardSerial ?? "بدون"} - اشتراك ${total}${delivery > 0 ? ` - توصيل ${delivery}` : ""} - واصل ${paid} - دين ${newCarry}`,
+        },
+      });
+      return { ok: true, serial: cardSerial, dateTo, newCarry };
+    });
+
+    // إرسال رسالة تفعيل صامتة للمشترك عبر واتساب (لا تُعطّل التفعيل لو فشلت)
+    void sendActivationMessage({
+      subscriberId,
+      officeId: subscriber.towerId,
+      phone: subscriber.phone,
+      waEnabled: subscriber.waEnabled,
+      name: subscriber.name,
+      netUser: subscriber.netUser,
+      packageName: pkg.name,
+      card: cardSerial,
+      price: total,
+      delivery,
+      paid,
+      remaining: Math.max(0, total + delivery - paid),
+      carry: newCarry,
+      dateTo,
+      createdByUser: session?.username,
+    });
+
+    return NextResponse.json(result);
+  } catch (e) {
+    if ((e as Error).message === "CARD_TAKEN") {
+      return NextResponse.json({ error: "الكارت استُخدم للتو من مكتب آخر — اسحب كارتاً جديداً" }, { status: 409 });
+    }
+    throw e;
+  }
+}
+
+// إرسال رسالة تفعيل صامتة عبر واتساب بقالب "التفعيل" (تُسجَّل في سجل الرسائل)
+async function sendActivationMessage(a: {
+  subscriberId: number;
+  officeId: number | null;
+  phone: string | null;
+  waEnabled: boolean | null;
+  name: string | null;
+  netUser: string | null;
+  packageName: string | null;
+  card: string | null;
+  price: number;
+  delivery: number;
+  paid: number;
+  remaining: number;
+  carry: number;
+  dateTo: Date;
+  createdByUser?: string;
+}): Promise<void> {
+  try {
+    if (a.waEnabled === false || !a.phone) return; // يحترم خيار واتساب لكل مشترك
+
+    // مكتب المشترك: اسمه + تفعيل واتساب المكتب
+    const office = a.officeId ? await prisma.tower.findUnique({ where: { id: a.officeId }, select: { name: true, waEnabled: true } }) : null;
+    if (office?.waEnabled === "0") return;
+
+    const tpl = await prisma.smsTemplate.findFirst({ where: { type: "activation" } });
+    if (!tpl?.text || tpl.enable === "0") return; // لا قالب تفعيل مكتوب
+
+    const text = renderTemplate(tpl.text, {
+      name: a.name,
+      netUser: a.netUser,
+      package: a.packageName,
+      card: a.card,
+      price: a.price,
+      delivery: a.delivery,
+      // سطر التوصيل يظهر فقط عند وجود مبلغ توصيل (للاستخدام في القالب عبر {deliveryLine})
+      deliveryLine: a.delivery > 0 ? `التوصيل: ${a.delivery} د.ع` : "",
+      total: a.price + a.delivery,
+      paid: a.paid,
+      remaining: a.remaining,
+      carry: a.carry,
+      dateTo: formatDate(a.dateTo),
+      office: office?.name ?? "شكيب نت",
+    });
+
+    const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId); // واتساب مكتب المشترك
+    await prisma.message.create({
+      data: {
+        channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text,
+        status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+        createdByUser: a.createdByUser,
+      },
+    });
+  } catch {
+    // لا نُفشل التفعيل بسبب رسالة
+  }
+}

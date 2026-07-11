@@ -1,26 +1,84 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* لوحة ألوان MyNet - الأزرق السماوي المستوحى من البرنامج الأصلي */
+  --mynet-blue: #1c8fe6;
+  --mynet-blue-dark: #0f6fbf;
+  --mynet-blue-deep: #0a4f8a;
+  --mynet-gold: #f4b93e;
+  --mynet-gold-dark: #e09a1f;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-mynet-blue: var(--mynet-blue);
+  --color-mynet-blue-dark: var(--mynet-blue-dark);
+  --color-mynet-blue-deep: var(--mynet-blue-deep);
+  --color-mynet-gold: var(--mynet-gold);
+  --font-sans: var(--font-cairo);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-cairo), "Segoe UI", Tahoma, sans-serif;
+}
+
+/* خلفية الأزرق المتدرّج لشاشة الوحدات */
+.mynet-canvas {
+  background:
+    radial-gradient(circle at 30% 0%, #2ba0f2 0%, transparent 55%),
+    linear-gradient(160deg, #1c8fe6 0%, #0f6fbf 60%, #0a4f8a 100%);
+}
+
+/* شريط الإعلان الذهبي المتحرك */
+@keyframes mynet-marquee {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.mynet-marquee {
+  animation: mynet-marquee 22s linear infinite;
+}
+
+/* الطباعة: إخفاء عناصر الواجهة وإظهار الوصل فقط */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
+
+/* بطاقة الوحدة (Tile) */
+.mynet-tile {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.mynet-tile:hover {
+  transform: translateY(-3px);
+}
+
+/* ===== تحسينات العرض على الهاتف ===== */
+@media (max-width: 767px) {
+  /* منع التمرير الأفقي للصفحة كاملة */
+  html, body {
+    overflow-x: hidden;
+  }
+  /* كثافة أنسب: تقليل الحشوات الكبيرة على الهاتف */
+  .p-6 { padding: 0.9rem !important; }
+  .p-5 { padding: 0.85rem !important; }
+
+  /* الجداول: خط أصغر وحشو أقل + تمرير أفقي داخل بطاقتها بدل القصّ */
+  table { font-size: 0.8rem; }
+  th, td { padding-inline: 0.45rem !important; }
+
+  /* أي حاوية جدول تسمح بالتمرير الأفقي على الهاتف بدل قصّ الأعمدة */
+  .overflow-hidden:has(> table),
+  .overflow-hidden:has(table) {
+    overflow-x: auto !important;
+  }
+
+  /* أهداف لمس مريحة للأزرار الصغيرة جداً */
+  button { touch-action: manipulation; }
 }

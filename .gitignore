@@ -36,6 +36,20 @@ yarn-error.log*
 # vercel
 .vercel
 
+# جلسات واتساب المحلية (لا تُرفع أبداً — كبيرة وتحوي جلسات)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# ملفات تشغيل/سجلات مؤقتة
+_srv.log
+*.log
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*
+
+# إعدادات Claude المحلية
+.claude/
