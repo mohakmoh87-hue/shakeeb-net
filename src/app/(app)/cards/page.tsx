@@ -5,7 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import { formatDateTime } from "@/lib/format";
 
 type Stat = { packageId: number; name: string | null; price: number | null; available: number };
-type UsedCard = { id: number; serial: string | null; packageName: string | null; subscriber: string | null; useDate: string | null; userName: string | null };
+type UsedCard = { id: number; serial: string | null; packageName: string | null; subscriber: string | null; office: string | null; useDate: string | null; userName: string | null };
 type AvailCard = { id: number; serial: string | null; packageId: number | null; packageName: string | null; price: number | null; addDate: string | null };
 
 const fmt = (n: number | null) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
@@ -155,17 +155,18 @@ export default function CardsPage() {
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-right text-sm">
             <thead className="bg-slate-50 text-slate-600">
-              <tr><th className="p-3">#</th><th className="p-3">السيريال</th><th className="p-3">الفئة</th><th className="p-3">المشترك</th><th className="p-3">التاريخ والساعة</th><th className="p-3">بواسطة</th></tr>
+              <tr><th className="p-3">#</th><th className="p-3">السيريال</th><th className="p-3">الفئة</th><th className="p-3">المشترك</th><th className="p-3">المكتب</th><th className="p-3">التاريخ والساعة</th><th className="p-3">بواسطة</th></tr>
             </thead>
             <tbody>
               {used.length === 0 ? (
-                <tr><td colSpan={6} className="p-8 text-center text-slate-400">لا توجد كروت مستخدمة</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-slate-400">لا توجد كروت مستخدمة</td></tr>
               ) : used.map((c) => (
                 <tr key={c.id} className="border-t border-slate-100">
                   <td className="p-3">{c.id}</td>
                   <td className="p-3 font-bold" dir="ltr">{c.serial}</td>
                   <td className="p-3">{c.packageName ?? "—"}</td>
                   <td className="p-3 font-medium">{c.subscriber ?? "—"}</td>
+                  <td className="p-3 text-mynet-blue">{c.office ?? "—"}</td>
                   <td className="p-3" dir="ltr">{fmtDT(c.useDate)}</td>
                   <td className="p-3 text-slate-500">{c.userName ?? "—"}</td>
                 </tr>

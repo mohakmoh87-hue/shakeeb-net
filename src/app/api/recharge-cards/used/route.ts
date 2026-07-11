@@ -13,24 +13,31 @@ export async function GET() {
     take: 1000,
   });
 
-  const [subs, packages] = await Promise.all([
+  const [subs, packages, towers] = await Promise.all([
     prisma.subscriber.findMany({
       where: { id: { in: cards.map((c) => c.subscriberId).filter(Boolean) as number[] } },
-      select: { id: true, name: true },
+      select: { id: true, name: true, towerId: true },
     }),
     prisma.package.findMany({ select: { id: true, name: true } }),
+    prisma.tower.findMany({ select: { id: true, name: true } }),
   ]);
-  const subMap = new Map(subs.map((s) => [s.id, s.name]));
+  const subMap = new Map(subs.map((s) => [s.id, s]));
   const pkgMap = new Map(packages.map((p) => [p.id, p.name]));
+  const towerMap = new Map(towers.map((t) => [t.id, t.name]));
 
   return NextResponse.json(
-    cards.map((c) => ({
-      id: c.id,
-      serial: c.serial,
-      packageName: c.packageId ? pkgMap.get(c.packageId) ?? null : null,
-      subscriber: c.subscriberId ? subMap.get(c.subscriberId) ?? null : null,
-      useDate: c.useDate,
-      userName: c.userName,
-    })),
+    cards.map((c) => {
+      const sub = c.subscriberId ? subMap.get(c.subscriberId) : null;
+      return {
+        id: c.id,
+        serial: c.serial,
+        packageName: c.packageId ? pkgMap.get(c.packageId) ?? null : null,
+        subscriber: sub?.name ?? null,
+        // اسم المكتب الذي استخدم الكارت (مكتب المشترك المفعَّل له)
+        office: sub?.towerId ? towerMap.get(sub.towerId) ?? null : null,
+        useDate: c.useDate,
+        userName: c.userName,
+      };
+    }),
   );
 }
