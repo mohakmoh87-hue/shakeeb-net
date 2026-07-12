@@ -1,23 +1,29 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
+import { isFieldManager, resolveFieldOffice, getOrCreateBoard } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
-// يُرجِع لوحة "إدارة الفنيين" مع أعمدتها وبطاقاتها (يُنشئها بأعمدة افتراضية إن لم توجد).
-export async function GET() {
+// لوحة "إدارة الفنيين" لمكتب واحد مع أعمدتها وبطاقاتها وفنّييه.
+// مستخدم المكتب يرى لوحة مكتبه فقط؛ المدير يختار المكتب عبر ?officeId ويرى الكل.
+export async function GET(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
-  let board = await prisma.taskBoard.findFirst({ where: { isDeleted: false }, orderBy: { id: "asc" } });
-  if (!board) {
-    board = await prisma.taskBoard.create({ data: { name: "إدارة الفنيين" } });
-    const defaults = ["طلبات جديدة", "قيد التنفيذ", "منجزة"];
-    for (let i = 0; i < defaults.length; i++) {
-      await prisma.taskList.create({ data: { boardId: board.id, name: defaults[i], position: i } });
-    }
-  }
+  const manager = isFieldManager(session);
+  // قائمة المكاتب للمدير (لاختيار اللوحة)
+  const offices = manager
+    ? await prisma.tower.findMany({ where: { isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" } })
+    : [];
 
+  const reqOffice = new URL(request.url).searchParams.get("officeId");
+  let officeId = resolveFieldOffice(session, reqOffice ? Number(reqOffice) : null);
+  // المدير بلا اختيار → افتراضياً أول مكتب
+  if (manager && officeId == null && offices.length > 0) officeId = offices[0].id;
+
+  const board = await getOrCreateBoard(officeId);
   const lists = await prisma.taskList.findMany({
     where: { boardId: board.id, isDeleted: false },
     orderBy: { position: "asc" },
@@ -26,6 +32,14 @@ export async function GET() {
     where: { listId: { in: lists.map((l) => l.id) }, isDeleted: false },
     orderBy: { position: "asc" },
   });
+  const technicians = await prisma.technician.findMany({
+    where: { towerId: officeId ?? null, isDeleted: false },
+    orderBy: { id: "asc" },
+  });
 
-  return NextResponse.json({ board, lists, cards });
+  return NextResponse.json({
+    board, lists, cards, technicians, offices, officeId,
+    isManager: manager,
+    canManage: can(session, "field.manage"),
+  });
 }

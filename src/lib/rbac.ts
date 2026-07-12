@@ -20,6 +20,7 @@ export type Permission =
   | "templates.manage" // قوالب الرسائل
   | "receipt.template" // قالب الوصل المطبوع
   | "users.manage" // المستخدمون
+  | "field.manage" // إدارة الفنيين (إضافة الفنيين وتوجيه البطاقات)
   | "settings.manage"; // إعدادات المكتب
 
 // قائمة الصلاحيات مع أسمائها العربية (لمربعات الصح عند إضافة مستخدم)
@@ -44,6 +45,7 @@ export const PERMISSION_LIST: { key: Permission; label: string }[] = [
   { key: "templates.manage", label: "قوالب الرسائل" },
   { key: "receipt.template", label: "قالب الوصل المطبوع" },
   { key: "users.manage", label: "إدارة المستخدمين" },
+  { key: "field.manage", label: "إدارة الفنيين (إضافة فنيين وتوجيه البطاقات)" },
   { key: "settings.manage", label: "إعدادات المكتب والباقات" },
 ];
 

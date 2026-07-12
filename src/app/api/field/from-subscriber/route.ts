@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
+import { getOrCreateBoard } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +31,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 
-  // لوحة إدارة الفنيين (تُنشأ إن لم توجد)
-  let board = await prisma.taskBoard.findFirst({ where: { isDeleted: false }, orderBy: { id: "asc" } });
-  if (!board) board = await prisma.taskBoard.create({ data: { name: "إدارة الفنيين" } });
+  // لوحة إدارة الفنيين الخاصّة بمكتب المشترك (مستقلّة لكل مكتب، تُنشأ إن لم توجد)
+  const board = await getOrCreateBoard(sub.towerId ?? null);
 
   // العمود الذي يحمل اسم العملية — يُنشأ إن لم يوجد
   let list = await prisma.taskList.findFirst({

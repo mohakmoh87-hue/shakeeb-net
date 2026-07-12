@@ -528,10 +528,25 @@ model PushType {
 model TaskBoard {
   id        Int      @id @default(autoincrement())
   name      String
+  towerId   Int? // المكتب المالك للّوحة (null = لوحة عامة/الإدارة). لوحة مستقلة لكل مكتب.
   createdAt DateTime @default(now())
   isDeleted Boolean  @default(false)
 
+  @@index([towerId])
   @@map("task_boards")
+}
+
+// ===== الفنيون (لكل مكتب) — تُوجَّه لهم بطاقات إدارة الفنيين =====
+model Technician {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String?
+  towerId   Int? // المكتب التابع له (null = غير محدّد)
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([towerId])
+  @@map("technicians")
 }
 
 model TaskList {

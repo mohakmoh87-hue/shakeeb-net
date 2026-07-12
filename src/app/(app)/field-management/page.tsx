@@ -10,6 +10,8 @@ type Card = {
   assignee: string | null; label: string | null; dueDate: string | null;
   position: number; done: boolean;
 };
+type Office = { id: number; name: string | null };
+type Technician = { id: number; name: string; phone: string | null };
 
 const LABELS = [
   { key: "red", cls: "bg-red-500", name: "عاجل" },
@@ -32,14 +34,44 @@ export default function FieldManagementPage() {
   const [cardText, setCardText] = useState("");
   const [sel, setSel] = useState<Card | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
+  // الفنيون والمكاتب (لوحة مستقلّة لكل مكتب، والمدير يختار المكتب)
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [offices, setOffices] = useState<Office[]>([]);
+  const [officeId, setOfficeId] = useState<number | null>(null);
+  const [isManager, setIsManager] = useState(false);
+  const [canManage, setCanManage] = useState(false);
+  const [techModal, setTechModal] = useState(false);
+  const [techName, setTechName] = useState("");
+  const [techPhone, setTechPhone] = useState("");
 
-  const load = useCallback(() => {
-    fetch("/api/field/board").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d) { setBoard(d.board); setLists(d.lists); setCards(d.cards); }
+  const load = useCallback((office?: number | null) => {
+    const q = office != null ? `?officeId=${office}` : "";
+    fetch(`/api/field/board${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) {
+        setBoard(d.board); setLists(d.lists); setCards(d.cards);
+        setTechnicians(d.technicians ?? []); setOffices(d.offices ?? []);
+        setOfficeId(d.officeId ?? null); setIsManager(!!d.isManager); setCanManage(!!d.canManage);
+      }
       setLoading(false);
     });
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  async function addTechnician() {
+    const name = techName.trim();
+    if (!name) return;
+    const r = await fetch("/api/field/technicians", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, phone: techPhone.trim() || null, officeId }),
+    });
+    if (r.ok) { const t = await r.json(); setTechnicians((x) => [...x, t]); setTechName(""); setTechPhone(""); }
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّرت الإضافة"); }
+  }
+  async function deleteTechnician(id: number) {
+    if (!confirm("حذف هذا الفني؟")) return;
+    setTechnicians((x) => x.filter((t) => t.id !== id));
+    await fetch(`/api/field/technicians?id=${id}`, { method: "DELETE" });
+  }
 
   async function addCard(listId: number) {
     const title = cardText.trim();
@@ -94,12 +126,30 @@ export default function FieldManagementPage() {
   return (
     <div className="flex h-[calc(100dvh-52px)] flex-col md:h-screen" style={{ background: "linear-gradient(160deg,#1c8fe6 0%,#0f6fbf 60%,#0a4f8a 100%)" }}>
       {/* ترويسة اللوحة */}
-      <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className="flex items-center gap-2 text-white">
           <span className="text-xl">🛠️</span>
-          <h1 className="text-lg font-bold">{board?.name ?? "إدارة الفنيين"}</h1>
+          <h1 className="text-lg font-bold">إدارة الفنيين</h1>
         </div>
-        <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* اختيار المكتب — للمدير فقط (لوحة مستقلّة لكل مكتب) */}
+          {isManager && offices.length > 0 && (
+            <select
+              value={officeId ?? ""}
+              onChange={(e) => { const v = Number(e.target.value); setOfficeId(v); load(v); }}
+              className="rounded-lg border border-white/30 bg-white/90 px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none"
+            >
+              {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `مكتب ${o.id}`}</option>)}
+            </select>
+          )}
+          {/* إدارة الفنيين — تظهر بصلاحية field.manage فقط */}
+          {canManage && (
+            <button onClick={() => setTechModal(true)} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/30">
+              👷 الفنيون ({technicians.length})
+            </button>
+          )}
+          <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
+        </div>
       </div>
 
       {/* الأعمدة */}
@@ -187,8 +237,21 @@ export default function FieldManagementPage() {
               ))}
             </div>
 
-            <label className="mb-1 block text-xs font-semibold text-slate-500">الفني / الموظف المسؤول</label>
-            <input value={sel.assignee ?? ""} onChange={(e) => setSel({ ...sel, assignee: e.target.value })} onBlur={() => saveCard({ assignee: sel.assignee })} placeholder="اسم الفني" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <label className="mb-1 block text-xs font-semibold text-slate-500">الفني المسؤول</label>
+            {technicians.length > 0 ? (
+              <select
+                value={technicians.some((t) => t.name === sel.assignee) ? (sel.assignee ?? "") : ""}
+                onChange={(e) => saveCard({ assignee: e.target.value || null })}
+                className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">— بدون فني —</option>
+                {technicians.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+              </select>
+            ) : (
+              <div className="mb-3 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">
+                لا يوجد فنيون لهذا المكتب بعد{canManage ? " — أضِفهم من زر «الفنيون» بالأعلى" : ""}.
+              </div>
+            )}
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">تاريخ الاستحقاق</label>
             <input type="date" value={sel.dueDate ? sel.dueDate.slice(0, 10) : ""} onChange={(e) => saveCard({ dueDate: e.target.value || null })} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" dir="ltr" />
@@ -203,6 +266,43 @@ export default function FieldManagementPage() {
               </label>
               <button onClick={deleteCard} className="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100">🗑️ حذف البطاقة</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* إدارة الفنيين (إضافة/حذف) — لصاحب صلاحية field.manage */}
+      {techModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={() => setTechModal(false)}>
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-800">👷 فنيّو {isManager ? (offices.find((o) => o.id === officeId)?.name ?? "المكتب") : "المكتب"}</h3>
+              <button onClick={() => setTechModal(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+            </div>
+            <p className="mb-3 text-xs text-slate-500">أضِف فنيّي هذا المكتب؛ يظهرون كخيارات عند توجيه البطاقات إليهم.</p>
+
+            {/* نموذج الإضافة */}
+            <div className="mb-4 flex flex-wrap gap-2">
+              <input value={techName} onChange={(e) => setTechName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTechnician()} placeholder="اسم الفني" className="min-w-[140px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <input value={techPhone} onChange={(e) => setTechPhone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTechnician()} placeholder="الهاتف (اختياري)" dir="ltr" className="min-w-[120px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <button onClick={addTechnician} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">+ إضافة</button>
+            </div>
+
+            {/* قائمة الفنيين */}
+            {technicians.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-sm text-slate-400">لا يوجد فنيون بعد</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {technicians.map((t) => (
+                  <li key={t.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-700">{t.name}</div>
+                      {t.phone && <div className="text-xs text-slate-400" dir="ltr">{t.phone}</div>}
+                    </div>
+                    <button onClick={() => deleteTechnician(t.id)} className="rounded bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100">حذف</button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}
