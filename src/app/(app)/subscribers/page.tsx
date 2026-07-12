@@ -406,12 +406,12 @@ export default function SubscribersPage() {
               <thead className="sticky top-0 bg-slate-100 text-slate-600">
                 <tr>
                   <th className="p-2"><input type="checkbox" checked={subs.length > 0 && checked.size === subs.length} onChange={toggleCheckAll} /></th>
-                  <th className="p-2">ت</th>
+                  <th className="hidden p-2 sm:table-cell">ت</th>
                   <th className="p-2">اسم المشترك</th>
-                  <th className="p-2">اليوزر</th>
-                  <th className="p-2">رقم الهاتف</th>
-                  <th className="p-2">المكتب</th>
                   <th className="p-2">عمليات</th>
+                  <th className="hidden p-2 sm:table-cell">اليوزر</th>
+                  <th className="p-2">رقم الهاتف</th>
+                  <th className="hidden p-2 sm:table-cell">المكتب</th>
                 </tr>
               </thead>
               <tbody>
@@ -424,19 +424,19 @@ export default function SubscribersPage() {
                     <td className="p-2" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={checked.has(s.id)} onChange={() => toggleCheck(s.id)} />
                     </td>
-                    <td className="p-2 text-slate-400">{i + 1}</td>
+                    <td className="hidden p-2 text-slate-400 sm:table-cell">{i + 1}</td>
                     <td className="p-2 font-medium">{s.name}</td>
-                    <td className="p-2" dir="ltr">{s.netUser ?? "—"}</td>
-                    <td className="p-2" dir="ltr">{s.phone ?? "—"}</td>
-                    <td className="p-2">{towerName(s.towerId)}</td>
                     <td className="p-2" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => { setOpsSub(s); setOpsMsg(""); }}
-                        className="rounded-lg border border-mynet-blue/30 bg-mynet-blue/5 px-2.5 py-1 text-[11px] font-semibold text-mynet-blue hover:bg-mynet-blue/10"
+                        className="whitespace-nowrap rounded-lg border border-mynet-blue/30 bg-mynet-blue/5 px-2.5 py-1 text-[11px] font-semibold text-mynet-blue hover:bg-mynet-blue/10"
                       >
                         عمليات ▾
                       </button>
                     </td>
+                    <td className="hidden p-2 sm:table-cell" dir="ltr">{s.netUser ?? "—"}</td>
+                    <td className="p-2" dir="ltr">{s.phone ?? "—"}</td>
+                    <td className="hidden p-2 sm:table-cell">{towerName(s.towerId)}</td>
                   </tr>
                 ))}
               </tbody>
