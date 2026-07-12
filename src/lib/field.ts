@@ -9,10 +9,11 @@ export function isFieldManager(session: SessionPayload): boolean {
   return !!session.isAdmin || session.towerId == null;
 }
 
-// المكتب الفعّال: مستخدم المكتب يُقصر على مكتبه؛ المدير يختار المكتب المطلوب.
+// المكتب الفعّال: أي مستخدم يستطيع عرض/مساعدة أي مكتب (تعاون بين المكاتب وقت الضغط).
+// عند عدم تحديد مكتب: المدير يبدأ بلا مكتب (أول مكتب)، ومستخدم المكتب يبدأ بمكتبه.
 export function resolveFieldOffice(session: SessionPayload, requested: number | null): number | null {
-  if (!isFieldManager(session)) return session.towerId ?? null;
-  return requested;
+  if (requested != null) return requested;
+  return isFieldManager(session) ? null : session.towerId ?? null;
 }
 
 // لوحة المكتب (تُنشأ إن لم توجد) — لوحة واحدة لكل قيمة towerId.

@@ -131,25 +131,7 @@ export default function FieldManagementPage() {
           <span className="text-xl">🛠️</span>
           <h1 className="text-lg font-bold">إدارة الفنيين</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* اختيار المكتب — للمدير فقط (لوحة مستقلّة لكل مكتب) */}
-          {isManager && offices.length > 0 && (
-            <select
-              value={officeId ?? ""}
-              onChange={(e) => { const v = Number(e.target.value); setOfficeId(v); load(v); }}
-              className="rounded-lg border border-white/30 bg-white/90 px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none"
-            >
-              {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `مكتب ${o.id}`}</option>)}
-            </select>
-          )}
-          {/* إدارة الفنيين — تظهر بصلاحية field.manage فقط */}
-          {canManage && (
-            <button onClick={() => setTechModal(true)} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/30">
-              👷 الفنيون ({technicians.length})
-            </button>
-          )}
-          <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
-        </div>
+        <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
       </div>
 
       {/* الأعمدة */}
@@ -215,6 +197,26 @@ export default function FieldManagementPage() {
           {newList.trim() && <button onClick={addList} className="mt-1 w-full rounded-lg bg-white py-1.5 text-sm font-semibold text-mynet-blue">إضافة العمود</button>}
         </div>
       </div>
+
+      {/* شريط سفلي وسط الصفحة: المكاتب جنب بعض + الفنيون — متاح للجميع (ليساعد الفني مكتباً آخر وقت الضغط) */}
+      {offices.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-1.5 border-t border-white/20 bg-black/25 px-4 py-2.5">
+          {offices.map((o) => (
+            <button
+              key={o.id}
+              onClick={() => { setOfficeId(o.id); load(o.id); }}
+              className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition ${officeId === o.id ? "bg-white text-mynet-blue shadow" : "bg-white/20 text-white hover:bg-white/35"}`}
+            >
+              {o.name ?? `مكتب ${o.id}`}
+            </button>
+          ))}
+          {canManage && (
+            <button onClick={() => setTechModal(true)} className="rounded-lg bg-emerald-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-emerald-600">
+              👷 الفنيون ({technicians.length})
+            </button>
+          )}
+        </div>
+      )}
 
       {/* تفاصيل البطاقة */}
       {sel && (

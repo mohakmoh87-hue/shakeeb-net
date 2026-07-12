@@ -13,10 +13,12 @@ export async function GET(request: Request) {
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
   const manager = isFieldManager(session);
-  // قائمة المكاتب للمدير (لاختيار اللوحة)
-  const offices = manager
-    ? await prisma.tower.findMany({ where: { isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" } })
-    : [];
+  // قائمة كل المكاتب متاحة للجميع (ليتمكّن أي فني من مساعدة مكتب آخر وقت الضغط)
+  const offices = await prisma.tower.findMany({
+    where: { isDeleted: false },
+    select: { id: true, name: true },
+    orderBy: { id: "asc" },
+  });
 
   const reqOffice = new URL(request.url).searchParams.get("officeId");
   let officeId = resolveFieldOffice(session, reqOffice ? Number(reqOffice) : null);
