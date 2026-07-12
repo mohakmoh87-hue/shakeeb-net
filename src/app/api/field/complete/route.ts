@@ -3,8 +3,32 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getOrCreatePettyAccount } from "@/lib/field";
+import { renderTemplate, sendViaProvider } from "@/lib/messaging";
+import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+
+// يحاول إيجاد مشترك من نصّ البطاقة (يوزر/هاتف) ضمن مكتب الفني.
+async function matchSubscriber(text: string, towerId: number | null) {
+  // 1) يوزر صريح بعد "اليوزر:"
+  const userLine = text.match(/اليوزر\s*[:：]\s*([^\n]+)/);
+  const explicit = userLine?.[1]?.trim();
+  const where = towerId != null ? { towerId } : {};
+  if (explicit && explicit !== "—") {
+    const s = await prisma.subscriber.findFirst({
+      where: { isDeleted: false, netUser: { equals: explicit, mode: "insensitive" }, ...where },
+      select: { id: true, name: true, phone: true, netUser: true, towerId: true },
+    });
+    if (s) return s;
+  }
+  // 2) مطابقة أي كلمة في النص مع netUser للمشتركين
+  const words = [...new Set(text.split(/[\s،,\n]+/).map((w) => w.trim()).filter((w) => w.length >= 3))];
+  if (words.length === 0) return null;
+  return prisma.subscriber.findFirst({
+    where: { isDeleted: false, netUser: { in: words, mode: "insensitive" }, ...where },
+    select: { id: true, name: true, phone: true, netUser: true, towerId: true },
+  });
+}
 
 const schema = z.object({
   cardId: z.coerce.number().int().positive(),
@@ -40,7 +64,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "يجب توجيه البطاقة لفني قبل إنجازها" }, { status: 400 });
   }
 
-  const isDelivery = card.kind === "delivery";
+  // نوع البطاقة: توصيل (مبلغ فقط) أم صيانة/غيرها (حقول كاملة)؟
+  const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false } });
+  const isDelivery = type?.deliveryOnly ?? card.kind === "توصيل";
 
   // التحقّق من الحقول الواجبة
   if (amount == null || amount <= 0) {
@@ -127,5 +153,54 @@ export async function POST(request: Request) {
     });
   });
 
-  return NextResponse.json({ ok: true, salesShare, pettyShare, hasPhoto: !!photo });
+  // ===== ما بعد الإنجاز (لا يُفشل الإنجاز إن تعثّر): مطابقة المشترك، سجل الصيانات، رسالة واتساب =====
+  let matchedSubscriber: number | null = null;
+  let messaged = false;
+  try {
+    const cardText = `${card.title}\n${card.description ?? ""}`;
+    const sub = await matchSubscriber(cardText, towerId);
+    if (sub) {
+      matchedSubscriber = sub.id;
+      // سجل صيانات المشترك (بلا صور) — للصيانة/التنصيب التي لها تفاصيل
+      if (!isDelivery && serviceDetails?.trim()) {
+        await prisma.maintenanceLog.create({
+          data: {
+            subscriberId: sub.id,
+            details: serviceDetails.trim(),
+            technicianName: tech?.name ?? null,
+            cardTitle: card.title,
+            kind: card.kind,
+            date: new Date(),
+          },
+        });
+      }
+      // رسالة واتساب للمشترك (قالب "رسالة الصيانة/التنصيب")
+      const tpl = await prisma.smsTemplate.findFirst({ where: { type: "maintenance" } });
+      if (sub.phone && tpl?.text && tpl.enable !== "0") {
+        const office = towerId ? await prisma.tower.findUnique({ where: { id: towerId }, select: { name: true, waEnabled: true } }) : null;
+        if (office?.waEnabled !== "0") {
+          const text = renderTemplate(tpl.text, {
+            name: sub.name, netUser: sub.netUser, kind: card.kind,
+            details: serviceDetails?.trim() ?? "", amount, date: formatDate(new Date()),
+            technician: tech?.name ?? "", office: office?.name ?? "شكيب نت",
+          });
+          let res: { ok: boolean; error?: string };
+          try { res = await sendViaProvider("WHATSAPP", sub.phone, text, towerId); }
+          catch (e) { res = { ok: false, error: e instanceof Error ? e.message : "تعذّر الإرسال" }; }
+          messaged = res.ok;
+          await prisma.message.create({
+            data: {
+              channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
+              status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+              createdByUser: String(session.userId ?? ""),
+            },
+          });
+        }
+      }
+    }
+  } catch {
+    // تجاهل: الإنجاز تمّ بنجاح بغضّ النظر عن الرسالة/السجل
+  }
+
+  return NextResponse.json({ ok: true, salesShare, pettyShare, hasPhoto: !!photo, matchedSubscriber, messaged });
 }

@@ -1,0 +1,23 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { guard } from "@/lib/guard";
+
+export const dynamic = "force-dynamic";
+
+// سجل صيانات المشترك (بجانب سجل الوصولات) — تفاصيل من الفنيين وتواريخها.
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const g = await guard("subscribers.manage");
+  if (g.error) return g.error;
+  const { id } = await params;
+  const subscriberId = Number(id);
+  if (!subscriberId) return NextResponse.json({ logs: [] });
+
+  const logs = await prisma.maintenanceLog.findMany({
+    where: { subscriberId },
+    orderBy: { date: "desc" },
+  });
+  return NextResponse.json({ logs });
+}

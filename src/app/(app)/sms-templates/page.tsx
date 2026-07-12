@@ -10,6 +10,7 @@ const CATEGORIES: { key: string; label: string; hint: string }[] = [
   { key: "expiring", label: "قرب الانتهاء", hint: "تذكير المشترك بقرب انتهاء اشتراكه" },
   { key: "activation", label: "التفعيل", hint: "رسالة عند تفعيل/تجديد الاشتراك" },
   { key: "debts", label: "الديون", hint: "مطالبة المشترك بتسديد الدين" },
+  { key: "maintenance", label: "الصيانة/التنصيب", hint: "رسالة تُرسل للمشترك عند إنجاز الفني للصيانة/التنصيب" },
   { key: "other", label: "أخرى", hint: "رسائل عامة" },
 ];
 
@@ -28,6 +29,10 @@ const VARS: { token: string; label: string; sample: string }[] = [
   { token: "{dateTo}", label: "تاريخ الانتهاء", sample: "10/07/2026" },
   { token: "{carry}", label: "الدين المتبقّي", sample: "5,000" },
   { token: "{office}", label: "اسم المكتب", sample: "شكيب نت" },
+  { token: "{kind}", label: "نوع العمل (صيانة/تنصيب) — للصيانة", sample: "صيانة" },
+  { token: "{details}", label: "تفاصيل الصيانة — للصيانة", sample: "تبديل مقوّي" },
+  { token: "{technician}", label: "اسم الفني — للصيانة", sample: "علي" },
+  { token: "{date}", label: "تاريخ العملية — للصيانة", sample: "12/07/2026" },
 ];
 
 function renderPreview(text: string): string {

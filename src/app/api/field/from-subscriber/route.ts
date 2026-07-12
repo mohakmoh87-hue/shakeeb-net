@@ -52,7 +52,8 @@ export async function POST(request: Request) {
   ];
   const position = await prisma.taskCard.count({ where: { listId: list.id, isDeleted: false } });
   const card = await prisma.taskCard.create({
-    data: { listId: list.id, title, description: descLines.join("\n"), position },
+    // نوع البطاقة يُؤخذ تلقائياً من العملية (توصيل/تحويل/صيانة/اعادة)
+    data: { listId: list.id, title, description: descLines.join("\n"), position, kind: operation },
   });
 
   return NextResponse.json({ ok: true, listName: list.name, card }, { status: 201 });

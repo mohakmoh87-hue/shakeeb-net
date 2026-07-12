@@ -14,6 +14,7 @@ type Card = {
 };
 type Office = { id: number; name: string | null };
 type Technician = { id: number; name: string; phone: string | null };
+type CardType = { id: number; name: string; deliveryOnly: boolean };
 
 const LABELS = [
   { key: "red", cls: "bg-red-500", name: "عاجل" },
@@ -34,7 +35,8 @@ export default function FieldManagementPage() {
   const [newList, setNewList] = useState("");
   const [addingTo, setAddingTo] = useState<number | null>(null);
   const [cardText, setCardText] = useState("");
-  const [cardKind, setCardKind] = useState<"maintenance" | "delivery">("maintenance");
+  const [cardTypes, setCardTypes] = useState<CardType[]>([]);
+  const [cardKind, setCardKind] = useState("صيانة");
   const [cardTech, setCardTech] = useState("");
   const [cardDue, setCardDue] = useState("");
   const [sel, setSel] = useState<Card | null>(null);
@@ -56,7 +58,8 @@ export default function FieldManagementPage() {
       if (d) {
         setBoard(d.board); setLists(d.lists); setCards(d.cards);
         setTechnicians(d.technicians ?? []); setOffices(d.offices ?? []);
-        setOfficeId(d.officeId ?? null); setIsManager(!!d.isManager); setCanManage(!!d.canManage);
+        setCardTypes(d.cardTypes ?? []); setOfficeId(d.officeId ?? null);
+        setIsManager(!!d.isManager); setCanManage(!!d.canManage);
       }
       setLoading(false);
     });
@@ -79,6 +82,18 @@ export default function FieldManagementPage() {
     await fetch(`/api/field/technicians?id=${id}`, { method: "DELETE" });
   }
 
+  async function createType() {
+    const name = prompt("اسم نوع البطاقة الجديد:");
+    if (!name?.trim()) return;
+    const deliveryOnly = confirm("هل هو من نوع «التوصيل» (مبلغ فقط بلا تفاصيل/صورة عند الإنجاز)؟\nموافق = توصيل، إلغاء = صيانة (حقول كاملة)");
+    const r = await fetch("/api/field/card-types", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), deliveryOnly }),
+    });
+    if (r.ok) { const t = await r.json(); setCardTypes((x) => (x.some((y) => y.id === t.id) ? x : [...x, t])); setCardKind(t.name); }
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّرت الإضافة"); }
+  }
+
   async function addCard(listId: number) {
     const title = cardText.trim();
     if (!title) { setAddingTo(null); return; }
@@ -88,7 +103,7 @@ export default function FieldManagementPage() {
       technicianId: tech?.id ?? null, assignee: tech?.name ?? null,
       dueDate: cardDue || null,
     };
-    setCardText(""); setCardTech(""); setCardDue(""); setCardKind("maintenance");
+    setCardText(""); setCardTech(""); setCardDue(""); setCardKind(cardTypes[0]?.name ?? "صيانة");
     const r = await fetch("/api/field/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (r.ok) { const c = await r.json(); setCards((x) => [...x, c]); }
   }
@@ -132,6 +147,8 @@ export default function FieldManagementPage() {
     const id = sel.id; setSel(null);
     await fetch(`/api/field/cards?id=${id}`, { method: "DELETE" });
   }
+
+  const isDeliveryKind = (name: string) => cardTypes.find((t) => t.name === name)?.deliveryOnly ?? name === "توصيل";
 
   if (loading) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
 
@@ -177,7 +194,7 @@ export default function FieldManagementPage() {
                     {c.label && <div className={`mb-1.5 h-1.5 w-10 rounded-full ${labelCls(c.label)}`} />}
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{c.kind === "delivery" ? "🚚 توصيل" : "🔧 صيانة"}</span>
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
                       {c.dueDate && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 {fmtDue(c.dueDate)}</span>}
                       {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة {c.amount != null ? `— ${Number(c.amount).toLocaleString("en-US")}` : ""}</span>}
@@ -192,9 +209,9 @@ export default function FieldManagementPage() {
                   <div className="space-y-1.5 rounded-lg bg-white p-2 shadow-inner">
                     <textarea autoFocus value={cardText} onChange={(e) => setCardText(e.target.value)} rows={2} placeholder="عنوان البطاقة..." className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
                     <div className="grid grid-cols-2 gap-1.5">
-                      <select value={cardKind} onChange={(e) => setCardKind(e.target.value as "maintenance" | "delivery")} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
-                        <option value="maintenance">🔧 صيانة</option>
-                        <option value="delivery">🚚 توصيل</option>
+                      <select value={cardKind} onChange={(e) => { if (e.target.value === "__new__") createType(); else setCardKind(e.target.value); }} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                        {cardTypes.map((t) => <option key={t.id} value={t.name}>{t.deliveryOnly ? "🚚" : "🔧"} {t.name}</option>)}
+                        {canManage && <option value="__new__">➕ نوع جديد…</option>}
                       </select>
                       <select value={cardTech} onChange={(e) => setCardTech(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
                         <option value="">— بدون فني —</option>
@@ -264,9 +281,10 @@ export default function FieldManagementPage() {
             </div>
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">نوع البطاقة</label>
-            <select value={sel.kind} onChange={(e) => saveCard({ kind: e.target.value })} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="maintenance">🔧 صيانة</option>
-              <option value="delivery">🚚 توصيل</option>
+            <select value={sel.kind} onChange={(e) => { if (e.target.value === "__new__") createType(); else saveCard({ kind: e.target.value }); }} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              {cardTypes.map((t) => <option key={t.id} value={t.name}>{t.deliveryOnly ? "🚚" : "🔧"} {t.name}</option>)}
+              {!cardTypes.some((t) => t.name === sel.kind) && <option value={sel.kind}>{sel.kind}</option>}
+              {canManage && <option value="__new__">➕ نوع جديد…</option>}
             </select>
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">الفني المسؤول</label>
@@ -322,6 +340,7 @@ export default function FieldManagementPage() {
       {completing && (
         <CompletionModal
           card={completing}
+          deliveryOnly={isDeliveryKind(completing.kind)}
           onClose={() => setCompleting(null)}
           onDone={() => { setCompleting(null); load(officeId); }}
         />
@@ -369,8 +388,8 @@ export default function FieldManagementPage() {
 
 /* ========== نافذة إنجاز البطاقة ========== */
 type CustodyMat = { itemId: number; name: string; priceSale: number; available: number };
-function CompletionModal({ card, onClose, onDone }: { card: Card; onClose: () => void; onDone: () => void }) {
-  const isDelivery = card.kind === "delivery";
+function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; deliveryOnly: boolean; onClose: () => void; onDone: () => void }) {
+  const isDelivery = deliveryOnly;
   const [details, setDetails] = useState("");
   const [amount, setAmount] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);

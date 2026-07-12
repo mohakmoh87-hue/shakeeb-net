@@ -63,7 +63,8 @@ export default function SubscribersPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<Partial<Subscriber>>({});
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState<"info" | "receipts" | "invoices">("info");
+  const [tab, setTab] = useState<"info" | "receipts" | "invoices" | "maintenance">("info");
+  const [maintLogs, setMaintLogs] = useState<{ id: number; details: string; technicianName: string | null; kind: string | null; date: string }[]>([]);
   const [activating, setActivating] = useState<Subscriber | null>(null);
   const [showAllTowers, setShowAllTowers] = useState(false);
   const [msg, setMsg] = useState("");
@@ -128,6 +129,14 @@ export default function SubscribersPage() {
     });
   }, [selectedId]);
   useEffect(() => { loadReceipts(); }, [loadReceipts]);
+
+  // جلب سجل صيانات المشترك المحدّد
+  useEffect(() => {
+    if (!selectedId) { setMaintLogs([]); return; }
+    fetch(`/api/subscribers/${selectedId}/maintenance`).then((r) => {
+      if (r.ok) r.json().then((d) => setMaintLogs(d.logs ?? []));
+    });
+  }, [selectedId]);
 
   // حذف وصل تفعيل عكسياً من سجل وصولات المشترك
   async function voidReceipt(id: number) {
@@ -257,6 +266,7 @@ export default function SubscribersPage() {
       {/* التبويبات */}
       <div className="flex justify-end gap-1 border-b border-slate-300 bg-slate-50 px-2 pt-1">
         <Tab active={tab === "invoices"} onClick={() => setTab("invoices")}>وصولات الفواتير</Tab>
+        <Tab active={tab === "maintenance"} onClick={() => setTab("maintenance")}>🛠️ سجل الصيانات</Tab>
         <Tab active={tab === "receipts"} onClick={() => setTab("receipts")}>سجل وصولات المشترك</Tab>
         <Tab active={tab === "info"} onClick={() => setTab("info")}>👤 بيانات المشترك</Tab>
       </div>
@@ -283,7 +293,7 @@ export default function SubscribersPage() {
           /* سجل وصولات المشترك / وصولات الفواتير */
           <section className={`${mobilePane === "detail" ? "flex" : "hidden"} w-full shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white md:flex md:w-[640px]`}>
             <div className="border-b border-slate-200 bg-slate-100 px-3 py-2 text-center text-xs font-bold text-slate-500">
-              {tab === "receipts" ? "سجل وصولات المشترك (التفعيلات السابقة)" : "وصولات الفواتير"}
+              {tab === "receipts" ? "سجل وصولات المشترك (التفعيلات السابقة)" : tab === "maintenance" ? "سجل صيانات المشترك" : "وصولات الفواتير"}
               {selected && <span className="mr-2 text-slate-700"> — {selected.name}</span>}
             </div>
             {!selected ? (
@@ -317,6 +327,26 @@ export default function SubscribersPage() {
                             <button onClick={() => voidReceipt(rc.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑</button>
                           </td>
                         )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : tab === "maintenance" ? (
+              <div className="flex-1 overflow-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-600">
+                    <tr><th className="p-2">التاريخ</th><th className="p-2">النوع</th><th className="p-2">التفاصيل</th><th className="p-2">الفني</th></tr>
+                  </thead>
+                  <tbody>
+                    {maintLogs.length === 0 ? (
+                      <tr><td colSpan={4} className="p-6 text-center text-slate-400">لا توجد صيانات لهذا المشترك</td></tr>
+                    ) : maintLogs.map((m) => (
+                      <tr key={m.id} className="border-t border-slate-100 align-top">
+                        <td className="p-2 whitespace-nowrap" dir="ltr">{formatDate(m.date)}</td>
+                        <td className="p-2 whitespace-nowrap">{m.kind ?? "صيانة"}</td>
+                        <td className="p-2 text-slate-700">{m.details}</td>
+                        <td className="p-2 whitespace-nowrap text-slate-500">{m.technicianName ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>

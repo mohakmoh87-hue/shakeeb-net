@@ -38,9 +38,12 @@ export async function GET(request: Request) {
     where: { towerId: officeId ?? null, isDeleted: false },
     orderBy: { id: "asc" },
   });
+  const cardTypes = await prisma.cardType.findMany({
+    where: { isDeleted: false }, orderBy: [{ position: "asc" }, { id: "asc" }],
+  });
 
   return NextResponse.json({
-    board, lists, cards, technicians, offices, officeId,
+    board, lists, cards, technicians, cardTypes, offices, officeId,
     isManager: manager,
     canManage: can(session, "field.manage"),
   });

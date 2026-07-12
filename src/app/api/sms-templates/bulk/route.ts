@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, guardAny } from "@/lib/guard";
 
 // التصنيفات الثابتة لقوالب الرسائل (#12)
-const CATEGORIES = ["expiring", "activation", "debts", "other"] as const;
+const CATEGORIES = ["expiring", "activation", "debts", "maintenance", "other"] as const;
 
 const schema = z.object({
   templates: z.array(

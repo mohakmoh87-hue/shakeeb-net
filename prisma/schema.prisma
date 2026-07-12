@@ -611,3 +611,30 @@ model CardPhoto {
 
   @@map("card_photos")
 }
+
+// أنواع البطاقات (توصيل/تحويل/اعادة/صيانة/تنصيب + أنواع يضيفها المستخدم)
+// deliveryOnly = بطاقة مبلغ فقط (كالتوصيل) لا تتطلّب تفاصيل/صورة عند الإنجاز.
+model CardType {
+  id           Int     @id @default(autoincrement())
+  name         String
+  deliveryOnly Boolean @default(false)
+  position     Int     @default(0)
+  isDeleted    Boolean @default(false)
+
+  @@map("card_types")
+}
+
+// سجل صيانات المشترك (بجانب سجل الوصولات) — تفاصيل الصيانة من الفني وتاريخها؛ بلا صور.
+model MaintenanceLog {
+  id             Int      @id @default(autoincrement())
+  subscriberId   Int
+  details        String
+  technicianName String?
+  cardTitle      String?
+  kind           String? // نوع البطاقة (صيانة/تنصيب...)
+  date           DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@index([subscriberId])
+  @@map("maintenance_logs")
+}
