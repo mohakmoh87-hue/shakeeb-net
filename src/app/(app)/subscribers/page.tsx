@@ -24,6 +24,14 @@ type Subscriber = {
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
 type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null };
 
+// خيارات "عمليات" لكل مشترك — كل خيار يُنشئ بطاقة في عمود بنفس الاسم بلوحة إدارة الفنيين
+const FIELD_OPS = [
+  { key: "صيانة", icon: "🔧" },
+  { key: "اعادة", icon: "🔁" },
+  { key: "توصيل", icon: "🔌" },
+  { key: "تحويل", icon: "↪️" },
+] as const;
+
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
 // الأيام المتبقية — تُحسب بفرق أيام التقويم (منتصف الليل)، فتنقص يوماً بالضبط عند بداية كل يوم جديد
 const daysLeft = (dateTo: string | null) => {
@@ -67,6 +75,23 @@ export default function SubscribersPage() {
   // تنبيه واتساب: يظهر عند فتح مشترك لا يملك رقماً، أو رقمه بعدد خاطئ، أو لا واتساب عليه (تنبيه بحت)
   const [waNotice, setWaNotice] = useState<"no-phone" | "bad-phone" | "no-whatsapp" | null>(null);
   const waCheckId = useRef<number | null>(null); // آخر مشترك طُلب فحصه (لتجاهل النتائج المتأخّرة)
+  // قائمة عمليات المشترك (ربط بلوحة إدارة الفنيين)
+  const [opsSub, setOpsSub] = useState<Subscriber | null>(null);
+  const [opsBusy, setOpsBusy] = useState(false);
+  const [opsMsg, setOpsMsg] = useState("");
+
+  // إرسال المشترك كبطاقة إلى عمود العملية في لوحة إدارة الفنيين
+  async function sendToField(operation: string) {
+    if (!opsSub) return;
+    setOpsBusy(true); setOpsMsg("");
+    const res = await fetch("/api/field/from-subscriber", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscriberId: opsSub.id, operation }),
+    });
+    setOpsBusy(false);
+    if (res.ok) { setOpsMsg(`✓ تمت إضافة «${opsSub.name ?? ""}» إلى عمود «${operation}» في إدارة الفنيين`); setOpsSub(null); }
+    else { const d = await res.json().catch(() => ({})); setOpsMsg(d.error ?? "تعذّرت الإضافة"); }
+  }
 
   function toggleCheck(id: number) {
     setChecked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -386,6 +411,7 @@ export default function SubscribersPage() {
                   <th className="p-2">اليوزر</th>
                   <th className="p-2">رقم الهاتف</th>
                   <th className="p-2">المكتب</th>
+                  <th className="p-2">عمليات</th>
                 </tr>
               </thead>
               <tbody>
@@ -403,6 +429,14 @@ export default function SubscribersPage() {
                     <td className="p-2" dir="ltr">{s.netUser ?? "—"}</td>
                     <td className="p-2" dir="ltr">{s.phone ?? "—"}</td>
                     <td className="p-2">{towerName(s.towerId)}</td>
+                    <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => { setOpsSub(s); setOpsMsg(""); }}
+                        className="rounded-lg border border-mynet-blue/30 bg-mynet-blue/5 px-2.5 py-1 text-[11px] font-semibold text-mynet-blue hover:bg-mynet-blue/10"
+                      >
+                        عمليات ▾
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -464,6 +498,40 @@ export default function SubscribersPage() {
             >
               ✕
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* قائمة عمليات المشترك → إضافة بطاقة في لوحة إدارة الفنيين */}
+      {opsSub && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => setOpsSub(null)}>
+          <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 text-center text-lg font-bold text-slate-800">عمليات المشترك</div>
+            <div className="mb-4 text-center text-sm text-slate-500">{opsSub.name ?? opsSub.netUser ?? `مشترك #${opsSub.id}`}</div>
+            <div className="grid grid-cols-2 gap-2">
+              {FIELD_OPS.map((op) => (
+                <button
+                  key={op.key}
+                  disabled={opsBusy}
+                  onClick={() => sendToField(op.key)}
+                  className="flex flex-col items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 py-4 font-semibold text-slate-700 hover:border-mynet-blue hover:bg-blue-50 disabled:opacity-50"
+                >
+                  <span className="text-2xl">{op.icon}</span>
+                  <span>{op.key}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setOpsSub(null)} className="mt-4 w-full rounded-lg bg-slate-100 py-2 text-slate-600 hover:bg-slate-200">إلغاء</button>
+          </div>
+        </div>
+      )}
+
+      {/* نتيجة العملية — إشعار قصير */}
+      {opsMsg && (
+        <div className="pointer-events-none fixed inset-x-0 top-3 z-[75] flex justify-center px-3">
+          <div className="pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-2xl">
+            <span className="flex-1">{opsMsg}</span>
+            <button onClick={() => setOpsMsg("")} className="shrink-0 rounded-full px-2 text-lg leading-none text-slate-400 hover:bg-black/10" title="إغلاق">✕</button>
           </div>
         </div>
       )}
