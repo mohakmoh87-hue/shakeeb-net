@@ -90,10 +90,14 @@ function normalize(u: Record<string, unknown>): SasUser {
   }
   const profile = u.profile_details as { name?: string } | undefined;
   const group = u.group_details as { group_name?: string } | undefined;
+  // دمج الاسم الأول والثاني في اسم واحد (مثال: "علي" + "محمد جاسم" → "علي محمد جاسم")
+  const firstName = ((u.firstname as string) || "").trim();
+  const lastName = ((u.lastname as string) || "").trim();
+  const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
   return {
     sasId: Number(u.id),
     username: String(u.username ?? ""),
-    name: (u.firstname as string) || null,
+    name: fullName,
     phone: (u.phone as string) || null,
     expiration: exp,
     days,
@@ -184,12 +188,14 @@ export interface SasActivation {
 }
 
 function normalizeActivation(a: Record<string, unknown>): SasActivation {
-  const u = a.user_details as { id?: number; username?: string; firstname?: string } | undefined;
+  const u = a.user_details as { id?: number; username?: string; firstname?: string; lastname?: string } | undefined;
   const m = a.manager_details as { username?: string } | undefined;
+  // دمج الاسم الأول والثاني في اسم واحد (نفس سلوك استيراد المشتركين)
+  const actName = [(u?.firstname ?? "").trim(), (u?.lastname ?? "").trim()].filter(Boolean).join(" ") || null;
   return {
     sasUserId: Number(a.user_id),
     username: u?.username ?? null,
-    name: u?.firstname ?? null,
+    name: actName,
     pin: (a.pin as string) ?? null,
     method: (a.activation_method as string) ?? null,
     oldExpiration: (a.old_expiration as string) ?? null,
