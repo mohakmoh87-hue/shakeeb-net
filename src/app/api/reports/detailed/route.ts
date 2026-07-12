@@ -25,17 +25,18 @@ export async function GET(request: Request) {
       take: 500,
     }),
     prisma.moneyTx.findMany({
-      where: { isDeleted: false, date: range, ...scope },
+      where: { isDeleted: false, date: range, ...scope, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
       orderBy: { id: "desc" },
       take: 500,
     }),
     prisma.subscriptionEntry.aggregate({
-      where: { isDeleted: false, date: range, ...scope },
+      where: { isDeleted: false, isMaster: false, date: range, ...scope },
       _sum: { money: true, moneyIn: true },
       _count: true,
     }),
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, date: range, ...scope },
+      // الماستر مستقل — خارج التقرير التفصيلي
+      where: { isDeleted: false, date: range, ...scope, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
       _sum: { moneyIn: true, moneyOut: true },
     }),
   ]);

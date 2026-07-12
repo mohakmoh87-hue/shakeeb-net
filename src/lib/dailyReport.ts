@@ -25,14 +25,16 @@ export async function computeDailyReport(towerId?: number | null, day?: Date) {
   const dateWhere = { date: { gte: start, lte: end } };
   const towerWhere = towerId ? { towerId } : {};
 
-  const [activations, todayMoney, todayInvoices, todaySales] = await Promise.all([
+  const [activations, todayMoney, todayInvoices, todaySales, todayMaster] = await Promise.all([
+    // تفعيلات عادية فقط (ماستر مستقل)
     prisma.subscriptionEntry.aggregate({
-      where: { isDeleted: false, ...dateWhere, ...towerWhere },
+      where: { isDeleted: false, isMaster: false, ...dateWhere, ...towerWhere },
       _count: true,
       _sum: { moneyIn: true },
     }),
+    // حركات الصندوق العادية — باستثناء الماستر (حساب مستقل لا يُجمع مع التقرير)
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, ...dateWhere, ...towerWhere },
+      where: { isDeleted: false, ...dateWhere, ...towerWhere, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
       _sum: { moneyIn: true, moneyOut: true },
     }),
     prisma.invoice.aggregate({
@@ -45,6 +47,11 @@ export async function computeDailyReport(towerId?: number | null, day?: Date) {
       where: { isDeleted: false, sourceType: "sale", ...dateWhere, ...towerWhere },
       _sum: { moneyIn: true },
     }),
+    // حساب الماستر — مستقل تماماً، يظهر بسطر منفصل ولا يدخل بالمجموع
+    prisma.moneyTx.aggregate({
+      where: { isDeleted: false, sourceType: "master", ...dateWhere, ...towerWhere },
+      _sum: { moneyIn: true, moneyOut: true },
+    }),
   ]);
 
   const todayIn = todayMoney._sum.moneyIn ?? 0;
@@ -52,8 +59,9 @@ export async function computeDailyReport(towerId?: number | null, day?: Date) {
   const activationIn = activations._sum.moneyIn ?? 0;
   const invoiceIn = todayInvoices._sum.waselHim ?? 0;
   const salesIn = todaySales._sum.moneyIn ?? 0;
+  const masterIn = (todayMaster._sum.moneyIn ?? 0) - (todayMaster._sum.moneyOut ?? 0);
   const otherIn = Math.max(0, todayIn - activationIn - invoiceIn - salesIn);
-  const total = todayIn - todayOut;
+  const total = todayIn - todayOut; // لا يشمل الماستر
 
   return {
     activationCount: activations._count || 0,
@@ -61,6 +69,7 @@ export async function computeDailyReport(towerId?: number | null, day?: Date) {
     invoiceCount: todayInvoices._count || 0,
     invoiceIn,
     salesIn,
+    masterIn,
     otherIn,
     expenses: todayOut,
     total,
@@ -83,6 +92,7 @@ export async function dailyReportText(office: string, towerId?: number | null, f
     `المقبوضات الأخرى: ${fmt(r.otherIn)} د.ع\n` +
     `المصروفات: ${fmt(r.expenses)} د.ع\n` +
     `——————————————\n` +
-    `💰 المجموع: ${fmt(r.total)} د.ع`
+    `💰 المجموع: ${fmt(r.total)} د.ع\n` +
+    `🅜 حساب الماستر (مستقل): ${fmt(r.masterIn)} د.ع`
   );
 }

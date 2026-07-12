@@ -16,6 +16,7 @@ const schema = z.object({
   totalOverride: z.coerce.number().min(0).nullable().optional(), // تعديل يدوي لمبلغ التفعيل
   delivery: z.coerce.number().min(0).default(0), // مبلغ التوصيل (يُضاف على مبلغ الاشتراك)
   dateToOverride: z.string().nullable().optional(), // تعديل يدوي لتاريخ الانتهاء (ISO)
+  master: z.boolean().default(false), // تفعيل ماستر: واصل كامل بلا دين، ويُسجَّل بحساب الماستر المستقل
 });
 
 // تفعيل مشترك: استهلاك الكارت + تسجيل الاشتراك + الواصل/الدين + تمديد الانتهاء
@@ -37,7 +38,7 @@ export async function POST(
       { status: 400 },
     );
   }
-  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride } = parsed.data;
+  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride, master } = parsed.data;
 
   const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
   if (!subscriber || subscriber.isDeleted || !ownsTower(g.session, subscriber.towerId)) {
@@ -102,7 +103,9 @@ export async function POST(
   const total = totalOverride != null ? totalOverride : price * months;
   // الإجمالي المستحق = الاشتراك + التوصيل؛ الواصل يُخصم منه والباقي دين
   const grandTotal = total + delivery;
-  const newCarry = (subscriber.carry ?? 0) + grandTotal - paid;
+  // ماستر: واصل كامل بلا دين جديد (يبقى دين المشترك السابق كما هو)
+  const effPaid = master ? grandTotal : paid;
+  const newCarry = master ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + grandTotal - paid;
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -116,23 +119,25 @@ export async function POST(
       }
       await tx.subscriber.update({
         where: { id: subscriberId },
-        data: { packageId, dateTo, carry: newCarry, wasel: paid, month: months },
+        data: { packageId, dateTo, carry: newCarry, wasel: effPaid, month: months },
       });
       const entry = await tx.subscriptionEntry.create({
         data: {
-          subscriberId, date: now, dateFrom: start, dateTo, money: total, moneyIn: paid,
+          subscriberId, date: now, dateFrom: start, dateTo, money: total, moneyIn: effPaid,
           addPrice: delivery, // مبلغ التوصيل (للوصل والتقارير)
           moneyCarry: newCarry, moneyType: 1, month: String(months), cardType: pkg.name,
           card2: cardSerial, towerId: subscriber.towerId, createdByUser: session?.username,
+          isMaster: master,
         },
       });
-      if (paid > 0) {
+      if (effPaid > 0) {
         await tx.moneyTx.create({
           data: {
-            moneyIn: paid, moneyOut: 0,
-            notes: `تفعيل ${pkg.name} - ${subscriber.name ?? subscriberId}${delivery > 0 ? ` (توصيل ${delivery})` : ""}`,
+            moneyIn: effPaid, moneyOut: 0,
+            notes: `${master ? "ماستر " : "تفعيل "}${pkg.name} - ${subscriber.name ?? subscriberId}${delivery > 0 ? ` (توصيل ${delivery})` : ""}`,
             date: now, serverDate: now, userId: session?.userId,
-            sourceType: "activation", sourceId: entry.id, towerId: subscriber.towerId,
+            // ماستر: حساب مستقل (sourceType=master) لا يُجمع مع التقرير اليومي
+            sourceType: master ? "master" : "activation", sourceId: entry.id, towerId: subscriber.towerId,
           },
         });
       }

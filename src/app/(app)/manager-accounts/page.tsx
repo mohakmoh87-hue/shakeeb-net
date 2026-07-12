@@ -25,9 +25,11 @@ type Data = {
   cardDebtRemaining: number;
   managerExpenses: number;
   managerReceipts: number;
+  masterBalance: number;
   employees: { id: number; name: string | null; withdrawn: number }[];
   transactions: MgrTx[];
 };
+type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string }[] };
 
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
 const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -49,6 +51,13 @@ export default function ManagerAccountsPage() {
   const [dailyLog, setDailyLog] = useState<DailyLog | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [logOffice, setLogOffice] = useState<number | "all">("all"); // المكتب المختار في السجل، all = الإجمالي
+  const [masterDetail, setMasterDetail] = useState<MasterDetail | null>(null);
+  const [showMaster, setShowMaster] = useState(false);
+
+  function openMaster() {
+    setShowMaster(true); setMasterDetail(null);
+    fetch("/api/manager-accounts/master").then((r) => void (r.ok && r.json().then(setMasterDetail)));
+  }
 
   function openDailyLog() {
     setShowLog(true);
@@ -88,7 +97,7 @@ export default function ManagerAccountsPage() {
     else { const d = await res.json().catch(() => ({})); setPriceMsg(d.error ?? "فشل"); }
   }
 
-  async function submit(type: "expense" | "receipt" | "card-payment") {
+  async function submit(type: "expense" | "receipt" | "card-payment" | "master-receipt" | "master-expense") {
     setError("");
     if (!amount || Number(amount) <= 0) { setError("أدخل مبلغاً صحيحاً"); return; }
     if ((type === "expense" || type === "receipt") && !notes.trim()) { setError("اكتب سبب/ملاحظة الحركة"); return; }
@@ -98,7 +107,7 @@ export default function ManagerAccountsPage() {
       body: JSON.stringify({ type, amount: Number(amount), notes: notes || null }),
     });
     setBusy(false);
-    if (res.ok) { setAmount(""); setNotes(""); load(); }
+    if (res.ok) { setAmount(""); setNotes(""); load(); if (showMaster) openMaster(); }
     else { const d = await res.json().catch(() => ({})); setError(d.error ?? "فشل"); }
   }
 
@@ -158,11 +167,12 @@ export default function ManagerAccountsPage() {
       {denied || !data ? null : (
       <>
       {/* البطاقات الرئيسية */}
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card label="المبلغ الكلي الموجود" value={fmt(data.totalAvailable)} color="text-emerald-700" bg="bg-emerald-50" big />
         <Card label="مجموع المبالغ اليومية" value={fmt(data.cumulativeDaily)} color="text-slate-700" bg="bg-slate-50" onClick={openDailyLog} hint="اضغط لعرض السجل اليومي" />
         <Card label="ديون الكارتات" value={fmt(data.cardDebtRemaining)} color="text-red-700" bg="bg-red-50" />
         <Card label="مصروفات الإدارة" value={fmt(data.managerExpenses)} color="text-amber-700" bg="bg-amber-50" />
+        <Card label="🅜 حساب الماستر (مستقل)" value={fmt(data.masterBalance)} color="text-indigo-700" bg="bg-indigo-50" onClick={openMaster} hint="اضغط لعرض تفاصيله اليومية" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
@@ -180,6 +190,14 @@ export default function ManagerAccountsPage() {
               <button onClick={() => submit("receipt")} disabled={busy} className="rounded-lg bg-emerald-600 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">+ قبض</button>
             </div>
             <button onClick={() => submit("card-payment")} disabled={busy} className="mt-2 w-full rounded-lg bg-mynet-blue py-2.5 font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">💳 تسديد ديون كارتات (متبقّي {fmt(data.cardDebtRemaining)})</button>
+            {/* حساب الماستر — مستقل تماماً عن بقية الحسابات */}
+            <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-2">
+              <div className="mb-1.5 text-center text-xs font-semibold text-indigo-700">🅜 حساب الماستر (مستقل) — الرصيد {fmt(data.masterBalance)}</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => submit("master-expense")} disabled={busy} className="rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">− صرف ماستر</button>
+                <button onClick={() => submit("master-receipt")} disabled={busy} className="rounded-lg bg-indigo-500 py-2 text-sm font-semibold text-white hover:bg-indigo-600 disabled:opacity-60">+ قبض ماستر</button>
+              </div>
+            </div>
           </div>
 
           {/* الموظفون */}
@@ -297,6 +315,48 @@ export default function ManagerAccountsPage() {
                   </table>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* تفاصيل حساب الماستر اليومية */}
+      {showMaster && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowMaster(false)}>
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 bg-indigo-50 px-4 py-3">
+              <div>
+                <h3 className="text-lg font-bold text-indigo-800">🅜 حساب الماستر</h3>
+                <p className="text-xs text-slate-500">حساب مستقل تماماً — تفعيلات الماستر + قبض/صرف الماستر</p>
+              </div>
+              <button onClick={() => setShowMaster(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+            </div>
+            <div className="border-b border-slate-200 bg-white px-4 py-2.5 text-center">
+              <span className="text-sm text-slate-500">الرصيد الكلي: </span>
+              <span className="text-xl font-extrabold text-indigo-700">{fmt(masterDetail?.balance ?? 0)} د.ع</span>
+            </div>
+            <div className="overflow-auto">
+              {!masterDetail ? <div className="p-8 text-center text-slate-400">جاري التحميل...</div>
+              : masterDetail.days.length === 0 ? <div className="p-8 text-center text-slate-400">لا توجد حركات ماستر بعد</div> : (
+                <table className="w-full text-right text-sm">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-600">
+                    <tr><th className="p-3">التاريخ</th><th className="p-3">قبض</th><th className="p-3">صرف</th><th className="p-3">صافي اليوم</th><th className="p-3">حركات</th></tr>
+                  </thead>
+                  <tbody>
+                    {masterDetail.days.map((d) => (
+                      <tr key={d.day} className="border-t border-slate-100">
+                        <td className="p-3 font-medium" dir="ltr">{d.day}</td>
+                        <td className="p-3 text-emerald-600">{d.in ? fmt(d.in) : "—"}</td>
+                        <td className="p-3 text-red-600">{d.out ? fmt(d.out) : "—"}</td>
+                        <td className={`p-3 font-bold ${d.net >= 0 ? "text-indigo-700" : "text-red-600"}`}>{fmt(d.net)}</td>
+                        <td className="p-3 text-slate-400">{d.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="sticky bottom-0 bg-indigo-50 font-bold">
+                    <tr><td className="p-3">الرصيد الكلي</td><td colSpan={2}></td><td className="p-3 text-indigo-700">{fmt(masterDetail.balance)}</td><td></td></tr>
+                  </tfoot>
+                </table>
+              )}
             </div>
           </div>
         </div>

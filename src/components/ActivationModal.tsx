@@ -56,6 +56,7 @@ export default function ActivationModal({
   const [card, setCard] = useState<{ id: number; serial: string | null } | null>(null);
   const [available, setAvailable] = useState<number>(0);
   const [paid, setPaid] = useState("");
+  const [master, setMaster] = useState(false); // تفعيل ماستر: واصل كامل بلا دين، بحساب مستقل
   const [months, setMonths] = useState(1); // عدد الأشهر (افتراضي 1)
   const [amount, setAmount] = useState(""); // مبلغ التفعيل يدوياً (فارغ = سعر الباقة × الأشهر)
   const [delivery, setDelivery] = useState(""); // مبلغ التوصيل (يُضاف على مبلغ الاشتراك)
@@ -161,6 +162,7 @@ export default function ActivationModal({
           totalOverride: amount !== "" ? Number(amount) || 0 : null,
           delivery: deliveryAmount,
           dateToOverride: expiry || null,
+          master,
         }),
       });
       const data = await res.json();
@@ -306,10 +308,10 @@ export default function ActivationModal({
 
               <label className="mb-1 block text-sm font-medium text-slate-700">المبلغ الواصل</label>
               <div className="flex gap-2">
-                <input type="number" value={paid} onChange={(e) => setPaid(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2" />
+                <input type="number" value={master ? String(grandTotal) : paid} disabled={master} onChange={(e) => setPaid(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" />
                 <button
                   onClick={() => setPaid(String(grandTotal))}
-                  disabled={!grandTotal}
+                  disabled={!grandTotal || master}
                   title="إدخال الإجمالي (اشتراك + توصيل)"
                   className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
                 >
@@ -318,8 +320,14 @@ export default function ActivationModal({
               </div>
               <div className="mt-2 flex justify-between text-sm">
                 <span className="text-slate-500">الباقي (دين)</span>
-                <span className={`font-bold ${remaining > 0 ? "text-red-600" : "text-emerald-600"}`}>{fmt(remaining)} د.ع</span>
+                <span className={`font-bold ${!master && remaining > 0 ? "text-red-600" : "text-emerald-600"}`}>{fmt(master ? 0 : remaining)} د.ع</span>
               </div>
+
+              {/* ماستر: واصل كامل بلا دين، ويُسجَّل بحساب الماستر المستقل (لا يدخل بمجموع التقرير) */}
+              <label className={`mt-3 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${master ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-600"}`}>
+                <input type="checkbox" checked={master} onChange={(e) => setMaster(e.target.checked)} className="h-4 w-4 accent-indigo-600" />
+                🅜 ماستر — واصل كامل بلا دين، بحساب مستقل عن التقرير اليومي
+              </label>
             </div>
 
             {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}

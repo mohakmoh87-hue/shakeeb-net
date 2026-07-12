@@ -9,6 +9,7 @@ export type DailyReport = {
   invoiceCount: number;
   invoiceIn: number;
   salesIn: number;
+  masterIn: number;
   otherIn: number;
   expenses: number;
   total: number;
@@ -97,6 +98,13 @@ export default function DailyReportCard({
             <span className="text-sm font-semibold text-slate-600">
               المجموع{isAdmin && sel !== "all" ? ` — ${towers.find((t) => t.id === sel)?.name ?? ""}` : isAdmin ? " (كل المكاتب)" : ""}
             </span>
+          </div>
+        </div>
+        {/* حساب الماستر — مستقل تماماً، لا يدخل ضمن المجموع أعلاه */}
+        <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xl font-extrabold text-indigo-600">{fmt(data.masterIn)} د.ع</span>
+            <span className="text-sm font-semibold text-slate-600">🅜 حساب الماستر (مستقل)</span>
           </div>
         </div>
       </div>

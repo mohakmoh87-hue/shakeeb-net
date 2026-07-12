@@ -28,7 +28,8 @@ export async function GET() {
 
   const [txs, towers] = await Promise.all([
     prisma.moneyTx.findMany({
-      where: { isDeleted: false },
+      // باستثناء حساب الماستر (مستقل عن التقرير اليومي)
+      where: { isDeleted: false, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
       select: { moneyIn: true, moneyOut: true, date: true, towerId: true },
       orderBy: { date: "asc" },
     }),

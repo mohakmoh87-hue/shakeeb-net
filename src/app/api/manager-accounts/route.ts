@@ -9,9 +9,9 @@ export async function GET() {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
 
-  const [dailyAgg, cardsAgg, mgr, employeeAccounts, mgrTxs] = await Promise.all([
-    // مجموع المبالغ اليومية = صافي كل حركات التقرير اليومي عبر كل الأيام
-    prisma.moneyTx.aggregate({ where: { isDeleted: false }, _sum: { moneyIn: true, moneyOut: true } }),
+  const [dailyAgg, cardsAgg, mgr, employeeAccounts, mgrTxs, masterAgg] = await Promise.all([
+    // مجموع المبالغ اليومية = صافي كل حركات التقرير اليومي عبر كل الأيام (باستثناء الماستر)
+    prisma.moneyTx.aggregate({ where: { isDeleted: false, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] }, _sum: { moneyIn: true, moneyOut: true } }),
     // مجموع مبالغ الكروت المضافة (كلفة الشراء) = ديون الكارتات قبل التسديد
     prisma.rechargeCard.aggregate({ where: {}, _sum: { price: true } }),
     // حركات المدير مجمّعة حسب النوع
@@ -20,7 +20,10 @@ export async function GET() {
     prisma.account.findMany({ where: { isDeleted: false, isEmployee: true }, select: { id: true, name: true } }),
     // سجل حركات المدير
     prisma.managerTx.findMany({ where: { isDeleted: false }, orderBy: { id: "desc" }, take: 200 }),
+    // حساب الماستر — مستقل تماماً (تفعيلات ماستر + قبض/صرف ماستر)
+    prisma.moneyTx.aggregate({ where: { isDeleted: false, sourceType: "master" }, _sum: { moneyIn: true, moneyOut: true } }),
   ]);
+  const masterBalance = (masterAgg._sum.moneyIn ?? 0) - (masterAgg._sum.moneyOut ?? 0);
 
   const cumulativeDaily = (dailyAgg._sum.moneyIn ?? 0) - (dailyAgg._sum.moneyOut ?? 0);
   const cardDebtAdded = cardsAgg._sum.price ?? 0;
@@ -47,6 +50,7 @@ export async function GET() {
     cardDebtRemaining,
     managerExpenses,
     managerReceipts,
+    masterBalance,
     employees,
     transactions: mgrTxs,
   });

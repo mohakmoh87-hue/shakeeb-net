@@ -227,6 +227,7 @@ model SubscriptionEntry {
   pushType     String?
   createdByUser String? // sand_user
   addPrice     Float? // Sand_add
+  isMaster     Boolean   @default(false) // تفعيل ماستر (واصل كامل، ويُسجَّل بحساب الماستر المستقل)
   isDeleted    Boolean   @default(false)
 
   @@index([subscriberId])

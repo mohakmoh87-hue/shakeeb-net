@@ -47,7 +47,8 @@ export async function GET(request: Request) {
     prisma.package.count({ where: { isDeleted: false } }),
     prisma.tower.count({ where: { isDeleted: false } }),
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, ...scope },
+      // حساب الماستر مستقل — لا يدخل بالتقرير الإجمالي
+      where: { isDeleted: false, ...scope, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
       _sum: { moneyIn: true, moneyOut: true },
     }),
     prisma.subscriber.aggregate({
