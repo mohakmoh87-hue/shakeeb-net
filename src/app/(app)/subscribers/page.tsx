@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ActivationModal, { type ActSubscriber } from "@/components/ActivationModal";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -64,6 +64,9 @@ export default function SubscribersPage() {
   const [delMenu, setDelMenu] = useState(false);
   // عرض الهاتف: القائمة أو تفاصيل المشترك (على الكمبيوتر تظهر كلها معاً)
   const [mobilePane, setMobilePane] = useState<"list" | "detail">("list");
+  // تنبيه واتساب: يظهر عند فتح مشترك لا يملك رقماً أو لا واتساب عليه (تنبيه بحت)
+  const [waNotice, setWaNotice] = useState<"no-phone" | "no-whatsapp" | null>(null);
+  const waCheckId = useRef<number | null>(null); // آخر مشترك طُلب فحصه (لتجاهل النتائج المتأخّرة)
 
   function toggleCheck(id: number) {
     setChecked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -135,6 +138,24 @@ export default function SubscribersPage() {
     setEditing(false);
     setMsg("");
     setMobilePane("detail"); // على الهاتف: الانتقال لتفاصيل المشترك عند اختياره
+    checkWhatsApp(s); // تنبيه إن كان المشترك بلا رقم أو بلا واتساب — يظهر كل مرة يُفتَح
+  }
+
+  // فحص واتساب المشترك عند فتحه (تنبيه بحت، لا يؤثر على أي عملية).
+  // يظهر التنبيه في كل مرة يُضغط المشترك ما دام بلا رقم أو بلا واتساب،
+  // ويختفي تلقائياً عند تبديل الرقم أو توفّر واتساب عليه.
+  function checkWhatsApp(s: Subscriber) {
+    setWaNotice(null);
+    waCheckId.current = s.id;
+    if (!s.phone?.trim()) { setWaNotice("no-phone"); return; }
+    fetch(`/api/whatsapp/subscriber-check?subscriberId=${s.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        // نتجاهل النتيجة إن تغيّر المشترك المختار أثناء الفحص
+        if (!d || waCheckId.current !== s.id) return;
+        if (d.status === "no-phone" || d.status === "no-whatsapp") setWaNotice(d.status);
+      })
+      .catch(() => { /* تجاهل — تنبيه فقط */ });
   }
   function newRecord() {
     setSelectedId(null);
@@ -157,6 +178,7 @@ export default function SubscribersPage() {
       setEditing(false);
       setSelectedId(saved.id);
       load(query, showAllTowers);
+      checkWhatsApp({ ...(form as Subscriber), id: saved.id }); // إعادة فحص واتساب بعد التعديل (مثلاً عند تبديل الرقم)
     } else {
       const d = await res.json().catch(() => ({}));
       setMsg(d.error ?? "فشل الحفظ");
@@ -224,6 +246,19 @@ export default function SubscribersPage() {
           👤 {selected ? selected.name : "التفاصيل"}
         </button>
       </div>
+
+      {/* تنبيه واتساب المشترك — يظهر عند فتح مشترك بلا رقم أو بلا واتساب (تنبيه بحت لا يؤثر على شيء) */}
+      {selected && waNotice && (
+        <div className={`flex items-center gap-2 border-b px-3 py-2 text-sm font-semibold ${waNotice === "no-phone" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-700"}`}>
+          <span className="text-base">{waNotice === "no-phone" ? "📵" : "⚠️"}</span>
+          <span className="flex-1">
+            {waNotice === "no-phone"
+              ? `المشترك «${selected.name ?? ""}» لا يملك رقم هاتف — لن تصله رسائل واتساب.`
+              : `المشترك «${selected.name ?? ""}» لا يملك واتساب على رقمه — لن تصله رسائل واتساب.`}
+          </span>
+          <button onClick={() => setWaNotice(null)} className="shrink-0 rounded px-2 py-0.5 text-slate-400 hover:bg-black/5" title="إخفاء">✕</button>
+        </div>
+      )}
 
       {/* الجسم: 3 لوحات (كمبيوتر) / لوحة واحدة بالتبديل (هاتف) */}
       <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2 md:flex-row md:overflow-hidden">

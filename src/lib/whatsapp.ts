@@ -107,6 +107,33 @@ export function toWaId(phoneRaw: string): string | null {
 
 export type SendResult = { ok: boolean; error?: string };
 
+// ذاكرة مؤقتة للأرقام المؤكَّد أن لها واتساب (لتفادي إعادة الفحص على خوادم واتساب).
+// نُخزّن النتائج الموجبة فقط؛ النتائج السالبة تُعاد فحصها دائماً حتى يظهر التنبيه
+// ويختفي فوراً عندما يصبح للرقم واتساب.
+const waRegisteredCache = new Map<string, number>();
+const WA_POS_TTL = 6 * 60 * 60 * 1000; // 6 ساعات
+
+// فحص هل الرقم مسجَّل في واتساب عبر جلسة واتساب المكتب.
+// يُرجِع true (له واتساب) أو false (لا يملك) أو null إذا تعذّر الفحص
+// (واتساب المكتب غير متصل، أو لا مكتب، أو الرقم غير صالح).
+export async function hasWhatsApp(officeId: number | null | undefined, phone: string): Promise<boolean | null> {
+  if (officeId == null) return null;
+  const client = ready(officeId);
+  if (!client) return null;
+  const waId = toWaId(phone);
+  if (!waId) return null;
+  const digits = waId.replace(/@c\.us$/, "");
+  const cached = waRegisteredCache.get(digits);
+  if (cached && Date.now() - cached < WA_POS_TTL) return true;
+  try {
+    const id = await client.getNumberId(digits);
+    if (id) { waRegisteredCache.set(digits, Date.now()); return true; }
+    return false;
+  } catch {
+    return null;
+  }
+}
+
 // ===== واجهة المحادثة (واتساب ويب لكل مكتب) =====
 export type WaChat = { id: string; name: string; unread: number; timestamp: number; last: string; isGroup: boolean };
 export type WaMessage = { id: string; body: string; fromMe: boolean; timestamp: number; type: string };
