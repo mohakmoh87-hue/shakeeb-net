@@ -7,8 +7,10 @@ type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number };
 type Card = {
   id: number; listId: number; title: string; description: string | null;
-  assignee: string | null; label: string | null; dueDate: string | null;
-  position: number; done: boolean;
+  assignee: string | null; technicianId: number | null; kind: string;
+  label: string | null; dueDate: string | null; position: number; done: boolean;
+  amount: number | null; serviceDetails: string | null; completedAt: string | null;
+  materialsInfo: string | null;
 };
 type Office = { id: number; name: string | null };
 type Technician = { id: number; name: string; phone: string | null };
@@ -32,7 +34,11 @@ export default function FieldManagementPage() {
   const [newList, setNewList] = useState("");
   const [addingTo, setAddingTo] = useState<number | null>(null);
   const [cardText, setCardText] = useState("");
+  const [cardKind, setCardKind] = useState<"maintenance" | "delivery">("maintenance");
+  const [cardTech, setCardTech] = useState("");
+  const [cardDue, setCardDue] = useState("");
   const [sel, setSel] = useState<Card | null>(null);
+  const [completing, setCompleting] = useState<Card | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
   // الفنيون والمكاتب (لوحة مستقلّة لكل مكتب، والمدير يختار المكتب)
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -76,8 +82,14 @@ export default function FieldManagementPage() {
   async function addCard(listId: number) {
     const title = cardText.trim();
     if (!title) { setAddingTo(null); return; }
-    setCardText("");
-    const r = await fetch("/api/field/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ listId, title }) });
+    const tech = technicians.find((t) => String(t.id) === cardTech);
+    const payload = {
+      listId, title, kind: cardKind,
+      technicianId: tech?.id ?? null, assignee: tech?.name ?? null,
+      dueDate: cardDue || null,
+    };
+    setCardText(""); setCardTech(""); setCardDue(""); setCardKind("maintenance");
+    const r = await fetch("/api/field/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (r.ok) { const c = await r.json(); setCards((x) => [...x, c]); }
   }
   async function addList() {
@@ -165,9 +177,10 @@ export default function FieldManagementPage() {
                     {c.label && <div className={`mb-1.5 h-1.5 w-10 rounded-full ${labelCls(c.label)}`} />}
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{c.kind === "delivery" ? "🚚 توصيل" : "🔧 صيانة"}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
                       {c.dueDate && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 {fmtDue(c.dueDate)}</span>}
-                      {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة</span>}
+                      {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة {c.amount != null ? `— ${Number(c.amount).toLocaleString("en-US")}` : ""}</span>}
                     </div>
                   </div>
                 ))}
@@ -176,11 +189,22 @@ export default function FieldManagementPage() {
               {/* إضافة بطاقة */}
               <div className="p-2">
                 {addingTo === l.id ? (
-                  <div className="space-y-1">
-                    <textarea autoFocus value={cardText} onChange={(e) => setCardText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addCard(l.id); } }} rows={2} placeholder="عنوان البطاقة..." className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                  <div className="space-y-1.5 rounded-lg bg-white p-2 shadow-inner">
+                    <textarea autoFocus value={cardText} onChange={(e) => setCardText(e.target.value)} rows={2} placeholder="عنوان البطاقة..." className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <select value={cardKind} onChange={(e) => setCardKind(e.target.value as "maintenance" | "delivery")} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                        <option value="maintenance">🔧 صيانة</option>
+                        <option value="delivery">🚚 توصيل</option>
+                      </select>
+                      <select value={cardTech} onChange={(e) => setCardTech(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                        <option value="">— بدون فني —</option>
+                        {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </div>
+                    <input type="date" value={cardDue} onChange={(e) => setCardDue(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs" />
                     <div className="flex gap-1">
-                      <button onClick={() => addCard(l.id)} className="rounded-lg bg-mynet-blue px-3 py-1 text-sm font-semibold text-white">إضافة</button>
-                      <button onClick={() => { setAddingTo(null); setCardText(""); }} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-200">✕</button>
+                      <button onClick={() => addCard(l.id)} className="flex-1 rounded-lg bg-mynet-blue px-3 py-1 text-sm font-semibold text-white">إضافة البطاقة</button>
+                      <button onClick={() => { setAddingTo(null); setCardText(""); setCardTech(""); setCardDue(""); setCardKind("maintenance"); }} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-200">✕</button>
                     </div>
                   </div>
                 ) : (
@@ -239,15 +263,24 @@ export default function FieldManagementPage() {
               ))}
             </div>
 
+            <label className="mb-1 block text-xs font-semibold text-slate-500">نوع البطاقة</label>
+            <select value={sel.kind} onChange={(e) => saveCard({ kind: e.target.value })} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="maintenance">🔧 صيانة</option>
+              <option value="delivery">🚚 توصيل</option>
+            </select>
+
             <label className="mb-1 block text-xs font-semibold text-slate-500">الفني المسؤول</label>
             {technicians.length > 0 ? (
               <select
-                value={technicians.some((t) => t.name === sel.assignee) ? (sel.assignee ?? "") : ""}
-                onChange={(e) => saveCard({ assignee: e.target.value || null })}
+                value={sel.technicianId ?? ""}
+                onChange={(e) => {
+                  const t = technicians.find((x) => String(x.id) === e.target.value);
+                  saveCard({ technicianId: t?.id ?? null, assignee: t?.name ?? null });
+                }}
                 className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               >
                 <option value="">— بدون فني —</option>
-                {technicians.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+                {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             ) : (
               <div className="mb-3 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">
@@ -261,15 +294,37 @@ export default function FieldManagementPage() {
             <label className="mb-1 block text-xs font-semibold text-slate-500">الوصف / التفاصيل</label>
             <textarea value={sel.description ?? ""} onChange={(e) => setSel({ ...sel, description: e.target.value })} onBlur={() => saveCard({ description: sel.description })} rows={4} placeholder="تفاصيل الطلب / الصيانة / التنصيب..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" checked={sel.done} onChange={(e) => saveCard({ done: e.target.checked })} className="h-4 w-4 accent-emerald-600" />
-                منجزة
-              </label>
+            {sel.done ? (
+              <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                <div className="mb-1 font-bold text-emerald-700">✓ منجزة (بانتظار التحصيل)</div>
+                {sel.amount != null && <div className="text-slate-600">المبلغ: <b>{Number(sel.amount).toLocaleString("en-US")}</b> د.ع</div>}
+                {sel.serviceDetails && <div className="text-slate-600">التفاصيل: {sel.serviceDetails}</div>}
+                {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
+              </div>
+            ) : (
+              <button
+                onClick={() => { setCompleting(sel); setSel(null); }}
+                disabled={sel.technicianId == null}
+                title={sel.technicianId == null ? "وجّه البطاقة لفني أولاً" : ""}
+                className="mb-3 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                ✓ إنجاز البطاقة
+              </button>
+            )}
+            <div className="flex items-center justify-end">
               <button onClick={deleteCard} className="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100">🗑️ حذف البطاقة</button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* نافذة إنجاز البطاقة بحقولها الواجبة */}
+      {completing && (
+        <CompletionModal
+          card={completing}
+          onClose={() => setCompleting(null)}
+          onDone={() => { setCompleting(null); load(officeId); }}
+        />
       )}
 
       {/* إدارة الفنيين (إضافة/حذف) — لصاحب صلاحية field.manage */}
@@ -310,4 +365,150 @@ export default function FieldManagementPage() {
       )}
     </div>
   );
+}
+
+/* ========== نافذة إنجاز البطاقة ========== */
+type CustodyMat = { itemId: number; name: string; priceSale: number; available: number };
+function CompletionModal({ card, onClose, onDone }: { card: Card; onClose: () => void; onDone: () => void }) {
+  const isDelivery = card.kind === "delivery";
+  const [details, setDetails] = useState("");
+  const [amount, setAmount] = useState("");
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [mats, setMats] = useState<CustodyMat[]>([]);
+  const [picked, setPicked] = useState<Record<number, number>>({}); // itemId -> qty
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (isDelivery || card.technicianId == null) return;
+    fetch(`/api/field/tech-custody?technicianId=${card.technicianId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setMats(d.materials ?? []));
+  }, [card.technicianId, isDelivery]);
+
+  const materialsTotal = Object.entries(picked).reduce((s, [id, q]) => {
+    const m = mats.find((x) => x.itemId === Number(id)); return s + (m ? m.priceSale * q : 0);
+  }, 0);
+  const nAmount = Number(amount) || 0;
+  const salesShare = Math.min(nAmount, materialsTotal);
+  const pettyShare = Math.max(0, nAmount - materialsTotal);
+
+  function togglePick(m: CustodyMat) {
+    setPicked((p) => { const n = { ...p }; if (n[m.itemId]) delete n[m.itemId]; else n[m.itemId] = 1; return n; });
+  }
+  function setQty(itemId: number, q: number, max: number) {
+    setPicked((p) => ({ ...p, [itemId]: Math.max(1, Math.min(q, max)) }));
+  }
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return;
+    setErr("");
+    try { setPhoto(await compressImage(f)); } catch { setErr("تعذّر قراءة الصورة"); }
+  }
+
+  async function submit() {
+    setErr("");
+    if (nAmount <= 0) { setErr("المبلغ مطلوب"); return; }
+    if (!isDelivery) {
+      if (!details.trim()) { setErr("تفاصيل الصيانة مطلوبة"); return; }
+      if (!photo) { setErr("رفع صورة مطلوب"); return; }
+    }
+    setBusy(true);
+    const materials = Object.entries(picked).map(([id, q]) => ({ itemId: Number(id), qty: q }));
+    const r = await fetch("/api/field/complete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardId: card.id, serviceDetails: details, amount: nAmount, photo, materials }),
+    });
+    const d = await r.json().catch(() => null);
+    setBusy(false);
+    if (!r.ok) { setErr(d?.error ?? "تعذّر الإنجاز"); return; }
+    onDone();
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={onClose}>
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-800">{isDelivery ? "🚚 إنجاز توصيل" : "🔧 إنجاز صيانة"}: {card.title}</h3>
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+        </div>
+
+        {!isDelivery && (
+          <>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">تفاصيل الصيانة <span className="text-red-500">*</span></label>
+            <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={3} placeholder="ماذا تمّ من عمل..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </>
+        )}
+
+        <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-red-500">*</span></label>
+        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+
+        {!isDelivery && (
+          <>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">المواد المُستهلَكة من ذمّتك (اختياري)</label>
+            {mats.length === 0 ? (
+              <div className="mb-3 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">لا مواد بذمّتك.</div>
+            ) : (
+              <div className="mb-3 space-y-1.5">
+                {mats.map((m) => {
+                  const on = picked[m.itemId] != null;
+                  return (
+                    <div key={m.itemId} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm ${on ? "border-amber-300 bg-amber-50" : "border-slate-200"}`}>
+                      <input type="checkbox" checked={on} onChange={() => togglePick(m)} className="h-4 w-4 accent-amber-500" />
+                      <span className="flex-1 text-slate-700">{m.name} <span className="text-xs text-slate-400">({m.priceSale.toLocaleString("en-US")} — متاح {m.available})</span></span>
+                      {on && <input type="number" value={picked[m.itemId]} min={1} max={m.available} onChange={(e) => setQty(m.itemId, Number(e.target.value), m.available)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" dir="ltr" />}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <label className="mb-1 block text-xs font-semibold text-slate-500">صورة العمل <span className="text-red-500">*</span></label>
+            <input type="file" accept="image/*" capture="environment" onChange={onFile} className="mb-2 w-full text-sm" />
+            {photo && <img src={photo} alt="preview" className="mb-3 max-h-40 rounded-lg border border-slate-200" />}
+          </>
+        )}
+
+        {nAmount > 0 && !isDelivery && Object.keys(picked).length > 0 && (
+          <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+            <div>قيمة المواد المباعة: <b>{materialsTotal.toLocaleString("en-US")}</b></div>
+            <div>يُسجَّل للمبيعات: <b className="text-emerald-700">{salesShare.toLocaleString("en-US")}</b> — للنثرية: <b className="text-blue-700">{pettyShare.toLocaleString("en-US")}</b></div>
+          </div>
+        )}
+
+        {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
+        <button onClick={submit} disabled={busy} className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+          {busy ? "جارٍ الإنجاز…" : "✓ تأكيد الإنجاز"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ضغط الصورة قبل الرفع (تصغير + JPEG) لتفادي تضخّم قاعدة البيانات/الاستضافة
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 900;
+        let { width, height } = img;
+        if (width > max || height > max) {
+          if (width > height) { height = Math.round((height * max) / width); width = max; }
+          else { width = Math.round((width * max) / height); height = max; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("no ctx"));
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.6));
+      };
+      img.onerror = reject;
+      img.src = reader.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }

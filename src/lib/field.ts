@@ -16,6 +16,17 @@ export function resolveFieldOffice(session: SessionPayload, requested: number | 
   return isFieldManager(session) ? null : session.towerId ?? null;
 }
 
+// حساب "نثرية" للمكتب (مقبوضات متفرقة) — يُنشأ إن لم يوجد.
+export async function getOrCreatePettyAccount(towerId: number | null) {
+  let acc = await prisma.account.findFirst({
+    where: { name: "نثرية", towerId: towerId ?? null, isDeleted: false },
+  });
+  if (!acc) {
+    acc = await prisma.account.create({ data: { name: "نثرية", typeName: "مقبوضات", towerId: towerId ?? null } });
+  }
+  return acc;
+}
+
 // لوحة المكتب (تُنشأ إن لم توجد) — لوحة واحدة لكل قيمة towerId.
 export async function getOrCreateBoard(towerId: number | null) {
   let board = await prisma.taskBoard.findFirst({

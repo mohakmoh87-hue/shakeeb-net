@@ -8,6 +8,7 @@ export type DailyReport = {
   activationIn: number;
   invoiceCount: number;
   invoiceIn: number;
+  salesIn: number;
   otherIn: number;
   expenses: number;
   total: number;
@@ -45,6 +46,7 @@ export default function DailyReportCard({
   const rows = [
     { cat: "تفعيل اشتراكات", count: data.activationCount, wasel: fmt(data.activationIn) },
     { cat: "فاتورة المبيع", count: data.invoiceCount, wasel: fmt(data.invoiceIn) },
+    { cat: "مبيعات المخزن", count: "" as number | string, wasel: fmt(data.salesIn) },
     { cat: "المقبوضات (اليوم)", count: "" as number | string, wasel: fmt(data.otherIn) },
     { cat: "المصروفات (اليوم)", count: "" as number | string, wasel: fmt(data.expenses) },
   ];

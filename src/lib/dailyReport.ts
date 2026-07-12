@@ -25,7 +25,7 @@ export async function computeDailyReport(towerId?: number | null, day?: Date) {
   const dateWhere = { date: { gte: start, lte: end } };
   const towerWhere = towerId ? { towerId } : {};
 
-  const [activations, todayMoney, todayInvoices] = await Promise.all([
+  const [activations, todayMoney, todayInvoices, todaySales] = await Promise.all([
     prisma.subscriptionEntry.aggregate({
       where: { isDeleted: false, ...dateWhere, ...towerWhere },
       _count: true,
@@ -40,13 +40,19 @@ export async function computeDailyReport(towerId?: number | null, day?: Date) {
       _count: true,
       _sum: { waselHim: true },
     }),
+    // مبيعات المخزن (البيع المباشر + مواد الذمم) — حركات سطرها sourceType="sale"
+    prisma.moneyTx.aggregate({
+      where: { isDeleted: false, sourceType: "sale", ...dateWhere, ...towerWhere },
+      _sum: { moneyIn: true },
+    }),
   ]);
 
   const todayIn = todayMoney._sum.moneyIn ?? 0;
   const todayOut = todayMoney._sum.moneyOut ?? 0;
   const activationIn = activations._sum.moneyIn ?? 0;
   const invoiceIn = todayInvoices._sum.waselHim ?? 0;
-  const otherIn = Math.max(0, todayIn - activationIn - invoiceIn);
+  const salesIn = todaySales._sum.moneyIn ?? 0;
+  const otherIn = Math.max(0, todayIn - activationIn - invoiceIn - salesIn);
   const total = todayIn - todayOut;
 
   return {
@@ -54,6 +60,7 @@ export async function computeDailyReport(towerId?: number | null, day?: Date) {
     activationIn,
     invoiceCount: todayInvoices._count || 0,
     invoiceIn,
+    salesIn,
     otherIn,
     expenses: todayOut,
     total,
@@ -72,6 +79,7 @@ export async function dailyReportText(office: string, towerId?: number | null, f
     `——————————————\n` +
     `تفعيل اشتراكات: ${r.activationCount} — ${fmt(r.activationIn)} د.ع\n` +
     `فاتورة المبيع: ${r.invoiceCount} — ${fmt(r.invoiceIn)} د.ع\n` +
+    `مبيعات المخزن: ${fmt(r.salesIn)} د.ع\n` +
     `المقبوضات الأخرى: ${fmt(r.otherIn)} د.ع\n` +
     `المصروفات: ${fmt(r.expenses)} د.ع\n` +
     `——————————————\n` +

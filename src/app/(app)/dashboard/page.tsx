@@ -1,5 +1,6 @@
 import ModuleTile from "@/components/ModuleTile";
 import DailyReportCard from "@/components/DailyReportCard";
+import FieldSettlementCard from "@/components/FieldSettlementCard";
 import { getSession } from "@/lib/auth";
 import { computeDailyReport } from "@/lib/dailyReport";
 import { prisma } from "@/lib/prisma";
@@ -50,6 +51,9 @@ export default async function DashboardPage() {
           ))}
         </section>
       </div>
+
+      {/* تحصيل الفنيين — اسم كل فني ومجموع تكتاته المنجزة وزر اكمال (لكل مكتب) */}
+      <FieldSettlementCard />
     </div>
   );
 }

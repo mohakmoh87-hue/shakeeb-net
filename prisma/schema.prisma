@@ -577,18 +577,37 @@ model TaskList {
 }
 
 model TaskCard {
-  id          Int       @id @default(autoincrement())
-  listId      Int // العمود المالك
-  title       String
-  description String?
-  assignee    String? // اسم الفني/الموظف (نصي مبدئياً؛ يُربط لاحقاً)
-  label       String? // لون/تصنيف
-  dueDate     DateTime?
-  position    Int       @default(0)
-  done        Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  isDeleted   Boolean   @default(false)
+  id           Int       @id @default(autoincrement())
+  listId       Int // العمود المالك
+  title        String
+  description  String?
+  assignee     String? // اسم الفني/الموظف (للعرض)
+  technicianId Int? // الفني المسؤول (لتجميع التحصيل)
+  kind         String    @default("maintenance") // maintenance = صيانة | delivery = توصيل
+  label        String? // لون/تصنيف
+  dueDate      DateTime?
+  position     Int       @default(0)
+  done         Boolean   @default(false)
+  // بيانات الإنجاز
+  serviceDetails String? // تفاصيل الصيانة
+  amount        Float? // المبلغ المستلم من الزبون
+  materialsInfo String? // JSON بالمواد المباعة من الذمم (للعرض)
+  completedAt   DateTime?
+  settled       Boolean   @default(false) // تمّ التحصيل (اكمال)
+  createdAt    DateTime  @default(now())
+  isDeleted    Boolean   @default(false)
 
   @@index([listId])
+  @@index([technicianId])
   @@map("task_cards")
+}
+
+// صورة إنجاز البطاقة (base64) — مفصولة لتفادي تضخّم استعلام اللوحة، وتُحذف فعلياً مع البطاقة/التحصيل
+model CardPhoto {
+  id        Int      @id @default(autoincrement())
+  cardId    Int      @unique
+  data      String // data URL (JPEG مضغوط)
+  createdAt DateTime @default(now())
+
+  @@map("card_photos")
 }
