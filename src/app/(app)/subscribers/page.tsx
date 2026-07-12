@@ -64,8 +64,8 @@ export default function SubscribersPage() {
   const [delMenu, setDelMenu] = useState(false);
   // عرض الهاتف: القائمة أو تفاصيل المشترك (على الكمبيوتر تظهر كلها معاً)
   const [mobilePane, setMobilePane] = useState<"list" | "detail">("list");
-  // تنبيه واتساب: يظهر عند فتح مشترك لا يملك رقماً أو لا واتساب عليه (تنبيه بحت)
-  const [waNotice, setWaNotice] = useState<"no-phone" | "no-whatsapp" | null>(null);
+  // تنبيه واتساب: يظهر عند فتح مشترك لا يملك رقماً، أو رقمه بعدد خاطئ، أو لا واتساب عليه (تنبيه بحت)
+  const [waNotice, setWaNotice] = useState<"no-phone" | "bad-phone" | "no-whatsapp" | null>(null);
   const waCheckId = useRef<number | null>(null); // آخر مشترك طُلب فحصه (لتجاهل النتائج المتأخّرة)
 
   function toggleCheck(id: number) {
@@ -142,18 +142,23 @@ export default function SubscribersPage() {
   }
 
   // فحص واتساب المشترك عند فتحه (تنبيه بحت، لا يؤثر على أي عملية).
-  // يظهر التنبيه في كل مرة يُضغط المشترك ما دام بلا رقم أو بلا واتساب،
-  // ويختفي تلقائياً عند تبديل الرقم أو توفّر واتساب عليه.
+  // يظهر التنبيه في كل مرة يُضغط المشترك، ويختفي عند تبديل الرقم أو توفّر واتساب.
+  //   - لا رقم                     → تنبيه فوراً (بلا حاجة لواتساب)
+  //   - رقم بعدد خاطئ (ليس 10 ولا 11) → تنبيه فوراً (بلا حاجة لواتساب)
+  //   - رقم صحيح بلا واتساب عليه     → تنبيه (يتطلّب واتساب المكتب متصلاً)
   function checkWhatsApp(s: Subscriber) {
     setWaNotice(null);
     waCheckId.current = s.id;
-    if (!s.phone?.trim()) { setWaNotice("no-phone"); return; }
+    const digits = (s.phone ?? "").replace(/\D/g, "");
+    if (digits.length === 0) { setWaNotice("no-phone"); return; }
+    if (digits.length !== 10 && digits.length !== 11) { setWaNotice("bad-phone"); return; }
+    // الرقم بطول صحيح → افحص وجود واتساب عليه (يحتاج واتساب المكتب متصلاً)
     fetch(`/api/whatsapp/subscriber-check?subscriberId=${s.id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         // نتجاهل النتيجة إن تغيّر المشترك المختار أثناء الفحص
         if (!d || waCheckId.current !== s.id) return;
-        if (d.status === "no-phone" || d.status === "no-whatsapp") setWaNotice(d.status);
+        if (d.status === "no-whatsapp") setWaNotice("no-whatsapp");
       })
       .catch(() => { /* تجاهل — تنبيه فقط */ });
   }
@@ -246,19 +251,6 @@ export default function SubscribersPage() {
           👤 {selected ? selected.name : "التفاصيل"}
         </button>
       </div>
-
-      {/* تنبيه واتساب المشترك — يظهر عند فتح مشترك بلا رقم أو بلا واتساب (تنبيه بحت لا يؤثر على شيء) */}
-      {selected && waNotice && (
-        <div className={`flex items-center gap-2 border-b px-3 py-2 text-sm font-semibold ${waNotice === "no-phone" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-700"}`}>
-          <span className="text-base">{waNotice === "no-phone" ? "📵" : "⚠️"}</span>
-          <span className="flex-1">
-            {waNotice === "no-phone"
-              ? `المشترك «${selected.name ?? ""}» لا يملك رقم هاتف — لن تصله رسائل واتساب.`
-              : `المشترك «${selected.name ?? ""}» لا يملك واتساب على رقمه — لن تصله رسائل واتساب.`}
-          </span>
-          <button onClick={() => setWaNotice(null)} className="shrink-0 rounded px-2 py-0.5 text-slate-400 hover:bg-black/5" title="إخفاء">✕</button>
-        </div>
-      )}
 
       {/* الجسم: 3 لوحات (كمبيوتر) / لوحة واحدة بالتبديل (هاتف) */}
       <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2 md:flex-row md:overflow-hidden">
@@ -436,6 +428,42 @@ export default function SubscribersPage() {
               <span className="block text-xs font-normal opacity-80">كل المشتركين في قاعدة البيانات</span>
             </button>
             <button onClick={() => setDelMenu(false)} className="w-full rounded-lg bg-slate-100 py-2 text-slate-600 hover:bg-slate-200">إلغاء</button>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تنبيه واتساب — تطلع بالوجه فوق المحتوى، تُغلَق بـ X وتتكرر كل ضغطة على المشترك (تنبيه بحت) */}
+      {selected && waNotice && (
+        <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex justify-center px-3">
+          <div
+            className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border px-4 py-3 shadow-2xl ${
+              waNotice === "no-whatsapp"
+                ? "border-red-300 bg-red-50 text-red-700"
+                : waNotice === "bad-phone"
+                ? "border-orange-300 bg-orange-50 text-orange-800"
+                : "border-amber-300 bg-amber-50 text-amber-800"
+            }`}
+          >
+            <span className="text-xl leading-none">{waNotice === "no-whatsapp" ? "⚠️" : "📵"}</span>
+            <div className="flex-1 text-sm">
+              <div className="mb-0.5 font-bold">تنبيه واتساب</div>
+              <div className="font-semibold">
+                المشترك «{selected.name ?? "—"}»
+                {waNotice === "no-phone"
+                  ? " لا يملك رقم هاتف"
+                  : waNotice === "bad-phone"
+                  ? ` رقم هاتفه غير صحيح (${(selected.phone ?? "").replace(/\D/g, "").length} أرقام — يجب أن يكون ١٠ أو ١١)`
+                  : " لا يملك واتساب على رقمه"}
+                <span className="font-normal"> — لن تصله رسائل واتساب.</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setWaNotice(null)}
+              className="shrink-0 rounded-full px-2 py-0.5 text-lg leading-none text-slate-400 hover:bg-black/10"
+              title="إغلاق"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
