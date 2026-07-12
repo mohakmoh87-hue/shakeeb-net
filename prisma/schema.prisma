@@ -550,6 +550,21 @@ model Technician {
   @@map("technicians")
 }
 
+// ===== ذمم الفنيين (عهدة المواد) — كمية من مادة بحوزة فني، لا تُنقِص إجمالي المخزن =====
+// المتبقي الكلي = Item.count ؛ بالمكتب = count − مجموع العهد ؛ يم الفني = العهدة.
+model Custody {
+  id           Int     @id @default(autoincrement())
+  technicianId Int
+  itemId       Int
+  towerId      Int? // المكتب (لعزل الذمم لكل مكتب)
+  qty          Float   @default(0)
+  isDeleted    Boolean @default(false)
+
+  @@index([technicianId])
+  @@index([itemId])
+  @@map("custodies")
+}
+
 model TaskList {
   id        Int      @id @default(autoincrement())
   boardId   Int // اللوحة المالكة
