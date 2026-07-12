@@ -542,6 +542,7 @@ model Technician {
   name      String
   phone     String?
   towerId   Int? // المكتب التابع له (null = غير محدّد)
+  accountId Int? // حساب المصروفات/المقبوضات (موظف) المرتبط بهذا الفني في نفس مكتبه
   isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
 

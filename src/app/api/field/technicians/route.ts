@@ -19,7 +19,8 @@ export async function GET(request: Request) {
   return NextResponse.json({ technicians, officeId });
 }
 
-// إضافة فني للمكتب (صلاحية إدارة الفنيين)
+// إضافة فني للمكتب (صلاحية إدارة الفنيين).
+// يُنشئ تلقائياً حساب مصروفات/مقبوضات باسمه (موظف) في نفس مكتبه ويربطه به.
 export async function POST(request: Request) {
   const g = await guard("field.manage");
   if (g.error) return g.error;
@@ -27,18 +28,27 @@ export async function POST(request: Request) {
   const name = String(b?.name ?? "").trim();
   if (!name) return NextResponse.json({ error: "اسم الفني مطلوب" }, { status: 400 });
   const officeId = resolveFieldOffice(g.session, b?.officeId != null ? Number(b.officeId) : null);
+
+  // حساب موظف باسم الفني في نفس المكتب (يظهر في قائمة حسابات المكتب وحسابات المدير)
+  const account = await prisma.account.create({
+    data: { name, typeName: "فني", isEmployee: true, towerId: officeId ?? null },
+  });
   const created = await prisma.technician.create({
-    data: { name, phone: String(b?.phone ?? "").trim() || null, towerId: officeId ?? null },
+    data: { name, phone: String(b?.phone ?? "").trim() || null, towerId: officeId ?? null, accountId: account.id },
   });
   return NextResponse.json(created, { status: 201 });
 }
 
-// حذف فني (حذف منطقي) — صلاحية إدارة الفنيين
+// حذف فني (حذف منطقي) — يحذف معه حساب الموظف المرتبط — صلاحية إدارة الفنيين
 export async function DELETE(request: Request) {
   const g = await guard("field.manage");
   if (g.error) return g.error;
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
+  const tech = await prisma.technician.findUnique({ where: { id }, select: { accountId: true } });
   await prisma.technician.updateMany({ where: { id, isDeleted: false }, data: { isDeleted: true } });
+  if (tech?.accountId) {
+    await prisma.account.updateMany({ where: { id: tech.accountId, isDeleted: false }, data: { isDeleted: true } });
+  }
   return NextResponse.json({ ok: true });
 }
