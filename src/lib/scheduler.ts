@@ -189,6 +189,14 @@ export async function flushPendingMessages(): Promise<{ resent: number }> {
   return { resent };
 }
 
+// حذف نهائي لأرشيف الرسائل بعد ٣ أيام من إرسالها (تُحفظ ٣ أيام فقط لضمان وصولها)
+export async function purgeOldMessages(days = 3): Promise<{ deleted: number }> {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const res = await prisma.message.deleteMany({ where: { date: { lt: cutoff } } });
+  if (res.count) console.log(`[scheduler] حُذف ${res.count} رسالة أقدم من ${days} أيام`);
+  return { deleted: res.count };
+}
+
 // الوقت الحالي بتوقيت بغداد بصيغة HH:MM
 function baghdadHHMM(): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -232,6 +240,11 @@ export function startScheduler() {
     try {
       await flushPendingMessages();
     } catch (e) { console.error("[scheduler] flush pending:", e); }
+
+    // تنظيف يومي (03:00 بغداد): حذف نهائي لأرشيف الرسائل الأقدم من ٣ أيام
+    if (nowHM === "03:00") {
+      purgeOldMessages(3).catch((e) => console.error("[scheduler] purge messages:", e));
+    }
   }, { timezone: TZ });
 
   console.log("[scheduler] started (Asia/Baghdad): تذكير الانتهاء (افتراضي 13:00) وتقرير المدير (افتراضي 23:55) حسب الإعدادات");
