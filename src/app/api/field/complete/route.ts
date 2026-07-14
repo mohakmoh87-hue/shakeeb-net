@@ -173,7 +173,8 @@ export async function POST(request: Request) {
       // تحويل: تحديث يوزر المشترك لليوزر الجديد + تسجيله بسجل الصيانات
       if (isTransfer && newUser?.trim()) {
         const nu = newUser.trim();
-        await prisma.subscriber.update({ where: { id: sub.id }, data: { netUser: nu } });
+        // تحديث اليوزر + وسم التحويل (يُنبَّه عند التفعيل ويُحذف بعد 30 يوماً دون تفعيل)
+        await prisma.subscriber.update({ where: { id: sub.id }, data: { netUser: nu, transferredAt: new Date(), transferredTo: nu } });
         await prisma.maintenanceLog.create({
           data: {
             subscriberId: sub.id,

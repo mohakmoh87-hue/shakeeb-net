@@ -119,7 +119,8 @@ export async function POST(
       }
       await tx.subscriber.update({
         where: { id: subscriberId },
-        data: { packageId, dateTo, carry: newCarry, wasel: effPaid, month: months },
+        // التفعيل يمسح وسم التحويل (فلا يُنبَّه ولا يُحذف)
+        data: { packageId, dateTo, carry: newCarry, wasel: effPaid, month: months, transferredAt: null, transferredTo: null },
       });
       const entry = await tx.subscriptionEntry.create({
         data: {

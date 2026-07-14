@@ -20,6 +20,7 @@ type Subscriber = {
   note: string | null;
   smsEnabled: number | null;
   waEnabled: boolean | null;
+  transferredTo: string | null;
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
 type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null };
@@ -406,6 +407,14 @@ export default function SubscribersPage() {
             حالة الخدمة : {serviceActive ? "فعالة" : (selectedId ? "منتهية" : "—")}
           </div>
           <Box label="تاريخ الانتهاء" value={formatDate(form.dateTo)} />
+          {/* زر تفعيل واضح تحت تاريخ الانتهاء مباشرةً */}
+          <button
+            onClick={() => selected && setActivating(selected)}
+            disabled={!selected}
+            className="w-full rounded-lg bg-emerald-600 py-3 text-base font-extrabold text-white shadow hover:bg-emerald-700 disabled:opacity-40"
+          >
+            ✅ تفعيل الاشتراك
+          </button>
           <BigStat label="ديون الاشتراكات" value={fmt(form.carry)} color="text-red-600" />
           {/* الايام المتبقية: أخضر إن ≥ 0، أحمر إن سالب */}
           <div className={`flex items-center justify-between rounded px-3 py-2 ${remaining >= 0 ? "bg-emerald-500" : "bg-red-600"}`}>
@@ -497,38 +506,27 @@ export default function SubscribersPage() {
         </div>
       )}
 
-      {/* نافذة تنبيه واتساب — تطلع بالوجه فوق المحتوى، تُغلَق بـ X وتتكرر كل ضغطة على المشترك (تنبيه بحت) */}
+      {/* تنبيه واتساب — إشعار كبير وسط الشاشة، يتكرر كل ضغطة على المشترك (تنبيه بحت) */}
       {selected && waNotice && (
-        <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex justify-center px-3">
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 p-4" onClick={() => setWaNotice(null)}>
           <div
-            className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border px-4 py-3 shadow-2xl ${
-              waNotice === "no-whatsapp"
-                ? "border-red-300 bg-red-50 text-red-700"
-                : waNotice === "bad-phone"
-                ? "border-orange-300 bg-orange-50 text-orange-800"
-                : "border-amber-300 bg-amber-50 text-amber-800"
-            }`}
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-md rounded-3xl bg-white p-7 text-center shadow-2xl`}
           >
-            <span className="text-xl leading-none">{waNotice === "no-whatsapp" ? "⚠️" : "📵"}</span>
-            <div className="flex-1 text-sm">
-              <div className="mb-0.5 font-bold">تنبيه واتساب</div>
-              <div className="font-semibold">
-                المشترك «{selected.name ?? "—"}»
-                {waNotice === "no-phone"
-                  ? " لا يملك رقم هاتف"
-                  : waNotice === "bad-phone"
-                  ? ` رقم هاتفه غير صحيح (${(selected.phone ?? "").replace(/\D/g, "").length} أرقام — يجب أن يكون ١٠ أو ١١)`
-                  : " لا يملك واتساب على رقمه"}
-                <span className="font-normal"> — لن تصله رسائل واتساب.</span>
-              </div>
+            <div className={`mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full text-5xl ${waNotice === "no-whatsapp" ? "bg-red-100" : "bg-amber-100"}`}>
+              {waNotice === "no-whatsapp" ? "⚠️" : "📵"}
             </div>
-            <button
-              onClick={() => setWaNotice(null)}
-              className="shrink-0 rounded-full px-2 py-0.5 text-lg leading-none text-slate-400 hover:bg-black/10"
-              title="إغلاق"
-            >
-              ✕
-            </button>
+            <h2 className={`mb-2 text-2xl font-extrabold ${waNotice === "no-whatsapp" ? "text-red-700" : "text-amber-700"}`}>تنبيه واتساب</h2>
+            <p className="mb-1 text-lg font-bold text-slate-800">المشترك «{selected.name ?? "—"}»</p>
+            <p className="mb-1 text-base text-slate-600">
+              {waNotice === "no-phone"
+                ? "لا يملك رقم هاتف"
+                : waNotice === "bad-phone"
+                ? `رقم هاتفه غير صحيح (${(selected.phone ?? "").replace(/\D/g, "").length} أرقام — يجب أن يكون ١٠ أو ١١)`
+                : "لا يملك واتساب على رقمه"}
+            </p>
+            <p className="mb-5 text-sm text-slate-400">لن تصله رسائل واتساب.</p>
+            <button onClick={() => setWaNotice(null)} className="w-full rounded-xl bg-mynet-blue py-3 text-lg font-bold text-white hover:bg-mynet-blue-dark">حسناً</button>
           </div>
         </div>
       )}

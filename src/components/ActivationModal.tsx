@@ -23,6 +23,7 @@ export type ActSubscriber = {
   sasId: number | null;
   carry: number | null;
   dateTo: string | null;
+  transferredTo?: string | null; // اليوزر الجديد إن كان المشترك محوّلاً (للتنبيه)
 };
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
@@ -70,6 +71,7 @@ export default function ActivationModal({
   const [loadingCard, setLoadingCard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [transferSeen, setTransferSeen] = useState(false); // إشعار التحويل يظهر عند كل فتح للتفعيل
 
   const pkg = packages.find((p) => p.id === packageId);
   const packagePrice = pkg?.priceDinar ?? 0;
@@ -88,11 +90,15 @@ export default function ActivationModal({
   const directLink = sasDirectUrl(tower, subscriber);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
 
-  // تسجيل الدخول التلقائي للوحة SAS4 المضمّنة ثم تحميلها
+  // تسجيل الدخول التلقائي للوحة SAS4 المضمّنة ثم تحميلها.
+  // الدخول التلقائي عبر البروكسي يعمل من اللوكل هوست فقط؛ من الموقع المنشور يُفتح
+  // رابط SAS المباشر (دخول يدوي) لأن البروكسي غير متاح على الإنترنت.
   useEffect(() => {
     let active = true;
+    const isLocal = typeof window !== "undefined" && /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
+    if (!isLocal) { setFrameSrc(directLink); return; } // الموقع: دخول يدوي بلا بروكسي
     const proxied = sasUrl(subscriber);
-    if (!subscriber.towerId || !proxied) { setFrameSrc(null); return; }
+    if (!subscriber.towerId || !proxied) { setFrameSrc(directLink); return; }
     prepareSasEmbed(subscriber.towerId).then((ok) => {
       if (active) setFrameSrc(ok ? proxied : directLink);
     });
@@ -177,6 +183,18 @@ export default function ActivationModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={releaseAndClose}>
+      {/* إشعار كبير وسط الشاشة: هذا المشترك محوّل إلى يوزر جديد */}
+      {subscriber.transferredTo && !transferSeen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-3xl bg-white p-7 text-center shadow-2xl">
+            <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-amber-100 text-5xl">🔁</div>
+            <h2 className="mb-2 text-2xl font-extrabold text-amber-700">تنبيه: مشترك محوّل</h2>
+            <p className="mb-1 text-lg text-slate-700">هذا المشترك قد تحوّل إلى اليوزر:</p>
+            <p className="mb-4 text-2xl font-extrabold text-slate-900" dir="ltr">{subscriber.transferredTo}</p>
+            <button onClick={() => setTransferSeen(true)} className="w-full rounded-xl bg-mynet-blue py-3 text-lg font-bold text-white hover:bg-mynet-blue-dark">فهمت، متابعة التفعيل</button>
+          </div>
+        </div>
+      )}
       <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* الترويسة */}
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2">

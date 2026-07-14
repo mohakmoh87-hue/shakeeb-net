@@ -160,6 +160,8 @@ model Subscriber {
   wifiUser     String?
   wifiPass     String?
   netUser      String? // اسم مستخدم المشترك في SAS4
+  transferredAt DateTime? // وقت تحويل يوزره عبر تكت تحويل (يُنبَّه عند التفعيل، ويُحذف بعد 30 يوماً دون تفعيل)
+  transferredTo String? // اليوزر الجديد بعد التحويل (للتنبيه)
   sasId        Int? // معرّف المشترك في SAS4 (للربط والتفعيل)
   cardCode     String? // cardID
   // حقول شاشة المشترك التفصيلية
