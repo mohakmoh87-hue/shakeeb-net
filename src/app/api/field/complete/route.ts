@@ -34,6 +34,7 @@ const schema = z.object({
   cardId: z.coerce.number().int().positive(),
   serviceDetails: z.string().optional(),
   amount: z.coerce.number().min(0).optional(),
+  newUser: z.string().optional(), // اليوزر الجديد (إلزامي لبطاقة التحويل)
   photo: z.string().optional(), // data URL (JPEG مضغوط)
   materials: z
     .array(z.object({ itemId: z.coerce.number().int().positive(), qty: z.coerce.number().positive() }))
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
-  const { cardId, serviceDetails, amount, photo, materials } = parsed.data;
+  const { cardId, serviceDetails, amount, newUser, photo, materials } = parsed.data;
 
   const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false } });
   if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
@@ -64,15 +65,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "يجب توجيه البطاقة لفني قبل إنجازها" }, { status: 400 });
   }
 
-  // نوع البطاقة: توصيل (مبلغ فقط) أم صيانة/غيرها (حقول كاملة)؟
+  // نوع البطاقة: توصيل (مبلغ فقط) / تحويل (يوزر جديد إلزامي) / صيانة وغيرها (حقول كاملة)
   const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false } });
   const isDelivery = type?.deliveryOnly ?? card.kind === "توصيل";
+  const isTransfer = card.kind === "تحويل";
 
   // التحقّق من الحقول الواجبة
   if (amount == null || amount <= 0) {
     return NextResponse.json({ error: "المبلغ مطلوب" }, { status: 400 });
   }
-  if (!isDelivery) {
+  if (isTransfer) {
+    if (!newUser?.trim()) return NextResponse.json({ error: "اليوزر الجديد مطلوب لإنجاز التحويل" }, { status: 400 });
+  } else if (!isDelivery) {
     if (!serviceDetails?.trim()) return NextResponse.json({ error: "تفاصيل الصيانة مطلوبة" }, { status: 400 });
     if (!photo?.trim()) return NextResponse.json({ error: "رفع صورة مطلوب" }, { status: 400 });
   }
@@ -161,8 +165,20 @@ export async function POST(request: Request) {
     const sub = await matchSubscriber(cardText, towerId);
     if (sub) {
       matchedSubscriber = sub.id;
+      // تحويل: تحديث يوزر المشترك لليوزر الجديد + تسجيله بسجل الصيانات
+      if (isTransfer && newUser?.trim()) {
+        const nu = newUser.trim();
+        await prisma.subscriber.update({ where: { id: sub.id }, data: { netUser: nu } });
+        await prisma.maintenanceLog.create({
+          data: {
+            subscriberId: sub.id,
+            details: `تحويل اليوزر من «${sub.netUser ?? "—"}» إلى «${nu}»`,
+            technicianName: tech?.name ?? null, cardTitle: card.title, kind: card.kind, date: new Date(),
+          },
+        });
+      }
       // سجل صيانات المشترك (بلا صور) — للصيانة/التنصيب التي لها تفاصيل
-      if (!isDelivery && serviceDetails?.trim()) {
+      if (!isDelivery && !isTransfer && serviceDetails?.trim()) {
         await prisma.maintenanceLog.create({
           data: {
             subscriberId: sub.id,

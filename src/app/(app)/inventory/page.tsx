@@ -27,6 +27,7 @@ export default function InventoryPage() {
   const [custodies, setCustodies] = useState<Custody[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [sellItem, setSellItem] = useState<Item | null>(null);
+  const [transferItem, setTransferItem] = useState<Item | null>(null);
   const [custodyOpen, setCustodyOpen] = useState(false);
 
   const loadCustodies = useCallback(() => {
@@ -78,12 +79,20 @@ export default function InventoryPage() {
           </button>
         }
         rowActions={(r) => (
-          <button
-            onClick={() => setSellItem(r)}
-            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-          >
-            💵 بيع
-          </button>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setSellItem(r)}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+            >
+              💵 بيع
+            </button>
+            <button
+              onClick={() => setTransferItem(r)}
+              className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700"
+            >
+              🔁 ترحيل
+            </button>
+          </div>
         )}
         columns={[
           { header: "#", render: (r) => r.id },
@@ -117,6 +126,15 @@ export default function InventoryPage() {
 
       {sellItem && (
         <SellModal item={sellItem} onClose={() => setSellItem(null)} onDone={() => { setSellItem(null); afterChange(); }} />
+      )}
+      {transferItem && (
+        <TransferModal
+          item={transferItem}
+          towers={towers}
+          atOffice={(transferItem.count ?? 0) - custodyByItem(transferItem.id)}
+          onClose={() => setTransferItem(null)}
+          onDone={() => { setTransferItem(null); afterChange(); }}
+        />
       )}
       {custodyOpen && (
         <CustodyModal
@@ -175,6 +193,53 @@ function SellModal({ item, onClose, onDone }: { item: Item; onClose: () => void;
           className="flex-1 rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
           {busy ? "جارٍ…" : "تأكيد البيع"}
         </button>
+        <button onClick={onClose} className="rounded-lg bg-slate-200 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-300">إلغاء</button>
+      </div>
+    </Overlay>
+  );
+}
+
+/* ============ نافذة ترحيل مادة بين المكاتب ============ */
+function TransferModal({ item, towers, atOffice, onClose, onDone }: { item: Item; towers: Tower[]; atOffice: number; onClose: () => void; onDone: () => void }) {
+  const [qty, setQty] = useState("1");
+  const [toTower, setToTower] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const dests = towers.filter((t) => t.id !== item.towerId);
+
+  async function submit() {
+    setErr("");
+    const n = Number(qty) || 0;
+    if (n <= 0) { setErr("أدخل كمية صحيحة"); return; }
+    if (n > atOffice) { setErr(`المتوفّر بالمخزن ${atOffice} فقط`); return; }
+    if (!toTower) { setErr("اختر المكتب الوجهة"); return; }
+    setBusy(true);
+    const r = await fetch("/api/inventory/transfer", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemId: item.id, qty: n, toTowerId: Number(toTower) }),
+    });
+    const d = await r.json().catch(() => null);
+    setBusy(false);
+    if (!r.ok) { setErr(d?.error ?? "تعذّر الترحيل"); return; }
+    onDone();
+  }
+
+  return (
+    <Overlay onClose={onClose}>
+      <h3 className="mb-1 text-lg font-bold text-slate-800">🔁 ترحيل: {item.name}</h3>
+      <p className="mb-4 text-sm text-slate-500">نقل كمية من هذا المخزن إلى مكتب آخر. المتوفّر للترحيل: <b>{atOffice}</b></p>
+      <div className="grid grid-cols-2 gap-3">
+        <L label="الكمية"><Inp value={qty} onChange={setQty} type="number" /></L>
+        <L label="إلى مكتب">
+          <select value={toTower} onChange={(e) => setToTower(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">اختر المكتب…</option>
+            {dests.map((t) => <option key={t.id} value={t.id}>{t.name ?? `#${t.id}`}</option>)}
+          </select>
+        </L>
+      </div>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      <div className="mt-5 flex gap-2">
+        <button onClick={submit} disabled={busy} className="flex-1 rounded-lg bg-sky-600 px-4 py-2.5 font-semibold text-white hover:bg-sky-700 disabled:opacity-50">{busy ? "جارٍ…" : "ترحيل"}</button>
         <button onClick={onClose} className="rounded-lg bg-slate-200 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-300">إلغاء</button>
       </div>
     </Overlay>

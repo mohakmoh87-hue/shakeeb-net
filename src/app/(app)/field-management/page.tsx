@@ -389,8 +389,11 @@ export default function FieldManagementPage() {
 /* ========== نافذة إنجاز البطاقة ========== */
 type CustodyMat = { itemId: number; name: string; priceSale: number; available: number };
 function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; deliveryOnly: boolean; onClose: () => void; onDone: () => void }) {
-  const isDelivery = deliveryOnly;
+  const isTransfer = card.kind === "تحويل";
+  const isDelivery = deliveryOnly && !isTransfer;
+  const fullFields = !isDelivery && !isTransfer; // صيانة/تنصيب: تفاصيل + صورة + مواد
   const [details, setDetails] = useState("");
+  const [newUser, setNewUser] = useState("");
   const [amount, setAmount] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [mats, setMats] = useState<CustodyMat[]>([]);
@@ -399,11 +402,11 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    if (isDelivery || card.technicianId == null) return;
+    if (!fullFields || card.technicianId == null) return;
     fetch(`/api/field/tech-custody?technicianId=${card.technicianId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setMats(d.materials ?? []));
-  }, [card.technicianId, isDelivery]);
+  }, [card.technicianId, fullFields]);
 
   const materialsTotal = Object.entries(picked).reduce((s, [id, q]) => {
     const m = mats.find((x) => x.itemId === Number(id)); return s + (m ? m.priceSale * q : 0);
@@ -428,7 +431,9 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   async function submit() {
     setErr("");
     if (nAmount <= 0) { setErr("المبلغ مطلوب"); return; }
-    if (!isDelivery) {
+    if (isTransfer) {
+      if (!newUser.trim()) { setErr("اليوزر الجديد مطلوب لإنجاز التحويل"); return; }
+    } else if (fullFields) {
       if (!details.trim()) { setErr("تفاصيل الصيانة مطلوبة"); return; }
       if (!photo) { setErr("رفع صورة مطلوب"); return; }
     }
@@ -436,7 +441,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
     const materials = Object.entries(picked).map(([id, q]) => ({ itemId: Number(id), qty: q }));
     const r = await fetch("/api/field/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cardId: card.id, serviceDetails: details, amount: nAmount, photo, materials }),
+      body: JSON.stringify({ cardId: card.id, serviceDetails: details, amount: nAmount, newUser, photo, materials }),
     });
     const d = await r.json().catch(() => null);
     setBusy(false);
@@ -448,11 +453,18 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={onClose}>
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-800">{isDelivery ? "🚚 إنجاز توصيل" : "🔧 إنجاز صيانة"}: {card.title}</h3>
+          <h3 className="text-lg font-bold text-slate-800">{isTransfer ? "🔁 إنجاز تحويل" : isDelivery ? "🚚 إنجاز توصيل" : "🔧 إنجاز صيانة"}: {card.title}</h3>
           <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
         </div>
 
-        {!isDelivery && (
+        {isTransfer && (
+          <>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">اليوزر الجديد <span className="text-red-500">*</span></label>
+            <input value={newUser} onChange={(e) => setNewUser(e.target.value)} placeholder="اكتب اليوزر الجديد للمشترك" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </>
+        )}
+
+        {fullFields && (
           <>
             <label className="mb-1 block text-xs font-semibold text-slate-500">تفاصيل الصيانة <span className="text-red-500">*</span></label>
             <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={3} placeholder="ماذا تمّ من عمل..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
@@ -462,7 +474,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
         <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-red-500">*</span></label>
         <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
 
-        {!isDelivery && (
+        {fullFields && (
           <>
             <label className="mb-1 block text-xs font-semibold text-slate-500">المواد المُستهلَكة من ذمّتك (اختياري)</label>
             {mats.length === 0 ? (
@@ -488,7 +500,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
           </>
         )}
 
-        {nAmount > 0 && !isDelivery && Object.keys(picked).length > 0 && (
+        {nAmount > 0 && fullFields && Object.keys(picked).length > 0 && (
           <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
             <div>قيمة المواد المباعة: <b>{materialsTotal.toLocaleString("en-US")}</b></div>
             <div>يُسجَّل للمبيعات: <b className="text-emerald-700">{salesShare.toLocaleString("en-US")}</b> — للنثرية: <b className="text-blue-700">{pettyShare.toLocaleString("en-US")}</b></div>
