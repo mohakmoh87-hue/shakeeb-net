@@ -11,7 +11,18 @@ type Card = {
   label: string | null; dueDate: string | null; position: number; done: boolean;
   amount: number | null; serviceDetails: string | null; completedAt: string | null;
   materialsInfo: string | null;
+  startedAt: string | null; durationSec: number | null; postponedTo: string | null;
 };
+
+// تنسيق مدة بالثواني إلى نص عربي مقروء
+function fmtDuration(sec: number | null): string {
+  if (sec == null) return "";
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return `${h} س ${m} د`;
+  if (m > 0) return `${m} د`;
+  return `${sec} ث`;
+}
+const fmtDateTime = (d: string | null) => (d ? new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
 type Office = { id: number; name: string | null };
 type Technician = { id: number; name: string; phone: string | null };
 type CardType = { id: number; name: string; deliveryOnly: boolean };
@@ -41,6 +52,7 @@ export default function FieldManagementPage() {
   const [cardDue, setCardDue] = useState("");
   const [sel, setSel] = useState<Card | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
+  const [postponing, setPostponing] = useState<Card | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
   // الفنيون والمكاتب (لوحة مستقلّة لكل مكتب، والمدير يختار المكتب)
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -140,6 +152,12 @@ export default function FieldManagementPage() {
     setCards((x) => x.map((c) => (c.id === sel.id ? merged : c)));
     await fetch("/api/field/cards", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: sel.id, ...patch }) });
   }
+  async function startCard() {
+    if (!sel) return;
+    const r = await fetch("/api/field/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cardId: sel.id }) });
+    if (r.ok) { const c = await r.json(); setSel(c); setCards((x) => x.map((y) => (y.id === c.id ? c : y))); }
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر البدء"); }
+  }
   async function deleteCard() {
     if (!sel) return;
     if (!confirm("حذف هذه البطاقة؟")) return;
@@ -198,6 +216,8 @@ export default function FieldManagementPage() {
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
                       {c.dueDate && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 {fmtDue(c.dueDate)}</span>}
                       {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة {c.amount != null ? `— ${Number(c.amount).toLocaleString("en-US")}` : ""}</span>}
+                      {!c.done && c.postponedTo && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 مؤجّلة {fmtDateTime(c.postponedTo)}</span>}
+                      {!c.done && !c.postponedTo && c.startedAt && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-sky-700">⏱ جارية</span>}
                     </div>
                   </div>
                 ))}
@@ -309,31 +329,69 @@ export default function FieldManagementPage() {
             <label className="mb-1 block text-xs font-semibold text-slate-500">تاريخ الاستحقاق</label>
             <input type="date" value={sel.dueDate ? sel.dueDate.slice(0, 10) : ""} onChange={(e) => saveCard({ dueDate: e.target.value || null })} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" dir="ltr" />
 
-            <label className="mb-1 block text-xs font-semibold text-slate-500">الوصف / التفاصيل</label>
-            <textarea value={sel.description ?? ""} onChange={(e) => setSel({ ...sel, description: e.target.value })} onBlur={() => saveCard({ description: sel.description })} rows={4} placeholder="تفاصيل الطلب / الصيانة / التنصيب..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            {/* المحتوى (التفاصيل) لا يظهر إلا بعد ضغط «بدء» */}
+            {(sel.startedAt || sel.done) ? (
+              <>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">الوصف / التفاصيل</label>
+                <textarea value={sel.description ?? ""} onChange={(e) => setSel({ ...sel, description: e.target.value })} onBlur={() => saveCard({ description: sel.description })} rows={4} placeholder="تفاصيل الطلب / الصيانة / التنصيب..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </>
+            ) : (
+              <div className="mb-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-center text-sm text-slate-400">
+                🔒 محتوى البطاقة مخفي — اضغط «بدء العمل» لعرض التفاصيل وبدء احتساب الوقت.
+                {sel.postponedTo && <div className="mt-2 font-bold text-amber-600">📅 مؤجّلة إلى {fmtDateTime(sel.postponedTo)}</div>}
+              </div>
+            )}
 
             {sel.done ? (
               <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
                 <div className="mb-1 font-bold text-emerald-700">✓ منجزة (بانتظار التحصيل)</div>
                 {sel.amount != null && <div className="text-slate-600">المبلغ: <b>{Number(sel.amount).toLocaleString("en-US")}</b> د.ع</div>}
                 {sel.serviceDetails && <div className="text-slate-600">التفاصيل: {sel.serviceDetails}</div>}
+                {sel.durationSec != null && <div className="text-slate-600">⏱ مدة الإنجاز: <b>{fmtDuration(sel.durationSec)}</b></div>}
                 {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
               </div>
-            ) : (
+            ) : !sel.startedAt ? (
               <button
-                onClick={() => { setCompleting(sel); setSel(null); }}
-                disabled={sel.technicianId == null}
-                title={sel.technicianId == null ? "وجّه البطاقة لفني أولاً" : ""}
-                className="mb-3 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={startCard}
+                className="mb-3 w-full rounded-lg bg-mynet-blue px-4 py-3 text-base font-bold text-white hover:bg-mynet-blue-dark"
               >
-                ✓ إنجاز البطاقة
+                ▶ بدء العمل
               </button>
+            ) : (
+              <>
+                <div className="mb-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-center text-xs font-semibold text-emerald-700">⏱ بدأ العمل: {fmtDateTime(sel.startedAt)}</div>
+                <div className="mb-3 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => { setCompleting(sel); setSel(null); }}
+                    disabled={sel.technicianId == null}
+                    title={sel.technicianId == null ? "وجّه البطاقة لفني أولاً" : ""}
+                    className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    ✓ إنجاز
+                  </button>
+                  <button
+                    onClick={() => { setPostponing(sel); setSel(null); }}
+                    className="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-600"
+                  >
+                    📅 تأجيل
+                  </button>
+                </div>
+              </>
             )}
             <div className="flex items-center justify-end">
               <button onClick={deleteCard} className="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100">🗑️ حذف البطاقة</button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* نافذة التأجيل */}
+      {postponing && (
+        <PostponeModal
+          card={postponing}
+          onClose={() => setPostponing(null)}
+          onDone={() => { setPostponing(null); load(officeId); }}
+        />
       )}
 
       {/* نافذة إنجاز البطاقة بحقولها الواجبة */}
@@ -382,6 +440,40 @@ export default function FieldManagementPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ========== نافذة تأجيل البطاقة ========== */
+function PostponeModal({ card, onClose, onDone }: { card: Card; onClose: () => void; onDone: () => void }) {
+  const [when, setWhen] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  async function submit() {
+    setErr("");
+    if (!when) { setErr("حدّد موعد المشترك (تاريخ ووقت)"); return; }
+    setBusy(true);
+    const r = await fetch("/api/field/postpone", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardId: card.id, postponeTo: new Date(when).toISOString() }),
+    });
+    const d = await r.json().catch(() => null);
+    setBusy(false);
+    if (!r.ok) { setErr(d?.error ?? "تعذّر التأجيل"); return; }
+    onDone();
+  }
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-1 text-lg font-bold text-slate-800">📅 تأجيل: {card.title}</h3>
+        <p className="mb-3 text-sm text-slate-500">المشترك غير متواجد — حدّد الموعد الذي يريده.</p>
+        <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
+        <div className="flex gap-2">
+          <button onClick={submit} disabled={busy} className="flex-1 rounded-lg bg-amber-500 px-4 py-2.5 font-semibold text-white hover:bg-amber-600 disabled:opacity-50">{busy ? "جارٍ…" : "تأجيل"}</button>
+          <button onClick={onClose} className="rounded-lg bg-slate-200 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-300">إلغاء</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -64,6 +64,11 @@ export async function POST(request: Request) {
   if (card.technicianId == null) {
     return NextResponse.json({ error: "يجب توجيه البطاقة لفني قبل إنجازها" }, { status: 400 });
   }
+  if (!card.startedAt) {
+    return NextResponse.json({ error: "اضغط «بدء» قبل إنجاز البطاقة" }, { status: 400 });
+  }
+  // مدة الإنجاز = من وقت البدء حتى الآن
+  const durationSec = Math.max(0, Math.round((Date.now() - card.startedAt.getTime()) / 1000));
 
   // نوع البطاقة: توصيل (مبلغ فقط) / تحويل (يوزر جديد إلزامي) / صيانة وغيرها (حقول كاملة)
   const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false } });
@@ -150,7 +155,7 @@ export async function POST(request: Request) {
     await tx.taskCard.update({
       where: { id: cardId },
       data: {
-        done: true, completedAt: new Date(),
+        done: true, completedAt: new Date(), durationSec,
         amount, serviceDetails: serviceDetails?.trim() || null,
         materialsInfo: soldInfo.length ? JSON.stringify(soldInfo) : null,
       },
@@ -173,7 +178,7 @@ export async function POST(request: Request) {
           data: {
             subscriberId: sub.id,
             details: `تحويل اليوزر من «${sub.netUser ?? "—"}» إلى «${nu}»`,
-            technicianName: tech?.name ?? null, cardTitle: card.title, kind: card.kind, date: new Date(),
+            technicianName: tech?.name ?? null, cardTitle: card.title, kind: card.kind, durationSec, date: new Date(),
           },
         });
       }
@@ -186,6 +191,7 @@ export async function POST(request: Request) {
             technicianName: tech?.name ?? null,
             cardTitle: card.title,
             kind: card.kind,
+            durationSec,
             date: new Date(),
           },
         });

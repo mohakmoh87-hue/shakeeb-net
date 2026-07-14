@@ -4,6 +4,7 @@ import TopBar from "@/components/TopBar";
 import MobileNav from "@/components/MobileNav";
 import WhatsAppMonitor from "@/components/WhatsAppMonitor";
 import ReminderPrompt from "@/components/ReminderPrompt";
+import CompletionNotifier from "@/components/CompletionNotifier";
 
 // غلاف الصفحات المحمية: شريط أدوات علوي + المحتوى
 export default async function AppLayout({
@@ -28,6 +29,7 @@ export default async function AppLayout({
 
       <WhatsAppMonitor />
       <ReminderPrompt />
+      <CompletionNotifier />
       <main className="flex-1">{children}</main>
     </div>
   );

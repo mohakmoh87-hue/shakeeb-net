@@ -589,6 +589,10 @@ model TaskCard {
   dueDate      DateTime?
   position     Int       @default(0)
   done         Boolean   @default(false)
+  // دورة حياة البطاقة
+  startedAt    DateTime? // وقت ضغط الفني «بدء» (يُخفى المحتوى قبله ويبدأ احتساب المدة)
+  durationSec  Int? // مدة الإنجاز بالثواني (completedAt − startedAt)
+  postponedTo  DateTime? // موعد التأجيل (عند عدم تواجد المشترك)
   // بيانات الإنجاز
   serviceDetails String? // تفاصيل الصيانة
   amount        Float? // المبلغ المستلم من الزبون
@@ -633,6 +637,7 @@ model MaintenanceLog {
   technicianName String?
   cardTitle      String?
   kind           String? // نوع البطاقة (صيانة/تنصيب...)
+  durationSec    Int? // مدة إنجاز الفني للبطاقة بالثواني
   date           DateTime @default(now())
   createdAt      DateTime @default(now())
 
