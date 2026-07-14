@@ -34,10 +34,17 @@ export async function GET(request: Request) {
     where: { listId: { in: lists.map((l) => l.id) }, isDeleted: false },
     orderBy: { position: "asc" },
   });
-  const technicians = await prisma.technician.findMany({
-    where: { towerId: officeId ?? null, isDeleted: false },
+  // فنّيو المكتب + الفنيون المُعارون له مؤقتاً (دعم)
+  const techRows = await prisma.technician.findMany({
+    where: officeId == null
+      ? { towerId: null, isDeleted: false }
+      : { isDeleted: false, OR: [{ towerId: officeId }, { supportTowerId: officeId }] },
     orderBy: { id: "asc" },
   });
+  const technicians = techRows.map((t) => ({
+    id: t.id, name: t.name, phone: t.phone,
+    isSupport: officeId != null && t.towerId !== officeId && t.supportTowerId === officeId,
+  }));
   const cardTypes = await prisma.cardType.findMany({
     where: { isDeleted: false }, orderBy: [{ position: "asc" }, { id: "asc" }],
   });

@@ -86,9 +86,11 @@ export async function POST(request: Request) {
     if (!photo?.trim()) return NextResponse.json({ error: "رفع صورة مطلوب" }, { status: 400 });
   }
 
-  // مكتب الفني (لعزل المبيعات/النثرية)
   const tech = await prisma.technician.findUnique({ where: { id: card.technicianId } });
-  const towerId = tech?.towerId ?? null;
+  // مكتب البطاقة (حيث تمّ العمل) — لعزل المبيعات/النثرية؛ يهمّ عند الدعم المؤقّت من مكتب آخر
+  const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } });
+  const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
+  const towerId = board?.towerId ?? tech?.towerId ?? null;
 
   // ===== معالجة المواد (للصيانة فقط؛ التوصيل بلا مواد) =====
   const soldInfo: { itemId: number; name: string; qty: number; price: number }[] = [];

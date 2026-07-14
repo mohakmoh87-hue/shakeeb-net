@@ -63,50 +63,55 @@ export default function TopBar({
   if (pathname !== "/dashboard") return null;
 
   return (
-    <header className="no-print hidden border-b border-slate-300 bg-gradient-to-b from-slate-50 to-slate-200 shadow-sm md:block">
-      <div className="flex items-stretch justify-between px-3 py-1.5">
+    <header className="no-print hidden border-b border-slate-200 bg-gradient-to-b from-white to-slate-100 shadow-sm md:block">
+      <div className="flex items-stretch justify-between gap-3 px-4 py-2.5">
         {/* الشعار والمستخدم */}
-        <div className="flex items-center gap-3 border-l border-slate-300 pl-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-mynet-blue font-bold text-white shadow">
+        <div className="flex items-center gap-3 border-l border-slate-200 pl-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-mynet-blue text-lg font-extrabold text-white shadow-md">
             نت
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-bold text-slate-800">{fullName}</div>
-            <div className="text-xs text-slate-500">{roleLabel}</div>
+            <div className="text-base font-bold text-slate-800">{fullName}</div>
+            <div className="text-xs font-medium text-slate-500">{roleLabel}</div>
           </div>
         </div>
 
         {/* مجموعات الأزرار */}
-        <div className="flex flex-1 items-stretch gap-2 px-4">
+        <div className="flex flex-1 items-stretch justify-center gap-2.5">
           {GROUPS.map((g) => (
             <div
               key={g.title}
-              className="flex flex-col rounded-md border border-slate-300/70 bg-white/50 px-2 pb-4 pt-1"
+              className="flex flex-col rounded-2xl border border-slate-200 bg-white px-2.5 pb-1.5 pt-2 shadow-sm"
             >
-              <div className="flex gap-1">
-                {g.items.map((it) => (
-                  <button
-                    key={it.label}
-                    disabled={!it.enabled}
-                    onClick={() =>
-                      it.href &&
-                      (it.href.startsWith("/api/")
-                        ? window.open(it.href, "_blank")
-                        : router.push(it.href))
-                    }
-                    title={it.enabled ? it.label : "قريباً"}
-                    className={`flex w-16 flex-col items-center gap-1 rounded px-1 py-1 text-center text-[11px] transition ${
-                      it.enabled
-                        ? "text-slate-700 hover:bg-blue-50"
-                        : "cursor-not-allowed text-slate-400"
-                    }`}
-                  >
-                    <span className="text-xl">{it.icon}</span>
-                    <span className="leading-tight">{it.label}</span>
-                  </button>
-                ))}
+              <div className="flex flex-1 items-stretch gap-1">
+                {g.items.map((it) => {
+                  const active = it.href === pathname;
+                  return (
+                    <button
+                      key={it.label}
+                      disabled={!it.enabled}
+                      onClick={() =>
+                        it.href &&
+                        (it.href.startsWith("/api/")
+                          ? window.open(it.href, "_blank")
+                          : router.push(it.href))
+                      }
+                      title={it.enabled ? it.label : "قريباً"}
+                      className={`flex w-[74px] flex-col items-center justify-start gap-1.5 rounded-xl px-1 py-2 text-center text-xs font-medium transition ${
+                        !it.enabled
+                          ? "cursor-not-allowed text-slate-300"
+                          : active
+                          ? "bg-blue-100 text-mynet-blue"
+                          : "text-slate-700 hover:-translate-y-0.5 hover:bg-blue-50 hover:text-mynet-blue"
+                      }`}
+                    >
+                      <span className="text-[26px] leading-none">{it.icon}</span>
+                      <span className="leading-tight">{it.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-              <span className="mt-auto text-center text-[10px] text-slate-400">
+              <span className="mt-1 rounded-full bg-slate-100 py-0.5 text-center text-[11px] font-semibold text-slate-500">
                 {g.title}
               </span>
             </div>
@@ -114,12 +119,12 @@ export default function TopBar({
         </div>
 
         {/* خروج */}
-        <div className="flex items-center gap-3 border-r border-slate-300 pr-4">
+        <div className="flex items-center border-r border-slate-200 pr-4">
           <button
             onClick={logout}
-            className="rounded-lg bg-slate-200 px-3 py-2 text-xs text-slate-700 transition hover:bg-red-100 hover:text-red-600"
+            className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-red-100 hover:text-red-600"
           >
-            خروج
+            🚪 خروج
           </button>
         </div>
       </div>

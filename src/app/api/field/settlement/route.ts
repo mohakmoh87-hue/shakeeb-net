@@ -12,7 +12,9 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const manager = isFieldManager(session);
 
-  const techWhere = manager ? { isDeleted: false } : { isDeleted: false, towerId: session.towerId ?? null };
+  const techWhere = manager
+    ? { isDeleted: false }
+    : { isDeleted: false, OR: [{ towerId: session.towerId ?? null }, { supportTowerId: session.towerId ?? null }] };
   const technicians = await prisma.technician.findMany({
     where: techWhere,
     select: { id: true, name: true, towerId: true },

@@ -24,7 +24,7 @@ function fmtDuration(sec: number | null): string {
 }
 const fmtDateTime = (d: string | null) => (d ? new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
 type Office = { id: number; name: string | null };
-type Technician = { id: number; name: string; phone: string | null };
+type Technician = { id: number; name: string; phone: string | null; isSupport?: boolean };
 type CardType = { id: number; name: string; deliveryOnly: boolean };
 
 const LABELS = [
@@ -61,6 +61,7 @@ export default function FieldManagementPage() {
   const [isManager, setIsManager] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [techModal, setTechModal] = useState(false);
+  const [supportModal, setSupportModal] = useState(false);
   const [techName, setTechName] = useState("");
   const [techPhone, setTechPhone] = useState("");
 
@@ -235,7 +236,7 @@ export default function FieldManagementPage() {
                       </select>
                       <select value={cardTech} onChange={(e) => setCardTech(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
                         <option value="">— بدون فني —</option>
-                        {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isSupport ? " (دعم)" : ""}</option>)}
                       </select>
                     </div>
                     <input type="date" value={cardDue} onChange={(e) => setCardDue(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs" />
@@ -274,6 +275,11 @@ export default function FieldManagementPage() {
           {canManage && (
             <button onClick={() => setTechModal(true)} className="rounded-lg bg-emerald-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-emerald-600">
               👷 الفنيون ({technicians.length})
+            </button>
+          )}
+          {officeId != null && (
+            <button onClick={() => setSupportModal(true)} className="rounded-lg bg-purple-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-purple-600">
+              🤝 دعم مؤقت
             </button>
           )}
         </div>
@@ -318,7 +324,7 @@ export default function FieldManagementPage() {
                 className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               >
                 <option value="">— بدون فني —</option>
-                {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isSupport ? " (دعم)" : ""}</option>)}
               </select>
             ) : (
               <div className="mb-3 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">
@@ -394,6 +400,11 @@ export default function FieldManagementPage() {
         />
       )}
 
+      {/* نافذة الدعم المؤقّت */}
+      {supportModal && officeId != null && (
+        <SupportModal officeId={officeId} onClose={() => setSupportModal(false)} onChange={() => load(officeId)} />
+      )}
+
       {/* نافذة إنجاز البطاقة بحقولها الواجبة */}
       {completing && (
         <CompletionModal
@@ -440,6 +451,72 @@ export default function FieldManagementPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ========== نافذة الدعم المؤقّت (استعارة فني من مكتب آخر) ========== */
+type SupportTech = { id: number; name: string; homeOffice: string };
+function SupportModal({ officeId, onClose, onChange }: { officeId: number; onClose: () => void; onChange: () => void }) {
+  const [borrowed, setBorrowed] = useState<SupportTech[]>([]);
+  const [candidates, setCandidates] = useState<SupportTech[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    fetch(`/api/field/support?officeId=${officeId}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) { setBorrowed(d.borrowed ?? []); setCandidates(d.candidates ?? []); }
+    });
+  }, [officeId]);
+  useEffect(() => { load(); }, [load]);
+
+  async function borrow(id: number) {
+    setBusy(true);
+    await fetch("/api/field/support", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId: id, officeId }) });
+    setBusy(false); load(); onChange();
+  }
+  async function ret(id: number) {
+    setBusy(true);
+    await fetch(`/api/field/support?technicianId=${id}`, { method: "DELETE" });
+    setBusy(false); load(); onChange();
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-800">🤝 دعم مؤقّت</h3>
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">استعِر فنياً من مكتب آخر ليعمل مؤقتاً في هذا المكتب وقت الضغط. يظهر ضمن فنّييك ويمكن توجيه البطاقات إليه.</p>
+
+        {borrowed.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-1.5 text-sm font-bold text-purple-700">المُعارون حالياً</div>
+            <ul className="space-y-1.5">
+              {borrowed.map((t) => (
+                <li key={t.id} className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
+                  <div><div className="text-sm font-semibold text-slate-700">{t.name}</div><div className="text-xs text-slate-400">من {t.homeOffice}</div></div>
+                  <button disabled={busy} onClick={() => ret(t.id)} className="rounded bg-white px-2.5 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-100">↩ إرجاع</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="mb-1.5 text-sm font-bold text-slate-700">فنيّو المكاتب الأخرى</div>
+        {candidates.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 p-3 text-center text-sm text-slate-400">لا يوجد فنيون متاحون للاستعارة</div>
+        ) : (
+          <ul className="space-y-1.5">
+            {candidates.map((t) => (
+              <li key={t.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div><div className="text-sm font-semibold text-slate-700">{t.name}</div><div className="text-xs text-slate-400">من {t.homeOffice}</div></div>
+                <button disabled={busy} onClick={() => borrow(t.id)} className="rounded bg-purple-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-purple-600">استعارة</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
