@@ -626,9 +626,10 @@ model CardPhoto {
 // حواسيب المكاتب المُسجَّلة في النظام الهجين (العمّال) — للأولوية وانتخاب القائد (مضيف واتساب)
 model HybridWorker {
   id        Int      @id @default(autoincrement())
-  machineId String   @unique // معرّف ثابت للحاسبة (يولّده المُنصِّب)
-  name      String? // اسم الحاسبة/المكتب (للعرض)
-  towerId   Int? // المكتب التابع له (اختياري)
+  machineId  String  @unique // معرّف ثابت للحاسبة (يولّده المُنصِّب)
+  name       String? // اسم الحاسبة/المكتب (للعرض)
+  nodeNumber Int? // رقم العقدة في نظام المعرّفات المُنطَّقة (السحابة=0، الحواسيب 1..)؛ نطاقها = nodeNumber×10^8
+  towerId    Int? // المكتب التابع له (اختياري)
   priority  Int      @default(100) // الأصغر = أعلى أولوية ليكون القائد
   lastSeen  DateTime @default(now()) // آخر نبضة heartbeat
   createdAt DateTime @default(now())

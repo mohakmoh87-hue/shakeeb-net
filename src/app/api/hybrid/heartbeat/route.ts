@@ -13,12 +13,21 @@ export async function POST(request: Request) {
   const name = b?.name ? String(b.name).slice(0, 120) : null;
   const towerId = b?.towerId != null ? Number(b.towerId) : null;
 
+  const existing = await prisma.hybridWorker.findUnique({ where: { machineId }, select: { nodeNumber: true } });
+
+  let nodeNumber = existing?.nodeNumber ?? null;
+  if (nodeNumber == null) {
+    // تعيين رقم عقدة فريد (السحابة=0؛ الحواسيب تبدأ من 1) لنظام المعرّفات المُنطَّقة
+    const agg = await prisma.hybridWorker.aggregate({ _max: { nodeNumber: true } });
+    nodeNumber = (agg._max.nodeNumber ?? 0) + 1;
+  }
+
   await prisma.hybridWorker.upsert({
     where: { machineId },
-    update: { lastSeen: new Date(), ...(name ? { name } : {}), ...(towerId != null ? { towerId } : {}) },
-    create: { machineId, name, towerId, lastSeen: new Date() },
+    update: { lastSeen: new Date(), nodeNumber, ...(name ? { name } : {}), ...(towerId != null ? { towerId } : {}) },
+    create: { machineId, name, towerId, nodeNumber, lastSeen: new Date() },
   });
 
   const leader = await computeLeaderMachineId();
-  return NextResponse.json({ ok: true, isLeader: leader === machineId, leaderMachineId: leader });
+  return NextResponse.json({ ok: true, isLeader: leader === machineId, leaderMachineId: leader, nodeNumber });
 }
