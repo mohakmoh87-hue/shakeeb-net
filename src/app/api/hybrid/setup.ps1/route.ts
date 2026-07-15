@@ -46,7 +46,8 @@ if (-not (Test-Path $envFile)) {
   $db = Read-Host "الصق رابط قاعدة بيانات Neon (DATABASE_URL)"
   $chars = (48..57) + (65..90) + (97..122)
   $secret = -join ($chars | Get-Random -Count 48 | ForEach-Object { [char]$_ })
-  $lines = @(("DATABASE_URL=" + $db), ("AUTH_SECRET=" + $secret), "RUN_WORKER=1")
+  $machineId = [guid]::NewGuid().ToString()
+  $lines = @(("DATABASE_URL=" + $db), ("AUTH_SECRET=" + $secret), "RUN_WORKER=1", ("MACHINE_ID=" + $machineId))
   Set-Content -Encoding utf8 -Path $envFile -Value $lines
 }
 

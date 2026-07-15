@@ -123,7 +123,11 @@ export default function ManagerAccountsPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="حسابات المدير" subtitle="حسابات الإدارة وواتساب المكاتب" />
+      <PageHeader
+        title="حسابات المدير"
+        subtitle="حسابات الإدارة وواتساب المكاتب"
+        action={<a href="/hybrid" className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700">🖥️ حواسيب النظام الهجين</a>}
+      />
 
       {/* واتساب المكاتب — فتح محادثات كل مكتب والرد عليها */}
       {waOffices.length > 0 && (

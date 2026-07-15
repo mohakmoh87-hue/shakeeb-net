@@ -623,6 +623,19 @@ model CardPhoto {
   @@map("card_photos")
 }
 
+// حواسيب المكاتب المُسجَّلة في النظام الهجين (العمّال) — للأولوية وانتخاب القائد (مضيف واتساب)
+model HybridWorker {
+  id        Int      @id @default(autoincrement())
+  machineId String   @unique // معرّف ثابت للحاسبة (يولّده المُنصِّب)
+  name      String? // اسم الحاسبة/المكتب (للعرض)
+  towerId   Int? // المكتب التابع له (اختياري)
+  priority  Int      @default(100) // الأصغر = أعلى أولوية ليكون القائد
+  lastSeen  DateTime @default(now()) // آخر نبضة heartbeat
+  createdAt DateTime @default(now())
+
+  @@map("hybrid_workers")
+}
+
 // أنواع البطاقات (توصيل/تحويل/اعادة/صيانة/تنصيب + أنواع يضيفها المستخدم)
 // deliveryOnly = بطاقة مبلغ فقط (كالتوصيل) لا تتطلّب تفاصيل/صورة عند الإنجاز.
 model CardType {

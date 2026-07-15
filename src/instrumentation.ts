@@ -8,5 +8,8 @@ export async function register() {
     // خادم صحّة الوكيل (منفذ 47615) — يجعل الحاسبة قابلة للكشف من الموقع فيتوقّف إشعار الإعداد
     const { startAgentHealthServer } = await import("@/lib/agentHealth");
     startAgentHealthServer();
+    // نبضة النظام الهجين — تسجّل الحاسبة وتحسم القيادة (مضيف واتساب)
+    const { startHybridAgent } = await import("@/lib/hybridAgent");
+    startHybridAgent();
   }
 }

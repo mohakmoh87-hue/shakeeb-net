@@ -218,6 +218,25 @@ function baghdadHHMM(): string {
   }).format(new Date());
 }
 
+// بدء جلسات واتساب لكل مكتب (للقائد فقط) — تُستدعى عند الإقلاع وعند تولّي القيادة (مرّة واحدة)
+let officeWaStarted = false;
+async function ensureOfficeWhatsApp() {
+  if (officeWaStarted) return;
+  officeWaStarted = true;
+  try {
+    const { startWhatsApp } = await import("@/lib/whatsapp");
+    const offices = await prisma.tower.findMany({
+      where: { isDeleted: false, OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }] },
+      select: { id: true },
+    });
+    for (const o of offices) { try { await startWhatsApp(o.id); } catch { /* ignore */ } }
+    if (offices.length) console.log(`[scheduler] بدء واتساب ${offices.length} مكتب (قائد)`);
+  } catch (e) {
+    officeWaStarted = false; // سماح بإعادة المحاولة لاحقاً
+    console.error("[scheduler] office WA start:", e);
+  }
+}
+
 export function startScheduler() {
   if (g.__schedulerStarted) return;
   g.__schedulerStarted = true;
@@ -226,6 +245,11 @@ export function startScheduler() {
   // reminderTime = تذكير الانتهاء (افتراضي 13:00)، reportTime = تقرير المدير (افتراضي 23:55)
   cron.schedule("* * * * *", async () => {
     const nowHM = baghdadHHMM();
+    // القائد فقط ينفّذ العمل (إرسال/مزامنة/تنظيف) — يمنع الازدواج عند تعدّد الحواسيب
+    const { isLeaderNow } = await import("@/lib/hybridAgent");
+    if (!isLeaderNow()) return;
+    // القائد يستضيف واتساب لكل المكاتب (يشمل حالة تولّي القيادة بعد انطفاء غيره)
+    void ensureOfficeWhatsApp();
     const reminderTime = (await getSetting("reminderTime", "13:00")).trim() || "13:00";
     const reportTime = (await getSetting("reportTime", "23:55")).trim() || "23:55";
     if (nowHM === reminderTime) {
@@ -264,24 +288,15 @@ export function startScheduler() {
 
   console.log("[scheduler] started (Asia/Baghdad): تذكير الانتهاء (افتراضي 13:00) وتقرير المدير (افتراضي 23:55) حسب الإعدادات");
 
-  // إعادة تشغيل جلسات واتساب لكل مكتب مفعّل عند الإقلاع (تتصل من الجلسة المحفوظة)
-  void (async () => {
-    try {
-      const { startWhatsApp } = await import("@/lib/whatsapp");
-      // نُشغّل جلسة واتساب لكل مكتب يحتاج الإرسال (لمشتركيه أو لمديره) — مستقل عن مفتاح رسائل المشتركين
-      const offices = await prisma.tower.findMany({
-        where: { isDeleted: false, OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }] },
-        select: { id: true },
-      });
-      for (const o of offices) { try { await startWhatsApp(o.id); } catch { /* ignore */ } }
-      if (offices.length) console.log(`[scheduler] بدء واتساب ${offices.length} مكتب`);
-    } catch (e) { console.error("[scheduler] office WA start:", e); }
-
-    // مهام بدء التشغيل بعد إتاحة وقت لاتصال الواتساب (~30ث):
-    //  (أ) تدارك تقرير الأمس إن نُسي إرساله، (ب) إفراغ كل الرسائل المؤجّلة.
+  // بدء واتساب ومهام الإقلاع بعد ~5ث (بعد أول نبضة تحسم القيادة) — للقائد فقط
+  setTimeout(async () => {
+    const { isLeaderNow } = await import("@/lib/hybridAgent");
+    if (!isLeaderNow()) return;
+    void ensureOfficeWhatsApp();
+    // بعد إتاحة وقت لاتصال الواتساب: تدارك تقرير الأمس + إفراغ الرسائل المؤجّلة
     setTimeout(() => {
       catchUpManagerReport().catch((e) => console.error("[scheduler] catchup report:", e));
       flushPendingMessages().catch((e) => console.error("[scheduler] startup flush:", e));
     }, 30000);
-  })();
+  }, 5000);
 }
