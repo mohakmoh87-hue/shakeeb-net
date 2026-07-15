@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const name = b?.name ? String(b.name).slice(0, 120) : null;
   const towerId = b?.towerId != null ? Number(b.towerId) : null;
 
-  const existing = await prisma.hybridWorker.findUnique({ where: { machineId }, select: { nodeNumber: true } });
+  const existing = await prisma.hybridWorker.findUnique({ where: { machineId }, select: { nodeNumber: true, approved: true } });
 
   let nodeNumber = existing?.nodeNumber ?? null;
   if (nodeNumber == null) {
@@ -24,10 +24,12 @@ export async function POST(request: Request) {
 
   await prisma.hybridWorker.upsert({
     where: { machineId },
-    update: { lastSeen: new Date(), nodeNumber, ...(name ? { name } : {}), ...(towerId != null ? { towerId } : {}) },
-    create: { machineId, name, towerId, nodeNumber, lastSeen: new Date() },
+    // لا نُحدّث الاسم عند النبضة حتى يبقى الاسم الذي حدّده المدير؛ الاسم يُضبط عند الإنشاء فقط
+    update: { lastSeen: new Date(), nodeNumber, ...(towerId != null ? { towerId } : {}) },
+    create: { machineId, name, towerId, nodeNumber, lastSeen: new Date() }, // approved=false افتراضياً
   });
 
+  const approved = existing?.approved ?? false;
   const leader = await computeLeaderMachineId();
-  return NextResponse.json({ ok: true, isLeader: leader === machineId, leaderMachineId: leader, nodeNumber });
+  return NextResponse.json({ ok: true, approved, isLeader: leader === machineId, leaderMachineId: leader, nodeNumber });
 }

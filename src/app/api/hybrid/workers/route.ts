@@ -22,21 +22,25 @@ export async function GET() {
     workers: workers.map((w) => ({
       id: w.id, machineId: w.machineId, name: w.name, towerId: w.towerId,
       officeName: w.towerId != null ? tn.get(w.towerId) ?? null : null,
-      priority: w.priority, lastSeen: w.lastSeen,
+      priority: w.priority, approved: w.approved, lastSeen: w.lastSeen,
       online: isOnline(w.lastSeen), isLeader: leader === w.machineId,
     })),
   });
 }
 
-// تعديل أولوية حاسبة (الأصغر = يصير القائد)
+// تعديل حاسبة: الأولوية، الاسم، أو الموافقة/الإيقاف
 export async function PATCH(request: Request) {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
   const b = await request.json().catch(() => null);
   const id = Number(b?.id);
-  const priority = Number(b?.priority);
-  if (!id || !Number.isFinite(priority)) return NextResponse.json({ error: "بيانات ناقصة" }, { status: 400 });
-  await prisma.hybridWorker.update({ where: { id }, data: { priority: Math.max(0, Math.round(priority)) } });
+  if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
+  const data: Record<string, unknown> = {};
+  if (b?.priority != null && Number.isFinite(Number(b.priority))) data.priority = Math.max(0, Math.round(Number(b.priority)));
+  if (typeof b?.name === "string") data.name = b.name.trim().slice(0, 120) || null;
+  if (typeof b?.approved === "boolean") data.approved = b.approved;
+  if (Object.keys(data).length === 0) return NextResponse.json({ error: "لا تغيير" }, { status: 400 });
+  await prisma.hybridWorker.update({ where: { id }, data });
   return NextResponse.json({ ok: true });
 }
 

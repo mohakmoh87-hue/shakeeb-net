@@ -5,7 +5,7 @@ import PageHeader from "@/components/PageHeader";
 
 type Worker = {
   id: number; machineId: string; name: string | null; towerId: number | null;
-  officeName: string | null; priority: number; lastSeen: string; online: boolean; isLeader: boolean;
+  officeName: string | null; priority: number; approved: boolean; lastSeen: string; online: boolean; isLeader: boolean;
 };
 
 const fmtTime = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -15,6 +15,7 @@ export default function HybridWorkersPage() {
   const [denied, setDenied] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [edits, setEdits] = useState<Record<number, string>>({});
+  const [nameEdits, setNameEdits] = useState<Record<number, string>>({});
 
   const load = useCallback(() => {
     fetch("/api/hybrid/workers").then((r) => {
@@ -31,8 +32,17 @@ export default function HybridWorkersPage() {
     const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: w.id, priority: val }) });
     if (r.ok) { setEdits((e) => { const n = { ...e }; delete n[w.id]; return n; }); load(); }
   }
+  async function saveName(w: Worker) {
+    const val = (nameEdits[w.id] ?? w.name ?? "").trim();
+    const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: w.id, name: val }) });
+    if (r.ok) { setNameEdits((e) => { const n = { ...e }; delete n[w.id]; return n; }); load(); }
+  }
+  async function setApproved(w: Worker, approved: boolean) {
+    const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: w.id, approved }) });
+    if (r.ok) load();
+  }
   async function remove(w: Worker) {
-    if (!confirm(`حذف الحاسبة «${w.name ?? w.machineId}» من القائمة؟`)) return;
+    if (!confirm(`حذف الحاسبة «${w.name ?? w.machineId}» نهائياً؟\nلن تعود جزءاً من النظام الهجين إلا إذا سُجّلت ووُوفق عليها من جديد.`)) return;
     const r = await fetch(`/api/hybrid/workers?id=${w.id}`, { method: "DELETE" });
     if (r.ok) load();
   }
@@ -58,8 +68,8 @@ export default function HybridWorkersPage() {
           <table className="w-full text-right text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th className="p-3">الحاسبة / المكتب</th><th className="p-3">الأولوية</th>
-                <th className="p-3">الحالة</th><th className="p-3">القائد</th>
+                <th className="p-3">اسم الحاسبة</th><th className="p-3">المكتب</th><th className="p-3">الأولوية</th>
+                <th className="p-3">الاعتماد</th><th className="p-3">الاتصال</th><th className="p-3">القائد</th>
                 <th className="p-3">آخر ظهور</th><th className="p-3"></th>
               </tr>
             </thead>
@@ -67,16 +77,27 @@ export default function HybridWorkersPage() {
               {workers.map((w) => (
                 <tr key={w.id} className="border-t border-slate-100">
                   <td className="p-3">
-                    <div className="font-semibold text-slate-800">{w.name ?? "—"}</div>
-                    <div className="text-xs text-slate-400">{w.officeName ?? "بلا مكتب"}</div>
+                    <div className="flex items-center gap-1">
+                      <input value={nameEdits[w.id] ?? w.name ?? ""} placeholder={w.machineId.slice(0, 8)} onChange={(e) => setNameEdits((x) => ({ ...x, [w.id]: e.target.value }))} className="w-40 rounded border border-slate-300 px-2 py-1 text-sm" />
+                      {nameEdits[w.id] != null && nameEdits[w.id] !== (w.name ?? "") && (
+                        <button onClick={() => saveName(w)} className="rounded bg-mynet-blue px-2 py-1 text-xs font-semibold text-white">حفظ</button>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-slate-300" dir="ltr">{w.machineId.slice(0, 13)}…</div>
                   </td>
+                  <td className="p-3 text-slate-500">{w.officeName ?? "—"}</td>
                   <td className="p-3">
                     <div className="flex items-center gap-1">
-                      <input type="number" value={edits[w.id] ?? String(w.priority)} onChange={(e) => setEdits((x) => ({ ...x, [w.id]: e.target.value }))} className="w-20 rounded border border-slate-300 px-2 py-1 text-center" />
+                      <input type="number" value={edits[w.id] ?? String(w.priority)} onChange={(e) => setEdits((x) => ({ ...x, [w.id]: e.target.value }))} className="w-16 rounded border border-slate-300 px-2 py-1 text-center" />
                       {edits[w.id] != null && Number(edits[w.id]) !== w.priority && (
                         <button onClick={() => savePriority(w)} className="rounded bg-mynet-blue px-2 py-1 text-xs font-semibold text-white">حفظ</button>
                       )}
                     </div>
+                  </td>
+                  <td className="p-3">
+                    {w.approved
+                      ? <button onClick={() => setApproved(w, false)} className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-200" title="اضغط للإيقاف">✅ معتمَدة</button>
+                      : <button onClick={() => setApproved(w, true)} className="rounded-full bg-amber-500 px-3 py-1 text-xs font-bold text-white hover:bg-amber-600">تفعيل</button>}
                   </td>
                   <td className="p-3">
                     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${w.online ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>

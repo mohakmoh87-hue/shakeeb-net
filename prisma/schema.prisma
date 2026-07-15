@@ -660,7 +660,8 @@ model CardPhoto {
 model HybridWorker {
   id        Int      @id @default(autoincrement())
   machineId  String  @unique // معرّف ثابت للحاسبة (يولّده المُنصِّب)
-  name       String? // اسم الحاسبة/المكتب (للعرض)
+  name       String? // اسم الحاسبة (يحدّده المدير للتمييز)
+  approved   Boolean @default(false) // لا تصبح جزءاً فعّالاً من النظام الهجين إلا بموافقة المدير
   nodeNumber Int? // رقم العقدة في نظام المعرّفات المُنطَّقة (السحابة=0، الحواسيب 1..)؛ نطاقها = nodeNumber×10^8
   towerId    Int? // المكتب التابع له (اختياري)
   priority  Int      @default(100) // الأصغر = أعلى أولوية ليكون القائد
