@@ -4,15 +4,19 @@ import { useEffect, useState } from "react";
 
 // منفذ الوكيل المحلي (يستمع عليه برنامج شكيب نت المُنصَّب على حاسبة المكتب)
 const AGENT_PORT = 47615;
+const DISMISS_KEY = "shakeebnet_agent_installed"; // علامة إخفاء دائم لهذه الحاسبة/المتصفّح
 
-// إشعار إعداد الحاسبة ضمن النظام الهجين — يظهر لكل مستخدم غير مدير عند كل دخول،
-// ويكتشف فعلياً وجود الوكيل على الحاسبة (localhost)؛ فور تنصيبه يتوقّف الإشعار تلقائياً.
+// إشعار إعداد الحاسبة ضمن النظام الهجين — يظهر لكل مستخدم غير مدير عند كل دخول.
+// يتوقّف تلقائياً فور اكتشاف الوكيل على localhost، أو يدوياً عبر زرّ «تم التثبيت» (لمتصفّحات
+// تحجب فحص localhost من صفحة https رغم أن الوكيل شغّال).
 export default function HybridOnboarding({ isAdmin }: { isAdmin: boolean }) {
   const [status, setStatus] = useState<"checking" | "installed" | "missing">("checking");
   const [showSteps, setShowSteps] = useState(false);
 
   useEffect(() => {
     if (isAdmin) return; // المدير لا يحتاج تنصيب الوكيل
+    // إخفاء دائم إن أكّد المستخدم التثبيت سابقاً على هذه الحاسبة
+    try { if (localStorage.getItem(DISMISS_KEY) === "1") { setStatus("installed"); return; } } catch { /* ignore */ }
     let alive = true;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 1800);
@@ -23,6 +27,11 @@ export default function HybridOnboarding({ isAdmin }: { isAdmin: boolean }) {
       .finally(() => clearTimeout(timer));
     return () => { alive = false; ctrl.abort(); clearTimeout(timer); };
   }, [isAdmin]);
+
+  function dismissForever() {
+    try { localStorage.setItem(DISMISS_KEY, "1"); } catch { /* ignore */ }
+    setStatus("installed");
+  }
 
   // لا يظهر للمدير، ولا أثناء الفحص، ولا عند اكتشاف الوكيل مُنصَّباً
   if (isAdmin || status !== "missing") return null;
@@ -53,9 +62,12 @@ export default function HybridOnboarding({ isAdmin }: { isAdmin: boolean }) {
               <li className="flex gap-2"><span className="font-bold text-mynet-blue">٢.</span> شغّل الملف بنقرة مزدوجة ووافق على تنبيه ويندوز.</li>
               <li className="flex gap-2"><span className="font-bold text-mynet-blue">٣.</span> امسح رمز واتساب (QR) بهاتف المكتب عند طلبه.</li>
             </ol>
-            <p className="mb-4 text-xs text-slate-400">سيختفي هذا الإشعار تلقائياً فور اكتمال التنصيب وتشغيل الوكيل.</p>
-            <button onClick={() => setStatus("installed")} className="w-full rounded-xl bg-emerald-600 py-3 font-bold text-white hover:bg-emerald-700">
-              إخفاء الآن
+            <p className="mb-3 text-xs text-slate-400">يختفي تلقائياً فور تشغيل الوكيل. وإن ثبّتّه ولم يختفِ (بعض المتصفّحات تحجب الفحص) اضغط الزرّ الأخضر لإخفائه نهائياً على هذه الحاسبة.</p>
+            <button onClick={dismissForever} className="mb-2 w-full rounded-xl bg-emerald-600 py-3 font-bold text-white hover:bg-emerald-700">
+              ✅ تم التثبيت — أخفِ نهائياً على هذه الحاسبة
+            </button>
+            <button onClick={() => setStatus("installed")} className="w-full rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-200">
+              إخفاء لهذه المرة فقط
             </button>
           </div>
         )}
