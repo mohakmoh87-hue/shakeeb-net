@@ -246,7 +246,6 @@ export default function SubscribersPage() {
         </ToolGroup>
         <ToolGroup title="الاشتراكات">
           <ToolBtn icon="📊" label="تقارير الوصولات + الديون" onClick={() => router.push("/reports/detailed")} />
-          <ToolBtn icon="✅" label="تفعيل الاشتراك" highlight onClick={() => selected && setActivating(selected)} disabled={!selected} />
           <ToolBtn icon="💵" label="تسديد اشتراك" onClick={() => router.push("/debts")} />
           <ToolBtn icon="🅰️" label="اضافة دين سابقة" danger onClick={() => selected && setActivating(selected)} disabled={!selected} />
         </ToolGroup>
@@ -581,9 +580,9 @@ export default function SubscribersPage() {
 /* ===== عناصر واجهة ===== */
 function ToolGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col rounded border border-slate-200 bg-white/60 px-1 pb-3 pt-1">
-      <div className="flex gap-0.5">{children}</div>
-      <span className="mt-auto text-center text-[9px] text-slate-400">{title}</span>
+    <div className="flex flex-col rounded-2xl border border-slate-200 bg-white px-2.5 pb-1.5 pt-2 shadow-sm">
+      <div className="flex flex-1 items-stretch gap-1">{children}</div>
+      <span className="mt-1 rounded-full bg-slate-100 py-0.5 text-center text-[11px] font-semibold text-slate-500">{title}</span>
     </div>
   );
 }
@@ -593,9 +592,11 @@ function ToolBtn({ icon, label, onClick, highlight, danger, disabled }: { icon: 
       onClick={onClick}
       disabled={disabled}
       title={label}
-      className={`flex w-[74px] flex-col items-center gap-1 rounded px-1 py-1 text-center text-[10px] leading-tight transition ${disabled ? "cursor-not-allowed text-slate-300" : "text-slate-700 hover:bg-blue-50"}`}
+      className={`flex w-[74px] flex-col items-center justify-start gap-1.5 rounded-xl px-1 py-2 text-center text-xs font-medium leading-tight transition ${
+        disabled ? "cursor-not-allowed text-slate-300" : "text-slate-700 hover:-translate-y-0.5 hover:bg-blue-50 hover:text-mynet-blue"
+      }`}
     >
-      <span className={`flex h-7 w-7 items-center justify-center rounded text-base ${highlight ? "bg-emerald-100" : danger ? "bg-red-100" : ""}`}>{icon}</span>
+      <span className={`flex h-9 w-9 items-center justify-center rounded-lg text-[22px] leading-none ${highlight ? "bg-emerald-100" : danger ? "bg-red-100" : "bg-slate-50"}`}>{icon}</span>
       <span>{label}</span>
     </button>
   );

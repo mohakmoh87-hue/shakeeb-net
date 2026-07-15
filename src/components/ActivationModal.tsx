@@ -90,13 +90,10 @@ export default function ActivationModal({
   const directLink = sasDirectUrl(tower, subscriber);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
 
-  // تسجيل الدخول التلقائي للوحة SAS4 المضمّنة ثم تحميلها.
-  // الدخول التلقائي عبر البروكسي يعمل من اللوكل هوست فقط؛ من الموقع المنشور يُفتح
-  // رابط SAS المباشر (دخول يدوي) لأن البروكسي غير متاح على الإنترنت.
+  // تسجيل الدخول التلقائي للوحة SAS4 المضمّنة عبر البروكسي (نفس origin) ثم تحميلها.
+  // يعمل محلياً وعلى الموقع المنشور معاً؛ وعند تعذّره يُفتح الرابط المباشر كبديل.
   useEffect(() => {
     let active = true;
-    const isLocal = typeof window !== "undefined" && /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
-    if (!isLocal) { setFrameSrc(directLink); return; } // الموقع: دخول يدوي بلا بروكسي
     const proxied = sasUrl(subscriber);
     if (!subscriber.towerId || !proxied) { setFrameSrc(directLink); return; }
     prepareSasEmbed(subscriber.towerId).then((ok) => {
