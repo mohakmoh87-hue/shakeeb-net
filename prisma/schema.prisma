@@ -54,6 +54,7 @@ model AuditLog {
 
   user User? @relation(fields: [userId], references: [id])
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("audit_logs")
 }
 
@@ -64,6 +65,7 @@ model Group {
   balance   Float   @default(0)
   isDeleted Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("groups")
 }
 
@@ -97,6 +99,7 @@ model Tower {
   lastReportDate String? // آخر يوم (YYYY-MM-DD) أُرسل فيه التقرير اليومي للمدير (لمنع تكراره)
   isDeleted   Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([groupId])
   @@map("towers")
 }
@@ -117,6 +120,7 @@ model TowerInfo {
   notes      String?
   isDeleted  Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([towerId])
   @@map("tower_info")
 }
@@ -132,6 +136,7 @@ model Package {
   towerId     Int? // card_brigfk
   isDeleted   Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([towerId])
   @@map("packages")
 }
@@ -180,6 +185,7 @@ model Subscriber {
   lastSmsDate  DateTime?
   isDeleted    Boolean   @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([packageId])
   @@index([towerId])
   @@index([groupId])
@@ -200,6 +206,7 @@ model Account {
   towerId   Int? // المكتب المالك للحساب (قائمة حسابات مستقلة لكل مكتب؛ المدير يرى الكل)
   isDeleted Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([towerId])
   @@map("accounts")
 }
@@ -234,6 +241,7 @@ model SubscriptionEntry {
   isMaster     Boolean   @default(false) // تفعيل ماستر (واصل كامل، ويُسجَّل بحساب الماستر المستقل)
   isDeleted    Boolean   @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([subscriberId])
   @@index([towerId])
   @@index([date])
@@ -256,6 +264,7 @@ model MoneyTx {
   towerId    Int? // البرج/المكتب الذي تخصّه الحركة (لتقارير كل برج)
   isDeleted  Boolean   @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([accountId])
   @@index([date])
   @@index([sourceType, sourceId])
@@ -276,6 +285,7 @@ model Box {
   notes     String?
   isDeleted Boolean   @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("boxes")
 }
 
@@ -287,6 +297,7 @@ model BoxDep {
   money     Float?
   isDeleted Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("box_deps")
 }
 
@@ -301,6 +312,7 @@ model ManagerTx {
   userId    Int?
   isDeleted Boolean  @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([type])
   @@map("manager_tx")
 }
@@ -320,6 +332,7 @@ model RechargeCard {
   userId       Int?
   userName     String?
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([serial])
   @@index([packageId, useDate])
   @@map("recharge_cards")
@@ -343,6 +356,7 @@ model Item {
   towerId     Int? // المكتب المالك للمخزن (مخزن مستقل لكل مكتب؛ المدير يرى الكل)
   isDeleted   Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([towerId])
   @@map("items")
 }
@@ -363,6 +377,7 @@ model Invoice {
   towerId      Int? // البرج/المكتب (لتقارير كل برج)
   isDeleted    Boolean   @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([subscriberId])
   @@index([towerId])
   @@map("invoices")
@@ -382,6 +397,7 @@ model InvoiceItem {
   size      String?
   isDeleted Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([invoiceId])
   @@map("invoice_items")
 }
@@ -403,6 +419,7 @@ model Ticket {
   depName       String?
   isDeleted     Boolean   @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("tickets")
 }
 
@@ -411,6 +428,7 @@ model TicketType {
   name      String?
   isDeleted Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("ticket_types")
 }
 
@@ -419,6 +437,7 @@ model TicketPriority {
   name      String?
   isDeleted Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("ticket_priorities")
 }
 
@@ -427,6 +446,7 @@ model TicketState {
   name      String?
   isDeleted Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("ticket_states")
 }
 
@@ -441,6 +461,7 @@ model Month {
   money     Float?
   isDeleted Boolean   @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("months")
 }
 
@@ -457,6 +478,7 @@ model Note {
   user      String?
   isDeleted Boolean   @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("notes")
 }
 
@@ -468,6 +490,7 @@ model Event {
   desc String?
   user String?
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("events")
 }
 
@@ -478,6 +501,7 @@ model SystemSetting {
   value String?
   text  String?
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("system_settings")
 }
 
@@ -488,6 +512,7 @@ model SmsTemplate {
   text   String?
   enable String?
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("sms_templates")
 }
 
@@ -515,6 +540,7 @@ model Message {
   createdByUser String?
   date          DateTime       @default(now())
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([subscriberId])
   @@index([status])
   @@map("messages")
@@ -526,6 +552,7 @@ model PushType {
   type      String?
   isDeleted Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("push_types")
 }
 
@@ -537,6 +564,7 @@ model TaskBoard {
   createdAt DateTime @default(now())
   isDeleted Boolean  @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([towerId])
   @@map("task_boards")
 }
@@ -552,6 +580,7 @@ model Technician {
   isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([towerId])
   @@index([supportTowerId])
   @@map("technicians")
@@ -567,6 +596,7 @@ model Custody {
   qty          Float   @default(0)
   isDeleted    Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([technicianId])
   @@index([itemId])
   @@map("custodies")
@@ -579,6 +609,7 @@ model TaskList {
   position  Int      @default(0)
   isDeleted Boolean  @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([boardId])
   @@map("task_lists")
 }
@@ -608,6 +639,7 @@ model TaskCard {
   createdAt    DateTime  @default(now())
   isDeleted    Boolean   @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([listId])
   @@index([technicianId])
   @@map("task_cards")
@@ -620,6 +652,7 @@ model CardPhoto {
   data      String // data URL (JPEG مضغوط)
   createdAt DateTime @default(now())
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("card_photos")
 }
 
@@ -634,6 +667,7 @@ model HybridWorker {
   lastSeen  DateTime @default(now()) // آخر نبضة heartbeat
   createdAt DateTime @default(now())
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("hybrid_workers")
 }
 
@@ -646,6 +680,7 @@ model CardType {
   position     Int     @default(0)
   isDeleted    Boolean @default(false)
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("card_types")
 }
 
@@ -661,6 +696,7 @@ model MaintenanceLog {
   date           DateTime @default(now())
   createdAt      DateTime @default(now())
 
+  updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([subscriberId])
   @@map("maintenance_logs")
 }
