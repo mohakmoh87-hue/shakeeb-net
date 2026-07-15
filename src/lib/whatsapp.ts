@@ -33,10 +33,22 @@ function store(officeId: number): WaStore {
 const SESSION_DIR = path.join(process.cwd(), ".wwebjs_auth");
 
 // تهيئة وبدء اتصال واتساب لمكتب محدّد (idempotent)
+const STARTUP_TIMEOUT_MS = 75_000; // إن لم يظهر QR/يجهز خلال هذه المدة نعتبر الإقلاع عالقاً
+
 export async function startWhatsApp(officeId: number): Promise<WaState> {
   const s = store(officeId);
-  if (s.client && (s.state === "ready" || s.state === "starting" || s.state === "qr" || s.state === "authenticated")) {
+  // جاهز/يعرض QR → أعِد الحالة كما هي
+  if (s.client && (s.state === "ready" || s.state === "authenticated" || s.state === "qr")) {
     return s.state;
+  }
+  // ما زال يقلع حديثاً → دعه يكمل
+  if (s.client && s.state === "starting" && s.startedAt && Date.now() - s.startedAt < STARTUP_TIMEOUT_MS) {
+    return s.state;
+  }
+  // إقلاع عالق/قديم (Chromium لم يستجب) → اهدم العميل وأعد التشغيل من جديد
+  if (s.client) {
+    try { s.client.destroy?.().catch(() => {}); } catch { /* تجاهل */ }
+    s.client = null;
   }
   s.state = "starting";
   s.qr = null;
@@ -69,12 +81,24 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   client.on("disconnected", (reason: string) => { const st = store(officeId); st.state = "disconnected"; st.lastError = `انقطع الاتصال: ${reason}`; st.client = null; });
 
   s.client = client;
+  const startedFor = s.startedAt;
   client.initialize().catch((e: unknown) => {
     const st = store(officeId);
     st.state = "error";
     st.lastError = e instanceof Error ? e.message : String(e);
+    try { st.client?.destroy?.().catch(() => {}); } catch { /* تجاهل */ }
     st.client = null;
   });
+  // مراقب: إن بقي عالقاً في "starting" بعد المهلة نُعلن خطأً ونهدم العميل (فتتوقّف الواجهة عن التحميل ويمكن إعادة المحاولة)
+  setTimeout(() => {
+    const st = store(officeId);
+    if (st.startedAt === startedFor && st.state === "starting") {
+      st.state = "error";
+      st.lastError = "تعذّر إقلاع متصفّح الواتساب — أعد المحاولة";
+      try { st.client?.destroy?.().catch(() => {}); } catch { /* تجاهل */ }
+      st.client = null;
+    }
+  }, STARTUP_TIMEOUT_MS);
   return s.state;
 }
 
