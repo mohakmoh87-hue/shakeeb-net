@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { getSession } from "@/lib/auth";
-import { startWhatsApp, whatsappStatus } from "@/lib/whatsapp";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 // حالة اتصال واتساب مكتب محدّد + رمز QR للربط (?officeId=)
-// ربط الواتساب متاح لأي مستخدم لمكتبه (خارج صلاحية إدارة المكاتب)؛ الأدمن لأي مكتب.
+// على الوكيل المحلي (RUN_WORKER=1): يشغّل واتساب محلياً ويقرأ الحالة مباشرةً.
+// على الموقع (Vercel، بلا متصفّح): يطلب الاتصال من الوكيل ويقرأ الحالة/الـQR من السحابة.
 export async function GET(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
@@ -17,9 +18,27 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "لا يمكنك ربط واتساب مكتب آخر" }, { status: 403 });
   }
 
-  await startWhatsApp(officeId);
-  const st = whatsappStatus(officeId);
-  let qrImage: string | null = null;
-  if (st.qr) qrImage = await QRCode.toDataURL(st.qr, { margin: 1, width: 320 }).catch(() => null);
-  return NextResponse.json({ state: st.state, qrImage, error: st.error });
+  const toImg = (qr: string | null | undefined) =>
+    qr ? QRCode.toDataURL(qr, { margin: 1, width: 320 }).catch(() => null) : Promise.resolve(null);
+
+  // الوكيل المحلي: تشغيل واتساب مباشرةً (Chromium متاح هنا)
+  if (process.env.RUN_WORKER === "1") {
+    const { startWhatsApp, whatsappStatus } = await import("@/lib/whatsapp");
+    await startWhatsApp(officeId);
+    const st = whatsappStatus(officeId);
+    return NextResponse.json({ state: st.state, qrImage: await toImg(st.qr), error: st.error });
+  }
+
+  // الموقع: سجّل طلب اتصال ليلتقطه الوكيل، واقرأ آخر حالة/QR نشرها الوكيل في السحابة
+  await prisma.waSession.upsert({
+    where: { towerId: officeId },
+    update: { requestedAt: new Date() },
+    create: { towerId: officeId, requestedAt: new Date(), state: "starting" },
+  });
+  const sess = await prisma.waSession.findUnique({ where: { towerId: officeId } });
+  return NextResponse.json({
+    state: sess?.state ?? "starting",
+    qrImage: await toImg(sess?.qr),
+    error: sess?.error ?? null,
+  });
 }

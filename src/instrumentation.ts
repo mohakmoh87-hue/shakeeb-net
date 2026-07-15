@@ -11,5 +11,8 @@ export async function register() {
     // نبضة النظام الهجين — تسجّل الحاسبة وتحسم القيادة (مضيف واتساب)
     const { startHybridAgent } = await import("@/lib/hybridAgent");
     startHybridAgent();
+    // مستطلِع طلبات ربط الواتساب القادمة من الموقع (ينشر الـQR للسحابة)
+    const { startWaRequestPoller } = await import("@/lib/whatsapp");
+    startWaRequestPoller();
   }
 }

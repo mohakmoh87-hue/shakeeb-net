@@ -2,6 +2,7 @@ import "server-only";
 import path from "path";
 import fs from "fs";
 import type { Client as WAClient } from "whatsapp-web.js";
+import { prisma } from "@/lib/prisma";
 
 // ===== خدمة واتساب ويب متعددة المكاتب (whatsapp-web.js) =====
 // عميل مستقل لكل مكتب (officeId)، يبقى حيّاً عبر إعادة تحميل الوحدات عبر globalThis.
@@ -31,6 +32,16 @@ function store(officeId: number): WaStore {
 }
 
 const SESSION_DIR = path.join(process.cwd(), ".wwebjs_auth");
+
+// نشر حالة/رمز الواتساب لهذا المكتب إلى السحابة (Neon) ليقرأها الموقع ويعرض الـQR من الإنترنت
+function publish(officeId: number) {
+  const s = store(officeId);
+  prisma.waSession.upsert({
+    where: { towerId: officeId },
+    update: { state: s.state, qr: s.qr, error: s.lastError },
+    create: { towerId: officeId, state: s.state, qr: s.qr, error: s.lastError },
+  }).catch(() => { /* لا نُفشل الواتساب بسبب النشر */ });
+}
 
 // تهيئة وبدء اتصال واتساب لمكتب محدّد (idempotent)
 const STARTUP_TIMEOUT_MS = 75_000; // إن لم يظهر QR/يجهز خلال هذه المدة نعتبر الإقلاع عالقاً
@@ -74,13 +85,14 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
     },
   });
 
-  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; });
-  client.on("authenticated", () => { const st = store(officeId); st.qr = null; st.state = "authenticated"; });
-  client.on("ready", () => { const st = store(officeId); st.qr = null; st.state = "ready"; });
-  client.on("auth_failure", (m: string) => { const st = store(officeId); st.state = "error"; st.lastError = `فشل المصادقة: ${m}`; });
-  client.on("disconnected", (reason: string) => { const st = store(officeId); st.state = "disconnected"; st.lastError = `انقطع الاتصال: ${reason}`; st.client = null; });
+  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; publish(officeId); });
+  client.on("authenticated", () => { const st = store(officeId); st.qr = null; st.state = "authenticated"; publish(officeId); });
+  client.on("ready", () => { const st = store(officeId); st.qr = null; st.state = "ready"; publish(officeId); });
+  client.on("auth_failure", (m: string) => { const st = store(officeId); st.state = "error"; st.lastError = `فشل المصادقة: ${m}`; publish(officeId); });
+  client.on("disconnected", (reason: string) => { const st = store(officeId); st.state = "disconnected"; st.lastError = `انقطع الاتصال: ${reason}`; st.client = null; publish(officeId); });
 
   s.client = client;
+  publish(officeId); // نشر حالة "starting"
   const startedFor = s.startedAt;
   client.initialize().catch((e: unknown) => {
     const st = store(officeId);
@@ -88,6 +100,7 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
     st.lastError = e instanceof Error ? e.message : String(e);
     try { st.client?.destroy?.().catch(() => {}); } catch { /* تجاهل */ }
     st.client = null;
+    publish(officeId);
   });
   // مراقب: إن بقي عالقاً في "starting" بعد المهلة نُعلن خطأً ونهدم العميل (فتتوقّف الواجهة عن التحميل ويمكن إعادة المحاولة)
   setTimeout(() => {
@@ -97,9 +110,31 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
       st.lastError = "تعذّر إقلاع متصفّح الواتساب — أعد المحاولة";
       try { st.client?.destroy?.().catch(() => {}); } catch { /* تجاهل */ }
       st.client = null;
+      publish(officeId);
     }
   }, STARTUP_TIMEOUT_MS);
   return s.state;
+}
+
+// مستطلِع طلبات الاتصال من الموقع: القائد يلتقط requestedAt ويبدأ واتساب المكتب فيُنشَر الـQR للسحابة.
+export function startWaRequestPoller() {
+  const gg = globalThis as unknown as { __waPollerStarted?: boolean };
+  if (gg.__waPollerStarted) return;
+  gg.__waPollerStarted = true;
+  setInterval(async () => {
+    try {
+      const { isLeaderNow } = await import("@/lib/hybridAgent");
+      if (!isLeaderNow()) return; // القائد فقط يستضيف واتساب
+      const since = new Date(Date.now() - 120_000); // طلبات آخر دقيقتين
+      const reqs = await prisma.waSession.findMany({ where: { requestedAt: { gte: since } }, select: { towerId: true } });
+      for (const r of reqs) {
+        const st = store(r.towerId);
+        if (st.state !== "ready" && st.state !== "qr" && st.state !== "starting" && st.state !== "authenticated") {
+          void startWhatsApp(r.towerId);
+        }
+      }
+    } catch { /* تجاهل */ }
+  }, 8000);
 }
 
 export function whatsappStatus(officeId: number): { state: WaState; qr: string | null; error: string | null } {

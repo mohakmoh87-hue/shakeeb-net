@@ -656,6 +656,18 @@ model CardPhoto {
   @@map("card_photos")
 }
 
+// جلسة واتساب كل مكتب منشورة في السحابة — ينشرها الوكيل ليقرأها الموقع (لعرض QR من الإنترنت)
+model WaSession {
+  towerId     Int       @id // المكتب
+  state       String    @default("disconnected") // disconnected|starting|qr|authenticated|ready|error
+  qr          String? // نص الـQR الخام (يحوّله الموقع لصورة)
+  error       String?
+  requestedAt DateTime? // طلب اتصال من الموقع (يلتقطه الوكيل ويبدأ التشغيل)
+  updatedAt   DateTime  @updatedAt
+
+  @@map("wa_sessions")
+}
+
 // حواسيب المكاتب المُسجَّلة في النظام الهجين (العمّال) — للأولوية وانتخاب القائد (مضيف واتساب)
 model HybridWorker {
   id        Int      @id @default(autoincrement())
