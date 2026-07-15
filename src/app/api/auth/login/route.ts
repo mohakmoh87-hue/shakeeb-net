@@ -29,12 +29,35 @@ export async function POST(request: Request) {
     );
   }
 
+  // قفل مؤقّت بعد محاولات فاشلة كثيرة (منع التخمين)
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    const mins = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+    return NextResponse.json(
+      { error: `الحساب مقفل مؤقتاً بسبب محاولات كثيرة — حاول بعد ${mins} دقيقة` },
+      { status: 429 },
+    );
+  }
+
   const ok = await verifyPassword(password, user.password);
   if (!ok) {
+    // زيادة عدّاد الفشل، وقفل 15 دقيقة بعد 5 محاولات
+    const attempts = (user.failedAttempts ?? 0) + 1;
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedAttempts: attempts,
+        lockedUntil: attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null,
+      },
+    });
     return NextResponse.json(
       { error: "اسم المستخدم أو كلمة السر غير صحيحة" },
       { status: 401 },
     );
+  }
+
+  // نجاح: تصفير عدّاد الفشل
+  if (user.failedAttempts || user.lockedUntil) {
+    await prisma.user.update({ where: { id: user.id }, data: { failedAttempts: 0, lockedUntil: null } });
   }
 
   await setSession({

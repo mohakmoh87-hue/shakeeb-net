@@ -26,10 +26,13 @@ export default async function DashboardPage() {
   const session = await getSession();
   const isAdmin = !!session?.isAdmin;
   const towerId = isAdmin ? null : session?.towerId ?? null;
-  const initialReport = await computeDailyReport(towerId);
-  const towers = isAdmin
-    ? await prisma.tower.findMany({ where: { isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" } })
-    : [];
+  // جلب متوازٍ لتقليل ذهاب/إياب الشبكة (أسرع فتحاً)
+  const [initialReport, towers] = await Promise.all([
+    computeDailyReport(towerId),
+    isAdmin
+      ? prisma.tower.findMany({ where: { isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" } })
+      : Promise.resolve([] as { id: number; name: string | null }[]),
+  ]);
 
   return (
     <div className="mynet-canvas min-h-[calc(100vh-140px)] p-5">

@@ -35,7 +35,7 @@ const schema = z.object({
   serviceDetails: z.string().optional(),
   amount: z.coerce.number().min(0).optional(),
   newUser: z.string().optional(), // اليوزر الجديد (إلزامي لبطاقة التحويل)
-  photo: z.string().optional(), // data URL (JPEG مضغوط)
+  photo: z.string().max(2_000_000, "حجم الصورة كبير جداً").optional(), // data URL (JPEG مضغوط) — حدّ ~1.5 ميغا
   materials: z
     .array(z.object({ itemId: z.coerce.number().int().positive(), qty: z.coerce.number().positive() }))
     .optional()
@@ -163,6 +163,14 @@ export async function POST(request: Request) {
       },
     });
   });
+
+  // سجل تدقيق: من أنجز أي بطاقة ولأي مكتب (مساءلة، خاصة عند الدعم بين المكاتب)
+  await prisma.auditLog.create({
+    data: {
+      userId: session.userId, action: "COMPLETE_CARD", entity: "taskCard", entityId: String(cardId),
+      details: `إنجاز بطاقة «${card.title}» (${card.kind}) — فني ${tech?.name ?? card.technicianId} — مكتب ${towerId ?? "?"} — مبلغ ${amount}`,
+    },
+  }).catch(() => {});
 
   // ===== ما بعد الإنجاز (لا يُفشل الإنجاز إن تعثّر): مطابقة المشترك، سجل الصيانات، رسالة واتساب =====
   let matchedSubscriber: number | null = null;
