@@ -5,6 +5,7 @@ import MobileNav from "@/components/MobileNav";
 import WhatsAppMonitor from "@/components/WhatsAppMonitor";
 import ReminderPrompt from "@/components/ReminderPrompt";
 import CompletionNotifier from "@/components/CompletionNotifier";
+import HybridOnboarding from "@/components/HybridOnboarding";
 
 // غلاف الصفحات المحمية: شريط أدوات علوي + المحتوى
 export default async function AppLayout({
@@ -30,6 +31,8 @@ export default async function AppLayout({
       <WhatsAppMonitor />
       <ReminderPrompt />
       <CompletionNotifier />
+      {/* إشعار إعداد الحاسبة ضمن النظام الهجين — لغير المدير حتى يُنصَّب الوكيل */}
+      <HybridOnboarding isAdmin={!!session.isAdmin} />
       <main className="flex-1">{children}</main>
     </div>
   );
