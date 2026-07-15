@@ -27,6 +27,7 @@ export type ActSubscriber = {
 };
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
+const PAYMENT_METHODS = ["المكتب", "نقد", "تحويل", "أخرى"];
 
 // رابط صفحة تفعيل المشترك عبر البروكسي (نفس origin + دخول تلقائي)
 function sasUrl(sub: ActSubscriber): string | null {
@@ -59,8 +60,12 @@ export default function ActivationModal({
   const [paid, setPaid] = useState("");
   const [master, setMaster] = useState(false); // تفعيل ماستر: واصل كامل بلا دين، بحساب مستقل
   const [months, setMonths] = useState(1); // عدد الأشهر (افتراضي 1)
-  const [amount, setAmount] = useState(""); // مبلغ التفعيل يدوياً (فارغ = سعر الباقة × الأشهر)
-  const [delivery, setDelivery] = useState(""); // مبلغ التوصيل (يُضاف على مبلغ الاشتراك)
+  const [amount, setAmount] = useState(""); // كلفة الاشتراك يدوياً (فارغ = سعر الباقة × الأشهر)
+  const [delivery, setDelivery] = useState(""); // اجور صيانة/توصيل (تُضاف على مبلغ الاشتراك)
+  const [note, setNote] = useState(""); // ملاحظة الوصل
+  const [dueDate, setDueDate] = useState(""); // موعد التسديد
+  const [paymentMethod, setPaymentMethod] = useState("المكتب"); // طريقة الدفع
+  const [manualDate, setManualDate] = useState(false); // تعديل تاريخ الانتهاء يدوياً
   // تاريخ الانتهاء الافتراضي = التاريخ الطبيعي حسب نظام المكتب وعدد الأشهر (قابل للتعديل)
   const [expiry, setExpiry] = useState(() => {
     const now = new Date();
@@ -76,17 +81,27 @@ export default function ActivationModal({
   const pkg = packages.find((p) => p.id === packageId);
   const packagePrice = pkg?.priceDinar ?? 0;
   const packageTotal = packagePrice * (months || 1); // إجمالي سعر الباقة لعدد الأشهر
-  const price = amount !== "" ? Number(amount) || 0 : packageTotal; // مبلغ التفعيل الفعلي (الاشتراك)
-  const deliveryAmount = Number(delivery) || 0; // مبلغ التوصيل
-  const grandTotal = price + deliveryAmount; // الإجمالي المستحق (اشتراك + توصيل)
+  const price = amount !== "" ? Number(amount) || 0 : packageTotal; // كلفة الاشتراك الفعلية
+  const deliveryAmount = Number(delivery) || 0; // اجور صيانة
+  const grandTotal = price + deliveryAmount; // المجموع المستحق
+  // ماستر: واصل كامل بلا دين جديد (يبقى دين المشترك السابق كما هو)
+  const remaining = master ? 0 : grandTotal - (Number(paid) || 0); // المبلغ المتبقي
+  const totalDebt = master ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + remaining; // مجموع الديون بعد هذا التفعيل
 
-  // إعادة حساب تاريخ الانتهاء الطبيعي عند تغيير عدد الأشهر
+  // تاريخ بدء الاشتراك المعروض في حقل "من"
+  const startDate = (() => {
+    const now = new Date();
+    return subscriber.dateTo && new Date(subscriber.dateTo) > now ? new Date(subscriber.dateTo) : now;
+  })();
+
+  // إعادة حساب تاريخ الانتهاء الطبيعي عند تغيير عدد الأشهر (ما لم يكن التعديل يدوياً)
   useEffect(() => {
+    if (manualDate) return;
     const now = new Date();
     const start = subscriber.dateTo && new Date(subscriber.dateTo) > now ? new Date(subscriber.dateTo) : now;
     setExpiry(toInputDate(computeDateTo(start, months || 1, tower?.activationMode)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [months]);
+  }, [months, manualDate]);
   const directLink = sasDirectUrl(tower, subscriber);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
 
@@ -149,7 +164,8 @@ export default function ActivationModal({
     onClose();
   }
 
-  async function confirm() {
+  // حفظ التفعيل — print=true يفتح وصل الطباعة بعد الحفظ
+  async function confirm(print = false) {
     setError("");
     if (!packageId) { setError("اختر الفئة"); return; }
     setSaving(true);
@@ -166,20 +182,27 @@ export default function ActivationModal({
           delivery: deliveryAmount,
           dateToOverride: expiry || null,
           master,
+          note: note || null,
+          dueDate: dueDate || null,
+          paymentMethod: paymentMethod || null,
         }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "فشل التفعيل"); return; }
+      if (print && data.entryId) window.open(`/subscriptions/${data.entryId}/receipt`, "_blank");
       onDone();
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally { setSaving(false); }
   }
 
-  const remaining = grandTotal - (Number(paid) || 0);
+  // فتح صفحة تفعيل الساس (نافذة جديدة)
+  function openSasPage() {
+    if (directLink) window.open(directLink, "_blank", "noopener,noreferrer");
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={releaseAndClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-3" onClick={releaseAndClose}>
       {/* إشعار كبير وسط الشاشة: هذا المشترك محوّل إلى يوزر جديد */}
       {subscriber.transferredTo && !transferSeen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.stopPropagation()}>
@@ -192,16 +215,17 @@ export default function ActivationModal({
           </div>
         </div>
       )}
-      <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+
+      <div className="flex h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* الترويسة */}
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2">
-          <h3 className="text-lg font-bold text-slate-800">تفعيل — {subscriber.name}</h3>
+          <h3 className="text-base font-bold text-slate-800">تفعيل الاشتراك</h3>
           <button onClick={releaseAndClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
         </div>
 
         <div className="flex flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
           {/* صفحة SAS4 مضمّنة (أعلى على الهاتف / يسار على الكمبيوتر) */}
-          <div className="flex h-[45vh] shrink-0 flex-col border-b border-slate-200 md:h-auto md:flex-1 md:border-b-0 md:border-l">
+          <div className="flex h-[42vh] shrink-0 flex-col border-b border-slate-200 md:h-auto md:flex-1 md:border-b-0 md:border-l">
             <div className="flex items-center justify-between bg-slate-100 px-3 py-1.5 text-xs">
               <span className="font-semibold text-slate-600">صفحة تفعيل المشترك في SAS4 (دخول تلقائي)</span>
               {directLink && <a href={directLink} target="_blank" rel="noopener noreferrer" className="text-mynet-blue hover:underline">فتح بنافذة جديدة ↗</a>}
@@ -211,8 +235,6 @@ export default function ActivationModal({
                 src={frameSrc}
                 className="flex-1 border-0"
                 title="SAS4 activation"
-                // عزل يمنع الساس من إعادة تحميل/تنقّل النافذة العليا (فتُغلق نافذة التفعيل)،
-                // مع إبقاء نفس الأصل ليعمل الدخول التلقائي والنماذج
                 sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
               />
             ) : (
@@ -222,138 +244,136 @@ export default function ActivationModal({
             )}
           </div>
 
-          {/* أدوات التفعيل (أسفل على الهاتف / يمين على الكمبيوتر) */}
-          <div className="w-full shrink-0 space-y-4 p-4 md:w-[340px] md:overflow-y-auto">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">الفئة (السرعة)</label>
-              <select value={packageId} onChange={(e) => setPackageId(Number(e.target.value) || "")} className="w-full rounded-lg border border-slate-300 px-3 py-2">
-                <option value="">— اختر الفئة —</option>
-                {packages.map((p) => <option key={p.id} value={p.id}>{p.name} ({fmt(p.priceDinar)} د.ع)</option>)}
-              </select>
+          {/* نموذج التفعيل (أسفل على الهاتف / يمين على الكمبيوتر) */}
+          <div className="w-full shrink-0 space-y-2 bg-slate-50 p-3 md:w-[380px] md:overflow-y-auto">
+            {/* المشترك */}
+            <div className="rounded-lg bg-white px-3 py-2 text-center text-sm font-bold text-red-600 shadow-sm">
+              المشترك: {subscriber.name ?? "—"}
             </div>
 
-            {/* الكارت */}
-            {packageId !== "" && (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                {card?.serial ? (
-                  <>
-                    <div className="mb-1 flex items-center justify-between">
-                      <span className="text-xs text-emerald-600">الكارت منسوخ ✓ — الصقه بصفحة SAS4</span>
-                      <span className="text-xs text-slate-400">متاح: {available}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 rounded bg-white px-3 py-2 text-lg font-bold tracking-wider text-slate-800" dir="ltr">{card.serial}</code>
-                      <button onClick={() => copy(card.serial)} className="rounded-lg bg-slate-200 px-3 py-2 text-sm hover:bg-slate-300" title="نسخ">📋{copied ? "✓" : ""}</button>
-                    </div>
-                  </>
-                ) : (
-                  <div>
-                    <div className="mb-2 text-xs text-slate-500">متاح لهذه الفئة: {available} كارت</div>
-                    <button onClick={pullCard} disabled={loadingCard || available === 0} className="w-full rounded-lg bg-amber-500 py-2.5 font-bold text-white shadow hover:bg-amber-600 disabled:opacity-50">
-                      {loadingCard ? "جاري السحب..." : available === 0 ? "لا توجد كروت متاحة" : "🎴 سحب كارت"}
-                    </button>
-                  </div>
-                )}
+            <Field label="اليوزر">
+              <div className="w-full truncate rounded border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm font-semibold text-slate-700" dir="ltr">{subscriber.netUser ?? "—"}</div>
+            </Field>
+
+            <Field label="فئة الاشتراك">
+              <select value={packageId} onChange={(e) => setPackageId(Number(e.target.value) || "")} className="w-full rounded border border-slate-300 bg-yellow-50 px-2 py-1.5 text-sm font-bold">
+                <option value="">— اختر الفئة —</option>
+                {packages.map((p) => <option key={p.id} value={p.id}>{p.name} ({fmt(p.priceDinar)})</option>)}
+              </select>
+            </Field>
+
+            <Field label="عدد الاشهر">
+              <div className="flex items-center gap-1">
+                <button onClick={() => setMonths((m) => Math.max(1, m - 1))} className="h-8 w-8 shrink-0 rounded bg-slate-200 text-lg font-bold hover:bg-slate-300">−</button>
+                <input type="number" min={1} value={months} onChange={(e) => setMonths(Math.max(1, Number(e.target.value) || 1))} className="w-full rounded border border-slate-300 px-2 py-1.5 text-center text-sm" />
+                <button onClick={() => setMonths((m) => m + 1)} className="h-8 w-8 shrink-0 rounded bg-slate-200 text-lg font-bold hover:bg-slate-300">+</button>
+              </div>
+            </Field>
+
+            {/* تاريخ التفعيل */}
+            <div className="mt-1 border-t border-slate-200 pt-1.5 text-center text-xs font-bold text-slate-500">تاريخ التفعيل</div>
+            <Field label="من">
+              <div className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm text-slate-600" dir="ltr">{toInputDate(startDate)}</div>
+            </Field>
+            <Field label="الى">
+              <div className="flex items-center gap-1">
+                <input type="date" value={expiry} disabled={!manualDate} onChange={(e) => setExpiry(e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-500" dir="ltr" />
+                <label className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500" title="تعديل يدوي للتاريخ">
+                  <input type="checkbox" checked={manualDate} onChange={(e) => setManualDate(e.target.checked)} className="h-4 w-4 accent-mynet-blue" />
+                  يدوي
+                </label>
+              </div>
+            </Field>
+
+            <Field label="كلفة الاشتراك">
+              <div className="flex gap-1">
+                <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={String(packageTotal)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                {amount !== "" && <button onClick={() => setAmount("")} title="رجوع لسعر الباقة" className="shrink-0 rounded bg-slate-200 px-2 text-sm hover:bg-slate-300">↺</button>}
+              </div>
+            </Field>
+
+            <Field label="اجور صيانة">
+              <input type="number" value={delivery} onChange={(e) => setDelivery(e.target.value)} placeholder="0" className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+            </Field>
+
+            <Field label="المجموع">
+              <div className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm font-bold text-slate-800">{fmt(grandTotal)}</div>
+            </Field>
+
+            <Field label="المبلغ الواصل">
+              <div className="flex gap-1">
+                <input type="number" value={master ? String(grandTotal) : paid} disabled={master} onChange={(e) => setPaid(e.target.value)} className="w-full rounded border border-slate-300 bg-sky-50 px-2 py-1.5 text-sm font-semibold disabled:bg-slate-100" />
+                <button onClick={() => setPaid(String(grandTotal))} disabled={!grandTotal || master} title="إدخال المجموع" className="shrink-0 rounded bg-emerald-600 px-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">➕</button>
+              </div>
+            </Field>
+
+            <Field label="المبلغ المتبقي">
+              <div className={`w-full rounded border px-2 py-1.5 text-sm font-bold ${remaining > 0 ? "border-red-200 bg-red-50 text-red-600" : "border-emerald-200 bg-emerald-50 text-emerald-600"}`}>{fmt(remaining)}</div>
+            </Field>
+
+            <Field label="مجموع الديون">
+              <div className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm font-bold text-slate-700">{fmt(totalDebt)}</div>
+            </Field>
+
+            {/* ماستر: واصل كامل بلا دين، بحساب مستقل عن التقرير اليومي */}
+            <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${master ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-600"}`}>
+              <input type="checkbox" checked={master} onChange={(e) => setMaster(e.target.checked)} className="h-4 w-4 accent-indigo-600" />
+              🅜 ماستر — واصل كامل بلا دين، بحساب مستقل
+            </label>
+
+            <Field label="موعد التسديد">
+              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" dir="ltr" />
+            </Field>
+
+            <Field label="طريقة الدفع">
+              <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
+                {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </Field>
+
+            <Field label="ملاحظة">
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+            </Field>
+
+            {/* حالة الكارت المسحوب */}
+            {card?.serial && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2">
+                <div className="mb-1 flex items-center justify-between text-[11px]">
+                  <span className="text-emerald-700">الكارت منسوخ ✓ — الصقه بصفحة SAS4</span>
+                  <span className="text-slate-400">متاح: {available}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 rounded bg-white px-2 py-1.5 text-base font-bold tracking-wider text-slate-800" dir="ltr">{card.serial}</code>
+                  <button onClick={() => copy(card.serial)} className="rounded bg-slate-200 px-2 py-1.5 text-sm hover:bg-slate-300" title="نسخ">📋{copied ? "✓" : ""}</button>
+                </div>
               </div>
             )}
 
-            {/* المبلغ + زر الإدخال السريع */}
-            <div className="rounded-lg border border-slate-200 p-3">
-              {/* عدد الأشهر */}
-              <label className="mb-1 block text-sm font-medium text-slate-700">عدد الأشهر</label>
-              <div className="mb-3 flex items-center gap-2">
-                <button onClick={() => setMonths((m) => Math.max(1, m - 1))} className="h-9 w-9 shrink-0 rounded-lg bg-slate-200 text-lg font-bold hover:bg-slate-300">−</button>
-                <input
-                  type="number"
-                  min={1}
-                  value={months}
-                  onChange={(e) => setMonths(Math.max(1, Number(e.target.value) || 1))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-center"
-                />
-                <button onClick={() => setMonths((m) => m + 1)} className="h-9 w-9 shrink-0 rounded-lg bg-slate-200 text-lg font-bold hover:bg-slate-300">+</button>
-              </div>
-
-              {/* مبلغ التفعيل (قابل للتعديل يدوياً للحالات النادرة) */}
-              <label className="mb-1 block text-sm font-medium text-slate-700">مبلغ التفعيل</label>
-              <div className="mb-1 flex gap-2">
-                <input
-                  type="number"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder={String(packageTotal)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-                {amount !== "" && (
-                  <button onClick={() => setAmount("")} title="رجوع لسعر الباقة" className="shrink-0 rounded-lg bg-slate-200 px-3 py-2 text-sm hover:bg-slate-300">↺</button>
-                )}
-              </div>
-              <div className="mb-3 text-xs text-slate-400">
-                سعر الباقة: {fmt(packagePrice)} د.ع{months > 1 ? ` × ${months} = ${fmt(packageTotal)} د.ع` : ""} — اتركه فارغاً لاستخدامه، أو أدخل مبلغاً خاصاً
-              </div>
-
-              {/* مبلغ التوصيل (يُضاف على مبلغ الاشتراك ويظهر في رسالة التفعيل) */}
-              <label className="mb-1 block text-sm font-medium text-slate-700">مبلغ التوصيل (اختياري)</label>
-              <input
-                type="number"
-                value={delivery}
-                onChange={(e) => setDelivery(e.target.value)}
-                placeholder="0"
-                className="mb-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-              />
-              <div className="mb-3 text-xs text-slate-400">
-                {deliveryAmount > 0
-                  ? `الإجمالي المستحق = اشتراك ${fmt(price)} + توصيل ${fmt(deliveryAmount)} = ${fmt(grandTotal)} د.ع`
-                  : "يُضاف على مبلغ الاشتراك ويُذكر للمشترك في رسالة التفعيل"}
-              </div>
-
-              {/* تاريخ الانتهاء (اختياري - للحالات الخاصة مثل شهرين أو 20 يوماً) */}
-              <label className="mb-1 block text-sm font-medium text-slate-700">تاريخ الانتهاء</label>
-              <input
-                type="date"
-                value={expiry}
-                onChange={(e) => setExpiry(e.target.value)}
-                className="mb-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                dir="ltr"
-              />
-              <div className="mb-3 text-xs text-slate-400">
-                {card
-                  ? "🎴 عند سحب كارت يُعتمد تاريخ الانتهاء الفعلي من SAS تلقائياً (يراعي قرض اليوم) بدل هذا الحقل"
-                  : "معبّأ افتراضياً بالتاريخ الطبيعي حسب نظام المكتب — عدّله للحالات الخاصة"}
-              </div>
-
-              <label className="mb-1 block text-sm font-medium text-slate-700">المبلغ الواصل</label>
-              <div className="flex gap-2">
-                <input type="number" value={master ? String(grandTotal) : paid} disabled={master} onChange={(e) => setPaid(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" />
-                <button
-                  onClick={() => setPaid(String(grandTotal))}
-                  disabled={!grandTotal || master}
-                  title="إدخال الإجمالي (اشتراك + توصيل)"
-                  className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
-                >
-                  ➕ {fmt(grandTotal)}
-                </button>
-              </div>
-              <div className="mt-2 flex justify-between text-sm">
-                <span className="text-slate-500">الباقي (دين)</span>
-                <span className={`font-bold ${!master && remaining > 0 ? "text-red-600" : "text-emerald-600"}`}>{fmt(master ? 0 : remaining)} د.ع</span>
-              </div>
-
-              {/* ماستر: واصل كامل بلا دين، ويُسجَّل بحساب الماستر المستقل (لا يدخل بمجموع التقرير) */}
-              <label className={`mt-3 flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${master ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-600"}`}>
-                <input type="checkbox" checked={master} onChange={(e) => setMaster(e.target.checked)} className="h-4 w-4 accent-indigo-600" />
-                🅜 ماستر — واصل كامل بلا دين، بحساب مستقل عن التقرير اليومي
-              </label>
-            </div>
-
             {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
 
-            <button onClick={confirm} disabled={saving} className="w-full rounded-lg bg-emerald-600 py-3 text-lg font-bold text-white shadow hover:bg-emerald-700 disabled:opacity-60">
-              {saving ? "جاري..." : "✅ تأكيد التفعيل"}
-            </button>
-            <button onClick={releaseAndClose} className="w-full rounded-lg bg-slate-100 py-2 text-slate-600 hover:bg-slate-200">إلغاء</button>
+            {/* أزرار الإجراءات */}
+            <div className="space-y-1.5 border-t border-slate-200 pt-2">
+              <div className="grid grid-cols-2 gap-1.5">
+                <button onClick={() => confirm(true)} disabled={saving} className="rounded-lg bg-mynet-blue py-2 text-sm font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-60">💾 حفظ وطباعة الوصل</button>
+                <button onClick={pullCard} disabled={loadingCard || !packageId} className="rounded-lg bg-amber-500 py-2 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50">{loadingCard ? "..." : `🎴 سحب بطاقة${available ? ` (${available})` : ""}`}</button>
+                <button onClick={openSasPage} disabled={!directLink} className="rounded-lg bg-slate-600 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40">🌐 صفحة التفعيل</button>
+                <button onClick={() => confirm(false)} disabled={saving} className="rounded-lg bg-emerald-600 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "جاري..." : "✅ حفظ و اغلاق"}</button>
+              </div>
+              <button onClick={releaseAndClose} className="w-full rounded-lg bg-slate-100 py-2 text-sm text-slate-600 hover:bg-slate-200">اغلاق</button>
+            </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// صف حقل: التسمية يميناً والقيمة/الإدخال يساراً (تخطيط كلاسيكي)
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <label className="w-24 shrink-0 text-right text-xs font-semibold text-slate-600">{label}</label>
+      <div className="flex-1">{children}</div>
     </div>
   );
 }

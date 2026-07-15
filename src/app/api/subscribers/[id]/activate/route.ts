@@ -17,6 +17,9 @@ const schema = z.object({
   delivery: z.coerce.number().min(0).default(0), // مبلغ التوصيل (يُضاف على مبلغ الاشتراك)
   dateToOverride: z.string().nullable().optional(), // تعديل يدوي لتاريخ الانتهاء (ISO)
   master: z.boolean().default(false), // تفعيل ماستر: واصل كامل بلا دين، ويُسجَّل بحساب الماستر المستقل
+  note: z.string().nullable().optional(), // ملاحظة الوصل → notes
+  dueDate: z.string().nullable().optional(), // موعد التسديد → nextDate
+  paymentMethod: z.string().nullable().optional(), // طريقة الدفع → operation
 });
 
 // تفعيل مشترك: استهلاك الكارت + تسجيل الاشتراك + الواصل/الدين + تمديد الانتهاء
@@ -38,7 +41,10 @@ export async function POST(
       { status: 400 },
     );
   }
-  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride, master } = parsed.data;
+  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride, master, note, dueDate, paymentMethod } = parsed.data;
+  // موعد التسديد (اختياري) — يُخزَّن في nextDate
+  const dueDateParsed = dueDate ? new Date(dueDate) : null;
+  const nextDate = dueDateParsed && !isNaN(dueDateParsed.getTime()) ? dueDateParsed : null;
 
   const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
   if (!subscriber || subscriber.isDeleted || !ownsTower(g.session, subscriber.towerId)) {
@@ -129,6 +135,9 @@ export async function POST(
           moneyCarry: newCarry, moneyType: 1, month: String(months), cardType: pkg.name,
           card2: cardSerial, towerId: subscriber.towerId, createdByUser: session?.username,
           isMaster: master,
+          notes: note ?? null, // ملاحظة الوصل
+          nextDate, // موعد التسديد
+          operation: paymentMethod ?? null, // طريقة الدفع
         },
       });
       if (effPaid > 0) {
@@ -148,7 +157,7 @@ export async function POST(
           details: `تفعيل ${pkg.name} - كارت ${cardSerial ?? "بدون"} - اشتراك ${total}${delivery > 0 ? ` - توصيل ${delivery}` : ""} - واصل ${paid} - دين ${newCarry}`,
         },
       });
-      return { ok: true, serial: cardSerial, dateTo, newCarry };
+      return { ok: true, serial: cardSerial, dateTo, newCarry, entryId: entry.id };
     });
 
     // إرسال رسالة تفعيل صامتة للمشترك عبر واتساب (لا تُعطّل التفعيل لو فشلت)
