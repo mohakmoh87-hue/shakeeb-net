@@ -22,25 +22,48 @@ export async function POST(
     return NextResponse.json({ error: "الحركة غير موجودة أو محذوفة مسبقاً" }, { status: 404 });
   }
 
-  if (tx.sourceType === "activation") {
-    return NextResponse.json({ error: "هذه حركة تفعيل — احذف وصل التفعيل من صفحة الاشتراكات لإرجاع الأيام والكارت" }, { status: 400 });
-  }
-  if (tx.sourceType === "invoice") {
-    return NextResponse.json({ error: "هذه حركة فاتورة — احذف الفاتورة من صفحة الفواتير لإرجاع المخزون" }, { status: 400 });
-  }
-
   try {
     await prisma.$transaction(async (t) => {
-      // تسديد دين: أرجِع المبلغ ديناً على المشترك
+      // ===== حركة تفعيل: إرجاع كامل (أيام + كارت + دين) ثم حذف الوصل =====
+      if (tx.sourceType === "activation" && tx.sourceId) {
+        const entry = await t.subscriptionEntry.findUnique({ where: { id: tx.sourceId } });
+        if (entry && !entry.isDeleted) {
+          if (entry.subscriberId) {
+            const sub = await t.subscriber.findUnique({ where: { id: entry.subscriberId } });
+            if (sub) {
+              const debtAdded = (entry.money ?? 0) + (entry.addPrice ?? 0) - (entry.moneyIn ?? 0);
+              const restoredDateTo = entry.dateFrom && entry.dateFrom > new Date() ? entry.dateFrom : null;
+              await t.subscriber.update({
+                where: { id: sub.id },
+                data: { dateTo: restoredDateTo, carry: (sub.carry ?? 0) - debtAdded },
+              });
+            }
+          }
+          // إرجاع الكارت للمخزون
+          if (entry.card2 && entry.subscriberId) {
+            await t.rechargeCard.updateMany({
+              where: { serial: entry.card2, subscriberId: entry.subscriberId, useDate: { not: null } },
+              data: { useDate: null, subscriberId: null, userName: null },
+            });
+          }
+          await t.subscriptionEntry.update({ where: { id: entry.id }, data: { isDeleted: true } });
+        }
+      }
+
+      // ===== حركة فاتورة: حذف الفاتورة (وتُزال من التقارير) =====
+      if (tx.sourceType === "invoice" && tx.sourceId) {
+        await t.invoice.updateMany({ where: { id: tx.sourceId, isDeleted: false }, data: { isDeleted: true } });
+      }
+
+      // ===== تسديد دين: أرجِع المبلغ ديناً على المشترك =====
       if (tx.sourceType === "debt" && tx.sourceId) {
         const sub = await t.subscriber.findUnique({ where: { id: tx.sourceId } });
         if (sub) {
-          await t.subscriber.update({
-            where: { id: sub.id },
-            data: { carry: (sub.carry ?? 0) + (tx.moneyIn ?? 0) },
-          });
+          await t.subscriber.update({ where: { id: sub.id }, data: { carry: (sub.carry ?? 0) + (tx.moneyIn ?? 0) } });
         }
       }
+
+      // ===== حذف الحركة نفسها (يشمل: بيع، ماستر، نثرية، يدوية) =====
       await t.moneyTx.update({ where: { id: txId }, data: { isDeleted: true } });
       await t.auditLog.create({
         data: {
