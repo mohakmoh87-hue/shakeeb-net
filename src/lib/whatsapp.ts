@@ -155,10 +155,19 @@ export function startWaRequestPoller() {
       const { isLeaderNow } = await import("@/lib/hybridAgent");
       if (!isLeaderNow()) return; // القائد فقط يستضيف واتساب
       const since = new Date(Date.now() - 120_000); // طلبات آخر دقيقتين
-      const reqs = await prisma.waSession.findMany({ where: { requestedAt: { gte: since } }, select: { towerId: true } });
-      for (const r of reqs) {
+      // نقرأ الحالة المنشورة + طلب الاتصال لكل المكاتب معاً
+      const rows = await prisma.waSession.findMany({ select: { towerId: true, state: true, requestedAt: true } });
+      for (const r of rows) {
         const st = store(r.towerId);
-        if (st.state !== "ready" && st.state !== "qr" && st.state !== "starting" && st.state !== "authenticated") {
+        const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
+        // فصل مطلوب من الموقع: القاعدة تقول "disconnected" بينما الوكيل ما زال يحمل عميلاً حيّاً
+        if (r.state === "disconnected" && alive) {
+          console.log(`[whatsapp] طلب فصل من الموقع لمكتب ${r.towerId} — تنفيذ الفصل وحذف الجلسة`);
+          await logoutWhatsApp(r.towerId);
+          continue;
+        }
+        // اتصال مطلوب: requestedAt حديث والوكيل غير نشط
+        if (r.requestedAt && r.requestedAt >= since && !alive) {
           void startWhatsApp(r.towerId);
         }
       }
@@ -171,15 +180,52 @@ export function whatsappStatus(officeId: number): { state: WaState; qr: string |
   return { state: s.state, qr: s.qr, error: s.lastError };
 }
 
+// حذف مجلد جلسة مكتب محفوظة (LocalAuth) — يمنع بقاء تسجيل دخول قديم عالق
+function deleteSessionDir(officeId: number) {
+  try {
+    const dir = path.join(SESSION_DIR, `session-office-${officeId}`);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  } catch { /* أفضل جهد — قد يبقى قفل مؤقت على ويندوز */ }
+}
+
+// فصل واتساب مكتب: يُلغي الربط على واتساب، يهدم المتصفّح، ويحذف الجلسة المحفوظة
+// فوراً (حتى لا تبقى جلسة قديمة تُسبّب عُلوق "جاري البدء" لاحقاً).
 export async function logoutWhatsApp(officeId: number): Promise<void> {
   const s = store(officeId);
+  const withTimeout = <T>(p: Promise<T>, ms: number) =>
+    Promise.race([p, new Promise((res) => setTimeout(res, ms))]);
   if (s.client) {
-    try { await s.client.logout(); } catch { /* ignore */ }
-    try { await s.client.destroy(); } catch { /* ignore */ }
+    // logout يُلغي الربط من خوادم واتساب؛ قد يعلّق فنحدّه بمهلة
+    try { await withTimeout(Promise.resolve(s.client.logout()), 8000); } catch { /* ignore */ }
+    try { await withTimeout(Promise.resolve(s.client.destroy()), 8000); } catch { /* ignore */ }
   }
   s.client = null;
   s.state = "disconnected";
   s.qr = null;
+  s.lastError = null;
+  s.startedAt = null;
+  deleteSessionDir(officeId); // امسح كل أثر للجلسة فور الفصل
+  publish(officeId); // انشر "disconnected" للسحابة فوراً
+}
+
+// حالة واتساب المكاتب كما نشرها الوكيل في السحابة (Neon) — تقرأها كل مسارات الموقع.
+// مهمّة لأن الموقع (Vercel) لا يملك عميل واتساب في ذاكرته؛ الحالة الحقيقية في القاعدة.
+// إن لم يوجد قائد متصل (وكيل مُعتمَد نشط)، لا شيء يستضيف واتساب فعلياً ⇒ الكل "غير متصل".
+export async function readOfficeStates(officeIds: number[]): Promise<Record<number, WaState>> {
+  const out: Record<number, WaState> = {};
+  for (const id of officeIds) out[id] = "disconnected";
+  if (officeIds.length === 0) return out;
+  const leader = await prisma.hybridWorker.findFirst({
+    where: { approved: true, lastSeen: { gte: new Date(Date.now() - 60_000) } },
+    select: { id: true },
+  });
+  if (!leader) return out; // لا وكيل نشط ⇒ لا اتصال واتساب
+  const rows = await prisma.waSession.findMany({
+    where: { towerId: { in: officeIds } },
+    select: { towerId: true, state: true },
+  });
+  for (const r of rows) out[r.towerId] = (r.state as WaState) ?? "disconnected";
+  return out;
 }
 
 // تحويل رقم عراقي إلى معرّف واتساب

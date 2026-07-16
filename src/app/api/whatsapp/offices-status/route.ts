@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { whatsappStatus } from "@/lib/whatsapp";
+import { readOfficeStates } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +22,7 @@ export async function GET() {
     where: { isDeleted: false, OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }], ...officeFilter },
     select: { id: true, name: true },
   });
-  const list = offices.map((o) => ({ id: o.id, name: o.name, state: whatsappStatus(o.id).state }));
+  const states = await readOfficeStates(offices.map((o) => o.id));
+  const list = offices.map((o) => ({ id: o.id, name: o.name, state: states[o.id] ?? "disconnected" }));
   return NextResponse.json({ offices: list, disconnected: list.filter((o) => o.state !== "ready") });
 }
