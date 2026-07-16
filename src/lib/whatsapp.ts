@@ -76,17 +76,28 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   } catch { /* تجاهل */ }
 
   console.log(`[whatsapp] بدء إقلاع واتساب مكتب ${officeId}...`);
-  // تحميل المكتبة مع مراعاة تداخل CJS/ESM: مع tsx تُوضَع الصادرات تحت default أحياناً
+  // تحميل المكتبة (CJS) بأمان: نجرّب require المباشر أولاً (يعمل مع tsx/Node)،
+  // ثم import مع مراعاة تداخل default — لأن الصادرات قد تُوضَع تحت default.
   let Client: typeof import("whatsapp-web.js").Client;
   let LocalAuth: typeof import("whatsapp-web.js").LocalAuth;
   try {
-    const wa = (await import("whatsapp-web.js")) as unknown as Record<string, unknown>;
-    const mod = (wa.Client ? wa : (wa.default as Record<string, unknown>)) ?? wa;
+    const pick = (o: unknown): Record<string, unknown> | null => {
+      const r = o as Record<string, unknown> | null;
+      return r && (typeof r.Client === "function" || typeof r.LocalAuth === "function") ? r : null;
+    };
+    let mod: Record<string, unknown> | null = null;
+    try {
+      const { createRequire } = await import("node:module");
+      const req = createRequire(path.join(process.cwd(), "wa-require.cjs"));
+      mod = pick(req("whatsapp-web.js"));
+    } catch { /* نجرّب import أدناه */ }
+    if (!mod) {
+      const wa = (await import("whatsapp-web.js")) as unknown as Record<string, unknown>;
+      mod = pick(wa) ?? pick(wa.default) ?? pick((wa.default as Record<string, unknown>)?.default);
+    }
+    if (!mod) throw new Error("Client/LocalAuth غير متاحين من whatsapp-web.js (interop)");
     Client = mod.Client as typeof Client;
     LocalAuth = mod.LocalAuth as typeof LocalAuth;
-    if (typeof Client !== "function" || typeof LocalAuth !== "function") {
-      throw new Error("Client/LocalAuth غير متاحين من whatsapp-web.js (interop)");
-    }
   } catch (e) {
     s.state = "error";
     s.lastError = `فشل تحميل مكتبة الواتساب: ${e instanceof Error ? e.message : String(e)}`;
