@@ -6,17 +6,18 @@ import { prisma } from "@/lib/prisma";
 // المنطقة تُؤخذ من مكتب المشترك: المواصلات(mu)→MWA، الرسالة(res)/الشهداء(shu)→SLM.
 
 // المكتب (لاحقة اليوزر) ← رمز المنطقة
+// المواصلات(mu)→MWA، الشهداء(shu)→SLM، الرسالة(res)→ENT
 const OFFICE_AREA: Record<string, string> = {
-  mu: "MWA", res: "SLM", shu: "SLM", mul: "MWA", mus: "MWA",
+  mu: "MWA", shu: "SLM", res: "ENT", mul: "MWA", mus: "MWA",
 };
-const FALLBACK_AREAS = ["MWA", "SLM"];
+const FALLBACK_AREAS = ["MWA", "SLM", "ENT"];
 
 // منطقة الخريطة من اسم المكتب (البرج)
 export function areaFromTowerName(name: string | null | undefined): string | null {
   const n = name ?? "";
   if (n.includes("مواصلات")) return "MWA";
-  if (n.includes("رسالة") || n.includes("الرساله")) return "SLM";
   if (n.includes("شهداء")) return "SLM";
+  if (n.includes("رسالة") || n.includes("الرساله")) return "ENT";
   return null;
 }
 
@@ -45,13 +46,13 @@ function officeSuffix(netUser: string | null | undefined): string | null {
 export function candidateColumnNames(netUser: string | null | undefined, areaHint?: string | null): string[] {
   const ab = parseAB(netUser);
   if (!ab) return []; // شاذ: لا رقمين ⇒ لا موقع
-  const areas: string[] = [];
-  if (areaHint) areas.push(areaHint.toUpperCase());
+  // منطقة المكتب حاسمة: إن عُرفت نستخدمها وحدها (تفادياً لموقع خاطئ من منطقة أخرى).
+  let areas: string[];
   const suf = officeSuffix(netUser);
-  if (suf && OFFICE_AREA[suf]) areas.push(OFFICE_AREA[suf]);
-  for (const f of FALLBACK_AREAS) if (!areas.includes(f)) areas.push(f);
-  const uniq = [...new Set(areas)];
-  return uniq.map((area) => `F${ab.b}/${ab.a}/${area}`.toUpperCase());
+  if (areaHint) areas = [areaHint.toUpperCase()];
+  else if (suf && OFFICE_AREA[suf]) areas = [OFFICE_AREA[suf]];
+  else areas = [...FALLBACK_AREAS];
+  return [...new Set(areas)].map((area) => `F${ab.b}/${ab.a}/${area}`.toUpperCase());
 }
 
 export type MapLoc = { name: string; lat: number; lng: number };
