@@ -414,9 +414,9 @@ export function startWaRelayPoller() {
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
           await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "done", result: JSON.stringify(result) } });
         } catch (e) {
-          const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
-          console.error(`[wa-relay] فشل ${relayRow.kind} مكتب ${relayRow.towerId}:`, e instanceof Error ? e.stack : e);
-          await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "error", error: msg.slice(0, 500) } }).catch(() => {});
+          const detail = e instanceof Error ? (e.stack || `${e.name}: ${e.message}`) : (() => { try { return JSON.stringify(e); } catch { return String(e); } })();
+          console.error(`[wa-relay] فشل ${relayRow.kind} مكتب ${relayRow.towerId}:`, detail);
+          await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "error", error: String(detail).slice(0, 1500) } }).catch(() => {});
         }
       }
       // تنظيف الطلبات القديمة (منجزة أو فاشلة) الأقدم من 5 دقائق
