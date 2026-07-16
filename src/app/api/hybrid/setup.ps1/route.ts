@@ -59,23 +59,24 @@ Write-Host "تثبيت المكتبات (قد يستغرق دقائق)..." -Fore
 npm install
 npx prisma generate
 
-# 5) التشغيل التلقائي عند دخول ويندوز — عبر مجلد بدء التشغيل (بلا صلاحية مدير)
+# 5) التشغيل التلقائي المخفي عند دخول ويندوز — عبر VBScript بمجلد بدء التشغيل (بلا نافذة، بلا صلاحية مدير)
+$oldBat = Join-Path ([Environment]::GetFolderPath('Startup')) 'ShakeebNetAgent.bat'
+if (Test-Path $oldBat) { Remove-Item $oldBat -Force -ErrorAction SilentlyContinue }
+$vbs = Join-Path ([Environment]::GetFolderPath('Startup')) 'ShakeebNetAgent.vbs'
 try {
-  $startup = [Environment]::GetFolderPath('Startup')
-  $runner  = Join-Path $startup 'ShakeebNetAgent.bat'
-  $batLines = @('@echo off', ('cd /d "' + $app + '"'), 'start "" /min cmd /c npx tsx src/worker.ts')
-  Set-Content -Encoding ascii -Path $runner -Value $batLines
-  Write-Host "سُجّل التشغيل التلقائي عند الاقلاع." -ForegroundColor Green
+  $vbsLines = @('Set sh = CreateObject("WScript.Shell")', ('sh.CurrentDirectory = "' + $app + '"'), 'sh.Run "cmd /c npx tsx src\worker.ts", 0, False')
+  Set-Content -Encoding ascii -Path $vbs -Value $vbsLines
+  Write-Host "سُجّل التشغيل التلقائي المخفي عند الاقلاع." -ForegroundColor Green
+  # 6) تشغيل العامل الان مخفياً (بلا نافذة يمكن إغلاقها بالخطأ)
+  Start-Process wscript.exe -ArgumentList ('"' + $vbs + '"')
 } catch {
-  Write-Host "تعذّر تسجيل التشغيل التلقائي — سيعمل يدوياً." -ForegroundColor Yellow
+  Write-Host "تعذّر التشغيل المخفي — سيعمل بنافذة." -ForegroundColor Yellow
+  Start-Process cmd -ArgumentList '/c npx tsx src/worker.ts' -WorkingDirectory $app
 }
-
-# 6) تشغيل العامل الآن (عملية مستقلة لا تعتمد على مُسجِّل Next)
-Start-Process cmd -ArgumentList '/c npx tsx src/worker.ts' -WorkingDirectory $app
 
 Write-Host ""
 Write-Host "تم الاعداد بنجاح" -ForegroundColor Green
-Write-Host "العامل يعمل الان، وسيبدأ تلقائياً عند تشغيل الحاسبة."
+Write-Host "العامل يعمل الان مخفياً، وسيبدأ تلقائياً عند تشغيل الحاسبة (بلا نافذة)."
 Write-Host "افتح صفحة الموقع وامسح رمز واتساب عند طلبه — وسيختفي اشعار الاعداد تلقائياً."
 Read-Host "اضغط Enter للانهاء"
 `;
