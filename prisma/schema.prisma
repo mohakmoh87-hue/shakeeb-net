@@ -675,6 +675,15 @@ model WaRelay {
   @@map("wa_relays")
 }
 
+// نقاط الخريطة (أعمدة المنطقة) — مرجع ثابت: اسم العمود ← إحداثيات. تُستورَد مرّة من ملف KMZ.
+model MapPoint {
+  name String  @id // مثل F2/1/MWA
+  lat  Float
+  lng  Float
+
+  @@map("map_points")
+}
+
 model WaSession {
   towerId     Int       @id // المكتب
   state       String    @default("disconnected") // disconnected|starting|qr|authenticated|ready|error

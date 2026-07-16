@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ActivationModal, { type ActSubscriber } from "@/components/ActivationModal";
+import MapButton from "@/components/MapButton";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 
@@ -398,9 +399,12 @@ export default function SubscribersPage() {
           </Row>
 
           {msg &&<div className="mt-2 rounded bg-blue-50 px-2 py-1 text-center text-xs text-blue-700">{msg}</div>}
-          <button onClick={() => selected && router.push(`/messages/compose?subscriberId=${selected.id}`)} disabled={!selected} className="mt-2 flex items-center justify-center gap-1 rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">
-            <span>💬</span> ارسال ملخص
-          </button>
+          <div className="mt-2 flex items-center gap-2">
+            <button onClick={() => selected && router.push(`/messages/compose?subscriberId=${selected.id}`)} disabled={!selected} className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">
+              <span>💬</span> ارسال ملخص
+            </button>
+            {selected && <MapButton subscriberId={selected.id} />}
+          </div>
         </section>
 
         {/* وسط: بيانات الاشتراك */}
