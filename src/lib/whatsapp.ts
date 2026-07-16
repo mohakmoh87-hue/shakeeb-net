@@ -75,7 +75,26 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
     }
   } catch { /* تجاهل */ }
 
-  const { Client, LocalAuth } = await import("whatsapp-web.js");
+  console.log(`[whatsapp] بدء إقلاع واتساب مكتب ${officeId}...`);
+  // تحميل المكتبة مع مراعاة تداخل CJS/ESM: مع tsx تُوضَع الصادرات تحت default أحياناً
+  let Client: typeof import("whatsapp-web.js").Client;
+  let LocalAuth: typeof import("whatsapp-web.js").LocalAuth;
+  try {
+    const wa = (await import("whatsapp-web.js")) as unknown as Record<string, unknown>;
+    const mod = (wa.Client ? wa : (wa.default as Record<string, unknown>)) ?? wa;
+    Client = mod.Client as typeof Client;
+    LocalAuth = mod.LocalAuth as typeof LocalAuth;
+    if (typeof Client !== "function" || typeof LocalAuth !== "function") {
+      throw new Error("Client/LocalAuth غير متاحين من whatsapp-web.js (interop)");
+    }
+  } catch (e) {
+    s.state = "error";
+    s.lastError = `فشل تحميل مكتبة الواتساب: ${e instanceof Error ? e.message : String(e)}`;
+    console.error("[whatsapp] ❌", s.lastError);
+    publish(officeId);
+    return s.state;
+  }
+
   const client = new Client({
     authStrategy: new LocalAuth({ clientId: `office-${officeId}`, dataPath: SESSION_DIR }),
     puppeteer: {
@@ -84,7 +103,6 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
     },
   });
 
-  console.log(`[whatsapp] بدء إقلاع واتساب مكتب ${officeId}...`);
   client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
   client.on("authenticated", () => { const st = store(officeId); st.qr = null; st.state = "authenticated"; publish(officeId); });
   client.on("ready", () => { const st = store(officeId); st.qr = null; st.state = "ready"; publish(officeId); });
