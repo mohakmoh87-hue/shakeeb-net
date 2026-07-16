@@ -7,9 +7,9 @@ type Loc = { name: string; gmaps: string; waze: string };
 // زر «خريطة»: يجلب موقع المشترك (بـ subscriberId أو netUser أو نصّ بطاقة)
 // ويعرض زرَّي ملاحة (خرائط جوجل + Waze). الموقع يُشتق تلقائياً من اليوزر.
 export default function MapButton({
-  subscriberId, netUser, text, size = "md", className = "",
+  subscriberId, netUser, text, towerId, size = "md", className = "",
 }: {
-  subscriberId?: number; netUser?: string | null; text?: string | null;
+  subscriberId?: number; netUser?: string | null; text?: string | null; towerId?: number | null;
   size?: "sm" | "md"; className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -23,6 +23,7 @@ export default function MapButton({
     if (subscriberId) qs.set("subscriberId", String(subscriberId));
     if (netUser) qs.set("netUser", netUser);
     if (text) qs.set("text", text);
+    if (towerId) qs.set("towerId", String(towerId));
     try {
       const r = await fetch(`/api/map/resolve?${qs.toString()}`);
       const d = await r.json();

@@ -218,7 +218,7 @@ export default function FieldManagementPage() {
                       {!c.done && !c.postponedTo && c.startedAt && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-sky-700">⏱ جارية</span>}
                     </div>
                     <div className="mt-1.5">
-                      <MapButton text={`${c.title}\n${c.description ?? ""}`} size="sm" />
+                      <MapButton text={`${c.title}\n${c.description ?? ""}`} towerId={officeId} size="sm" />
                     </div>
                   </div>
                 ))}
@@ -292,7 +292,7 @@ export default function FieldManagementPage() {
             <div className="mb-3 flex items-start justify-between gap-2">
               <input value={sel.title} onChange={(e) => setSel({ ...sel, title: e.target.value })} onBlur={() => saveCard({ title: sel.title })} className="flex-1 rounded-lg border border-transparent px-2 py-1 text-lg font-bold text-slate-800 hover:border-slate-200 focus:border-mynet-blue" />
               {/* زر الخريطة — يستخرج اليوزر من عنوان/وصف البطاقة (يدوية أو تلقائية) ويرشد الفني للموقع */}
-              <MapButton text={`${sel.title}\n${sel.description ?? ""}`} />
+              <MapButton text={`${sel.title}\n${sel.description ?? ""}`} towerId={officeId} />
               <button onClick={() => setSel(null)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
             </div>
 

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { resolveLocation, extractNetUser, gmapsUrl, wazeUrl } from "@/lib/mapLocation";
+import { resolveLocation, extractNetUser, areaFromTowerName, gmapsUrl, wazeUrl } from "@/lib/mapLocation";
 
 export const dynamic = "force-dynamic";
 
-// موقع مشترك على الخريطة: بـ ?netUser= أو ?subscriberId= أو ?text= (لبطاقة يدوية)
+// موقع مشترك على الخريطة: بـ ?netUser= أو ?subscriberId= أو ?text= (لبطاقة يدوية).
+// المنطقة تُشتق من مكتب المشترك (أو ?towerId=) — أدقّ من لاحقة اليوزر.
 export async function GET(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
@@ -14,15 +15,24 @@ export async function GET(request: Request) {
   let netUser = url.searchParams.get("netUser");
   const subscriberId = Number(url.searchParams.get("subscriberId"));
   const text = url.searchParams.get("text");
+  let towerId = Number(url.searchParams.get("towerId")) || null;
 
   if (!netUser && subscriberId) {
-    const s = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { netUser: true } });
+    const s = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { netUser: true, towerId: true } });
     netUser = s?.netUser ?? null;
+    if (s?.towerId && !towerId) towerId = s.towerId;
   }
   if (!netUser && text) netUser = extractNetUser(text);
   if (!netUser) return NextResponse.json({ error: "لا يوجد يوزر لتحديد الموقع" }, { status: 404 });
 
-  const loc = await resolveLocation(netUser);
+  // منطقة الخريطة من مكتب المشترك
+  let areaHint: string | null = null;
+  if (towerId) {
+    const t = await prisma.tower.findUnique({ where: { id: towerId }, select: { name: true } });
+    areaHint = areaFromTowerName(t?.name);
+  }
+
+  const loc = await resolveLocation(netUser, areaHint);
   if (!loc) return NextResponse.json({ error: "موقع هذا اليوزر غير موجود في الخريطة", netUser }, { status: 404 });
 
   return NextResponse.json({
