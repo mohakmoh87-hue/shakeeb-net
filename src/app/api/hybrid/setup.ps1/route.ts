@@ -60,12 +60,16 @@ npm install
 npx prisma generate
 npm run build
 
-# 5) التشغيل التلقائي عند دخول ويندوز
-$taskName = "ShakeebNetAgent"
-$argLine  = '/c cd /d "' + $app + '" ^&^& set RUN_WORKER=1 ^&^& npm start'
-$action   = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument $argLine
-$trigger  = New-ScheduledTaskTrigger -AtLogOn
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Force -RunLevel Highest | Out-Null
+# 5) التشغيل التلقائي عند دخول ويندوز — عبر مجلد بدء التشغيل (بلا صلاحية مدير)
+try {
+  $startup = [Environment]::GetFolderPath('Startup')
+  $runner  = Join-Path $startup 'ShakeebNetAgent.bat'
+  $batLines = @('@echo off', ('cd /d "' + $app + '"'), 'set RUN_WORKER=1', 'start "" /min cmd /c npm start')
+  Set-Content -Encoding ascii -Path $runner -Value $batLines
+  Write-Host "سُجّل التشغيل التلقائي عند الاقلاع." -ForegroundColor Green
+} catch {
+  Write-Host "تعذّر تسجيل التشغيل التلقائي — سيعمل يدوياً." -ForegroundColor Yellow
+}
 
 # 6) التشغيل الآن
 $env:RUN_WORKER = "1"
