@@ -228,8 +228,13 @@ async function ensureOfficeWhatsApp() {
       where: { isDeleted: false, OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }] },
       select: { id: true },
     });
-    for (const o of offices) { try { await startWhatsApp(o.id); } catch { /* ignore */ } }
-    if (offices.length) console.log(`[scheduler] بدء واتساب ${offices.length} مكتب (قائد)`);
+    if (offices.length) console.log(`[scheduler] بدء واتساب ${offices.length} مكتب بالتتابع (قائد)`);
+    // إقلاع متتابع بفاصل زمني — تشغيل عدّة متصفّحات واتساب دفعةً واحدة يُزاحم موارد
+    // الحاسبة فيعلق بعضها على "authenticated/starting". الفاصل يمنح كل مكتب فرصة الاستقرار.
+    for (const o of offices) {
+      try { await startWhatsApp(o.id); } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 25000)); // 25ث بين مكتب وآخر
+    }
   } catch (e) {
     officeWaStarted = false; // سماح بإعادة المحاولة لاحقاً
     console.error("[scheduler] office WA start:", e);
