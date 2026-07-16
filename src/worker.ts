@@ -2,6 +2,7 @@
 // يشغّل المجدول + واتساب + خادم الصحّة + نبضة النظام الهجين، بلا الاعتماد على مُسجِّل Next.
 // يُشغَّل على حاسبة المكتب عبر: npx tsx src/worker.ts
 import fs from "node:fs";
+import net from "node:net";
 
 // تحميل متغيّرات .env يدوياً (العملية المستقلة لا تحمّلها تلقائياً كما يفعل Next)
 try {
@@ -18,7 +19,25 @@ try {
 
 process.env.RUN_WORKER = "1";
 
+// حارس النسخة الواحدة: منفذ الوكيل (47615) يعمل قفلاً. إن كان مشغولاً فهناك عامل
+// آخر يعمل على هذه الحاسبة — نخرج فوراً لمنع تشغيل متصفّحَي واتساب على نفس الجلسة
+// (وإلا يظهر خطأ "The browser is already running for ...session-office-X").
+function ensureSingleInstance(): Promise<void> {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once("error", (e: NodeJS.ErrnoException) => {
+      if (e.code === "EADDRINUSE") {
+        console.error("[worker] ⛔ عامل شكيب نت يعمل بالفعل على هذه الحاسبة — تم إيقاف هذه النسخة المكرّرة.");
+        process.exit(0);
+      }
+      resolve(); // خطأ آخر غير متوقّع — نُكمل على أي حال
+    });
+    probe.listen(47615, "127.0.0.1", () => { probe.close(() => resolve()); });
+  });
+}
+
 (async () => {
+  await ensureSingleInstance();
   console.log("[worker] بدء عامل شكيب نت المستقل...");
   try {
     const { startScheduler } = await import("@/lib/scheduler");
