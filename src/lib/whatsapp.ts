@@ -287,39 +287,76 @@ function ready(officeId: number): WAClient | null {
   return s.state === "ready" && s.client ? s.client : null;
 }
 
-// قائمة محادثات مكتب (الأحدث أولاً)
+// صفحة المتصفّح للعميل (للقراءة المباشرة من Store عند فشل دوال المكتبة).
+// نمرّر تعبير IIFE نصّياً (page.evaluate يقيّم النص ويُرجِع نتيجة وعده) — تفادياً
+// لمشاكل تسلسل الدوال مع tsx وتمرير الوسائط.
+function pupEval<T>(client: WAClient, expr: string): Promise<T> {
+  const p = (client as unknown as { pupPage?: { evaluate: (e: string) => Promise<unknown> } }).pupPage;
+  if (!p) return Promise.resolve([] as unknown as T);
+  return p.evaluate(expr) as Promise<T>;
+}
+
+// قائمة محادثات مكتب (الأحدث أولاً).
+// نقرأ من Store مباشرةً بحماية بدل client.getChats() لأن getChatModel في المكتبة
+// يلمس وحدات داخلية تغيّرت في واتساب ويب فيرمي خطأً مُصغّراً ("r").
 export async function getOfficeChats(officeId: number, limit = 40): Promise<WaChat[]> {
   const client = ready(officeId);
   if (!client) return [];
-  const chats = await client.getChats();
-  return chats
-    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
-    .slice(0, limit)
-    .map((c) => ({
-      id: c.id._serialized,
-      name: c.name || c.id.user,
-      unread: c.unreadCount ?? 0,
-      timestamp: (c.timestamp ?? 0),
-      last: c.lastMessage?.body || (c.lastMessage?.hasMedia ? "📎 وسائط" : ""),
-      isGroup: !!c.isGroup,
-    }));
+  const lim = Math.max(1, Math.min(200, Math.floor(limit)));
+  const expr = `(async () => {
+    const out = [];
+    const C = window.require('WAWebCollections').Chat;
+    const arr = C.getModelsArray ? C.getModelsArray() : (C._models || C.models || []);
+    for (const c of arr) {
+      try {
+        const id = (c.id && c.id._serialized) ? c.id._serialized : ((c.id && c.id.user) || '');
+        if (!id) continue;
+        const isGroup = !!(c.id && c.id.server === 'g.us') || !!c.isGroup;
+        let name = '';
+        try { name = c.formattedTitle || c.name || ''; } catch(e) {}
+        if (!name) { try { name = (c.contact && (c.contact.formattedName || c.contact.pushname || c.contact.name)) || ''; } catch(e) {} }
+        if (!name && c.id && c.id.user) name = c.id.user;
+        let timestamp = 0; try { timestamp = c.t || 0; } catch(e) {}
+        let unread = 0; try { unread = c.unreadCount || 0; } catch(e) {}
+        let last = '';
+        try {
+          const ms = c.msgs && (c.msgs.getModelsArray ? c.msgs.getModelsArray() : c.msgs.models);
+          const lm = (ms && ms.length) ? ms[ms.length - 1] : null;
+          if (lm) last = lm.body || ((lm.type && lm.type !== 'chat') ? '📎 وسائط' : '');
+        } catch(e) {}
+        out.push({ id, name, unread, timestamp, last, isGroup });
+      } catch(e) {}
+    }
+    out.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return out.slice(0, ${lim});
+  })()`;
+  try { return (await pupEval<WaChat[]>(client, expr)) ?? []; } catch { return []; }
 }
 
-// رسائل محادثة محدّدة
+// رسائل محادثة محدّدة — نقرأ رسائل المحادثة المحمَّلة من Store مباشرةً بحماية.
 export async function getOfficeMessages(officeId: number, chatId: string, limit = 40): Promise<WaMessage[]> {
   const client = ready(officeId);
   if (!client) return [];
-  const chat = await client.getChatById(chatId);
-  const msgs = await chat.fetchMessages({ limit });
-  // علّم كمقروءة عند الفتح
-  try { await chat.sendSeen(); } catch { /* ignore */ }
-  return msgs.map((m) => ({
-    id: m.id._serialized,
-    body: m.body || (m.hasMedia ? "📎 وسائط" : ""),
-    fromMe: !!m.fromMe,
-    timestamp: m.timestamp ?? 0,
-    type: m.type ?? "chat",
-  }));
+  const lim = Math.max(1, Math.min(200, Math.floor(limit)));
+  const cid = JSON.stringify(String(chatId)); // اقتباس آمن للمعرّف داخل النص
+  const expr = `(async () => {
+    const C = window.require('WAWebCollections').Chat;
+    let c = null;
+    try { c = C.get ? C.get(${cid}) : null; } catch(e) {}
+    if (!c) { const arr = C.getModelsArray ? C.getModelsArray() : (C._models || C.models || []); c = arr.find(x => x.id && x.id._serialized === ${cid}); }
+    if (!c) return [];
+    let ms = [];
+    try { ms = (c.msgs && (c.msgs.getModelsArray ? c.msgs.getModelsArray() : c.msgs.models)) || []; } catch(e) {}
+    return ms.slice(-${lim}).map((m) => {
+      let id = ''; try { id = (m.id && m.id._serialized) || ''; } catch(e) {}
+      let body = ''; try { body = m.body || ''; } catch(e) {}
+      let fromMe = false; try { fromMe = !!(m.id && m.id.fromMe); } catch(e) {}
+      let ts = 0; try { ts = m.t || 0; } catch(e) {}
+      let type = 'chat'; try { type = m.type || 'chat'; } catch(e) {}
+      return { id, body: body || (type !== 'chat' ? '📎 وسائط' : ''), fromMe, timestamp: ts, type };
+    });
+  })()`;
+  try { return (await pupEval<WaMessage[]>(client, expr)) ?? []; } catch { return []; }
 }
 
 // إرسال رد في محادثة
