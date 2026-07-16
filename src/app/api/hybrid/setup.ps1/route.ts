@@ -58,6 +58,9 @@ if (-not (Test-Path $envFile)) {
 Write-Host "تثبيت المكتبات (قد يستغرق دقائق)..." -ForegroundColor Yellow
 npm install
 npx prisma generate
+# متصفّح Chromium للواتساب (whatsapp-web.js) — ضروري لظهور رمز QR؛ قد لا ينزّله npm install وحده
+Write-Host "تنزيل متصفّح الواتساب (Chromium)..." -ForegroundColor Yellow
+npx puppeteer browsers install chrome
 
 # 5) التشغيل التلقائي المخفي عند دخول ويندوز — عبر VBScript بمجلد بدء التشغيل (بلا نافذة، بلا صلاحية مدير)
 $oldBat = Join-Path ([Environment]::GetFolderPath('Startup')) 'ShakeebNetAgent.bat'
