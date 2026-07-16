@@ -44,6 +44,9 @@ $envFile = Join-Path $app ".env"
 if (-not (Test-Path $envFile)) {
   Write-Host ""
   $db = Read-Host "الصق رابط قاعدة بيانات Neon (DATABASE_URL)"
+  # إزالة channel_binding=require (يسبّب فشل اتصال مع سائق pg على بعض الإصدارات)
+  $db = ($db -replace '&channel_binding=require','') -replace '\?channel_binding=require&','?'
+  $db = $db.Trim()
   $chars = (48..57) + (65..90) + (97..122)
   $secret = -join ($chars | Get-Random -Count 48 | ForEach-Object { [char]$_ })
   $machineId = [guid]::NewGuid().ToString()

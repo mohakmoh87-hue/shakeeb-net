@@ -13,11 +13,11 @@ const nextConfig: NextConfig = {
       "node_modules/@puppeteer/**",
     ],
   },
-  // رؤوس حماية على كل الصفحات (clickjacking، MIME-sniffing، تسريب المُحيل، HTTPS إجباري)
+  // رؤوس حماية على كل الصفحات عدا بروكسي SAS المضمّن (/sas/*) — حتى لا تُعطّل أصوله
   async headers() {
     return [
       {
-        source: "/:path*",
+        source: "/:path((?!sas/).*)",
         headers: [
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "X-Content-Type-Options", value: "nosniff" },
