@@ -84,7 +84,8 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
     },
   });
 
-  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; publish(officeId); });
+  console.log(`[whatsapp] بدء إقلاع واتساب مكتب ${officeId}...`);
+  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
   client.on("authenticated", () => { const st = store(officeId); st.qr = null; st.state = "authenticated"; publish(officeId); });
   client.on("ready", () => { const st = store(officeId); st.qr = null; st.state = "ready"; publish(officeId); });
   client.on("auth_failure", (m: string) => { const st = store(officeId); st.state = "error"; st.lastError = `فشل المصادقة: ${m}`; publish(officeId); });
