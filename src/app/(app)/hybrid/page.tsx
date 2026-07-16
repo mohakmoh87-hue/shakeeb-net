@@ -16,6 +16,13 @@ export default function HybridWorkersPage() {
   const [loaded, setLoaded] = useState(false);
   const [edits, setEdits] = useState<Record<number, string>>({});
   const [nameEdits, setNameEdits] = useState<Record<number, string>>({});
+  const [copied, setCopied] = useState(false);
+
+  // أمر إضافة حاسبة مكتب (يُلصَق في PowerShell) — يعتمد على أصل الموقع الحالي
+  const setupCmd = "iwr -UseBasicParsing 'https://shakeebnet.com/api/hybrid/setup.ps1' | iex";
+  function copyCmd() {
+    navigator.clipboard?.writeText(setupCmd).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
 
   const load = useCallback(() => {
     fetch("/api/hybrid/workers").then((r) => {
@@ -53,6 +60,24 @@ export default function HybridWorkersPage() {
   return (
     <div className="p-6">
       <PageHeader title="حواسيب النظام الهجين" subtitle="أولوية الحواسيب — الأصغر رقماً يصير مضيف واتساب لكل المكاتب" />
+
+      {/* أمر إضافة حاسبة مكتب — يُلصَق في PowerShell على الحاسبة الجديدة */}
+      <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+        <div className="mb-2 flex items-center gap-2 text-sm font-bold text-emerald-800">
+          <span>➕ إضافة حاسبة مكتب (أو إعادة إضافة محذوفة)</span>
+        </div>
+        <p className="mb-2 text-xs text-slate-600">
+          على حاسبة المكتب: افتح <b>PowerShell</b> والصق هذا الأمر ثم Enter. بعد ~٢٠ ثانية تظهر الحاسبة في الجدول أدناه — اكتب لها اسماً واضغط «تفعيل».
+        </p>
+        <div className="flex items-stretch gap-2">
+          <code dir="ltr" className="flex-1 overflow-x-auto whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-800">
+            {setupCmd}
+          </code>
+          <button onClick={copyCmd} className={`shrink-0 rounded-lg px-4 py-2 text-sm font-bold text-white transition ${copied ? "bg-emerald-600" : "bg-mynet-blue hover:bg-mynet-blue-dark"}`}>
+            {copied ? "✓ نُسِخ" : "📋 نسخ"}
+          </button>
+        </div>
+      </div>
 
       <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-slate-600">
         الحاسبة صاحبة <b>أصغر رقم أولوية</b> بين المتصلة تصير <b>القائد</b> (تستضيف واتساب لكل المكاتب وتنفّذ الإرسال/المزامنة).
