@@ -389,17 +389,24 @@ export function startWaRelayPoller() {
         orderBy: { id: "asc" },
         take: 5,
       });
-      for (const r of pend) {
+      for (const relayRow of pend) {
         try {
-          const p = (r.params ? JSON.parse(r.params) : {}) as { chatId?: string; text?: string; limit?: number };
+          const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; limit?: number };
+          // تأكّد أن واتساب المكتب جاهز فعلاً قبل محاولة جلب المحادثات
+          const st = store(relayRow.towerId);
+          if ((relayRow.kind === "chats" || relayRow.kind === "messages" || relayRow.kind === "send") && st.state !== "ready") {
+            throw new Error(`واتساب المكتب غير جاهز (الحالة: ${st.state})`);
+          }
           let result: unknown = null;
-          if (r.kind === "chats") result = await getOfficeChats(r.towerId, p.limit ?? 40);
-          else if (r.kind === "messages") result = await getOfficeMessages(r.towerId, p.chatId ?? "", p.limit ?? 40);
-          else if (r.kind === "send") result = await sendOfficeChat(r.towerId, p.chatId ?? "", p.text ?? "");
-          else if (r.kind === "logout") { await logoutWhatsApp(r.towerId); result = { ok: true }; }
-          await prisma.waRelay.update({ where: { id: r.id }, data: { status: "done", result: JSON.stringify(result) } });
+          if (relayRow.kind === "chats") result = await getOfficeChats(relayRow.towerId, p.limit ?? 40);
+          else if (relayRow.kind === "messages") result = await getOfficeMessages(relayRow.towerId, p.chatId ?? "", p.limit ?? 40);
+          else if (relayRow.kind === "send") result = await sendOfficeChat(relayRow.towerId, p.chatId ?? "", p.text ?? "");
+          else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
+          await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "done", result: JSON.stringify(result) } });
         } catch (e) {
-          await prisma.waRelay.update({ where: { id: r.id }, data: { status: "error", error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
+          const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+          console.error(`[wa-relay] فشل ${relayRow.kind} مكتب ${relayRow.towerId}:`, e instanceof Error ? e.stack : e);
+          await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "error", error: msg.slice(0, 500) } }).catch(() => {});
         }
       }
       // تنظيف الطلبات القديمة (منجزة أو فاشلة) الأقدم من 5 دقائق
