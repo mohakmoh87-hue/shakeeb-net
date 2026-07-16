@@ -49,26 +49,44 @@ export async function GET(request: Request) {
     matchedTowerIds = towers.map((t) => t.id);
   }
 
-  const subscribers = await prisma.subscriber.findMany({
-    where: {
-      isDeleted: false,
-      ...towerFilter,
-      ...(q
-        ? {
-            OR: [
-              { name: { contains: q, mode: "insensitive" } },
-              { netUser: { contains: q, mode: "insensitive" } },
-              { phone: { contains: q } },
-              { address: { contains: q, mode: "insensitive" } },
-              // البحث باسم المكتب
-              ...(matchedTowerIds.length ? [{ towerId: { in: matchedTowerIds } }] : []),
-            ],
-          }
-        : {}),
-    },
-    orderBy: { name: "asc" },
+  const where = {
+    isDeleted: false,
+    ...towerFilter,
+    ...(q
+      ? {
+          OR: [
+            { name: { contains: q, mode: "insensitive" as const } },
+            { netUser: { contains: q, mode: "insensitive" as const } },
+            { phone: { contains: q } },
+            { address: { contains: q, mode: "insensitive" as const } },
+            // البحث باسم المكتب
+            ...(matchedTowerIds.length ? [{ towerId: { in: matchedTowerIds } }] : []),
+          ],
+        }
+      : {}),
+  };
+
+  // حدّ التحميل: نجلب أول 300 فقط (القائمة كبيرة — 5000+)، والبحث يغطّي الباقي.
+  // هذا يقلّل النقل من فرانكفورت ورسم آلاف الصفوف، فتُفتح الصفحة فوراً.
+  const LIMIT = 300;
+  const [items, total] = await Promise.all([
+    prisma.subscriber.findMany({
+      where,
+      // نُرجع الأعمدة التي تعرضها الواجهة فقط (بدل 30+ عموداً) — أخفّ نقلاً ومعالجةً
+      select: {
+        id: true, name: true, phone: true, address: true, packageId: true,
+        towerId: true, carry: true, dateTo: true, netUser: true, sasId: true,
+        note: true, smsEnabled: true, waEnabled: true, transferredTo: true,
+      },
+      orderBy: { name: "asc" },
+      take: LIMIT,
+    }),
+    prisma.subscriber.count({ where }),
+  ]);
+  // نُبقي الرد مصفوفةً (توافقاً مع بقية الصفحات)، والمجموع/الحدّ في ترويسات
+  return NextResponse.json(items, {
+    headers: { "X-Total-Count": String(total), "X-Limit": String(LIMIT) },
   });
-  return NextResponse.json(subscribers);
 }
 
 export async function POST(request: Request) {

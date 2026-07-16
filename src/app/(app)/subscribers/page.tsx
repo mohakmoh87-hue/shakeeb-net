@@ -58,6 +58,7 @@ type Receipt = {
 export default function SubscribersPage() {
   const router = useRouter();
   const [subs, setSubs] = useState<Subscriber[]>([]);
+  const [total, setTotal] = useState(0); // مجموع المطابقين (قد يفوق المعروض 300)
   const [packages, setPackages] = useState<Pkg[]>([]);
   const [towers, setTowers] = useState<Tower[]>([]);
   const [query, setQuery] = useState("");
@@ -149,7 +150,10 @@ export default function SubscribersPage() {
 
   const load = useCallback((q = "", all = false) => {
     fetch(`/api/subscribers?q=${encodeURIComponent(q)}${all ? "&all=1" : ""}`).then((r) => {
-      if (r.ok) r.json().then(setSubs);
+      if (!r.ok) return;
+      const t = Number(r.headers.get("X-Total-Count"));
+      setTotal(Number.isFinite(t) ? t : 0);
+      r.json().then(setSubs);
     });
   }, []);
 
@@ -481,7 +485,10 @@ export default function SubscribersPage() {
               </tbody>
             </table>
           </div>
-          <div className="border-t border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-bold text-slate-600">{subs.length}</div>
+          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-bold text-slate-600">
+            <span>{total > subs.length ? `عرض ${subs.length} من ${total}` : subs.length}</span>
+            {total > subs.length && <span className="text-xs font-normal text-amber-600">🔍 اكتب في البحث لإيجاد الباقي</span>}
+          </div>
         </section>
       </div>
 
