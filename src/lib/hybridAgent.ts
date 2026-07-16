@@ -22,6 +22,7 @@ export function startHybridAgent() {
   const id = getMachineId();
   const name = os.hostname();
   const towerId = process.env.WORKER_TOWER_ID ? Number(process.env.WORKER_TOWER_ID) : null;
+  let loggedOk = false;
 
   async function beat() {
     try {
@@ -32,8 +33,9 @@ export function startHybridAgent() {
       });
       const leader = await computeLeaderMachineId();
       leaderNow = leader == null || leader === id;
-    } catch {
-      /* عند تعذّر الاتصال بالقاعدة نُبقي آخر حالة معروفة */
+      if (!loggedOk) { loggedOk = true; console.log(`[hybrid-agent] ✅ سُجّلت الحاسبة (${id}) name=${name} — قائد=${leaderNow}`); }
+    } catch (e) {
+      console.error("[hybrid-agent] ❌ فشل تسجيل الحاسبة:", e instanceof Error ? e.message : e);
     }
   }
   void beat();
