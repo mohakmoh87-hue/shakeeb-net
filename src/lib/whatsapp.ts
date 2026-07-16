@@ -320,9 +320,10 @@ export async function getOfficeChats(officeId: number, limit = 40): Promise<WaCh
         let unread = 0; try { unread = c.unreadCount || 0; } catch(e) {}
         let last = '';
         try {
+          const mlabel = (t) => t==='image'?'📷 صورة':t==='video'?'🎥 فيديو':(t==='ptt'||t==='audio')?'🎤 رسالة صوتية':t==='document'?'📄 ملف':t==='sticker'?'🌟 ملصق':t==='location'?'📍 موقع':(t==='vcard'||t==='multi_vcard')?'👤 جهة اتصال':'📎 مرفق';
           const ms = c.msgs && (c.msgs.getModelsArray ? c.msgs.getModelsArray() : c.msgs.models);
           const lm = (ms && ms.length) ? ms[ms.length - 1] : null;
-          if (lm) last = lm.body || ((lm.type && lm.type !== 'chat') ? '📎 وسائط' : '');
+          if (lm) last = lm.body || ((lm.type && lm.type !== 'chat') ? mlabel(lm.type) : '');
         } catch(e) {}
         out.push({ id, name, unread, timestamp, last, isGroup });
       } catch(e) {}
@@ -345,15 +346,27 @@ export async function getOfficeMessages(officeId: number, chatId: string, limit 
     try { c = C.get ? C.get(${cid}) : null; } catch(e) {}
     if (!c) { const arr = C.getModelsArray ? C.getModelsArray() : (C._models || C.models || []); c = arr.find(x => x.id && x.id._serialized === ${cid}); }
     if (!c) return [];
+    // حمّل رسائل أقدم من الخادم حتى نبلغ الحد (الوحدة WAWebChatLoadMessages غير مكسورة)
+    try {
+      const loader = window.require('WAWebChatLoadMessages');
+      let guard = 0;
+      const count = () => { try { return c.msgs.getModelsArray().length; } catch(e) { return 0; } };
+      while (loader && loader.loadEarlierMsgs && count() < ${lim} && guard < 12) {
+        const loaded = await loader.loadEarlierMsgs({ chat: c });
+        guard++;
+        if (!loaded || !loaded.length) break;
+      }
+    } catch(e) {}
     let ms = [];
     try { ms = (c.msgs && (c.msgs.getModelsArray ? c.msgs.getModelsArray() : c.msgs.models)) || []; } catch(e) {}
+    const mlabel = (t) => t==='image'?'📷 صورة':t==='video'?'🎥 فيديو':(t==='ptt'||t==='audio')?'🎤 رسالة صوتية':t==='document'?'📄 ملف':t==='sticker'?'🌟 ملصق':t==='location'?'📍 موقع':(t==='vcard'||t==='multi_vcard')?'👤 جهة اتصال':'📎 مرفق';
     return ms.slice(-${lim}).map((m) => {
       let id = ''; try { id = (m.id && m.id._serialized) || ''; } catch(e) {}
       let body = ''; try { body = m.body || ''; } catch(e) {}
       let fromMe = false; try { fromMe = !!(m.id && m.id.fromMe); } catch(e) {}
       let ts = 0; try { ts = m.t || 0; } catch(e) {}
       let type = 'chat'; try { type = m.type || 'chat'; } catch(e) {}
-      return { id, body: body || (type !== 'chat' ? '📎 وسائط' : ''), fromMe, timestamp: ts, type };
+      return { id, body: body || (type !== 'chat' ? mlabel(type) : ''), fromMe, timestamp: ts, type };
     });
   })()`;
   try { return (await pupEval<WaMessage[]>(client, expr)) ?? []; } catch { return []; }
