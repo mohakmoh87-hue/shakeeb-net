@@ -20,6 +20,20 @@ enum Role {
   VIEWER
 }
 
+// ===== الوكيل (المستأجر): مالك النظام يدير عدّة وكلاء، كل وكيل يدير مكاتبه =====
+model Agent {
+  id         Int       @id @default(autoincrement())
+  name       String // اسم/علامة الوكيل — يظهر بكامل البرنامج له
+  officeCap  Int       @default(1) // أقصى عدد مكاتب يسمح له بإنشائها
+  planExpiry DateTime? // تاريخ انتهاء الاشتراك (null = بلا انتهاء)
+  isTrial    Boolean   @default(false) // حساب تجريبي (أسبوع)
+  isDeleted  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @default(now()) @updatedAt
+
+  @@map("agents")
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   fullName  String
@@ -27,6 +41,8 @@ model User {
   password  String
   role      Role     @default(VIEWER)
   isAdmin   Boolean  @default(false) // مدير كامل الصلاحيات
+  isOwner   Boolean  @default(false) // مالك النظام (فوق المدير) — يدير الوكلاء فقط
+  agentId   Int? // الوكيل (المستأجر) الذي ينتمي إليه هذا المستخدم
   permissions String? // صلاحيات مفصولة بفواصل
   towerId   Int? // البرج الذي يتحكم به هذا المستخدم (المكتب)
   managerPhone String? // رقم المدير لإرسال التقرير اليومي
@@ -73,6 +89,7 @@ model Group {
 model Tower {
   id          Int     @id @default(autoincrement())
   name        String?
+  agentId     Int? // الوكيل (المستأجر) الذي يملك هذا المكتب
   address     String?
   note        String?
   phone       String?
