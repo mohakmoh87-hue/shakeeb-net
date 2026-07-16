@@ -5,6 +5,8 @@ export const dynamic = "force-dynamic";
 // ملاحظة: لا يحتوي السكربت على أي حرف backtick (لتفادي تعارضه مع قالب JS).
 const SCRIPT = String.raw`
 $ErrorActionPreference = "Stop"
+# رفع حظر تشغيل السكربتات للعملية الحالية (يمنع خطأ npm.ps1 cannot be loaded)
+try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch { }
 $repo = "https://github.com/mohakmoh87-hue/shakeeb-net.git"
 $root = Join-Path $env:LOCALAPPDATA "ShakeebNet"
 $app  = Join-Path $root "app"
@@ -56,11 +58,12 @@ if (-not (Test-Path $envFile)) {
 
 # 4) التثبيت والتوليد (العامل المستقل لا يحتاج next build)
 Write-Host "تثبيت المكتبات (قد يستغرق دقائق)..." -ForegroundColor Yellow
-npm install
-npx prisma generate
+# استدعاء npm.cmd/npx.cmd مباشرةً لتجاوز حظر تشغيل npm.ps1 عبر سياسة PowerShell
+& cmd /c "npm install"
+& cmd /c "npx prisma generate"
 # متصفّح Chromium للواتساب (whatsapp-web.js) — ضروري لظهور رمز QR؛ قد لا ينزّله npm install وحده
 Write-Host "تنزيل متصفّح الواتساب (Chromium)..." -ForegroundColor Yellow
-npx puppeteer browsers install chrome
+& cmd /c "npx puppeteer browsers install chrome"
 
 # 5) التشغيل التلقائي المخفي عند دخول ويندوز — عبر VBScript بمجلد بدء التشغيل (بلا نافذة، بلا صلاحية مدير)
 $oldBat = Join-Path ([Environment]::GetFolderPath('Startup')) 'ShakeebNetAgent.bat'
