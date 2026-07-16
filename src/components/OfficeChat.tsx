@@ -19,6 +19,9 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
   const [err, setErr] = useState("");
   const [media, setMedia] = useState<Record<string, Media | "loading" | "error">>({});
   const endRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const lastMsgIdRef = useRef<string>("");
+  const selIdRef = useRef<string>("");
 
   // تنزيل وعرض وسائط رسالة عند الضغط على «عرض»
   async function viewMedia(msgId: string) {
@@ -49,7 +52,21 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
     const i = setInterval(() => loadMsgs(sel.id), 3500);
     return () => clearInterval(i);
   }, [sel, loadMsgs]);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+  // تمرير تلقائي للأسفل فقط عند: فتح محادثة جديدة، أو وصول رسالة جديدة والمستخدم قريب من الأسفل.
+  // (يمنع القفز للأسفل أثناء تصفّح الرسائل القديمة مع كل تحديث دوري)
+  useEffect(() => {
+    const el = listRef.current;
+    const lastId = msgs.length ? msgs[msgs.length - 1].id : "";
+    const chatChanged = sel?.id !== selIdRef.current;
+    const nearBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    if (chatChanged) {
+      endRef.current?.scrollIntoView();
+      selIdRef.current = sel?.id ?? "";
+    } else if (lastId !== lastMsgIdRef.current && nearBottom) {
+      endRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    lastMsgIdRef.current = lastId;
+  }, [msgs, sel]);
 
   async function send() {
     if (!sel || !text.trim()) return;
@@ -108,7 +125,7 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
             ) : (
               <>
                 <div className="border-b border-slate-200 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">{sel.name}</div>
-                <div className="flex-1 space-y-1.5 overflow-y-auto p-4">
+                <div ref={listRef} className="flex-1 space-y-1.5 overflow-y-auto p-4">
                   {msgs.map((m) => {
                     const md = media[m.id];
                     return (

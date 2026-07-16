@@ -347,6 +347,8 @@ export async function getOfficeMessages(officeId: number, chatId: string, limit 
     try { c = C.get ? C.get(${cid}) : null; } catch(e) {}
     if (!c) { const arr = C.getModelsArray ? C.getModelsArray() : (C._models || C.models || []); c = arr.find(x => x.id && x.id._serialized === ${cid}); }
     if (!c) return [];
+    // علّم المحادثة كمقروءة عند فتحها (يُزيل عدّاد غير المقروء)
+    try { if (window.WWebJS && window.WWebJS.sendSeen) await window.WWebJS.sendSeen(${cid}); } catch(e) {}
     // حمّل رسائل أقدم من الخادم حتى نبلغ الحد (الوحدة WAWebChatLoadMessages غير مكسورة)
     try {
       const loader = window.require('WAWebChatLoadMessages');

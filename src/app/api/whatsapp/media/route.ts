@@ -12,8 +12,8 @@ export async function GET(request: Request) {
   const officeId = Number(url.searchParams.get("officeId"));
   const msgId = url.searchParams.get("msgId");
   if (!officeId || !msgId) return NextResponse.json({ error: "بيانات ناقصة" }, { status: 400 });
-  // مهلة أطول للتنزيل (قد يستغرق ثوانٍ)
-  const r = await relayRequest(officeId, "media", { msgId }, 20000);
+  // مهلة ضمن حدّ دالة Vercel (لا نتجاوز ~10ث وإلا تُقطَع الدالة فيظهر خطأ الجلب)
+  const r = await relayRequest(officeId, "media", { msgId }, 9000);
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
   const m = (r.result ?? {}) as { data?: string; mimetype?: string; filename?: string; error?: string };
   if (m.error || !m.data) {
