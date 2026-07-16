@@ -24,23 +24,32 @@ export async function GET() {
     where: { isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" },
   });
 
-  // البطاقات المنجزة غير المحصّلة، مجمّعة حسب الفني
-  const pending = await prisma.taskCard.groupBy({
-    by: ["technicianId"],
+  // البطاقات المنجزة غير المحصّلة (تفاصيل كل تكت) لبناء المجموع + تفصيله لكل فني
+  const cards = await prisma.taskCard.findMany({
     where: { done: true, settled: false, isDeleted: false, technicianId: { in: technicians.map((t) => t.id) } },
-    _sum: { amount: true },
-    _count: true,
+    select: { id: true, title: true, kind: true, amount: true, technicianId: true },
+    orderBy: { id: "asc" },
   });
-  const map = new Map(pending.map((p) => [p.technicianId, { total: p._sum.amount ?? 0, count: p._count }]));
+  const byTech = new Map<number, { title: string; kind: string; amount: number }[]>();
+  for (const c of cards) {
+    if (c.technicianId == null) continue;
+    const arr = byTech.get(c.technicianId) ?? [];
+    arr.push({ title: c.title, kind: c.kind, amount: c.amount ?? 0 });
+    byTech.set(c.technicianId, arr);
+  }
 
   return NextResponse.json({
     isManager: manager,
     offices,
-    technicians: technicians.map((t) => ({
-      id: t.id, name: t.name, towerId: t.towerId,
-      pendingTotal: map.get(t.id)?.total ?? 0,
-      pendingCount: map.get(t.id)?.count ?? 0,
-    })),
+    technicians: technicians.map((t) => {
+      const items = byTech.get(t.id) ?? [];
+      return {
+        id: t.id, name: t.name, towerId: t.towerId,
+        pendingTotal: items.reduce((s, x) => s + x.amount, 0),
+        pendingCount: items.length,
+        items, // تفصيل كل تكت (عنوان + نوع + مبلغ)
+      };
+    }),
   });
 }
 

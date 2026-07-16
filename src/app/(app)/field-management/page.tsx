@@ -27,14 +27,9 @@ type Office = { id: number; name: string | null };
 type Technician = { id: number; name: string; phone: string | null; isSupport?: boolean };
 type CardType = { id: number; name: string; deliveryOnly: boolean };
 
-const LABELS = [
-  { key: "red", cls: "bg-red-500", name: "عاجل" },
-  { key: "amber", cls: "bg-amber-500", name: "مهم" },
-  { key: "green", cls: "bg-emerald-500", name: "عادي" },
-  { key: "blue", cls: "bg-blue-500", name: "متابعة" },
-  { key: "purple", cls: "bg-purple-500", name: "أخرى" },
-];
-const labelCls = (k: string | null) => LABELS.find((l) => l.key === k)?.cls ?? "";
+// لون ثابت لكل نوع بطاقة (تصنيف) — يُشتق من اسم النوع فيبقى ثابتاً لكل تصنيف
+const KIND_COLORS = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-purple-500", "bg-pink-500", "bg-cyan-600", "bg-red-500", "bg-lime-600", "bg-indigo-500", "bg-orange-500"];
+const kindColor = (name: string) => KIND_COLORS[[...(name || "")].reduce((a, ch) => a + ch.charCodeAt(0), 0) % KIND_COLORS.length];
 const fmtDue = (d: string | null) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" }) : null);
 
 export default function FieldManagementPage() {
@@ -210,10 +205,11 @@ export default function FieldManagementPage() {
                     onClick={() => setSel(c)}
                     className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md"
                   >
-                    {c.label && <div className={`mb-1.5 h-1.5 w-10 rounded-full ${labelCls(c.label)}`} />}
+                    {/* شريط لون التصنيف (النوع) */}
+                    <div className={`mb-1.5 h-1.5 w-10 rounded-full ${kindColor(c.kind)}`} />
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
+                      <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
                       {c.dueDate && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 {fmtDue(c.dueDate)}</span>}
                       {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة {c.amount != null ? `— ${Number(c.amount).toLocaleString("en-US")}` : ""}</span>}
@@ -299,19 +295,25 @@ export default function FieldManagementPage() {
               {lists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
 
+            {/* التصنيف: كل نوع مستطيل ملوّن يُضغَط لاختياره (بدل القائمة المنسدلة) */}
             <label className="mb-1 block text-xs font-semibold text-slate-500">التصنيف</label>
-            <div className="mb-3 flex gap-1.5">
-              {LABELS.map((lb) => (
-                <button key={lb.key} onClick={() => saveCard({ label: sel.label === lb.key ? null : lb.key })} title={lb.name} className={`h-7 flex-1 rounded ${lb.cls} ${sel.label === lb.key ? "ring-2 ring-slate-800 ring-offset-1" : "opacity-70"}`} />
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              {cardTypes.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => saveCard({ kind: t.name })}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white transition ${kindColor(t.name)} ${sel.kind === t.name ? "ring-2 ring-slate-800 ring-offset-1" : "opacity-55 hover:opacity-100"}`}
+                >
+                  {t.deliveryOnly ? "🚚" : "🔧"} {t.name}
+                </button>
               ))}
+              {!cardTypes.some((t) => t.name === sel.kind) && (
+                <button className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white ring-2 ring-slate-800 ring-offset-1 ${kindColor(sel.kind)}`}>{sel.kind}</button>
+              )}
+              {canManage && (
+                <button onClick={createType} className="rounded-lg border border-dashed border-slate-400 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50">➕ نوع</button>
+              )}
             </div>
-
-            <label className="mb-1 block text-xs font-semibold text-slate-500">نوع البطاقة</label>
-            <select value={sel.kind} onChange={(e) => { if (e.target.value === "__new__") createType(); else saveCard({ kind: e.target.value }); }} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              {cardTypes.map((t) => <option key={t.id} value={t.name}>{t.deliveryOnly ? "🚚" : "🔧"} {t.name}</option>)}
-              {!cardTypes.some((t) => t.name === sel.kind) && <option value={sel.kind}>{sel.kind}</option>}
-              {canManage && <option value="__new__">➕ نوع جديد…</option>}
-            </select>
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">الفني المسؤول</label>
             {technicians.length > 0 ? (

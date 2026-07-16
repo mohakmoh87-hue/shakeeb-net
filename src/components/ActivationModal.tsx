@@ -267,7 +267,7 @@ export default function ActivationModal({
                   {amount !== "" && <button onClick={() => setAmount("")} title="رجوع لسعر الباقة" className="shrink-0 rounded bg-slate-200 px-1.5 text-sm hover:bg-slate-300">↺</button>}
                 </div>
               </Cell>
-              <Cell label="اجور صيانة">
+              <Cell label="اجور توصيل">
                 <input type="number" value={delivery} onChange={(e) => setDelivery(e.target.value)} placeholder="0" className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
               </Cell>
               <Cell label="المجموع">
