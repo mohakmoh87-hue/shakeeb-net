@@ -1,4 +1,3 @@
-import "server-only";
 import type { SasUser } from "./sas4";
 
 // كاش لآخر قائمة مشتركين عرضتها لوحة SAS4 (مفتاح: معرّف مستخدم البرنامج)

@@ -1,4 +1,3 @@
-import "server-only";
 import { prisma } from "@/lib/prisma";
 
 // حذف نهائي لمشترك/مشتركين مع كل سجلاتهم (كأنهم لم يُضافوا أبداً):

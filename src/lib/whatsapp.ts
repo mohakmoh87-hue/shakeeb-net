@@ -1,4 +1,3 @@
-import "server-only";
 import path from "path";
 import fs from "fs";
 import type { Client as WAClient } from "whatsapp-web.js";

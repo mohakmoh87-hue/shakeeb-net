@@ -1,4 +1,3 @@
-import "server-only";
 import crypto from "node:crypto";
 import { fetch as undiciFetch, Agent } from "undici";
 

@@ -1,4 +1,3 @@
-import "server-only";
 import cron from "node-cron";
 import { prisma } from "@/lib/prisma";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";

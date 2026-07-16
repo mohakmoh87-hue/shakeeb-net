@@ -54,30 +54,28 @@ if (-not (Test-Path $envFile)) {
   Set-Content -Encoding utf8 -Path $envFile -Value $lines
 }
 
-# 4) التثبيت والتوليد والبناء
+# 4) التثبيت والتوليد (العامل المستقل لا يحتاج next build)
 Write-Host "تثبيت المكتبات (قد يستغرق دقائق)..." -ForegroundColor Yellow
 npm install
 npx prisma generate
-npm run build
 
 # 5) التشغيل التلقائي عند دخول ويندوز — عبر مجلد بدء التشغيل (بلا صلاحية مدير)
 try {
   $startup = [Environment]::GetFolderPath('Startup')
   $runner  = Join-Path $startup 'ShakeebNetAgent.bat'
-  $batLines = @('@echo off', ('cd /d "' + $app + '"'), 'set RUN_WORKER=1', 'start "" /min cmd /c npm start')
+  $batLines = @('@echo off', ('cd /d "' + $app + '"'), 'start "" /min cmd /c npx tsx src/worker.ts')
   Set-Content -Encoding ascii -Path $runner -Value $batLines
   Write-Host "سُجّل التشغيل التلقائي عند الاقلاع." -ForegroundColor Green
 } catch {
   Write-Host "تعذّر تسجيل التشغيل التلقائي — سيعمل يدوياً." -ForegroundColor Yellow
 }
 
-# 6) التشغيل الآن
-$env:RUN_WORKER = "1"
-Start-Process cmd -ArgumentList '/c set RUN_WORKER=1 && npm start' -WorkingDirectory $app
+# 6) تشغيل العامل الآن (عملية مستقلة لا تعتمد على مُسجِّل Next)
+Start-Process cmd -ArgumentList '/c npx tsx src/worker.ts' -WorkingDirectory $app
 
 Write-Host ""
 Write-Host "تم الاعداد بنجاح" -ForegroundColor Green
-Write-Host "الوكيل يعمل الان، وسيبدأ تلقائياً عند تشغيل الحاسبة."
+Write-Host "العامل يعمل الان، وسيبدأ تلقائياً عند تشغيل الحاسبة."
 Write-Host "افتح صفحة الموقع وامسح رمز واتساب عند طلبه — وسيختفي اشعار الاعداد تلقائياً."
 Read-Host "اضغط Enter للانهاء"
 `;

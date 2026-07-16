@@ -1,4 +1,3 @@
-import "server-only";
 import { fetch as undiciFetch, Agent } from "undici";
 
 const insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });

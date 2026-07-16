@@ -1,4 +1,3 @@
-import "server-only";
 import { prisma } from "@/lib/prisma";
 import type { SessionPayload } from "@/lib/auth";
 
