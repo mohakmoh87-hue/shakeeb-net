@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Chat = { id: string; name: string; unread: number; timestamp: number; last: string; isGroup: boolean };
-type Msg = { id: string; body: string; fromMe: boolean; timestamp: number; type: string };
+type Msg = { id: string; body: string; fromMe: boolean; timestamp: number; type: string; hasMedia?: boolean };
+type Media = { data: string; mimetype: string; filename?: string };
 
 const fmtTime = (ts: number) => ts ? new Date(ts * 1000).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "";
 
@@ -16,7 +17,19 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
   const [sending, setSending] = useState(false);
   const [loadingChats, setLoadingChats] = useState(true);
   const [err, setErr] = useState("");
+  const [media, setMedia] = useState<Record<string, Media | "loading" | "error">>({});
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  // تنزيل وعرض وسائط رسالة عند الضغط على «عرض»
+  async function viewMedia(msgId: string) {
+    setMedia((m) => ({ ...m, [msgId]: "loading" }));
+    try {
+      const r = await fetch(`/api/whatsapp/media?officeId=${officeId}&msgId=${encodeURIComponent(msgId)}`);
+      const d = await r.json();
+      if (r.ok && d.data) setMedia((m) => ({ ...m, [msgId]: { data: d.data, mimetype: d.mimetype, filename: d.filename } }));
+      else { setMedia((m) => ({ ...m, [msgId]: "error" })); setErr(d.error ?? "تعذّر تنزيل الوسائط"); }
+    } catch { setMedia((m) => ({ ...m, [msgId]: "error" })); }
+  }
 
   const loadChats = useCallback(async () => {
     const r = await fetch(`/api/whatsapp/chats?officeId=${officeId}`);
@@ -96,14 +109,30 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
               <>
                 <div className="border-b border-slate-200 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">{sel.name}</div>
                 <div className="flex-1 space-y-1.5 overflow-y-auto p-4">
-                  {msgs.map((m) => (
+                  {msgs.map((m) => {
+                    const md = media[m.id];
+                    return (
                     <div key={m.id} className={`flex ${m.fromMe ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[75%] rounded-lg px-3 py-1.5 text-sm shadow-sm ${m.fromMe ? "bg-emerald-100 text-slate-800" : "bg-white text-slate-800"}`}>
-                        <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                        {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
+                        {m.hasMedia && (
+                          md && md !== "loading" && md !== "error" ? (
+                            <MediaView media={md} />
+                          ) : (
+                            <button
+                              onClick={() => viewMedia(m.id)}
+                              disabled={md === "loading"}
+                              className="mt-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                            >
+                              {md === "loading" ? "جاري التنزيل…" : md === "error" ? "أعد المحاولة" : "عرض 📷"}
+                            </button>
+                          )
+                        )}
                         <div className="mt-0.5 text-left text-[10px] text-slate-400" dir="ltr">{fmtTime(m.timestamp)}</div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   <div ref={endRef} />
                 </div>
                 <div className="flex items-center gap-2 border-t border-slate-200 bg-slate-50 p-3">
@@ -123,5 +152,26 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
         )}
       </div>
     </div>
+  );
+}
+
+// عرض الوسائط المُنزَّلة حسب النوع (صورة/فيديو/صوت/ملف)
+function MediaView({ media }: { media: Media }) {
+  const src = `data:${media.mimetype};base64,${media.data}`;
+  const mt = media.mimetype || "";
+  if (mt.startsWith("image/")) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <a href={src} download={media.filename || "image"} target="_blank" rel="noreferrer"><img src={src} alt="صورة" className="mt-1 max-h-64 rounded-lg" /></a>;
+  }
+  if (mt.startsWith("video/")) {
+    return <video src={src} controls className="mt-1 max-h-64 rounded-lg" />;
+  }
+  if (mt.startsWith("audio/")) {
+    return <audio src={src} controls className="mt-1 w-56" />;
+  }
+  return (
+    <a href={src} download={media.filename || "file"} className="mt-1 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+      📄 تنزيل {media.filename || "الملف"}
+    </a>
   );
 }

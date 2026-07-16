@@ -280,7 +280,8 @@ export async function hasWhatsApp(officeId: number | null | undefined, phone: st
 
 // ===== واجهة المحادثة (واتساب ويب لكل مكتب) =====
 export type WaChat = { id: string; name: string; unread: number; timestamp: number; last: string; isGroup: boolean };
-export type WaMessage = { id: string; body: string; fromMe: boolean; timestamp: number; type: string };
+export type WaMessage = { id: string; body: string; fromMe: boolean; timestamp: number; type: string; hasMedia?: boolean };
+export type WaMedia = { data?: string; mimetype?: string; filename?: string; filesize?: number; error?: string };
 
 function ready(officeId: number): WAClient | null {
   const s = store(officeId);
@@ -366,10 +367,43 @@ export async function getOfficeMessages(officeId: number, chatId: string, limit 
       let fromMe = false; try { fromMe = !!(m.id && m.id.fromMe); } catch(e) {}
       let ts = 0; try { ts = m.t || 0; } catch(e) {}
       let type = 'chat'; try { type = m.type || 'chat'; } catch(e) {}
-      return { id, body: body || (type !== 'chat' ? mlabel(type) : ''), fromMe, timestamp: ts, type };
+      let hasMedia = false; try { hasMedia = !!(m.mediaData && m.mediaData.type) || ['image','video','ptt','audio','document','sticker'].indexOf(type) >= 0; } catch(e) {}
+      return { id, body: body || (type !== 'chat' ? mlabel(type) : ''), fromMe, timestamp: ts, type, hasMedia };
     });
   })()`;
   try { return (await pupEval<WaMessage[]>(client, expr)) ?? []; } catch { return []; }
+}
+
+// تنزيل وسائط رسالة محدّدة (صورة/فيديو/صوت/ملف) وإرجاعها base64.
+// نُكرّر منطق المكتبة (WAWebDownloadManager) — وهو مسار غير مكسور.
+export async function downloadOfficeMedia(officeId: number, msgId: string): Promise<WaMedia | null> {
+  const client = ready(officeId);
+  if (!client) return null;
+  const mid = JSON.stringify(String(msgId));
+  const expr = `(async () => {
+    const Col = window.require('WAWebCollections');
+    let msg = Col.Msg.get(${mid});
+    if (!msg) { try { const r = await Col.Msg.getMessagesById([${mid}]); msg = r && r.messages && r.messages[0]; } catch(e){} }
+    if (!msg || !msg.mediaData) return { error: 'no-media' };
+    if (msg.size && msg.size > 8388608) return { error: 'too-large' };
+    if (msg.mediaData.mediaStage === 'REUPLOADING') return { error: 'expired' };
+    try {
+      if (msg.mediaData.mediaStage != 'RESOLVED') {
+        await msg.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1 });
+      }
+      const stage = msg.mediaData.mediaStage || '';
+      if (stage.indexOf('ERROR') >= 0 || stage === 'FETCHING') return { error: 'unavailable' };
+      const dec = await window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
+        directPath: msg.directPath, encFilehash: msg.encFilehash, filehash: msg.filehash,
+        mediaKey: msg.mediaKey, mediaKeyTimestamp: msg.mediaKeyTimestamp, type: msg.type,
+        signal: new AbortController().signal,
+        downloadQpl: { addAnnotations: function(){ return this; }, addPoint: function(){ return this; } },
+      });
+      const data = await window.WWebJS.arrayBufferToBase64Async(dec);
+      return { data, mimetype: msg.mimetype || 'application/octet-stream', filename: msg.filename || '', filesize: msg.size || 0 };
+    } catch(e) { return { error: (e && e.message) || 'failed' }; }
+  })()`;
+  try { return (await pupEval<WaMedia>(client, expr)) ?? null; } catch { return null; }
 }
 
 // إرسال رد في محادثة
@@ -409,7 +443,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // (على الموقع) أنشئ طلباً وانتظر نتيجته من الوكيل — مع مهلة.
 export async function relayRequest(
   towerId: number,
-  kind: "chats" | "messages" | "send" | "logout",
+  kind: "chats" | "messages" | "send" | "logout" | "media",
   params: Record<string, unknown> = {},
   timeoutMs = 9000,
 ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
@@ -451,16 +485,17 @@ export function startWaRelayPoller() {
       });
       for (const relayRow of pend) {
         try {
-          const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; limit?: number };
-          // تأكّد أن واتساب المكتب جاهز فعلاً قبل محاولة جلب المحادثات
+          const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; limit?: number; msgId?: string };
+          // تأكّد أن واتساب المكتب جاهز فعلاً قبل محاولة القراءة/التنزيل
           const st = store(relayRow.towerId);
-          if ((relayRow.kind === "chats" || relayRow.kind === "messages" || relayRow.kind === "send") && st.state !== "ready") {
+          if ((relayRow.kind === "chats" || relayRow.kind === "messages" || relayRow.kind === "send" || relayRow.kind === "media") && st.state !== "ready") {
             throw new Error(`واتساب المكتب غير جاهز (الحالة: ${st.state})`);
           }
           let result: unknown = null;
           if (relayRow.kind === "chats") result = await getOfficeChats(relayRow.towerId, p.limit ?? 40);
           else if (relayRow.kind === "messages") result = await getOfficeMessages(relayRow.towerId, p.chatId ?? "", p.limit ?? 40);
           else if (relayRow.kind === "send") result = await sendOfficeChat(relayRow.towerId, p.chatId ?? "", p.text ?? "");
+          else if (relayRow.kind === "media") result = await downloadOfficeMedia(relayRow.towerId, p.msgId ?? "");
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
           await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "done", result: JSON.stringify(result) } });
         } catch (e) {
