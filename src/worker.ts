@@ -43,11 +43,12 @@ function ensureSingleInstance(): Promise<void> {
     const { startScheduler } = await import("@/lib/scheduler");
     const { startAgentHealthServer } = await import("@/lib/agentHealth");
     const { startHybridAgent } = await import("@/lib/hybridAgent");
-    const { startWaRequestPoller } = await import("@/lib/whatsapp");
+    const { startWaRequestPoller, startWaRelayPoller } = await import("@/lib/whatsapp");
     startScheduler();
     startAgentHealthServer();
     startHybridAgent();
     startWaRequestPoller();
+    startWaRelayPoller();
     console.log("[worker] ✅ العامل يعمل. اتركه مفتوحاً.");
   } catch (e) {
     console.error("[worker] ❌ فشل بدء العامل:", e);

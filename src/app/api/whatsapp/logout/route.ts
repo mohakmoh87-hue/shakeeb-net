@@ -18,14 +18,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "لا يمكنك فصل واتساب مكتب آخر" }, { status: 403 });
   }
 
-  // إشارة الفصل في السحابة (يلتقطها الوكيل، وتُحدّث الواجهة فوراً)
+  // إشارة الفصل في السحابة (تُحدّث الواجهة فوراً) + طلب فصل صريح للوكيل عبر المُرحِّل
+  // (يُنفَّذ حتى لو كان عميل المكتب منهاراً — فيحذف الجلسة ويوقف عُلوق "جاري البدء").
   await prisma.waSession.upsert({
     where: { towerId: officeId },
     update: { state: "disconnected", qr: null, error: null, requestedAt: null },
     create: { towerId: officeId, state: "disconnected" },
   });
+  await prisma.waRelay.create({ data: { towerId: officeId, kind: "logout" } });
 
-  // على الوكيل المحلي: نفّذ الفصل الحقيقي فوراً (هدم العميل + حذف الجلسة)
+  // على الوكيل المحلي: نفّذ الفصل الحقيقي فوراً أيضاً
   if (process.env.RUN_WORKER === "1") {
     const { logoutWhatsApp } = await import("@/lib/whatsapp");
     await logoutWhatsApp(officeId);

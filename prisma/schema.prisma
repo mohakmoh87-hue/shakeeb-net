@@ -658,6 +658,23 @@ model CardPhoto {
 }
 
 // جلسة واتساب كل مكتب منشورة في السحابة — ينشرها الوكيل ليقرأها الموقع (لعرض QR من الإنترنت)
+// مُرحِّل عمليات واتساب بين الموقع (Vercel، بلا عميل) والوكيل (يملك العميل الحيّ).
+// الموقع ينشئ طلباً (pending)، الوكيل القائد ينفّذه ويكتب النتيجة، الموقع يقرؤها.
+model WaRelay {
+  id        Int      @id @default(autoincrement())
+  towerId   Int
+  kind      String // chats | messages | send | logout
+  params    String? // JSON: { chatId?, text?, limit? }
+  status    String   @default("pending") // pending | done | error
+  result    String? // JSON نتيجة التنفيذ
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([status, createdAt])
+  @@map("wa_relays")
+}
+
 model WaSession {
   towerId     Int       @id // المكتب
   state       String    @default("disconnected") // disconnected|starting|qr|authenticated|ready|error

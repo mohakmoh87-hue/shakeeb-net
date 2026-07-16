@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { guard } from "@/lib/guard";
-import { sendOfficeChat } from "@/lib/whatsapp";
+import { relayRequest } from "@/lib/whatsapp";
 
 const schema = z.object({
   officeId: z.coerce.number(),
@@ -17,7 +17,8 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
   const { officeId, chatId, text } = parsed.data;
-  const res = await sendOfficeChat(officeId, chatId, text);
-  if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 });
+  const r = await relayRequest(officeId, "send", { chatId, text });
+  const res = (r.ok ? r.result : { ok: false, error: r.error }) as { ok: boolean; error?: string };
+  if (!r.ok || !res?.ok) return NextResponse.json({ error: res?.error ?? r.error ?? "تعذّر الإرسال" }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

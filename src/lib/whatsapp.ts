@@ -340,3 +340,70 @@ export async function sendWhatsApp(officeId: number | null | undefined, phone: s
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+// ===== مُرحِّل عمليات واتساب (الموقع ↔ الوكيل) =====
+// الموقع لا يملك عميل واتساب؛ فيرسل الطلب عبر جدول wa_relays، ويُنفّذه الوكيل القائد.
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// (على الموقع) أنشئ طلباً وانتظر نتيجته من الوكيل — مع مهلة.
+export async function relayRequest(
+  towerId: number,
+  kind: "chats" | "messages" | "send" | "logout",
+  params: Record<string, unknown> = {},
+  timeoutMs = 9000,
+): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+  // لا فائدة من الطلب إن لا يوجد وكيل نشط
+  const leader = await prisma.hybridWorker.findFirst({
+    where: { approved: true, lastSeen: { gte: new Date(Date.now() - 60_000) } },
+    select: { id: true },
+  });
+  if (!leader) return { ok: false, error: "وكيل المكتب غير متصل — لا يمكن جلب المحادثات" };
+
+  const row = await prisma.waRelay.create({
+    data: { towerId, kind, params: JSON.stringify(params) },
+  });
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await sleep(700);
+    const r = await prisma.waRelay.findUnique({ where: { id: row.id } });
+    if (r?.status === "done") return { ok: true, result: r.result ? JSON.parse(r.result) : null };
+    if (r?.status === "error") return { ok: false, error: r.error ?? "فشل التنفيذ على الوكيل" };
+  }
+  // نظّف الطلب المعلّق حتى لا يُنفَّذ متأخّراً
+  await prisma.waRelay.update({ where: { id: row.id }, data: { status: "error", error: "timeout" } }).catch(() => {});
+  return { ok: false, error: "انتهت المهلة — تأكّد أن وكيل المكتب متصل" };
+}
+
+// (على الوكيل) نفّذ طلبات المُرحِّل المعلّقة: القائد فقط.
+export function startWaRelayPoller() {
+  const gg = globalThis as unknown as { __waRelayPollerStarted?: boolean };
+  if (gg.__waRelayPollerStarted) return;
+  gg.__waRelayPollerStarted = true;
+  setInterval(async () => {
+    try {
+      const { isLeaderNow } = await import("@/lib/hybridAgent");
+      if (!isLeaderNow()) return;
+      const pend = await prisma.waRelay.findMany({
+        where: { status: "pending", createdAt: { gte: new Date(Date.now() - 60_000) } },
+        orderBy: { id: "asc" },
+        take: 5,
+      });
+      for (const r of pend) {
+        try {
+          const p = (r.params ? JSON.parse(r.params) : {}) as { chatId?: string; text?: string; limit?: number };
+          let result: unknown = null;
+          if (r.kind === "chats") result = await getOfficeChats(r.towerId, p.limit ?? 40);
+          else if (r.kind === "messages") result = await getOfficeMessages(r.towerId, p.chatId ?? "", p.limit ?? 40);
+          else if (r.kind === "send") result = await sendOfficeChat(r.towerId, p.chatId ?? "", p.text ?? "");
+          else if (r.kind === "logout") { await logoutWhatsApp(r.towerId); result = { ok: true }; }
+          await prisma.waRelay.update({ where: { id: r.id }, data: { status: "done", result: JSON.stringify(result) } });
+        } catch (e) {
+          await prisma.waRelay.update({ where: { id: r.id }, data: { status: "error", error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
+        }
+      }
+      // تنظيف الطلبات القديمة (منجزة أو فاشلة) الأقدم من 5 دقائق
+      await prisma.waRelay.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 5 * 60_000) } } }).catch(() => {});
+    } catch { /* تجاهل */ }
+  }, 2000);
+}
