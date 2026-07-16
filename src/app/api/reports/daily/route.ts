@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { agentTowerIds } from "@/lib/guard";
 import { computeDailyReport } from "@/lib/dailyReport";
 
 export const dynamic = "force-dynamic";
@@ -11,13 +12,16 @@ export async function GET(request: Request) {
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
   const param = new URL(request.url).searchParams.get("towerId");
-  let towerId: number | null;
+  const agentTowers = await agentTowerIds(session);
+  let scope: number | number[] | null;
   if (session.isAdmin) {
-    towerId = !param || param === "all" ? null : Number(param) || null;
+    // الإجمالي = كل مكاتب الوكيل؛ مكتب محدّد = فقط إن كان ضمن وكيله
+    if (!param || param === "all") scope = agentTowers;
+    else { const t = Number(param) || -1; scope = agentTowers.includes(t) ? t : -1; }
   } else {
-    towerId = session.towerId ?? null; // مستخدم المكتب مقيّد بمكتبه
+    scope = session.towerId ?? null; // مستخدم المكتب مقيّد بمكتبه
   }
 
-  const r = await computeDailyReport(towerId);
+  const r = await computeDailyReport(scope);
   return NextResponse.json(r);
 }

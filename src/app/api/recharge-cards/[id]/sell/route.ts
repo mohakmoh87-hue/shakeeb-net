@@ -13,9 +13,11 @@ export async function POST(
   const session = await getSession();
 
   const { id } = await params;
-  const updated = await prisma.rechargeCard.update({
-    where: { id: Number(id) },
+  // عزل: لا يُباع إلا كارت يتبع وكيل المستخدم
+  const res = await prisma.rechargeCard.updateMany({
+    where: { id: Number(id), agentId: session?.agentId ?? -1 },
     data: { useDate: new Date(), userName: session?.fullName ?? session?.username },
   });
-  return NextResponse.json(updated);
+  if (res.count === 0) return NextResponse.json({ error: "الكارت غير موجود ضمن حسابك" }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }

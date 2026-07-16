@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { agentOfficeFilter } from "@/lib/guard";
 import { readOfficeStates } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
@@ -10,12 +11,8 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
-  // الأدمن: كل المكاتب | مستخدم بمكتب: مكتبه فقط | مستخدم بلا مكتب: لا شيء
-  let officeFilter: Record<string, unknown> = {};
-  if (!session.isAdmin) {
-    if (session.towerId == null) return NextResponse.json({ offices: [], disconnected: [] });
-    officeFilter = { id: session.towerId };
-  }
+  // عزل المستأجر: مستخدم المكتب ⇒ مكتبه؛ مدير الوكيل ⇒ كل مكاتب وكيله
+  const officeFilter = await agentOfficeFilter(session);
 
   // المكاتب التي تحتاج واتساب (لمشتركيها أو لمديرها) — مستقل عن مفتاح رسائل المشتركين
   const offices = await prisma.tower.findMany({

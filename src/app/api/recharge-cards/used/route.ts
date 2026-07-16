@@ -8,7 +8,7 @@ export async function GET() {
   if (g.error) return g.error;
 
   const cards = await prisma.rechargeCard.findMany({
-    where: { useDate: { not: null } },
+    where: { useDate: { not: null }, agentId: g.session?.agentId ?? -1 }, // عزل: كروت وكيل المستخدم
     orderBy: { useDate: "desc" },
     take: 1000,
   });

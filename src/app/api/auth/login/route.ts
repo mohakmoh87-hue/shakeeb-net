@@ -65,6 +65,8 @@ export async function POST(request: Request) {
     username: user.username,
     fullName: user.fullName,
     isAdmin: user.isAdmin,
+    isOwner: user.isOwner,
+    agentId: user.agentId ?? null,
     permissions: (user.permissions ?? "").split(",").filter(Boolean) as Permission[],
     towerId: user.towerId ?? null,
   });

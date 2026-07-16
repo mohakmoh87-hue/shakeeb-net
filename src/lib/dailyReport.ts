@@ -18,11 +18,12 @@ export function iraqYesterdayRange(now = new Date()): { start: Date; end: Date }
 
 const fmt = (n: number | null | undefined) => Number(n ?? 0).toLocaleString("en-US");
 
-// يحسب أرقام التقرير اليومي (اختيارياً مقيّداً بمكتب، وليوم محدّد للتدارك)
-export async function computeDailyReport(towerId?: number | null, day?: Date) {
+// يحسب أرقام التقرير اليومي (اختيارياً مقيّداً بمكتب واحد أو مجموعة مكاتب وكيل، وليوم محدّد للتدارك)
+export async function computeDailyReport(towerId?: number | number[] | null, day?: Date) {
   const { start, end } = iraqTodayRange(day ?? new Date());
   const dateWhere = { date: { gte: start, lte: end } };
-  const towerWhere = towerId ? { towerId } : {};
+  const towerWhere =
+    towerId == null ? {} : Array.isArray(towerId) ? { towerId: { in: towerId.length ? towerId : [-1] } } : { towerId };
 
   const [activations, todayMoney, todayInvoices, todaySales, todayMaster] = await Promise.all([
     // تفعيلات عادية فقط (ماستر مستقل)

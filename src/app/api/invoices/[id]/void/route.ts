@@ -16,7 +16,7 @@ export async function POST(
   const invoiceId = Number(id);
 
   const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
-  if (!invoice || invoice.isDeleted || !ownsTower(g.session, invoice.towerId)) {
+  if (!invoice || invoice.isDeleted || !(await ownsTower(g.session, invoice.towerId))) {
     return NextResponse.json({ error: "الفاتورة غير موجودة أو محذوفة مسبقاً" }, { status: 404 });
   }
 

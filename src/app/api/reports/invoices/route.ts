@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const to = toStr ? new Date(toStr) : new Date();
   to.setHours(23, 59, 59, 999);
 
-  const where = { isDeleted: false, date: { gte: from, lte: to }, ...towerScope(g.session) };
+  const where = { isDeleted: false, date: { gte: from, lte: to }, ...(await towerScope(g.session)) };
   const [invoices, agg] = await Promise.all([
     prisma.invoice.findMany({ where, orderBy: { id: "desc" }, take: 500 }),
     prisma.invoice.aggregate({

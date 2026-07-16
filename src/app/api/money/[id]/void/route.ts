@@ -18,7 +18,7 @@ export async function POST(
   const txId = Number(id);
 
   const tx = await prisma.moneyTx.findUnique({ where: { id: txId } });
-  if (!tx || tx.isDeleted || !ownsTower(g.session, tx.towerId)) {
+  if (!tx || tx.isDeleted || !(await ownsTower(g.session, tx.towerId))) {
     return NextResponse.json({ error: "الحركة غير موجودة أو محذوفة مسبقاً" }, { status: 404 });
   }
 

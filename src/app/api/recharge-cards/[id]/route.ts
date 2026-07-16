@@ -25,11 +25,13 @@ export async function PUT(
       { status: 400 },
     );
   }
-  const updated = await prisma.rechargeCard.update({
-    where: { id: Number(id) },
+  // عزل: لا يُعدَّل إلا كارت يتبع وكيل المستخدم
+  const upd = await prisma.rechargeCard.updateMany({
+    where: { id: Number(id), agentId: g.session?.agentId ?? -1 },
     data: parsed.data,
   });
-  return NextResponse.json(updated);
+  if (upd.count === 0) return NextResponse.json({ error: "الكارت غير موجود ضمن حسابك" }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
@@ -42,8 +44,9 @@ export async function DELETE(
   if (g.error) return g.error;
 
   const { id } = await params;
-  const card = await prisma.rechargeCard.findUnique({ where: { id: Number(id) }, select: { useDate: true } });
-  if (!card) return NextResponse.json({ error: "الكارت غير موجود" }, { status: 404 });
+  // عزل: كارت وكيل المستخدم فقط
+  const card = await prisma.rechargeCard.findFirst({ where: { id: Number(id), agentId: g.session?.agentId ?? -1 }, select: { useDate: true } });
+  if (!card) return NextResponse.json({ error: "الكارت غير موجود ضمن حسابك" }, { status: 404 });
   if (card.useDate) return NextResponse.json({ error: "لا يمكن حذف كارت مستخدم" }, { status: 400 });
 
   await prisma.rechargeCard.delete({ where: { id: Number(id) } });

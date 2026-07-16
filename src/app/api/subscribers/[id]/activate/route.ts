@@ -47,7 +47,7 @@ export async function POST(
   const nextDate = dueDateParsed && !isNaN(dueDateParsed.getTime()) ? dueDateParsed : null;
 
   const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
-  if (!subscriber || subscriber.isDeleted || !ownsTower(g.session, subscriber.towerId)) {
+  if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
   const pkg = await prisma.package.findUnique({ where: { id: packageId } });
@@ -118,7 +118,7 @@ export async function POST(
       // استهلاك الكارت ذرّياً عند التأكيد فقط (يمنع تعارض مكتبين)
       if (cardId) {
         const claim = await tx.rechargeCard.updateMany({
-          where: { id: cardId, useDate: null },
+          where: { id: cardId, useDate: null, agentId: session?.agentId ?? -1 }, // عزل: كارت وكيل المستخدم فقط
           data: { useDate: now, subscriberId, userName: session?.fullName, reservedBy: null, reservedAt: null },
         });
         if (claim.count === 0) throw new Error("CARD_TAKEN");

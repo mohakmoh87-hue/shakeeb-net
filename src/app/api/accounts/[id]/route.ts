@@ -27,7 +27,7 @@ export async function PUT(
     );
   }
   const existing = await prisma.account.findUnique({ where: { id: Number(id) }, select: { towerId: true } });
-  if (!existing || !ownsTower(g.session, existing.towerId)) {
+  if (!existing || !(await ownsTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
   const updated = await prisma.account.update({
@@ -46,7 +46,7 @@ export async function DELETE(
 
   const { id } = await params;
   const existing = await prisma.account.findUnique({ where: { id: Number(id) }, select: { towerId: true } });
-  if (!existing || !ownsTower(g.session, existing.towerId)) {
+  if (!existing || !(await ownsTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
   await prisma.account.update({

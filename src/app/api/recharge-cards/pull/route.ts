@@ -21,12 +21,14 @@ export async function POST(request: Request) {
   // الحجوزات الأقدم من 5 دقائق تُعتبر منتهية
   const staleBefore = new Date(Date.now() - 5 * 60 * 1000);
 
+  const agentId = g.session?.agentId ?? -1; // عزل: كروت وكيل المستخدم
   // محاولة حجز كارت متاح ذرّياً (updateMany بشرط يضمن عدم أخذ نفس الكارت مرتين)
   for (let attempt = 0; attempt < 25; attempt++) {
     const candidate = await prisma.rechargeCard.findFirst({
       where: {
         packageId,
         useDate: null,
+        agentId,
         OR: [{ reservedAt: null }, { reservedAt: { lt: staleBefore } }],
       },
       orderBy: { id: "asc" },
@@ -38,13 +40,14 @@ export async function POST(request: Request) {
       where: {
         id: candidate.id,
         useDate: null,
+        agentId,
         OR: [{ reservedAt: null }, { reservedAt: { lt: staleBefore } }],
       },
       data: { reservedBy: userId, reservedAt: new Date() },
     });
     if (res.count === 1) {
       const available = await prisma.rechargeCard.count({
-        where: { packageId, useDate: null },
+        where: { packageId, useDate: null, agentId },
       });
       return NextResponse.json({ card: candidate, available });
     }

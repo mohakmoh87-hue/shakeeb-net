@@ -18,7 +18,7 @@ export async function GET() {
 
   // قائمة حسابات مستقلة لكل مكتب؛ المدير يرى كل المكاتب
   const accounts = await prisma.account.findMany({
-    where: { isDeleted: false, ...towerScope(g.session) },
+    where: { isDeleted: false, ...(await towerScope(g.session)) },
     orderBy: { id: "asc" },
   });
   return NextResponse.json(accounts);

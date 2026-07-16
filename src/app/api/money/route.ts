@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const where = {
     isDeleted: false,
     OR: [{ sourceType: null }, { sourceType: "manual" }],
-    ...towerScope(g.session),
+    ...(await towerScope(g.session)),
     ...(accountId ? { accountId: Number(accountId) } : {}),
   };
 

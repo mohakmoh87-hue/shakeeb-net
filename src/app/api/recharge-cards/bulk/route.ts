@@ -33,16 +33,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "لا توجد سيريلات صحيحة" }, { status: 400 });
   }
 
-  // استبعاد السيريلات الموجودة مسبقاً
+  // عزل المستأجر: كروت وكيل المستخدم
+  const agentId = g.session?.agentId ?? null;
+  // استبعاد السيريلات الموجودة مسبقاً (ضمن كروت الوكيل)
   const existing = await prisma.rechargeCard.findMany({
-    where: { serial: { in: clean } },
+    where: { serial: { in: clean }, agentId: agentId ?? -1 },
     select: { serial: true },
   });
   const existingSet = new Set(existing.map((e) => e.serial));
   const toAdd = clean.filter((s) => !existingSet.has(s));
 
   const res = await prisma.rechargeCard.createMany({
-    data: toAdd.map((serial) => ({ serial, number: serial, packageId, price, addDate: new Date() })),
+    data: toAdd.map((serial) => ({ serial, number: serial, packageId, price, addDate: new Date(), agentId })),
   });
 
   return NextResponse.json({

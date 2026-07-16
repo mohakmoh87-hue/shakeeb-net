@@ -15,7 +15,7 @@ export async function GET() {
   if (g.error) return g.error;
 
   const rows = await prisma.custody.findMany({
-    where: { isDeleted: false, qty: { gt: 0 }, ...towerScope(g.session) },
+    where: { isDeleted: false, qty: { gt: 0 }, ...(await towerScope(g.session)) },
     orderBy: { id: "asc" },
   });
   const techIds = [...new Set(rows.map((r) => r.technicianId))];

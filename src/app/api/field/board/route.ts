@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
+import { agentOfficeFilter } from "@/lib/guard";
 import { isFieldManager, resolveFieldOffice, getOrCreateBoard } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
@@ -13,15 +14,18 @@ export async function GET(request: Request) {
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
   const manager = isFieldManager(session);
-  // قائمة كل المكاتب متاحة للجميع (ليتمكّن أي فني من مساعدة مكتب آخر وقت الضغط)
+  // عزل المستأجر: مكاتب وكيل المستخدم فقط (أي فني قد يساعد مكتباً آخر ضمن نفس الوكيل)
   const offices = await prisma.tower.findMany({
-    where: { isDeleted: false },
+    where: { isDeleted: false, ...(await agentOfficeFilter(session)) },
     select: { id: true, name: true },
     orderBy: { id: "asc" },
   });
+  const officeIds = new Set(offices.map((o) => o.id));
 
   const reqOffice = new URL(request.url).searchParams.get("officeId");
   let officeId = resolveFieldOffice(session, reqOffice ? Number(reqOffice) : null);
+  // لا يُسمح بمكتب خارج وكيل المستخدم
+  if (officeId != null && !officeIds.has(officeId)) officeId = null;
   // المدير بلا اختيار → افتراضياً أول مكتب
   if (manager && officeId == null && offices.length > 0) officeId = offices[0].id;
 

@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   const { channel, text, target, subscriberId, subscriberIds, expiringDays, from, to, search } = parsed.data;
 
   // تحديد المستلمين (مع فلترة المكتب: كل مستخدم يرسل لمشتركي مكتبه، الأدمن للكل)
-  const scope = towerScope(g.session);
+  const scope = await towerScope(g.session);
   let where: Record<string, unknown> = { isDeleted: false, ...scope };
   if (target === "one" && subscriberId) {
     where = { id: subscriberId };

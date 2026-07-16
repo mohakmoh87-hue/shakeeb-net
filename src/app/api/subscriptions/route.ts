@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const entries = await prisma.subscriptionEntry.findMany({
     where: {
       isDeleted: false,
-      ...towerScope(g.session),
+      ...(await towerScope(g.session)),
       ...(subId ? { subscriberId: Number(subId) } : {}),
     },
     orderBy: { id: "desc" },
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   const subscriber = await prisma.subscriber.findUnique({
     where: { id: subscriberId },
   });
-  if (!subscriber || subscriber.isDeleted || !ownsTower(g.session, subscriber.towerId)) {
+  if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
   const pkg = await prisma.package.findUnique({ where: { id: packageId } });

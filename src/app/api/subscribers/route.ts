@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, agentTowerIds } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 
 const schema = z.object({
@@ -33,17 +33,18 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim();
-  // عرض كل المكاتب متاح للمدير فقط؛ مستخدم المكتب مقيّد بمكتبه دائماً
-  const showAll = url.searchParams.get("all") === "1" && !!g.session?.isAdmin;
-  // فلترة حسب مكتب المستخدم (المكتب) ما لم يُطلب عرض كل المكاتب
-  const towerFilter =
-    !showAll && g.session?.towerId ? { towerId: g.session.towerId } : {};
+  // عزل المستأجر: مستخدم المكتب ⇒ مكتبه؛ مدير الوكيل ⇒ كل مكاتب وكيله فقط
+  const agentTowers = await agentTowerIds(g.session ?? null);
+  const isOfficeUser = !g.session?.isAdmin && g.session?.towerId != null;
+  const towerFilter = isOfficeUser
+    ? { towerId: g.session!.towerId! }
+    : { towerId: { in: agentTowers.length ? agentTowers : [-1] } };
 
-  // مطابقة اسم المكتب: نجلب معرّفات المكاتب التي يتضمّن اسمها نص البحث
+  // مطابقة اسم المكتب: نجلب معرّفات المكاتب (ضمن وكيل المستخدم) التي يتضمّن اسمها نص البحث
   let matchedTowerIds: number[] = [];
   if (q) {
     const towers = await prisma.tower.findMany({
-      where: { isDeleted: false, name: { contains: q, mode: "insensitive" } },
+      where: { isDeleted: false, id: { in: agentTowers.length ? agentTowers : [-1] }, name: { contains: q, mode: "insensitive" } },
       select: { id: true },
     });
     matchedTowerIds = towers.map((t) => t.id);
@@ -108,6 +109,12 @@ export async function POST(request: Request) {
     session && !session.isAdmin && session.towerId != null
       ? session.towerId
       : parsed.data.towerId ?? null;
+
+  // عزل المستأجر: لا يُنشأ مشترك إلا في مكتب يتبع وكيل المستخدم
+  const agentTowers = await agentTowerIds(session);
+  if (towerId == null || !agentTowers.includes(towerId)) {
+    return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
+  }
 
   const created = await prisma.subscriber.create({
     data: {

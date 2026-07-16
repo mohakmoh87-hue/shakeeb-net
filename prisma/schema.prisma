@@ -337,6 +337,7 @@ model ManagerTx {
 
 model RechargeCard {
   id           Int       @id @default(autoincrement())
+  agentId      Int? // الوكيل (المستأجر) مالك مخزون الكروت — عزل الكروت بين الوكلاء
   number       String?
   password     String?
   serial       String? // سيريال الكارت

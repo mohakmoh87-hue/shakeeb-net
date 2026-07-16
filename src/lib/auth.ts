@@ -16,6 +16,8 @@ export interface SessionPayload {
   username: string;
   fullName: string;
   isAdmin: boolean;
+  isOwner: boolean; // مالك النظام (فوق المدير) — يدير الوكلاء فقط
+  agentId: number | null; // الوكيل (المستأجر) الذي ينتمي إليه المستخدم
   permissions: Permission[];
   towerId: number | null; // مكتب المستخدم (المكتب)
 }
@@ -77,6 +79,8 @@ export async function getSession(): Promise<SessionPayload | null> {
     username: user.username,
     fullName: user.fullName,
     isAdmin: user.isAdmin,
+    isOwner: user.isOwner,
+    agentId: user.agentId,
     permissions: (user.permissions ?? "").split(",").filter(Boolean) as Permission[],
     towerId: user.towerId,
   };

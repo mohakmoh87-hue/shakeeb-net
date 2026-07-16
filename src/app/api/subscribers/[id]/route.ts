@@ -38,7 +38,7 @@ export async function GET(
   const subscriber = await prisma.subscriber.findUnique({
     where: { id: Number(id) },
   });
-  if (!subscriber || !ownsTower(g.session, subscriber.towerId)) {
+  if (!subscriber || !(await ownsTower(g.session, subscriber.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
   return NextResponse.json(subscriber);
@@ -66,7 +66,7 @@ export async function PUT(
     where: { id: Number(id) },
     select: { towerId: true },
   });
-  if (!existing || !ownsTower(g.session, existing.towerId)) {
+  if (!existing || !(await ownsTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
   const data =
@@ -94,7 +94,7 @@ export async function DELETE(
     where: { id: Number(id) },
     select: { towerId: true },
   });
-  if (!existing || !ownsTower(g.session, existing.towerId)) {
+  if (!existing || !(await ownsTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
   // حذف نهائي مع كل السجلات المرتبطة (وصولات/فواتير/حركات/رسائل)

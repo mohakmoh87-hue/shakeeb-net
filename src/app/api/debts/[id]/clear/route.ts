@@ -16,7 +16,7 @@ export async function POST(
   const subscriberId = Number(id);
 
   const sub = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
-  if (!sub || sub.isDeleted || !ownsTower(g.session, sub.towerId)) {
+  if (!sub || sub.isDeleted || !(await ownsTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 

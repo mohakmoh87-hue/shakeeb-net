@@ -12,7 +12,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
   const cards = await prisma.rechargeCard.findMany({
-    where: { useDate: null },
+    where: { useDate: null, agentId: session.agentId ?? -1 }, // عزل: كروت وكيل المستخدم فقط
     orderBy: { id: "desc" },
     take: 2000,
     select: { id: true, serial: true, packageId: true, price: true, addDate: true },

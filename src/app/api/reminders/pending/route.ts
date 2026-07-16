@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard, towerScope } from "@/lib/guard";
+import { guard, agentOfficeFilter } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,6 @@ export async function GET() {
   if (g.error) return g.error;
 
   const today = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const scope = towerScope(g.session);
 
   const offices = await prisma.tower.findMany({
     where: {
@@ -19,7 +18,7 @@ export async function GET() {
       silent: "0",
       NOT: { waEnabled: "0" },
       OR: [{ lastReminderDate: null }, { lastReminderDate: { not: today } }],
-      ...scope,
+      ...(await agentOfficeFilter(g.session)),
     },
     select: { id: true, name: true },
   });

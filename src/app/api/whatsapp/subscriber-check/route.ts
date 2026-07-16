@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     where: { id, isDeleted: false },
     select: { id: true, phone: true, towerId: true },
   });
-  if (!sub || !ownsTower(g.session, sub.towerId)) {
+  if (!sub || !(await ownsTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
 

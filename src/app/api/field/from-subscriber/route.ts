@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     where: { id: subscriberId, isDeleted: false },
     select: { id: true, name: true, phone: true, netUser: true, towerId: true },
   });
-  if (!sub || !ownsTower(g.session, sub.towerId)) {
+  if (!sub || !(await ownsTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 

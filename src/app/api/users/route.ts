@@ -19,8 +19,9 @@ export async function GET() {
   const g = await guard("users.manage");
   if (g.error) return g.error;
 
+  // عزل المستأجر: المدير يرى مستخدمي وكيله فقط (ولا يرى مالك النظام)
   const users = await prisma.user.findMany({
-    where: { isDeleted: false },
+    where: { isDeleted: false, isOwner: false, agentId: g.session?.agentId ?? -1 },
     orderBy: { id: "asc" },
     select: {
       id: true, fullName: true, username: true, isAdmin: true,
@@ -48,10 +49,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "اسم المستخدم موجود مسبقاً" }, { status: 400 });
   }
 
+  // عزل المستأجر: المستخدم يُنشأ ضمن وكيل المدير، وأي مكتب مُسنَد يجب أن يتبع وكيله
+  const agentId = g.session?.agentId ?? null;
+  if (agentId == null) return NextResponse.json({ error: "لا وكيل مرتبط بحسابك" }, { status: 403 });
   const { permissions, password, ...rest } = parsed.data;
+  if (rest.towerId != null) {
+    const t = await prisma.tower.findFirst({ where: { id: rest.towerId, agentId, isDeleted: false }, select: { id: true } });
+    if (!t) return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
+  }
   const created = await prisma.user.create({
     data: {
       ...rest,
+      agentId,
       password: await hashPassword(password),
       permissions: permissions.join(","),
     },

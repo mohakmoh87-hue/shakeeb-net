@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, agentTowerIds } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +30,11 @@ export async function POST(request: Request) {
   // عزل: مستخدم المكتب يُرحّل من مخزن مكتبه فقط
   if (session && !session.isAdmin && session.towerId != null && item.towerId !== session.towerId) {
     return NextResponse.json({ error: "لا يمكنك الترحيل من مخزن مكتب آخر" }, { status: 403 });
+  }
+  // عزل المستأجر: المصدر والوجهة يجب أن يكونا ضمن مكاتب وكيل المستخدم
+  const agentTowers = await agentTowerIds(session);
+  if (item.towerId == null || !agentTowers.includes(item.towerId) || !agentTowers.includes(toTowerId)) {
+    return NextResponse.json({ error: "المكتب المصدر أو الوجهة لا يتبع حسابك" }, { status: 403 });
   }
   if (item.towerId === toTowerId) {
     return NextResponse.json({ error: "المكتب المصدر والوجهة متطابقان" }, { status: 400 });

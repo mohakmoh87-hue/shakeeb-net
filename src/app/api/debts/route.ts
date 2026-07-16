@@ -8,7 +8,7 @@ export async function GET() {
   if (g.error) return g.error;
 
   const debtors = await prisma.subscriber.findMany({
-    where: { isDeleted: false, carry: { gt: 0 }, ...towerScope(g.session) },
+    where: { isDeleted: false, carry: { gt: 0 }, ...(await towerScope(g.session)) },
     orderBy: { carry: "desc" },
     select: {
       id: true,

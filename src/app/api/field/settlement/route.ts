@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { isFieldManager } from "@/lib/field";
+import { agentTowerIds, agentOfficeFilter } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +12,10 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const manager = isFieldManager(session);
+  const agentTowers = await agentTowerIds(session);
 
   const techWhere = manager
-    ? { isDeleted: false }
+    ? { isDeleted: false, OR: [{ towerId: { in: agentTowers } }, { supportTowerId: { in: agentTowers } }] }
     : { isDeleted: false, OR: [{ towerId: session.towerId ?? null }, { supportTowerId: session.towerId ?? null }] };
   const technicians = await prisma.technician.findMany({
     where: techWhere,
@@ -21,7 +23,7 @@ export async function GET() {
     orderBy: { id: "asc" },
   });
   const offices = await prisma.tower.findMany({
-    where: { isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" },
+    where: { isDeleted: false, ...(await agentOfficeFilter(session)) }, select: { id: true, name: true }, orderBy: { id: "asc" },
   });
 
   // البطاقات المنجزة غير المحصّلة (تفاصيل كل تكت) لبناء المجموع + تفصيله لكل فني
@@ -61,10 +63,14 @@ export async function POST(request: Request) {
   const technicianId = Number(b?.technicianId);
   if (!technicianId) return NextResponse.json({ error: "technicianId مطلوب" }, { status: 400 });
 
-  // عزل: مستخدم المكتب يحصّل فنيّي مكتبه فقط
+  // عزل المستأجر: مستخدم المكتب يحصّل فنيّي مكتبه؛ المدير فنيّي وكيله فقط
   const tech = await prisma.technician.findUnique({ where: { id: technicianId } });
   if (!tech) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
-  if (!isFieldManager(session) && tech.towerId !== (session.towerId ?? null)) {
+  if (isFieldManager(session)) {
+    const agentTowers = await agentTowerIds(session);
+    const ok = (tech.towerId != null && agentTowers.includes(tech.towerId)) || (tech.supportTowerId != null && agentTowers.includes(tech.supportTowerId));
+    if (!ok) return NextResponse.json({ error: "لا يمكنك تحصيل فني وكيل آخر" }, { status: 403 });
+  } else if (tech.towerId !== (session.towerId ?? null)) {
     return NextResponse.json({ error: "لا يمكنك تحصيل فني مكتب آخر" }, { status: 403 });
   }
 

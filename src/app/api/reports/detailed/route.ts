@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   to.setHours(23, 59, 59, 999);
 
   const range = { gte: from, lte: to };
-  const scope = towerScope(g.session);
+  const scope = await towerScope(g.session);
 
   const [entries, money, entriesAgg, moneyAgg] = await Promise.all([
     prisma.subscriptionEntry.findMany({

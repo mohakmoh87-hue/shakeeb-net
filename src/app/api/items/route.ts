@@ -20,7 +20,7 @@ export async function GET() {
 
   // مخزن مستقل لكل مكتب؛ المدير يرى كل المكاتب
   const items = await prisma.item.findMany({
-    where: { isDeleted: false, ...towerScope(g.session) },
+    where: { isDeleted: false, ...(await towerScope(g.session)) },
     orderBy: { id: "asc" },
   });
   return NextResponse.json(items);

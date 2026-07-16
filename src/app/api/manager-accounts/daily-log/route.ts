@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, agentTowerIds } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -26,15 +26,17 @@ export async function GET() {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
 
+  // عزل المستأجر: مكاتب وكيل المستخدم فقط
+  const agentTowers = await agentTowerIds(g.session);
   const [txs, towers] = await Promise.all([
     prisma.moneyTx.findMany({
       // باستثناء حساب الماستر (مستقل عن التقرير اليومي)
-      where: { isDeleted: false, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
+      where: { isDeleted: false, towerId: { in: agentTowers }, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
       select: { moneyIn: true, moneyOut: true, date: true, towerId: true },
       orderBy: { date: "asc" },
     }),
     prisma.tower.findMany({
-      where: { isDeleted: false },
+      where: { isDeleted: false, id: { in: agentTowers } },
       select: { id: true, name: true },
       orderBy: { id: "asc" },
     }),

@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   const { ids, all } = parsed.data;
 
   // مستخدم المكتب مقيّد بمكتبه؛ الأدمن يشمل كل المكاتب
-  const scope = towerScope(g.session);
+  const scope = await towerScope(g.session);
 
   // حصر المعرّفات ضمن النطاق ثم الحذف النهائي المتسلسل (مع الوصولات والحركات)
   let targetIds: number[];

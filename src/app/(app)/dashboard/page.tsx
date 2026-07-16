@@ -2,6 +2,7 @@ import ModuleTile from "@/components/ModuleTile";
 import DailyReportCard from "@/components/DailyReportCard";
 import FieldSettlementCard from "@/components/FieldSettlementCard";
 import { getSession } from "@/lib/auth";
+import { agentTowerIds } from "@/lib/guard";
 import { computeDailyReport } from "@/lib/dailyReport";
 import { prisma } from "@/lib/prisma";
 
@@ -25,12 +26,14 @@ export default async function DashboardPage() {
   // التقرير اليومي: مستخدم المكتب يرى مكتبه؛ المدير يرى الإجمالي مبدئياً ويختار مكتباً عبر التبويبات
   const session = await getSession();
   const isAdmin = !!session?.isAdmin;
-  const towerId = isAdmin ? null : session?.towerId ?? null;
+  // عزل المستأجر: المدير يرى إجمالي مكاتب وكيله فقط؛ مستخدم المكتب يرى مكتبه
+  const agentTowers = await agentTowerIds(session ?? null);
+  const scope: number | number[] | null = isAdmin ? agentTowers : session?.towerId ?? null;
   // جلب متوازٍ لتقليل ذهاب/إياب الشبكة (أسرع فتحاً)
   const [initialReport, towers] = await Promise.all([
-    computeDailyReport(towerId),
+    computeDailyReport(scope),
     isAdmin
-      ? prisma.tower.findMany({ where: { isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" } })
+      ? prisma.tower.findMany({ where: { isDeleted: false, id: { in: agentTowers.length ? agentTowers : [-1] } }, select: { id: true, name: true }, orderBy: { id: "asc" } })
       : Promise.resolve([] as { id: number; name: string | null }[]),
   ]);
 

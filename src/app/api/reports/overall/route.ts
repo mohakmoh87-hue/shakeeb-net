@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const to = toStr ? new Date(toStr) : new Date();
   to.setHours(23, 59, 59, 999);
 
-  const scope = towerScope(g.session); // فلتر المكتب (الأدمن يرى الكل)
+  const scope = await towerScope(g.session); // فلتر المكتب (الأدمن يرى الكل)
 
   // المشتركون الذين فعّلوا اشتراكهم خلال المدة (مميّزون — كل مشترك مرة واحدة)
   const activatedGroups = await prisma.subscriptionEntry.groupBy({

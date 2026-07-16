@@ -17,7 +17,7 @@ export async function GET(
 
   // عزل بين المكاتب: لا يُقرأ سجل مشترك مكتب آخر
   const sub = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { towerId: true } });
-  if (!sub || !ownsTower(g.session, sub.towerId)) {
+  if (!sub || !(await ownsTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 

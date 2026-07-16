@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
   // المشترك إلزامي (لمعرفة صاحب الدين والمكتب)
   const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
-  if (!subscriber || subscriber.isDeleted || !ownsTower(g.session, subscriber.towerId)) {
+  if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 

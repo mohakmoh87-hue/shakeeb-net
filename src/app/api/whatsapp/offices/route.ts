@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, agentOfficeFilter } from "@/lib/guard";
 import { readOfficeStates } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export async function GET() {
   if (g.error) return g.error;
 
   const offices = await prisma.tower.findMany({
-    where: { isDeleted: false, OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }] },
+    where: { isDeleted: false, ...(await agentOfficeFilter(g.session)), OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }] },
     select: { id: true, name: true },
     orderBy: { id: "asc" },
   });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { resolveFieldOffice } from "@/lib/field";
+import { agentTowerIds } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +13,11 @@ export async function GET(request: Request) {
   const reqOffice = new URL(request.url).searchParams.get("officeId");
   const officeId = resolveFieldOffice(s, reqOffice ? Number(reqOffice) : null);
   if (officeId == null) return NextResponse.json({ borrowed: [], candidates: [] });
+  // عزل المستأجر: المكتب والفنيون المرشّحون ضمن وكيل المستخدم فقط
+  const agentTowers = await agentTowerIds(s);
+  if (!agentTowers.includes(officeId)) return NextResponse.json({ borrowed: [], candidates: [] });
 
-  const towers = await prisma.tower.findMany({ where: { isDeleted: false }, select: { id: true, name: true } });
+  const towers = await prisma.tower.findMany({ where: { isDeleted: false, id: { in: agentTowers } }, select: { id: true, name: true } });
   const tn = new Map(towers.map((t) => [t.id, t.name]));
 
   // الفنيون المُعارون حالياً لهذا المكتب
@@ -21,9 +25,9 @@ export async function GET(request: Request) {
     where: { isDeleted: false, supportTowerId: officeId, NOT: { towerId: officeId } },
     orderBy: { id: "asc" },
   });
-  // مرشّحون للاستعارة: فنيّو المكاتب الأخرى غير المُعارين لهنا أصلاً
+  // مرشّحون للاستعارة: فنيّو مكاتب الوكيل الأخرى غير المُعارين لهنا أصلاً
   const candidates = await prisma.technician.findMany({
-    where: { isDeleted: false, NOT: { towerId: officeId }, supportTowerId: null },
+    where: { isDeleted: false, towerId: { in: agentTowers }, NOT: { towerId: officeId }, supportTowerId: null },
     orderBy: { id: "asc" },
   });
 

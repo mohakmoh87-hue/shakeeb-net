@@ -33,6 +33,16 @@ export async function PUT(
   }
   const { password, permissions, ...rest } = parsed.data;
 
+  // عزل المستأجر: لا يُعدَّل إلا مستخدم يتبع وكيل المدير (وليس مالك النظام)
+  const target = await prisma.user.findUnique({ where: { id: Number(id) }, select: { agentId: true, isOwner: true } });
+  if (!target || target.isOwner || target.agentId !== (g.session?.agentId ?? null)) {
+    return NextResponse.json({ error: "المستخدم لا يتبع حسابك" }, { status: 403 });
+  }
+  if (rest.towerId != null) {
+    const t = await prisma.tower.findFirst({ where: { id: rest.towerId, agentId: g.session?.agentId ?? -1, isDeleted: false }, select: { id: true } });
+    if (!t) return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
+  }
+
   const updated = await prisma.user.update({
     where: { id: Number(id) },
     data: {
@@ -56,6 +66,11 @@ export async function DELETE(
   const uid = Number(id);
   if (uid === g.session?.userId) {
     return NextResponse.json({ error: "لا يمكنك حذف حسابك الحالي" }, { status: 400 });
+  }
+  // عزل المستأجر: لا يُحذف إلا مستخدم يتبع وكيل المدير (وليس مالك النظام)
+  const target = await prisma.user.findUnique({ where: { id: uid }, select: { agentId: true, isOwner: true } });
+  if (!target || target.isOwner || target.agentId !== (g.session?.agentId ?? null)) {
+    return NextResponse.json({ error: "المستخدم لا يتبع حسابك" }, { status: 403 });
   }
   // حذف نهائي من قاعدة البيانات (لإمكانية إعادة إضافة نفس اليوزر لاحقاً)
   await prisma.$transaction([
