@@ -3,6 +3,21 @@
 // يُشغَّل على حاسبة المكتب عبر: npx tsx src/worker.ts
 import fs from "node:fs";
 import net from "node:net";
+import { execSync } from "node:child_process";
+
+// قتل متصفّحات puppeteer اليتيمة التي تستخدم مجلد جلساتنا (.wwebjs_auth) من تشغيل سابق
+// انهار دون إغلاق نظيف — تمنع خطأ "The browser is already running for ...session-office-X".
+// لا يمسّ متصفّح Chrome العادي للمستخدم (نُرشّح بمسار الجلسة فقط).
+function killOrphanBrowsers() {
+  if (process.platform !== "win32") return;
+  try {
+    execSync(
+      `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name='chrome.exe'\\" | Where-Object { $_.CommandLine -like '*wwebjs_auth*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
+      { stdio: "ignore", timeout: 20000 },
+    );
+    console.log("[worker] نُظّفت متصفّحات الواتساب اليتيمة (إن وُجدت)");
+  } catch { /* لا شيء ليُقتل أو تعذّر — نتابع */ }
+}
 
 // تحميل متغيّرات .env يدوياً (العملية المستقلة لا تحمّلها تلقائياً كما يفعل Next)
 try {
@@ -38,6 +53,7 @@ function ensureSingleInstance(): Promise<void> {
 
 (async () => {
   await ensureSingleInstance();
+  killOrphanBrowsers(); // نظّف متصفّحات يتيمة من تشغيل سابق قبل بدء الواتساب
   console.log("[worker] بدء عامل شكيب نت المستقل...");
   try {
     const { startScheduler } = await import("@/lib/scheduler");
