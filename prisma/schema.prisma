@@ -191,6 +191,7 @@ model Subscriber {
   @@index([groupId])
   @@index([phone])
   @@index([name])
+  @@index([isDeleted, towerId, name]) // يطابق فلترة+ترتيب قائمة المشتركين
   @@map("subscribers")
 }
 
