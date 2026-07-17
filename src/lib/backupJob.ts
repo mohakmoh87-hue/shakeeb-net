@@ -18,14 +18,16 @@ export async function sendAgentBackupEmail(agentId: number): Promise<{ ok: boole
   });
 }
 
-// المهمة اليومية: إرسال نسخة كل وكيل لديه إيميل نسخ مضبوط إلى إيميله
-export async function runDailyBackups(): Promise<{ total: number; sent: number; failed: number }> {
+// المهمة اليومية: إرسال نسخة كل وكيل لديه إيميل نسخ مضبوط إلى إيميله.
+// agentId اختياري: يُمرَّر من المجدول (قائد كل وكيل ينفّذ لوكيله فقط) لتفادي التكرار
+// عند تعدّد قادة الوكلاء. بلا agentId يشمل كل الوكلاء (للاستخدام اليدوي).
+export async function runDailyBackups(agentId?: number | null): Promise<{ total: number; sent: number; failed: number }> {
   if (!mailerConfigured()) {
     console.warn("[backup] لم تُضبط بيانات SMTP — تخطّي النسخ اليومي بالبريد");
     return { total: 0, sent: 0, failed: 0 };
   }
   const agents = await prisma.agent.findMany({
-    where: { isDeleted: false, backupEmail: { not: null } },
+    where: { isDeleted: false, backupEmail: { not: null }, ...(agentId != null ? { id: agentId } : {}) },
     select: { id: true },
   });
   let sent = 0, failed = 0;
