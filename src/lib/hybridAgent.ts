@@ -2,9 +2,10 @@ import os from "node:os";
 import { prisma } from "@/lib/prisma";
 import { computeLeaderMachineId } from "@/lib/hybridLeader";
 
-// حالة القيادة على العامل المحلي: القائد فقط يستضيف واتساب ويُرسل ويزامن.
-// الافتراضي true حتى تُحسم أول نبضة (حاسبة واحدة = قائد دائماً).
-let leaderNow = true;
+// حالة القيادة على العامل المحلي: قائد الوكيل فقط يستضيف واتساب مكاتب وكيله.
+// الافتراضي false حتى تُحسم أول نبضة (لا يُصبح قائداً إلا بعد اعتماده وربطه بوكيل).
+let leaderNow = false;
+let myAgentId: number | null = null; // وكيل هذه الحاسبة (يُقرأ من صفّها بعد الاعتماد)
 let mid = "";
 
 export function getMachineId(): string {
@@ -12,6 +13,8 @@ export function getMachineId(): string {
   return mid;
 }
 export function isLeaderNow(): boolean { return leaderNow; }
+// وكيل هذه الحاسبة (لحصر جلسات الواتساب بمكاتب هذا الوكيل)
+export function getWorkerAgentId(): number | null { return myAgentId; }
 
 // نبضة دورية: تسجّل هذه الحاسبة وتحدّث حالة القيادة.
 export function startHybridAgent() {
@@ -26,14 +29,21 @@ export function startHybridAgent() {
 
   async function beat() {
     try {
-      await prisma.hybridWorker.upsert({
+      const row = await prisma.hybridWorker.upsert({
         where: { machineId: id },
         update: { lastSeen: new Date(), name },
         create: { machineId: id, name, towerId, lastSeen: new Date() },
+        select: { agentId: true, approved: true },
       });
-      const leader = await computeLeaderMachineId();
-      leaderNow = leader == null || leader === id;
-      if (!loggedOk) { loggedOk = true; console.log(`[hybrid-agent] ✅ سُجّلت الحاسبة (${id}) name=${name} — قائد=${leaderNow}`); }
+      myAgentId = row.agentId ?? null;
+      // قائد وكيل هذه الحاسبة فقط (يستضيف واتساب مكاتب هذا الوكيل). غير معتمَد/بلا وكيل ⇒ ليس قائداً.
+      if (row.approved && myAgentId != null) {
+        const leader = await computeLeaderMachineId(myAgentId);
+        leaderNow = leader === id;
+      } else {
+        leaderNow = false;
+      }
+      if (!loggedOk) { loggedOk = true; console.log(`[hybrid-agent] ✅ سُجّلت الحاسبة (${id}) name=${name} — وكيل=${myAgentId} قائد=${leaderNow}`); }
     } catch (e) {
       console.error("[hybrid-agent] ❌ فشل تسجيل الحاسبة:", e instanceof Error ? e.message : e);
     }

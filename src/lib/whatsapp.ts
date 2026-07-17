@@ -162,12 +162,18 @@ export function startWaRequestPoller() {
   gg.__waPollerStarted = true;
   setInterval(async () => {
     try {
-      const { isLeaderNow } = await import("@/lib/hybridAgent");
-      if (!isLeaderNow()) return; // القائد فقط يستضيف واتساب
+      const { isLeaderNow, getWorkerAgentId } = await import("@/lib/hybridAgent");
+      if (!isLeaderNow()) return; // قائد الوكيل فقط يستضيف واتساب مكاتب وكيله
+      const aid = getWorkerAgentId();
+      if (aid == null) return;
+      // مكاتب وكيل هذه الحاسبة فقط (عزل جلسات الواتساب بين الوكلاء)
+      const mineRows = await prisma.tower.findMany({ where: { agentId: aid, isDeleted: false }, select: { id: true } });
+      const mine = new Set(mineRows.map((t) => t.id));
       const since = new Date(Date.now() - 120_000); // طلبات آخر دقيقتين
-      // نقرأ الحالة المنشورة + طلب الاتصال لكل المكاتب معاً
-      const rows = await prisma.waSession.findMany({ select: { towerId: true, state: true, requestedAt: true } });
+      // نقرأ الحالة المنشورة + طلب الاتصال لمكاتب هذا الوكيل
+      const rows = await prisma.waSession.findMany({ where: { towerId: { in: [...mine] } }, select: { towerId: true, state: true, requestedAt: true } });
       for (const r of rows) {
+        if (!mine.has(r.towerId)) continue;
         const st = store(r.towerId);
         const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
         // فصل مطلوب من الموقع: القاعدة تقول "disconnected" بينما الوكيل ما زال يحمل عميلاً حيّاً
@@ -445,16 +451,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // (على الموقع) أنشئ طلباً وانتظر نتيجته من الوكيل — مع مهلة.
 export async function relayRequest(
   towerId: number,
-  kind: "chats" | "messages" | "send" | "logout" | "media",
+  kind: "chats" | "messages" | "send" | "logout" | "media" | "sas",
   params: Record<string, unknown> = {},
   timeoutMs = 9000,
 ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
-  // لا فائدة من الطلب إن لا يوجد وكيل نشط
+  // لا فائدة من الطلب إن لا يوجد قائد نشط لوكيل هذا المكتب (عزل الوكلاء)
+  const tower = await prisma.tower.findUnique({ where: { id: towerId }, select: { agentId: true } });
   const leader = await prisma.hybridWorker.findFirst({
-    where: { approved: true, lastSeen: { gte: new Date(Date.now() - 60_000) } },
+    where: { approved: true, agentId: tower?.agentId ?? -1, lastSeen: { gte: new Date(Date.now() - 60_000) } },
     select: { id: true },
   });
-  if (!leader) return { ok: false, error: "وكيل المكتب غير متصل — لا يمكن جلب المحادثات" };
+  if (!leader) return { ok: false, error: "حاسبة مكتب هذا الوكيل غير مشغّلة حالياً" };
 
   const row = await prisma.waRelay.create({
     data: { towerId, kind, params: JSON.stringify(params) },
@@ -471,6 +478,20 @@ export async function relayRequest(
   return { ok: false, error: "انتهت المهلة — تأكّد أن وكيل المكتب متصل" };
 }
 
+// (على الوكيل) تنفيذ عملية SAS محلياً — الحاسبة في العراق قرب خادم SAS فأسرع من Vercel.
+async function runSasOp(towerId: number, op: string, p: { page?: number; count?: number }): Promise<unknown> {
+  const { runOfficeSync } = await import("@/lib/subscriptionSync");
+  const { sasBaseUrl, sasLogin, sasFetchOnePage } = await import("@/lib/sas4");
+  if (op === "sync") return runOfficeSync(towerId, { notify: false });
+  const tower = await prisma.tower.findUnique({ where: { id: towerId }, select: { loginUrl: true, username: true, password: true } });
+  if (!tower?.loginUrl || !tower.username || !tower.password) throw new Error("بيانات SAS ناقصة لهذا المكتب");
+  const base = sasBaseUrl(tower.loginUrl);
+  const token = await sasLogin(base, tower.username, tower.password);
+  if (op === "token") return { token };
+  if (op === "fetchPage") return sasFetchOnePage(base, token, p.page ?? 1, p.count ?? 10);
+  throw new Error(`عملية SAS غير معروفة: ${op}`);
+}
+
 // (على الوكيل) نفّذ طلبات المُرحِّل المعلّقة: القائد فقط.
 export function startWaRelayPoller() {
   const gg = globalThis as unknown as { __waRelayPollerStarted?: boolean };
@@ -478,17 +499,22 @@ export function startWaRelayPoller() {
   gg.__waRelayPollerStarted = true;
   setInterval(async () => {
     try {
-      const { isLeaderNow } = await import("@/lib/hybridAgent");
+      const { isLeaderNow, getWorkerAgentId } = await import("@/lib/hybridAgent");
       if (!isLeaderNow()) return;
+      const aid = getWorkerAgentId();
+      if (aid == null) return;
+      // مكاتب وكيل هذه الحاسبة فقط
+      const mineRows = await prisma.tower.findMany({ where: { agentId: aid, isDeleted: false }, select: { id: true } });
+      const mine = mineRows.map((t) => t.id);
       const pend = await prisma.waRelay.findMany({
-        where: { status: "pending", createdAt: { gte: new Date(Date.now() - 60_000) } },
+        where: { status: "pending", towerId: { in: mine.length ? mine : [-1] }, createdAt: { gte: new Date(Date.now() - 60_000) } },
         orderBy: { id: "asc" },
         take: 5,
       });
       for (const relayRow of pend) {
         try {
-          const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; limit?: number; msgId?: string };
-          // تأكّد أن واتساب المكتب جاهز فعلاً قبل محاولة القراءة/التنزيل
+          const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; limit?: number; msgId?: string; op?: string; page?: number; count?: number };
+          // تأكّد أن واتساب المكتب جاهز فعلاً قبل عمليات الواتساب (لا يلزم لعمليات SAS)
           const st = store(relayRow.towerId);
           if ((relayRow.kind === "chats" || relayRow.kind === "messages" || relayRow.kind === "send" || relayRow.kind === "media") && st.state !== "ready") {
             throw new Error(`واتساب المكتب غير جاهز (الحالة: ${st.state})`);
@@ -499,6 +525,7 @@ export function startWaRelayPoller() {
           else if (relayRow.kind === "send") result = await sendOfficeChat(relayRow.towerId, p.chatId ?? "", p.text ?? "");
           else if (relayRow.kind === "media") result = await downloadOfficeMedia(relayRow.towerId, p.msgId ?? "");
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
+          else if (relayRow.kind === "sas") result = await runSasOp(relayRow.towerId, p.op ?? "", p);
           await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "done", result: JSON.stringify(result) } });
         } catch (e) {
           const detail = e instanceof Error ? (e.stack || `${e.name}: ${e.message}`) : (() => { try { return JSON.stringify(e); } catch { return String(e); } })();

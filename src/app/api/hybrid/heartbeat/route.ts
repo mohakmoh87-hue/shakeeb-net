@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const name = b?.name ? String(b.name).slice(0, 120) : null;
   const towerId = b?.towerId != null ? Number(b.towerId) : null;
 
-  const existing = await prisma.hybridWorker.findUnique({ where: { machineId }, select: { nodeNumber: true, approved: true } });
+  const existing = await prisma.hybridWorker.findUnique({ where: { machineId }, select: { nodeNumber: true, approved: true, agentId: true } });
 
   let nodeNumber = existing?.nodeNumber ?? null;
   if (nodeNumber == null) {
@@ -30,6 +30,7 @@ export async function POST(request: Request) {
   });
 
   const approved = existing?.approved ?? false;
-  const leader = await computeLeaderMachineId();
-  return NextResponse.json({ ok: true, approved, isLeader: leader === machineId, leaderMachineId: leader, nodeNumber });
+  // قائد وكيل هذه الحاسبة فقط
+  const leader = await computeLeaderMachineId(existing?.agentId ?? null);
+  return NextResponse.json({ ok: true, approved, isLeader: leader === machineId, leaderMachineId: leader, nodeMachineId: machineId, nodeNumber });
 }

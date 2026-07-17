@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 import { sasBaseUrl, sasLogin } from "@/lib/sas4";
+import { relayRequest } from "@/lib/whatsapp";
 
 const schema = z.object({ towerId: z.coerce.number() });
 
@@ -24,7 +25,11 @@ export async function POST(request: Request) {
 
   try {
     const base = sasBaseUrl(tower.loginUrl);
-    const token = await sasLogin(base, tower.username, tower.password);
+    // عبر حاسبة المكتب (أسرع) إن كانت مشغّلة، وإلا مباشرةً من الموقع
+    const relayed = await relayRequest(tower.id, "sas", { op: "token" }, 15_000);
+    const token = (relayed.ok && (relayed.result as { token?: string })?.token)
+      ? (relayed.result as { token: string }).token
+      : await sasLogin(base, tower.username, tower.password);
     // مسار الـ API عبر البروكسي (نفس origin البرنامج)
     const apiUrl = `/sas/${tower.id}/admin/api/index.php/api/`;
     const host = tower.loginUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");

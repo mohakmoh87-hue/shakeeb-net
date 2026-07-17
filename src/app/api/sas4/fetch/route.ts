@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
-import { sasBaseUrl, sasLogin, sasFetchOnePage } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasFetchOnePage, type SasUser } from "@/lib/sas4";
+import { relayRequest } from "@/lib/whatsapp";
 
 const schema = z.object({
   towerId: z.coerce.number(),
@@ -31,10 +32,16 @@ export async function POST(request: Request) {
   }
 
   try {
-    const base = sasBaseUrl(tower.loginUrl);
-    // تسجيل الدخول التلقائي باليوزر/الباسورد المخزّنين
-    const token = await sasLogin(base, tower.username, tower.password);
-    const { users, total, lastPage } = await sasFetchOnePage(base, token, page, count);
+    // جلب الصفحة عبر حاسبة المكتب (SAS قريب فأسرع) إن كانت مشغّلة، وإلا مباشرةً من الموقع
+    const relayed = await relayRequest(towerId, "sas", { op: "fetchPage", page, count }, 20_000);
+    let users: SasUser[], total: number, lastPage: number;
+    if (relayed.ok && relayed.result) {
+      ({ users, total, lastPage } = relayed.result as { users: SasUser[]; total: number; lastPage: number });
+    } else {
+      const base = sasBaseUrl(tower.loginUrl);
+      const token = await sasLogin(base, tower.username, tower.password);
+      ({ users, total, lastPage } = await sasFetchOnePage(base, token, page, count));
+    }
 
     const existing = await prisma.subscriber.findMany({
       where: { sasId: { in: users.map((u) => u.sasId) } },
