@@ -36,12 +36,22 @@ export default function Sas4ImportPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
-  const [localBase, setLocalBase] = useState<string>(""); // عنوان العامل المحلي إن وُجد
+  // تبديل يدوي: تحميل SAS من حاسبة المكتب (العامل المحلي) — أسرع بكثير. يُحفَظ الاختيار.
+  const [useLocal, setUseLocal] = useState(false);
+  const localBase = useLocal ? "http://127.0.0.1:47615" : "";
 
   useEffect(() => {
     fetch("/api/towers").then((r) => { if (r.ok) r.json().then(setTowers); });
-    localSasBase().then(setLocalBase); // كشف العامل المحلي مرّة
+    // تفعيل تلقائي إن كُشِف العامل المحلي، أو استعادة اختيار المستخدم المحفوظ
+    const saved = typeof window !== "undefined" ? localStorage.getItem("sas_use_local") : null;
+    if (saved === "1") setUseLocal(true);
+    else if (saved !== "0") localSasBase().then((b) => { if (b) setUseLocal(true); });
   }, []);
+
+  function toggleLocal(v: boolean) {
+    setUseLocal(v);
+    try { localStorage.setItem("sas_use_local", v ? "1" : "0"); } catch { /* */ }
+  }
 
   const tower = towers.find((t) => t.id === towerId);
   const directPanelUrl = sasDirectPanelUrl(tower?.loginUrl ?? null);
@@ -127,6 +137,11 @@ export default function Sas4ImportPage() {
         <button onClick={showCurrent} disabled={loading || !towerId} className="rounded-lg bg-mynet-blue px-5 py-2 font-semibold text-white shadow hover:bg-mynet-blue-dark disabled:opacity-60">
           {loading ? "..." : "⬇️ عرض المشتركين المعروضين في اللوحة"}
         </button>
+        {/* تحميل SAS من حاسبة المكتب (أسرع) — يبقى الإطار مصغّراً في مكانه */}
+        <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${useLocal ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-slate-600"}`}>
+          <input type="checkbox" checked={useLocal} onChange={(e) => toggleLocal(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
+          ⚡ حاسبة المكتب (أسرع)
+        </label>
       </div>
 
       <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
