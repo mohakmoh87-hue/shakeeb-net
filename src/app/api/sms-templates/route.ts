@@ -14,7 +14,7 @@ export async function GET() {
   const g = await guardAny("templates.manage", "messaging.manage");
   if (g.error) return g.error;
 
-  const templates = await prisma.smsTemplate.findMany({ orderBy: { id: "asc" } });
+  const templates = await prisma.smsTemplate.findMany({ where: { agentId: g.session?.agentId ?? -1 }, orderBy: { id: "asc" } });
   return NextResponse.json(templates);
 }
 
@@ -30,6 +30,6 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const created = await prisma.smsTemplate.create({ data: parsed.data });
+  const created = await prisma.smsTemplate.create({ data: { ...parsed.data, agentId: g.session?.agentId ?? null } });
   return NextResponse.json(created, { status: 201 });
 }

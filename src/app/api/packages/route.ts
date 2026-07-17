@@ -18,7 +18,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
   const packages = await prisma.package.findMany({
-    where: { isDeleted: false },
+    where: { isDeleted: false, agentId: session.agentId ?? -1 }, // عزل: باقات وكيل المستخدم
     orderBy: { id: "asc" },
   });
   return NextResponse.json(packages);
@@ -37,6 +37,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const created = await prisma.package.create({ data: parsed.data });
+  const created = await prisma.package.create({ data: { ...parsed.data, agentId: g.session?.agentId ?? null } });
   return NextResponse.json(created, { status: 201 });
 }

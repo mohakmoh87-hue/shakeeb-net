@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import PrintButton from "@/components/PrintButton";
 import ReceiptPrintStyle from "@/components/ReceiptPrintStyle";
 import { getReceiptTemplate } from "@/lib/receiptTemplate";
+import { getSession } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 
 const fmt = (n: number | null | undefined) =>
@@ -32,7 +33,8 @@ export default async function InvoiceReceipt({
     where: { type: "office" },
   });
   const officeName = officeSetting?.value || "شكيب نت للانترنت";
-  const tpl = await getReceiptTemplate();
+  const session = await getSession();
+  const tpl = await getReceiptTemplate(session?.agentId ?? null);
 
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">

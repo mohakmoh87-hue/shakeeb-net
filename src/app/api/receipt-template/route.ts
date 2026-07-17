@@ -28,10 +28,16 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
   showLogo: true,
 };
 
+// مفتاح قالب الوصل لكل وكيل (عزل المستأجر)
+function receiptKey(agentId: number | null | undefined) { return `receipt:${agentId ?? 0}`; }
+
 export async function GET() {
   const g = await guard("receipt.template");
   if (g.error) return g.error;
-  const row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
+  const key = receiptKey(g.session?.agentId);
+  // مفتاح الوكيل، ثم ارتداد للمفتاح القديم "receipt" (توافق مع الوكيل الأول)
+  let row = await prisma.systemSetting.findFirst({ where: { type: key } });
+  if (!row) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
   let data = DEFAULT_RECEIPT;
   if (row?.text) {
     try { data = { ...DEFAULT_RECEIPT, ...JSON.parse(row.text) }; } catch { /* keep default */ }
@@ -49,11 +55,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
   }
   const json = JSON.stringify(parsed.data);
-  const existing = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
+  const key = receiptKey(g.session?.agentId);
+  const existing = await prisma.systemSetting.findFirst({ where: { type: key } });
   if (existing) {
     await prisma.systemSetting.update({ where: { id: existing.id }, data: { text: json } });
   } else {
-    await prisma.systemSetting.create({ data: { type: "receipt", text: json } });
+    await prisma.systemSetting.create({ data: { type: key, text: json } });
   }
   return NextResponse.json({ ok: true });
 }

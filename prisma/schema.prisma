@@ -145,6 +145,7 @@ model TowerInfo {
 // ===== الباقات (card) =====
 model Package {
   id          Int     @id @default(autoincrement())
+  agentId     Int? // الوكيل (المستأجر) مالك هذا الإعداد
   name        String?
   priceDollar Float? // card_priceDO
   priceDinar  Float?
@@ -527,6 +528,7 @@ model SystemSetting {
 // ===== قوالب الرسائل (Setting_sms) =====
 model SmsTemplate {
   id     Int     @id @default(autoincrement())
+  agentId Int? // الوكيل (المستأجر) مالك هذا الإعداد
   type   String?
   text   String?
   enable String?
@@ -733,6 +735,7 @@ model HybridWorker {
 // deliveryOnly = بطاقة مبلغ فقط (كالتوصيل) لا تتطلّب تفاصيل/صورة عند الإنجاز.
 model CardType {
   id           Int     @id @default(autoincrement())
+  agentId      Int? // الوكيل (المستأجر) مالك هذا الإعداد
   name         String
   deliveryOnly Boolean @default(false)
   position     Int     @default(0)

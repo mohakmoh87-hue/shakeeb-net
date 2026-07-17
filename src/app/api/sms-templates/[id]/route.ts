@@ -25,11 +25,12 @@ export async function PUT(
       { status: 400 },
     );
   }
-  const updated = await prisma.smsTemplate.update({
-    where: { id: Number(id) },
+  const upd = await prisma.smsTemplate.updateMany({
+    where: { id: Number(id), agentId: g.session?.agentId ?? -1 }, // عزل: قالب وكيل المستخدم
     data: parsed.data,
   });
-  return NextResponse.json(updated);
+  if (upd.count === 0) return NextResponse.json({ error: "القالب غير موجود ضمن حسابك" }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
@@ -40,6 +41,6 @@ export async function DELETE(
   if (g.error) return g.error;
 
   const { id } = await params;
-  await prisma.smsTemplate.delete({ where: { id: Number(id) } });
+  await prisma.smsTemplate.deleteMany({ where: { id: Number(id), agentId: g.session?.agentId ?? -1 } });
   return NextResponse.json({ ok: true });
 }

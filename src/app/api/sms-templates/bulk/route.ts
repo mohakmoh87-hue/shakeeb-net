@@ -21,7 +21,7 @@ export async function GET() {
   const g = await guardAny("templates.manage", "messaging.manage");
   if (g.error) return g.error;
 
-  const rows = await prisma.smsTemplate.findMany({ where: { type: { in: [...CATEGORIES] } } });
+  const rows = await prisma.smsTemplate.findMany({ where: { type: { in: [...CATEGORIES] }, agentId: g.session?.agentId ?? -1 } });
   const map = new Map(rows.map((r) => [r.type, r]));
   const result = CATEGORIES.map((cat) => {
     const r = map.get(cat);
@@ -41,12 +41,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
   }
 
+  const agentId = g.session?.agentId ?? null; // عزل: قوالب وكيل المستخدم
   for (const t of parsed.data.templates) {
-    const existing = await prisma.smsTemplate.findFirst({ where: { type: t.type } });
+    const existing = await prisma.smsTemplate.findFirst({ where: { type: t.type, agentId: agentId ?? -1 } });
     if (existing) {
       await prisma.smsTemplate.update({ where: { id: existing.id }, data: { text: t.text, enable: t.enable } });
     } else {
-      await prisma.smsTemplate.create({ data: { type: t.type, text: t.text, enable: t.enable } });
+      await prisma.smsTemplate.create({ data: { type: t.type, text: t.text, enable: t.enable, agentId } });
     }
   }
   return NextResponse.json({ ok: true });

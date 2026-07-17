@@ -10,7 +10,7 @@ export async function GET() {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const types = await prisma.cardType.findMany({
-    where: { isDeleted: false }, orderBy: [{ position: "asc" }, { id: "asc" }],
+    where: { isDeleted: false, agentId: s.agentId ?? -1 }, orderBy: [{ position: "asc" }, { id: "asc" }],
   });
   return NextResponse.json({ types });
 }
@@ -22,11 +22,12 @@ export async function POST(request: Request) {
   const b = await request.json().catch(() => null);
   const name = String(b?.name ?? "").trim();
   if (!name) return NextResponse.json({ error: "اسم النوع مطلوب" }, { status: 400 });
-  const exists = await prisma.cardType.findFirst({ where: { name, isDeleted: false } });
+  const agentId = g.session?.agentId ?? null; // عزل: أنواع وكيل المستخدم
+  const exists = await prisma.cardType.findFirst({ where: { name, isDeleted: false, agentId: agentId ?? -1 } });
   if (exists) return NextResponse.json(exists, { status: 200 });
-  const count = await prisma.cardType.count({ where: { isDeleted: false } });
+  const count = await prisma.cardType.count({ where: { isDeleted: false, agentId: agentId ?? -1 } });
   const created = await prisma.cardType.create({
-    data: { name, deliveryOnly: !!b?.deliveryOnly, position: count },
+    data: { name, deliveryOnly: !!b?.deliveryOnly, position: count, agentId },
   });
   return NextResponse.json(created, { status: 201 });
 }
@@ -37,6 +38,6 @@ export async function DELETE(request: Request) {
   if (g.error) return g.error;
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
-  await prisma.cardType.updateMany({ where: { id }, data: { isDeleted: true } });
+  await prisma.cardType.updateMany({ where: { id, agentId: g.session?.agentId ?? -1 }, data: { isDeleted: true } });
   return NextResponse.json({ ok: true });
 }

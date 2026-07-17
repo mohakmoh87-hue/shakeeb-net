@@ -23,8 +23,12 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
 };
 
 // قراءة قالب الوصل المخزّن (server-side) للاستخدام في صفحات الطباعة
-export async function getReceiptTemplate(): Promise<ReceiptTemplate> {
-  const row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
+// قالب الوصل لوكيل محدّد (عزل المستأجر): مفتاح الوكيل، ثم ارتداد للمفتاح القديم "receipt"
+export async function getReceiptTemplate(agentId?: number | null): Promise<ReceiptTemplate> {
+  let row = agentId != null
+    ? await prisma.systemSetting.findFirst({ where: { type: `receipt:${agentId}` } })
+    : null;
+  if (!row) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
   if (row?.text) {
     try { return { ...DEFAULT_RECEIPT, ...JSON.parse(row.text) }; } catch { /* ignore */ }
   }

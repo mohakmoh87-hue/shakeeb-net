@@ -28,11 +28,12 @@ export async function PUT(
     );
   }
 
-  const updated = await prisma.package.update({
-    where: { id: Number(id) },
+  const upd = await prisma.package.updateMany({
+    where: { id: Number(id), agentId: g.session?.agentId ?? -1 }, // عزل: باقة وكيل المستخدم
     data: parsed.data,
   });
-  return NextResponse.json(updated);
+  if (upd.count === 0) return NextResponse.json({ error: "الباقة غير موجودة ضمن حسابك" }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
@@ -43,9 +44,10 @@ export async function DELETE(
   if (g.error) return g.error;
 
   const { id } = await params;
-  await prisma.package.update({
-    where: { id: Number(id) },
+  const del = await prisma.package.updateMany({
+    where: { id: Number(id), agentId: g.session?.agentId ?? -1 }, // عزل: باقة وكيل المستخدم
     data: { isDeleted: true }, // حذف منطقي
   });
+  if (del.count === 0) return NextResponse.json({ error: "الباقة غير موجودة ضمن حسابك" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }
