@@ -25,12 +25,13 @@ export default async function ReceiptPage({
     ? await prisma.subscriber.findUnique({ where: { id: entry.subscriberId } })
     : null;
 
-  // اسم المكتب من الإعدادات (إن وُجد)
-  const officeSetting = await prisma.systemSetting.findFirst({
-    where: { type: "office" },
-  });
-  const officeName = officeSetting?.value || "شكيب نت للانترنت";
+  // اسم العلامة من الوكيل الحالي، ثم الإعداد العام، ثم الافتراضي
   const session = await getSession();
+  const agent = session?.agentId != null
+    ? await prisma.agent.findUnique({ where: { id: session.agentId }, select: { name: true } })
+    : null;
+  const officeSetting = await prisma.systemSetting.findFirst({ where: { type: "office" } });
+  const officeName = agent?.name || officeSetting?.value || "شكيب نت للانترنت";
   const tpl = await getReceiptTemplate(session?.agentId ?? null);
 
   return (

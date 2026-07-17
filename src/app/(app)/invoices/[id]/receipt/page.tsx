@@ -29,11 +29,12 @@ export default async function InvoiceReceipt({
   });
   const nameMap = new Map(items.map((i) => [i.id, i.name]));
 
-  const officeSetting = await prisma.systemSetting.findFirst({
-    where: { type: "office" },
-  });
-  const officeName = officeSetting?.value || "شكيب نت للانترنت";
   const session = await getSession();
+  const agent = session?.agentId != null
+    ? await prisma.agent.findUnique({ where: { id: session.agentId }, select: { name: true } })
+    : null;
+  const officeSetting = await prisma.systemSetting.findFirst({ where: { type: "office" } });
+  const officeName = agent?.name || officeSetting?.value || "شكيب نت للانترنت";
   const tpl = await getReceiptTemplate(session?.agentId ?? null);
 
   return (

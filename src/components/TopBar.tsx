@@ -44,9 +44,11 @@ const GROUPS: {
 ];
 
 export default function TopBar({
+  brand,
   fullName,
   roleLabel,
 }: {
+  brand?: string;
   fullName: string;
   roleLabel: string;
 }) {
@@ -71,8 +73,8 @@ export default function TopBar({
             نت
           </div>
           <div className="leading-tight">
-            <div className="text-base font-bold text-slate-800">{fullName}</div>
-            <div className="text-xs font-medium text-slate-500">{roleLabel}</div>
+            <div className="text-base font-extrabold text-mynet-blue">{brand ?? "شكيب نت"}</div>
+            <div className="text-xs font-medium text-slate-500">{fullName} — {roleLabel}</div>
           </div>
         </div>
 
