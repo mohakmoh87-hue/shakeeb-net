@@ -60,6 +60,17 @@ export async function POST(request: Request) {
     await prisma.user.update({ where: { id: user.id }, data: { failedAttempts: 0, lockedUntil: null } });
   }
 
+  // منع دخول وكيل منتهي الاشتراك (يبقى المالك ومستخدمو النظام بلا وكيل غير متأثّرين)
+  if (!user.isOwner && user.agentId != null) {
+    const agent = await prisma.agent.findUnique({ where: { id: user.agentId }, select: { planExpiry: true, isDeleted: true } });
+    if (!agent || agent.isDeleted) {
+      return NextResponse.json({ error: "الحساب غير مفعّل — تواصل مع الإدارة" }, { status: 403 });
+    }
+    if (agent.planExpiry && agent.planExpiry.getTime() < Date.now()) {
+      return NextResponse.json({ error: "انتهت فترة اشتراكك — تواصل مع الإدارة للتجديد" }, { status: 403 });
+    }
+  }
+
   await setSession({
     userId: user.id,
     username: user.username,
