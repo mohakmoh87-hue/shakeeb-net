@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/PageHeader";
+import BackupSection from "@/components/BackupSection";
 import { usePermission } from "@/lib/usePermission";
 
 export default function SettingsPage() {
@@ -62,6 +63,9 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
+      {/* النسخ الاحتياطي والاسترجاع لكل وكيل */}
+      <BackupSection />
 
       <form onSubmit={save} className="max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <Field label="اسم النظام (الافتراضي في الوصولات)" value={form.office} onChange={(v) => set("office", v)} />

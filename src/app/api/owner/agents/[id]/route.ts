@@ -68,7 +68,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   // كل الجداول التي فيها عمود towerId ⇒ حذف صفوف مكاتب الوكيل
   if (towerIds.length) {
     const towerTables: { table_name: string }[] = await prisma.$queryRawUnsafe(
-      `SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='towerId'`,
+      `SELECT table_name::text AS table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='towerId'`,
     );
     for (const { table_name } of towerTables) {
       await prisma.$executeRawUnsafe(`DELETE FROM "${table_name}" WHERE "towerId" = ANY($1::int[])`, towerIds).catch(() => {});
@@ -77,7 +77,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
   // كل الجداول التي فيها عمود agentId (عدا agents نفسه) ⇒ حذف صفوف الوكيل
   const agentTables: { table_name: string }[] = await prisma.$queryRawUnsafe(
-    `SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='agentId' AND table_name <> 'agents'`,
+    `SELECT table_name::text AS table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='agentId' AND table_name <> 'agents'`,
   );
   for (const { table_name } of agentTables) {
     await prisma.$executeRawUnsafe(`DELETE FROM "${table_name}" WHERE "agentId" = $1`, agentId).catch(() => {});

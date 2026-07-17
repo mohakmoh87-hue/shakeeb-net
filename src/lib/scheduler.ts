@@ -278,6 +278,11 @@ export function startScheduler() {
       // احتياطي: يُرسل تقرير أي مكتب لم يُرسَل تقريره اليوم (لمن أطفأ دون تسجيل خروج)
       runManagerDailyReport(undefined, { oncePerDay: true }).catch((e) => console.error("[scheduler] managerReport:", e));
     }
+    // نسخة احتياطية يومية لكل وكيل إلى إيميله (افتراضي 04:00 بغداد)
+    const backupTime = (await getSetting("backupTime", "04:00")).trim() || "04:00";
+    if (nowHM === backupTime) {
+      import("@/lib/backupJob").then((m) => m.runDailyBackups()).catch((e) => console.error("[scheduler] dailyBackup:", e));
+    }
     // مزامنة اشتراكات كل مكتب حسب وقته المضبوط (مرحلتان: كروت الأمس ثم تصحيح التواريخ)
     try {
       const offices = await prisma.tower.findMany({ where: { isDeleted: false, syncEnabled: "1", syncTime: { not: null } }, select: { id: true, syncTime: true } });

@@ -27,6 +27,7 @@ model Agent {
   officeCap  Int       @default(1) // أقصى عدد مكاتب يسمح له بإنشائها
   planExpiry DateTime? // تاريخ انتهاء الاشتراك (null = بلا انتهاء)
   isTrial    Boolean   @default(false) // حساب تجريبي (أسبوع)
+  backupEmail String? // إيميل النسخ الاحتياطي/الاسترجاع — تُرسل إليه نسخة يومية
   isDeleted  Boolean   @default(false)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @default(now()) @updatedAt
