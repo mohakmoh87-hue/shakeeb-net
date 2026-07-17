@@ -107,7 +107,13 @@ export default function OfficesPage() {
       <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
         {/* قائمة المكاتب */}
         <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <button onClick={addNew} className="mb-3 w-full rounded-lg bg-mynet-blue py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">+ إضافة مكتب</button>
+          {me?.officeCap != null && (
+            <div className="mb-2 rounded-lg bg-slate-50 px-3 py-1.5 text-center text-xs font-semibold text-slate-600">
+              المكاتب: {offices.length} / {me.officeCap}
+              {offices.length >= me.officeCap && <span className="text-red-600"> — بلغت الحد</span>}
+            </div>
+          )}
+          <button onClick={addNew} disabled={me?.officeCap != null && offices.length >= me.officeCap} className="mb-3 w-full rounded-lg bg-mynet-blue py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark disabled:cursor-not-allowed disabled:opacity-40">+ إضافة مكتب</button>
           <div className="space-y-1">
             {offices.map((o) => (
               <div key={o.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${sel?.id === o.id ? "bg-blue-50" : "hover:bg-slate-50"}`}>

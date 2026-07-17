@@ -17,8 +17,9 @@ async function getSetting(type: string, fallback = ""): Promise<string> {
 }
 
 // جلب قالب رسالة حسب التصنيف
-async function getTemplate(type: string): Promise<string | null> {
-  const t = await prisma.smsTemplate.findFirst({ where: { type } });
+// قالب رسالة لوكيل محدّد (عزل المستأجر) — كل وكيل قوالبه الخاصّة
+async function getTemplate(type: string, agentId: number | null): Promise<string | null> {
+  const t = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1 } });
   if (!t || (t.enable && t.enable === "0")) return null;
   return t.text ?? null;
 }
@@ -32,9 +33,6 @@ function baghdadYesterday(): Date { return new Date(Date.now() - 24 * 60 * 60 * 
 
 // ===== تذكير المشتركين المنتهين خلال يومين — لمكاتب محدّدة (أو الكل) =====
 export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent: number; failed: number }> {
-  const template = await getTemplate("expiring");
-  if (!template) return { sent: 0, failed: 0 };
-
   const now = new Date();
   const limit = new Date();
   limit.setDate(limit.getDate() + 2); // خلال يومين
@@ -50,15 +48,24 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
   const packages = await prisma.package.findMany({ select: { id: true, name: true, priceDinar: true } });
   const priceMap = new Map(packages.map((p) => [p.id, p.priceDinar ?? 0]));
   const pkgNameMap = new Map(packages.map((p) => [p.id, p.name]));
-  const offices = await prisma.tower.findMany({ select: { id: true, name: true, waEnabled: true } });
+  const offices = await prisma.tower.findMany({ select: { id: true, name: true, waEnabled: true, agentId: true } });
   const officeMap = new Map(offices.map((o) => [o.id, o]));
   const fallbackOffice = await getSetting("office", "شكيب نت");
+  // قالب "expiring" لكل وكيل (يُجلب مرّة ويُخزَّن) — عزل المستأجر
+  const tplCache = new Map<number, string | null>();
+  async function templateFor(agentId: number | null): Promise<string | null> {
+    if (agentId == null) return null;
+    if (!tplCache.has(agentId)) tplCache.set(agentId, await getTemplate("expiring", agentId));
+    return tplCache.get(agentId) ?? null;
+  }
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let sent = 0, failed = 0, i = 0;
   for (const sub of recipients) {
     const office = sub.towerId ? officeMap.get(sub.towerId) : null;
     if (office?.waEnabled === "0") continue; // مكتب معطّل الواتساب
+    const template = await templateFor(office?.agentId ?? null);
+    if (!template) continue; // لا قالب مفعّل لوكيل هذا المكتب
     if (i++ > 0) await sleep(10000); // تأخير 10 ثوانٍ بين رسالة وأخرى
     const text = renderTemplate(template, {
       name: sub.name,

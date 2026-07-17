@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type Me = { isAdmin: boolean; permissions: string[] };
+type Me = { isAdmin: boolean; permissions: string[]; officeCap?: number | null; officeCount?: number; agentName?: string | null };
 
 // كاش على مستوى الوحدة: يُجلب /api/me مرة واحدة ويُعاد استخدامه عبر كل الصفحات (يقلّل الطلبات عند التنقّل)
 let cache: Me | null = null;
