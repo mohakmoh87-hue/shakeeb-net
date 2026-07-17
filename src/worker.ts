@@ -57,11 +57,11 @@ function ensureSingleInstance(): Promise<void> {
   console.log("[worker] بدء عامل شكيب نت المستقل...");
   try {
     const { startScheduler } = await import("@/lib/scheduler");
-    const { startAgentHealthServer } = await import("@/lib/agentHealth");
+    const { startLocalSasServer } = await import("@/lib/localSasServer");
     const { startHybridAgent } = await import("@/lib/hybridAgent");
     const { startWaRequestPoller, startWaRelayPoller } = await import("@/lib/whatsapp");
     startScheduler();
-    startAgentHealthServer();
+    startLocalSasServer(); // يشمل /health + لوحة SAS + عمليات SAS محلياً (المنفذ 47615)
     startHybridAgent();
     startWaRequestPoller();
     startWaRelayPoller();

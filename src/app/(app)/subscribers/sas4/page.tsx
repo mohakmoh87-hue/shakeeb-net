@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import { prepareSasEmbed } from "@/lib/sasEmbed";
+import { localSasBase } from "@/lib/localSas";
 
 type Tower = { id: number; name: string | null; loginUrl: string | null; username: string | null };
 type SasUser = {
@@ -35,9 +36,11 @@ export default function Sas4ImportPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [localBase, setLocalBase] = useState<string>(""); // عنوان العامل المحلي إن وُجد
 
   useEffect(() => {
     fetch("/api/towers").then((r) => { if (r.ok) r.json().then(setTowers); });
+    localSasBase().then(setLocalBase); // كشف العامل المحلي مرّة
   }, []);
 
   const tower = towers.find((t) => t.id === towerId);
@@ -48,18 +51,26 @@ export default function Sas4ImportPage() {
     setFrameUrl(null); setUsers([]); setSelected(new Set());
     if (!towerId) return;
     let active = true;
-    prepareSasEmbed(Number(towerId)).then((ok) => {
-      if (active) setFrameUrl(ok ? `/sas/${towerId}#/users/index` : directPanelUrl);
-    });
+    // العامل المحلي: يحقن التوكن في اللوحة تلقائياً، فنحمّلها منه مباشرةً (سريع)
+    if (localBase) {
+      setFrameUrl(`${localBase}/sas/${towerId}#/users/index`);
+    } else {
+      prepareSasEmbed(Number(towerId)).then((ok) => {
+        if (active) setFrameUrl(ok ? `/sas/${towerId}#/users/index` : directPanelUrl);
+      });
+    }
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [towerId]);
+  }, [towerId, localBase]);
 
   // سحب المشتركين المعروضين حالياً في اللوحة
   async function showCurrent() {
     setError(""); setResult(""); setLoading(true);
     try {
-      const res = await fetch("/api/sas4/last-view");
+      // العامل المحلي (سريع) إن وُجد، وإلا Vercel
+      const res = localBase
+        ? await fetch(`${localBase}/sas4/last-view?towerId=${towerId}`)
+        : await fetch("/api/sas4/last-view");
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "تعذّر قراءة العرض"); return; }
       setUsers(data.users);
