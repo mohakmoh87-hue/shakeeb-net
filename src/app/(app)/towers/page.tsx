@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { usePermission } from "@/lib/usePermission";
+import { localSasBase } from "@/lib/localSas";
 
 type Office = {
   id: number;
@@ -253,7 +254,11 @@ function OfficeSync({ officeId }: { officeId: number }) {
 
   async function sync() {
     setBusy(true); setRes(null);
-    const r = await fetch(`/api/offices/${officeId}/sync`, { method: "POST" });
+    // العامل المحلي (حاسبة المكتب، قرب SAS) أسرع؛ وإلا Vercel
+    const base = await localSasBase();
+    const r = base
+      ? await fetch(`${base}/sas4/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ towerId: officeId }) })
+      : await fetch(`/api/offices/${officeId}/sync`, { method: "POST" });
     setBusy(false);
     const d = await r.json().catch(() => ({ error: "تعذّر الاتصال" }));
     setRes(d);

@@ -14,6 +14,8 @@ const tokenCache = new Map<number, { token: string; at: number }>();
 const TOKEN_TTL = 4 * 60 * 1000;
 // آخر قائمة مشتركين عُرضت في اللوحة لكل مكتب (لاستيراد المعروض)
 const viewCache = new Map<number, { users: SasUser[]; at: number }>();
+// المكتب/المضيف للّوحة المفتوحة حالياً — تستعمله نداءات اللوحة على /admin/* (بديل الكوكيز)
+let currentPanel: { towerId: number; host: string } | null = null;
 
 function cors(res: http.ServerResponse, origin?: string) {
   res.setHeader("Access-Control-Allow-Origin", origin || "*");
@@ -81,6 +83,7 @@ export function startLocalSasServer() {
         const t = await agentTower(towerId);
         if (!t) { res.writeHead(404); res.end("tower not allowed"); return; }
         const host = (t.loginUrl || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+        currentPanel = { towerId, host }; // تُستعمل في نداءات /admin/*
         const bodyBuf = req.method === "GET" || req.method === "HEAD" ? undefined : Buffer.from(await readBody(req));
         const webReq = toWebRequest(req, bodyBuf);
         let capturedJson: string | null = null;
@@ -92,7 +95,7 @@ export function startLocalSasServer() {
         if (ct.includes("text/html")) {
           // حقن التوكن في localStorage قبل تحميل سكربتات اللوحة (دخول تلقائي)
           const token = await towerToken(t).catch(() => "");
-          const apiUrl = `/sas/${towerId}/admin/api/index.php/api/`;
+          const apiUrl = `/admin/api/index.php/api/`; // اللوحة تنادي API على /admin/* (جذر)
           let html = await webRes.text();
           const inject = `<script>try{localStorage.setItem('sas4_jwt',${JSON.stringify(token)});localStorage.setItem('sas4_api_url',${JSON.stringify(apiUrl)});}catch(e){}</script>`;
           html = html.replace(/<head[^>]*>/i, (m) => m + inject);
@@ -103,6 +106,24 @@ export function startLocalSasServer() {
         res.setHeader("Content-Type", ct);
         res.writeHead(webRes.status);
         res.end(bodyText);
+        return;
+      }
+
+      // بروكسي نداءات API للّوحة: /admin/*  (تُوجَّه لخادم SAS للمكتب المفتوح حالياً)
+      if (p.startsWith("/admin/") || p === "/admin") {
+        if (!currentPanel) { res.writeHead(404); res.end("no panel"); return; }
+        const bodyBuf = req.method === "GET" || req.method === "HEAD" ? undefined : Buffer.from(await readBody(req));
+        const webReq = toWebRequest(req, bodyBuf);
+        const upstreamPath = p.replace(/^\//, ""); // admin/...
+        let capturedJson: string | null = null;
+        const webRes = await proxyToSas(webReq, currentPanel.host, upstreamPath, undefined, (txt) => { capturedJson = txt; });
+        if (capturedJson && upstreamPath.endsWith("index/user")) {
+          try { const us = parseUsersList(capturedJson); if (us.length) viewCache.set(currentPanel.towerId, { users: us, at: Date.now() }); } catch { /* */ }
+        }
+        const ct = webRes.headers.get("content-type") || "";
+        res.setHeader("Content-Type", ct);
+        res.writeHead(webRes.status);
+        res.end(Buffer.from(await webRes.arrayBuffer()));
         return;
       }
 

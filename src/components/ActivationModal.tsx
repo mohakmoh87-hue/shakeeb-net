@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { prepareSasEmbed } from "@/lib/sasEmbed";
+import { localSasBase } from "@/lib/localSas";
 import { computeDateTo } from "@/lib/subscription";
 
 // صيغة قيمة حقل التاريخ yyyy-MM-dd (توقيت محلي)
@@ -95,19 +96,28 @@ export default function ActivationModal({
   }, [months, manualDate]);
   const directLink = sasDirectUrl(tower, subscriber);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
+  const [localBase, setLocalBase] = useState<string>("");
 
-  // تسجيل الدخول التلقائي للوحة SAS4 المضمّنة عبر البروكسي (نفس origin) ثم تحميلها.
-  // يعمل محلياً وعلى الموقع المنشور معاً؛ وعند تعذّره يُفتح الرابط المباشر كبديل.
+  useEffect(() => { localSasBase().then(setLocalBase); }, []);
+
+  // تسجيل الدخول التلقائي للوحة SAS4 المضمّنة ثم تحميلها.
+  // إن وُجد العامل المحلي (حاسبة المكتب) تُحمَّل منه مباشرةً (أسرع، يحقن التوكن تلقائياً)؛
+  // وإلا عبر بروكسي الموقع؛ وعند تعذّره الرابط المباشر.
   useEffect(() => {
     let active = true;
+    if (!subscriber.towerId || !subscriber.sasId) { setFrameSrc(directLink); return; }
+    if (localBase) {
+      setFrameSrc(`${localBase}/sas/${subscriber.towerId}#/user/activate/${subscriber.sasId}`);
+      return;
+    }
     const proxied = sasUrl(subscriber);
-    if (!subscriber.towerId || !proxied) { setFrameSrc(directLink); return; }
+    if (!proxied) { setFrameSrc(directLink); return; }
     prepareSasEmbed(subscriber.towerId).then((ok) => {
       if (active) setFrameSrc(ok ? proxied : directLink);
     });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subscriber.id]);
+  }, [subscriber.id, localBase]);
 
   const copy = useCallback((serial: string | null) => {
     if (!serial) return;
