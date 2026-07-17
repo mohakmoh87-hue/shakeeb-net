@@ -48,6 +48,14 @@ export async function ownsTower(session: SessionPayload | null, recordTowerId: n
   return ids.includes(recordTowerId);
 }
 
+// حارس مسارات المالك (Super Admin): للمالك فقط
+export async function guardOwner() {
+  const session = await getSession();
+  if (!session) return { error: NextResponse.json({ error: "غير مصرّح" }, { status: 401 }) };
+  if (!session.isOwner) return { error: NextResponse.json({ error: "هذه الصفحة لمالك النظام فقط" }, { status: 403 }) };
+  return { session };
+}
+
 // حارس لمسارات الـ API: يتحقق من الجلسة والصلاحية
 // يُرجع الجلسة عند النجاح، أو NextResponse بخطأ عند الفشل
 export async function guard(permission: Permission) {

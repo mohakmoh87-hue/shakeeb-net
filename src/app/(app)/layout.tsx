@@ -14,6 +14,8 @@ export default async function AppLayout({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
+  // مالك النظام لا يدخل صفحات المستأجر — يُوجَّه للوحته
+  if (session.isOwner) redirect("/owner");
 
   return (
     <div className="flex min-h-screen flex-col">
