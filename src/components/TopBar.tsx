@@ -30,6 +30,7 @@ const GROUPS: {
       { label: "الصندوق", icon: "🧮", href: "/cashbox", enabled: true },
       { label: "انشاء حساب مصروفات", icon: "🗂️", href: "/accounts", enabled: true },
       { label: "المصروفات والمقبوضات", icon: "💵", href: "/cashbox", enabled: true },
+      { label: "سجلّ المكافآت", icon: "🎁", href: "/rewards", enabled: true },
     ],
   },
   {

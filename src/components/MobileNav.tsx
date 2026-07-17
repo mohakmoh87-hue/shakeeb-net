@@ -15,6 +15,7 @@ const NAV: { section: string; items: { label: string; icon: string; href: string
       { label: "إرسال رسالة للكل", icon: "💬", href: "/messages/compose" },
       { label: "الصندوق", icon: "🧮", href: "/cashbox" },
       { label: "حسابات المدير", icon: "🧾", href: "/manager-accounts" },
+      { label: "سجلّ المكافآت", icon: "🎁", href: "/rewards" },
     ],
   },
   {

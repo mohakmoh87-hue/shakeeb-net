@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { getOrCreatePettyAccount } from "@/lib/field";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
+import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ const schema = z.object({
     .array(z.object({ itemId: z.coerce.number().int().positive(), qty: z.coerce.number().positive() }))
     .optional()
     .default([]),
+  useReward: z.boolean().optional().default(false), // سحب كود مكافأة المشترك خصماً من المبلغ
 });
 
 // إنجاز بطاقة — بحقولها الواجبة حسب النوع:
@@ -56,7 +58,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
-  const { cardId, serviceDetails, amount, newUser, photo, materials } = parsed.data;
+  const { cardId, serviceDetails, amount, newUser, photo, materials, useReward } = parsed.data;
 
   const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false } });
   if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
@@ -111,13 +113,34 @@ export async function POST(request: Request) {
     }
   }
 
-  // تقسيم المبلغ: ما يخصّ المواد (مبيعات) والباقي (نثرية)
-  const salesShare = materials.length > 0 ? Math.min(amount, materialsTotal) : 0;
-  const pettyShare = amount - salesShare; // الباقي (قد يكون كامل المبلغ إن لا مواد)
+  // سحب كود المكافأة (اختياري): نحلّ مشترك البطاقة ونتحقّق من تفعيل النظام لهذا المكتب
+  let rewardSubId: number | null = null;
+  if (useReward && !isTransfer && towerId) {
+    const off = await prisma.tower.findUnique({ where: { id: towerId }, select: { rewardsEnabled: true } });
+    if (off?.rewardsEnabled === "1") {
+      const s = await matchSubscriber(`${card.title}\n${card.description ?? ""}`, towerId);
+      rewardSubId = s?.id ?? null;
+    }
+  }
 
-  const petty = pettyShare > 0 ? await getOrCreatePettyAccount(towerId) : null;
+  // حساب النثرية إن لزم (قد لا يُستخدم إن غطّت المكافأة كامل المبلغ)
+  const petty = amount > 0 ? await getOrCreatePettyAccount(towerId) : null;
 
+  let salesShare = 0, pettyShare = 0, rewardDiscount = 0;
   await prisma.$transaction(async (tx) => {
+    // خصم كود المكافأة أولاً (بحدّ المبلغ، ويبقى الباقي للمشترك)
+    if (rewardSubId) {
+      const r = await redeemReward(tx, {
+        subscriberId: rewardSubId, billAmount: amount, context: "maintenance", refId: cardId,
+        towerId, agentId: session.agentId ?? null, createdByUser: String(session.userId ?? ""), createdByName: session.fullName ?? undefined,
+      });
+      rewardDiscount = r?.discount ?? 0;
+    }
+    // المبلغ الصافي بعد الخصم = المُحصَّل فعلياً من المشترك
+    const netAmount = Math.max(0, amount - rewardDiscount);
+    salesShare = materials.length > 0 ? Math.min(netAmount, materialsTotal) : 0;
+    pettyShare = netAmount - salesShare;
+
     // خصم المواد من المخزن ومن ذمّة الفني
     for (const s of soldInfo) {
       const item = await tx.item.findUnique({ where: { id: s.itemId } });
@@ -143,7 +166,7 @@ export async function POST(request: Request) {
         data: {
           moneyIn: pettyShare, moneyOut: 0, date: new Date(), serverDate: new Date(),
           userId: session.userId, accountId: petty.id, sourceType: "manual", towerId,
-          notes: `نثرية — ${isDelivery ? "توصيل" : "صيانة"} تكت #${cardId}`,
+          notes: `نثرية — ${isDelivery ? "توصيل" : "صيانة"} تكت #${cardId}` + (rewardDiscount > 0 ? ` (مكافأة −${rewardDiscount})` : ""),
         },
       });
     }
@@ -153,16 +176,26 @@ export async function POST(request: Request) {
         where: { cardId }, update: { data: photo }, create: { cardId, data: photo },
       });
     }
-    // إنجاز البطاقة (تبقى معلّقة حتى التحصيل)
+    // إنجاز البطاقة — المبلغ المخزَّن = الصافي بعد خصم المكافأة (المُحصَّل فعلاً)
     await tx.taskCard.update({
       where: { id: cardId },
       data: {
         done: true, completedAt: new Date(), durationSec,
-        amount, serviceDetails: serviceDetails?.trim() || null,
+        amount: netAmount,
+        serviceDetails: (serviceDetails?.trim() || null) ? `${serviceDetails!.trim()}${rewardDiscount > 0 ? `\n(خصم مكافأة: ${rewardDiscount} د.ع)` : ""}` : (rewardDiscount > 0 ? `(خصم مكافأة: ${rewardDiscount} د.ع)` : null),
         materialsInfo: soldInfo.length ? JSON.stringify(soldInfo) : null,
       },
     });
   });
+
+  // رسالة تأكيد استخدام المكافأة (بعد الإنجاز، أفضل جهد)
+  if (rewardSubId && rewardDiscount > 0) {
+    const rs = await prisma.subscriber.findUnique({ where: { id: rewardSubId }, select: { phone: true, waEnabled: true, name: true, rewardBalance: true } });
+    if (rs) void sendRewardUsedMessage({
+      subscriberId: rewardSubId, officeId: towerId, agentId: session.agentId ?? null,
+      phone: rs.phone, waEnabled: rs.waEnabled, name: rs.name, discount: rewardDiscount, balance: rs.rewardBalance ?? 0, createdByUser: String(session.userId ?? ""),
+    });
+  }
 
   // سجل تدقيق: من أنجز أي بطاقة ولأي مكتب (مساءلة، خاصة عند الدعم بين المكاتب)
   await prisma.auditLog.create({
@@ -235,5 +268,5 @@ export async function POST(request: Request) {
     // تجاهل: الإنجاز تمّ بنجاح بغضّ النظر عن الرسالة/السجل
   }
 
-  return NextResponse.json({ ok: true, salesShare, pettyShare, hasPhoto: !!photo, matchedSubscriber, messaged });
+  return NextResponse.json({ ok: true, salesShare, pettyShare, rewardDiscount, hasPhoto: !!photo, matchedSubscriber, messaged });
 }

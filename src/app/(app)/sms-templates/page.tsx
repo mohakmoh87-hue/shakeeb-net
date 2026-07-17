@@ -11,6 +11,8 @@ const CATEGORIES: { key: string; label: string; hint: string }[] = [
   { key: "activation", label: "التفعيل", hint: "رسالة عند تفعيل/تجديد الاشتراك" },
   { key: "debts", label: "الديون", hint: "مطالبة المشترك بتسديد الدين" },
   { key: "maintenance", label: "الصيانة/التنصيب", hint: "رسالة تُرسل للمشترك عند إنجاز الفني للصيانة/التنصيب" },
+  { key: "reward", label: "المكافأة", hint: "رسالة عند منح مكافأة التفعيل (الكود + الرصيد). المتغيّرات: {code} {balance} {granted}" },
+  { key: "rewardUsed", label: "استخدام المكافأة", hint: "رسالة تأكيد عند خصم/استخدام كود المكافأة. المتغيّرات: {amount} {balance}" },
   { key: "other", label: "أخرى", hint: "رسائل عامة" },
 ];
 
@@ -33,6 +35,10 @@ const VARS: { token: string; label: string; sample: string }[] = [
   { token: "{details}", label: "تفاصيل الصيانة — للصيانة", sample: "تبديل مقوّي" },
   { token: "{technician}", label: "اسم الفني — للصيانة", sample: "علي" },
   { token: "{date}", label: "تاريخ العملية — للصيانة", sample: "12/07/2026" },
+  { token: "{code}", label: "كود المكافأة — للمكافأة", sample: "K7M2QP9A" },
+  { token: "{balance}", label: "رصيد المكافأة — للمكافأة", sample: "30,000" },
+  { token: "{granted}", label: "مبلغ المكافأة الممنوح — للمكافأة", sample: "15,000" },
+  { token: "{amount}", label: "المبلغ المخصوم — لاستخدام المكافأة", sample: "10,000" },
 ];
 
 function renderPreview(text: string): string {

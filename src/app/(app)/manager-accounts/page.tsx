@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import OfficeChat from "@/components/OfficeChat";
 import InstallComputer from "@/components/InstallComputer";
+import RewardConfig from "@/components/RewardConfig";
 
 type WaOffice = { id: number; name: string | null; state: string };
 
@@ -170,6 +171,9 @@ export default function ManagerAccountsPage() {
           {priceMsg && <div className="mt-2 text-sm text-emerald-700">{priceMsg}</div>}
         </div>
       )}
+
+      {/* مبلغ مكافأة التفعيل لكل باقة (للمدير) */}
+      <RewardConfig />
 
       {/* لا صلاحية مالية → اكتفِ بقسم الواتساب */}
       {denied || !data ? null : (

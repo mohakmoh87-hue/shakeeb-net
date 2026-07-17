@@ -574,6 +574,8 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   const [amount, setAmount] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false); // جاري ضغط الصورة
+  const [reward, setReward] = useState<{ balance: number; code: string | null; name: string | null } | null>(null); // رصيد مكافأة المشترك
+  const [rewardPulled, setRewardPulled] = useState(false); // سُحب الكود لهذا الإنجاز
   const [mats, setMats] = useState<CustodyMat[]>([]);
   const [picked, setPicked] = useState<Record<number, number>>({}); // itemId -> qty
   const [busy, setBusy] = useState(false);
@@ -585,6 +587,14 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setMats(d.materials ?? []));
   }, [card.technicianId, fullFields]);
+
+  // رصيد مكافأة مشترك البطاقة (لسحبها خصماً) — للصيانة/التوصيل لا التحويل
+  useEffect(() => {
+    if (isTransfer) return;
+    fetch(`/api/rewards/lookup?cardId=${card.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.found && d.rewardsEnabled && (d.balance ?? 0) > 0) setReward({ balance: d.balance, code: d.code, name: d.name }); });
+  }, [card.id, isTransfer]);
 
   const materialsTotal = Object.entries(picked).reduce((s, [id, q]) => {
     const m = mats.find((x) => x.itemId === Number(id)); return s + (m ? m.priceSale * q : 0);
@@ -620,7 +630,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
     const materials = Object.entries(picked).map(([id, q]) => ({ itemId: Number(id), qty: q }));
     const r = await fetch("/api/field/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cardId: card.id, serviceDetails: details, amount: nAmount, newUser, photo, materials }),
+      body: JSON.stringify({ cardId: card.id, serviceDetails: details, amount: nAmount, newUser, photo, materials, useReward: rewardPulled }),
     });
     const d = await r.json().catch(() => null);
     setBusy(false);
@@ -652,6 +662,26 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
 
         <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-red-500">*</span></label>
         <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+
+        {/* سحب كود مكافأة المشترك خصماً من المبلغ */}
+        {reward && (
+          <div className="mb-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-fuchsia-800">🎁 رصيد مكافأة {reward.name ?? "المشترك"}: {reward.balance.toLocaleString("en-US")} د.ع</span>
+              {!rewardPulled ? (
+                <button type="button" onClick={() => setRewardPulled(true)} disabled={nAmount <= 0} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700 disabled:opacity-50">سحب الكود</button>
+              ) : (
+                <button type="button" onClick={() => setRewardPulled(false)} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إلغاء السحب</button>
+              )}
+            </div>
+            {rewardPulled && (
+              <div className="mt-2 text-xs text-fuchsia-700">
+                سيُخصم <b>{Math.min(reward.balance, nAmount).toLocaleString("en-US")}</b> د.ع — المتبقّي على الزبون: <b>{Math.max(0, nAmount - reward.balance).toLocaleString("en-US")}</b> د.ع
+                {reward.balance > nAmount && <span> (يبقى للمشترك {(reward.balance - nAmount).toLocaleString("en-US")} د.ع)</span>}
+              </div>
+            )}
+          </div>
+        )}
 
         {fullFields && (
           <>

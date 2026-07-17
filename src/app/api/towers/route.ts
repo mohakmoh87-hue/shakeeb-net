@@ -18,6 +18,7 @@ const schema = z.object({
   activationMode: z.enum(["month", "days30"]).nullable().optional(), // نظام التفعيل
   managerPhone: z.string().nullable().optional(), // رقم مدير المكتب
   mapArea: z.string().nullable().optional(), // رمز منطقة الخريطة
+  rewardsEnabled: z.string().nullable().optional(), // 1 = تفعيل نظام المكافآت للمكتب
   silent: z.string().nullable().optional(), // 1 = إرسال صامت
   waEnabled: z.string().nullable().optional(), // 1 = تفعيل واتساب المكتب
   syncTime: z.string().nullable().optional(), // وقت مزامنة الاشتراكات اليومية (HH:MM)

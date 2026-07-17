@@ -7,6 +7,7 @@ import { computeDateTo } from "@/lib/subscription";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { sasBaseUrl, sasLogin, sasFetchUser } from "@/lib/sas4";
+import { grantReward, sendRewardGrantMessage } from "@/lib/rewards";
 
 const schema = z.object({
   packageId: z.coerce.number(),
@@ -70,9 +71,14 @@ export async function POST(
   const tower = subscriber.towerId
     ? await prisma.tower.findUnique({
         where: { id: subscriber.towerId },
-        select: { activationMode: true, loginUrl: true, username: true, password: true },
+        select: { activationMode: true, loginUrl: true, username: true, password: true, rewardsEnabled: true },
       })
     : null;
+
+  // نظام المكافآت: يُمنح كود عند التفعيل إن كان مفعّلاً للمكتب وللباقة مبلغ مكافأة.
+  // انقطاع التجديد (اشتراك منتهٍ قبل هذا التفعيل) يُصفّر الرصيد المتراكم قبل المنح الجديد.
+  const rewardsOn = tower?.rewardsEnabled === "1" && (pkg.rewardAmount ?? 0) > 0;
+  const hadGap = !subscriber.dateTo || subscriber.dateTo <= now;
 
   // تاريخ الانتهاء:
   // 1) عند سحب كارت: نقرأ تاريخ الانتهاء الفعلي من SAS4 لحظة التأكيد (يراعي قرض اليوم الواحد)
@@ -113,6 +119,7 @@ export async function POST(
   const effPaid = master ? grandTotal : paid;
   const newCarry = master ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + grandTotal - paid;
 
+  let rewardGrant: { code: string; balance: number; granted: number } | null = null;
   try {
     const result = await prisma.$transaction(async (tx) => {
       // استهلاك الكارت ذرّياً عند التأكيد فقط (يمنع تعارض مكتبين)
@@ -128,6 +135,15 @@ export async function POST(
         // التفعيل يمسح وسم التحويل (فلا يُنبَّه ولا يُحذف)
         data: { packageId, dateTo, carry: newCarry, wasel: effPaid, month: months, transferredAt: null, transferredTo: null },
       });
+      // منح مكافأة التفعيل (كود + رصيد متراكم) — يشمل العادي والماستر
+      if (rewardsOn) {
+        rewardGrant = await grantReward(tx, {
+          subscriberId, towerId: subscriber.towerId, agentId: session?.agentId ?? null,
+          subscriberName: subscriber.name, currentBalance: subscriber.rewardBalance ?? 0,
+          hadGap, rewardAmount: pkg.rewardAmount ?? 0, months,
+          createdByUser: session?.username, createdByName: session?.fullName,
+        });
+      }
       const entry = await tx.subscriptionEntry.create({
         data: {
           subscriberId, date: now, dateFrom: start, dateTo, money: total, moneyIn: effPaid,
@@ -179,7 +195,17 @@ export async function POST(
       createdByUser: session?.username,
     });
 
-    return NextResponse.json(result);
+    // رسالة مكافأة منفصلة (الكود + الرصيد) — عند منحها
+    if (rewardGrant) {
+      const rg: { code: string; balance: number; granted: number } = rewardGrant;
+      void sendRewardGrantMessage({
+        subscriberId, officeId: subscriber.towerId, agentId: session?.agentId ?? null,
+        phone: subscriber.phone, waEnabled: subscriber.waEnabled, name: subscriber.name, netUser: subscriber.netUser,
+        code: rg.code, balance: rg.balance, granted: rg.granted, createdByUser: session?.username,
+      });
+    }
+
+    return NextResponse.json({ ...result, reward: rewardGrant });
   } catch (e) {
     if ((e as Error).message === "CARD_TAKEN") {
       return NextResponse.json({ error: "الكارت استُخدم للتو من مكتب آخر — اسحب كارتاً جديداً" }, { status: 409 });

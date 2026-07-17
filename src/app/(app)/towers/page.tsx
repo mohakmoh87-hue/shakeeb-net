@@ -15,6 +15,7 @@ type Office = {
   phone: string | null;
   managerPhone: string | null;
   mapArea: string | null;
+  rewardsEnabled: string | null;
   activationMode: string | null;
   silent: string | null;
   waEnabled: string | null;
@@ -178,6 +179,10 @@ export default function OfficesPage() {
                   <label className="flex items-center gap-2 text-sm text-slate-600">
                     <input type="checkbox" disabled={ro} checked={form.syncEnabled === "1"} onChange={(e) => set("syncEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-emerald-600" />
                     تفعيل المزامنة اليومية (بالوقت المحدّد)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <input type="checkbox" disabled={ro} checked={form.rewardsEnabled === "1"} onChange={(e) => set("rewardsEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-fuchsia-600" />
+                    🎁 تفعيل نظام مكافآت المشتركين
                   </label>
                 </div>
                 {msg && <div className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">{msg}</div>}

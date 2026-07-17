@@ -110,6 +110,7 @@ model Tower {
   activationMode String? @default("month") // نظام التفعيل: month = نفس تاريخ اليوم بالشهر التالي، days30 = 30 يوماً
   managerPhone String? // رقم مدير هذا المكتب (لإرسال التقرير اليومي)
   mapArea     String? // رمز منطقة الخريطة لهذا المكتب (مثل MWA/ENT/SLM/KAD...) لتحديد مواقع المشتركين
+  rewardsEnabled String? @default("0") // 1 = تفعيل نظام مكافآت المشتركين لهذا المكتب
   silent      String? @default("1") // 1 = إرسال صامت افتراضي لهذا المكتب
   waEnabled   String? @default("1") // 1 = تفعيل واتساب لهذا المكتب
   syncEnabled String? @default("0") // 1 = تفعيل المزامنة اليومية التلقائية
@@ -153,6 +154,7 @@ model Package {
   priceDinar  Float?
   addPrice    Float? // card_add
   cardCost    Float? // سعر شراء/كلفة الكارت الواحد لهذه الفئة (لديون الكارتات)
+  rewardAmount Int? // مبلغ مكافأة التفعيل لهذه الباقة (لكل شهر) — نظام أكواد المكافآت
   towerId     Int? // card_brigfk
   isDeleted   Boolean @default(false)
 
@@ -189,6 +191,8 @@ model Subscriber {
   netUser      String? // اسم مستخدم المشترك في SAS4
   transferredAt DateTime? // وقت تحويل يوزره عبر تكت تحويل (يُنبَّه عند التفعيل، ويُحذف بعد 30 يوماً دون تفعيل)
   transferredTo String? // اليوزر الجديد بعد التحويل (للتنبيه)
+  rewardCode   String? // كود المكافأة الحالي (8 خانات) — نظام أكواد المكافآت
+  rewardBalance Int?  @default(0) // رصيد المكافأة المتراكم (يُخصم عند الاستخدام)
   sasId        Int? // معرّف المشترك في SAS4 (للربط والتفعيل)
   cardCode     String? // cardID
   // حقول شاشة المشترك التفصيلية
@@ -707,6 +711,28 @@ model MapPoint {
 }
 
 // رمز تنصيب لمرّة واحدة — يُسلّم رابط قاعدة البيانات للمُنصِّب بأمان (بلا إدخال يدوي ولا سكربت عام)
+// ===== سجل مكافآت المشتركين (منح/استخدام) =====
+model RewardLog {
+  id            Int      @id @default(autoincrement())
+  agentId       Int? // الوكيل (المستأجر) — للعزل والنسخ الاحتياطي
+  towerId       Int? // مكتب العملية
+  subscriberId  Int?
+  kind          String // grant = منح عند التفعيل، redeem = استخدام/خصم
+  amount        Int // المبلغ الممنوح أو المخصوم
+  code          String? // الكود المرتبط بالعملية
+  context       String? // activation | maintenance | sale
+  refId         Int? // معرّف الوصل/البطاقة/البيع المرتبط
+  balanceAfter  Int? // الرصيد بعد العملية
+  subscriberName String? // اسم المشترك (للعرض في السجل)
+  createdByUser String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+
+  @@index([agentId])
+  @@index([subscriberId])
+  @@map("reward_logs")
+}
+
 model InstallToken {
   token     String   @id
   agentId   Int? // الوكيل الذي أنشأ الرمز
