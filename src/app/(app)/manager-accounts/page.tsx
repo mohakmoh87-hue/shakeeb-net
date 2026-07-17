@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import OfficeChat from "@/components/OfficeChat";
+import InstallComputer from "@/components/InstallComputer";
 
 type WaOffice = { id: number; name: string | null; state: string };
 
@@ -128,6 +129,9 @@ export default function ManagerAccountsPage() {
         subtitle="حسابات الإدارة وواتساب المكاتب"
         action={<a href="/hybrid" className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700">🖥️ حواسيب النظام الهجين</a>}
       />
+
+      {/* تنصيب حاسبة مكتب — تعليمات كاملة + أمر آمن برمز لمرّة واحدة */}
+      <InstallComputer />
 
       {/* واتساب المكاتب — فتح محادثات كل مكتب والرد عليها */}
       {waOffices.length > 0 && (

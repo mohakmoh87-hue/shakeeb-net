@@ -45,7 +45,16 @@ Set-Location $app
 $envFile = Join-Path $app ".env"
 if (-not (Test-Path $envFile)) {
   Write-Host ""
-  $db = Read-Host "الصق رابط قاعدة بيانات Neon (DATABASE_URL)"
+  # رابط قاعدة البيانات: يُجلب تلقائياً برمز التنصيب (آمن)، أو يُدخَل يدوياً كبديل
+  $db = ""
+  if ($env:INSTALL_TOKEN) {
+    Write-Host "جلب الإعدادات برمز التنصيب..." -ForegroundColor Yellow
+    try {
+      $cfg = iwr -UseBasicParsing "__ORIGIN__/api/hybrid/install-config?token=$($env:INSTALL_TOKEN)" | ConvertFrom-Json
+      $db = $cfg.databaseUrl
+    } catch { Write-Host "تعذّر جلب الإعدادات بالرمز (قد يكون منتهياً)." -ForegroundColor Red }
+  }
+  if (-not $db) { $db = Read-Host "الصق رابط قاعدة بيانات Neon (DATABASE_URL)" }
   # إزالة channel_binding=require (يسبّب فشل اتصال مع سائق pg على بعض الإصدارات)
   $db = ($db -replace '&channel_binding=require','') -replace '\?channel_binding=require&','?'
   $db = $db.Trim()
@@ -87,8 +96,10 @@ Write-Host "افتح صفحة الموقع وامسح رمز واتساب عند
 Read-Host "اضغط Enter للانهاء"
 `;
 
-export async function GET() {
-  return new Response(SCRIPT, {
+export async function GET(request: Request) {
+  const origin = `${new URL(request.url).protocol}//${new URL(request.url).host}`;
+  const script = SCRIPT.replace(/__ORIGIN__/g, origin);
+  return new Response(script, {
     status: 200,
     headers: { "Content-Type": "text/plain; charset=utf-8" },
   });

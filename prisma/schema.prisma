@@ -704,6 +704,18 @@ model MapPoint {
   @@map("map_points")
 }
 
+// رمز تنصيب لمرّة واحدة — يُسلّم رابط قاعدة البيانات للمُنصِّب بأمان (بلا إدخال يدوي ولا سكربت عام)
+model InstallToken {
+  token     String   @id
+  agentId   Int? // الوكيل الذي أنشأ الرمز
+  createdBy Int? // معرّف المستخدم المنشئ
+  expiresAt DateTime // تنتهي صلاحيته (نصف ساعة)
+  usedAt    DateTime? // وقت أول استخدام (لمرّة واحدة)
+  createdAt DateTime @default(now())
+
+  @@map("install_tokens")
+}
+
 model WaSession {
   towerId     Int       @id // المكتب
   state       String    @default("disconnected") // disconnected|starting|qr|authenticated|ready|error
