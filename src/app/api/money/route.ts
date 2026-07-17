@@ -16,13 +16,21 @@ export async function GET(request: Request) {
   const g = await guard("finance.view");
   if (g.error) return g.error;
 
-  const accountId = new URL(request.url).searchParams.get("accountId");
+  const sp = new URL(request.url).searchParams;
+  const accountId = sp.get("accountId");
+  const from = sp.get("from"); // yyyy-MM-dd (شامل)
+  const to = sp.get("to"); // yyyy-MM-dd (شامل)
+  // فلتر التاريخ حسب حقل date (يشمل يوم البداية ويوم النهاية كاملاً)
+  const dateFilter: { gte?: Date; lte?: Date } = {};
+  if (from) { const d = new Date(from); if (!isNaN(d.getTime())) dateFilter.gte = d; }
+  if (to) { const d = new Date(to); if (!isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); dateFilter.lte = d; } }
   // صفحة الصندوق للحركات اليدوية فقط (المصروفات والمقبوضات) — التفعيلات/الفواتير تُدار من صفحاتها
   const where = {
     isDeleted: false,
     OR: [{ sourceType: null }, { sourceType: "manual" }],
     ...(await towerScope(g.session)),
     ...(accountId ? { accountId: Number(accountId) } : {}),
+    ...(dateFilter.gte || dateFilter.lte ? { date: dateFilter } : {}),
   };
 
   const [transactions, agg, accounts] = await Promise.all([

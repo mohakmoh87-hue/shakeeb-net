@@ -14,12 +14,14 @@ type Office = {
   address: string | null;
   phone: string | null;
   managerPhone: string | null;
+  mapArea: string | null;
   activationMode: string | null;
   silent: string | null;
   waEnabled: string | null;
   syncTime: string | null;
   syncEnabled: string | null;
 };
+type MapArea = { code: string; count: number };
 
 const empty: Partial<Office> = { activationMode: "month", silent: "1", waEnabled: "1" };
 
@@ -34,11 +36,15 @@ export default function OfficesPage() {
   const [form, setForm] = useState<Partial<Office>>(empty);
   const [editing, setEditing] = useState(false);
   const [msg, setMsg] = useState("");
+  const [areas, setAreas] = useState<MapArea[]>([]); // مناطق الخريطة المتاحة
 
   const load = useCallback(() => {
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setOffices)));
   }, []);
   useEffect(() => { if (isManager) load(); }, [load, isManager]);
+  useEffect(() => {
+    if (isManager) fetch("/api/map/areas").then((r) => r.ok ? r.json() : null).then((d) => d && setAreas(d.areas ?? []));
+  }, [isManager]);
 
   // وضع QR فقط: جلب مكتب المستخدم دائماً للربط (متاح بلا صلاحية إدارة)
   useEffect(() => {
@@ -150,7 +156,16 @@ export default function OfficesPage() {
                   </F>
                   <F label="العنوان"><I v={form.address} on={(v) => set("address", v)} ro={ro} /></F>
                   <F label="وقت مزامنة الاشتراكات (يومياً)"><input type="time" value={form.syncTime ?? ""} disabled={ro} onChange={(e) => set("syncTime", e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50" /></F>
+                  <F label="منطقة الخريطة (لتحديد مواقع المشتركين)">
+                    <select value={form.mapArea ?? ""} disabled={ro} onChange={(e) => set("mapArea", e.target.value || null)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50">
+                      <option value="">— بدون / غير محدّدة —</option>
+                      {areas.map((a) => <option key={a.code} value={a.code}>{a.code} ({a.count})</option>)}
+                      {/* إبقاء القيمة الحالية ظاهرةً حتى لو لم تَعُد ضمن القائمة */}
+                      {form.mapArea && !areas.some((a) => a.code === form.mapArea) && <option value={form.mapArea}>{form.mapArea}</option>}
+                    </select>
+                  </F>
                 </div>
+                <p className="mt-1 text-xs text-slate-500">اختر منطقة هذا المكتب على الخريطة ليظهر موقع كل مشترك بدقّة عند الضغط على «خريطة». الرقم بين القوسين = عدد النقاط في تلك المنطقة.</p>
                 <div className="mt-3 flex flex-wrap gap-4">
                   <label className="flex items-center gap-2 text-sm text-slate-600">
                     <input type="checkbox" disabled={ro} checked={form.waEnabled !== "0"} onChange={(e) => set("waEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-emerald-600" />

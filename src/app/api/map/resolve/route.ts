@@ -25,11 +25,12 @@ export async function GET(request: Request) {
   if (!netUser && text) netUser = extractNetUser(text);
   if (!netUser) return NextResponse.json({ error: "لا يوجد يوزر لتحديد الموقع" }, { status: 404 });
 
-  // منطقة الخريطة من مكتب المشترك
+  // منطقة الخريطة من مكتب المشترك: الإعداد اليدوي (mapArea) هو الأساس،
+  // وإلا نستنتجها من اسم المكتب (توافقاً مع المكاتب القديمة قبل ضبط الإعداد)
   let areaHint: string | null = null;
   if (towerId) {
-    const t = await prisma.tower.findUnique({ where: { id: towerId }, select: { name: true } });
-    areaHint = areaFromTowerName(t?.name);
+    const t = await prisma.tower.findUnique({ where: { id: towerId }, select: { name: true, mapArea: true } });
+    areaHint = (t?.mapArea && t.mapArea.trim()) ? t.mapArea.trim() : areaFromTowerName(t?.name);
   }
 
   const loc = await resolveLocation(netUser, areaHint);

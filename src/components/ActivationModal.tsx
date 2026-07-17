@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { prepareSasEmbed } from "@/lib/sasEmbed";
 import { localSasBase } from "@/lib/localSas";
 import { computeDateTo } from "@/lib/subscription";
@@ -325,12 +325,7 @@ export default function ActivationModal({
               {directLink && <a href={directLink} target="_blank" rel="noopener noreferrer" className="text-mynet-blue hover:underline">فتح بنافذة جديدة ↗</a>}
             </div>
             {frameSrc ? (
-              <iframe
-                src={frameSrc}
-                className="flex-1 border-0"
-                title="SAS4 activation"
-                sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-              />
+              <ScaledSasFrame src={frameSrc} title="SAS4 activation" />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-slate-400">
                 {subscriber.sasId ? "جاري تسجيل الدخول التلقائي..." : "هذا المشترك غير مربوط بـ SAS4"}
@@ -339,6 +334,61 @@ export default function ActivationModal({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// إطار SAS4 مضمّن. على الهاتف: لوحة SAS مصمّمة لعرض مكتبي أوسع من الشاشة،
+// فتخرج لليسار (RTL) ولا يمكن رؤيتها؛ لذا نصغّر الصفحة كاملةً لتناسب عرض الحاوية.
+// على الكمبيوتر: تُعرض بحجمها الكامل مع تمرير داخلي (كما كانت).
+function ScaledSasFrame({ src, title }: { src: string; title: string }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const onMq = () => setIsMobile(mq.matches);
+    onMq();
+    mq.addEventListener("change", onMq);
+    return () => mq.removeEventListener("change", onMq);
+  }, []);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () => setBox({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const LOGICAL = 1024; // العرض المنطقي لصفحة SAS المكتبية
+  const scale = isMobile && box && box.w > 0 ? box.w / LOGICAL : 1;
+  const scaled = scale < 1 && !!box;
+
+  return (
+    <div ref={wrapRef} className="relative flex-1 overflow-hidden bg-white">
+      <iframe
+        src={src}
+        title={title}
+        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+        style={
+          scaled && box
+            ? {
+                position: "absolute",
+                top: 0,
+                right: 0,
+                width: LOGICAL,
+                height: box.h / scale,
+                transform: `scale(${scale})`,
+                transformOrigin: "top right",
+                border: 0,
+              }
+            : { width: "100%", height: "100%", border: 0 }
+        }
+      />
     </div>
   );
 }

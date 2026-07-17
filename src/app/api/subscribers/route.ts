@@ -33,10 +33,12 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim();
+  const showAll = url.searchParams.get("all") === "1"; // «عرض جميع المشتركين من كل المكاتب»
   // عزل المستأجر: مستخدم المكتب ⇒ مكتبه؛ مدير الوكيل ⇒ كل مكاتب وكيله فقط
   const agentTowers = await agentTowerIds(g.session ?? null);
   const isOfficeUser = !g.session?.isAdmin && g.session?.towerId != null;
-  const towerFilter = isOfficeUser
+  // عند تفعيل «عرض الكل» يرى مستخدم المكتب أيضاً كل مكاتب وكيله (يبقى ضمن عزل الوكيل)
+  const towerFilter = isOfficeUser && !showAll
     ? { towerId: g.session!.towerId! }
     : { towerId: { in: agentTowers.length ? agentTowers : [-1] } };
 

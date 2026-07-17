@@ -573,6 +573,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   const [newUser, setNewUser] = useState("");
   const [amount, setAmount] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false); // جاري ضغط الصورة
   const [mats, setMats] = useState<CustodyMat[]>([]);
   const [picked, setPicked] = useState<Record<number, number>>({}); // itemId -> qty
   const [busy, setBusy] = useState(false);
@@ -601,8 +602,9 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return;
-    setErr("");
+    setErr(""); setPreparing(true);
     try { setPhoto(await compressImage(f)); } catch { setErr("تعذّر قراءة الصورة"); }
+    finally { setPreparing(false); }
   }
 
   async function submit() {
@@ -673,6 +675,8 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">صورة العمل <span className="text-red-500">*</span></label>
             <input type="file" accept="image/*" capture="environment" onChange={onFile} className="mb-2 w-full text-sm" />
+            <p className="mb-2 text-[11px] text-slate-400">أي حجم صورة مقبول — تُضغط تلقائياً (≤ 1.5MB) قبل الرفع.</p>
+            {preparing && <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">جاري ضغط الصورة…</div>}
             {photo && <img src={photo} alt="preview" className="mb-3 max-h-40 rounded-lg border border-slate-200" />}
           </>
         )}
@@ -693,25 +697,53 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   );
 }
 
-// ضغط الصورة قبل الرفع (تصغير + JPEG) لتفادي تضخّم قاعدة البيانات/الاستضافة
+// ضغط الصورة تلقائياً قبل الرفع: يقبل أي حجم، ويصغّره حتى يصبح ≤ 1.5MB
+// بأعلى جودة ممكنة (بلا حاجة لأن يقلّص الفني الصورة يدوياً).
+const MAX_UPLOAD_BYTES = 1.5 * 1024 * 1024; // 1.5 ميغابايت
+// حجم الـ dataURL (base64) بالبايت تقريباً
+function dataUrlBytes(dataUrl: string): number {
+  const i = dataUrl.indexOf(",");
+  const b64 = i >= 0 ? dataUrl.slice(i + 1) : dataUrl;
+  return Math.floor((b64.length * 3) / 4);
+}
 function compressImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        const max = 900;
-        let { width, height } = img;
-        if (width > max || height > max) {
-          if (width > height) { height = Math.round((height * max) / width); width = max; }
-          else { width = Math.round((width * max) / height); height = max; }
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return reject(new Error("no ctx"));
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.6));
+        // نبدأ بأبعاد كبيرة وجودة عالية، ثم نخفّض تدريجياً حتى ≤ 1.5MB
+        const render = (maxDim: number, quality: number): string => {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+            else { width = Math.round((width * maxDim) / height); height = maxDim; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("no ctx");
+          ctx.drawImage(img, 0, 0, width, height);
+          return canvas.toDataURL("image/jpeg", quality);
+        };
+        try {
+          let dim = 1920; // بُعد أقصى مبدئي (جودة عالية)
+          let out = render(dim, 0.85);
+          // 1) خفّض الجودة أولاً (يحافظ على الأبعاد)
+          const qualities = [0.8, 0.72, 0.64, 0.55, 0.45];
+          let qi = 0;
+          while (dataUrlBytes(out) > MAX_UPLOAD_BYTES && qi < qualities.length) {
+            out = render(dim, qualities[qi++]);
+          }
+          // 2) إن بقيت أكبر: صغّر الأبعاد تدريجياً بجودة ثابتة
+          const dims = [1600, 1280, 1024, 800];
+          let di = 0;
+          while (dataUrlBytes(out) > MAX_UPLOAD_BYTES && di < dims.length) {
+            dim = dims[di++];
+            out = render(dim, 0.6);
+          }
+          resolve(out);
+        } catch (e) { reject(e as Error); }
       };
       img.onerror = reject;
       img.src = reader.result as string;

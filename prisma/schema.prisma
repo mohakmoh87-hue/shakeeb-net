@@ -108,6 +108,7 @@ model Tower {
   month       Int?
   activationMode String? @default("month") // نظام التفعيل: month = نفس تاريخ اليوم بالشهر التالي، days30 = 30 يوماً
   managerPhone String? // رقم مدير هذا المكتب (لإرسال التقرير اليومي)
+  mapArea     String? // رمز منطقة الخريطة لهذا المكتب (مثل MWA/ENT/SLM/KAD...) لتحديد مواقع المشتركين
   silent      String? @default("1") // 1 = إرسال صامت افتراضي لهذا المكتب
   waEnabled   String? @default("1") // 1 = تفعيل واتساب لهذا المكتب
   syncEnabled String? @default("0") // 1 = تفعيل المزامنة اليومية التلقائية

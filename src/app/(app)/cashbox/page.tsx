@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { formatDate } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
+
+// مفاتيح الترتيب المتاحة في جدول الحركات
+type SortKey = "id" | "date" | "moneyIn" | "moneyOut" | "accountName" | "notes";
 
 type Tx = {
   id: number;
@@ -33,8 +36,17 @@ export default function CashboxPage() {
   const [saving, setSaving] = useState(false);
   const { can } = usePermission();
 
-  const load = useCallback(() => {
-    fetch("/api/money").then((r) => {
+  // بحث بالتاريخ (من – إلى) وترتيب الأعمدة
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("id");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const load = useCallback((f = "", t = "") => {
+    const qs = new URLSearchParams();
+    if (f) qs.set("from", f);
+    if (t) qs.set("to", t);
+    fetch(`/api/money${qs.toString() ? `?${qs}` : ""}`).then((r) => {
       if (r.ok)
         r.json().then((d) => {
           setTxs(d.transactions);
@@ -44,9 +56,26 @@ export default function CashboxPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    load(from, to);
     fetch("/api/accounts").then((r) => void (r.ok && r.json().then(setAccounts)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
+
+  // النقر على اسم الحقل: تصاعدي ثم تنازلي عند التكرار
+  function sortBy(key: SortKey) {
+    if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+  }
+  const sortedTxs = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: Tx, b: Tx): number => {
+      if (sortKey === "date") return dir * (( a.date ? new Date(a.date).getTime() : 0) - (b.date ? new Date(b.date).getTime() : 0));
+      if (sortKey === "accountName" || sortKey === "notes")
+        return dir * (a[sortKey] ?? "").toString().localeCompare((b[sortKey] ?? "").toString(), "ar");
+      return dir * (Number(a[sortKey] ?? 0) - Number(b[sortKey] ?? 0));
+    };
+    return [...txs].sort(cmp);
+  }, [txs, sortKey, sortDir]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,7 +103,7 @@ export default function CashboxPage() {
       }
       setAmount("");
       setNotes("");
-      load();
+      load(from, to);
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {
@@ -87,7 +116,7 @@ export default function CashboxPage() {
     const label = t.sourceType === "debt" ? "تسديد الدين (سيرجع ديناً على المشترك)" : "الحركة المالية";
     if (!window.confirm(`حذف ${label}؟ سيُلغى مبلغها من الصندوق.`)) return;
     const res = await fetch(`/api/money/${t.id}/void`, { method: "POST" });
-    if (res.ok) load();
+    if (res.ok) load(from, to);
     else {
       const d = await res.json().catch(() => ({}));
       alert(d.error ?? "تعذّر الحذف");
@@ -99,9 +128,26 @@ export default function CashboxPage() {
       <PageHeader title="المصروفات والمقبوضات" subtitle="تسجيل الصرف والقبض اليدوي فقط (إيجار، كهرباء، ...) — لا تظهر هنا التفعيلات" />
 
       {/* بطاقات الرصيد */}
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <StatCard label="إجمالي القبض (يدوي)" value={fmt(summary.totalIn)} color="text-emerald-600" bg="bg-emerald-50" />
         <StatCard label="إجمالي الصرف (يدوي)" value={fmt(summary.totalOut)} color="text-red-600" bg="bg-red-50" />
+      </div>
+
+      {/* بحث بالتاريخ (من – إلى) — يشمل اليومين، والإجماليات أعلاه تعكس النتيجة */}
+      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">من تاريخ</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">إلى تاريخ</label>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
+        </div>
+        <button onClick={() => load(from, to)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
+        {(from || to) && (
+          <button onClick={() => { setFrom(""); setTo(""); load("", ""); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
+        )}
+        <span className="mr-auto self-center text-xs text-slate-400">{sortedTxs.length} حركة</span>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
@@ -168,20 +214,20 @@ export default function CashboxPage() {
           <table className="w-full text-right text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th className="p-3">#</th>
-                <th className="p-3">التاريخ</th>
-                <th className="p-3">قبض</th>
-                <th className="p-3">صرف</th>
-                <th className="p-3">الحساب</th>
-                <th className="p-3">ملاحظات</th>
+                <SortTh label="#" k="id" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+                <SortTh label="التاريخ" k="date" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+                <SortTh label="قبض" k="moneyIn" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+                <SortTh label="صرف" k="moneyOut" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+                <SortTh label="الحساب" k="accountName" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+                <SortTh label="ملاحظات" k="notes" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
                 {can("receipts.void") && <th className="p-3"></th>}
               </tr>
             </thead>
             <tbody>
-              {txs.length === 0 ? (
+              {sortedTxs.length === 0 ? (
                 <tr><td colSpan={can("receipts.void") ? 7 : 6} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
               ) : (
-                txs.map((t) => (
+                sortedTxs.map((t) => (
                   <tr key={t.id} className="border-t border-slate-100">
                     <td className="p-3">{t.id}</td>
                     <td className="p-3">{fmtDate(t.date)}</td>
@@ -202,6 +248,19 @@ export default function CashboxPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ترويسة عمود قابلة للترتيب: تصاعدي/تنازلي مع سهم يوضّح الاتجاه الحالي
+function SortTh({ label, k, sortKey, sortDir, onSort }: { label: string; k: SortKey; sortKey: SortKey; sortDir: "asc" | "desc"; onSort: (k: SortKey) => void }) {
+  const active = sortKey === k;
+  return (
+    <th className="p-3">
+      <button onClick={() => onSort(k)} className={`inline-flex items-center gap-1 select-none hover:text-mynet-blue ${active ? "font-bold text-mynet-blue" : ""}`}>
+        {label}
+        <span className="text-[10px]">{active ? (sortDir === "asc" ? "▲" : "▼") : "⇅"}</span>
+      </button>
+    </th>
   );
 }
 
