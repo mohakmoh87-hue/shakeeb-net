@@ -74,6 +74,7 @@ export default function SettingsPage() {
         <Field label="رمز الدولة" value={form.country} onChange={(v) => set("country", v)} placeholder="964" />
         <Field label="وقت إرسال تذكير انتهاء الاشتراك (يومياً)" value={form.reminderTime || "13:00"} onChange={(v) => set("reminderTime", v)} type="time" />
         <Field label="وقت إرسال تقرير المدير (يومياً)" value={form.reportTime || "23:55"} onChange={(v) => set("reportTime", v)} type="time" />
+        <Field label="وقت إرسال النسخة الاحتياطية للإيميل (يومياً)" value={form.backupTime || "04:00"} onChange={(v) => set("backupTime", v)} type="time" />
 
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-700">
           ربط واتساب كل مكتب، وبيانات SAS، ورقم المدير، والإرسال الصامت — كلها من صفحة{" "}

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 
 // المفاتيح المعروفة للإعدادات
-const KNOWN = ["office", "dollar", "phone", "country", "whatsapp", "silent", "reminderTime", "reportTime"] as const;
+const KNOWN = ["office", "dollar", "phone", "country", "whatsapp", "silent", "reminderTime", "reportTime", "backupTime"] as const;
 
 const schema = z.object({
   office: z.string().nullable().optional(),
@@ -15,6 +15,7 @@ const schema = z.object({
   silent: z.string().nullable().optional(), // 1 = إرسال صامت افتراضي بلا تأكيد
   reminderTime: z.string().nullable().optional(), // وقت إرسال تذكير الانتهاء يومياً (HH:MM)
   reportTime: z.string().nullable().optional(), // وقت إرسال تقرير المدير يومياً (HH:MM)
+  backupTime: z.string().nullable().optional(), // وقت إرسال النسخة الاحتياطية يومياً (HH:MM)
 });
 
 export async function GET() {
