@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ActivationModal, { type ActSubscriber } from "@/components/ActivationModal";
+import AddDebtModal from "@/components/AddDebtModal";
 import MapButton from "@/components/MapButton";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
@@ -69,6 +70,7 @@ export default function SubscribersPage() {
   const [tab, setTab] = useState<"info" | "receipts" | "invoices" | "maintenance">("info");
   const [maintLogs, setMaintLogs] = useState<{ id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; date: string }[]>([]);
   const [activating, setActivating] = useState<Subscriber | null>(null);
+  const [addingDebt, setAddingDebt] = useState<Subscriber | null>(null);
   const [showAllTowers, setShowAllTowers] = useState(false);
   const [msg, setMsg] = useState("");
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -252,7 +254,7 @@ export default function SubscribersPage() {
         <ToolGroup title="الاشتراكات">
           <ToolBtn icon="📊" label="تقارير الوصولات + الديون" onClick={() => router.push("/reports/detailed")} />
           <ToolBtn icon="💵" label="تسديد اشتراك" onClick={() => router.push("/debts")} />
-          <ToolBtn icon="🅰️" label="اضافة دين سابقة" danger onClick={() => selected && setActivating(selected)} disabled={!selected} />
+          <ToolBtn icon="🅰️" label="اضافة ديون سابقة" danger onClick={() => selected && setAddingDebt(selected)} disabled={!selected} />
         </ToolGroup>
         <ToolGroup title="فاتورة مبيع">
           <ToolBtn icon="🧾" label="انشاء فاتورة" onClick={() => router.push("/invoices")} />
@@ -582,6 +584,14 @@ export default function SubscribersPage() {
           tower={towers.find((t) => t.id === activating.towerId)}
           onClose={() => setActivating(null)}
           onDone={() => { setActivating(null); load(query, showAllTowers); }}
+        />
+      )}
+
+      {addingDebt && (
+        <AddDebtModal
+          subscriber={{ id: addingDebt.id, name: addingDebt.name ?? null, netUser: addingDebt.netUser ?? null, carry: addingDebt.carry ?? null }}
+          onClose={() => setAddingDebt(null)}
+          onDone={() => { setAddingDebt(null); loadReceipts(); load(query, showAllTowers); }}
         />
       )}
     </div>
