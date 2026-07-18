@@ -51,6 +51,13 @@ export default function OwnerPage() {
     const r = await fetch(`/api/owner/agents/${a.id}`, { method: "DELETE" });
     if (r.ok) load(); else alert("تعذّر الحذف");
   }
+  // إعادة توليد مفتاح قاعدة بيانات الوكيل (عند الشك بتسريب) — تفقد الحواسيب اتصالها حتى تُجدَّد تنصيباتها
+  async function regenKey(a: Agent) {
+    if (!confirm(`إعادة توليد مفتاح قاعدة بيانات الوكيل «${a.name}»؟\nستتوقف حواسيب مكاتبه المُنصَّبة عن الاتصال حتى تُعيد تنصيبها برمز جديد من «حسابات المدير». استخدمها عند الشك بتسريب المفتاح فقط.`)) return;
+    const r = await fetch(`/api/owner/agents/${a.id}/db-key`, { method: "POST" });
+    if (r.ok) alert("✓ أُعيد توليد المفتاح. جدّد تنصيب حواسيب هذا الوكيل برموز جديدة.");
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّرت العملية"); }
+  }
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); }
 
   return (
@@ -123,6 +130,7 @@ export default function OwnerPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   {!a.approved && <button onClick={() => patch(a.id, { approve: true })} className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-700">✓ موافقة وتفعيل</button>}
                   <button onClick={() => setCredAgent(a)} className="rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">🔑 بيانات الدخول</button>
+                  <button onClick={() => regenKey(a)} className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100" title="إعادة توليد مفتاح قاعدة بيانات الوكيل (عند الشك بتسريب)">🔐 مفتاح القاعدة</button>
                   <label className="flex items-center gap-1 text-xs text-slate-600">سقف المكاتب
                     <input type="number" min={0} defaultValue={a.officeCap} onBlur={(e) => { const v = Number(e.target.value); if (v !== a.officeCap) patch(a.id, { officeCap: v }); }} className="w-16 rounded border border-slate-300 px-2 py-1 text-center" />
                   </label>

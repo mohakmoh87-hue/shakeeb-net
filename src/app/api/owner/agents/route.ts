@@ -84,5 +84,14 @@ export async function POST(request: Request) {
     return { agent, managerId: manager.id };
   });
 
+  // RLS: إنشاء دور قاعدة بيانات الوكيل تلقائياً (خارج المعاملة — يتضمّن DDL على القاعدة).
+  // فشله لا يُبطل إنشاء الوكيل؛ يُنشأ الدور لاحقاً عند أول توليد رمز تنصيب.
+  try {
+    const { ensureAgentRoleUrl } = await import("@/lib/agentDbRole");
+    await ensureAgentRoleUrl(created.agent.id);
+  } catch (e) {
+    console.error("[owner/agents] تعذّر إنشاء دور قاعدة الوكيل (سيُنشأ عند التنصيب):", e);
+  }
+
   return NextResponse.json({ ok: true, agentId: created.agent.id }, { status: 201 });
 }
