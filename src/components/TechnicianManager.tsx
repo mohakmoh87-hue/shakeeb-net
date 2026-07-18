@@ -63,14 +63,15 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={onClose}>
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-slate-50 p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-300 sm:hidden" />
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-800">👷 فنيّو {officeName}</h3>
-          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+          <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm hover:bg-slate-100">✕</button>
         </div>
 
         {!openForm && (
-          <button onClick={startAdd} className="mb-3 w-full rounded-xl bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700">➕ إضافة فني جديد</button>
+          <button onClick={startAdd} className="mb-4 w-full rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 py-3.5 text-base font-extrabold text-white shadow-md active:scale-[0.99]">➕ إضافة فني جديد</button>
         )}
 
         {openForm && (
@@ -100,30 +101,29 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
         )}
 
         {techs.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-sm text-slate-400">لا يوجد فنيون بعد</div>
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-400">لا يوجد فنيون بعد</div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {techs.map((t) => (
-              <li key={t.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-slate-800">{t.name}</div>
-                    <div className="text-[11px] text-slate-500" dir="ltr">👤 {t.username ?? "—"}{t.plainCode ? ` · 🔑 ${t.plainCode}` : ""}</div>
-                    <div className="mt-0.5 text-[11px] text-slate-500">
-                      {t.shiftStart && t.shiftEnd ? `⏰ ${t.shiftStart}–${t.shiftEnd}` : "بلا دوام"} · راتب {Number(t.salary ?? 0).toLocaleString("en-US")}
-                    </div>
+              <li key={t.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                {/* معلومات الفني */}
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xl">👷</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-base font-bold text-slate-800">{t.name}</div>
+                    <div className="truncate text-xs text-slate-500" dir="ltr">👤 {t.username ?? "—"}{t.plainCode ? ` · 🔑 ${t.plainCode}` : ""}</div>
+                    <div className="mt-0.5 text-xs text-slate-500">{t.shiftStart && t.shiftEnd ? `⏰ ${t.shiftStart}–${t.shiftEnd}` : "بلا دوام"} · راتب {Number(t.salary ?? 0).toLocaleString("en-US")}</div>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <div className="flex gap-1">
-                      <button onClick={() => startEdit(t)} className="rounded bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-300">تعديل</button>
-                      <button onClick={() => del(t)} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100">حذف</button>
-                    </div>
-                    <div className="flex gap-1">
-                      <button onClick={() => setSalaryTech(t)} className="rounded bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100">💰 الراتب</button>
-                      <button onClick={() => manualOut(t, "now")} className="rounded bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 hover:bg-amber-100">خروج الآن</button>
-                      <button onClick={() => manualOut(t, "scheduled")} className="rounded bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 hover:bg-amber-100">خروج بوقته</button>
-                    </div>
-                  </div>
+                </div>
+                {/* الخيارات — مربعات واضحة */}
+                <div className="grid grid-cols-3 gap-2">
+                  <Act onClick={() => setSalaryTech(t)} cls="bg-emerald-50 text-emerald-700" icon="💰" label="الراتب" />
+                  <Act onClick={() => startEdit(t)} cls="bg-sky-50 text-sky-700" icon="✏️" label="تعديل" />
+                  <Act onClick={() => del(t)} cls="bg-rose-50 text-rose-600" icon="🗑️" label="حذف" />
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <Act onClick={() => manualOut(t, "now")} cls="bg-amber-50 text-amber-700" icon="🕐" label="خروج الآن" />
+                  <Act onClick={() => manualOut(t, "scheduled")} cls="bg-amber-50 text-amber-700" icon="⏰" label="خروج بوقته" />
                 </div>
               </li>
             ))}
@@ -135,6 +135,16 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
         <SalaryModal technicianId={salaryTech.id} name={salaryTech.name} onClose={() => setSalaryTech(null)} onSettled={onChange} />
       )}
     </div>
+  );
+}
+
+// زر إجراء كمربّع واضح (أيقونة فوق التسمية)
+function Act({ onClick, cls, icon, label }: { onClick: () => void; cls: string; icon: string; label: string }) {
+  return (
+    <button onClick={onClick} className={`flex flex-col items-center gap-1 rounded-xl py-2.5 font-bold transition active:scale-95 ${cls}`}>
+      <span className="text-lg leading-none">{icon}</span>
+      <span className="text-xs">{label}</span>
+    </button>
   );
 }
 
