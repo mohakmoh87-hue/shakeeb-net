@@ -12,7 +12,7 @@ export default function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-100 px-4 py-3 shadow-sm">
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-100 px-4 py-3 shadow-sm">
       <div className="flex items-center gap-3">
         <Link
           href="/dashboard"

@@ -27,9 +27,8 @@ const GROUPS: {
   {
     title: "المصاريف",
     items: [
-      { label: "الصندوق", icon: "🧮", href: "/cashbox", enabled: true },
-      { label: "انشاء حساب مصروفات", icon: "🗂️", href: "/accounts", enabled: true },
       { label: "المصروفات والمقبوضات", icon: "💵", href: "/cashbox", enabled: true },
+      { label: "انشاء حساب مصروفات", icon: "🗂️", href: "/accounts", enabled: true },
       { label: "سجلّ المكافآت", icon: "🎁", href: "/rewards", enabled: true },
     ],
   },
@@ -39,7 +38,7 @@ const GROUPS: {
       { label: "التذاكر", icon: "🎫", href: "/tickets", enabled: true },
       { label: "قوالب الرسائل", icon: "📝", href: "/sms-templates", enabled: true },
       { label: "سجل التدقيق", icon: "🛡️", href: "/audit", enabled: true },
-      { label: "نسخة احتياطية", icon: "🗄️", href: "/api/backup", enabled: true },
+      { label: "نسخة احتياطية", icon: "🗄️", href: "/api/backup/export", enabled: true },
     ],
   },
 ];

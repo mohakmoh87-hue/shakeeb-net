@@ -5,9 +5,10 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.RUN_WORKER === "1") {
     const { startScheduler } = await import("@/lib/scheduler");
     startScheduler();
-    // خادم صحّة الوكيل (منفذ 47615) — يجعل الحاسبة قابلة للكشف من الموقع فيتوقّف إشعار الإعداد
-    const { startAgentHealthServer } = await import("@/lib/agentHealth");
-    startAgentHealthServer();
+    // خادم SAS المحلي الكامل (منفذ 47615): الصحّة + بروكسي اللوحة + عمليات SAS.
+    // (كان هنا خادم الصحّة القديم فقط — فكان «يخطف» عرض SAS إلى منفذ بلا مسارات /sas)
+    const { startLocalSasServer } = await import("@/lib/localSasServer");
+    startLocalSasServer();
     // نبضة النظام الهجين — تسجّل الحاسبة وتحسم القيادة (مضيف واتساب)
     const { startHybridAgent } = await import("@/lib/hybridAgent");
     startHybridAgent();

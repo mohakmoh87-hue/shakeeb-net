@@ -50,7 +50,7 @@ const NAV: { section: string; items: { label: string; icon: string; href: string
       { label: "إنشاء حساب مصروفات", icon: "🗂️", href: "/accounts" },
       { label: "التذاكر", icon: "🎫", href: "/tickets" },
       { label: "سجل التدقيق", icon: "🛡️", href: "/audit" },
-      { label: "نسخة احتياطية", icon: "🗄️", href: "/api/backup", external: true },
+      { label: "نسخة احتياطية", icon: "🗄️", href: "/api/backup/export", external: true },
     ],
   },
 ];

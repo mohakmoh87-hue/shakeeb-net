@@ -16,7 +16,13 @@ export async function localSasBase(): Promise<string> {
     const t = setTimeout(() => ctrl.abort(), 1500);
     const r = await fetch("http://127.0.0.1:47615/health", { signal: ctrl.signal });
     clearTimeout(t);
-    if (r.ok) cachedBase = "http://127.0.0.1:47615";
+    // بصمة العامل الجديد: /health يرجع agentId رقمياً (معتمَد ومربوط بوكيل).
+    // عامل قديم (بلا agentId) أو غير معتمَد ⇒ نتجاهله ونستخدم مسار Vercel (أبطأ لكنه يعمل)
+    // — يمنع «اختطاف» عرض SAS إلى عامل لا يملك مسارات /sas.
+    if (r.ok) {
+      const d = await r.json().catch(() => null);
+      if (d && typeof d.agentId === "number") cachedBase = "http://127.0.0.1:47615";
+    }
   } catch { /* لا عامل محلي — نعتمد على Vercel */ }
   return cachedBase;
 }

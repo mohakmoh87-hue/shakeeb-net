@@ -10,6 +10,7 @@ export type Permission =
   | "messaging.manage" // الرسائل
   | "reports.view" // التقارير
   | "receipts.void" // حذف/إلغاء الوصولات عكسياً
+  | "rewards.clear" // مسح كود ورصيد مكافأة المشترك
   | "manager.accounts" // الاطلاع على حسابات الإدارة
   | "whatsapp.chat" // الرد على رسائل واتساب المشتركين
   | "offices.manage" // إدارة المكاتب (بيانات المكتب و SAS والمزامنة)
@@ -35,6 +36,7 @@ export const PERMISSION_LIST: { key: Permission; label: string }[] = [
   { key: "messaging.manage", label: "الرسائل والقوالب" },
   { key: "reports.view", label: "التقارير" },
   { key: "receipts.void", label: "حذف/إلغاء الوصولات (تفعيل/مبيع/ديون) عكسياً" },
+  { key: "rewards.clear", label: "🎁 مسح كود ورصيد مكافأة المشترك" },
   { key: "manager.accounts", label: "الاطلاع على حسابات الإدارة" },
   { key: "whatsapp.chat", label: "الرد على رسائل واتساب المشتركين" },
   { key: "offices.manage", label: "إدارة المكاتب (البيانات و SAS والمزامنة)" },

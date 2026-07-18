@@ -266,7 +266,7 @@ export default function SubscribersPage() {
           <ToolBtn icon="📊" label="تقارير الوصولات + الديون" onClick={() => router.push("/reports/detailed")} />
           <ToolBtn icon="💵" label="تسديد اشتراك" onClick={() => router.push("/debts")} />
           <ToolBtn icon="🅰️" label="اضافة ديون سابقة" danger onClick={() => selected && setAddingDebt(selected)} disabled={!selected} />
-          <ToolBtn icon="🎁" label="مسح كود المكافأة" danger onClick={clearReward} disabled={!selected} />
+          {can("rewards.clear") && <ToolBtn icon="🎁" label="مسح كود المكافأة" danger onClick={clearReward} disabled={!selected} />}
         </ToolGroup>
         <ToolGroup title="فاتورة مبيع">
           <ToolBtn icon="🧾" label="انشاء فاتورة" onClick={() => router.push("/invoices")} />

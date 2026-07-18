@@ -6,9 +6,9 @@ import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// مسح كود ورصيد مكافأة أي مشترك يدوياً
+// مسح كود ورصيد مكافأة أي مشترك يدوياً — صلاحية مستقلة قابلة للمنح
 export async function POST(request: Request) {
-  const g = await guard("subscriptions.manage");
+  const g = await guard("rewards.clear");
   if (g.error) return g.error;
   const session = await getSession();
 
