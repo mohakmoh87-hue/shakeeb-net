@@ -122,6 +122,11 @@ model Tower {
   syncTime    String? // وقت مزامنة الاشتراكات اليومية مع SAS (HH:MM)
   lastReminderDate String? // آخر يوم (YYYY-MM-DD) أُرسل/عولج فيه تذكير الانتهاء (لمنطق الموافقة عند الدخول)
   lastReportDate String? // آخر يوم (YYYY-MM-DD) أُرسل فيه التقرير اليومي للمدير (لمنع تكراره)
+  // موقع المكتب للبصمة الجغرافية (الفني لا يبصم إلا داخل النطاق)
+  lat         Float? // خط العرض
+  lng         Float? // خط الطول
+  geoRadius   Int?    @default(200) // نصف قطر النطاق المسموح بالأمتار
+  geoEnabled  Boolean @default(false) // تفعيل التحقّق من الموقع عند البصمة
   isDeleted   Boolean @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة

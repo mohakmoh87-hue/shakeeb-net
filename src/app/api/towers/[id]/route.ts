@@ -23,6 +23,11 @@ const schema = z.object({
   waEnabled: z.string().nullable().optional(), // 1 = تفعيل واتساب المكتب
   syncTime: z.string().nullable().optional(), // وقت مزامنة الاشتراكات اليومية (HH:MM)
   syncEnabled: z.string().nullable().optional(), // 1 = تفعيل المزامنة التلقائية
+  // موقع المكتب للبصمة الجغرافية
+  lat: z.coerce.number().nullable().optional(),
+  lng: z.coerce.number().nullable().optional(),
+  geoRadius: z.coerce.number().int().min(20).max(5000).nullable().optional(),
+  geoEnabled: z.boolean().optional(),
 });
 
 export async function PUT(

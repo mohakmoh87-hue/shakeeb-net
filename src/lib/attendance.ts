@@ -12,6 +12,15 @@ export function baghdadMinutesOfDay(d: Date): number {
 export function baghdadDayKey(d: Date): string {
   return baghdad(d).toISOString().slice(0, 10);
 }
+// المسافة بالأمتار بين نقطتين (Haversine) — للبصمة الجغرافية
+export function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // نصف قطر الأرض بالأمتار
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(a)));
+}
+
 // "HH:MM" → دقائق منذ منتصف الليل، أو null
 export function parseHHMM(s: string | null | undefined): number | null {
   if (!s) return null;

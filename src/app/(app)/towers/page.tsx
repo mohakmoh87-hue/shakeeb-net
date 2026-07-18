@@ -21,6 +21,10 @@ type Office = {
   waEnabled: string | null;
   syncTime: string | null;
   syncEnabled: string | null;
+  lat: number | null;
+  lng: number | null;
+  geoRadius: number | null;
+  geoEnabled: boolean | null;
 };
 type MapArea = { code: string; count: number };
 
@@ -80,6 +84,16 @@ export default function OfficesPage() {
   function pick(o: Office) { setSel(o); setForm({ ...o }); setEditing(false); setMsg(""); }
   function addNew() { setSel(null); setForm({ ...empty }); setEditing(true); setMsg(""); }
   const set = (k: keyof Office, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
+  // التقاط موقع المكتب من موقع الجهاز الحالي (يُفتح من الهاتف عند المكتب)
+  function captureLocation() {
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) { setMsg("جهازك لا يدعم تحديد الموقع"); return; }
+    setMsg("جارٍ تحديد الموقع…");
+    navigator.geolocation.getCurrentPosition(
+      (p) => { setForm((f) => ({ ...f, lat: p.coords.latitude, lng: p.coords.longitude })); setMsg("تم تحديد الموقع ✓ — لا تنسَ الحفظ"); },
+      (e) => setMsg(e.code === 1 ? "رُفض إذن الموقع — فعّله من إعدادات المتصفح" : "تعذّر تحديد الموقع — فعّل GPS وحاول ثانيةً"),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    );
+  }
 
   async function save() {
     if (!form.name?.trim()) { setMsg("اسم المكتب مطلوب"); return; }
@@ -184,6 +198,31 @@ export default function OfficesPage() {
                     <input type="checkbox" disabled={ro} checked={form.rewardsEnabled === "1"} onChange={(e) => set("rewardsEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-fuchsia-600" />
                     🎁 تفعيل نظام مكافآت المشتركين
                   </label>
+                </div>
+
+                {/* موقع المكتب للبصمة الجغرافية — لا يبصم الفني إلا داخل النطاق */}
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <input type="checkbox" disabled={ro} checked={!!form.geoEnabled} onChange={(e) => set("geoEnabled", e.target.checked)} className="h-4 w-4 accent-emerald-600" />
+                    📍 بصمة الفنيين بالموقع (لا يبصم إلا من داخل المكتب)
+                  </label>
+                  {form.geoEnabled && (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" disabled={ro} onClick={captureLocation} className="rounded-lg bg-mynet-blue px-3 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-50">📍 تحديد موقعي الآن (كن عند المكتب)</button>
+                        {form.lat != null && form.lng != null ? (
+                          <span className="text-xs text-emerald-700" dir="ltr">✓ {Number(form.lat).toFixed(5)}, {Number(form.lng).toFixed(5)}</span>
+                        ) : (
+                          <span className="text-xs text-amber-600">لم يُحدَّد الموقع بعد</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-slate-600">النطاق المسموح (متر):</span>
+                        <input type="number" min={20} max={5000} disabled={ro} value={form.geoRadius ?? 200} onChange={(e) => set("geoRadius", Number(e.target.value) || 200)} dir="ltr" className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-100" />
+                      </div>
+                      <p className="text-xs text-slate-500">افتح هذه الصفحة من هاتفك <b>وأنت عند المكتب</b> ثم اضغط «تحديد موقعي الآن». يمكن تعديله لاحقاً. النطاق الافتراضي 200 متر يراعي دقّة الـ GPS.</p>
+                    </div>
+                  )}
                 </div>
                 {msg && <div className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">{msg}</div>}
                 {(editing || !sel) && (

@@ -26,14 +26,27 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     });
   }, []);
 
-  function flash(msg: string) { setToast(msg); setTimeout(() => setToast(""), 2600); }
+  function flash(msg: string) { setToast(msg); setTimeout(() => setToast(""), 4200); }
+
+  // موقع الفني الحالي (للبصمة الجغرافية) — يرجع null إن تعذّر
+  function getPosition(): Promise<{ lat: number; lng: number } | null> {
+    return new Promise((resolve) => {
+      if (typeof navigator === "undefined" || !("geolocation" in navigator)) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 9000, maximumAge: 10000 },
+      );
+    });
+  }
 
   async function stamp() {
     if (busy || state === "done") return;
     const action = state === "none" ? "in" : "out";
     if (action === "out" && !confirm("تأكيد تسجيل الخروج الآن؟")) return;
     setBusy(true);
-    const r = await fetch("/api/field/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    const pos = await getPosition(); // قد يطلب إذن الموقع
+    const r = await fetch("/api/field/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...(pos ?? {}) }) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { flash(d.error ?? "تعذّر تسجيل البصمة"); return; }

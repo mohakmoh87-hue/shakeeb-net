@@ -3,10 +3,24 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { baghdadDayKey, computeAttendance, parseHHMM } from "@/lib/attendance";
+import { baghdadDayKey, computeAttendance, parseHHMM, distanceMeters } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
+
+// تحقّق البصمة الجغرافية (منع صارم): يرجع رسالة خطأ إن مُنعت البصمة، أو null إن سُمح.
+async function geofenceError(towerId: number | null, lat: number | undefined, lng: number | undefined): Promise<string | null> {
+  if (towerId == null) return null;
+  const office = await prisma.tower.findUnique({ where: { id: towerId }, select: { geoEnabled: true, lat: true, lng: true, geoRadius: true, name: true } });
+  if (!office || !office.geoEnabled || office.lat == null || office.lng == null) return null; // غير مفعّل/بلا موقع ⇒ لا تحقّق
+  if (typeof lat !== "number" || typeof lng !== "number" || Number.isNaN(lat) || Number.isNaN(lng)) {
+    return "تعذّر تحديد موقعك — فعّل الموقع (GPS) واسمح للتطبيق بالوصول إليه ثم أعد المحاولة";
+  }
+  const dist = distanceMeters(office.lat, office.lng, lat, lng);
+  const radius = office.geoRadius ?? 200;
+  if (dist > radius) return `يجب أن تكون داخل «${office.name ?? "المكتب"}» للبصمة — تبعد عنه ~${dist} م (المسموح ${radius} م)`;
+  return null;
+}
 
 // سجل حضور فني ليوم اليوم (أو ينشئه)
 async function todayRecord(technicianId: number) {
@@ -49,8 +63,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const tech = await getTechSession();
   if (!tech) return NextResponse.json({ error: "دخول الفني مطلوب" }, { status: 401 });
-  const parsed = z.object({ action: z.enum(["in", "out"]) }).safeParse(await request.json().catch(() => null));
+  const parsed = z.object({ action: z.enum(["in", "out"]), lat: z.coerce.number().optional(), lng: z.coerce.number().optional() }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "إجراء غير صحيح" }, { status: 400 });
+
+  // البصمة الجغرافية (منع صارم): يجب أن يكون الفني داخل نطاق مكتبه
+  const geoErr = await geofenceError(tech.towerId, parsed.data.lat, parsed.data.lng);
+  if (geoErr) return NextResponse.json({ error: geoErr }, { status: 403 });
 
   const now = new Date();
   const key = baghdadDayKey(now);
