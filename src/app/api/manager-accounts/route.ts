@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
+import { statementForTechnician } from "@/lib/salary";
 
 export const dynamic = "force-dynamic";
 
@@ -35,11 +36,14 @@ export async function GET() {
   const cardDebtRemaining = cardDebtAdded - cardPayments;
   const totalAvailable = cumulativeDaily - cardPayments - managerExpenses + managerReceipts;
 
-  // سحوبات الموظفين = مصروفات التقرير اليومي (moneyOut) على حساب الموظف
-  const employees: { id: number; name: string | null; withdrawn: number }[] = [];
+  // الموظفون (الفنيون): الراتب المتبقي (صافي كشف الراتب) + ما سحبه للعرض
+  const employees: { id: number; name: string | null; withdrawn: number; technicianId: number | null; net: number | null }[] = [];
   for (const acc of employeeAccounts) {
     const a = await prisma.moneyTx.aggregate({ where: { isDeleted: false, accountId: acc.id }, _sum: { moneyOut: true } });
-    employees.push({ id: acc.id, name: acc.name, withdrawn: a._sum.moneyOut ?? 0 });
+    const tech = await prisma.technician.findFirst({ where: { accountId: acc.id, isDeleted: false }, select: { id: true, name: true, salary: true } });
+    let net: number | null = null;
+    if (tech) net = (await statementForTechnician(tech.id, tech.salary ?? 0)).net;
+    employees.push({ id: acc.id, name: tech?.name ?? acc.name, withdrawn: a._sum.moneyOut ?? 0, technicianId: tech?.id ?? null, net });
   }
 
   return NextResponse.json({

@@ -302,6 +302,11 @@ export function startScheduler() {
       await flushPendingMessages();
     } catch (e) { console.error("[scheduler] flush pending:", e); }
 
+    // بصمة خروج تلقائية (00:15 بغداد): إغلاق حضور من نسي الخروج بوقت الخروج المثبّت + غرامة
+    if (nowHM === "00:15") {
+      import("@/lib/autoCheckout").then((m) => m.runAutoCheckout()).then((r) => { if (r.closed) console.log(`[scheduler] خروج تلقائي: أُغلق ${r.closed} حضور`); }).catch((e) => console.error("[scheduler] autoCheckout:", e));
+    }
+
     // تنظيف يومي (03:00 بغداد): حذف أرشيف الرسائل >3 أيام، والمشتركين المحوّلين >30 يوماً دون تفعيل
     if (nowHM === "03:00") {
       purgeOldMessages(3).catch((e) => console.error("[scheduler] purge messages:", e));

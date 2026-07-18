@@ -3,20 +3,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { baghdadDayKey } from "@/lib/attendance";
-import { computeSalary, type SalaryAttendance, type SalaryLeave, type SalaryAdjustment } from "@/lib/salary";
+import { statementForTechnician as statementFor } from "@/lib/salary";
 
 export const dynamic = "force-dynamic";
-
-async function statementFor(technicianId: number, salary: number) {
-  const todayKey = baghdadDayKey(new Date());
-  const [att, leaves, adj] = await Promise.all([
-    prisma.attendance.findMany({ where: { technicianId }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true } }),
-    prisma.leave.findMany({ where: { technicianId }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
-    prisma.adjustment.findMany({ where: { technicianId }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
-  ]);
-  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], todayKey);
-}
 
 // GET: للفني → كشفه + أرشيفه (قراءة). للمدير → كشف فني ?technicianId، أو قائمة فنيّي المكتب.
 export async function GET(request: Request) {

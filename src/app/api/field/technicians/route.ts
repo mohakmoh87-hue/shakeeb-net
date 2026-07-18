@@ -37,6 +37,7 @@ export async function GET(request: Request) {
       ...base, plainCode: t.plainCode, salary: t.salary,
       shiftStart: t.shiftStart, shiftEnd: t.shiftEnd, entryGraceMin: t.entryGraceMin, exitGraceMin: t.exitGraceMin,
       lateRatePerMin: t.lateRatePerMin, overtimeRatePerMin: t.overtimeRatePerMin, paidLeavesPerMonth: t.paidLeavesPerMonth,
+      missedCheckoutPenalty: t.missedCheckoutPenalty,
     };
   });
   return NextResponse.json({ technicians, officeId, isManager });
@@ -52,6 +53,7 @@ function readFields(b: Record<string, unknown>) {
     entryGraceMin: num(b.entryGraceMin) ?? 0, exitGraceMin: num(b.exitGraceMin) ?? 0,
     lateRatePerMin: num(b.lateRatePerMin) ?? 0, overtimeRatePerMin: num(b.overtimeRatePerMin) ?? 0,
     paidLeavesPerMonth: num(b.paidLeavesPerMonth) ?? 0,
+    missedCheckoutPenalty: num(b.missedCheckoutPenalty) ?? 0,
   };
 }
 

@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import OfficeChat from "@/components/OfficeChat";
 import InstallComputer from "@/components/InstallComputer";
 import RewardConfig from "@/components/RewardConfig";
+import SalaryModal from "@/components/SalaryModal";
 
 type WaOffice = { id: number; name: string | null; state: string };
 
@@ -28,7 +29,7 @@ type Data = {
   managerExpenses: number;
   managerReceipts: number;
   masterBalance: number;
-  employees: { id: number; name: string | null; withdrawn: number }[];
+  employees: { id: number; name: string | null; withdrawn: number; technicianId: number | null; net: number | null }[];
   transactions: MgrTx[];
 };
 type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string }[] };
@@ -47,6 +48,7 @@ export default function ManagerAccountsPage() {
   const [busy, setBusy] = useState(false);
   const [waOffices, setWaOffices] = useState<WaOffice[]>([]);
   const [chatOffice, setChatOffice] = useState<WaOffice | null>(null);
+  const [salaryTech, setSalaryTech] = useState<{ id: number; name: string } | null>(null);
   const [cardData, setCardData] = useState<{ packages: { id: number; name: string | null; priceDinar: number | null; cardCost: number | null }[]; canEdit: boolean } | null>(null);
   const [priceInputs, setPriceInputs] = useState<Record<number, string>>({});
   const [priceMsg, setPriceMsg] = useState("");
@@ -152,6 +154,9 @@ export default function ManagerAccountsPage() {
 
       {chatOffice && <OfficeChat officeId={chatOffice.id} officeName={chatOffice.name ?? `مكتب ${chatOffice.id}`} state={chatOffice.state} onClose={() => setChatOffice(null)} />}
 
+      {/* كشف راتب الموظف (الفني): تفاصيل + تسديد — نفس نافذة إدارة الفنيين */}
+      {salaryTech && <SalaryModal technicianId={salaryTech.id} name={salaryTech.name} onClose={() => setSalaryTech(null)} onSettled={load} />}
+
       {/* تحديد سعر الكارت لكل فئة (صلاحية cardprice.manage) — يُطبَّق على الكروت الجديدة فقط */}
       {cardData?.canEdit && (
         <div className="mb-6 max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -212,17 +217,22 @@ export default function ManagerAccountsPage() {
             </div>
           </div>
 
-          {/* الموظفون */}
+          {/* الموظفون — الراتب المتبقي + تفاصيل + تسديد */}
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="mb-2 font-bold text-slate-800">سحوبات الموظفين</h3>
-            <p className="mb-2 text-xs text-slate-500">مجموع ما سحبه كل موظف (حساب موظف) من التقرير اليومي — للعرض فقط.</p>
+            <h3 className="mb-2 font-bold text-slate-800">رواتب الموظفين</h3>
+            <p className="mb-2 text-xs text-slate-500">الراتب المتبقّي لكل موظف (فني) بعد الحضور والخصومات. اضغط «تفاصيل» للكشف، و«تسديد» لصرف راتبه.</p>
             {data.employees.length === 0 ? <div className="text-sm text-slate-400">لا توجد حسابات موظفين</div> : (
               <table className="w-full text-right text-sm">
                 <tbody>
                   {data.employees.map((e) => (
                     <tr key={e.id} className="border-t border-slate-100">
-                      <td className="py-1.5 font-medium">{e.name ?? "—"}</td>
-                      <td className="py-1.5 text-red-600">{fmt(e.withdrawn)} د.ع</td>
+                      <td className="py-2 font-medium">{e.name ?? "—"}</td>
+                      <td className="py-2 font-bold text-emerald-700">{e.net != null ? `${fmt(e.net)} د.ع` : <span className="text-xs font-normal text-slate-400">حساب غير مرتبط بفني</span>}</td>
+                      <td className="py-2 text-left">
+                        {e.technicianId != null && (
+                          <button onClick={() => setSalaryTech({ id: e.technicianId!, name: e.name ?? "الموظف" })} className="rounded-lg bg-mynet-blue px-3 py-1.5 text-xs font-bold text-white hover:bg-mynet-blue-dark">💰 تفاصيل / تسديد</button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

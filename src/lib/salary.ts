@@ -17,6 +17,19 @@ export type SalaryResult = {
   periodFrom: string; periodTo: string; items: SalaryItem[];
 };
 
+// كشف راتب فنيٍّ من قاعدة البيانات (مشترك بين مسار الراتب وحسابات المدير)
+import { prisma } from "./prisma";
+import { baghdadDayKey } from "./attendance";
+export async function statementForTechnician(technicianId: number, salary: number): Promise<SalaryResult> {
+  const todayKey = baghdadDayKey(new Date());
+  const [att, leaves, adj] = await Promise.all([
+    prisma.attendance.findMany({ where: { technicianId }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true } }),
+    prisma.leave.findMany({ where: { technicianId }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
+    prisma.adjustment.findMany({ where: { technicianId }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
+  ]);
+  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], todayKey);
+}
+
 // أيام شهر الـ dayKey (YYYY-MM-DD)
 export function daysInMonthOf(dayKey: string): number {
   const [y, m] = dayKey.split("-").map(Number);

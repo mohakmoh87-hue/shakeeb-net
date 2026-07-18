@@ -6,10 +6,10 @@ import SalaryModal from "./SalaryModal";
 type Tech = {
   id: number; name: string; phone: string | null; username: string | null; plainCode?: string | null;
   salary?: number | null; shiftStart?: string | null; shiftEnd?: string | null;
-  entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null;
+  entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null; missedCheckoutPenalty?: number | null;
 };
 type Form = Record<string, string>;
-const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0" };
+const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0" };
 
 // إدارة الفنيين للمدير: إضافة/تعديل بكل الإعدادات + حذف نهائي + بصمة خروج يدوية.
 export default function TechnicianManager({ officeId, officeName, onClose, onChange }: { officeId: number | null; officeName: string; onClose: () => void; onChange: () => void }) {
@@ -35,6 +35,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
       salary: String(t.salary ?? ""), shiftStart: t.shiftStart ?? "", shiftEnd: t.shiftEnd ?? "",
       entryGraceMin: String(t.entryGraceMin ?? 0), exitGraceMin: String(t.exitGraceMin ?? 0),
       lateRatePerMin: String(t.lateRatePerMin ?? 0), overtimeRatePerMin: String(t.overtimeRatePerMin ?? 0), paidLeavesPerMonth: String(t.paidLeavesPerMonth ?? 0),
+      missedCheckoutPenalty: String(t.missedCheckoutPenalty ?? 0),
     });
     setOpenForm(true); setMsg("");
   }
@@ -89,6 +90,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
               <L label="سماحية الخروج (دقيقة)"><I v={f.exitGraceMin} on={(v) => set("exitGraceMin", v)} num /></L>
               <L label="سعر دقيقة الخصم"><I v={f.lateRatePerMin} on={(v) => set("lateRatePerMin", v)} num /></L>
               <L label="سعر دقيقة الإضافي"><I v={f.overtimeRatePerMin} on={(v) => set("overtimeRatePerMin", v)} num /></L>
+              <L label="غرامة نسيان الخروج"><I v={f.missedCheckoutPenalty} on={(v) => set("missedCheckoutPenalty", v)} num /></L>
             </div>
             <div className="mt-3 flex gap-2">
               <button onClick={save} disabled={busy} className="flex-1 rounded-lg bg-mynet-blue py-2 font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-60">{busy ? "..." : "حفظ"}</button>
