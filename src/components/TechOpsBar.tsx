@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import TechLeaveModal from "./TechLeaveModal";
 import TechAdjustments from "./TechAdjustments";
 import SalaryModal from "./SalaryModal";
+import { bioConfirm, bioReRegister } from "@/lib/biometric";
 
 type AttState = "none" | "in" | "done";
 const fmtTime = (d: string | null) => (d ? new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "");
@@ -19,6 +20,9 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [leaveMode, setLeaveMode] = useState<"day" | "time" | null>(null);
   const [adjOpen, setAdjOpen] = useState(false);
   const [salaryOpen, setSalaryOpen] = useState(false);
+  const [bioOpen, setBioOpen] = useState(false); // نافذة تأكيد البصمة
+  const [bioBusy, setBioBusy] = useState(false);
+  const [bioErr, setBioErr] = useState("");
 
   useEffect(() => {
     fetch("/api/field/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => {
@@ -40,10 +44,10 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     });
   }
 
+  // تسجيل البصمة فعلياً (بعد تأكيد بصمة الهاتف)
   async function stamp() {
     if (busy || state === "done") return;
     const action = state === "none" ? "in" : "out";
-    if (action === "out" && !confirm("تأكيد تسجيل الخروج الآن؟")) return;
     setBusy(true);
     const pos = await getPosition(); // قد يطلب إذن الموقع
     const r = await fetch("/api/field/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...(pos ?? {}) }) });
@@ -53,6 +57,33 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     setState(d.state);
     if (action === "in") { setCheckIn(d.checkIn); flash("تم تسجيل الدخول ✓"); }
     else { setCheckOut(d.checkOut); flash("تم تسجيل الخروج ✓"); }
+  }
+
+  // فتح نافذة تأكيد البصمة قبل التسجيل
+  function openBio() {
+    if (busy || state === "done") return;
+    setBioErr(""); setBioOpen(true);
+  }
+
+  // لمس المستشعر: يُطلق بصمة الهاتف الحقيقية ثم يُكمل التسجيل
+  async function confirmBio() {
+    setBioBusy(true); setBioErr("");
+    const res = await bioConfirm(techName);
+    setBioBusy(false);
+    if (res === "failed") { setBioErr("لم تُؤكَّد البصمة — أعد المحاولة"); return; }
+    // ok أو unsupported (جهاز بلا مستشعر) → نُكمل التسجيل
+    setBioOpen(false);
+    await stamp();
+  }
+
+  // إعادة تسجيل البصمة على هذا الجهاز (عند تبديل الهاتف)
+  async function reRegisterBio() {
+    setBioBusy(true); setBioErr("");
+    const res = await bioReRegister(techName);
+    setBioBusy(false);
+    if (res === "ok") setBioErr("تم تسجيل بصمة هذا الجهاز ✓ — المس المستشعر للتأكيد");
+    else if (res === "unsupported") setBioErr("هذا الجهاز لا يدعم البصمة");
+    else setBioErr("تعذّر تسجيل البصمة — أعد المحاولة");
   }
 
   const btn = state === "none"
@@ -74,6 +105,29 @@ export default function TechOpsBar({ techName }: { techName: string }) {
       {adjOpen && <TechAdjustments onClose={() => setAdjOpen(false)} />}
       {salaryOpen && <SalaryModal onClose={() => setSalaryOpen(false)} />}
       {toast && <div className="fixed bottom-24 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-slate-900/90 px-5 py-2 text-sm font-semibold text-white shadow-lg">{toast}</div>}
+
+      {/* نافذة تأكيد البصمة ببصمة الهاتف الحقيقية */}
+      {bioOpen && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/60 p-5" onClick={() => !bioBusy && setBioOpen(false)}>
+          <div className="w-full max-w-xs rounded-3xl bg-white p-6 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 text-base font-extrabold text-slate-800">
+              {state === "none" ? "تأكيد بصمة الدخول" : "تأكيد بصمة الخروج"}
+            </div>
+            <p className="mb-5 text-xs text-slate-500">المس مستشعر البصمة في هاتفك للتأكيد</p>
+            <button onClick={confirmBio} disabled={bioBusy}
+              className={`mx-auto flex h-24 w-24 items-center justify-center rounded-full text-5xl text-white shadow-lg transition active:scale-95 disabled:opacity-70 ${bioBusy ? "animate-pulse bg-slate-500" : state === "none" ? "bg-gradient-to-br from-emerald-500 to-emerald-700" : "bg-gradient-to-br from-red-500 to-red-700"}`}>
+              👆
+            </button>
+            <div className="mt-4 text-sm font-bold text-slate-600">{bioBusy ? "بانتظار البصمة…" : "اضغط للمس المستشعر"}</div>
+            {bioErr && <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">{bioErr}</div>}
+            <div className="mt-5 flex items-center justify-center gap-4 text-xs">
+              <button onClick={() => !bioBusy && setBioOpen(false)} className="font-semibold text-slate-400 hover:text-slate-600">إلغاء</button>
+              <span className="text-slate-200">|</span>
+              <button onClick={reRegisterBio} disabled={bioBusy} className="font-semibold text-slate-400 hover:text-slate-600 disabled:opacity-50">هاتف جديد؟ سجّل البصمة</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {opsOpen && (
         <div className="fixed inset-0 z-[75]" onClick={() => setOpsOpen(false)}>
@@ -102,7 +156,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
             className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-100 font-bold text-slate-700 hover:bg-slate-200">
             ⚙️ عمليات <span className="text-xs">▾</span>
           </button>
-          <button onClick={stamp} disabled={busy || state === "done"}
+          <button onClick={openBio} disabled={busy || state === "done"}
             className={`flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl font-extrabold text-white shadow-md transition ${btn.cls} disabled:opacity-90`}>
             <span>{btn.icon}</span>{busy ? "..." : btn.label}
           </button>

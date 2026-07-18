@@ -631,6 +631,7 @@ model Technician {
   overtimeRatePerMin Int? @default(0) // سعر دقيقة الإضافي
   paidLeavesPerMonth Int? @default(0) // عدد إجازات الراتب المسموحة شهرياً
   missedCheckoutPenalty Int? @default(0) // غرامة نسيان بصمة الخروج (يضبطها المدير)
+  bioCredId String? // معرّف بصمة الجهاز (WebAuthn) لتأكيد البصمة ببصمة الهاتف الحقيقية
   isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
 
