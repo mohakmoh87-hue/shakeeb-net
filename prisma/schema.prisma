@@ -883,6 +883,33 @@ model Adjustment {
   @@map("adjustments")
 }
 
+// ===== كشف راتب مؤرشَف — لقطة مضغوطة عند التسديد؛ يُصفَّر بعدها سجل الفني الخام =====
+model SalaryStatement {
+  id                   Int      @id @default(autoincrement())
+  technicianId         Int
+  technicianName       String
+  agentId              Int? // عزل الوكيل
+  towerId              Int?
+  periodFrom           String // dayKey أول سجل محتسب
+  periodTo             String // dayKey التسديد
+  daysPaid             Int // أيام محتسبة (حضور + إجازة براتب)
+  dailyAmount          Int // متوسط مبلغ اليوم
+  baseEarned           Int // مجموع مبالغ الأيام
+  overtime             Int // مجموع الإضافي
+  bonuses              Int // مجموع المكافآت المؤكّدة
+  attendanceDeductions Int // خصومات التأخير/الخروج المبكّر
+  confirmedDeductions  Int // خصومات معلّقة مؤكّدة (تجاوز الوقت…)
+  net                  Int // الصافي المدفوع
+  details              String // JSON بالبنود المؤثّرة (تاريخ/نوع/مبلغ/سبب)
+  paidByUser           String?
+  moneyTxId            Int? // قيد الصرف المرتبط
+  createdAt            DateTime @default(now())
+
+  @@index([technicianId])
+  @@index([agentId])
+  @@map("salary_statements")
+}
+
 // سجل صيانات المشترك (بجانب سجل الوصولات) — تفاصيل الصيانة من الفني وتاريخها؛ بلا صور.
 model MaintenanceLog {
   id             Int      @id @default(autoincrement())

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import SalaryModal from "./SalaryModal";
 
 type Tech = {
   id: number; name: string; phone: string | null; username: string | null; plainCode?: string | null;
@@ -18,6 +19,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [openForm, setOpenForm] = useState(false);
+  const [salaryTech, setSalaryTech] = useState<Tech | null>(null);
 
   const load = useCallback(() => {
     fetch(`/api/field/technicians${officeId != null ? `?officeId=${officeId}` : ""}`).then((r) => (r.ok ? r.json() : null)).then((d) => d && setTechs(d.technicians ?? []));
@@ -115,6 +117,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                       <button onClick={() => del(t)} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100">حذف</button>
                     </div>
                     <div className="flex gap-1">
+                      <button onClick={() => setSalaryTech(t)} className="rounded bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100">💰 الراتب</button>
                       <button onClick={() => manualOut(t, "now")} className="rounded bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 hover:bg-amber-100">خروج الآن</button>
                       <button onClick={() => manualOut(t, "scheduled")} className="rounded bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 hover:bg-amber-100">خروج بوقته</button>
                     </div>
@@ -125,6 +128,10 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
           </ul>
         )}
       </div>
+
+      {salaryTech && (
+        <SalaryModal technicianId={salaryTech.id} name={salaryTech.name} onClose={() => setSalaryTech(null)} onSettled={onChange} />
+      )}
     </div>
   );
 }

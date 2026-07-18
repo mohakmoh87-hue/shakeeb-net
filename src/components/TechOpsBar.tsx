@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import TechLeaveModal from "./TechLeaveModal";
 import TechAdjustments from "./TechAdjustments";
+import SalaryModal from "./SalaryModal";
 
 type AttState = "none" | "in" | "done";
 const fmtTime = (d: string | null) => (d ? new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "");
@@ -17,6 +18,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [toast, setToast] = useState("");
   const [leaveMode, setLeaveMode] = useState<"day" | "time" | null>(null);
   const [adjOpen, setAdjOpen] = useState(false);
+  const [salaryOpen, setSalaryOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/field/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => {
@@ -57,6 +59,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     <>
       {leaveMode && <TechLeaveModal mode={leaveMode} onClose={() => setLeaveMode(null)} />}
       {adjOpen && <TechAdjustments onClose={() => setAdjOpen(false)} />}
+      {salaryOpen && <SalaryModal onClose={() => setSalaryOpen(false)} />}
       {toast && <div className="fixed bottom-24 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-slate-900/90 px-5 py-2 text-sm font-semibold text-white shadow-lg">{toast}</div>}
 
       {opsOpen && (
@@ -68,6 +71,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
                 if (o.key === "leave") setLeaveMode("day");
                 else if (o.key === "tleave") setLeaveMode("time");
                 else if (o.key === "adjust") setAdjOpen(true);
+                else if (o.key === "salary") setSalaryOpen(true);
                 else flash("هذه الميزة تُضاف في التحديث القادم");
               }}
                 className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-right text-sm font-semibold text-slate-700 last:border-0 hover:bg-slate-50">
