@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
+import { reverseRewardGrant } from "@/lib/rewards";
 
 // حذف وصل تفعيل عكسياً: إرجاع المشترك لحالته قبل الوصل
 // (إلغاء المبلغ من الصندoق + إرجاع أيام الاشتراك + إرجاع الكارت للمخزون + تصحيح الدين)
@@ -55,7 +56,15 @@ export async function POST(
         data: { isDeleted: true },
       });
 
-      // 4) حذف الوصل نفسه
+      // 4) عكس مكافأة هذا التفعيل فقط (يُخصم مبلغ منح هذا الوصل دون المساس بالرصيد السابق)
+      if (entry.subscriberId) {
+        await reverseRewardGrant(tx, {
+          entryId, subscriberId: entry.subscriberId, towerId: entry.towerId,
+          agentId: g.session?.agentId ?? null, createdByUser: session?.username, createdByName: session?.fullName,
+        });
+      }
+
+      // 5) حذف الوصل نفسه
       await tx.subscriptionEntry.update({ where: { id: entryId }, data: { isDeleted: true } });
 
       await tx.auditLog.create({

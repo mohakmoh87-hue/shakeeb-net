@@ -574,8 +574,10 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   const [amount, setAmount] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false); // جاري ضغط الصورة
-  const [reward, setReward] = useState<{ balance: number; code: string | null; name: string | null } | null>(null); // رصيد مكافأة المشترك
+  const [rewardsOn, setRewardsOn] = useState(false); // مكتب المشترك مفعّل للمكافآت
+  const [reward, setReward] = useState<{ balance: number; name: string | null } | null>(null); // رصيد مكافأة المشترك (إن وُجد)
   const [rewardPulled, setRewardPulled] = useState(false); // سُحب الكود لهذا الإنجاز
+  const [noCode, setNoCode] = useState(false); // «ليس لديه كود» عند السحب
   const [mats, setMats] = useState<CustodyMat[]>([]);
   const [picked, setPicked] = useState<Record<number, number>>({}); // itemId -> qty
   const [busy, setBusy] = useState(false);
@@ -593,7 +595,11 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
     if (isTransfer) return;
     fetch(`/api/rewards/lookup?cardId=${card.id}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.found && d.rewardsEnabled && (d.balance ?? 0) > 0) setReward({ balance: d.balance, code: d.code, name: d.name }); });
+      .then((d) => {
+        if (!d?.found) return;
+        setRewardsOn(!!d.rewardsEnabled);
+        if (d.rewardsEnabled && (d.balance ?? 0) > 0) setReward({ balance: d.balance, name: d.name });
+      });
   }, [card.id, isTransfer]);
 
   const materialsTotal = Object.entries(picked).reduce((s, [id, q]) => {
@@ -663,20 +669,21 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
         <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-red-500">*</span></label>
         <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
 
-        {/* سحب كود مكافأة المشترك خصماً من المبلغ */}
-        {reward && (
+        {/* سحب كود مكافأة المشترك خصماً من المبلغ — يظهر دائماً عند تفعيل نظام المكافآت للمكتب */}
+        {fullFields && rewardsOn && (
           <div className="mb-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-fuchsia-800">🎁 رصيد مكافأة {reward.name ?? "المشترك"}: {reward.balance.toLocaleString("en-US")} د.ع</span>
+              <span className="text-sm font-semibold text-fuchsia-800">🎁 كود المكافأة</span>
               {!rewardPulled ? (
-                <button type="button" onClick={() => setRewardPulled(true)} disabled={nAmount <= 0} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700 disabled:opacity-50">سحب الكود</button>
+                <button type="button" onClick={() => { if (reward) setRewardPulled(true); else setNoCode(true); }} disabled={nAmount <= 0} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700 disabled:opacity-50">سحب كود المكافأة</button>
               ) : (
                 <button type="button" onClick={() => setRewardPulled(false)} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إلغاء السحب</button>
               )}
             </div>
-            {rewardPulled && (
+            {noCode && !rewardPulled && <div className="mt-2 text-xs font-semibold text-slate-500">ليس لديه كود</div>}
+            {rewardPulled && reward && (
               <div className="mt-2 text-xs text-fuchsia-700">
-                سيُخصم <b>{Math.min(reward.balance, nAmount).toLocaleString("en-US")}</b> د.ع — المتبقّي على الزبون: <b>{Math.max(0, nAmount - reward.balance).toLocaleString("en-US")}</b> د.ع
+                خُصم <b>{Math.min(reward.balance, nAmount).toLocaleString("en-US")}</b> د.ع — المتبقّي على الزبون: <b>{Math.max(0, nAmount - reward.balance).toLocaleString("en-US")}</b> د.ع
                 {reward.balance > nAmount && <span> (يبقى للمشترك {(reward.balance - nAmount).toLocaleString("en-US")} د.ع)</span>}
               </div>
             )}

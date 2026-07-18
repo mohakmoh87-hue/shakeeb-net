@@ -154,37 +154,18 @@ function SellModal({ item, onClose, onDone }: { item: Item; onClose: () => void;
   const [received, setReceived] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  // اختيار مشترك لسحب كود المكافأة
-  const [subQuery, setSubQuery] = useState("");
-  const [subResults, setSubResults] = useState<{ id: number; name: string | null; netUser: string | null }[]>([]);
-  const [sub, setSub] = useState<{ id: number; name: string | null } | null>(null);
-  const [reward, setReward] = useState<{ balance: number } | null>(null);
-  const [rewardPulled, setRewardPulled] = useState(false);
 
   const nQty = Number(qty) || 0;
   const nPrice = Number(price) || 0;
   const nRecv = Number(received) || 0;
   const total = nQty * nPrice;
-  const discount = rewardPulled && reward ? Math.min(reward.balance, total) : 0;
-  const netDue = Math.max(0, total - discount);
-  const remaining = Math.max(0, netDue - nRecv);
-
-  async function searchSub() {
-    if (!subQuery.trim()) return;
-    const r = await fetch(`/api/subscribers?q=${encodeURIComponent(subQuery.trim())}`);
-    if (r.ok) { const d = await r.json(); setSubResults((d ?? []).slice(0, 6)); }
-  }
-  async function pickSub(s: { id: number; name: string | null; netUser: string | null }) {
-    setSub({ id: s.id, name: s.name }); setSubResults([]); setReward(null); setRewardPulled(false);
-    const r = await fetch(`/api/rewards/lookup?subscriberId=${s.id}`);
-    if (r.ok) { const d = await r.json(); if (d?.found && d.rewardsEnabled && (d.balance ?? 0) > 0) setReward({ balance: d.balance }); }
-  }
+  const remaining = Math.max(0, total - nRecv);
 
   async function submit() {
     setBusy(true); setErr("");
     const r = await fetch("/api/inventory/sell", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId: item.id, qty: nQty, price: nPrice, received: nRecv, subscriberId: rewardPulled ? sub?.id ?? null : null, useReward: rewardPulled }),
+      body: JSON.stringify({ itemId: item.id, qty: nQty, price: nPrice, received: nRecv }),
     });
     const d = await r.json().catch(() => null);
     setBusy(false);
@@ -202,47 +183,6 @@ function SellModal({ item, onClose, onDone }: { item: Item; onClose: () => void;
         <L label="المبلغ الواصل"><Inp value={received} onChange={setReceived} type="number" placeholder="0" /></L>
         <L label="الإجمالي"><div className="rounded-lg bg-slate-100 px-3 py-2 font-bold text-slate-800">{total.toLocaleString("en-US")}</div></L>
       </div>
-
-      {/* سحب كود مكافأة مشترك (اختياري) */}
-      <div className="mt-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
-        <div className="mb-1 text-xs font-semibold text-fuchsia-800">🎁 خصم كود مكافأة مشترك (اختياري)</div>
-        {!sub ? (
-          <>
-            <div className="flex gap-1">
-              <input value={subQuery} onChange={(e) => setSubQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && searchSub()} placeholder="اسم/يوزر المشترك" className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm" />
-              <button type="button" onClick={searchSub} className="rounded bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700">بحث</button>
-            </div>
-            {subResults.length > 0 && (
-              <div className="mt-1 max-h-32 overflow-auto rounded border border-slate-200 bg-white">
-                {subResults.map((s) => (
-                  <button key={s.id} type="button" onClick={() => pickSub(s)} className="block w-full px-2 py-1 text-right text-xs hover:bg-fuchsia-50">
-                    {s.name ?? "—"} <span className="text-slate-400" dir="ltr">{s.netUser ?? ""}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </>
-        ) : (
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-700">{sub.name ?? "مشترك"}{reward ? ` — رصيد ${reward.balance.toLocaleString("en-US")}` : " — لا رصيد مكافأة"}</span>
-              <button type="button" onClick={() => { setSub(null); setReward(null); setRewardPulled(false); }} className="text-xs text-slate-500 underline">تغيير</button>
-            </div>
-            {reward && (
-              !rewardPulled ? (
-                <button type="button" onClick={() => setRewardPulled(true)} disabled={total <= 0} className="mt-2 rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700 disabled:opacity-50">سحب الكود</button>
-              ) : (
-                <div className="mt-2 text-xs text-fuchsia-700">
-                  سيُخصم <b>{discount.toLocaleString("en-US")}</b> د.ع
-                  {reward.balance > total && <span> (يبقى للمشترك {(reward.balance - total).toLocaleString("en-US")})</span>}
-                  <button type="button" onClick={() => setRewardPulled(false)} className="mr-2 text-slate-500 underline">إلغاء</button>
-                </div>
-              )
-            )}
-          </div>
-        )}
-      </div>
-
       <div className="mt-3 flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm">
         <span className="text-slate-600">المتبقّي (دين):</span>
         <span className={`font-bold ${remaining > 0 ? "text-red-600" : "text-emerald-700"}`}>{remaining.toLocaleString("en-US")}</span>

@@ -39,7 +39,7 @@ export default function RewardConfig() {
         <h3 className="font-bold text-fuchsia-800">🎁 مكافأة التفعيل لكل باقة</h3>
         <a href="/rewards" className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-fuchsia-700">📒 سجلّ المكافآت</a>
       </div>
-      <p className="mb-3 text-xs text-slate-500">مبلغ المكافأة لكل شهر تفعيل. يتراكم للمشترك عند كل تفعيل (× عدد الأشهر) ويُرسل له كوداً بواتساب يستخدمه خصماً عند الصيانة أو الشراء. فعّل النظام لكل مكتب من صفحة «المكاتب».</p>
+      <p className="mb-3 text-xs text-slate-500">مبلغ المكافأة لكل شهر تفعيل. يتراكم للمشترك عند كل تفعيل (× عدد الأشهر) ويُرسل له كوداً بواتساب يستخدمه خصماً عند الصيانة أو فاتورة المبيع فقط. فعّل النظام لكل مكتب من صفحة «المكاتب».</p>
       {pkgs.length === 0 ? <div className="text-sm text-slate-400">لا توجد باقات بعد — أضِفها من صفحة الباقات.</div> : (
         <div className="space-y-2">
           {pkgs.map((pk) => (

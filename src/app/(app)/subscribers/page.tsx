@@ -151,6 +151,17 @@ export default function SubscribersPage() {
     else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
   }
 
+  // مسح كود ورصيد مكافأة المشترك المحدّد يدوياً
+  async function clearReward() {
+    if (!selected) return;
+    if (!confirm(`مسح كود ورصيد مكافأة «${selected.name ?? ""}» نهائياً؟`)) return;
+    const res = await fetch("/api/rewards/clear", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscriberId: selected.id }),
+    });
+    if (res.ok) { load(query, showAllTowers); }
+    else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر مسح الكود"); }
+  }
+
   const load = useCallback((q = "", all = false) => {
     fetch(`/api/subscribers?q=${encodeURIComponent(q)}${all ? "&all=1" : ""}`).then((r) => {
       if (!r.ok) return;
@@ -255,6 +266,7 @@ export default function SubscribersPage() {
           <ToolBtn icon="📊" label="تقارير الوصولات + الديون" onClick={() => router.push("/reports/detailed")} />
           <ToolBtn icon="💵" label="تسديد اشتراك" onClick={() => router.push("/debts")} />
           <ToolBtn icon="🅰️" label="اضافة ديون سابقة" danger onClick={() => selected && setAddingDebt(selected)} disabled={!selected} />
+          <ToolBtn icon="🎁" label="مسح كود المكافأة" danger onClick={clearReward} disabled={!selected} />
         </ToolGroup>
         <ToolGroup title="فاتورة مبيع">
           <ToolBtn icon="🧾" label="انشاء فاتورة" onClick={() => router.push("/invoices")} />

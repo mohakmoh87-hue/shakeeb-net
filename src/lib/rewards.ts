@@ -27,6 +27,7 @@ export async function grantReward(
     hadGap: boolean;        // انقطاع تجديد (اشتراك منتهٍ) ⇒ يُصفَّر الرصيد أولاً
     rewardAmount: number;   // مبلغ مكافأة الباقة (لكل شهر)
     months: number;
+    refId?: number | null;  // معرّف وصل التفعيل (لعكس المنح عند حذف الوصل)
     createdByUser?: string;
     createdByName?: string;
   },
@@ -40,11 +41,37 @@ export async function grantReward(
   await tx.rewardLog.create({
     data: {
       agentId: opts.agentId ?? null, towerId: opts.towerId ?? null, subscriberId: opts.subscriberId,
-      kind: "grant", amount: granted, code, context: "activation", balanceAfter: balance,
+      kind: "grant", amount: granted, code, context: "activation", refId: opts.refId ?? null, balanceAfter: balance,
       subscriberName: opts.subscriberName ?? null, createdByUser: opts.createdByUser ?? null, createdByName: opts.createdByName ?? null,
     },
   });
   return { code, balance, granted };
+}
+
+// عكس منح مكافأة تفعيل عند حذف وصله: يُخصم مبلغ منح ذلك الوصل فقط من الرصيد الحالي
+// (لا يؤثر على المبالغ السابقة). يُمسح الكود إن بلغ الرصيد صفراً.
+export async function reverseRewardGrant(
+  tx: Prisma.TransactionClient,
+  opts: { entryId: number; subscriberId: number; towerId: number | null; agentId: number | null; createdByUser?: string; createdByName?: string },
+): Promise<number> {
+  // منح هذا الوصل (إن وُجد ولم يُعكَس سابقاً)
+  const grant = await tx.rewardLog.findFirst({ where: { subscriberId: opts.subscriberId, refId: opts.entryId, kind: "grant" }, orderBy: { id: "desc" } });
+  if (!grant) return 0;
+  const already = await tx.rewardLog.findFirst({ where: { subscriberId: opts.subscriberId, refId: opts.entryId, kind: "reverse" } });
+  if (already) return 0; // عُكِس مسبقاً
+  const sub = await tx.subscriber.findUnique({ where: { id: opts.subscriberId }, select: { rewardBalance: true, rewardCode: true, name: true } });
+  const bal = sub?.rewardBalance ?? 0;
+  const back = Math.min(bal, grant.amount); // لا يتجاوز الرصيد الحالي (قد يكون استُخدم جزئياً)
+  const balanceAfter = Math.max(0, bal - back);
+  await tx.subscriber.update({ where: { id: opts.subscriberId }, data: { rewardBalance: balanceAfter, rewardCode: balanceAfter > 0 ? sub?.rewardCode ?? null : null } });
+  await tx.rewardLog.create({
+    data: {
+      agentId: opts.agentId ?? null, towerId: opts.towerId ?? null, subscriberId: opts.subscriberId,
+      kind: "reverse", amount: back, code: grant.code, context: "activation-void", refId: opts.entryId, balanceAfter,
+      subscriberName: sub?.name ?? null, createdByUser: opts.createdByUser ?? null, createdByName: opts.createdByName ?? null,
+    },
+  });
+  return back;
 }
 
 // ===== استخدام/خصم مكافأة عند الصيانة أو البيع (ضمن معاملة) =====
@@ -83,7 +110,7 @@ export async function redeemReward(
 }
 
 const DEFAULT_GRANT_TPL =
-  "مرحباً {name} 🎁\nحصلت على مكافأة تفعيل بمبلغ {granted} د.ع.\nرصيد مكافأتك الآن: {balance} د.ع\nكود المكافأة: {code}\nاستخدمه عند الصيانة أو الشراء من {office}.";
+  "مرحباً {name} 🎁\nحصلت على مكافأة تفعيل بمبلغ {granted} د.ع.\nرصيد مكافأتك الآن: {balance} د.ع\nكود المكافأة: {code}\nاستخدمه عند الصيانة أو فاتورة المبيع في {office}.";
 const DEFAULT_USED_TPL =
   "تم استخدام مكافأتك 🎉\nخُصِم {amount} د.ع.\nرصيدك المتبقّي: {balance} د.ع\n{office}";
 

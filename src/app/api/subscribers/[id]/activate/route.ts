@@ -135,15 +135,6 @@ export async function POST(
         // التفعيل يمسح وسم التحويل (فلا يُنبَّه ولا يُحذف)
         data: { packageId, dateTo, carry: newCarry, wasel: effPaid, month: months, transferredAt: null, transferredTo: null },
       });
-      // منح مكافأة التفعيل (كود + رصيد متراكم) — يشمل العادي والماستر
-      if (rewardsOn) {
-        rewardGrant = await grantReward(tx, {
-          subscriberId, towerId: subscriber.towerId, agentId: session?.agentId ?? null,
-          subscriberName: subscriber.name, currentBalance: subscriber.rewardBalance ?? 0,
-          hadGap, rewardAmount: pkg.rewardAmount ?? 0, months,
-          createdByUser: session?.username, createdByName: session?.fullName,
-        });
-      }
       const entry = await tx.subscriptionEntry.create({
         data: {
           subscriberId, date: now, dateFrom: start, dateTo, money: total, moneyIn: effPaid,
@@ -156,6 +147,15 @@ export async function POST(
           operation: paymentMethod ?? null, // طريقة الدفع
         },
       });
+      // منح مكافأة التفعيل (كود + رصيد متراكم) — يشمل العادي والماستر، مربوطة بهذا الوصل
+      if (rewardsOn) {
+        rewardGrant = await grantReward(tx, {
+          subscriberId, towerId: subscriber.towerId, agentId: session?.agentId ?? null,
+          subscriberName: subscriber.name, currentBalance: subscriber.rewardBalance ?? 0,
+          hadGap, rewardAmount: pkg.rewardAmount ?? 0, months, refId: entry.id,
+          createdByUser: session?.username, createdByName: session?.fullName,
+        });
+      }
       if (effPaid > 0) {
         await tx.moneyTx.create({
           data: {

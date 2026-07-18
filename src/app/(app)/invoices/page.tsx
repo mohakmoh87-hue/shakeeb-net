@@ -29,10 +29,26 @@ export default function NewInvoicePage() {
   const [subQuery, setSubQuery] = useState("");
   const [subs, setSubs] = useState<Sub[]>([]);
   const [sub, setSub] = useState<Sub | null>(null);
+  // مكافأة المشترك (سحب الكود خصماً)
+  const [rewardsOn, setRewardsOn] = useState(false);
+  const [reward, setReward] = useState<{ balance: number } | null>(null);
+  const [rewardPulled, setRewardPulled] = useState(false);
+  const [noCode, setNoCode] = useState(false);
 
   useEffect(() => {
     fetch("/api/items").then((r) => void (r.ok && r.json().then(setItems)));
   }, []);
+
+  // جلب رصيد مكافأة المشترك المختار
+  useEffect(() => {
+    setRewardsOn(false); setReward(null); setRewardPulled(false); setNoCode(false);
+    if (!sub) return;
+    fetch(`/api/rewards/lookup?subscriberId=${sub.id}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d?.found) return;
+      setRewardsOn(!!d.rewardsEnabled);
+      if (d.rewardsEnabled && (d.balance ?? 0) > 0) setReward({ balance: d.balance });
+    });
+  }, [sub]);
 
   useEffect(() => {
     if (sub) return; // لا تبحث بعد الاختيار
@@ -64,6 +80,8 @@ export default function NewInvoicePage() {
   }
 
   const total = lines.reduce((s, l) => s + l.count * l.price, 0);
+  const discount = rewardPulled && reward ? Math.min(reward.balance, total) : 0;
+  const netTotal = Math.max(0, total - discount);
 
   async function save() {
     setError("");
@@ -85,6 +103,7 @@ export default function NewInvoicePage() {
           items: lines.map((l) => ({ itemId: l.itemId, count: l.count, price: l.price })),
           note,
           paid: Number(paid) || 0,
+          useReward: rewardPulled,
         }),
       });
       const data = await res.json();
@@ -217,16 +236,40 @@ export default function NewInvoicePage() {
             </div>
           )}
 
-          <div className="mb-3 flex items-center justify-between text-lg">
+          {/* سحب كود مكافأة المشترك (يظهر عند اختيار مشترك ومكتبه مفعّل للمكافآت) */}
+          {sub && rewardsOn && (
+            <div className="mb-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-fuchsia-800">🎁 كود المكافأة</span>
+                {!rewardPulled ? (
+                  <button type="button" onClick={() => { if (reward) setRewardPulled(true); else setNoCode(true); }} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700">سحب كود المكافأة</button>
+                ) : (
+                  <button type="button" onClick={() => setRewardPulled(false)} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إلغاء السحب</button>
+                )}
+              </div>
+              {noCode && !rewardPulled && <div className="mt-2 text-xs font-semibold text-slate-500">ليس لديه كود</div>}
+              {rewardPulled && reward && (
+                <div className="mt-2 text-xs text-fuchsia-700">خُصم <b>{fmt(discount)}</b> د.ع{reward.balance > total && <span> (يبقى {fmt(reward.balance - total)} للمشترك)</span>}</div>
+              )}
+            </div>
+          )}
+
+          <div className="mb-1 flex items-center justify-between text-lg">
             <span className="text-slate-600">الإجمالي</span>
-            <span className="font-extrabold text-mynet-blue">{fmt(total)} د.ع</span>
+            <span className={`font-extrabold ${discount > 0 ? "text-slate-400 line-through" : "text-mynet-blue"}`}>{fmt(total)} د.ع</span>
           </div>
+          {discount > 0 && (
+            <div className="mb-3 flex items-center justify-between text-lg">
+              <span className="text-fuchsia-700">بعد المكافأة</span>
+              <span className="font-extrabold text-mynet-blue">{fmt(netTotal)} د.ع</span>
+            </div>
+          )}
           <label className="mb-1 block text-sm font-medium text-slate-700">المبلغ المدفوع</label>
           <input
             type="number"
             value={paid}
             onChange={(e) => setPaid(e.target.value)}
-            placeholder={String(total)}
+            placeholder={String(netTotal)}
             className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
           />
           <label className="mb-1 block text-sm font-medium text-slate-700">ملاحظات</label>
