@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeLeaderMachineId } from "@/lib/hybridLeader";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
 // نبضة العامل المحلي: يسجّل الحاسبة/يحدّث آخر ظهور، ويعيد هل هي القائد (مضيف واتساب).
 export async function POST(request: Request) {
+  // حدّ سخيّ يكفي عدّة عمّال خلف IP واحد (كل عامل ينبض ~كل 20ث) ويمنع الإغراق
+  if (!rateLimit(`hb:${clientIp(request)}`, 120, 60_000)) {
+    return NextResponse.json({ error: "too many" }, { status: 429 });
+  }
   const b = await request.json().catch(() => null);
   const machineId = String(b?.machineId ?? "").trim();
   if (!machineId) return NextResponse.json({ error: "machineId مطلوب" }, { status: 400 });

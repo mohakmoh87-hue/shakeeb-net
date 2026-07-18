@@ -23,6 +23,11 @@ export async function PUT(
   const session = await getSession();
 
   const { id } = await params;
+  // عزل المستأجر: لا تُعدَّل إلا تذكرة تتبع وكيل المستخدم
+  const t = await prisma.ticket.findUnique({ where: { id: Number(id) }, select: { agentId: true } });
+  if (!t || t.agentId !== (g.session?.agentId ?? null)) {
+    return NextResponse.json({ error: "التذكرة غير موجودة" }, { status: 404 });
+  }
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -58,6 +63,11 @@ export async function DELETE(
   if (g.error) return g.error;
 
   const { id } = await params;
+  // عزل المستأجر: لا تُحذف إلا تذكرة تتبع وكيل المستخدم
+  const t = await prisma.ticket.findUnique({ where: { id: Number(id) }, select: { agentId: true } });
+  if (!t || t.agentId !== (g.session?.agentId ?? null)) {
+    return NextResponse.json({ error: "التذكرة غير موجودة" }, { status: 404 });
+  }
   await prisma.ticket.update({
     where: { id: Number(id) },
     data: { isDeleted: true },

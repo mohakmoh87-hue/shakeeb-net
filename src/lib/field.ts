@@ -1,5 +1,26 @@
 import { prisma } from "@/lib/prisma";
 import type { SessionPayload } from "@/lib/auth";
+import { agentTowerIds } from "@/lib/guard";
+
+// عزل المستأجر للوحات الفنيين: هل مكتب اللوحة يتبع أحد مكاتب وكيل المستخدم؟
+// (يسمح بالتعاون بين مكاتب نفس الوكيل، ويمنع الوصول لبيانات وكيل آخر)
+async function agentOwnsTower(session: SessionPayload, towerId: number | null | undefined): Promise<boolean> {
+  if (towerId == null) return false;
+  const towers = await agentTowerIds(session);
+  return towers.includes(towerId);
+}
+export async function agentOwnsBoard(session: SessionPayload, boardId: number): Promise<boolean> {
+  const board = await prisma.taskBoard.findUnique({ where: { id: boardId }, select: { towerId: true } });
+  return agentOwnsTower(session, board?.towerId);
+}
+export async function agentOwnsList(session: SessionPayload, listId: number): Promise<boolean> {
+  const list = await prisma.taskList.findUnique({ where: { id: listId }, select: { boardId: true } });
+  return list ? agentOwnsBoard(session, list.boardId) : false;
+}
+export async function agentOwnsCard(session: SessionPayload, cardId: number): Promise<boolean> {
+  const card = await prisma.taskCard.findUnique({ where: { id: cardId }, select: { listId: true } });
+  return card ? agentOwnsList(session, card.listId) : false;
+}
 
 // لوحة إدارة الفنيين مستقلّة لكل مكتب (TaskBoard.towerId)، والمدير يرى كل المكاتب.
 

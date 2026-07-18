@@ -3,6 +3,10 @@ import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
+// مفتاح توقيع الجلسة: مطلوب في الإنتاج (فشل واضح إن غاب بدل استخدام مفتاح عام صامت)
+if (!process.env.AUTH_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("AUTH_SECRET غير مضبوط في الإنتاج — أوقف التشغيل بدل استخدام مفتاح افتراضي عام");
+}
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? "dev-secret-change-me",
 );

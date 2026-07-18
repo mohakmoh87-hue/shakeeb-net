@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, ownsTower } from "@/lib/guard";
 import { sasBaseUrl, sasLogin } from "@/lib/sas4";
 
 const schema = z.object({ towerId: z.coerce.number() });
@@ -15,6 +15,11 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
+  }
+
+  // عزل المستأجر: لا يُصدَّر توكن SAS إلا لمكتب يتبع وكيل المستخدم (يمنع فتح لوحة وكيل آخر)
+  if (!(await ownsTower(g.session, parsed.data.towerId))) {
+    return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   }
 
   const tower = await prisma.tower.findUnique({ where: { id: parsed.data.towerId } });

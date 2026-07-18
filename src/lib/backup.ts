@@ -126,10 +126,22 @@ async function deleteAgentData(tx: typeof prisma, agentId: number) {
   await tx.$executeRawUnsafe(`DELETE FROM system_settings WHERE type = $1`, `receipt:${agentId}`).catch(() => {});
 }
 
-// إدراج صفوف جدول (بأعمدتها وقيمها) مع إجبار agentId على الوكيل الهدف
+// مُعرّف SQL آمن (اسم جدول/عمود) — أحرف/أرقام/شرطة سفلية فقط، يمنع الحقن عبر الأسماء
+const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+// أسماء كل جداول القاعدة الحقيقية (قائمة بيضاء للاسترجاع)
+async function allRealTables(): Promise<Set<string>> {
+  const rows = await prisma.$queryRawUnsafe<{ table_name: string }[]>(
+    `SELECT table_name::text AS table_name FROM information_schema.tables WHERE table_schema='public'`,
+  );
+  return new Set(rows.map((r) => r.table_name));
+}
+
+// إدراج صفوف جدول (بأعمدتها وقيمها) مع إجبار agentId على الوكيل الهدف.
+// الجدول مُتحقَّق منه من المُستدعي (قائمة بيضاء)؛ هنا نتحقّق من أسماء الأعمدة أيضاً.
 async function insertRows(tx: typeof prisma, table: string, rows: Row[], targetAgentId: number, hasAgentId: boolean) {
   for (const row of rows) {
-    const cols = Object.keys(row);
+    const cols = Object.keys(row).filter((c) => SAFE_IDENT.test(c)); // تجاهل أي اسم عمود غير آمن
     if (cols.length === 0) continue;
     const values = cols.map((c) => {
       if (hasAgentId && c === "agentId") return targetAgentId; // ربط بالوكيل الهدف
@@ -154,13 +166,15 @@ async function resyncSequence(tx: typeof prisma, table: string) {
 // استرجاع كامل (استبدال): يمسح بيانات الوكيل الحالية ويُدرج بيانات الملف تحت الوكيل الهدف
 export async function importAgentBackup(targetAgentId: number, backup: AgentBackup): Promise<{ ok: boolean; tablesRestored: number; rowsRestored: number }> {
   const agentTableSet = new Set(await columnsWith("agentId"));
+  const realTables = await allRealTables(); // قائمة بيضاء لأسماء الجداول الحقيقية
 
   let tablesRestored = 0, rowsRestored = 0;
   await prisma.$transaction(async (tx) => {
     await deleteAgentData(tx as typeof prisma, targetAgentId);
 
     for (const [table, rows] of Object.entries(backup.tables)) {
-      if (EXCLUDE.has(table) || !Array.isArray(rows) || rows.length === 0) continue;
+      // أمان: تجاهُل أي جدول باسم غير آمن أو غير موجود فعلاً أو مستثنى (يمنع الحقن عبر ملف ملغّم)
+      if (!SAFE_IDENT.test(table) || !realTables.has(table) || EXCLUDE.has(table) || !Array.isArray(rows) || rows.length === 0) continue;
       const hasAgentId = agentTableSet.has(table);
       await insertRows(tx as typeof prisma, table, rows, targetAgentId, hasAgentId);
       await resyncSequence(tx as typeof prisma, table);

@@ -21,6 +21,7 @@ export async function GET(request: Request) {
   const tickets = await prisma.ticket.findMany({
     where: {
       isDeleted: false,
+      agentId: g.session?.agentId ?? -1, // عزل: تذاكر وكيل المستخدم فقط
       ...(status === "open" ? { isClosed: { not: 1 } } : {}),
       ...(status === "closed" ? { isClosed: 1 } : {}),
     },
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
   const created = await prisma.ticket.create({
     data: {
       ...parsed.data,
+      agentId: session?.agentId ?? null, // عزل: التذكرة تتبع وكيل المُنشئ
       date: new Date(),
       isClosed: 0,
       createdByUser: session?.fullName ?? session?.username,

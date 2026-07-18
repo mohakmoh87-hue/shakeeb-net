@@ -1,17 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
-async function auth() {
-  const s = await getSession();
-  return s ? null : NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
-}
+import { agentOwnsCard, agentOwnsList } from "@/lib/field";
 
 // إنشاء بطاقة جديدة في عمود — مع خياراتها مباشرةً (فني، تاريخ، نوع، وصف)
 export async function POST(request: Request) {
-  const e = await auth(); if (e) return e;
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const b = await request.json().catch(() => null);
   if (!b?.listId || !b?.title?.trim()) return NextResponse.json({ error: "بيانات ناقصة" }, { status: 400 });
+  if (!(await agentOwnsList(s, Number(b.listId)))) return NextResponse.json({ error: "العمود لا يتبع حسابك" }, { status: 403 });
   const count = await prisma.taskCard.count({ where: { listId: Number(b.listId), isDeleted: false } });
   const created = await prisma.taskCard.create({
     data: {
@@ -31,9 +29,13 @@ export async function POST(request: Request) {
 
 // تعديل بطاقة (المحتوى أو النقل بين الأعمدة/الترتيب)
 export async function PATCH(request: Request) {
-  const e = await auth(); if (e) return e;
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const b = await request.json().catch(() => null);
   if (!b?.id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
+  if (!(await agentOwnsCard(s, Number(b.id)))) return NextResponse.json({ error: "البطاقة لا تتبع حسابك" }, { status: 403 });
+  // عند النقل لعمود آخر: تحقّق أن العمود الهدف يتبع الوكيل أيضاً
+  if (typeof b.listId === "number" && !(await agentOwnsList(s, b.listId))) return NextResponse.json({ error: "العمود الهدف لا يتبع حسابك" }, { status: 403 });
   const data: Record<string, unknown> = {};
   if (typeof b.title === "string") data.title = b.title.trim();
   if ("description" in b) data.description = b.description || null;
@@ -52,9 +54,11 @@ export async function PATCH(request: Request) {
 
 // حذف بطاقة حذفاً منطقياً — مع حذف صورتها فعلياً من القاعدة (تفريغ مساحة الاستضافة)
 export async function DELETE(request: Request) {
-  const e = await auth(); if (e) return e;
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
+  if (!(await agentOwnsCard(s, id))) return NextResponse.json({ error: "البطاقة لا تتبع حسابك" }, { status: 403 });
   await prisma.taskCard.update({ where: { id }, data: { isDeleted: true } });
   await prisma.cardPhoto.deleteMany({ where: { cardId: id } });
   return NextResponse.json({ ok: true });

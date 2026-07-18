@@ -4,6 +4,9 @@ import { jwtVerify } from "jose";
 
 // حماية المسارات (Proxy - بديل middleware في Next 16)
 // فحص مبدئي خفيف للجلسة: يتحقق من صلاحية التوكن فقط (jose يعمل في بيئة edge)
+if (!process.env.AUTH_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("AUTH_SECRET غير مضبوط في الإنتاج");
+}
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? "dev-secret-change-me",
 );

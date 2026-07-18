@@ -436,6 +436,7 @@ model InvoiceItem {
 // ===== التذاكر (tct) =====
 model Ticket {
   id            Int       @id @default(autoincrement())
+  agentId       Int? // الوكيل (المستأجر) مالك التذكرة — عزل البيانات
   createdByUser String?
   typeId        Int?
   priorityId    Int?

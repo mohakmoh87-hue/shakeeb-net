@@ -3,12 +3,16 @@ import { z } from "zod";
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { mailerConfigured, sendMail } from "@/lib/mailer";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
 // طلب استرجاع كلمة السر — عام: يُرسل رابط إعادة تعيين إلى إيميل الاسترجاع.
 // إيميل الاسترجاع: للمالك recoveryEmail؛ للمدير recoveryEmail أو Agent.backupEmail.
 export async function POST(request: Request) {
+  if (!rateLimit(`forgot:${clientIp(request)}`, 5, 60_000)) {
+    return NextResponse.json({ error: "محاولات كثيرة — انتظر دقيقة" }, { status: 429 });
+  }
   const parsed = z.object({ username: z.string().min(1) }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "أدخل اسم المستخدم" }, { status: 400 });
 

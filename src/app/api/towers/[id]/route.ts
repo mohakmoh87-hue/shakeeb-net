@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, ownsTower } from "@/lib/guard";
 
 const schema = z.object({
   name: z.string().min(1, "اسم المكتب مطلوب"),
@@ -33,6 +33,10 @@ export async function PUT(
   if (g.error) return g.error;
 
   const { id } = await params;
+  // عزل المستأجر: لا يُعدَّل إلا مكتب يتبع وكيل المستخدم
+  if (!(await ownsTower(g.session, Number(id)))) {
+    return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+  }
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -57,6 +61,10 @@ export async function DELETE(
   if (g.error) return g.error;
 
   const { id } = await params;
+  // عزل المستأجر: لا يُحذف إلا مكتب يتبع وكيل المستخدم
+  if (!(await ownsTower(g.session, Number(id)))) {
+    return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+  }
   await prisma.tower.update({
     where: { id: Number(id) },
     data: { isDeleted: true },
