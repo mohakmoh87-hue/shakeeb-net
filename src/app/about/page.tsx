@@ -165,8 +165,8 @@ export default function AboutPage() {
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800">
-      {/* الشريط العلوي */}
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+      {/* الشريط العلوي (غير لاصق — التمرير اللاصق مع overflow-x:hidden يكسر تمرير الصفحة على iOS) */}
+      <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">نت</div>
@@ -182,7 +182,7 @@ export default function AboutPage() {
       {/* المقدمة */}
       <section className="bg-gradient-to-b from-blue-700 via-blue-600 to-blue-500 px-4 py-14 text-center text-white">
         <div className="mx-auto max-w-3xl">
-          <h1 className="text-3xl font-extrabold leading-snug sm:text-4xl">أدِر شغلك كلّه من مكان واحد —<br />المشتركون، الكروت، الفنيون، والفلوس</h1>
+          <h1 className="text-3xl font-extrabold leading-snug sm:text-4xl">أدِر شغلك كلّه من مكان واحد —<br />المشتركون، الكروت، الفنيون، والحسابات</h1>
           <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-blue-100 sm:text-base">
             شكيب نت نظام متكامل صُمّم خصيصاً لوكلاء الإنترنت: يفعّل ويذكّر ويزامن ويحاسب ويراقب — تلقائياً — وأنت تتابع كل شيء من هاتفك.
           </p>
