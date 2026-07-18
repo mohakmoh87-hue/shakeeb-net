@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Manager = { id: number; username: string; plainPassword: string | null };
+type DbSize = { usedMB: number; limitMB: number; percent: number; level: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
 type Agent = {
   id: number; name: string; officeCap: number; planExpiry: string | null;
   isTrial: boolean; approved: boolean; officeCount: number; userCount: number; subscriberCount: number;
@@ -22,11 +23,16 @@ export default function OwnerPage() {
   const [f, setF] = useState({ name: "", officeCap: 1, planMonths: 0, managerFullName: "", managerUsername: "", managerPassword: "" });
   const [credAgent, setCredAgent] = useState<Agent | null>(null); // تعديل بيانات دخول مدير وكيل
   const [showAccount, setShowAccount] = useState(false); // إعدادات حساب المالك
+  const [dbSize, setDbSize] = useState<DbSize | null>(null); // مؤشّر حجم قاعدة البيانات
+  const [showDbDetail, setShowDbDetail] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/owner/agents").then((r) => r.ok ? r.json() : { agents: [] }).then((d) => { setAgents(d.agents ?? []); setLoading(false); });
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    fetch("/api/owner/db-size").then((r) => (r.ok ? r.json() : null)).then((d) => d && setDbSize(d));
+  }, []);
 
   async function addAgent() {
     setMsg("");
@@ -57,6 +63,45 @@ export default function OwnerPage() {
           <button onClick={logout} className="rounded-xl bg-slate-200 px-4 py-2 font-semibold text-slate-600 hover:bg-slate-300">خروج</button>
         </div>
       </div>
+
+      {/* مؤشّر حجم قاعدة البيانات — تنبيه عند 60% و80% */}
+      {dbSize && (
+        <div
+          onClick={() => setShowDbDetail((v) => !v)}
+          className={`mb-5 cursor-pointer rounded-2xl border p-4 shadow-sm transition hover:shadow-md ${
+            dbSize.level === "danger" ? "border-red-300 bg-red-50" : dbSize.level === "warn" ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-bold text-slate-800">
+              🗄️ حجم قاعدة البيانات
+              {dbSize.level === "danger" && <span className="mr-2 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">تحذير: تجاوز 80%!</span>}
+              {dbSize.level === "warn" && <span className="mr-2 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">تنبيه: تجاوز 60%</span>}
+            </div>
+            <div className="text-sm font-extrabold text-slate-700" dir="ltr">
+              {dbSize.usedMB} MB / {dbSize.limitMB} MB <span className={`${dbSize.level === "danger" ? "text-red-600" : dbSize.level === "warn" ? "text-amber-600" : "text-emerald-600"}`}>({dbSize.percent}%)</span>
+            </div>
+          </div>
+          {/* شريط الامتلاء */}
+          <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-200" dir="ltr">
+            <div
+              className={`h-full rounded-full transition-all ${dbSize.level === "danger" ? "bg-red-500" : dbSize.level === "warn" ? "bg-amber-500" : "bg-emerald-500"}`}
+              style={{ width: `${Math.min(100, Math.max(1, dbSize.percent))}%` }}
+            />
+          </div>
+          <div className="mt-1 text-[11px] text-slate-400">اضغط لعرض أكبر الجداول {showDbDetail ? "▲" : "▼"}</div>
+          {showDbDetail && (
+            <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4" onClick={(e) => e.stopPropagation()}>
+              {dbSize.topTables.map((t) => (
+                <div key={t.table} className="rounded-lg bg-white/70 px-2.5 py-1.5 text-xs ring-1 ring-slate-200">
+                  <div className="truncate font-semibold text-slate-700" dir="ltr">{t.table}</div>
+                  <div className="text-slate-500" dir="ltr">{t.mb} MB · {t.rows.toLocaleString("en-US")} صف</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="p-8 text-center text-slate-400">جاري التحميل…</div>
