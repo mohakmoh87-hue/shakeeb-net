@@ -1,7 +1,8 @@
 export const dynamic = "force-dynamic";
 
-// سكربت PowerShell لإعداد وكيل شكيب نت على حاسبة المكتب (النظام الهجين — الخيار ب).
-// عام (بلا أسرار): رابط قاعدة البيانات يُدخَل يدوياً مرّة واحدة أثناء التشغيل.
+// سكربت PowerShell لإعداد وكيل شكيب نت على حاسبة المكتب (النظام الهجين).
+// عام (بلا أسرار)، لكنه لا يعمل لتنصيب جديد إلا برمز تنصيب صالح (INSTALL_TOKEN)
+// يولَّد من: حسابات المدير ← «تنصيب حاسبة مكتب». لا إدخال روابط يدوياً إطلاقاً.
 // ملاحظة: لا يحتوي السكربت على أي حرف backtick (لتفادي تعارضه مع قالب JS).
 const SCRIPT = String.raw`
 $ErrorActionPreference = "Stop"
@@ -12,6 +13,14 @@ $root = Join-Path $env:LOCALAPPDATA "ShakeebNet"
 $app  = Join-Path $root "app"
 
 Write-Host "===== اعداد وكيل شكيب نت =====" -ForegroundColor Cyan
+
+# تنصيب جديد يتطلب رمز تنصيب مؤقت (يُفشل مبكراً قبل تثبيت أي شيء)
+if (-not (Test-Path (Join-Path $app ".env")) -and -not $env:INSTALL_TOKEN) {
+  Write-Host "امر تنصيب غير صالح: التنصيب الجديد يتطلب رمزا مؤقتا." -ForegroundColor Red
+  Write-Host "ولد امر التنصيب من: حسابات المدير - (تنصيب حاسبة مكتب) والصقه كما هو." -ForegroundColor Yellow
+  Read-Host "اضغط Enter للانهاء"
+  exit 1
+}
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 
 function Have($c) { return $null -ne (Get-Command $c -ErrorAction SilentlyContinue) }
@@ -45,16 +54,21 @@ Set-Location $app
 $envFile = Join-Path $app ".env"
 if (-not (Test-Path $envFile)) {
   Write-Host ""
-  # رابط قاعدة البيانات: يُجلب تلقائياً برمز التنصيب (آمن)، أو يُدخَل يدوياً كبديل
+  # رابط قاعدة البيانات: يُجلب حصراً برمز التنصيب المؤقت — لا إدخال يدوي
   $db = ""
   if ($env:INSTALL_TOKEN) {
     Write-Host "جلب الإعدادات برمز التنصيب..." -ForegroundColor Yellow
     try {
       $cfg = iwr -UseBasicParsing "__ORIGIN__/api/hybrid/install-config?token=$($env:INSTALL_TOKEN)" | ConvertFrom-Json
       $db = $cfg.databaseUrl
-    } catch { Write-Host "تعذّر جلب الإعدادات بالرمز (قد يكون منتهياً)." -ForegroundColor Red }
+    } catch { Write-Host "تعذر جلب الاعدادات بالرمز (قد يكون منتهيا)." -ForegroundColor Red }
   }
-  if (-not $db) { $db = Read-Host "الصق رابط قاعدة بيانات Neon (DATABASE_URL)" }
+  if (-not $db) {
+    Write-Host "توقف التنصيب: الرمز غير صالح او منتهي الصلاحية (صالح 30 دقيقة ولمرة واحدة)." -ForegroundColor Red
+    Write-Host "ولد امر تنصيب جديدا من: حسابات المدير - (تنصيب حاسبة مكتب)." -ForegroundColor Yellow
+    Read-Host "اضغط Enter للانهاء"
+    exit 1
+  }
   # إزالة channel_binding=require (يسبّب فشل اتصال مع سائق pg على بعض الإصدارات)
   $db = ($db -replace '&channel_binding=require','') -replace '\?channel_binding=require&','?'
   $db = $db.Trim()
