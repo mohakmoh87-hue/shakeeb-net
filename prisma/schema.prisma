@@ -699,11 +699,12 @@ model Custody {
 }
 
 model TaskList {
-  id        Int      @id @default(autoincrement())
-  boardId   Int // اللوحة المالكة
-  name      String
-  position  Int      @default(0)
-  isDeleted Boolean  @default(false)
+  id          Int      @id @default(autoincrement())
+  boardId     Int // اللوحة المالكة
+  name        String
+  position    Int      @default(0)
+  timeTracked Boolean  @default(false) // عمود محسوب بالوقت — تجاوز وقت الفئة يولّد خصماً معلّقاً
+  isDeleted   Boolean  @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([boardId])
@@ -844,15 +845,42 @@ model HybridWorker {
 // أنواع البطاقات (توصيل/تحويل/اعادة/صيانة/تنصيب + أنواع يضيفها المستخدم)
 // deliveryOnly = بطاقة مبلغ فقط (كالتوصيل) لا تتطلّب تفاصيل/صورة عند الإنجاز.
 model CardType {
-  id           Int     @id @default(autoincrement())
-  agentId      Int? // الوكيل (المستأجر) مالك هذا الإعداد
-  name         String
-  deliveryOnly Boolean @default(false)
-  position     Int     @default(0)
-  isDeleted    Boolean @default(false)
+  id              Int     @id @default(autoincrement())
+  agentId         Int? // الوكيل (المستأجر) مالك هذا الإعداد
+  name            String
+  deliveryOnly    Boolean @default(false)
+  execMinutes     Int? // الوقت المسموح لإنجاز هذا النوع (دقائق) — أساس احتساب التجاوز
+  overrunDeduction Int? // خصم لكل دقيقة تجاوز فوق الوقت المسموح
+  position        Int     @default(0)
+  isDeleted       Boolean @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@map("card_types")
+}
+
+// ===== خصومات/مكافآت الفني المعلّقة — تجاوز وقت البطاقة يولّد خصماً معلّقاً يؤكّده/يرفضه المدير =====
+model Adjustment {
+  id           Int       @id @default(autoincrement())
+  technicianId Int
+  agentId      Int? // عزل الوكيل
+  towerId      Int?
+  kind         String // "deduction" خصم | "bonus" مكافأة
+  source       String // "overrun" تجاوز وقت | "manual" يدوي
+  amount       Int // موجب دائماً؛ النوع يحدّد الاتجاه
+  reason       String
+  cardId       Int? // البطاقة المسبّبة (لتجاوز الوقت)
+  overrunMin   Int? // دقائق التجاوز (توثيق)
+  status       String    @default("pending") // pending | confirmed | rejected
+  dayKey       String // YYYY-MM-DD (بغداد) — للتجميع الشهري في الرواتب
+  decidedBy    String?
+  decidedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+
+  @@index([technicianId])
+  @@index([agentId])
+  @@index([status])
+  @@map("adjustments")
 }
 
 // سجل صيانات المشترك (بجانب سجل الوصولات) — تفاصيل الصيانة من الفني وتاريخها؛ بلا صور.

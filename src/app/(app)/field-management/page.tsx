@@ -6,9 +6,11 @@ import MapButton from "@/components/MapButton";
 import TechOpsBar from "@/components/TechOpsBar";
 import TechnicianManager from "@/components/TechnicianManager";
 import LeaveReview from "@/components/LeaveReview";
+import CardTypeManager from "@/components/CardTypeManager";
+import DeductionReview from "@/components/DeductionReview";
 
 type Board = { id: number; name: string };
-type List = { id: number; name: string; position: number };
+type List = { id: number; name: string; position: number; timeTracked?: boolean };
 type Card = {
   id: number; listId: number; title: string; description: string | null;
   assignee: string | null; technicianId: number | null; kind: string;
@@ -29,7 +31,7 @@ function fmtDuration(sec: number | null): string {
 const fmtDateTime = (d: string | null) => (d ? new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
 type Office = { id: number; name: string | null };
 type Technician = { id: number; name: string; phone: string | null; isSupport?: boolean };
-type CardType = { id: number; name: string; deliveryOnly: boolean };
+type CardType = { id: number; name: string; deliveryOnly: boolean; execMinutes?: number | null; overrunDeduction?: number | null };
 
 // لون ثابت لكل نوع بطاقة (تصنيف) — يُشتق من اسم النوع فيبقى ثابتاً لكل تصنيف
 const KIND_COLORS = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-purple-500", "bg-pink-500", "bg-cyan-600", "bg-red-500", "bg-lime-600", "bg-indigo-500", "bg-orange-500"];
@@ -65,6 +67,9 @@ export default function FieldManagementPage() {
   const [supportModal, setSupportModal] = useState(false);
   const [leaveModal, setLeaveModal] = useState(false);
   const [leavePending, setLeavePending] = useState(0);
+  const [typesModal, setTypesModal] = useState(false);
+  const [dedModal, setDedModal] = useState(false);
+  const [dedPending, setDedPending] = useState(0);
 
   const load = useCallback((office?: number | null) => {
     const q = office != null ? `?officeId=${office}` : "";
@@ -89,6 +94,22 @@ export default function FieldManagementPage() {
     fetch(`/api/field/leaves${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => d && setLeavePending(d.pendingCount ?? 0));
   }, [canManage]);
   useEffect(() => { loadLeavePending(officeId); }, [loadLeavePending, officeId]);
+
+  // عدد الخصومات المعلّقة (للمدير) — بشارة على زر الخصومات
+  const loadDedPending = useCallback((office?: number | null) => {
+    if (!canManage) return;
+    const q = office != null ? `?officeId=${office}` : "";
+    fetch(`/api/field/adjustments${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => d && setDedPending(d.pendingCount ?? 0));
+  }, [canManage]);
+  useEffect(() => { loadDedPending(officeId); }, [loadDedPending, officeId]);
+
+  // مبدّل «محسوب بالوقت» لعمود (للمدير)
+  async function toggleTimeTracked(l: List) {
+    const next = !l.timeTracked;
+    setLists((xs) => xs.map((x) => (x.id === l.id ? { ...x, timeTracked: next } : x)));
+    const r = await fetch("/api/field/lists", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: l.id, timeTracked: next }) });
+    if (!r.ok) setLists((xs) => xs.map((x) => (x.id === l.id ? { ...x, timeTracked: !next } : x))); // تراجع عند الفشل
+  }
 
 
   const isTech = role === "technician";
@@ -200,9 +221,13 @@ export default function FieldManagementPage() {
               className="flex max-h-full w-[280px] shrink-0 flex-col rounded-xl bg-slate-100 shadow-lg"
             >
               <div className="flex items-center justify-between px-3 py-2">
-                <span className="font-bold text-slate-700">{l.name} <span className="text-xs font-normal text-slate-400">({listCards.length})</span></span>
-                {!isTech && (
+                <span className="font-bold text-slate-700">
+                  {l.name} <span className="text-xs font-normal text-slate-400">({listCards.length})</span>
+                  {l.timeTracked && <span className="ml-1 rounded bg-sky-100 px-1 py-0.5 text-[10px] font-semibold text-sky-700" title="عمود محسوب بالوقت">⏱</span>}
+                </span>
+                {canManage && (
                   <div className="flex gap-1 text-slate-400">
+                    <button onClick={() => toggleTimeTracked(l)} className={`rounded px-1 ${l.timeTracked ? "text-sky-600" : "hover:bg-slate-200"}`} title={l.timeTracked ? "إلغاء الاحتساب بالوقت" : "تفعيل الاحتساب بالوقت"}>⏱</button>
                     <button onClick={() => renameList(l)} className="rounded px-1 hover:bg-slate-200" title="إعادة تسمية">✏️</button>
                     <button onClick={() => deleteList(l)} className="rounded px-1 hover:bg-red-100" title="حذف">🗑️</button>
                   </div>
@@ -265,8 +290,8 @@ export default function FieldManagementPage() {
           );
         })}
 
-        {/* إضافة عمود — للمدير/المستخدم فقط (يُخفى عن الفني) */}
-        {!isTech && (
+        {/* إضافة عمود — للمدير فقط */}
+        {canManage && (
           <div className="w-[280px] shrink-0 rounded-xl bg-white/20 p-2">
             <input value={newList} onChange={(e) => setNewList(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addList()} placeholder="+ إضافة عمود جديد" className="w-full rounded-lg bg-white/90 px-3 py-2 text-sm outline-none" />
             {newList.trim() && <button onClick={addList} className="mt-1 w-full rounded-lg bg-white py-1.5 text-sm font-semibold text-mynet-blue">إضافة العمود</button>}
@@ -295,6 +320,17 @@ export default function FieldManagementPage() {
             <button onClick={() => setLeaveModal(true)} className="relative rounded-lg bg-amber-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-amber-600">
               📅 الإجازات
               {leavePending > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white ring-2 ring-black/25">{leavePending}</span>}
+            </button>
+          )}
+          {canManage && (
+            <button onClick={() => setDedModal(true)} className="relative rounded-lg bg-rose-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-rose-600">
+              💠 الخصومات
+              {dedPending > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-700 px-1 text-[11px] font-bold text-white ring-2 ring-black/25">{dedPending}</span>}
+            </button>
+          )}
+          {canManage && (
+            <button onClick={() => setTypesModal(true)} className="rounded-lg bg-sky-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-sky-700">
+              ⏱ الأنواع والأوقات
             </button>
           )}
           {officeId != null && (
@@ -375,6 +411,19 @@ export default function FieldManagementPage() {
                 {sel.postponedTo && <div className="mt-2 font-bold text-amber-600">📅 مؤجّلة إلى {fmtDateTime(sel.postponedTo)}</div>}
               </div>
             )}
+
+            {/* تنبيه الوقت المسموح — عمود محسوب بالوقت ونوع غير توصيل له وقت */}
+            {(() => {
+              const lst = lists.find((l) => l.id === sel.listId);
+              const ty = cardTypes.find((t) => t.name === sel.kind);
+              if (!lst?.timeTracked || ty?.deliveryOnly || !ty?.execMinutes) return null;
+              return (
+                <div className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700">
+                  ⏱ عمود محسوب بالوقت — الوقت المسموح لهذا النوع: <b>{ty.execMinutes} دقيقة</b>
+                  {(ty.overrunDeduction ?? 0) > 0 && <> · خصم التجاوز <b>{ty.overrunDeduction}</b>/دقيقة</>}
+                </div>
+              );
+            })()}
 
             {sel.done ? (
               <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
@@ -459,6 +508,23 @@ export default function FieldManagementPage() {
           officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"}
           onClose={() => setLeaveModal(false)}
           onChange={() => loadLeavePending(officeId)}
+        />
+      )}
+
+      {dedModal && (
+        <DeductionReview
+          officeId={officeId}
+          officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"}
+          onClose={() => setDedModal(false)}
+          onChange={() => loadDedPending(officeId)}
+        />
+      )}
+
+      {typesModal && (
+        <CardTypeManager
+          types={cardTypes}
+          onClose={() => setTypesModal(false)}
+          onChange={() => load(officeId)}
         />
       )}
 

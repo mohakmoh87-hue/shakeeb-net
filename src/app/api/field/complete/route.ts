@@ -6,6 +6,7 @@ import { getOrCreatePettyAccount } from "@/lib/field";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
+import { baghdadDayKey } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
 
@@ -66,16 +67,17 @@ export async function POST(request: Request) {
   if (card.technicianId == null) {
     return NextResponse.json({ error: "يجب توجيه البطاقة لفني قبل إنجازها" }, { status: 400 });
   }
-  if (!card.startedAt) {
-    return NextResponse.json({ error: "اضغط «بدء» قبل إنجاز البطاقة" }, { status: 400 });
-  }
-  // مدة الإنجاز = من وقت البدء حتى الآن
-  const durationSec = Math.max(0, Math.round((Date.now() - card.startedAt.getTime()) / 1000));
-
-  // نوع البطاقة: توصيل (مبلغ فقط) / تحويل (يوزر جديد إلزامي) / صيانة وغيرها (حقول كاملة)
-  const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false } });
+  // نوع البطاقة (معزول بالوكيل): توصيل (مبلغ فقط) / تحويل (يوزر جديد إلزامي) / صيانة وغيرها (حقول كاملة)
+  const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false, agentId: session.agentId ?? -1 } });
   const isDelivery = type?.deliveryOnly ?? card.kind === "توصيل";
   const isTransfer = card.kind === "تحويل";
+
+  // التوصيل مُستثنى من «بدء» واحتساب الوقت؛ ما عداه يتطلّب «بدء»
+  if (!isDelivery && !card.startedAt) {
+    return NextResponse.json({ error: "اضغط «بدء» قبل إنجاز البطاقة" }, { status: 400 });
+  }
+  // مدة الإنجاز = من وقت البدء حتى الآن (null للتوصيل بلا بدء)
+  const durationSec = card.startedAt ? Math.max(0, Math.round((Date.now() - card.startedAt.getTime()) / 1000)) : null;
 
   // التحقّق من الحقول الواجبة
   if (amount == null || amount <= 0) {
@@ -90,7 +92,7 @@ export async function POST(request: Request) {
 
   const tech = await prisma.technician.findUnique({ where: { id: card.technicianId } });
   // مكتب البطاقة (حيث تمّ العمل) — لعزل المبيعات/النثرية؛ يهمّ عند الدعم المؤقّت من مكتب آخر
-  const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } });
+  const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true, timeTracked: true } });
   const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
   const towerId = board?.towerId ?? tech?.towerId ?? null;
 
@@ -188,6 +190,27 @@ export async function POST(request: Request) {
     });
   });
 
+  // ===== خصم معلّق عند تجاوز الوقت (عمود «محسوب بالوقت» + نوع له وقت مسموح + غير توصيل) =====
+  let overrunResult: { amount: number; overrunMin: number } | null = null;
+  if (!isDelivery && list?.timeTracked && durationSec != null && (type?.execMinutes ?? 0) > 0 && (type?.overrunDeduction ?? 0) > 0) {
+    const overSec = durationSec - type!.execMinutes! * 60;
+    if (overSec > 0) {
+      const overrunMin = Math.ceil(overSec / 60);
+      const amount = overrunMin * type!.overrunDeduction!;
+      if (amount > 0) {
+        await prisma.adjustment.create({
+          data: {
+            technicianId: card.technicianId, agentId: session.agentId ?? null, towerId,
+            kind: "deduction", source: "overrun", amount, overrunMin,
+            reason: `تجاوز وقت «${card.kind}» ${overrunMin} دقيقة (تكت #${cardId})`,
+            cardId, status: "pending", dayKey: baghdadDayKey(new Date()),
+          },
+        }).catch(() => {}); // لا يُفشل الإنجاز إن تعذّر إنشاء الخصم
+        overrunResult = { amount, overrunMin };
+      }
+    }
+  }
+
   // رسالة تأكيد استخدام المكافأة (بعد الإنجاز، أفضل جهد)
   if (rewardSubId && rewardDiscount > 0) {
     const rs = await prisma.subscriber.findUnique({ where: { id: rewardSubId }, select: { phone: true, waEnabled: true, name: true, rewardBalance: true } });
@@ -268,5 +291,5 @@ export async function POST(request: Request) {
     // تجاهل: الإنجاز تمّ بنجاح بغضّ النظر عن الرسالة/السجل
   }
 
-  return NextResponse.json({ ok: true, salesShare, pettyShare, rewardDiscount, hasPhoto: !!photo, matchedSubscriber, messaged });
+  return NextResponse.json({ ok: true, salesShare, pettyShare, rewardDiscount, hasPhoto: !!photo, matchedSubscriber, messaged, overrun: overrunResult });
 }

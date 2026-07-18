@@ -16,7 +16,8 @@ export async function POST(request: Request) {
       listId: Number(b.listId),
       title: String(b.title).trim(),
       position: count,
-      kind: b.kind === "delivery" ? "delivery" : "maintenance",
+      // نوع البطاقة = اسم الفئة (CardType) كما اختاره المستخدم — لا يُقسَر إلى maintenance/delivery
+      kind: b.kind ? String(b.kind).trim() : "صيانة",
       assignee: b.assignee ? String(b.assignee) : null,
       technicianId: b.technicianId != null ? Number(b.technicianId) : null,
       dueDate: b.dueDate ? new Date(b.dueDate) : null,
@@ -41,7 +42,7 @@ export async function PATCH(request: Request) {
   if ("description" in b) data.description = b.description || null;
   if ("assignee" in b) data.assignee = b.assignee || null;
   if ("technicianId" in b) data.technicianId = b.technicianId != null ? Number(b.technicianId) : null;
-  if ("kind" in b) data.kind = b.kind === "delivery" ? "delivery" : "maintenance";
+  if ("kind" in b && b.kind) data.kind = String(b.kind).trim();
   if ("label" in b) data.label = b.label || null;
   if ("dueDate" in b) data.dueDate = b.dueDate ? new Date(b.dueDate) : null;
   if (typeof b.listId === "number") data.listId = b.listId;
