@@ -10,7 +10,7 @@ if (!process.env.AUTH_SECRET && process.env.NODE_ENV === "production") {
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? "dev-secret-change-me",
 );
-const PUBLIC_PATHS = ["/login", "/reset"];
+const PUBLIC_PATHS = ["/login", "/reset", "/about"];
 
 // يعيد { authed, isTech } من توكن الجلسة (المستخدم أو الفني)
 async function readSession(req: NextRequest): Promise<{ authed: boolean; isTech: boolean }> {

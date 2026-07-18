@@ -141,6 +141,13 @@ export default function LoginPage() {
           >
             🎁 تجربة مجانية لمدة أسبوع
           </button>
+          {/* الصفحة التعريفية — تفتح بتبويب جديد وتبقى صفحة الدخول */}
+          <a
+            href="/about" target="_blank" rel="noopener"
+            className="mt-2 block w-full rounded-lg border-2 border-blue-200 bg-blue-50 py-2.5 text-center font-bold text-blue-700 transition hover:bg-blue-100"
+          >
+            ✨ اكتشف مزايا شكيب نت
+          </a>
         </div>
 
         {ownerPhone && (
