@@ -7,7 +7,7 @@ import { jwtVerify } from "jose";
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? "dev-secret-change-me",
 );
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/reset"];
 
 async function hasValidSession(req: NextRequest): Promise<boolean> {
   const token = req.cookies.get("mynet_session")?.value;
