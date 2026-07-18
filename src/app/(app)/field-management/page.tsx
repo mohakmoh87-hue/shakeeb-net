@@ -67,6 +67,7 @@ export default function FieldManagementPage() {
   const [myOfficeId, setMyOfficeId] = useState<number | null>(null);
   const [role, setRole] = useState<string>("");
   const [myName, setMyName] = useState("");
+  const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
   const [leaveModal, setLeaveModal] = useState(false);
@@ -89,8 +90,8 @@ export default function FieldManagementPage() {
     });
   }, []);
   useEffect(() => { load(); }, [load]);
-  // اسم الدور الحالي (للفني: اسمه) — لعرضه في الشريط السفلي
-  useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => d?.name && setMyName(d.name)); }, []);
+  // اسم الدور الحالي (للفني: اسمه ومعرّفه) — لعرضه في الشريط السفلي وللتحويل على نفسه
+  useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.name) setMyName(d.name); if (d?.technicianId != null) setMyTechId(d.technicianId); }); }, []);
 
   // عدد طلبات الإجازة المعلّقة (للمدير) — بشارة على زر الإجازات
   const loadLeavePending = useCallback((office?: number | null) => {
@@ -208,6 +209,17 @@ export default function FieldManagementPage() {
     setCards((x) => x.filter((c) => c.id !== sel.id));
     const id = sel.id; setSel(null);
     await fetch(`/api/field/cards?id=${id}`, { method: "DELETE" });
+  }
+  // الفني يحوّل بطاقةً على نفسه (كانت على فنيٍّ آخر في نفس مكتبه)
+  async function claimCard() {
+    if (!sel || myTechId == null) return;
+    if (!confirm(`تحويل بطاقة «${sel.title}» عليك؟ ستصبح مسؤولاً عنها بدل ${sel.assignee ?? "الفني الحالي"}.`)) return;
+    const r = await fetch("/api/field/claim-card", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cardId: sel.id }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.card) {
+      const c = { ...sel, technicianId: d.card.technicianId, assignee: d.card.assignee };
+      setSel(c); setCards((x) => x.map((y) => (y.id === c.id ? c : y)));
+    } else alert(d.error ?? "تعذّر التحويل");
   }
 
   const isDeliveryKind = (name: string) => cardTypes.find((t) => t.name === name)?.deliveryOnly ?? name === "توصيل";
@@ -447,7 +459,17 @@ export default function FieldManagementPage() {
             </div>
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">الفني المسؤول</label>
-            {technicians.length > 0 ? (
+            {isTech ? (
+              // الفني: يرى المسؤول، ويستطيع تحويل البطاقة على نفسه إن كانت على فنيٍّ آخر بمكتبه
+              <div className="mb-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  👤 {sel.assignee ?? "بدون فني"}{sel.technicianId != null && sel.technicianId === myTechId ? " (أنت)" : ""}
+                </div>
+                {!sel.done && sel.technicianId != null && sel.technicianId !== myTechId && (
+                  <button onClick={claimCard} className="mt-2 w-full rounded-lg bg-mynet-blue py-2.5 text-sm font-bold text-white hover:bg-mynet-blue-dark">↪️ حوّلها لي</button>
+                )}
+              </div>
+            ) : technicians.length > 0 ? (
               <select
                 value={sel.technicianId ?? ""}
                 onChange={(e) => {
@@ -468,16 +490,15 @@ export default function FieldManagementPage() {
             <label className="mb-1 block text-xs font-semibold text-slate-500">تاريخ الاستحقاق</label>
             <input type="date" value={sel.dueDate ? sel.dueDate.slice(0, 10) : ""} onChange={(e) => saveCard({ dueDate: e.target.value || null })} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" dir="ltr" />
 
-            {/* المحتوى (التفاصيل) لا يظهر إلا بعد ضغط «بدء» */}
+            {/* المحتوى: يُعرض دائماً (يشاهده الفني قبل البدء)؛ التعديل بعد «بدء» فقط، والبدء لا يزال شرطاً للإنجاز */}
+            <label className="mb-1 block text-xs font-semibold text-slate-500">الوصف / التفاصيل</label>
             {(sel.startedAt || sel.done) ? (
-              <>
-                <label className="mb-1 block text-xs font-semibold text-slate-500">الوصف / التفاصيل</label>
-                <textarea value={sel.description ?? ""} onChange={(e) => setSel({ ...sel, description: e.target.value })} onBlur={() => saveCard({ description: sel.description })} rows={4} placeholder="تفاصيل الطلب / الصيانة / التنصيب..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </>
+              <textarea value={sel.description ?? ""} onChange={(e) => setSel({ ...sel, description: e.target.value })} onBlur={() => saveCard({ description: sel.description })} rows={4} placeholder="تفاصيل الطلب / الصيانة / التنصيب..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             ) : (
-              <div className="mb-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-center text-sm text-slate-400">
-                🔒 محتوى البطاقة مخفي — اضغط «بدء العمل» لعرض التفاصيل وبدء احتساب الوقت.
+              <div className="mb-3 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+                {sel.description?.trim() ? sel.description : <span className="text-slate-400">لا توجد تفاصيل</span>}
                 {sel.postponedTo && <div className="mt-2 font-bold text-amber-600">📅 مؤجّلة إلى {fmtDateTime(sel.postponedTo)}</div>}
+                {canOperate && <div className="mt-2 text-[11px] text-slate-400">اضغط «بدء العمل» لبدء احتساب الوقت والتمكّن من التعديل والإنجاز.</div>}
               </div>
             )}
 

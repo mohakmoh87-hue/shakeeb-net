@@ -18,6 +18,9 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const subscriberId = Number(body?.subscriberId);
   const operation = String(body?.operation ?? "").trim();
+  // اختياريان: رقم هاتف إضافي + ملاحظة يكتبهما المستخدم في مربع الحوار (يُضافان للبطاقة)
+  const extraPhone = String(body?.extraPhone ?? "").trim().slice(0, 40);
+  const note = String(body?.note ?? "").trim().slice(0, 1000);
   if (!subscriberId) return NextResponse.json({ error: "معرّف المشترك مطلوب" }, { status: 400 });
   if (!OPERATIONS.includes(operation as (typeof OPERATIONS)[number])) {
     return NextResponse.json({ error: "عملية غير معروفة" }, { status: 400 });
@@ -44,12 +47,14 @@ export async function POST(request: Request) {
     list = await prisma.taskList.create({ data: { boardId: board.id, name: operation, position: count } });
   }
 
-  // البطاقة: الاسم عنواناً، والهاتف واليوزر في الوصف
+  // البطاقة: الاسم عنواناً، والهاتف واليوزر في الوصف + الهاتف الإضافي والملاحظة (إن كُتبا)
   const title = sub.name?.trim() || sub.netUser?.trim() || `مشترك #${sub.id}`;
   const descLines = [
     `📱 الهاتف: ${sub.phone?.trim() || "—"}`,
     `👤 اليوزر: ${sub.netUser?.trim() || "—"}`,
   ];
+  if (extraPhone) descLines.push(`📞 هاتف إضافي: ${extraPhone}`);
+  if (note) descLines.push(`📝 ملاحظة: ${note}`);
   const position = await prisma.taskCard.count({ where: { listId: list.id, isDeleted: false } });
   const card = await prisma.taskCard.create({
     // نوع البطاقة يُؤخذ تلقائياً من العملية (توصيل/تحويل/صيانة/اعادة)

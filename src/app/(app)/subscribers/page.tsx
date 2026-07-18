@@ -85,17 +85,22 @@ export default function SubscribersPage() {
   const [opsSub, setOpsSub] = useState<Subscriber | null>(null);
   const [opsBusy, setOpsBusy] = useState(false);
   const [opsMsg, setOpsMsg] = useState("");
+  const [opsChosen, setOpsChosen] = useState<string | null>(null); // العملية المختارة (تُفتح نافذة الهاتف/الملاحظة)
+  const [opsPhone, setOpsPhone] = useState(""); // رقم هاتف إضافي (اختياري)
+  const [opsNote, setOpsNote] = useState(""); // ملاحظة (اختيارية)
 
-  // إرسال المشترك كبطاقة إلى عمود العملية في لوحة إدارة الفنيين
+  function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); }
+
+  // إرسال المشترك كبطاقة إلى عمود العملية — مع الهاتف الإضافي والملاحظة (إن كُتبا)
   async function sendToField(operation: string) {
     if (!opsSub) return;
     setOpsBusy(true); setOpsMsg("");
     const res = await fetch("/api/field/from-subscriber", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriberId: opsSub.id, operation }),
+      body: JSON.stringify({ subscriberId: opsSub.id, operation, extraPhone: opsPhone.trim() || undefined, note: opsNote.trim() || undefined }),
     });
     setOpsBusy(false);
-    if (res.ok) { setOpsMsg(`✓ تمت إضافة «${opsSub.name ?? ""}» إلى عمود «${operation}» في إدارة الفنيين`); setOpsSub(null); }
+    if (res.ok) { setOpsMsg(`✓ تمت إضافة «${opsSub.name ?? ""}» إلى عمود «${operation}» في إدارة الفنيين`); closeOps(); }
     else { const d = await res.json().catch(() => ({})); setOpsMsg(d.error ?? "تعذّرت الإضافة"); }
   }
 
@@ -557,24 +562,46 @@ export default function SubscribersPage() {
 
       {/* قائمة عمليات المشترك → إضافة بطاقة في لوحة إدارة الفنيين */}
       {opsSub && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={() => setOpsSub(null)}>
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={closeOps}>
           <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-1 text-center text-lg font-bold text-slate-800">عمليات المشترك</div>
             <div className="mb-4 text-center text-sm text-slate-500">{opsSub.name ?? opsSub.netUser ?? `مشترك #${opsSub.id}`}</div>
-            <div className="grid grid-cols-2 gap-2">
-              {FIELD_OPS.map((op) => (
-                <button
-                  key={op.key}
-                  disabled={opsBusy}
-                  onClick={() => sendToField(op.key)}
-                  className="flex flex-col items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 py-4 font-semibold text-slate-700 hover:border-mynet-blue hover:bg-blue-50 disabled:opacity-50"
-                >
-                  <span className="text-2xl">{op.icon}</span>
-                  <span>{op.key}</span>
-                </button>
-              ))}
-            </div>
-            <button onClick={() => setOpsSub(null)} className="mt-4 w-full rounded-lg bg-slate-100 py-2 text-slate-600 hover:bg-slate-200">إلغاء</button>
+
+            {!opsChosen ? (
+              // الخطوة 1: اختيار نوع العملية
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  {FIELD_OPS.map((op) => (
+                    <button
+                      key={op.key}
+                      disabled={opsBusy}
+                      onClick={() => { setOpsChosen(op.key); setOpsPhone(""); setOpsNote(""); }}
+                      className="flex flex-col items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 py-4 font-semibold text-slate-700 hover:border-mynet-blue hover:bg-blue-50 disabled:opacity-50"
+                    >
+                      <span className="text-2xl">{op.icon}</span>
+                      <span>{op.key}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={closeOps} className="mt-4 w-full rounded-lg bg-slate-100 py-2 text-slate-600 hover:bg-slate-200">إلغاء</button>
+              </>
+            ) : (
+              // الخطوة 2: هاتف إضافي + ملاحظة (اختياريان) — الفراغ يُنشئ البطاقة كالمعتاد
+              <>
+                <div className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-center text-sm font-semibold text-mynet-blue">
+                  {FIELD_OPS.find((o) => o.key === opsChosen)?.icon} {opsChosen}
+                </div>
+                <label className="mb-1 block text-xs font-semibold text-slate-500">رقم هاتف إضافي (اختياري)</label>
+                <input value={opsPhone} onChange={(e) => setOpsPhone(e.target.value)} dir="ltr" placeholder={opsSub.phone ? `الأصلي: ${opsSub.phone}` : "07..."} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
+                <label className="mb-1 block text-xs font-semibold text-slate-500">ملاحظة (اختيارية)</label>
+                <textarea value={opsNote} onChange={(e) => setOpsNote(e.target.value)} rows={3} placeholder="تفاصيل أو ملاحظة للفني..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
+                <p className="mb-3 text-[11px] text-slate-400">تُضاف مع رقم المشترك الأصلي إلى البطاقة. اتركها فارغة واضغط موافق لإنشاء البطاقة كالمعتاد.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => sendToField(opsChosen)} disabled={opsBusy} className="flex-1 rounded-lg bg-mynet-blue py-2.5 font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-50">{opsBusy ? "..." : "موافق"}</button>
+                  <button onClick={() => setOpsChosen(null)} disabled={opsBusy} className="rounded-lg bg-slate-100 px-4 py-2.5 font-semibold text-slate-600 hover:bg-slate-200">رجوع</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
