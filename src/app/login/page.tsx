@@ -9,12 +9,6 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [ownerPhone, setOwnerPhone] = useState("");
-  // وضع الدخول: موظف/مدير أو فني
-  const [mode, setMode] = useState<"user" | "tech">("user");
-  const [techUser, setTechUser] = useState("");
-  const [techCode, setTechCode] = useState("");
-  const [techErr, setTechErr] = useState("");
-  const [techLoading, setTechLoading] = useState(false);
   // نسيت كلمة السر
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotUser, setForgotUser] = useState("");
@@ -24,18 +18,6 @@ export default function LoginPage() {
   useEffect(() => {
     fetch("/api/public/contact").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.phone) setOwnerPhone(d.phone); });
   }, []);
-
-  async function techLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setTechErr(""); setTechLoading(true);
-    try {
-      const res = await fetch("/api/field/tech-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: techUser.trim(), code: techCode }) });
-      const data = await res.json();
-      if (!res.ok) { setTechErr(data.error ?? "تعذّر الدخول"); return; }
-      window.location.href = "/field-management";
-    } catch { setTechErr("تعذّر الاتصال بالخادم"); }
-    finally { setTechLoading(false); }
-  }
 
   async function sendForgot(e: React.FormEvent) {
     e.preventDefault();
@@ -68,8 +50,8 @@ export default function LoginPage() {
         setError(data.error ?? "فشل تسجيل الدخول");
         return;
       }
-      // إعادة تحميل كاملة لتصفير كل حالة العميل (بما فيها كاش الصلاحيات) للمستخدم الجديد
-      window.location.href = "/dashboard";
+      // إعادة تحميل كاملة لتصفير حالة العميل، والتوجيه حسب الدور (فني → إدارة الفنيين، غيره → لوحته)
+      window.location.href = data.redirect ?? "/dashboard";
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {
@@ -104,28 +86,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* اختيار نوع الدخول */}
-        <div className="mb-5 grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
-          <button type="button" onClick={() => setMode("user")} className={`rounded-lg py-2 text-sm font-bold transition ${mode === "user" ? "bg-white text-blue-700 shadow" : "text-slate-500"}`}>موظف / مدير</button>
-          <button type="button" onClick={() => setMode("tech")} className={`rounded-lg py-2 text-sm font-bold transition ${mode === "tech" ? "bg-white text-emerald-700 shadow" : "text-slate-500"}`}>👷 فني</button>
-        </div>
-
-        {mode === "tech" ? (
-          <form onSubmit={techLogin} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">اسم المستخدم</label>
-              <input type="text" value={techUser} onChange={(e) => setTechUser(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-left outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200" autoComplete="username" />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">رمز الدخول</label>
-              <input type="password" value={techCode} onChange={(e) => setTechCode(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-left outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200" autoComplete="current-password" />
-            </div>
-            {techErr && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{techErr}</div>}
-            <button type="submit" disabled={techLoading} className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60">
-              {techLoading ? "جاري الدخول..." : "دخول الفني"}
-            </button>
-          </form>
-        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -170,10 +130,8 @@ export default function LoginPage() {
             <button type="button" onClick={() => { setForgotOpen(true); setForgotMsg(""); setForgotUser(username); }} className="text-sm text-blue-600 hover:underline">نسيت كلمة السر؟</button>
           </div>
         </form>
-        )}
 
-        {/* تجربة أسبوع (للموظف/المدير فقط) */}
-        {mode === "user" && (
+        {/* تجربة أسبوع (لحسابات الوكلاء الجديدة) */}
         <div className="mt-5 border-t border-slate-200 pt-4 text-center">
           <p className="mb-2 text-sm text-slate-500">أول مرة؟ جرّب النظام مجاناً</p>
           <button
@@ -183,7 +141,6 @@ export default function LoginPage() {
             🎁 تجربة مجانية لمدة أسبوع
           </button>
         </div>
-        )}
 
         {ownerPhone && (
           <div className="mt-5 border-t border-slate-200 pt-4 text-center text-sm text-slate-500">

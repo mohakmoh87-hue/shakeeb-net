@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { verifyPassword, setSession } from "@/lib/auth";
+import { verifyPassword, setSession, setTechSession } from "@/lib/auth";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
 import type { Permission } from "@/lib/rbac";
 
 const schema = z.object({
@@ -9,7 +10,21 @@ const schema = z.object({
   password: z.string().min(1, "كلمة السر مطلوبة"),
 });
 
+// يتحقّق من فعالية الوكيل (غير محذوف/معتمد/غير منتهٍ) — يُشارَك بين دخول المستخدم والفني.
+async function agentBlockReason(agentId: number | null): Promise<string | null> {
+  if (agentId == null) return null;
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { planExpiry: true, isDeleted: true, approved: true } });
+  if (!agent || agent.isDeleted) return "الحساب غير مفعّل — تواصل مع الإدارة";
+  if (!agent.approved) return "حسابك قيد المراجعة — بانتظار موافقة الإدارة على تفعيله";
+  if (agent.planExpiry && agent.planExpiry.getTime() < Date.now()) return "انتهت فترة اشتراكك — تواصل مع الإدارة للتجديد";
+  return null;
+}
+
 export async function POST(request: Request) {
+  // تحديد معدّل عام لمنع تخمين كلمات السر/الرموز (يحمي دخول المستخدم والفني معاً)
+  if (!rateLimit(`login:${clientIp(request)}`, 12, 60_000)) {
+    return NextResponse.json({ error: "محاولات كثيرة — انتظر دقيقة" }, { status: 429 });
+  }
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -22,7 +37,19 @@ export async function POST(request: Request) {
   const { username, password } = parsed.data;
   const user = await prisma.user.findUnique({ where: { username } });
 
-  if (!user || user.isDeleted || !user.isActive) {
+  // دخول موحّد: إن لم يكن اسم المستخدم لمستخدمٍ (اليوزر فريد على مستوى النظام) فقد يكون فنّياً.
+  if (!user) {
+    const tech = await prisma.technician.findFirst({ where: { username: username.trim(), isDeleted: false } });
+    if (tech?.code && (await verifyPassword(password, tech.code))) {
+      const blocked = await agentBlockReason(tech.agentId);
+      if (blocked) return NextResponse.json({ error: blocked }, { status: 403 });
+      await setTechSession({ kind: "technician", technicianId: tech.id, name: tech.name, username: tech.username ?? "", agentId: tech.agentId, towerId: tech.towerId });
+      return NextResponse.json({ ok: true, redirect: "/field-management" });
+    }
+    return NextResponse.json({ error: "اسم المستخدم أو كلمة السر غير صحيحة" }, { status: 401 });
+  }
+
+  if (user.isDeleted || !user.isActive) {
     return NextResponse.json(
       { error: "اسم المستخدم أو كلمة السر غير صحيحة" },
       { status: 401 },
@@ -61,17 +88,9 @@ export async function POST(request: Request) {
   }
 
   // منع دخول وكيل منتهي الاشتراك (يبقى المالك ومستخدمو النظام بلا وكيل غير متأثّرين)
-  if (!user.isOwner && user.agentId != null) {
-    const agent = await prisma.agent.findUnique({ where: { id: user.agentId }, select: { planExpiry: true, isDeleted: true, approved: true } });
-    if (!agent || agent.isDeleted) {
-      return NextResponse.json({ error: "الحساب غير مفعّل — تواصل مع الإدارة" }, { status: 403 });
-    }
-    if (!agent.approved) {
-      return NextResponse.json({ error: "حسابك قيد المراجعة — بانتظار موافقة الإدارة على تفعيله" }, { status: 403 });
-    }
-    if (agent.planExpiry && agent.planExpiry.getTime() < Date.now()) {
-      return NextResponse.json({ error: "انتهت فترة اشتراكك — تواصل مع الإدارة للتجديد" }, { status: 403 });
-    }
+  if (!user.isOwner) {
+    const blocked = await agentBlockReason(user.agentId);
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 403 });
   }
 
   await setSession({
@@ -90,5 +109,6 @@ export async function POST(request: Request) {
     data: { userId: user.id, action: "LOGIN", entity: "user" },
   });
 
-  return NextResponse.json({ ok: true });
+  // توجيه حسب الدور: المالك للوحته، وغيره للوحة التحكم
+  return NextResponse.json({ ok: true, redirect: user.isOwner ? "/owner" : "/dashboard" });
 }
