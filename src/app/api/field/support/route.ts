@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { resolveFieldOffice, canOperateOffice, getOrCreateBoard, endSupport } from "@/lib/field";
+import { resolveFieldOffice, canOperateOfficeIn, getOrCreateBoard, endSupport } from "@/lib/field";
 import { agentTowerIds } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
@@ -50,13 +50,13 @@ export async function POST(request: Request) {
   const technicianId = Number(b?.technicianId);
   const officeId = resolveFieldOffice(s, b?.officeId != null ? Number(b.officeId) : null);
   if (!technicianId || officeId == null) return NextResponse.json({ error: "بيانات ناقصة" }, { status: 400 });
-  // الموظف يطلب الدعم لمكتبه فقط؛ المدير لأي مكتب من وكيله
-  if (!canOperateOffice(s, officeId)) return NextResponse.json({ error: "لا يمكنك طلب دعم لمكتب آخر" }, { status: 403 });
+  // الموظف يطلب الدعم لمكتبه فقط؛ المدير لأي مكتب من وكيله (لا مكاتب وكلاء آخرين)
+  const agentTowers = await agentTowerIds(s);
+  if (!canOperateOfficeIn(s, officeId, agentTowers)) return NextResponse.json({ error: "لا يمكنك طلب دعم لمكتب آخر" }, { status: 403 });
 
   const tech = await prisma.technician.findFirst({ where: { id: technicianId, isDeleted: false } });
   if (!tech) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
   if (tech.towerId === officeId) return NextResponse.json({ error: "الفني من نفس المكتب" }, { status: 400 });
-  const agentTowers = await agentTowerIds(s);
   if (tech.towerId != null && !agentTowers.includes(tech.towerId)) return NextResponse.json({ error: "الفني لا يتبع حسابك" }, { status: 403 });
 
   const kind = b?.kind === "cards" ? "cards" : "day";
@@ -91,8 +91,14 @@ export async function DELETE(request: Request) {
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const technicianId = Number(new URL(request.url).searchParams.get("technicianId"));
   if (!technicianId) return NextResponse.json({ error: "technicianId مطلوب" }, { status: 400 });
-  const tech = await prisma.technician.findUnique({ where: { id: technicianId }, select: { supportTowerId: true } });
-  if (tech?.supportTowerId != null && !canOperateOffice(s, tech.supportTowerId)) {
+  const tech = await prisma.technician.findUnique({ where: { id: technicianId }, select: { towerId: true, supportTowerId: true } });
+  if (!tech) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
+  // عزل الوكيل: لا إنهاء دعم فنيٍّ لا يتبع مكاتب وكيل المستخدم
+  const agentTowers = await agentTowerIds(s);
+  if (tech.towerId != null && !agentTowers.includes(tech.towerId)) {
+    return NextResponse.json({ error: "الفني لا يتبع حسابك" }, { status: 403 });
+  }
+  if (tech.supportTowerId != null && !canOperateOfficeIn(s, tech.supportTowerId, agentTowers)) {
     return NextResponse.json({ error: "لا يمكنك إنهاء دعم مكتب آخر" }, { status: 403 });
   }
   await endSupport(technicianId);

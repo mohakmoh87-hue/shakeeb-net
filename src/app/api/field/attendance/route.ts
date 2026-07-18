@@ -45,6 +45,10 @@ export async function GET(request: Request) {
   const reqOffice = Number(new URL(request.url).searchParams.get("officeId")) || null;
   const key = baghdadDayKey(new Date());
   const agentTowers = await agentTowerIds(session);
+  // عزل الوكيل: لا يُعرض حضور مكتبٍ لا يتبع وكيل المستخدم
+  if (reqOffice && !agentTowers.includes(reqOffice)) {
+    return NextResponse.json({ error: "لا يمكنك عرض حضور مكتب آخر" }, { status: 403 });
+  }
   const where = reqOffice
     ? { towerId: reqOffice, isDeleted: false }
     : { towerId: { in: agentTowers.length ? agentTowers : [-1] }, isDeleted: false };

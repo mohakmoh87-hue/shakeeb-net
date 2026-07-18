@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { agentTowerIds } from "@/lib/guard";
-import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOffice } from "@/lib/field";
+import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOfficeIn } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -57,8 +57,8 @@ export async function GET(request: Request) {
     ...data, offices, officeId,
     isManager: manager,
     canManage: can(session, "field.manage"),
-    // الكتابة على المكتب المعروض: المدير لأي مكتب، والموظف لمكتبه فقط
-    canOperate: canOperateOffice(session, officeId),
+    // الكتابة على المكتب المعروض: المدير لمكاتب وكيله، والموظف لمكتبه فقط
+    canOperate: canOperateOfficeIn(session, officeId, agentTowers),
     myOfficeId: session.towerId ?? null,
     role: manager ? "manager" : "office",
   });

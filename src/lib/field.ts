@@ -34,10 +34,19 @@ export async function cardOfficeId(cardId: number): Promise<number | null> {
   const card = await prisma.taskCard.findUnique({ where: { id: cardId }, select: { listId: true } });
   return card ? listOfficeId(card.listId) : null;
 }
-// هل يجوز للمستخدم الكتابة على مكتبٍ ما؟ المدير (field.manage) لأي مكتب؛ الموظف لمكتبه فقط (مشاهدة لغيره).
-export function canOperateOffice(session: SessionPayload, towerId: number | null): boolean {
-  if (can(session, "field.manage")) return true;
-  return towerId != null && towerId === (session.towerId ?? null);
+// هل يجوز للمستخدم الكتابة على مكتبٍ ما؟ ضمن وكيله حصراً (عزل المستأجر):
+// المدير (field.manage) لكل مكاتب وكيله فقط؛ الموظف لمكتبه فقط (مشاهدة لغيره).
+// النسخة المتزامنة لمن جلب مكاتب الوكيل مسبقاً (agentTowerIds مرّة واحدة).
+export function canOperateOfficeIn(session: SessionPayload, towerId: number | null, agentTowers: number[]): boolean {
+  if (towerId == null) return false;
+  if (!can(session, "field.manage")) return towerId === (session.towerId ?? null);
+  return agentTowers.includes(towerId);
+}
+export async function canOperateOffice(session: SessionPayload, towerId: number | null): Promise<boolean> {
+  if (towerId == null) return false;
+  // الموظف لا يحتاج جلب مكاتب الوكيل — مكتبه فقط
+  if (!can(session, "field.manage")) return towerId === (session.towerId ?? null);
+  return (await agentTowerIds(session)).includes(towerId);
 }
 export async function canOperateCard(session: SessionPayload, cardId: number): Promise<boolean> {
   return canOperateOffice(session, await cardOfficeId(cardId));
