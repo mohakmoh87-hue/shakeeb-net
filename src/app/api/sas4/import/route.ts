@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, ownsTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 
 const schema = z.object({
@@ -37,6 +37,11 @@ export async function POST(request: Request) {
   }
   const { towerId, users } = parsed.data;
 
+  // عزل المستأجر: لا يُستورَد إلا إلى مكتب يتبع وكيل المستخدم
+  if (!(await ownsTower(g.session, towerId))) {
+    return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+  }
+
   // المستوردون سابقاً (لتفادي التكرار)
   const existing = await prisma.subscriber.findMany({
     where: { sasId: { in: users.map((u) => u.sasId) } },
@@ -50,7 +55,7 @@ export async function POST(request: Request) {
   ];
   // الربط بفئة موجودة مسبقاً فقط (لا يُنشئ فئات تلقائياً — الفئات تُضاف يدوياً)
   const existingPkgs = await prisma.package.findMany({
-    where: { isDeleted: false, name: { in: tierNames } },
+    where: { isDeleted: false, name: { in: tierNames }, agentId: g.session?.agentId ?? -1 }, // عزل: باقات الوكيل فقط
     select: { id: true, name: true },
   });
   const pkgMap = new Map(existingPkgs.map((p) => [p.name, p.id]));

@@ -7,16 +7,17 @@ export async function GET() {
   const g = await guard("inventory.manage");
   if (g.error) return g.error;
 
+  const agentId = g.session?.agentId ?? -1; // عزل: باقات وكروت وكيل المستخدم فقط
   const [packages, grouped] = await Promise.all([
     prisma.package.findMany({
-      where: { isDeleted: false },
+      where: { isDeleted: false, agentId },
       select: { id: true, name: true, priceDinar: true },
       orderBy: { id: "asc" },
     }),
     prisma.rechargeCard.groupBy({
       by: ["packageId"],
       _count: { _all: true },
-      where: { useDate: null },
+      where: { useDate: null, agentId },
     }),
   ]);
 

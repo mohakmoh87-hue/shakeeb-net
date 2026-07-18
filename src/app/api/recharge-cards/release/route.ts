@@ -14,9 +14,9 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
 
-  // يُرجَع فقط إن لم يُستخدم نهائياً
+  // يُرجَع فقط إن لم يُستخدم نهائياً — وضمن كروت وكيل المستخدم (عزل)
   await prisma.rechargeCard.updateMany({
-    where: { id: parsed.data.cardId, useDate: null },
+    where: { id: parsed.data.cardId, useDate: null, agentId: g.session?.agentId ?? -1 },
     data: { reservedBy: null, reservedAt: null },
   });
   return NextResponse.json({ ok: true });

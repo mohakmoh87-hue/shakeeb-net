@@ -21,7 +21,8 @@ export async function POST(request: Request) {
   }
 
   const res = await prisma.rechargeCard.deleteMany({
-    where: { id: { in: parsed.data.ids }, useDate: null },
+    // عزل: لا يُحذف إلا كروت وكيل المستخدم غير المستخدمة
+    where: { id: { in: parsed.data.ids }, useDate: null, agentId: g.session?.agentId ?? -1 },
   });
   return NextResponse.json({ ok: true, deleted: res.count });
 }

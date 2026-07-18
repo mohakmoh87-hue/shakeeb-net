@@ -18,7 +18,7 @@ export async function GET() {
     select: { id: true, serial: true, packageId: true, price: true, addDate: true },
   });
   const packages = await prisma.package.findMany({
-    where: { isDeleted: false },
+    where: { isDeleted: false, agentId: session.agentId ?? -1 }, // عزل: باقات وكيل المستخدم
     select: { id: true, name: true },
   });
   const nameById = new Map(packages.map((p) => [p.id, p.name]));

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, guardAny, towerScope } from "@/lib/guard";
+import { guard, guardAny, towerScope, ownsTower } from "@/lib/guard";
 
 const schema = z.object({
   name: z.string().min(1, "اسم الحساب مطلوب"),
@@ -41,6 +41,10 @@ export async function POST(request: Request) {
     g.session && !g.session.isAdmin && g.session.towerId != null
       ? g.session.towerId
       : parsed.data.towerId ?? null;
+  // عزل المستأجر: المكتب المحدّد يجب أن يتبع وكيل المستخدم
+  if (towerId != null && !(await ownsTower(g.session, towerId))) {
+    return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+  }
   const created = await prisma.account.create({ data: { ...parsed.data, towerId } });
   return NextResponse.json(created, { status: 201 });
 }

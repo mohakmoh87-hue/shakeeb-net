@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { guard } from "@/lib/guard";
+import { guard, ownsTower } from "@/lib/guard";
 import { relayRequest } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,7 @@ export async function GET(request: Request) {
   const officeId = Number(url.searchParams.get("officeId"));
   const msgId = url.searchParams.get("msgId");
   if (!officeId || !msgId) return NextResponse.json({ error: "بيانات ناقصة" }, { status: 400 });
+  if (!(await ownsTower(g.session, officeId))) return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   // مهلة ضمن حدّ دالة Vercel (لا نتجاوز ~10ث وإلا تُقطَع الدالة فيظهر خطأ الجلب)
   const r = await relayRequest(officeId, "media", { msgId }, 9000);
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });

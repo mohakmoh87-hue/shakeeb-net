@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { guard } from "@/lib/guard";
+import { guard, ownsTower } from "@/lib/guard";
 import { relayRequest } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,7 @@ export async function GET(request: Request) {
   if (g.error) return g.error;
   const officeId = Number(new URL(request.url).searchParams.get("officeId"));
   if (!officeId) return NextResponse.json({ error: "حدّد المكتب" }, { status: 400 });
+  if (!(await ownsTower(g.session, officeId))) return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   const r = await relayRequest(officeId, "chats", { limit: 40 });
   if (!r.ok) return NextResponse.json({ chats: [], error: r.error });
   return NextResponse.json({ chats: r.result ?? [] });

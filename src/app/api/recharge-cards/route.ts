@@ -14,6 +14,7 @@ export async function GET() {
   if (g.error) return g.error;
 
   const cards = await prisma.rechargeCard.findMany({
+    where: { agentId: g.session?.agentId ?? -1 }, // عزل: كروت وكيل المستخدم فقط
     orderBy: { id: "desc" },
     take: 500,
   });
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
     );
   }
   const created = await prisma.rechargeCard.create({
-    data: { ...parsed.data, addDate: new Date() },
+    data: { ...parsed.data, addDate: new Date(), agentId: g.session?.agentId ?? null }, // عزل: كارت وكيل المستخدم
   });
   return NextResponse.json(created, { status: 201 });
 }

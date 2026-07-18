@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, ownsTower } from "@/lib/guard";
 import { sasBaseUrl, sasLogin, sasFetchOnePage } from "@/lib/sas4";
 
 const schema = z.object({
@@ -21,6 +21,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
   }
   const { towerId, page, count } = parsed.data;
+
+  // عزل المستأجر: لا يُجلب من SAS إلا لمكتب يتبع وكيل المستخدم
+  if (!(await ownsTower(g.session, towerId))) {
+    return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+  }
 
   const tower = await prisma.tower.findUnique({ where: { id: towerId } });
   if (!tower || !tower.loginUrl || !tower.username || !tower.password) {

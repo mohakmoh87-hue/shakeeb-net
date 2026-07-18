@@ -13,13 +13,14 @@ export async function GET() {
     take: 1000,
   });
 
+  const agentId = g.session?.agentId ?? -1; // عزل: باقات ومكاتب وكيل المستخدم فقط
   const [subs, packages, towers] = await Promise.all([
     prisma.subscriber.findMany({
       where: { id: { in: cards.map((c) => c.subscriberId).filter(Boolean) as number[] } },
       select: { id: true, name: true, towerId: true },
     }),
-    prisma.package.findMany({ select: { id: true, name: true } }),
-    prisma.tower.findMany({ select: { id: true, name: true } }),
+    prisma.package.findMany({ where: { agentId }, select: { id: true, name: true } }),
+    prisma.tower.findMany({ where: { agentId }, select: { id: true, name: true } }),
   ]);
   const subMap = new Map(subs.map((s) => [s.id, s]));
   const pkgMap = new Map(packages.map((p) => [p.id, p.name]));

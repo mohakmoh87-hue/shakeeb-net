@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { getSession } from "@/lib/auth";
+import { ownsTower } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ export async function GET(request: Request) {
 
   const officeId = Number(new URL(request.url).searchParams.get("officeId"));
   if (!officeId) return NextResponse.json({ error: "حدّد المكتب" }, { status: 400 });
-  if (!session.isAdmin && session.towerId !== officeId) {
+  // عزل المستأجر: مكتب يتبع وكيل المستخدم فقط (ownsTower يقيّد المدير بمكاتب وكيله لا كل النظام)
+  if (!(await ownsTower(session, officeId))) {
     return NextResponse.json({ error: "لا يمكنك ربط واتساب مكتب آخر" }, { status: 403 });
   }
 

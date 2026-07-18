@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { ownsTower } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const officeId = Number(body?.officeId);
   if (!officeId) return NextResponse.json({ error: "حدّد المكتب" }, { status: 400 });
-  if (!session.isAdmin && session.towerId !== officeId) {
+  // عزل المستأجر: لا يُفصل إلا واتساب مكتب يتبع وكيل المستخدم
+  if (!(await ownsTower(session, officeId))) {
     return NextResponse.json({ error: "لا يمكنك فصل واتساب مكتب آخر" }, { status: 403 });
   }
 

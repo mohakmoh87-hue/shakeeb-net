@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, guardAny, agentTowerIds } from "@/lib/guard";
+import { can } from "@/lib/rbac";
 
 const schema = z.object({
   name: z.string().min(1, "اسم المكتب مطلوب"),
@@ -43,7 +44,13 @@ export async function GET() {
     where: { isDeleted: false, ...idFilter },
     orderBy: { id: "asc" },
   });
-  return NextResponse.json(towers);
+  // تحصين: لا تُكشف بيانات دخول SAS (اليوزر/الباسورد) إلا لمن يدير المكاتب.
+  // بقية المستخدمين يحصلون على الحقول اللازمة للقوائم فقط (بلا كلمات سر).
+  const canManage = can(session, "offices.manage");
+  const safe = canManage
+    ? towers
+    : towers.map(({ username, password, passOnline, ...rest }) => { void username; void password; void passOnline; return rest; });
+  return NextResponse.json(safe);
 }
 
 export async function POST(request: Request) {
