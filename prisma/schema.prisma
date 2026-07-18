@@ -607,16 +607,55 @@ model Technician {
   id        Int      @id @default(autoincrement())
   name      String
   phone     String?
+  agentId   Int? // الوكيل (المستأجر) — للعزل ولتحديد الوكيل عند دخول الفني
   towerId   Int? // المكتب التابع له (null = غير محدّد)
   supportTowerId Int? // مكتب يدعمه هذا الفني مؤقتاً (يظهر ضمن فنّييه أيضاً)
   accountId Int? // حساب المصروفات/المقبوضات (موظف) المرتبط بهذا الفني في نفس مكتبه
+  // ===== تطبيق إدارة الفنيين: الدخول والحضور والراتب =====
+  username  String?  @unique // اسم مستخدم فريد على مستوى النظام (لدخول تطبيق الفني)
+  code      String? // رمز الدخول (كلمة السر) مُشفّر bcrypt
+  plainCode String? // نسخة قابلة للعرض للمدير (يضبطها المدير)
+  salary    Int? // الراتب الشهري
+  shiftStart String? // بداية الدوام HH:MM
+  shiftEnd   String? // نهاية الدوام HH:MM
+  entryGraceMin Int? @default(0) // سماحية الدخول (دقائق)
+  exitGraceMin  Int? @default(0) // سماحية الخروج (دقائق)
+  lateRatePerMin     Int? @default(0) // سعر دقيقة الخصم (تأخير/خروج مبكّر)
+  overtimeRatePerMin Int? @default(0) // سعر دقيقة الإضافي
+  paidLeavesPerMonth Int? @default(0) // عدد إجازات الراتب المسموحة شهرياً
   isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([towerId])
   @@index([supportTowerId])
+  @@index([agentId])
   @@map("technicians")
+}
+
+// ===== حضور الفنيين (بصمات دخول/خروج) — تطبيق إدارة الفنيين =====
+model Attendance {
+  id           Int       @id @default(autoincrement())
+  technicianId Int
+  agentId      Int? // عزل الوكيل
+  towerId      Int?
+  dayKey       String? // YYYY-MM-DD (توقيت بغداد) — يوم واحد لكل فني
+  checkIn      DateTime? // بصمة الدخول (وقت الخادم)
+  checkOut     DateTime? // بصمة الخروج
+  checkoutBy   String? // tech | manager (بصمة خروج يدوية من المدير)
+  // المحسوب عند الخروج
+  lateMinutes     Int? // دقائق تأخير الدخول (فوق السماحية)
+  earlyMinutes    Int? // دقائق الخروج المبكّر
+  overtimeMinutes Int? // دقائق الإضافي (فوق نهاية الدوام + السماحية)
+  lateDeduction     Int? // خصم التأخير
+  earlyDeduction    Int? // خصم الخروج المبكّر
+  overtimeAddition  Int? // مبلغ الإضافي
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  @@index([technicianId])
+  @@index([agentId])
+  @@map("attendances")
 }
 
 // ===== ذمم الفنيين (عهدة المواد) — كمية من مادة بحوزة فني، لا تُنقِص إجمالي المخزن =====

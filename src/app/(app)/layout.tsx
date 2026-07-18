@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { getSession, getTechSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import TopBar from "@/components/TopBar";
 import MobileNav from "@/components/MobileNav";
@@ -14,7 +14,18 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) {
+    // الفني: غلاف مجرّد بلا شريط علوي/سفلي — تطبيق إدارة الفنيين المركّز فقط
+    const tech = await getTechSession();
+    if (tech) {
+      return (
+        <div className="flex min-h-screen flex-col">
+          <main className="flex-1">{children}</main>
+        </div>
+      );
+    }
+    redirect("/login");
+  }
   // مالك النظام لا يدخل صفحات المستأجر — يُوجَّه للوحته
   if (session.isOwner) redirect("/owner");
 

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import MapButton from "@/components/MapButton";
+import TechOpsBar from "@/components/TechOpsBar";
+import TechnicianManager from "@/components/TechnicianManager";
 
 type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number };
@@ -56,10 +58,10 @@ export default function FieldManagementPage() {
   const [officeId, setOfficeId] = useState<number | null>(null);
   const [isManager, setIsManager] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const [role, setRole] = useState<string>("");
+  const [myName, setMyName] = useState("");
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
-  const [techName, setTechName] = useState("");
-  const [techPhone, setTechPhone] = useState("");
 
   const load = useCallback((office?: number | null) => {
     const q = office != null ? `?officeId=${office}` : "";
@@ -68,27 +70,20 @@ export default function FieldManagementPage() {
         setBoard(d.board); setLists(d.lists); setCards(d.cards);
         setTechnicians(d.technicians ?? []); setOffices(d.offices ?? []);
         setCardTypes(d.cardTypes ?? []); setOfficeId(d.officeId ?? null);
-        setIsManager(!!d.isManager); setCanManage(!!d.canManage);
+        setIsManager(!!d.isManager); setCanManage(!!d.canManage); setRole(d.role ?? "");
       }
       setLoading(false);
     });
   }, []);
   useEffect(() => { load(); }, [load]);
+  // اسم الدور الحالي (للفني: اسمه) — لعرضه في الشريط السفلي
+  useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => d?.name && setMyName(d.name)); }, []);
 
-  async function addTechnician() {
-    const name = techName.trim();
-    if (!name) return;
-    const r = await fetch("/api/field/technicians", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phone: techPhone.trim() || null, officeId }),
-    });
-    if (r.ok) { const t = await r.json(); setTechnicians((x) => [...x, t]); setTechName(""); setTechPhone(""); }
-    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّرت الإضافة"); }
-  }
-  async function deleteTechnician(id: number) {
-    if (!confirm("حذف هذا الفني؟")) return;
-    setTechnicians((x) => x.filter((t) => t.id !== id));
-    await fetch(`/api/field/technicians?id=${id}`, { method: "DELETE" });
+
+  const isTech = role === "technician";
+  async function techLogout() {
+    await fetch("/api/field/tech-logout", { method: "POST" });
+    router.replace("/login");
   }
 
   async function createType() {
@@ -175,7 +170,11 @@ export default function FieldManagementPage() {
           <span className="text-xl">🛠️</span>
           <h1 className="text-lg font-bold">إدارة الفنيين</h1>
         </div>
-        <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
+        {isTech ? (
+          <button onClick={techLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
+        ) : (
+          <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
+        )}
       </div>
 
       {/* الأعمدة */}
@@ -191,10 +190,12 @@ export default function FieldManagementPage() {
             >
               <div className="flex items-center justify-between px-3 py-2">
                 <span className="font-bold text-slate-700">{l.name} <span className="text-xs font-normal text-slate-400">({listCards.length})</span></span>
-                <div className="flex gap-1 text-slate-400">
-                  <button onClick={() => renameList(l)} className="rounded px-1 hover:bg-slate-200" title="إعادة تسمية">✏️</button>
-                  <button onClick={() => deleteList(l)} className="rounded px-1 hover:bg-red-100" title="حذف">🗑️</button>
-                </div>
+                {!isTech && (
+                  <div className="flex gap-1 text-slate-400">
+                    <button onClick={() => renameList(l)} className="rounded px-1 hover:bg-slate-200" title="إعادة تسمية">✏️</button>
+                    <button onClick={() => deleteList(l)} className="rounded px-1 hover:bg-red-100" title="حذف">🗑️</button>
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 space-y-2 overflow-y-auto px-2">
@@ -253,11 +254,13 @@ export default function FieldManagementPage() {
           );
         })}
 
-        {/* إضافة عمود */}
-        <div className="w-[280px] shrink-0 rounded-xl bg-white/20 p-2">
-          <input value={newList} onChange={(e) => setNewList(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addList()} placeholder="+ إضافة عمود جديد" className="w-full rounded-lg bg-white/90 px-3 py-2 text-sm outline-none" />
-          {newList.trim() && <button onClick={addList} className="mt-1 w-full rounded-lg bg-white py-1.5 text-sm font-semibold text-mynet-blue">إضافة العمود</button>}
-        </div>
+        {/* إضافة عمود — للمدير/المستخدم فقط (يُخفى عن الفني) */}
+        {!isTech && (
+          <div className="w-[280px] shrink-0 rounded-xl bg-white/20 p-2">
+            <input value={newList} onChange={(e) => setNewList(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addList()} placeholder="+ إضافة عمود جديد" className="w-full rounded-lg bg-white/90 px-3 py-2 text-sm outline-none" />
+            {newList.trim() && <button onClick={addList} className="mt-1 w-full rounded-lg bg-white py-1.5 text-sm font-semibold text-mynet-blue">إضافة العمود</button>}
+          </div>
+        )}
       </div>
 
       {/* شريط سفلي وسط الصفحة: المكاتب جنب بعض + الفنيون — متاح للجميع (ليساعد الفني مكتباً آخر وقت الضغط) */}
@@ -425,40 +428,16 @@ export default function FieldManagementPage() {
 
       {/* إدارة الفنيين (إضافة/حذف) — لصاحب صلاحية field.manage */}
       {techModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={() => setTechModal(false)}>
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-1 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-800">👷 فنيّو {isManager ? (offices.find((o) => o.id === officeId)?.name ?? "المكتب") : "المكتب"}</h3>
-              <button onClick={() => setTechModal(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
-            </div>
-            <p className="mb-3 text-xs text-slate-500">أضِف فنيّي هذا المكتب؛ يظهرون كخيارات عند توجيه البطاقات إليهم.</p>
-
-            {/* نموذج الإضافة */}
-            <div className="mb-4 flex flex-wrap gap-2">
-              <input value={techName} onChange={(e) => setTechName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTechnician()} placeholder="اسم الفني" className="min-w-[140px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <input value={techPhone} onChange={(e) => setTechPhone(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTechnician()} placeholder="الهاتف (اختياري)" dir="ltr" className="min-w-[120px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <button onClick={addTechnician} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">+ إضافة</button>
-            </div>
-
-            {/* قائمة الفنيين */}
-            {technicians.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-sm text-slate-400">لا يوجد فنيون بعد</div>
-            ) : (
-              <ul className="space-y-1.5">
-                {technicians.map((t) => (
-                  <li key={t.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-700">{t.name}</div>
-                      {t.phone && <div className="text-xs text-slate-400" dir="ltr">{t.phone}</div>}
-                    </div>
-                    <button onClick={() => deleteTechnician(t.id)} className="rounded bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100">حذف</button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
+        <TechnicianManager
+          officeId={officeId}
+          officeName={isManager ? (offices.find((o) => o.id === officeId)?.name ?? "المكتب") : "المكتب"}
+          onClose={() => setTechModal(false)}
+          onChange={() => load(officeId)}
+        />
       )}
+
+      {/* شريط الفني السفلي: بصمة + عمليات */}
+      {role === "technician" && <TechOpsBar techName={myName} />}
     </div>
   );
 }
