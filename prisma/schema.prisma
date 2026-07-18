@@ -658,6 +658,30 @@ model Attendance {
   @@map("attendances")
 }
 
+// ===== إجازات الفنيين — يوم (براتب/بلا حسب الحصّة الشهرية) أو زمنية؛ سبب إلزامي؛ قبول/رفض المدير =====
+model Leave {
+  id           Int      @id @default(autoincrement())
+  technicianId Int
+  agentId      Int? // عزل الوكيل
+  towerId      Int?
+  kind         String // "day" | "time"
+  paid         Boolean  @default(false) // إجازة يوم مدفوعة (تُحتسب من الحصّة)
+  dayKey       String // YYYY-MM-DD (توقيت بغداد) — يوم الإجازة
+  startMin     Int? // إجازة زمنية: بداية الدقيقة من اليوم (بغداد)
+  endMin       Int? // إجازة زمنية: نهاية الدقيقة من اليوم
+  reason       String // إلزامي
+  status       String   @default("pending") // pending | approved | rejected
+  decidedBy    String? // اسم المدير الذي قرّر
+  decidedAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  @@index([technicianId])
+  @@index([agentId])
+  @@index([dayKey])
+  @@map("leaves")
+}
+
 // ===== ذمم الفنيين (عهدة المواد) — كمية من مادة بحوزة فني، لا تُنقِص إجمالي المخزن =====
 // المتبقي الكلي = Item.count ؛ بالمكتب = count − مجموع العهد ؛ يم الفني = العهدة.
 model Custody {

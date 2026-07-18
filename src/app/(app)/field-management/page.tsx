@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import MapButton from "@/components/MapButton";
 import TechOpsBar from "@/components/TechOpsBar";
 import TechnicianManager from "@/components/TechnicianManager";
+import LeaveReview from "@/components/LeaveReview";
 
 type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number };
@@ -62,6 +63,8 @@ export default function FieldManagementPage() {
   const [myName, setMyName] = useState("");
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
+  const [leaveModal, setLeaveModal] = useState(false);
+  const [leavePending, setLeavePending] = useState(0);
 
   const load = useCallback((office?: number | null) => {
     const q = office != null ? `?officeId=${office}` : "";
@@ -78,6 +81,14 @@ export default function FieldManagementPage() {
   useEffect(() => { load(); }, [load]);
   // اسم الدور الحالي (للفني: اسمه) — لعرضه في الشريط السفلي
   useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => d?.name && setMyName(d.name)); }, []);
+
+  // عدد طلبات الإجازة المعلّقة (للمدير) — بشارة على زر الإجازات
+  const loadLeavePending = useCallback((office?: number | null) => {
+    if (!canManage) return;
+    const q = office != null ? `?officeId=${office}` : "";
+    fetch(`/api/field/leaves${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => d && setLeavePending(d.pendingCount ?? 0));
+  }, [canManage]);
+  useEffect(() => { loadLeavePending(officeId); }, [loadLeavePending, officeId]);
 
 
   const isTech = role === "technician";
@@ -280,6 +291,12 @@ export default function FieldManagementPage() {
               👷 الفنيون ({technicians.length})
             </button>
           )}
+          {canManage && (
+            <button onClick={() => setLeaveModal(true)} className="relative rounded-lg bg-amber-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-amber-600">
+              📅 الإجازات
+              {leavePending > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white ring-2 ring-black/25">{leavePending}</span>}
+            </button>
+          )}
           {officeId != null && (
             <button onClick={() => setSupportModal(true)} className="rounded-lg bg-purple-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-purple-600">
               🤝 دعم مؤقت
@@ -433,6 +450,15 @@ export default function FieldManagementPage() {
           officeName={isManager ? (offices.find((o) => o.id === officeId)?.name ?? "المكتب") : "المكتب"}
           onClose={() => setTechModal(false)}
           onChange={() => load(officeId)}
+        />
+      )}
+
+      {leaveModal && (
+        <LeaveReview
+          officeId={officeId}
+          officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"}
+          onClose={() => setLeaveModal(false)}
+          onChange={() => loadLeavePending(officeId)}
         />
       )}
 

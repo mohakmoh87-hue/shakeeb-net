@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TechLeaveModal from "./TechLeaveModal";
 
 type AttState = "none" | "in" | "done";
 const fmtTime = (d: string | null) => (d ? new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "");
@@ -13,6 +14,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [busy, setBusy] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [leaveMode, setLeaveMode] = useState<"day" | "time" | null>(null);
 
   useEffect(() => {
     fetch("/api/field/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => {
@@ -51,13 +53,19 @@ export default function TechOpsBar({ techName }: { techName: string }) {
 
   return (
     <>
+      {leaveMode && <TechLeaveModal mode={leaveMode} onClose={() => setLeaveMode(null)} />}
       {toast && <div className="fixed bottom-24 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-slate-900/90 px-5 py-2 text-sm font-semibold text-white shadow-lg">{toast}</div>}
 
       {opsOpen && (
         <div className="fixed inset-0 z-[75]" onClick={() => setOpsOpen(false)}>
           <div className="absolute bottom-[76px] left-1/2 w-64 -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {ops.map((o) => (
-              <button key={o.key} onClick={() => { setOpsOpen(false); flash("هذه الميزة تُضاف في التحديث القادم"); }}
+              <button key={o.key} onClick={() => {
+                setOpsOpen(false);
+                if (o.key === "leave") setLeaveMode("day");
+                else if (o.key === "tleave") setLeaveMode("time");
+                else flash("هذه الميزة تُضاف في التحديث القادم");
+              }}
                 className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-right text-sm font-semibold text-slate-700 last:border-0 hover:bg-slate-50">
                 <span className="text-lg">{o.icon}</span>{o.label}
               </button>
