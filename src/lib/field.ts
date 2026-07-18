@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { SessionPayload } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
+import { can } from "@/lib/rbac";
 
 // عزل المستأجر للوحات الفنيين: هل مكتب اللوحة يتبع أحد مكاتب وكيل المستخدم؟
 // (يسمح بالتعاون بين مكاتب نفس الوكيل، ويمنع الوصول لبيانات وكيل آخر)
@@ -20,6 +21,29 @@ export async function agentOwnsList(session: SessionPayload, listId: number): Pr
 export async function agentOwnsCard(session: SessionPayload, cardId: number): Promise<boolean> {
   const card = await prisma.taskCard.findUnique({ where: { id: cardId }, select: { listId: true } });
   return card ? agentOwnsList(session, card.listId) : false;
+}
+
+// مكتب العمود/البطاقة (لتقييد الكتابة على مستوى المكتب داخل الوكيل)
+export async function listOfficeId(listId: number): Promise<number | null> {
+  const list = await prisma.taskList.findUnique({ where: { id: listId }, select: { boardId: true } });
+  if (!list) return null;
+  const board = await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } });
+  return board?.towerId ?? null;
+}
+export async function cardOfficeId(cardId: number): Promise<number | null> {
+  const card = await prisma.taskCard.findUnique({ where: { id: cardId }, select: { listId: true } });
+  return card ? listOfficeId(card.listId) : null;
+}
+// هل يجوز للمستخدم الكتابة على مكتبٍ ما؟ المدير (field.manage) لأي مكتب؛ الموظف لمكتبه فقط (مشاهدة لغيره).
+export function canOperateOffice(session: SessionPayload, towerId: number | null): boolean {
+  if (can(session, "field.manage")) return true;
+  return towerId != null && towerId === (session.towerId ?? null);
+}
+export async function canOperateCard(session: SessionPayload, cardId: number): Promise<boolean> {
+  return canOperateOffice(session, await cardOfficeId(cardId));
+}
+export async function canOperateList(session: SessionPayload, listId: number): Promise<boolean> {
+  return canOperateOffice(session, await listOfficeId(listId));
 }
 
 // لوحة إدارة الفنيين مستقلّة لكل مكتب (TaskBoard.towerId)، والمدير يرى كل المكاتب.

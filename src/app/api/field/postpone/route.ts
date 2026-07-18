@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { canOperateCard } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
   const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false } });
   if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
   if (card.done) return NextResponse.json({ error: "البطاقة منجزة" }, { status: 400 });
+  if (!(await canOperateCard(s, cardId))) return NextResponse.json({ error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" }, { status: 403 });
   if (!card.startedAt) return NextResponse.json({ error: "ابدأ البطاقة أولاً قبل التأجيل" }, { status: 400 });
 
   // يُلغى وقت البدء (المدة لا تُحتسب على التأجيل) ويُسجَّل الموعد الجديد

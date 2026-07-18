@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
-import { agentOfficeFilter } from "@/lib/guard";
-import { isFieldManager, resolveFieldOffice, getOrCreateBoard } from "@/lib/field";
+import { agentTowerIds } from "@/lib/guard";
+import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOffice } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -29,16 +29,17 @@ export async function GET(request: Request) {
   const tech = await getTechSession();
   if (tech) {
     const data = await buildBoard(tech.towerId, tech.agentId);
-    return NextResponse.json({ ...data, offices: [], officeId: tech.towerId, isManager: false, canManage: false, role: "technician" });
+    return NextResponse.json({ ...data, offices: [], officeId: tech.towerId, isManager: false, canManage: false, canOperate: true, myOfficeId: tech.towerId, role: "technician" });
   }
 
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
   const manager = isFieldManager(session);
-  // عزل المستأجر: مكاتب وكيل المستخدم فقط (أي فني قد يساعد مكتباً آخر ضمن نفس الوكيل)
+  // عزل المستأجر: كل مكاتب وكيل المستخدم — أي مستخدم يتصفّح المكاتب (مشاهدة)، والكتابة مقيّدة بمكتبه.
+  const agentTowers = await agentTowerIds(session);
   const offices = await prisma.tower.findMany({
-    where: { isDeleted: false, ...(await agentOfficeFilter(session)) },
+    where: { isDeleted: false, id: { in: agentTowers.length ? agentTowers : [-1] } },
     select: { id: true, name: true },
     orderBy: { id: "asc" },
   });
@@ -56,6 +57,9 @@ export async function GET(request: Request) {
     ...data, offices, officeId,
     isManager: manager,
     canManage: can(session, "field.manage"),
+    // الكتابة على المكتب المعروض: المدير لأي مكتب، والموظف لمكتبه فقط
+    canOperate: canOperateOffice(session, officeId),
+    myOfficeId: session.towerId ?? null,
     role: manager ? "manager" : "office",
   });
 }

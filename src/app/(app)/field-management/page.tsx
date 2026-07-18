@@ -63,6 +63,8 @@ export default function FieldManagementPage() {
   const [officeId, setOfficeId] = useState<number | null>(null);
   const [isManager, setIsManager] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const [canOperate, setCanOperate] = useState(true); // الكتابة على المكتب المعروض (الموظف: مكتبه فقط)
+  const [myOfficeId, setMyOfficeId] = useState<number | null>(null);
   const [role, setRole] = useState<string>("");
   const [myName, setMyName] = useState("");
   const [techModal, setTechModal] = useState(false);
@@ -81,6 +83,7 @@ export default function FieldManagementPage() {
         setTechnicians(d.technicians ?? []); setOffices(d.offices ?? []);
         setCardTypes(d.cardTypes ?? []); setOfficeId(d.officeId ?? null);
         setIsManager(!!d.isManager); setCanManage(!!d.canManage); setRole(d.role ?? "");
+        setCanOperate(d.canOperate !== false); setMyOfficeId(d.myOfficeId ?? null);
       }
       setLoading(false);
     });
@@ -123,6 +126,15 @@ export default function FieldManagementPage() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
+  // تبديل المكتب — الموظف (غير المدير) يُؤكَّد له الانتقال لغير مكتبه (مشاهدة فقط)
+  function switchOffice(id: number) {
+    if (id === officeId) return;
+    if (!canManage && myOfficeId != null && id !== myOfficeId) {
+      const name = offices.find((o) => o.id === id)?.name ?? `مكتب ${id}`;
+      if (!confirm(`ستنتقل إلى مكتب «${name}» — مشاهدة فقط بلا تعديل. متابعة؟`)) return;
+    }
+    setOfficeId(id); load(id);
+  }
 
   async function createType() {
     const name = prompt("اسم نوع البطاقة الجديد:");
@@ -137,6 +149,7 @@ export default function FieldManagementPage() {
   }
 
   async function addCard(listId: number) {
+    if (!canOperate) return;
     const title = cardText.trim();
     if (!title) { setAddingTo(null); return; }
     const tech = technicians.find((t) => String(t.id) === cardTech);
@@ -169,6 +182,7 @@ export default function FieldManagementPage() {
     await fetch(`/api/field/lists?id=${l.id}`, { method: "DELETE" });
   }
   async function moveCard(card: Card, toListId: number) {
+    if (!canOperate) return;
     if (card.listId === toListId) return;
     const pos = cards.filter((c) => c.listId === toListId).length;
     setCards((x) => x.map((c) => (c.id === card.id ? { ...c, listId: toListId, position: pos } : c)));
@@ -176,20 +190,20 @@ export default function FieldManagementPage() {
     await fetch("/api/field/cards", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: card.id, listId: toListId, position: pos }) });
   }
   async function saveCard(patch: Partial<Card>) {
-    if (!sel) return;
+    if (!sel || !canOperate) return;
     const merged = { ...sel, ...patch };
     setSel(merged);
     setCards((x) => x.map((c) => (c.id === sel.id ? merged : c)));
     await fetch("/api/field/cards", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: sel.id, ...patch }) });
   }
   async function startCard() {
-    if (!sel) return;
+    if (!sel || !canOperate) return;
     const r = await fetch("/api/field/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cardId: sel.id }) });
     if (r.ok) { const c = await r.json(); setSel(c); setCards((x) => x.map((y) => (y.id === c.id ? c : y))); }
     else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر البدء"); }
   }
   async function deleteCard() {
-    if (!sel) return;
+    if (!sel || !canOperate) return;
     if (!confirm("حذف هذه البطاقة؟")) return;
     setCards((x) => x.filter((c) => c.id !== sel.id));
     const id = sel.id; setSel(null);
@@ -245,7 +259,7 @@ export default function FieldManagementPage() {
             <div
               key={l.id}
               onDragOver={(e) => e.preventDefault()}
-              onDrop={() => { const c = cards.find((x) => x.id === dragId); if (c) moveCard(c, l.id); setDragId(null); }}
+              onDrop={() => { if (!canOperate) return; const c = cards.find((x) => x.id === dragId); if (c) moveCard(c, l.id); setDragId(null); }}
               className="flex max-h-full w-[280px] shrink-0 flex-col rounded-xl bg-slate-100 shadow-lg"
             >
               <div className="flex items-center justify-between px-3 py-2">
@@ -266,8 +280,8 @@ export default function FieldManagementPage() {
                 {listCards.map((c) => (
                   <div
                     key={c.id}
-                    draggable
-                    onDragStart={() => setDragId(c.id)}
+                    draggable={canOperate}
+                    onDragStart={() => canOperate && setDragId(c.id)}
                     onClick={() => setSel(c)}
                     className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md"
                   >
@@ -289,7 +303,8 @@ export default function FieldManagementPage() {
                 ))}
               </div>
 
-              {/* إضافة بطاقة */}
+              {/* إضافة بطاقة — للمكتب الذي يجوز الكتابة عليه فقط */}
+              {canOperate && (
               <div className="p-2">
                 {addingTo === l.id ? (
                   <div className="space-y-1.5 rounded-lg bg-white p-2 shadow-inner">
@@ -314,6 +329,7 @@ export default function FieldManagementPage() {
                   <button onClick={() => { setAddingTo(l.id); setCardText(""); }} className="w-full rounded-lg px-2 py-1.5 text-right text-sm text-slate-500 hover:bg-slate-200">+ إضافة بطاقة</button>
                 )}
               </div>
+              )}
             </div>
           );
         })}
@@ -333,7 +349,7 @@ export default function FieldManagementPage() {
           {offices.map((o) => (
             <button
               key={o.id}
-              onClick={() => { setOfficeId(o.id); load(o.id); }}
+              onClick={() => switchOffice(o.id)}
               className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition ${officeId === o.id ? "bg-white text-mynet-blue shadow" : "bg-white/20 text-white hover:bg-white/35"}`}
             >
               {o.name ?? `مكتب ${o.id}`}
@@ -375,7 +391,7 @@ export default function FieldManagementPage() {
           <FieldAppMenu
             offices={offices}
             officeId={officeId}
-            onSelectOffice={(id) => { setOfficeId(id); load(id); }}
+            onSelectOffice={switchOffice}
             canManage={canManage}
             techCount={technicians.length}
             leavePending={leavePending}
@@ -399,6 +415,10 @@ export default function FieldManagementPage() {
               <MapButton text={`${sel.title}\n${sel.description ?? ""}`} towerId={officeId} />
               <button onClick={() => setSel(null)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
             </div>
+
+            {!canOperate && (
+              <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-700">👁️ مشاهدة فقط — بطاقة مكتب آخر (لا يمكنك التعديل)</div>
+            )}
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">الحالة (العمود)</label>
             <select value={sel.listId} onChange={(e) => moveCard(sel, Number(e.target.value))} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -481,7 +501,7 @@ export default function FieldManagementPage() {
                 {sel.durationSec != null && <div className="text-slate-600">⏱ مدة الإنجاز: <b>{fmtDuration(sel.durationSec)}</b></div>}
                 {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
               </div>
-            ) : !sel.startedAt ? (
+            ) : !canOperate ? null : !sel.startedAt ? (
               <button
                 onClick={startCard}
                 className="mb-3 w-full rounded-lg bg-mynet-blue px-4 py-3 text-base font-bold text-white hover:bg-mynet-blue-dark"
@@ -510,7 +530,7 @@ export default function FieldManagementPage() {
               </>
             )}
             <div className="flex items-center justify-end">
-              <button onClick={deleteCard} className="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100">🗑️ حذف البطاقة</button>
+              {canOperate && <button onClick={deleteCard} className="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100">🗑️ حذف البطاقة</button>}
             </div>
           </div>
         </div>
