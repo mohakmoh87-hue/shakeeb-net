@@ -29,6 +29,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ar" dir="rtl" className={`${cairo.variable} h-full antialiased`}>
+      <head>
+        {/* التقاط حدث تثبيت التطبيق مبكّراً جداً (قبل تحميل React) كي لا نفوّته على أندرويد */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "window.__bipEvent=null;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__bipEvent=e;window.dispatchEvent(new Event('bip-ready'));});window.addEventListener('appinstalled',function(){window.__bipEvent=null;});",
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
         <PwaRegister />
         {children}

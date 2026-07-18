@@ -19,5 +19,8 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
+    // يسمح لـ getInstalledRelatedApps بكشف أنّ هذا الـPWA مثبّت (فنعرض «افتحه» بدل إعادة التثبيت)
+    related_applications: [{ platform: "webapp", url: "https://shakeebnet.com/manifest.webmanifest" }],
+    prefer_related_applications: false,
   };
 }

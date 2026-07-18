@@ -18,11 +18,22 @@ export default function InstallApp() {
     const isIos = /iphone|ipad|ipod/i.test(ua) || (/(macintosh)/i.test(ua) && "ontouchend" in document);
     const isAndroid = /android/i.test(ua);
     setPlat(isIos ? "ios" : isAndroid ? "android" : "desktop");
-    const onBip = (e: Event) => { e.preventDefault(); setDeferred(e as BIPEvent); };
+
+    const win = window as unknown as { __bipEvent?: BIPEvent | null };
+    // الحدث المُلتقَط مبكّراً (قبل تحميل React) — لا نفوّته
+    if (win.__bipEvent) setDeferred(win.__bipEvent);
+    const onReady = () => { if (win.__bipEvent) setDeferred(win.__bipEvent); };
+    const onBip = (e: Event) => { e.preventDefault(); win.__bipEvent = e as BIPEvent; setDeferred(e as BIPEvent); };
+    window.addEventListener("bip-ready", onReady);
     window.addEventListener("beforeinstallprompt", onBip);
-    const onInstalled = () => setPlat("installed");
+    const onInstalled = () => { win.__bipEvent = null; setPlat("installed"); };
     window.addEventListener("appinstalled", onInstalled);
-    return () => { window.removeEventListener("beforeinstallprompt", onBip); window.removeEventListener("appinstalled", onInstalled); };
+
+    // كشف إن كان التطبيق مثبّتاً مسبقاً (كروم) — فنعرض «افتحه» بدل إعادة التثبيت
+    (navigator as unknown as { getInstalledRelatedApps?: () => Promise<unknown[]> }).getInstalledRelatedApps?.()
+      .then((apps) => { if (Array.isArray(apps) && apps.length > 0) setPlat("installed"); }).catch(() => {});
+
+    return () => { window.removeEventListener("bip-ready", onReady); window.removeEventListener("beforeinstallprompt", onBip); window.removeEventListener("appinstalled", onInstalled); };
   }, []);
 
   if (plat === "" || plat === "installed") return null;
@@ -76,7 +87,11 @@ export default function InstallApp() {
             {modal === "hint" && (
               <>
                 <div className="mb-2 text-lg font-bold text-slate-800">تثبيت التطبيق</div>
-                <div className="text-sm text-slate-600">من قائمة المتصفّح <b>⋮</b> اختر <b>«تثبيت التطبيق»</b> أو <b>«إضافة إلى الشاشة الرئيسية»</b>.</div>
+                <ol className="mb-3 space-y-2 text-right text-sm text-slate-600">
+                  <li>1️⃣ افتح الموقع في متصفّح <b>Chrome</b> (لا داخل تطبيق آخر).</li>
+                  <li>2️⃣ من قائمة المتصفّح <b>⋮</b> (أعلى اليمين) اختر <b>«تثبيت التطبيق»</b> أو <b>«إضافة إلى الشاشة الرئيسية»</b>.</li>
+                </ol>
+                <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">إن كان التطبيق <b>مثبّتاً مسبقاً</b>، فلن يظهر خيار التثبيت — افتحه مباشرةً من <b>أيقونته على الشاشة الرئيسية</b> لهاتفك.</div>
               </>
             )}
           </div>
