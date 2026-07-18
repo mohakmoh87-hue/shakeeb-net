@@ -9,6 +9,7 @@ import LeaveReview from "@/components/LeaveReview";
 import CardTypeManager from "@/components/CardTypeManager";
 import DeductionReview from "@/components/DeductionReview";
 import NotificationsBell from "@/components/NotificationsBell";
+import FieldAppMenu from "@/components/FieldAppMenu";
 
 type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number; timeTracked?: boolean };
@@ -114,11 +115,6 @@ export default function FieldManagementPage() {
 
 
   const isTech = role === "technician";
-  // وضع التطبيق المثبّت (standalone) — لعرض «خروج» بدل «الرئيسية» للمدير داخل التطبيق
-  const [standalone, setStandalone] = useState(false);
-  useEffect(() => {
-    setStandalone(window.matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true);
-  }, []);
   async function techLogout() {
     await fetch("/api/field/tech-logout", { method: "POST" });
     router.replace("/login");
@@ -210,20 +206,39 @@ export default function FieldManagementPage() {
       <div data-app-safetop className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className="flex items-center gap-2 text-white">
           <span className="text-xl">🛠️</span>
-          <h1 className="text-lg font-bold">إدارة الفنيين</h1>
+          <div className="leading-tight">
+            <h1 className="text-lg font-bold">إدارة الفنيين</h1>
+            {offices.length > 0 && officeId != null && (
+              <div data-app-only className="text-[11px] font-medium text-white/70">🏢 {offices.find((o) => o.id === officeId)?.name ?? `مكتب ${officeId}`}</div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {canManage && <NotificationsBell />}
-          {isTech || standalone ? (
-            <button onClick={isTech ? techLogout : userLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
+          {isTech ? (
+            <button onClick={techLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
           ) : (
-            <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
+            <>
+              {/* المتصفح: زر الرئيسية · التطبيق: زر خروج (تبديل عبر CSS بلا وميض) */}
+              <button data-site-only onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
+              <button data-app-only onClick={userLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
+            </>
           )}
         </div>
       </div>
 
       {/* الأعمدة */}
-      <div className="flex flex-1 items-start gap-3 overflow-x-auto px-4 pb-4">
+      <div data-empty={lists.length === 0 ? "1" : undefined} className="flex flex-1 items-start gap-3 overflow-x-auto px-4 pb-4">
+        {/* حالة فارغة أنيقة (تظهر داخل التطبيق فقط عبر CSS) */}
+        {lists.length === 0 && (
+          <div data-app-only>
+            <div className="flex flex-col items-center gap-3 text-center text-white/85">
+              <div className="text-6xl">🗂️</div>
+              <div className="text-lg font-bold">لا أعمدة بعد</div>
+              <div className="max-w-[240px] text-sm text-white/60">{canManage ? "أضِف أول عمود لتبدأ بتنظيم بطاقات الفنيين" : "لم يُنشئ المدير أعمدة لهذا المكتب بعد"}</div>
+            </div>
+          </div>
+        )}
         {lists.map((l) => {
           const listCards = cards.filter((c) => c.listId === l.id).sort((a, b) => a.position - b.position);
           return (
@@ -312,9 +327,9 @@ export default function FieldManagementPage() {
         )}
       </div>
 
-      {/* شريط سفلي وسط الصفحة: المكاتب جنب بعض + الفنيون — متاح للجميع (ليساعد الفني مكتباً آخر وقت الضغط) */}
+      {/* شريط سفلي (صفحة النت فقط، يُخفى داخل التطبيق عبر CSS): المكاتب + الأدوات — تصميم الموقع كما هو */}
       {offices.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-1.5 border-t border-white/20 bg-black/25 px-4 pt-2.5 pb-[max(10px,env(safe-area-inset-bottom))]">
+        <div data-site-only className="flex flex-wrap items-center justify-center gap-1.5 border-t border-white/20 bg-black/25 px-4 pt-2.5 pb-[max(10px,env(safe-area-inset-bottom))]">
           {offices.map((o) => (
             <button
               key={o.id}
@@ -351,6 +366,26 @@ export default function FieldManagementPage() {
               🤝 دعم مؤقت
             </button>
           )}
+        </div>
+      )}
+
+      {/* قائمة التطبيق الأنيقة (تظهر داخل التطبيق فقط عبر CSS) — تجمع المكاتب والأدوات */}
+      {offices.length > 0 && (
+        <div data-app-only>
+          <FieldAppMenu
+            offices={offices}
+            officeId={officeId}
+            onSelectOffice={(id) => { setOfficeId(id); load(id); }}
+            canManage={canManage}
+            techCount={technicians.length}
+            leavePending={leavePending}
+            dedPending={dedPending}
+            onTechs={() => setTechModal(true)}
+            onTypes={() => setTypesModal(true)}
+            onLeaves={() => setLeaveModal(true)}
+            onDeductions={() => setDedModal(true)}
+            onSupport={() => setSupportModal(true)}
+          />
         </div>
       )}
 

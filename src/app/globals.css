@@ -86,10 +86,16 @@ body {
 /* ===== وضع التطبيق المثبّت (PWA standalone): تطبيق هاتف مركّز على إدارة الفنيين فقط ===== */
 /* الغلاف شفّاف في المتصفح (لا يغيّر التخطيط) ويُخفى داخل التطبيق */
 [data-site-chrome] { display: contents; }
+/* عناصر التطبيق فقط: مخفيّة في المتصفح، تظهر داخل التطبيق (بلا وميض تبديل عبر JS) */
+[data-app-only] { display: none; }
 
 @media all and (display-mode: standalone) {
   /* إخفاء واجهة الموقع الكاملة (الشريط العلوي + القائمة المنسدلة) وأي عنصر خاصّ بالموقع */
   [data-site-chrome], [data-site-only] { display: none !important; }
+  /* إظهار عناصر التطبيق */
+  [data-app-only] { display: block !important; }
+  /* توسيط اللوحة الفارغة داخل التطبيق */
+  [data-empty] { align-items: center !important; justify-content: center !important; }
   /* الشاشة كاملة الارتفاع بلا شريط علوي */
   [data-app-fullheight] { height: 100dvh !important; }
   /* مساحة آمنة أعلى الترويسة (شقّ/شريط الحالة) */
