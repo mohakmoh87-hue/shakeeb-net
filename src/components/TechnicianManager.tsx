@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import SalaryModal from "./SalaryModal";
+import AttendanceManager from "./AttendanceManager";
 
 type Tech = {
   id: number; name: string; phone: string | null; username: string | null; plainCode?: string | null;
@@ -20,6 +21,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   const [busy, setBusy] = useState(false);
   const [openForm, setOpenForm] = useState(false);
   const [salaryTech, setSalaryTech] = useState<Tech | null>(null);
+  const [attTech, setAttTech] = useState<Tech | null>(null);
 
   const load = useCallback(() => {
     fetch(`/api/field/technicians${officeId != null ? `?officeId=${officeId}` : ""}`).then((r) => (r.ok ? r.json() : null)).then((d) => d && setTechs(d.technicians ?? []));
@@ -54,11 +56,6 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
     if (!confirm(`حذف الفني «${t.name}» نهائياً من قاعدة البيانات؟ لا يمكن التراجع.`)) return;
     const r = await fetch(`/api/field/technicians?id=${t.id}`, { method: "DELETE" });
     if (r.ok) { load(); onChange(); } else alert("تعذّر الحذف");
-  }
-  async function manualOut(t: Tech, mode: "now" | "scheduled") {
-    const r = await fetch("/api/field/attendance", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId: t.id, mode }) });
-    const d = await r.json().catch(() => ({}));
-    alert(r.ok ? "تم تسجيل خروج الفني" : (d.error ?? "تعذّر"));
   }
 
   return (
@@ -116,14 +113,11 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                   </div>
                 </div>
                 {/* الخيارات — مربعات واضحة */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <Act onClick={() => setSalaryTech(t)} cls="bg-emerald-50 text-emerald-700" icon="💰" label="الراتب" />
+                  <Act onClick={() => setAttTech(t)} cls="bg-amber-50 text-amber-700" icon="🗓️" label="الحضور" />
                   <Act onClick={() => startEdit(t)} cls="bg-sky-50 text-sky-700" icon="✏️" label="تعديل" />
                   <Act onClick={() => del(t)} cls="bg-rose-50 text-rose-600" icon="🗑️" label="حذف" />
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <Act onClick={() => manualOut(t, "now")} cls="bg-amber-50 text-amber-700" icon="🕐" label="خروج الآن" />
-                  <Act onClick={() => manualOut(t, "scheduled")} cls="bg-amber-50 text-amber-700" icon="⏰" label="خروج بوقته" />
                 </div>
               </li>
             ))}
@@ -133,6 +127,9 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
 
       {salaryTech && (
         <SalaryModal technicianId={salaryTech.id} name={salaryTech.name} onClose={() => setSalaryTech(null)} onSettled={onChange} />
+      )}
+      {attTech && (
+        <AttendanceManager technicianId={attTech.id} technicianName={attTech.name} onClose={() => setAttTech(null)} onChange={onChange} />
       )}
     </div>
   );

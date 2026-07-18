@@ -109,15 +109,41 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, state: "done", checkOut: updated.checkOut, calc, supportEnded: onSupport });
 }
 
-// PATCH (المدير فقط): بصمة خروج يدوية عند نسيان الفني — بالوقت الحالي أو بوقته المحدّد.
+// وقت (UTC) لدقيقةٍ من يوم بغداد المحدّد (YYYY-MM-DD)
+function bgTimeUtc(dayKey: string, minutesOfDay: number): Date {
+  const [y, mo, d] = dayKey.split("-").map(Number);
+  const bgMidnightUtc = Date.UTC(y, mo - 1, d, 0, 0, 0) - 3 * 3600 * 1000;
+  return new Date(bgMidnightUtc + minutesOfDay * 60 * 1000);
+}
+
+// PATCH (المدير فقط): بصمة خروج يدوية (now/scheduled)، أو إضافة بصمة يوم كامل لتاريخٍ يختاره (addDay).
 export async function PATCH(request: Request) {
   const g = await guard("field.manage");
   if (g.error) return g.error;
-  const parsed = z.object({ technicianId: z.coerce.number(), mode: z.enum(["now", "scheduled"]) }).safeParse(await request.json().catch(() => null));
+  const parsed = z.object({
+    technicianId: z.coerce.number(),
+    mode: z.enum(["now", "scheduled"]).optional(),
+    addDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
 
   const t = await prisma.technician.findUnique({ where: { id: parsed.data.technicianId } });
   if (!t || t.isDeleted || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
+
+  // إضافة بصمة يوم كامل (دخول=بدء الدوام، خروج=نهايته) — بلا خصم/إضافي
+  if (parsed.data.addDay) {
+    const startMin = parseHHMM(t.shiftStart), endMin0 = parseHHMM(t.shiftEnd);
+    if (startMin == null || endMin0 == null) return NextResponse.json({ error: "حدّد دوام الفني (بداية/نهاية) أولاً" }, { status: 400 });
+    const checkIn = bgTimeUtc(parsed.data.addDay, startMin);
+    const checkOut = bgTimeUtc(parsed.data.addDay, endMin0 <= startMin ? endMin0 + 1440 : endMin0);
+    const calc = computeAttendance(t, checkIn, checkOut); // أوقات الدوام بالضبط ⇒ صفر خصم/إضافي
+    const existing = await prisma.attendance.findFirst({ where: { technicianId: t.id, dayKey: parsed.data.addDay } });
+    if (existing) await prisma.attendance.update({ where: { id: existing.id }, data: { checkIn, checkOut, checkoutBy: "manager", ...calc } });
+    else await prisma.attendance.create({ data: { technicianId: t.id, agentId: t.agentId, towerId: t.towerId, dayKey: parsed.data.addDay, checkIn, checkOut, checkoutBy: "manager", ...calc } });
+    return NextResponse.json({ ok: true, addedDay: parsed.data.addDay });
+  }
+
+  // خلاف ذلك: بصمة خروج يدوية لليوم
   const rec = await todayRecord(t.id);
   if (!rec?.checkIn) return NextResponse.json({ error: "لا توجد بصمة دخول لليوم" }, { status: 400 });
   if (rec.checkOut) return NextResponse.json({ error: "سُجّل الخروج مسبقاً" }, { status: 400 });
@@ -137,4 +163,18 @@ export async function PATCH(request: Request) {
   const calc = computeAttendance(t, rec.checkIn, checkoutAt);
   await prisma.attendance.update({ where: { id: rec.id }, data: { checkOut: checkoutAt, checkoutBy: "manager", ...calc } });
   return NextResponse.json({ ok: true, checkOut: checkoutAt, calc });
+}
+
+// DELETE (المدير فقط): مسح بصمة يومٍ للفني إن كانت خاطئة (اليوم افتراضياً) — يستطيع الفني إعادة البصمة.
+export async function DELETE(request: Request) {
+  const g = await guard("field.manage");
+  if (g.error) return g.error;
+  const url = new URL(request.url);
+  const technicianId = Number(url.searchParams.get("technicianId"));
+  const dayKey = url.searchParams.get("dayKey") || baghdadDayKey(new Date());
+  if (!technicianId) return NextResponse.json({ error: "technicianId مطلوب" }, { status: 400 });
+  const t = await prisma.technician.findUnique({ where: { id: technicianId } });
+  if (!t || t.isDeleted || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
+  const res = await prisma.attendance.deleteMany({ where: { technicianId, dayKey } });
+  return NextResponse.json({ ok: true, deleted: res.count });
 }

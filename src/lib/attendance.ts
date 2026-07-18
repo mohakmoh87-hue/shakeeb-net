@@ -53,7 +53,9 @@ export function computeAttendance(tech: TechShift, checkIn: Date, checkOut: Date
   const or = Math.max(0, tech.overtimeRatePerMin ?? 0);
   if (endMin <= startMin) endMin += 1440; // دوام يعبر منتصف الليل
 
-  const ci = baghdadMinutesOfDay(checkIn);
+  // البصمة قبل موعد الدخول لا تُحتسب نهائياً — يُعتمد بدء الدوام كبداية فعلية
+  let ci = baghdadMinutesOfDay(checkIn);
+  if (ci < startMin) ci = startMin;
   let co = baghdadMinutesOfDay(checkOut);
   if (co < ci) co += 1440; // خروج في يوم لاحق
 
