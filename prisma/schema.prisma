@@ -910,6 +910,39 @@ model SalaryStatement {
   @@map("salary_statements")
 }
 
+// ===== إشعارات المدير — أحداث الفنيين (بصمة/إجازة/خصم معلّق) =====
+model Notification {
+  id        Int      @id @default(autoincrement())
+  agentId   Int? // عزل الوكيل
+  towerId   Int? // مكتب الحدث
+  type      String // checkin | checkout | leave | deduction
+  title     String
+  body      String
+  refType   String? // technician | leave | adjustment
+  refId     Int?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([agentId])
+  @@index([towerId])
+  @@index([read])
+  @@map("notifications")
+}
+
+// ===== اشتراكات Web Push للمدير (VAPID) =====
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  userId    Int // المستخدم المشترِك (المدير)
+  agentId   Int? // للعزل والاستهداف
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([agentId])
+  @@map("push_subscriptions")
+}
+
 // سجل صيانات المشترك (بجانب سجل الوصولات) — تفاصيل الصيانة من الفني وتاريخها؛ بلا صور.
 model MaintenanceLog {
   id             Int      @id @default(autoincrement())

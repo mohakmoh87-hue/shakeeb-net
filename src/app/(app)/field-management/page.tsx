@@ -8,6 +8,7 @@ import TechnicianManager from "@/components/TechnicianManager";
 import LeaveReview from "@/components/LeaveReview";
 import CardTypeManager from "@/components/CardTypeManager";
 import DeductionReview from "@/components/DeductionReview";
+import NotificationsBell from "@/components/NotificationsBell";
 
 type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number; timeTracked?: boolean };
@@ -202,11 +203,14 @@ export default function FieldManagementPage() {
           <span className="text-xl">🛠️</span>
           <h1 className="text-lg font-bold">إدارة الفنيين</h1>
         </div>
-        {isTech ? (
-          <button onClick={techLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
-        ) : (
-          <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
-        )}
+        <div className="flex items-center gap-2">
+          {canManage && <NotificationsBell />}
+          {isTech ? (
+            <button onClick={techLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
+          ) : (
+            <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
+          )}
+        </div>
       </div>
 
       {/* الأعمدة */}

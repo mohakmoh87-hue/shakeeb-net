@@ -7,6 +7,7 @@ import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
 import { baghdadDayKey } from "@/lib/attendance";
+import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -206,6 +207,7 @@ export async function POST(request: Request) {
             cardId, status: "pending", dayKey: baghdadDayKey(new Date()),
           },
         }).catch(() => {}); // لا يُفشل الإنجاز إن تعذّر إنشاء الخصم
+        await notify({ agentId: session.agentId ?? null, towerId, type: "deduction", title: "خصم تجاوز وقت معلّق", body: `${tech?.name ?? "فني"}: تجاوز «${card.kind}» ${overrunMin} دقيقة — خصم ${amount.toLocaleString("en-US")}`, refType: "adjustment" });
         overrunResult = { amount, overrunMin };
       }
     }

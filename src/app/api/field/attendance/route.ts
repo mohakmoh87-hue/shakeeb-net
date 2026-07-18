@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { baghdadDayKey, computeAttendance, parseHHMM } from "@/lib/attendance";
+import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
     const created = await prisma.attendance.create({
       data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: tech.towerId, dayKey: key, checkIn: now, checkoutBy: null },
     });
+    await notify({ agentId: tech.agentId, towerId: tech.towerId, type: "checkin", title: "بصمة دخول", body: `${tech.name} سجّل الدخول`, refType: "technician", refId: tech.technicianId });
     return NextResponse.json({ ok: true, state: "in", checkIn: created.checkIn });
   }
 
@@ -72,6 +74,9 @@ export async function POST(request: Request) {
     where: { id: rec.id },
     data: { checkOut: now, checkoutBy: "tech", ...(calc ?? {}) },
   });
+  const late = calc?.lateDeduction ?? 0, early = calc?.earlyDeduction ?? 0, ot = calc?.overtimeAddition ?? 0;
+  const extra = late || early ? ` (خصم ${(late + early).toLocaleString("en-US")})` : ot ? ` (إضافي ${ot.toLocaleString("en-US")})` : "";
+  await notify({ agentId: tech.agentId, towerId: tech.towerId, type: "checkout", title: "بصمة خروج", body: `${tech.name} سجّل الخروج${extra}`, refType: "technician", refId: tech.technicianId });
   return NextResponse.json({ ok: true, state: "done", checkOut: updated.checkOut, calc });
 }
 

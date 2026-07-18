@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { baghdadDayKey } from "@/lib/attendance";
+import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
     const created = await prisma.leave.create({
       data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: tech.towerId, kind: "time", paid: false, dayKey, startMin, endMin, reason },
     });
+    await notify({ agentId: tech.agentId, towerId: tech.towerId, type: "leave", title: "طلب إجازة زمنية", body: `${tech.name} طلب إجازة زمنية (${dayKey})`, refType: "leave", refId: created.id });
     return NextResponse.json({ ok: true, leave: created });
   }
 
@@ -97,6 +99,7 @@ export async function POST(request: Request) {
   const created = await prisma.leave.create({
     data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: tech.towerId, kind: "day", paid, dayKey, reason },
   });
+  await notify({ agentId: tech.agentId, towerId: tech.towerId, type: "leave", title: "طلب إجازة", body: `${tech.name} طلب إجازة يوم ${paid ? "براتب" : "بلا راتب"} (${dayKey})`, refType: "leave", refId: created.id });
   return NextResponse.json({ ok: true, leave: created });
 }
 
