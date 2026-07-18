@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { hashPassword, setSession } from "@/lib/auth";
-import type { Permission } from "@/lib/rbac";
+import { hashPassword } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// تسجيل ذاتي لتجربة أسبوع — عام (بلا دخول): ينشئ وكيلاً تجريبياً بمكتب واحد ينتهي بعد 7 أيام.
+// تسجيل ذاتي لتجربة أسبوع — عام (بلا دخول): ينشئ طلب وكيل تجريبي (بانتظار موافقة المالك).
 const schema = z.object({
   fullName: z.string().min(1, "الاسم مطلوب"),
   username: z.string().min(3, "اسم المستخدم 3 أحرف على الأقل").regex(/^[A-Za-z0-9_.-]+$/, "أحرف إنجليزية وأرقام فقط"),
@@ -24,30 +23,18 @@ export async function POST(request: Request) {
 
   const planExpiry = new Date(Date.now() + 7 * 24 * 3600 * 1000); // أسبوع
 
-  const created = await prisma.$transaction(async (tx) => {
+  // يُنشأ بانتظار الموافقة (approved=false، بلا دخول تلقائي) — يفعّله المالك من لوحته
+  await prisma.$transaction(async (tx) => {
     const agent = await tx.agent.create({
-      data: { name: fullName, officeCap: 1, isTrial: true, planExpiry },
+      data: { name: fullName, officeCap: 1, isTrial: true, approved: false, planExpiry },
     });
-    const manager = await tx.user.create({
+    await tx.user.create({
       data: {
-        fullName, username, password: await hashPassword(password),
+        fullName, username, password: await hashPassword(password), plainPassword: password,
         role: "ADMIN", isAdmin: true, isOwner: false, agentId: agent.id, isActive: true,
       },
     });
-    return { agent, manager };
   });
 
-  // تسجيل دخول تلقائي للحساب الجديد
-  await setSession({
-    userId: created.manager.id,
-    username: created.manager.username,
-    fullName: created.manager.fullName,
-    isAdmin: true,
-    isOwner: false,
-    agentId: created.agent.id,
-    permissions: [] as Permission[],
-    towerId: null,
-  });
-
-  return NextResponse.json({ ok: true }, { status: 201 });
+  return NextResponse.json({ ok: true, pending: true }, { status: 201 });
 }

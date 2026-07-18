@@ -58,7 +58,8 @@ export default function BackupSection() {
       <h3 className="mb-1 font-bold text-sky-800">💾 النسخ الاحتياطي والاسترجاع</h3>
       <p className="mb-3 text-xs text-slate-500">يُرسل النظام نسخة كاملة من بياناتك إلى إيميلك يومياً تلقائياً. احتفظ بها لاسترجاع بياناتك عند الحاجة (حتى على جهاز آخر).</p>
 
-      <label className="mb-1 block text-sm font-semibold text-slate-700">إيميل النسخ الاحتياطي (= إيميل الاسترجاع)</label>
+      <label className="mb-1 block text-sm font-semibold text-slate-700">إيميل النسخ الاحتياطي (= إيميل استرجاع كلمة السر)</label>
+      <p className="mb-1 text-[11px] text-slate-400">يُستخدم أيضاً لاسترجاع كلمة سرّك عند نسيانها عبر «نسيت كلمة السر؟» في صفحة الدخول.</p>
       <div className="mb-1 flex gap-2">
         <input type="email" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@gmail.com" className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500" />
         <button onClick={saveEmail} disabled={saving || email.trim() === savedEmail} className="rounded-lg bg-sky-600 px-5 py-2 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-50">{saving ? "…" : "حفظ"}</button>

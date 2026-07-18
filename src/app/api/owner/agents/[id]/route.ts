@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guardOwner } from "@/lib/guard";
+import { hashPassword } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,9 @@ const patchSchema = z.object({
   officeCap: z.coerce.number().int().min(0).optional(),
   addMonths: z.coerce.number().int().optional(), // تمديد الاشتراك بعدد أشهر (يُضاف للانتهاء الحالي أو من الآن)
   clearExpiry: z.boolean().optional(), // إزالة تاريخ الانتهاء (بلا انتهاء)
+  approve: z.boolean().optional(), // موافقة المالك على تفعيل الوكيل (التجريبي)
+  managerUsername: z.string().min(1).optional(), // تعديل يوزر مدير الوكيل
+  managerPassword: z.string().min(4).optional(), // تعديل باسورد مدير الوكيل
 });
 
 // تعديل وكيل: الاسم، سقف المكاتب، تمديد الاشتراك
@@ -28,6 +32,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const data: Record<string, unknown> = {};
   if (d.name != null) data.name = d.name;
   if (d.officeCap != null) data.officeCap = d.officeCap;
+  if (d.approve) data.approved = true; // تفعيل الوكيل التجريبي
   if (d.clearExpiry) { data.planExpiry = null; data.isTrial = false; }
   else if (d.addMonths != null && d.addMonths !== 0) {
     const base = agent.planExpiry && agent.planExpiry.getTime() > Date.now() ? agent.planExpiry.getTime() : Date.now();
@@ -35,7 +40,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     data.isTrial = false; // التمديد يحوّله لحساب عادي
   }
 
-  await prisma.agent.update({ where: { id: agentId }, data });
+  if (Object.keys(data).length > 0) await prisma.agent.update({ where: { id: agentId }, data });
+
+  // تعديل بيانات دخول مدير الوكيل (أول أدمن للوكيل)
+  if (d.managerUsername != null || d.managerPassword != null) {
+    const manager = await prisma.user.findFirst({ where: { agentId, isAdmin: true, isOwner: false, isDeleted: false }, orderBy: { id: "asc" } });
+    if (!manager) return NextResponse.json({ error: "لا مدير لهذا الوكيل" }, { status: 404 });
+    const mdata: Record<string, unknown> = {};
+    if (d.managerUsername != null && d.managerUsername !== manager.username) {
+      const taken = await prisma.user.findUnique({ where: { username: d.managerUsername } });
+      if (taken && taken.id !== manager.id) return NextResponse.json({ error: "اسم المستخدم موجود مسبقاً" }, { status: 400 });
+      mdata.username = d.managerUsername;
+    }
+    if (d.managerPassword != null) { mdata.password = await hashPassword(d.managerPassword); mdata.plainPassword = d.managerPassword; }
+    if (Object.keys(mdata).length > 0) await prisma.user.update({ where: { id: manager.id }, data: mdata });
+  }
+
   return NextResponse.json({ ok: true });
 }
 

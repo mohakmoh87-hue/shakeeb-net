@@ -217,7 +217,8 @@ export default function ActivationModal({
           <button onClick={releaseAndClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
         </div>
 
-        <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
+        {/* على الهاتف: تمرير عمودي للوصول لصفحة SAS بالأسفل؛ على الكمبيوتر: جنباً لجنب */}
+        <div className="flex flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
           {/* نموذج التفعيل — يمين على الكمبيوتر / أعلى على الهاتف */}
           <div className="w-full shrink-0 space-y-2 bg-slate-50 p-3 md:w-[460px] md:overflow-y-auto">
             {/* المشترك + اليوزر */}
@@ -319,7 +320,7 @@ export default function ActivationModal({
           </div>
 
           {/* صفحة SAS4 مضمّنة — يسار على الكمبيوتر / أسفل على الهاتف */}
-          <div className="flex h-[42vh] shrink-0 flex-col border-t border-slate-200 md:h-auto md:flex-1 md:border-r md:border-t-0">
+          <div className="flex h-[75vh] shrink-0 flex-col border-t border-slate-200 md:h-auto md:flex-1 md:border-r md:border-t-0">
             <div className="flex items-center justify-between bg-slate-100 px-3 py-1.5 text-xs">
               <span className="font-semibold text-slate-600">صفحة تفعيل المشترك في SAS4 (دخول تلقائي)</span>
               {directLink && <a href={directLink} target="_blank" rel="noopener noreferrer" className="text-mynet-blue hover:underline">فتح بنافذة جديدة ↗</a>}

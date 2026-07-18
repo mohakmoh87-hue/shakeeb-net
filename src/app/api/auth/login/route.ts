@@ -62,9 +62,12 @@ export async function POST(request: Request) {
 
   // منع دخول وكيل منتهي الاشتراك (يبقى المالك ومستخدمو النظام بلا وكيل غير متأثّرين)
   if (!user.isOwner && user.agentId != null) {
-    const agent = await prisma.agent.findUnique({ where: { id: user.agentId }, select: { planExpiry: true, isDeleted: true } });
+    const agent = await prisma.agent.findUnique({ where: { id: user.agentId }, select: { planExpiry: true, isDeleted: true, approved: true } });
     if (!agent || agent.isDeleted) {
       return NextResponse.json({ error: "الحساب غير مفعّل — تواصل مع الإدارة" }, { status: 403 });
+    }
+    if (!agent.approved) {
+      return NextResponse.json({ error: "حسابك قيد المراجعة — بانتظار موافقة الإدارة على تفعيله" }, { status: 403 });
     }
     if (agent.planExpiry && agent.planExpiry.getTime() < Date.now()) {
       return NextResponse.json({ error: "انتهت فترة اشتراكك — تواصل مع الإدارة للتجديد" }, { status: 403 });
