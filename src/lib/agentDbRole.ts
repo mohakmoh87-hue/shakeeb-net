@@ -33,14 +33,30 @@ async function readStoredUrl(agentId: number): Promise<string | null> {
   return rows[0]?.url ?? null;
 }
 
-// ينشئ/يبدّل كلمة سر دور الوكيل على القاعدة ثم يخزّن الرابط ويُعيده
+// ينشئ/يبدّل كلمة سر دور الوكيل على القاعدة ثم يخزّن الرابط ويُعيده.
+// اتصال الموقع (neondb_owner) يملك CREATEROLE، فتُنفَّذ عبارات DDL مباشرةً بلا حاجة
+// لدالة SECURITY DEFINER — مع تحقّق صارم يمنع أي حقن (المعرّف عدد، وكلمة السر alnum فقط).
 async function upsertRole(agentId: number): Promise<string> {
+  if (!Number.isInteger(agentId) || agentId <= 0) throw new Error("agentId غير صالح");
+  const roleName = `agent_${agentId}_worker`;
   const password = randomPassword();
-  // الدالة SECURITY DEFINER: تنشئ الدور أو تبدّل كلمة سره وتُدرجه بجدول الربط
-  const res = await prisma.$queryRawUnsafe<{ create_agent_worker_role: string }[]>(
-    `SELECT create_agent_worker_role($1, $2)`, agentId, password,
+  if (!/^[A-Za-z0-9]+$/.test(password)) throw new Error("كلمة سر غير آمنة"); // حارس إضافي
+
+  const exists = await prisma.$queryRawUnsafe<{ n: number }[]>(
+    `SELECT count(*)::int AS n FROM pg_roles WHERE rolname = $1`, roleName,
   );
-  const roleName = res[0]?.create_agent_worker_role ?? `agent_${agentId}_worker`;
+  // أسماء الأدوار وكلمات السر لا تقبل معاملات في DDL؛ آمنة هنا (عدد + alnum)
+  if ((exists[0]?.n ?? 0) > 0) {
+    await prisma.$executeRawUnsafe(`ALTER ROLE "${roleName}" WITH LOGIN PASSWORD '${password}'`);
+  } else {
+    await prisma.$executeRawUnsafe(`CREATE ROLE "${roleName}" WITH LOGIN PASSWORD '${password}'`);
+  }
+  await prisma.$executeRawUnsafe(`GRANT agent_worker TO "${roleName}"`);
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO db_agent_roles (role_name, agent_id) VALUES ($1, $2)
+     ON CONFLICT (role_name) DO UPDATE SET agent_id = EXCLUDED.agent_id`, roleName, agentId,
+  );
+
   const url = buildRoleUrl(roleName, password);
   await prisma.$executeRawUnsafe(`UPDATE agents SET "workerDbUrl" = $1 WHERE id = $2`, url, agentId);
   return url;
