@@ -71,6 +71,11 @@ export async function getOrCreatePettyAccount(towerId: number | null) {
   return acc;
 }
 
+// إنهاء دعم فني: يعيده لمكتبه الأصلي (يمسح حقول الدعم كلّها).
+export async function endSupport(technicianId: number) {
+  await prisma.technician.update({ where: { id: technicianId }, data: { supportTowerId: null, supportKind: null, supportCardIds: null } });
+}
+
 // لوحة المكتب (تُنشأ إن لم توجد) — لوحة واحدة لكل قيمة towerId.
 export async function getOrCreateBoard(towerId: number | null) {
   let board = await prisma.taskBoard.findFirst({

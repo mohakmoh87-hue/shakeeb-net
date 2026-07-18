@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { getOrCreatePettyAccount, canOperateCard } from "@/lib/field";
+import { getOrCreatePettyAccount, canOperateCard, endSupport } from "@/lib/field";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
@@ -212,6 +212,20 @@ export async function POST(request: Request) {
         overrunResult = { amount, overrunMin };
       }
     }
+  }
+
+  // ===== دعم ببطاقات محدّدة: إن أُكملت كل بطاقات الدعم ⇒ عودة تلقائية للفني لمكتبه =====
+  if (tech?.supportTowerId != null && tech.supportKind === "cards" && tech.supportCardIds) {
+    try {
+      const ids = JSON.parse(tech.supportCardIds) as number[];
+      if (Array.isArray(ids) && ids.includes(cardId)) {
+        const remaining = await prisma.taskCard.count({ where: { id: { in: ids }, done: false, isDeleted: false } });
+        if (remaining === 0) {
+          await endSupport(tech.id);
+          await notify({ agentId: session.agentId ?? null, towerId: tech.towerId, type: "checkout", title: "انتهاء الدعم", body: `${tech.name} أكمل بطاقات الدعم وعاد لمكتبه`, refType: "technician", refId: tech.id });
+        }
+      }
+    } catch { /* تجاهل إن كان supportCardIds غير صالح */ }
   }
 
   // رسالة تأكيد استخدام المكافأة (بعد الإنجاز، أفضل جهد)

@@ -5,6 +5,7 @@ import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { baghdadDayKey, computeAttendance, parseHHMM, distanceMeters } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
+import { endSupport } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -66,8 +67,13 @@ export async function POST(request: Request) {
   const parsed = z.object({ action: z.enum(["in", "out"]), lat: z.coerce.number().optional(), lng: z.coerce.number().optional() }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "إجراء غير صحيح" }, { status: 400 });
 
-  // البصمة الجغرافية (منع صارم): يجب أن يكون الفني داخل نطاق مكتبه
-  const geoErr = await geofenceError(tech.towerId, parsed.data.lat, parsed.data.lng);
+  // بيانات الفني (بما فيها الدعم) — البصمة تتحوّل لمكتب الدعم إن كان الفني مُعاراً
+  const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { towerId: true, supportTowerId: true, shiftStart: true, shiftEnd: true, entryGraceMin: true, exitGraceMin: true, lateRatePerMin: true, overtimeRatePerMin: true } });
+  const stampOffice = t?.supportTowerId ?? tech.towerId; // مكتب البصمة الحالي (الدعم أو الأصلي)
+  const onSupport = t?.supportTowerId != null;
+
+  // البصمة الجغرافية (منع صارم): يجب أن يكون الفني داخل نطاق مكتب البصمة الحالي
+  const geoErr = await geofenceError(stampOffice, parsed.data.lat, parsed.data.lng);
   if (geoErr) return NextResponse.json({ error: geoErr }, { status: 403 });
 
   const now = new Date();
@@ -77,16 +83,15 @@ export async function POST(request: Request) {
   if (parsed.data.action === "in") {
     if (rec?.checkIn) return NextResponse.json({ error: "سجّلت دخولك اليوم مسبقاً" }, { status: 400 });
     const created = await prisma.attendance.create({
-      data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: tech.towerId, dayKey: key, checkIn: now, checkoutBy: null },
+      data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: stampOffice, dayKey: key, checkIn: now, checkoutBy: null },
     });
-    await notify({ agentId: tech.agentId, towerId: tech.towerId, type: "checkin", title: "بصمة دخول", body: `${tech.name} سجّل الدخول`, refType: "technician", refId: tech.technicianId });
+    await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkin", title: "بصمة دخول", body: `${tech.name} سجّل الدخول${onSupport ? " (دعم)" : ""}`, refType: "technician", refId: tech.technicianId });
     return NextResponse.json({ ok: true, state: "in", checkIn: created.checkIn });
   }
 
   // خروج
   if (!rec?.checkIn) return NextResponse.json({ error: "سجّل دخولك أولاً" }, { status: 400 });
   if (rec.checkOut) return NextResponse.json({ error: "سجّلت خروجك اليوم مسبقاً" }, { status: 400 });
-  const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { shiftStart: true, shiftEnd: true, entryGraceMin: true, exitGraceMin: true, lateRatePerMin: true, overtimeRatePerMin: true } });
   const calc = t ? computeAttendance(t, rec.checkIn, now) : null;
   const updated = await prisma.attendance.update({
     where: { id: rec.id },
@@ -94,8 +99,14 @@ export async function POST(request: Request) {
   });
   const late = calc?.lateDeduction ?? 0, early = calc?.earlyDeduction ?? 0, ot = calc?.overtimeAddition ?? 0;
   const extra = late || early ? ` (خصم ${(late + early).toLocaleString("en-US")})` : ot ? ` (إضافي ${ot.toLocaleString("en-US")})` : "";
-  await notify({ agentId: tech.agentId, towerId: tech.towerId, type: "checkout", title: "بصمة خروج", body: `${tech.name} سجّل الخروج${extra}`, refType: "technician", refId: tech.technicianId });
-  return NextResponse.json({ ok: true, state: "done", checkOut: updated.checkOut, calc });
+  await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkout", title: "بصمة خروج", body: `${tech.name} سجّل الخروج${extra}`, refType: "technician", refId: tech.technicianId });
+
+  // إن كان على دعم: الخروج ينهي الدعم ويعيده لمكتبه الأصلي (في كل الأحوال بنهاية الدوام)
+  if (onSupport) {
+    await endSupport(tech.technicianId);
+    await notify({ agentId: tech.agentId, towerId: tech.towerId, type: "checkout", title: "انتهاء الدعم", body: `${tech.name} أنهى الدعم وعاد لمكتبه`, refType: "technician", refId: tech.technicianId });
+  }
+  return NextResponse.json({ ok: true, state: "done", checkOut: updated.checkOut, calc, supportEnded: onSupport });
 }
 
 // PATCH (المدير فقط): بصمة خروج يدوية عند نسيان الفني — بالوقت الحالي أو بوقته المحدّد.

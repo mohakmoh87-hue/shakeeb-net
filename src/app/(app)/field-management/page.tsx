@@ -602,26 +602,41 @@ export default function FieldManagementPage() {
   );
 }
 
-/* ========== نافذة الدعم المؤقّت (استعارة فني من مكتب آخر) ========== */
-type SupportTech = { id: number; name: string; homeOffice: string };
+/* ========== نافذة الدعم المؤقّت (استعارة فني من مكتب آخر: بطاقات محدّدة أو يوم كامل) ========== */
+type SupportTech = { id: number; name: string; homeOffice: string; supportKind?: string | null };
+type SupportCard = { id: number; title: string; kind: string; assignee: string | null };
 function SupportModal({ officeId, onClose, onChange }: { officeId: number; onClose: () => void; onChange: () => void }) {
   const [borrowed, setBorrowed] = useState<SupportTech[]>([]);
   const [candidates, setCandidates] = useState<SupportTech[]>([]);
+  const [officeCards, setOfficeCards] = useState<SupportCard[]>([]);
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState<SupportTech | null>(null); // الفني الجاري استعارته
+  const [kind, setKind] = useState<"day" | "cards">("day");
+  const [selCards, setSelCards] = useState<number[]>([]);
+  const [msg, setMsg] = useState("");
 
   const load = useCallback(() => {
     fetch(`/api/field/support?officeId=${officeId}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d) { setBorrowed(d.borrowed ?? []); setCandidates(d.candidates ?? []); }
+      if (d) { setBorrowed(d.borrowed ?? []); setCandidates(d.candidates ?? []); setOfficeCards(d.cards ?? []); }
     });
   }, [officeId]);
   useEffect(() => { load(); }, [load]);
 
-  async function borrow(id: number) {
-    setBusy(true);
-    await fetch("/api/field/support", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId: id, officeId }) });
-    setBusy(false); load(); onChange();
+  function startBorrow(t: SupportTech) { setPicking(t); setKind("day"); setSelCards([]); setMsg(""); }
+  const toggleCard = (id: number) => setSelCards((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  async function confirmBorrow() {
+    if (!picking) return;
+    if (kind === "cards" && selCards.length === 0) { setMsg("اختر بطاقة واحدة على الأقل"); return; }
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/field/support", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId: picking.id, officeId, kind, cardIds: kind === "cards" ? selCards : undefined }) });
+    const d = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) { setMsg(d.error ?? "تعذّر طلب الدعم"); return; }
+    setPicking(null); load(); onChange();
   }
   async function ret(id: number) {
+    if (!confirm("إنهاء الدعم وإعادة الفني لمكتبه؟")) return;
     setBusy(true);
     await fetch(`/api/field/support?technicianId=${id}`, { method: "DELETE" });
     setBusy(false); load(); onChange();
@@ -634,34 +649,65 @@ function SupportModal({ officeId, onClose, onChange }: { officeId: number; onClo
           <h3 className="text-lg font-bold text-slate-800">🤝 دعم مؤقّت</h3>
           <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
         </div>
-        <p className="mb-3 text-xs text-slate-500">استعِر فنياً من مكتب آخر ليعمل مؤقتاً في هذا المكتب وقت الضغط. يظهر ضمن فنّييك ويمكن توجيه البطاقات إليه.</p>
+        <p className="mb-3 text-xs text-slate-500">استعِر فنياً من مكتب آخر ليعمل مؤقتاً في هذا المكتب. تتحوّل بصمته لهذا المكتب، ويعود لمكتبه تلقائياً بإكمال بطاقات الدعم أو بنهاية دوامه بعد بصمة الخروج.</p>
+        {msg && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{msg}</div>}
 
-        {borrowed.length > 0 && (
-          <div className="mb-4">
-            <div className="mb-1.5 text-sm font-bold text-purple-700">المُعارون حالياً</div>
-            <ul className="space-y-1.5">
-              {borrowed.map((t) => (
-                <li key={t.id} className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
-                  <div><div className="text-sm font-semibold text-slate-700">{t.name}</div><div className="text-xs text-slate-400">من {t.homeOffice}</div></div>
-                  <button disabled={busy} onClick={() => ret(t.id)} className="rounded bg-white px-2.5 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-100">↩ إرجاع</button>
-                </li>
-              ))}
-            </ul>
+        {/* اختيار نوع الدعم للفني الجاري استعارته */}
+        {picking ? (
+          <div className="mb-4 rounded-xl border border-purple-200 bg-purple-50/60 p-3">
+            <div className="mb-2 text-sm font-bold text-slate-800">دعم «{picking.name}» — من {picking.homeOffice}</div>
+            <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-white p-1">
+              <button onClick={() => setKind("day")} className={`rounded-lg py-2 text-sm font-bold transition ${kind === "day" ? "bg-purple-600 text-white shadow" : "text-slate-500"}`}>دعم يوم كامل</button>
+              <button onClick={() => setKind("cards")} className={`rounded-lg py-2 text-sm font-bold transition ${kind === "cards" ? "bg-purple-600 text-white shadow" : "text-slate-500"}`}>بطاقات محدّدة</button>
+            </div>
+            {kind === "cards" && (
+              <div className="mb-3 max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1">
+                {officeCards.length === 0 ? (
+                  <div className="p-3 text-center text-xs text-slate-400">لا بطاقات غير منجزة في هذا المكتب</div>
+                ) : officeCards.map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-50">
+                    <input type="checkbox" checked={selCards.includes(c.id)} onChange={() => toggleCard(c.id)} className="h-4 w-4 accent-purple-600" />
+                    <span className="flex-1 truncate text-slate-700">{c.title}</span>
+                    <span className="text-[10px] text-slate-400">{c.kind}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={confirmBorrow} disabled={busy} className="flex-1 rounded-lg bg-purple-600 py-2 text-sm font-bold text-white hover:bg-purple-700 disabled:opacity-60">{busy ? "..." : kind === "cards" ? `تأكيد الدعم (${selCards.length})` : "تأكيد دعم اليوم"}</button>
+              <button onClick={() => setPicking(null)} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600">إلغاء</button>
+            </div>
           </div>
-        )}
-
-        <div className="mb-1.5 text-sm font-bold text-slate-700">فنيّو المكاتب الأخرى</div>
-        {candidates.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 p-3 text-center text-sm text-slate-400">لا يوجد فنيون متاحون للاستعارة</div>
         ) : (
-          <ul className="space-y-1.5">
-            {candidates.map((t) => (
-              <li key={t.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <div><div className="text-sm font-semibold text-slate-700">{t.name}</div><div className="text-xs text-slate-400">من {t.homeOffice}</div></div>
-                <button disabled={busy} onClick={() => borrow(t.id)} className="rounded bg-purple-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-purple-600">استعارة</button>
-              </li>
-            ))}
-          </ul>
+          <>
+            {borrowed.length > 0 && (
+              <div className="mb-4">
+                <div className="mb-1.5 text-sm font-bold text-purple-700">المُعارون حالياً</div>
+                <ul className="space-y-1.5">
+                  {borrowed.map((t) => (
+                    <li key={t.id} className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
+                      <div><div className="text-sm font-semibold text-slate-700">{t.name}</div><div className="text-xs text-slate-400">من {t.homeOffice} · {t.supportKind === "cards" ? "بطاقات محدّدة" : "يوم كامل"}</div></div>
+                      <button disabled={busy} onClick={() => ret(t.id)} className="rounded bg-white px-2.5 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-100">↩ إنهاء الدعم</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="mb-1.5 text-sm font-bold text-slate-700">فنيّو المكاتب الأخرى</div>
+            {candidates.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-300 p-3 text-center text-sm text-slate-400">لا يوجد فنيون متاحون للاستعارة</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {candidates.map((t) => (
+                  <li key={t.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div><div className="text-sm font-semibold text-slate-700">{t.name}</div><div className="text-xs text-slate-400">من {t.homeOffice}</div></div>
+                    <button disabled={busy} onClick={() => startBorrow(t)} className="rounded bg-purple-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-purple-600">طلب دعم</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
     </div>
