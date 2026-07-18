@@ -114,9 +114,18 @@ export default function FieldManagementPage() {
 
 
   const isTech = role === "technician";
+  // وضع التطبيق المثبّت (standalone) — لعرض «خروج» بدل «الرئيسية» للمدير داخل التطبيق
+  const [standalone, setStandalone] = useState(false);
+  useEffect(() => {
+    setStandalone(window.matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true);
+  }, []);
   async function techLogout() {
     await fetch("/api/field/tech-logout", { method: "POST" });
     router.replace("/login");
+  }
+  async function userLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
   }
 
   async function createType() {
@@ -196,17 +205,17 @@ export default function FieldManagementPage() {
   if (loading) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
 
   return (
-    <div className="flex h-[calc(100dvh-52px)] flex-col md:h-screen" style={{ background: "linear-gradient(160deg,#1c8fe6 0%,#0f6fbf 60%,#0a4f8a 100%)" }}>
+    <div data-app-fullheight className="flex h-[calc(100dvh-52px)] flex-col md:h-screen" style={{ background: "linear-gradient(160deg,#1c8fe6 0%,#0f6fbf 60%,#0a4f8a 100%)" }}>
       {/* ترويسة اللوحة */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+      <div data-app-safetop className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className="flex items-center gap-2 text-white">
           <span className="text-xl">🛠️</span>
           <h1 className="text-lg font-bold">إدارة الفنيين</h1>
         </div>
         <div className="flex items-center gap-2">
           {canManage && <NotificationsBell />}
-          {isTech ? (
-            <button onClick={techLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
+          {isTech || standalone ? (
+            <button onClick={isTech ? techLogout : userLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
           ) : (
             <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
           )}
@@ -305,7 +314,7 @@ export default function FieldManagementPage() {
 
       {/* شريط سفلي وسط الصفحة: المكاتب جنب بعض + الفنيون — متاح للجميع (ليساعد الفني مكتباً آخر وقت الضغط) */}
       {offices.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-1.5 border-t border-white/20 bg-black/25 px-4 py-2.5">
+        <div className="flex flex-wrap items-center justify-center gap-1.5 border-t border-white/20 bg-black/25 px-4 pt-2.5 pb-[max(10px,env(safe-area-inset-bottom))]">
           {offices.map((o) => (
             <button
               key={o.id}

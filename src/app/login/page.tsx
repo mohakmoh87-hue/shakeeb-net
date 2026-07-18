@@ -50,8 +50,9 @@ export default function LoginPage() {
         setError(data.error ?? "فشل تسجيل الدخول");
         return;
       }
-      // إعادة تحميل كاملة لتصفير حالة العميل، والتوجيه حسب الدور (فني → إدارة الفنيين، غيره → لوحته)
-      window.location.href = data.redirect ?? "/dashboard";
+      // في التطبيق المثبّت (standalone): يبقى الجميع على إدارة الفنيين. وإلا التوجيه حسب الدور.
+      const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
+      window.location.href = standalone ? "/field-management" : (data.redirect ?? "/dashboard");
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {

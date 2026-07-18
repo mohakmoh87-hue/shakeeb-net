@@ -6,6 +6,7 @@ import MobileNav from "@/components/MobileNav";
 import WhatsAppMonitor from "@/components/WhatsAppMonitor";
 import ReminderPrompt from "@/components/ReminderPrompt";
 import CompletionNotifier from "@/components/CompletionNotifier";
+import StandaloneLock from "@/components/StandaloneLock";
 
 // غلاف الصفحات المحمية: شريط أدوات علوي + المحتوى
 export default async function AppLayout({
@@ -38,21 +39,28 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <TopBar
-        brand={brand}
-        fullName={session.fullName}
-        roleLabel={session.isAdmin ? "مدير النظام" : "مستخدم"}
-      />
-      {/* تنقّل الهاتف (يظهر على الشاشات الصغيرة فقط) */}
-      <MobileNav
-        brand={brand}
-        fullName={session.fullName}
-        roleLabel={session.isAdmin ? "مدير النظام" : "مستخدم"}
-      />
+      {/* واجهة الموقع الكاملة — تُخفى في التطبيق المثبّت (standalone) ليبقى مركّزاً على إدارة الفنيين */}
+      <div data-site-chrome>
+        <TopBar
+          brand={brand}
+          fullName={session.fullName}
+          roleLabel={session.isAdmin ? "مدير النظام" : "مستخدم"}
+        />
+        {/* تنقّل الهاتف (يظهر على الشاشات الصغيرة فقط) */}
+        <MobileNav
+          brand={brand}
+          fullName={session.fullName}
+          roleLabel={session.isAdmin ? "مدير النظام" : "مستخدم"}
+        />
 
-      <WhatsAppMonitor />
-      <ReminderPrompt />
-      <CompletionNotifier />
+        <WhatsAppMonitor />
+        <ReminderPrompt />
+        <CompletionNotifier />
+      </div>
+
+      {/* في التطبيق المثبّت: يحصر التنقّل بإدارة الفنيين لأي حساب */}
+      <StandaloneLock />
+
       <main className="flex-1">{children}</main>
     </div>
   );
