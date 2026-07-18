@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import InstallApp from "@/components/InstallApp";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -189,6 +190,9 @@ export default function LoginPage() {
             للتواصل والاشتراك: <a href={`tel:${ownerPhone}`} className="font-bold text-blue-600" dir="ltr">{ownerPhone}</a>
           </div>
         )}
+
+        {/* تثبيت تطبيق إدارة الفنيين (يظهر حسب الجهاز، ويختفي إن كان مثبّتاً) */}
+        <InstallApp />
       </div>
 
       {forgotOpen && (

@@ -49,5 +49,5 @@ export default async function proxy(req: NextRequest) {
 
 export const config = {
   // يعمل على كل المسارات ماعدا الملفات الثابتة و API و عامل الخدمة/بيان التطبيق (يجب أن تُفتح بلا تسجيل دخول)
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|manifest.json).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|manifest.json|icons/).*)"],
 };
