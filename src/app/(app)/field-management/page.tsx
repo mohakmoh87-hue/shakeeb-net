@@ -355,7 +355,7 @@ export default function FieldManagementPage() {
               {o.name ?? `مكتب ${o.id}`}
             </button>
           ))}
-          {canManage && (
+          {(canManage || (!isTech && canOperate)) && (
             <button onClick={() => setTechModal(true)} className="rounded-lg bg-emerald-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-emerald-600">
               👷 الفنيون ({technicians.length})
             </button>
@@ -393,6 +393,7 @@ export default function FieldManagementPage() {
             officeId={officeId}
             onSelectOffice={switchOffice}
             canManage={canManage}
+            canTechs={canManage || (!isTech && canOperate)}
             techCount={technicians.length}
             leavePending={leavePending}
             dedPending={dedPending}

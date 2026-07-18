@@ -30,6 +30,30 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     });
   }, []);
 
+  // تتبع الموقع بالطلب: فحص خفيف كل 30ث «هل التتبع مطلوب؟» — إن طُلب يُرسل الموقع كل دقيقة،
+  // وإن ردّ الخادم بالتوقف (أُغلقت صفحة التتبع) يعود للخمول فوراً بلا أي إرسال.
+  useEffect(() => {
+    let locTimer: ReturnType<typeof setInterval> | null = null;
+    let stopped = false;
+    const stopLoc = () => { if (locTimer) { clearInterval(locTimer); locTimer = null; } };
+    const sendLoc = async () => {
+      const pos = await getPosition();
+      if (!pos || stopped) return;
+      const r = await fetch("/api/field/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pos) }).catch(() => null);
+      const d = await r?.json().catch(() => null);
+      if (!d?.tracking) stopLoc();
+    };
+    const check = async () => {
+      const d = await fetch("/api/field/track").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (stopped) return;
+      if (d?.tracking) { if (!locTimer) { sendLoc(); locTimer = setInterval(sendLoc, 60_000); } }
+      else stopLoc();
+    };
+    check();
+    const checkTimer = setInterval(check, 30_000);
+    return () => { stopped = true; clearInterval(checkTimer); stopLoc(); };
+  }, []);
+
   function flash(msg: string) { setToast(msg); setTimeout(() => setToast(""), 4200); }
 
   // موقع الفني الحالي (للبصمة الجغرافية) — يرجع null إن تعذّر

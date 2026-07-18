@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import SalaryModal from "./SalaryModal";
 import AttendanceManager from "./AttendanceManager";
+import TrackModal from "./TrackModal";
 
 type Tech = {
   id: number; name: string; phone: string | null; username: string | null; plainCode?: string | null;
@@ -22,9 +23,11 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   const [openForm, setOpenForm] = useState(false);
   const [salaryTech, setSalaryTech] = useState<Tech | null>(null);
   const [attTech, setAttTech] = useState<Tech | null>(null);
+  const [isManager, setIsManager] = useState(true); // مستخدم المكتب يرى القائمة والتتبع فقط
+  const [trackIds, setTrackIds] = useState<number[] | null>(null); // فتح نافذة التتبع بفنيين محدّدين
 
   const load = useCallback(() => {
-    fetch(`/api/field/technicians${officeId != null ? `?officeId=${officeId}` : ""}`).then((r) => (r.ok ? r.json() : null)).then((d) => d && setTechs(d.technicians ?? []));
+    fetch(`/api/field/technicians${officeId != null ? `?officeId=${officeId}` : ""}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setTechs(d.technicians ?? []); setIsManager(d.isManager !== false); } });
   }, [officeId]);
   useEffect(() => { load(); }, [load]);
 
@@ -67,8 +70,11 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
           <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm hover:bg-slate-100">✕</button>
         </div>
 
-        {!openForm && (
-          <button onClick={startAdd} className="mb-4 w-full rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 py-3.5 text-base font-extrabold text-white shadow-md active:scale-[0.99]">➕ إضافة فني جديد</button>
+        {!openForm && isManager && (
+          <button onClick={startAdd} className="mb-3 w-full rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 py-3.5 text-base font-extrabold text-white shadow-md active:scale-[0.99]">➕ إضافة فني جديد</button>
+        )}
+        {!openForm && techs.length > 0 && (
+          <button onClick={() => setTrackIds(techs.map((t) => t.id))} className="mb-4 w-full rounded-2xl bg-gradient-to-br from-sky-500 to-sky-700 py-3 text-base font-extrabold text-white shadow-md active:scale-[0.99]">📍 تتبع موقع الجميع</button>
         )}
 
         {openForm && (
@@ -109,16 +115,23 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                   <div className="min-w-0 flex-1">
                     <div className="text-base font-bold text-slate-800">{t.name}</div>
                     <div className="truncate text-xs text-slate-500" dir="ltr">👤 {t.username ?? "—"}{t.plainCode ? ` · 🔑 ${t.plainCode}` : ""}</div>
-                    <div className="mt-0.5 text-xs text-slate-500">{t.shiftStart && t.shiftEnd ? `⏰ ${t.shiftStart}–${t.shiftEnd}` : "بلا دوام"} · راتب {Number(t.salary ?? 0).toLocaleString("en-US")}</div>
+                    {isManager && <div className="mt-0.5 text-xs text-slate-500">{t.shiftStart && t.shiftEnd ? `⏰ ${t.shiftStart}–${t.shiftEnd}` : "بلا دوام"} · راتب {Number(t.salary ?? 0).toLocaleString("en-US")}</div>}
                   </div>
                 </div>
-                {/* الخيارات — مربعات واضحة */}
-                <div className="grid grid-cols-2 gap-2">
-                  <Act onClick={() => setSalaryTech(t)} cls="bg-emerald-50 text-emerald-700" icon="💰" label="الراتب" />
-                  <Act onClick={() => setAttTech(t)} cls="bg-amber-50 text-amber-700" icon="🗓️" label="الحضور" />
-                  <Act onClick={() => startEdit(t)} cls="bg-sky-50 text-sky-700" icon="✏️" label="تعديل" />
-                  <Act onClick={() => del(t)} cls="bg-rose-50 text-rose-600" icon="🗑️" label="حذف" />
-                </div>
+                {/* الخيارات — مربعات واضحة (مستخدم المكتب: التتبع فقط) */}
+                {isManager ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    <Act onClick={() => setTrackIds([t.id])} cls="bg-sky-50 text-sky-700" icon="📍" label="تتبع الموقع" />
+                    <Act onClick={() => setSalaryTech(t)} cls="bg-emerald-50 text-emerald-700" icon="💰" label="الراتب" />
+                    <Act onClick={() => setAttTech(t)} cls="bg-amber-50 text-amber-700" icon="🗓️" label="الحضور" />
+                    <Act onClick={() => startEdit(t)} cls="bg-slate-100 text-slate-600" icon="✏️" label="تعديل" />
+                    <Act onClick={() => del(t)} cls="bg-rose-50 text-rose-600" icon="🗑️" label="حذف" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2">
+                    <Act onClick={() => setTrackIds([t.id])} cls="bg-sky-50 text-sky-700" icon="📍" label="تتبع الموقع" />
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -130,6 +143,9 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
       )}
       {attTech && (
         <AttendanceManager technicianId={attTech.id} technicianName={attTech.name} onClose={() => setAttTech(null)} onChange={onChange} />
+      )}
+      {trackIds && (
+        <TrackModal techs={techs.map((t) => ({ id: t.id, name: t.name }))} initialIds={trackIds} onClose={() => setTrackIds(null)} />
       )}
     </div>
   );

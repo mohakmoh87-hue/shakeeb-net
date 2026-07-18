@@ -7,11 +7,11 @@ type Office = { id: number; name: string | null };
 // قائمة التطبيق المنسدلة الأنيقة (وضع standalone فقط) — تجمع المكاتب والأدوات
 // المبعثرة في زرٍّ واحد + نافذة سفلية احترافية. لا تظهر في المتصفح.
 export default function FieldAppMenu({
-  offices, officeId, onSelectOffice, canManage, techCount, leavePending, dedPending,
+  offices, officeId, onSelectOffice, canManage, canTechs, techCount, leavePending, dedPending,
   onTechs, onTypes, onLeaves, onDeductions, onSupport,
 }: {
   offices: Office[]; officeId: number | null; onSelectOffice: (id: number) => void;
-  canManage: boolean; techCount: number; leavePending: number; dedPending: number;
+  canManage: boolean; canTechs?: boolean; techCount: number; leavePending: number; dedPending: number;
   onTechs: () => void; onTypes: () => void; onLeaves: () => void; onDeductions: () => void; onSupport: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -19,8 +19,11 @@ export default function FieldAppMenu({
   const currentOffice = offices.find((o) => o.id === officeId)?.name ?? "اختر مكتباً";
 
   const tools = [
-    ...(canManage ? [
+    // «الفنيون» تظهر للمدير ولمستخدم المكتب (تتبع الموقع)؛ بقية الأدوات للمدير فقط
+    ...((canManage || canTechs) ? [
       { key: "techs", icon: "👷", label: "الفنيون", sub: `${techCount}`, badge: 0, cls: "from-emerald-600 to-emerald-800", on: onTechs },
+    ] : []),
+    ...(canManage ? [
       { key: "leaves", icon: "📅", label: "الإجازات", sub: "طلبات", badge: leavePending, cls: "from-amber-500 to-amber-700", on: onLeaves },
       { key: "ded", icon: "💠", label: "الخصومات", sub: "معلّقة", badge: dedPending, cls: "from-rose-600 to-rose-800", on: onDeductions },
       { key: "types", icon: "⏱", label: "الأنواع والأوقات", sub: "إعداد", badge: 0, cls: "from-slate-600 to-slate-800", on: onTypes },
