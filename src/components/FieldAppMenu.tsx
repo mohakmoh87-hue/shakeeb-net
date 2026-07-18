@@ -20,12 +20,12 @@ export default function FieldAppMenu({
 
   const tools = [
     ...(canManage ? [
-      { key: "techs", icon: "👷", label: "الفنيون", sub: `${techCount}`, badge: 0, cls: "from-emerald-500 to-emerald-600", on: onTechs },
-      { key: "leaves", icon: "📅", label: "الإجازات", sub: "طلبات", badge: leavePending, cls: "from-amber-500 to-amber-600", on: onLeaves },
-      { key: "ded", icon: "💠", label: "الخصومات", sub: "معلّقة", badge: dedPending, cls: "from-rose-500 to-rose-600", on: onDeductions },
-      { key: "types", icon: "⏱", label: "الأنواع والأوقات", sub: "إعداد", badge: 0, cls: "from-sky-500 to-sky-700", on: onTypes },
+      { key: "techs", icon: "👷", label: "الفنيون", sub: `${techCount}`, badge: 0, cls: "from-emerald-600 to-emerald-800", on: onTechs },
+      { key: "leaves", icon: "📅", label: "الإجازات", sub: "طلبات", badge: leavePending, cls: "from-amber-500 to-amber-700", on: onLeaves },
+      { key: "ded", icon: "💠", label: "الخصومات", sub: "معلّقة", badge: dedPending, cls: "from-rose-600 to-rose-800", on: onDeductions },
+      { key: "types", icon: "⏱", label: "الأنواع والأوقات", sub: "إعداد", badge: 0, cls: "from-slate-600 to-slate-800", on: onTypes },
     ] : []),
-    ...(officeId != null ? [{ key: "support", icon: "🤝", label: "دعم مؤقت", sub: "فنّي مُعار", badge: 0, cls: "from-purple-500 to-purple-600", on: onSupport }] : []),
+    ...(officeId != null ? [{ key: "support", icon: "🤝", label: "دعم مؤقت", sub: "فنّي مُعار", badge: 0, cls: "from-teal-600 to-teal-800", on: onSupport }] : []),
   ];
 
   const pick = (fn: () => void) => { setOpen(false); fn(); };

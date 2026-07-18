@@ -201,7 +201,7 @@ export default function FieldManagementPage() {
   if (loading) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
 
   return (
-    <div data-app-fullheight className="flex h-[calc(100dvh-52px)] flex-col md:h-screen" style={{ background: "linear-gradient(160deg,#1c8fe6 0%,#0f6fbf 60%,#0a4f8a 100%)" }}>
+    <div data-app-fullheight className="field-canvas flex h-[calc(100dvh-52px)] flex-col md:h-screen">
       {/* ترويسة اللوحة */}
       <div data-app-safetop className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className="flex items-center gap-2 text-white">

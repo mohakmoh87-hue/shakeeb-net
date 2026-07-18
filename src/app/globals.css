@@ -89,6 +89,9 @@ body {
 /* عناصر التطبيق فقط: مخفيّة في المتصفح، تظهر داخل التطبيق (بلا وميض تبديل عبر JS) */
 [data-app-only] { display: none; }
 
+/* خلفية لوحة إدارة الفنيين — المتصفح: أزرق شكيب كما هو. التطبيق: غرافيتي احترافي (يُبدَّل أدناه) */
+.field-canvas { background: linear-gradient(160deg, #1c8fe6 0%, #0f6fbf 60%, #0a4f8a 100%); }
+
 @media all and (display-mode: standalone) {
   /* إخفاء واجهة الموقع الكاملة (الشريط العلوي + القائمة المنسدلة) وأي عنصر خاصّ بالموقع */
   [data-site-chrome], [data-site-only] { display: none !important; }
@@ -96,6 +99,16 @@ body {
   [data-app-only] { display: block !important; }
   /* توسيط اللوحة الفارغة داخل التطبيق */
   [data-empty] { align-items: center !important; justify-content: center !important; }
+
+  /* ===== ثيم التطبيق: غرافيتي عميق + كهرماني/ذهبي (جِدّ والتزام) — لا يمسّ صفحة النت ===== */
+  /* خلفية اللوحة: تدرّج غرافيتي احترافي بدل الأزرق */
+  .field-canvas { background: linear-gradient(160deg, #3b4a5e 0%, #24303f 55%, #121a26 100%) !important; }
+  /* اللون الأساسي (mynet-blue) → كهرماني عبر متغيّرات الجذر (يعيد تلوين كل الأزرار والروابط في التطبيق) */
+  :root {
+    --mynet-blue: #d97706;      /* amber-600 */
+    --mynet-blue-dark: #b45309; /* amber-700 */
+    --mynet-blue-deep: #92400e; /* amber-800 */
+  }
   /* الشاشة كاملة الارتفاع بلا شريط علوي */
   [data-app-fullheight] { height: 100dvh !important; }
   /* مساحة آمنة أعلى الترويسة (شقّ/شريط الحالة) */
