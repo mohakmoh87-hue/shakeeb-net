@@ -31,6 +31,7 @@ type Data = {
   masterBalance: number;
   employees: { id: number; name: string | null; withdrawn: number; technicianId: number | null; net: number | null }[];
   transactions: MgrTx[];
+  salaryPeriod: { from: string | null; to: string | null } | null;
 };
 type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string }[] };
 
@@ -57,6 +58,11 @@ export default function ManagerAccountsPage() {
   const [logOffice, setLogOffice] = useState<number | "all">("all"); // المكتب المختار في السجل، all = الإجمالي
   const [masterDetail, setMasterDetail] = useState<MasterDetail | null>(null);
   const [showMaster, setShowMaster] = useState(false);
+  // فترة احتساب الرواتب (عامة لكل الموظفين)
+  const [pFrom, setPFrom] = useState("");
+  const [pTo, setPTo] = useState("");
+  const [savingPeriod, setSavingPeriod] = useState(false);
+  const [periodMsg, setPeriodMsg] = useState("");
 
   function openMaster() {
     setShowMaster(true); setMasterDetail(null);
@@ -77,6 +83,33 @@ export default function ManagerAccountsPage() {
     });
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // مزامنة حقول الفترة مع القيم المحفوظة (عند التحميل/بعد الحفظ)
+  useEffect(() => {
+    if (data?.salaryPeriod) { setPFrom(data.salaryPeriod.from ?? ""); setPTo(data.salaryPeriod.to ?? ""); }
+  }, [data?.salaryPeriod?.from, data?.salaryPeriod?.to]);
+
+  async function savePeriod() {
+    setPeriodMsg("");
+    if (!pFrom || !pTo) { setPeriodMsg("أدخل تاريخ البداية والنهاية"); return; }
+    if (pFrom > pTo) { setPeriodMsg("تاريخ البداية بعد تاريخ النهاية"); return; }
+    setSavingPeriod(true);
+    const r = await fetch("/api/field/salary-period", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: pFrom, to: pTo }) });
+    setSavingPeriod(false);
+    if (r.ok) { setPeriodMsg("✓ حُفظت الفترة — طُبِّقت على رواتب كل الموظفين"); load(); }
+    else { const d = await r.json().catch(() => ({})); setPeriodMsg(d.error ?? "تعذّر الحفظ"); }
+  }
+  // تعبئة الشهر التالي: من = اليوم التالي لنهاية الفترة، إلى = آخر يوم في ذلك الشهر
+  function fillNextMonth() {
+    const base = pTo || pFrom;
+    if (!base) return;
+    const [y, m, d] = base.split("-").map(Number);
+    const from = new Date(Date.UTC(y, m - 1, d)); from.setUTCDate(from.getUTCDate() + 1);
+    const fk = from.toISOString().slice(0, 10);
+    const last = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0)).getUTCDate();
+    setPFrom(fk); setPTo(`${from.getUTCFullYear()}-${String(from.getUTCMonth() + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`);
+    setPeriodMsg("");
+  }
 
   // محادثات واتساب المكاتب (صلاحية whatsapp.chat)
   useEffect(() => {
@@ -217,10 +250,28 @@ export default function ManagerAccountsPage() {
             </div>
           </div>
 
+          {/* فترة احتساب الرواتب — عامة لكل الموظفين */}
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
+            <h3 className="mb-1 font-bold text-slate-800">🗓️ فترة احتساب الرواتب</h3>
+            <p className="mb-3 text-xs text-slate-600">تُطبَّق على رواتب <b>كل الموظفين</b>. يُحتسب الراتب والخصومات والمكافآت ومصروفات/مقبوضات الموظف ضمن هذه الفترة فقط (شاملةً يومَي البداية والنهاية). أي حركة بعد نهاية الفترة تُرحَّل للشهر القادم عند التسديد.</p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block"><span className="mb-0.5 block text-[11px] font-semibold text-slate-500">من</span>
+                <input type="date" value={pFrom} onChange={(e) => setPFrom(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm" /></label>
+              <label className="block"><span className="mb-0.5 block text-[11px] font-semibold text-slate-500">إلى</span>
+                <input type="date" value={pTo} onChange={(e) => setPTo(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm" /></label>
+            </div>
+            {periodMsg && <div className={`mt-2 rounded-lg px-2.5 py-1.5 text-xs ${periodMsg.includes("✓") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{periodMsg}</div>}
+            <div className="mt-2 flex gap-2">
+              <button onClick={savePeriod} disabled={savingPeriod} className="flex-1 rounded-lg bg-indigo-600 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60">{savingPeriod ? "..." : "حفظ الفترة"}</button>
+              <button onClick={fillNextMonth} className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100">الشهر التالي ⏭</button>
+            </div>
+            {!data.salaryPeriod?.from && <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700">لم تُضبط فترة بعد — يُحتسب حالياً كامل سجل الموظف. حدّد الفترة لتقييد الاحتساب.</div>}
+          </div>
+
           {/* الموظفون — الراتب المتبقي + تفاصيل + تسديد */}
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="mb-2 font-bold text-slate-800">رواتب الموظفين</h3>
-            <p className="mb-2 text-xs text-slate-500">الراتب المتبقّي لكل موظف (فني) بعد الحضور والخصومات. اضغط «تفاصيل» للكشف، و«تسديد» لصرف راتبه.</p>
+            <p className="mb-2 text-xs text-slate-500">الراتب المتبقّي لكل موظف (فني) بعد الحضور والخصومات ضمن الفترة المحدّدة. اضغط «تفاصيل» للكشف، و«تسديد» لصرف راتبه.</p>
             {data.employees.length === 0 ? <div className="text-sm text-slate-400">لا توجد حسابات موظفين</div> : (
               <table className="w-full text-right text-sm">
                 <tbody>

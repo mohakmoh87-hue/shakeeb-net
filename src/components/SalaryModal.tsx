@@ -4,9 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 
 type Item = { date: string; type: string; label: string; amount: number; reason?: string };
 type Statement = {
-  daysPaid: number; cleanDays: number; dailyAmount: number; baseEarned: number; overtime: number; bonuses: number;
-  attendanceDeductions: number; confirmedDeductions: number; net: number; periodFrom: string; periodTo: string; items: Item[];
+  daysPaid: number; cleanDays: number; dailyAmount: number; baseEarned: number; overtime: number; bonuses: number; credits: number;
+  attendanceDeductions: number; confirmedDeductions: number; advances: number; net: number; periodFrom: string; periodTo: string; items: Item[];
 };
+type Period = { from: string | null; to: string | null };
 type Archive = { id: number; periodFrom: string; periodTo: string; net: number; daysPaid: number; createdAt: string; paidByUser: string | null };
 const num = (n: number) => Number(n).toLocaleString("en-US");
 const signed = (n: number) => (n >= 0 ? `+${num(n)}` : `−${num(Math.abs(n))}`);
@@ -16,6 +17,7 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   const isManager = technicianId != null;
   const [st, setSt] = useState<Statement | null>(null);
   const [history, setHistory] = useState<Archive[]>([]);
+  const [period, setPeriod] = useState<Period | null>(null);
   const [techName, setTechName] = useState(name ?? "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -24,13 +26,13 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
     const q = isManager ? `?technicianId=${technicianId}` : "";
     fetch(`/api/field/salary${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (!d) return;
-      setSt(d.statement ?? null); setHistory(d.history ?? []); if (d.name) setTechName(d.name);
+      setSt(d.statement ?? null); setHistory(d.history ?? []); setPeriod(d.period ?? null); if (d.name) setTechName(d.name);
     });
   }, [isManager, technicianId]);
   useEffect(() => { load(); }, [load]);
 
   async function settle() {
-    if (!confirm(`تسديد راتب «${techName}»؟ سيُسجَّل صرفٌ بمقدار الصافي، ويُصفَّر سجل الحضور والخصومات والإجازات المقرّرة.`)) return;
+    if (!confirm(`تسديد راتب «${techName}»؟ سيُسجَّل صرفٌ بمقدار الصافي، ويُصفَّر سجل الحضور والخصومات والإجازات ضمن الفترة فقط. أي حركة أو خصم بتاريخ بعد نهاية الفترة يُرحَّل للشهر القادم.`)) return;
     setBusy(true); setMsg("");
     const r = await fetch("/api/field/salary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId }) });
     const d = await r.json().catch(() => ({}));
@@ -57,6 +59,7 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
               <div className="text-xs opacity-80">صافي الراتب المستحقّ</div>
               <div className="text-3xl font-extrabold">{num(st.net)} <span className="text-base font-normal">د.ع</span></div>
               <div className="mt-1 text-[11px] opacity-80" dir="ltr">{st.periodFrom} → {st.periodTo}</div>
+              {!period?.from && <div className="mt-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">لم تُضبط فترة — يُحتسب كل السجل</div>}
             </div>
 
             {/* التفصيل */}
@@ -64,8 +67,10 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
               <Cell label={`مبالغ الأيام (${st.daysPaid})`} value={num(st.baseEarned)} tone="pos" />
               <Cell label="الإضافي" value={num(st.overtime)} tone="pos" />
               <Cell label="المكافآت" value={num(st.bonuses)} tone="pos" />
+              <Cell label="إضافة للحساب (قبض)" value={num(st.credits ?? 0)} tone="pos" />
               <Cell label="خصم الحضور" value={num(st.attendanceDeductions)} tone="neg" />
               <Cell label="خصومات مؤكّدة" value={num(st.confirmedDeductions)} tone="neg" />
+              <Cell label="سحب من الحساب (صرف)" value={num(st.advances ?? 0)} tone="neg" />
               <Cell label="بصمات سليمة" value={String(st.cleanDays)} tone="mut" />
             </div>
 

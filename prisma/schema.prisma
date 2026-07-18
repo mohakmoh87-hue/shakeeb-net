@@ -29,6 +29,9 @@ model Agent {
   isTrial    Boolean   @default(false) // حساب تجريبي (أسبوع)
   approved   Boolean   @default(true) // موافقة المالك — التجريبي يبدأ false حتى يوافق المالك
   backupEmail String? // إيميل النسخ الاحتياطي/الاسترجاع — تُرسل إليه نسخة يومية
+  // فترة احتساب رواتب الموظفين (عامة لكل مكاتب الوكيل) — يضبطها المدير ويغيّرها متى شاء
+  salaryPeriodFrom String? // YYYY-MM-DD (بغداد) — بداية الفترة (شامل)
+  salaryPeriodTo   String? // YYYY-MM-DD (بغداد) — نهاية الفترة (شامل)
   isDeleted  Boolean   @default(false)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @default(now()) @updatedAt
@@ -297,6 +300,7 @@ model MoneyTx {
   sourceType String? // مصدر الحركة: activation | invoice | debt | manual (لإلغائها عكسياً)
   sourceId   Int? // معرّف المصدر (وصل التفعيل/الفاتورة/المشترك)
   towerId    Int? // البرج/المكتب الذي تخصّه الحركة (لتقارير كل برج)
+  salaryStatementId Int? // كشف الراتب الذي احتُسبت فيه هذه الحركة (لحساب الموظف) — يمنع تكرار احتسابها؛ لا تُحذف من التقرير اليومي
   isDeleted  Boolean   @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة

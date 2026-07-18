@@ -10,6 +10,10 @@ export async function GET() {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
 
+  // فترة احتساب الرواتب العامة للوكيل (إن ضُبطت) — يُحسب الصافي ضمنها فقط
+  const agent = g.session.agentId != null ? await prisma.agent.findUnique({ where: { id: g.session.agentId }, select: { salaryPeriodFrom: true, salaryPeriodTo: true } }) : null;
+  const period = agent?.salaryPeriodFrom && agent?.salaryPeriodTo ? { from: agent.salaryPeriodFrom, to: agent.salaryPeriodTo } : null;
+
   const [dailyAgg, cardsAgg, mgr, employeeAccounts, mgrTxs, masterAgg] = await Promise.all([
     // مجموع المبالغ اليومية = صافي كل حركات التقرير اليومي عبر كل الأيام (باستثناء الماستر)
     prisma.moneyTx.aggregate({ where: { isDeleted: false, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] }, _sum: { moneyIn: true, moneyOut: true } }),
@@ -42,7 +46,7 @@ export async function GET() {
     const a = await prisma.moneyTx.aggregate({ where: { isDeleted: false, accountId: acc.id }, _sum: { moneyOut: true } });
     const tech = await prisma.technician.findFirst({ where: { accountId: acc.id, isDeleted: false }, select: { id: true, name: true, salary: true } });
     let net: number | null = null;
-    if (tech) net = (await statementForTechnician(tech.id, tech.salary ?? 0)).net;
+    if (tech) net = (await statementForTechnician(tech.id, tech.salary ?? 0, period)).net;
     employees.push({ id: acc.id, name: tech?.name ?? acc.name, withdrawn: a._sum.moneyOut ?? 0, technicianId: tech?.id ?? null, net });
   }
 
@@ -57,5 +61,6 @@ export async function GET() {
     masterBalance,
     employees,
     transactions: mgrTxs,
+    salaryPeriod: period,
   });
 }

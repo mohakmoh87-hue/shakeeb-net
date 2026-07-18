@@ -1,6 +1,7 @@
 // حساب راتب الفني — كل الأوقات بتوقيت بغداد (تُشتق dayKey من سجل الحضور/الإجازة).
 // النموذج: مبلغ اليوم = الراتب ÷ أيام الشهر، يُضاف عند الحضور (بصمة) أو الإجازة براتب.
-// الصافي = مبالغ الأيام + الإضافي + المكافآت المؤكّدة − خصومات الحضور − الخصومات المؤكّدة.
+// الفترة: يحدّدها المدير (من/إلى شامل) — كل الاحتساب (الأيام، الخصومات، المكافآت، وسحب/إضافة حساب الموظف) ضمنها فقط.
+// الصافي = مبالغ الأيام + الإضافي + المكافآت + إضافات الحساب (قبض) − خصومات الحضور − الخصومات المؤكّدة − سحوبات الحساب (صرف).
 
 export type SalaryAttendance = {
   dayKey: string | null; checkIn: Date | null;
@@ -8,26 +9,45 @@ export type SalaryAttendance = {
 };
 export type SalaryLeave = { dayKey: string; kind: string; paid: boolean; status: string; reason: string };
 export type SalaryAdjustment = { dayKey: string; kind: string; amount: number; status: string; reason: string };
+export type SalaryMoneyTx = { dayKey: string; moneyIn: number; moneyOut: number; notes: string };
+export type SalaryPeriod = { from: string; to: string };
 
 export type SalaryItem = { date: string; type: string; label: string; amount: number; reason?: string };
 export type SalaryResult = {
   daysPaid: number; cleanDays: number; dailyAmount: number;
-  baseEarned: number; overtime: number; bonuses: number;
-  attendanceDeductions: number; confirmedDeductions: number; net: number;
+  baseEarned: number; overtime: number; bonuses: number; credits: number;
+  attendanceDeductions: number; confirmedDeductions: number; advances: number; net: number;
   periodFrom: string; periodTo: string; items: SalaryItem[];
 };
 
 // كشف راتب فنيٍّ من قاعدة البيانات (مشترك بين مسار الراتب وحسابات المدير)
 import { prisma } from "./prisma";
 import { baghdadDayKey } from "./attendance";
-export async function statementForTechnician(technicianId: number, salary: number): Promise<SalaryResult> {
+
+export async function statementForTechnician(technicianId: number, salary: number, period?: SalaryPeriod | null): Promise<SalaryResult> {
   const todayKey = baghdadDayKey(new Date());
-  const [att, leaves, adj] = await Promise.all([
-    prisma.attendance.findMany({ where: { technicianId }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true } }),
-    prisma.leave.findMany({ where: { technicianId }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
-    prisma.adjustment.findMany({ where: { technicianId }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
+  const p = period && period.from && period.to ? period : null;
+  const dayRange = p ? { gte: p.from, lte: p.to } : undefined; // dayKey ISO يقارن نصياً = زمنياً
+
+  const tech = await prisma.technician.findUnique({ where: { id: technicianId }, select: { accountId: true } });
+  const accountId = tech?.accountId ?? null;
+  // حدود التاريخ لحركات حساب الموظف (بغداد UTC+3)
+  const dateRange = p ? { gte: new Date(`${p.from}T00:00:00+03:00`), lte: new Date(`${p.to}T23:59:59.999+03:00`) } : undefined;
+
+  const [att, leaves, adj, money] = await Promise.all([
+    prisma.attendance.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true } }),
+    prisma.leave.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
+    prisma.adjustment.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
+    accountId
+      ? prisma.moneyTx.findMany({ where: { accountId, isDeleted: false, salaryStatementId: null, ...(dateRange ? { date: dateRange } : {}) }, select: { date: true, moneyIn: true, moneyOut: true, notes: true } })
+      : Promise.resolve([] as { date: Date | null; moneyIn: number | null; moneyOut: number | null; notes: string | null }[]),
   ]);
-  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], todayKey);
+
+  const moneyItems: SalaryMoneyTx[] = money.map((m) => ({
+    dayKey: baghdadDayKey(m.date ?? new Date()), moneyIn: m.moneyIn ?? 0, moneyOut: m.moneyOut ?? 0, notes: m.notes ?? "",
+  }));
+
+  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], moneyItems, todayKey, p);
 }
 
 // أيام شهر الـ dayKey (YYYY-MM-DD)
@@ -41,20 +61,38 @@ export function dailyAmountFor(salary: number, dayKey: string): number {
   return d > 0 ? Math.round((salary || 0) / d) : 0;
 }
 
+// اليوم التالي لمفتاح يوم (YYYY-MM-DD) — لتقديم الفترة تلقائياً بعد التسديد
+export function addDaysKey(dayKey: string, n: number): string {
+  const [y, m, d] = dayKey.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+}
+// آخر يوم في شهر مفتاح اليوم
+export function lastDayOfMonthKey(dayKey: string): string {
+  const [y, m] = dayKey.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}
+
 export function computeSalary(
   salary: number,
   attendances: SalaryAttendance[],
   leaves: SalaryLeave[],
   adjustments: SalaryAdjustment[],
+  moneyTxs: SalaryMoneyTx[],
   todayKey: string,
+  period?: SalaryPeriod | null,
 ): SalaryResult {
   const items: SalaryItem[] = [];
-  let baseEarned = 0, overtime = 0, bonuses = 0, attDed = 0, confDed = 0;
+  let baseEarned = 0, overtime = 0, bonuses = 0, attDed = 0, confDed = 0, advances = 0, credits = 0;
   let daysPaid = 0, cleanDays = 0;
   const keys: string[] = [];
+  // تصفية دفاعية بالفترة (بجانب تصفية القاعدة) لضمان «هذه الفترة فقط»
+  const inPeriod = (k: string | null | undefined) => !period || (!!k && k >= period.from && k <= period.to);
 
   for (const a of attendances) {
-    if (!a.checkIn || !a.dayKey) continue;
+    if (!a.checkIn || !a.dayKey || !inPeriod(a.dayKey)) continue;
     keys.push(a.dayKey);
     const dm = dailyAmountFor(salary, a.dayKey);
     baseEarned += dm; daysPaid++;
@@ -67,7 +105,7 @@ export function computeSalary(
   }
 
   for (const l of leaves) {
-    if (l.status !== "approved") continue;
+    if (l.status !== "approved" || !inPeriod(l.dayKey)) continue;
     keys.push(l.dayKey);
     if (l.kind === "day" && l.paid) {
       const dm = dailyAmountFor(salary, l.dayKey);
@@ -81,19 +119,27 @@ export function computeSalary(
   }
 
   for (const adj of adjustments) {
-    if (adj.status !== "confirmed") continue;
+    if (adj.status !== "confirmed" || !inPeriod(adj.dayKey)) continue;
     keys.push(adj.dayKey);
     if (adj.kind === "bonus") { bonuses += adj.amount; items.push({ date: adj.dayKey, type: "bonus", label: "مكافأة", amount: adj.amount, reason: adj.reason }); }
     else { confDed += adj.amount; items.push({ date: adj.dayKey, type: "deduction", label: "خصم", amount: -adj.amount, reason: adj.reason }); }
   }
 
-  const net = baseEarned + overtime + bonuses - attDed - confDed;
+  // سحب/إضافة حساب الموظف (المصروفات والمقبوضات) — صرف يُخصم، قبض يُضاف
+  for (const m of moneyTxs) {
+    if (!inPeriod(m.dayKey)) continue;
+    const out = m.moneyOut ?? 0, inn = m.moneyIn ?? 0;
+    if (out) { advances += out; keys.push(m.dayKey); items.push({ date: m.dayKey, type: "advance", label: "سحب من الحساب", amount: -out, reason: m.notes || undefined }); }
+    if (inn) { credits += inn; keys.push(m.dayKey); items.push({ date: m.dayKey, type: "credit", label: "إضافة للحساب", amount: inn, reason: m.notes || undefined }); }
+  }
+
+  const net = baseEarned + overtime + bonuses + credits - attDed - confDed - advances;
   const sorted = keys.filter(Boolean).sort();
   const dailyAmount = daysPaid > 0 ? Math.round(baseEarned / daysPaid) : dailyAmountFor(salary, todayKey);
   items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return {
     daysPaid, cleanDays, dailyAmount,
-    baseEarned, overtime, bonuses, attendanceDeductions: attDed, confirmedDeductions: confDed, net,
-    periodFrom: sorted[0] ?? todayKey, periodTo: todayKey, items,
+    baseEarned, overtime, bonuses, credits, attendanceDeductions: attDed, confirmedDeductions: confDed, advances, net,
+    periodFrom: period?.from ?? (sorted[0] ?? todayKey), periodTo: period?.to ?? todayKey, items,
   };
 }
