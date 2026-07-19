@@ -352,6 +352,7 @@ model ManagerTx {
   notes     String?
   date      DateTime @default(now())
   userId    Int?
+  byUser    String? // اسم المدير الذي أجرى الحركة (للتدقيق — يبقى ولو حُذف المستخدم)
   agentId   Int? // الوكيل (المستأجر) مالك الحركة — عزل حسابات المدير بين الوكلاء
   isDeleted Boolean  @default(false)
 

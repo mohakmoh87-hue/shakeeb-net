@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   }
 
   const created = await prisma.managerTx.create({
-    data: { type, amount, notes: notes ?? null, userId: session?.userId, agentId },
+    data: { type, amount, notes: notes ?? null, userId: session?.userId, agentId, byUser: g.session.fullName ?? g.session.username },
   });
   return NextResponse.json(created, { status: 201 });
 }

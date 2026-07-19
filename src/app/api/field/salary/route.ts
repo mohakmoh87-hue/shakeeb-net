@@ -95,6 +95,7 @@ export async function POST(request: Request) {
           data: {
             type: "salary", amount: paid, userId: g.session.userId,
             agentId: t.agentId ?? g.session.agentId ?? -1, // عزل المستأجر
+            byUser: g.session.fullName ?? g.session.username, // اسم المدير الذي سدّد
             notes: `راتب الفني ${t.name} (${from} → ${to}) — أيام ${result.daysPaid}`,
           },
         });

@@ -9,7 +9,7 @@ import SalaryModal from "@/components/SalaryModal";
 
 type WaOffice = { id: number; name: string | null; state: string };
 
-type MgrTx = { id: number; type: string; amount: number; notes: string | null; date: string };
+type MgrTx = { id: number; type: string; amount: number; notes: string | null; date: string; byUser: string | null };
 
 // سجل المبالغ اليومية: كل يوم بإجماليه وتفصيله حسب المكتب (البرج)
 type DayAgg = { moneyIn: number; moneyOut: number; net: number; count: number };
@@ -290,17 +290,18 @@ export default function ManagerAccountsPage() {
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-right text-sm">
             <thead className="bg-slate-50 text-slate-600">
-              <tr><th className="p-3">#</th><th className="p-3">التاريخ</th><th className="p-3">النوع</th><th className="p-3">المبلغ</th><th className="p-3">ملاحظة</th><th className="p-3"></th></tr>
+              <tr><th className="p-3">#</th><th className="p-3">التاريخ</th><th className="p-3">النوع</th><th className="p-3">المبلغ</th><th className="p-3">بواسطة</th><th className="p-3">ملاحظة</th><th className="p-3"></th></tr>
             </thead>
             <tbody>
               {data.transactions.length === 0 ? (
-                <tr><td colSpan={6} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
+                <tr><td colSpan={7} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
               ) : data.transactions.map((t) => (
                 <tr key={t.id} className="border-t border-slate-100">
                   <td className="p-3 text-slate-400">{t.id}</td>
                   <td className="p-3" dir="ltr">{fmtDate(t.date)}</td>
                   <td className="p-3">{TYPE_LABEL[t.type] ?? t.type}</td>
                   <td className={`p-3 font-bold ${t.type === "receipt" ? "text-emerald-600" : "text-red-600"}`}>{fmt(t.amount)}</td>
+                  <td className="p-3 font-medium text-slate-700">{t.byUser ?? "—"}</td>
                   <td className="p-3 text-slate-600">{t.notes ?? "—"}</td>
                   <td className="p-3"><button onClick={() => del(t.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-100">حذف</button></td>
                 </tr>
