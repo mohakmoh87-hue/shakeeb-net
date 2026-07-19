@@ -23,6 +23,8 @@ type Subscriber = {
   smsEnabled: number | null;
   waEnabled: boolean | null;
   transferredTo: string | null;
+  rewardBalance: number | null;
+  rewardCode: string | null;
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
 type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null };
@@ -448,6 +450,8 @@ export default function SubscribersPage() {
             <span className="text-2xl font-extrabold text-white">{remaining}</span>
           </div>
           <BigStat label="ديون الفواتير" value="0" color="text-amber-600" />
+          {/* رصيد كود الخصم (المكافآت) — كم لدى المشترك من رصيد قابل للاستخدام */}
+          <BigStat label="رصيد كود الخصم" value={fmt(selected?.rewardBalance)} color="text-fuchsia-600" />
           <button onClick={() => selected?.phone && window.open(`https://wa.me/${selected.phone}`, "_blank")} disabled={!selected?.phone} className="mt-auto rounded border border-slate-300 bg-slate-50 px-2 py-2 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-40">
             فتح المحادثة
           </button>

@@ -80,6 +80,7 @@ export async function GET(request: Request) {
         id: true, name: true, phone: true, address: true, packageId: true,
         towerId: true, carry: true, dateTo: true, netUser: true, sasId: true,
         note: true, smsEnabled: true, waEnabled: true, transferredTo: true,
+        rewardBalance: true, rewardCode: true,
       },
       orderBy: { name: "asc" },
       take: LIMIT,
