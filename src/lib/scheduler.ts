@@ -230,16 +230,16 @@ async function ensureOfficeWhatsApp() {
   if (officeWaStarted) return;
   officeWaStarted = true;
   try {
-    const { startWhatsApp } = await import("@/lib/whatsapp");
+    const { startWhatsApp, hostsOfficeLocally } = await import("@/lib/whatsapp");
     const { getWorkerAgentId } = await import("@/lib/hybridAgent");
     const aid = getWorkerAgentId();
     if (aid == null) { officeWaStarted = false; return; } // بلا وكيل بعد (غير معتمَد) — لا تستضِف شيئاً
-    // مكاتب وكيل هذه الحاسبة فقط (عزل الواتساب بين الوكلاء)
-    const offices = await prisma.tower.findMany({
+    // مكاتب وكيل هذه الحاسبة التي تملك جلستها على قرصها فقط — كل حاسبة تستضيف مكتبها هي (مالكة الجلسة)
+    const offices = (await prisma.tower.findMany({
       where: { isDeleted: false, agentId: aid, OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }] },
       select: { id: true },
-    });
-    if (offices.length) console.log(`[scheduler] بدء واتساب ${offices.length} مكتب بالتتابع (قائد)`);
+    })).filter((o) => hostsOfficeLocally(o.id));
+    if (offices.length) console.log(`[scheduler] بدء واتساب ${offices.length} مكتب (جلساتها على هذه الحاسبة)`);
     // إقلاع متتابع بفاصل زمني — تشغيل عدّة متصفّحات واتساب دفعةً واحدة يُزاحم موارد
     // الحاسبة فيعلق بعضها على "authenticated/starting". الفاصل يمنح كل مكتب فرصة الاستقرار.
     for (const o of offices) {

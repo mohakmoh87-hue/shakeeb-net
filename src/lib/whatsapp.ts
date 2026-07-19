@@ -155,34 +155,35 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   return s.state;
 }
 
-// مستطلِع طلبات الاتصال من الموقع: القائد يلتقط requestedAt ويبدأ واتساب المكتب فيُنشَر الـQR للسحابة.
+// المكاتب التي تملك هذه الحاسبة جلسة واتسابها على القرص — هي وحدها التي تستضيفها (مالكة الجلسة).
+// (الجلسة تُنشأ محلياً عند مسح QR على هذه الحاسبة، فلا تستضيف حاسبةٌ مكتباً لا تملك جلسته.)
+function localOfficeIds(): number[] {
+  try {
+    if (!fs.existsSync(SESSION_DIR)) return [];
+    const ids: number[] = [];
+    for (const name of fs.readdirSync(SESSION_DIR)) {
+      const m = /^session-office-(\d+)$/.exec(name);
+      if (m) ids.push(Number(m[1]));
+    }
+    return ids;
+  } catch { return []; }
+}
+export function hostsOfficeLocally(officeId: number): boolean {
+  try { return fs.existsSync(path.join(SESSION_DIR, `session-office-${officeId}`)); } catch { return false; }
+}
+
+// مستطلِع الاتصال: كل حاسبة تُبقي جلسات واتساب مكاتبها (الموجودة على قرصها) متصلة — بمهلة 60ث بين المحاولات.
 export function startWaRequestPoller() {
   const gg = globalThis as unknown as { __waPollerStarted?: boolean };
   if (gg.__waPollerStarted) return;
   gg.__waPollerStarted = true;
-  setInterval(async () => {
+  setInterval(() => {
     try {
-      const { isLeaderNow, getWorkerAgentId } = await import("@/lib/hybridAgent");
-      if (!isLeaderNow()) return; // قائد الوكيل فقط يستضيف واتساب مكاتب وكيله
-      const aid = getWorkerAgentId();
-      if (aid == null) return;
-      // مكاتب وكيل هذه الحاسبة فقط (عزل جلسات الواتساب بين الوكلاء)
-      const mineRows = await prisma.tower.findMany({ where: { agentId: aid, isDeleted: false }, select: { id: true } });
-      const mine = new Set(mineRows.map((t) => t.id));
-      const since = new Date(Date.now() - 120_000); // طلبات آخر دقيقتين
-      // نقرأ الحالة المنشورة + طلب الاتصال لمكاتب هذا الوكيل
-      const rows = await prisma.waSession.findMany({ where: { towerId: { in: [...mine] } }, select: { towerId: true, state: true, requestedAt: true } });
-      for (const r of rows) {
-        if (!mine.has(r.towerId)) continue;
-        const st = store(r.towerId);
+      for (const id of localOfficeIds()) {
+        const st = store(id);
         const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
-        // لا نُنفّذ الفصل هنا اعتماداً على حالة "disconnected" في القاعدة: فقد تنشرها حاسبةٌ أخرى
-        // خطأً فوق جلسة حيّة فتُحذَف الجلسة بلا سبب. الفصل الصريح يتم فقط عبر waRelay kind="logout"
-        // (يُنشئه زر الفصل اليدوي، وينفّذه مُستطلِع المُرحِّل).
-        // اتصال مطلوب: requestedAt حديث والوكيل غير نشط
-        if (r.requestedAt && r.requestedAt >= since && !alive) {
-          void startWhatsApp(r.towerId);
-        }
+        const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
+        if (!alive && !recentlyTried) void startWhatsApp(id); // أعد وصل جلسة هذه الحاسبة
       }
     } catch { /* تجاهل */ }
   }, 8000);
@@ -423,13 +424,10 @@ export async function sendOfficeChat(officeId: number, chatId: string, text: str
   }
 }
 
-// إرسال رسالة نصية من واتساب مكتب محدّد
-export async function sendWhatsApp(officeId: number | null | undefined, phone: string, text: string): Promise<SendResult> {
-  if (officeId == null) return { ok: false, error: "المشترك غير مربوط بمكتب" };
+// إرسال محلّي مباشر من عميل واتساب هذه الحاسبة (بلا تمرير) — تستعمله مالكة الجلسة والمُرحِّل.
+async function sendWhatsAppLocal(officeId: number, phone: string, text: string): Promise<SendResult> {
   const s = store(officeId);
-  if (s.state !== "ready" || !s.client) {
-    return { ok: false, error: `واتساب المكتب غير متصل — اربطه من إدارة المكاتب` };
-  }
+  if (s.state !== "ready" || !s.client) return { ok: false, error: "واتساب المكتب غير متصل — اربطه من إدارة المكاتب" };
   const waId = toWaId(phone);
   if (!waId) return { ok: false, error: `رقم غير صالح: ${phone}` };
   try {
@@ -440,6 +438,19 @@ export async function sendWhatsApp(officeId: number | null | undefined, phone: s
   }
 }
 
+// إرسال رسالة نصية من واتساب مكتب محدّد. إن كانت جلسة هذا المكتب على حاسبةٍ أخرى (مالكة الجلسة)
+// نُمرّر الإرسال إليها عبر المُرحِّل — فيعمل الإرسال المجدول/السحابي لكل مكتب من حاسبته.
+export async function sendWhatsApp(officeId: number | null | undefined, phone: string, text: string): Promise<SendResult> {
+  if (officeId == null) return { ok: false, error: "المشترك غير مربوط بمكتب" };
+  const s = store(officeId);
+  if (s.state === "ready" && s.client) return sendWhatsAppLocal(officeId, phone, text);
+  // هذه الحاسبة مالكة الجلسة لكنها غير جاهزة الآن ⇒ لا تُمرّر لنفسها
+  if (hostsOfficeLocally(officeId)) return { ok: false, error: "واتساب المكتب غير متصل — اربطه من إدارة المكاتب" };
+  // ليست المالكة ⇒ مرّر الإرسال إلى حاسبة المكتب
+  const r = await relayRequest(officeId, "sendMsg", { phone, text }, 15000);
+  return r.ok ? { ok: true } : { ok: false, error: r.error ?? "تعذّر الإرسال عبر حاسبة المكتب" };
+}
+
 // ===== مُرحِّل عمليات واتساب (الموقع ↔ الوكيل) =====
 // الموقع لا يملك عميل واتساب؛ فيرسل الطلب عبر جدول wa_relays، ويُنفّذه الوكيل القائد.
 
@@ -448,17 +459,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // (على الموقع) أنشئ طلباً وانتظر نتيجته من الوكيل — مع مهلة.
 export async function relayRequest(
   towerId: number,
-  kind: "chats" | "messages" | "send" | "logout" | "media" | "sas",
+  kind: "chats" | "messages" | "send" | "logout" | "media" | "sas" | "sendMsg",
   params: Record<string, unknown> = {},
   timeoutMs = 9000,
 ): Promise<{ ok: boolean; result?: unknown; error?: string }> {
-  // لا فائدة من الطلب إن لا يوجد قائد نشط لوكيل هذا المكتب (عزل الوكلاء)
+  // لا فائدة من الطلب إن لم يكن أي عاملٍ لوكيل هذا المكتب متصلاً (السحابة لا تعرف أي حاسبة تملك الجلسة)
   const tower = await prisma.tower.findUnique({ where: { id: towerId }, select: { agentId: true } });
-  const leader = await prisma.hybridWorker.findFirst({
+  const online = await prisma.hybridWorker.findFirst({
     where: { approved: true, agentId: tower?.agentId ?? -1, lastSeen: { gte: new Date(Date.now() - 60_000) } },
     select: { id: true },
   });
-  if (!leader) return { ok: false, error: "حاسبة مكتب هذا الوكيل غير مشغّلة حالياً" };
+  if (!online) return { ok: false, error: "حاسبة مكتب هذا الوكيل غير مشغّلة حالياً" };
 
   const row = await prisma.waRelay.create({
     data: { towerId, kind, params: JSON.stringify(params) },
@@ -489,37 +500,45 @@ async function runSasOp(towerId: number, op: string, p: { page?: number; count?:
   throw new Error(`عملية SAS غير معروفة: ${op}`);
 }
 
-// (على الوكيل) نفّذ طلبات المُرحِّل المعلّقة: القائد فقط.
+// (على الوكيل) نفّذ طلبات المُرحِّل المعلّقة لمكتب هذه الحاسبة فقط (مالكة جلسة واتساب/خادم SAS).
 export function startWaRelayPoller() {
   const gg = globalThis as unknown as { __waRelayPollerStarted?: boolean };
   if (gg.__waRelayPollerStarted) return;
   gg.__waRelayPollerStarted = true;
   setInterval(async () => {
     try {
+      // واتساب: هذه الحاسبة تعالج مكاتبها (مالكة الجلسة على القرص).
+      // SAS: القائد يعالجها لكل مكاتب وكيله (كما هو — لا تغيير على سلوك SAS).
+      const localIds = localOfficeIds();
+      const orConds: { towerId: { in: number[] }; kind: string | { in: string[] } }[] = [];
+      if (localIds.length) orConds.push({ towerId: { in: localIds }, kind: { in: ["chats", "messages", "send", "media", "logout", "sendMsg"] } });
       const { isLeaderNow, getWorkerAgentId } = await import("@/lib/hybridAgent");
-      if (!isLeaderNow()) return;
-      const aid = getWorkerAgentId();
-      if (aid == null) return;
-      // مكاتب وكيل هذه الحاسبة فقط
-      const mineRows = await prisma.tower.findMany({ where: { agentId: aid, isDeleted: false }, select: { id: true } });
-      const mine = mineRows.map((t) => t.id);
+      if (isLeaderNow()) {
+        const aid = getWorkerAgentId();
+        if (aid != null) {
+          const rows = await prisma.tower.findMany({ where: { agentId: aid, isDeleted: false }, select: { id: true } });
+          if (rows.length) orConds.push({ towerId: { in: rows.map((t) => t.id) }, kind: "sas" });
+        }
+      }
+      if (!orConds.length) return;
       const pend = await prisma.waRelay.findMany({
-        where: { status: "pending", towerId: { in: mine.length ? mine : [-1] }, createdAt: { gte: new Date(Date.now() - 60_000) } },
+        where: { status: "pending", createdAt: { gte: new Date(Date.now() - 60_000) }, OR: orConds },
         orderBy: { id: "asc" },
         take: 5,
       });
       for (const relayRow of pend) {
         try {
-          const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; limit?: number; msgId?: string; op?: string; page?: number; count?: number };
+          const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; phone?: string; limit?: number; msgId?: string; op?: string; page?: number; count?: number };
           // تأكّد أن واتساب المكتب جاهز فعلاً قبل عمليات الواتساب (لا يلزم لعمليات SAS)
           const st = store(relayRow.towerId);
-          if ((relayRow.kind === "chats" || relayRow.kind === "messages" || relayRow.kind === "send" || relayRow.kind === "media") && st.state !== "ready") {
+          if ((relayRow.kind === "chats" || relayRow.kind === "messages" || relayRow.kind === "send" || relayRow.kind === "media" || relayRow.kind === "sendMsg") && st.state !== "ready") {
             throw new Error(`واتساب المكتب غير جاهز (الحالة: ${st.state})`);
           }
           let result: unknown = null;
           if (relayRow.kind === "chats") result = await getOfficeChats(relayRow.towerId, p.limit ?? 40);
           else if (relayRow.kind === "messages") result = await getOfficeMessages(relayRow.towerId, p.chatId ?? "", p.limit ?? 40);
           else if (relayRow.kind === "send") result = await sendOfficeChat(relayRow.towerId, p.chatId ?? "", p.text ?? "");
+          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? ""); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true }; }
           else if (relayRow.kind === "media") result = await downloadOfficeMedia(relayRow.towerId, p.msgId ?? "");
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
           else if (relayRow.kind === "sas") result = await runSasOp(relayRow.towerId, p.op ?? "", p);

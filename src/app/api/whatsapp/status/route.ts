@@ -23,17 +23,24 @@ export async function GET(request: Request) {
   const toImg = (qr: string | null | undefined) =>
     qr ? QRCode.toDataURL(qr, { margin: 1, width: 320 }).catch(() => null) : Promise.resolve(null);
 
-  // الحاسبة القائدة فقط تستضيف واتساب وتنشر حالته. حاسبةٌ غير قائدة يجب ألّا تبدأ عميلاً
-  // لمكتبٍ لا تملك جلسته، وإلا نشرت حالة "منقطع" فوق الحالة الحقيقية فتُفصَل الجلسة الحيّة خطأً.
+  // حاسبة مالكة الجلسة (على قرصها) تستضيف واتساب المكتب. حاسبةٌ لا تملك الجلسة يجب ألّا تبدأ عميلاً
+  // لمكتبٍ مستضاف على حاسبة أخرى (تنشر "منقطع" فوق الحالة الحقيقية)، لكن يُسمح لها ببدء الربط (مسح QR)
+  // إن لم يكن للمكتب مضيفٌ حيٌّ في أي مكان — كي يمكن ربط مكتب جديد من حاسبته.
   if (process.env.RUN_WORKER === "1") {
-    const { isLeaderNow } = await import("@/lib/hybridAgent");
-    if (isLeaderNow()) {
+    const { hostsOfficeLocally } = await import("@/lib/whatsapp");
+    let allowStart = hostsOfficeLocally(officeId);
+    if (!allowStart) {
+      const sess = await prisma.waSession.findUnique({ where: { towerId: officeId }, select: { state: true } });
+      const liveElsewhere = sess != null && ["ready", "qr", "authenticated", "starting"].includes(sess.state ?? "");
+      allowStart = !liveElsewhere; // لا مضيف حيّ ⇒ اسمح ببدء الربط هنا
+    }
+    if (allowStart) {
       const { startWhatsApp, whatsappStatus } = await import("@/lib/whatsapp");
       await startWhatsApp(officeId);
       const st = whatsappStatus(officeId);
       return NextResponse.json({ state: st.state, qrImage: await toImg(st.qr), error: st.error });
     }
-    // ليست القائدة: تتصرّف كالموقع (تُسجّل الطلب وتقرأ الحالة المنشورة) — بلا تشغيل محلّي
+    // مضيفٌ حيّ على حاسبة أخرى: لا تُشغّل محلياً — اقرأ الحالة المنشورة (كالموقع)
   }
 
   // الموقع (أو عاملٌ غير قائد): سجّل طلب اتصال ليلتقطه القائد، واقرأ آخر حالة/QR نشرها في السحابة
