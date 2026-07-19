@@ -77,7 +77,7 @@ export default function TrackModal({ techs, initialIds, onClose }: { techs: Tech
           <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm hover:bg-slate-100">✕</button>
         </div>
         <p className="px-5 pb-2 text-[11px] leading-relaxed text-slate-500">
-          يتحدّث الموقع كل دقيقة ويستبدل السابق (لا يُحفظ أي سجل). يتطلّب أن يكون تطبيق الفني مفتوحاً في هاتفه. إغلاق هذه النافذة يوقف التتبع ويمسح المواقع نهائياً.
+          يتحدّث الموقع كل 30 ثانية ويستبدل السابق (بلا سجل تاريخي). يتطلّب أن يكون تطبيق الفني مفتوحاً في هاتفه وقد فعّل إذن الموقع. إغلاق هذه النافذة يوقف طلب التتبع ويُبقي «آخر موقع حيّ» فقط ليظهر عند إعادة الفتح.
         </p>
 
         <div className="flex gap-2 px-5 pb-2">

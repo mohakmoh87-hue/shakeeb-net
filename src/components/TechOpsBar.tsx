@@ -23,6 +23,8 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [bioOpen, setBioOpen] = useState(false); // نافذة تأكيد البصمة
   const [bioBusy, setBioBusy] = useState(false);
   const [bioErr, setBioErr] = useState("");
+  const [trackReq, setTrackReq] = useState(false); // المكتب يطلب موقعي الآن
+  const [geoBlocked, setGeoBlocked] = useState(false); // إذن الموقع مرفوض/متعذّر أثناء الطلب
 
   useEffect(() => {
     fetch("/api/field/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => {
@@ -30,24 +32,36 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     });
   }, []);
 
-  // تتبع الموقع بالطلب: فحص خفيف كل 30ث «هل التتبع مطلوب؟» — إن طُلب يُرسل الموقع كل دقيقة،
-  // وإن ردّ الخادم بالتوقف (أُغلقت صفحة التتبع) يعود للخمول فوراً بلا أي إرسال.
+  // تتبع الموقع بالطلب: فحص خفيف كل 30ث «هل التتبع مطلوب؟» — إن طُلب يُرسل الموقع كل 30ث
+  // (فيبقى حيّاً لدى المكتب)، وإن ردّ الخادم بالتوقف يعود للخمول فوراً. إن رُفض إذن الموقع
+  // يُرفع تنبيه للفني ليُفعّله. الإرسال يتوقف تماماً حين لا يُطلب.
   useEffect(() => {
     let locTimer: ReturnType<typeof setInterval> | null = null;
     let stopped = false;
     const stopLoc = () => { if (locTimer) { clearInterval(locTimer); locTimer = null; } };
-    const sendLoc = async () => {
-      const pos = await getPosition();
-      if (!pos || stopped) return;
-      const r = await fetch("/api/field/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pos) }).catch(() => null);
-      const d = await r?.json().catch(() => null);
-      if (!d?.tracking) stopLoc();
+    const sendLoc = () => {
+      if (stopped || typeof navigator === "undefined" || !("geolocation" in navigator)) { setGeoBlocked(true); return; }
+      navigator.geolocation.getCurrentPosition(
+        async (p) => {
+          setGeoBlocked(false);
+          if (stopped) return;
+          const r = await fetch("/api/field/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat: p.coords.latitude, lng: p.coords.longitude }) }).catch(() => null);
+          const d = await r?.json().catch(() => null);
+          if (!d?.tracking) { stopLoc(); setTrackReq(false); }
+        },
+        (err) => { setGeoBlocked(err.code === err.PERMISSION_DENIED || err.code === err.POSITION_UNAVAILABLE); },
+        { enableHighAccuracy: true, timeout: 20_000, maximumAge: 10_000 },
+      );
     };
     const check = async () => {
       const d = await fetch("/api/field/track").then((r) => (r.ok ? r.json() : null)).catch(() => null);
       if (stopped) return;
-      if (d?.tracking) { if (!locTimer) { sendLoc(); locTimer = setInterval(sendLoc, 60_000); } }
-      else stopLoc();
+      if (d?.tracking) {
+        setTrackReq(true);
+        if (!locTimer) { sendLoc(); locTimer = setInterval(sendLoc, 30_000); } // إرسال فوري ثم كل 30ث
+      } else {
+        setTrackReq(false); setGeoBlocked(false); stopLoc();
+      }
     };
     check();
     const checkTimer = setInterval(check, 30_000);
@@ -55,6 +69,20 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   }, []);
 
   function flash(msg: string) { setToast(msg); setTimeout(() => setToast(""), 4200); }
+
+  // تفعيل الموقع بلمسة الفني (سياق إيماءة → يظهر طلب إذن المتصفح) — عند حجب الموقع
+  function primeLocation() {
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) { flash("جهازك لا يدعم تحديد الموقع"); return; }
+    navigator.geolocation.getCurrentPosition(
+      async (p) => {
+        setGeoBlocked(false);
+        await fetch("/api/field/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat: p.coords.latitude, lng: p.coords.longitude }) }).catch(() => {});
+        flash("تم تفعيل الموقع ✓ — مكتبك يتابعك الآن");
+      },
+      () => { setGeoBlocked(true); flash("فعّل إذن الموقع من إعدادات المتصفح ثم أعد المحاولة"); },
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+    );
+  }
 
   // موقع الفني الحالي (للبصمة الجغرافية) — يرجع null إن تعذّر
   function getPosition(): Promise<{ lat: number; lng: number } | null> {
@@ -129,6 +157,21 @@ export default function TechOpsBar({ techName }: { techName: string }) {
       {adjOpen && <TechAdjustments onClose={() => setAdjOpen(false)} />}
       {salaryOpen && <SalaryModal onClose={() => setSalaryOpen(false)} />}
       {toast && <div className="fixed bottom-24 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-slate-900/90 px-5 py-2 text-sm font-semibold text-white shadow-lg">{toast}</div>}
+
+      {/* المكتب يطلب موقعي الآن — شفافية للفني + تفعيل الإذن إن كان محجوباً */}
+      {trackReq && (
+        <div className="fixed inset-x-2 top-2 z-[80] mx-auto max-w-md rounded-xl px-4 py-2.5 text-sm font-semibold shadow-lg backdrop-blur"
+          style={{ background: geoBlocked ? "rgba(220,38,38,0.95)" : "rgba(5,150,105,0.95)", color: "white" }}>
+          {geoBlocked ? (
+            <div className="flex items-center justify-between gap-2">
+              <span>📍 مكتبك يطلب موقعك — الإذن محجوب</span>
+              <button onClick={primeLocation} className="shrink-0 rounded-lg bg-white px-3 py-1 text-xs font-bold text-red-700">فعّل الموقع</button>
+            </div>
+          ) : (
+            <span>📍 مكتبك يتابع موقعك الآن</span>
+          )}
+        </div>
+      )}
 
       {/* نافذة تأكيد البصمة ببصمة الهاتف الحقيقية */}
       {bioOpen && (

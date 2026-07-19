@@ -7,8 +7,8 @@ import { ownsTower } from "@/lib/guard";
 export const dynamic = "force-dynamic";
 
 // تتبع الموقع بالطلب: صفحة التتبع تبعث «نبضة» كل 30ث تجدّد trackReqAt؛
-// هاتف الفني يرسل موقعه كل دقيقة ما دامت النبضة طازجة. لا سجل تاريخي:
-// كل تحديث يستبدل السابق، والإيقاف يمسح الموقع نهائياً.
+// هاتف الفني يرسل موقعه ما دامت النبضة طازجة. لا سجل تاريخي: كل تحديث يستبدل السابق.
+// الإيقاف يمسح النبضة فقط ويُبقي «آخر موقع حيّ» (يُعرض عند إعادة الفتح مع وقته/طزاجته).
 const FRESH_MS = 90_000; // نبضة أقدم من 90ث = التتبع متوقف (أمان عند انقطاع صفحة التتبع)
 
 const isFresh = (d: Date | null) => !!d && Date.now() - d.getTime() < FRESH_MS;
@@ -56,13 +56,13 @@ export async function PUT(request: Request) {
   });
 }
 
-// إيقاف التتبع: مسح النبضة وآخر موقع نهائياً من القاعدة
+// إيقاف التتبع: مسح النبضة فقط (يوقف طلب الإرسال من الهاتف) ويُبقي آخر موقع محفوظاً
 async function stopTracking(ids: number[]) {
   const r = await ownedTechs(ids);
   if ("error" in r) return r.error;
   await prisma.technician.updateMany({
     where: { id: { in: r.techs.map((t) => t.id) } },
-    data: { trackReqAt: null, trackLat: null, trackLng: null, trackAt: null },
+    data: { trackReqAt: null },
   });
   return NextResponse.json({ ok: true, stopped: r.techs.length });
 }
@@ -86,8 +86,8 @@ export async function POST(request: Request) {
     if (!parsed.success) return NextResponse.json({ error: "إحداثيات غير صحيحة" }, { status: 400 });
     const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { trackReqAt: true } });
     if (!isFresh(t?.trackReqAt ?? null)) {
-      // التتبع لم يعُد مطلوباً — امسح أي أثر وأبلغ التطبيق بالتوقف
-      await prisma.technician.update({ where: { id: tech.technicianId }, data: { trackReqAt: null, trackLat: null, trackLng: null, trackAt: null } });
+      // التتبع لم يعُد مطلوباً — أبلغ التطبيق بالتوقف (نُبقي آخر موقع محفوظاً)
+      await prisma.technician.update({ where: { id: tech.technicianId }, data: { trackReqAt: null } });
       return NextResponse.json({ tracking: false });
     }
     await prisma.technician.update({
