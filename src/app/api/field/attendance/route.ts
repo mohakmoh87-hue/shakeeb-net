@@ -97,9 +97,11 @@ export async function POST(request: Request) {
   if (!rec?.checkIn) return NextResponse.json({ error: "سجّل دخولك أولاً" }, { status: 400 });
   if (rec.checkOut) return NextResponse.json({ error: "سجّلت خروجك اليوم مسبقاً" }, { status: 400 });
   const calc = t ? computeAttendance(t, rec.checkIn, now) : null;
+  // دعم يومٍ طُلب بعد بصمة دخوله بمكتبه الأصلي: الدخول يبقى لمكتبه، والخروج يُنسب لمكتب الدعم
+  const outTower = stampOffice !== rec.towerId ? stampOffice : null;
   const updated = await prisma.attendance.update({
     where: { id: rec.id },
-    data: { checkOut: now, checkoutBy: "tech", ...(calc ?? {}) },
+    data: { checkOut: now, checkoutBy: "tech", checkOutTowerId: outTower, ...(calc ?? {}) },
   });
   const late = calc?.lateDeduction ?? 0, early = calc?.earlyDeduction ?? 0, ot = calc?.overtimeAddition ?? 0;
   const extra = late || early ? ` (خصم ${(late + early).toLocaleString("en-US")})` : ot ? ` (إضافي ${ot.toLocaleString("en-US")})` : "";

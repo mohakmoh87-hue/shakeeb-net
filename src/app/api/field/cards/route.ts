@@ -100,5 +100,25 @@ export async function DELETE(request: Request) {
   if (!(await canOperateCard(s, id))) return NextResponse.json(VIEW_ONLY, { status: 403 });
   await prisma.taskCard.update({ where: { id }, data: { isDeleted: true } });
   await prisma.cardPhoto.deleteMany({ where: { cardId: id } });
+
+  // إن كانت من بطاقات دعمٍ مؤقت: أعد فحص «اكتملت كل بطاقات الدعم» — وإلا يعلق الدعم بعد حذف بطاقة
+  try {
+    const supTechs = await prisma.technician.findMany({
+      where: { isDeleted: false, supportKind: "cards", supportCardIds: { not: null } },
+      select: { id: true, name: true, agentId: true, towerId: true, supportCardIds: true },
+    });
+    for (const t of supTechs) {
+      let ids: number[] = [];
+      try { ids = JSON.parse(t.supportCardIds ?? "[]") as number[]; } catch { continue; }
+      if (!ids.includes(id)) continue;
+      const remaining = await prisma.taskCard.count({ where: { id: { in: ids }, done: false, isDeleted: false } });
+      if (remaining === 0) {
+        const { endSupport } = await import("@/lib/field");
+        await endSupport(t.id);
+        const { notify } = await import("@/lib/notify");
+        void notify({ agentId: t.agentId, towerId: t.towerId, type: "checkout", title: "انتهاء الدعم", body: `${t.name} انتهت بطاقات دعمه وعاد لمكتبه`, refType: "technician", refId: t.id });
+      }
+    }
+  } catch { /* لا يُفشل الحذف */ }
   return NextResponse.json({ ok: true });
 }
