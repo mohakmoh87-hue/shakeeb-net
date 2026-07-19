@@ -118,9 +118,10 @@ export async function POST(request: Request) {
         data: { salaryStatementId: st.id },
       });
     }
-    // تصفير سجل الفترة فقط: الحضور والخصومات المؤكّدة والإجازات المقرّرة ضمن [from,to]؛ ما بعدها يُرحَّل
+    // تصفير سجل الفترة فقط: الحضور وكل الخصومات (بما فيها المعلّقة — تُصفَّى بدفع الفترة) والإجازات
+    // المقرّرة ضمن [from,to]؛ ما بعدها يُرحَّل. (المعلّق يبقى بلا وقت محدّد ما لم تُدفع فترته)
     await tx.attendance.deleteMany({ where: { technicianId: t.id, dayKey: dayRange } });
-    await tx.adjustment.deleteMany({ where: { technicianId: t.id, status: "confirmed", dayKey: dayRange } });
+    await tx.adjustment.deleteMany({ where: { technicianId: t.id, dayKey: dayRange } });
     await tx.leave.deleteMany({ where: { technicianId: t.id, status: { in: ["approved", "rejected"] }, dayKey: dayRange } });
     return st;
   });

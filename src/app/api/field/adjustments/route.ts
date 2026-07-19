@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { baghdadDayKey } from "@/lib/attendance";
+import { baghdadDayKey, parseHHMM, baghdadMinutesOfDay } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -53,14 +53,33 @@ export async function GET(request: Request) {
   const reqOffice = Number(new URL(request.url).searchParams.get("officeId")) || null;
   const agentTowers = await agentTowerIds(g.session);
   const towerFilter = reqOffice ? [reqOffice] : (agentTowers.length ? agentTowers : [-1]);
-  const techs = await prisma.technician.findMany({ where: { towerId: { in: towerFilter }, isDeleted: false }, select: { id: true, name: true } });
+  const techs = await prisma.technician.findMany({ where: { towerId: { in: towerFilter }, isDeleted: false }, select: { id: true, name: true, shiftStart: true, entryGraceMin: true, lateRatePerMin: true } });
   const nameById = new Map(techs.map((t) => [t.id, t.name]));
+  const techById = new Map(techs.map((t) => [t.id, t]));
   const rows = await prisma.adjustment.findMany({ where: { technicianId: { in: techs.map((t) => t.id) } }, orderBy: { id: "desc" }, take: 120 });
   const order = (s: string) => (s === "pending" ? 0 : 1);
   rows.sort((a, b) => order(a.status) - order(b.status) || b.id - a.id);
-  const pendingCount = rows.filter((r) => r.status === "pending").length;
+
+  // طلبات «نسيت البصمة» المعلّقة (على سجل الحضور) — لعرضها ضمن نفس نافذة المراجعة
+  const excuseRecs = await prisma.attendance.findMany({
+    where: { technicianId: { in: techs.map((t) => t.id) }, lateExcuse: "pending" },
+    select: { id: true, technicianId: true, dayKey: true, checkIn: true },
+    orderBy: { id: "desc" }, take: 60,
+  });
+  const lateExcuses = excuseRecs.map((r) => {
+    const tt = techById.get(r.technicianId);
+    const startMin = parseHHMM(tt?.shiftStart);
+    const grace = Math.max(0, tt?.entryGraceMin ?? 0);
+    const lateMin = r.checkIn && startMin != null ? Math.max(0, baghdadMinutesOfDay(r.checkIn) - (startMin + grace)) : 0;
+    return {
+      technicianId: r.technicianId, technicianName: nameById.get(r.technicianId) ?? `#${r.technicianId}`,
+      dayKey: r.dayKey, checkIn: r.checkIn, lateMinutes: lateMin, estDeduction: lateMin * Math.max(0, tt?.lateRatePerMin ?? 0),
+    };
+  });
+
+  const pendingCount = rows.filter((r) => r.status === "pending").length + lateExcuses.length;
   return NextResponse.json({
-    role: "manager", pendingCount,
+    role: "manager", pendingCount, lateExcuses,
     adjustments: rows.map((r) => ({ ...r, technicianName: nameById.get(r.technicianId) ?? `#${r.technicianId}` })),
   });
 }
@@ -81,4 +100,16 @@ export async function PATCH(request: Request) {
     data: { status: parsed.data.status, decidedBy: g.session.fullName ?? g.session.username, decidedAt: new Date() },
   });
   return NextResponse.json({ ok: true, adjustment: updated });
+}
+
+// DELETE (المدير فقط): حذف أي خصم/مكافأة (بأي حالة) — عزل عبر ownsTower
+export async function DELETE(request: Request) {
+  const g = await guard("field.manage");
+  if (g.error) return g.error;
+  const id = Number(new URL(request.url).searchParams.get("id"));
+  if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
+  const adj = await prisma.adjustment.findUnique({ where: { id } });
+  if (!adj || !(await ownsTower(g.session, adj.towerId))) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+  await prisma.adjustment.delete({ where: { id } });
+  return NextResponse.json({ ok: true, deleted: id });
 }

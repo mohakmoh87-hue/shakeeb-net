@@ -670,6 +670,7 @@ model Attendance {
   checkOut     DateTime? // بصمة الخروج
   checkoutBy   String? // tech | manager (بصمة خروج يدوية من المدير)
   checkOutTowerId Int? // مكتب بصمة الخروج إن اختلف عن مكتب الدخول (دعم يوم طُلب بعد بصمة الدخول بالمكتب الأصلي)
+  lateExcuse   String? // طلب «نسيت البصمة» عند الدخول المتأخّر: null | pending | approved | rejected — pending يُعلّق خصم التأخير حتى قرار المدير
   // المحسوب عند الخروج
   lateMinutes     Int? // دقائق تأخير الدخول (فوق السماحية)
   earlyMinutes    Int? // دقائق الخروج المبكّر

@@ -26,6 +26,8 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [bioErr, setBioErr] = useState("");
   const [trackReq, setTrackReq] = useState(false); // المكتب يطلب موقعي الآن
   const [geoBlocked, setGeoBlocked] = useState(false); // إذن الموقع مرفوض/متعذّر أثناء الطلب
+  const [excusePrompt, setExcusePrompt] = useState(false); // دخول متأخّر: عرض «هل نسيت البصمة؟»
+  const [excuseBusy, setExcuseBusy] = useState(false);
 
   useEffect(() => {
     fetch("/api/field/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => {
@@ -119,8 +121,17 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     setBusy(false);
     if (!r.ok) { flash(d.error ?? "تعذّر تسجيل البصمة"); return; }
     setState(d.state);
-    if (action === "in") { setCheckIn(d.checkIn); flash("تم تسجيل الدخول ✓"); }
+    if (action === "in") { setCheckIn(d.checkIn); flash("تم تسجيل الدخول ✓"); if (d.canExcuse) setExcusePrompt(true); }
     else { setCheckOut(d.checkOut); flash("تم تسجيل الخروج ✓"); }
+  }
+
+  // طلب «نسيت البصمة»: يُرسل للمدير طلب إعفاء من خصم تأخير الدخول (يبقى معلّقاً حتى قراره)
+  async function submitExcuse() {
+    setExcuseBusy(true);
+    const r = await fetch("/api/field/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "excuse" }) });
+    const d = await r.json().catch(() => ({}));
+    setExcuseBusy(false); setExcusePrompt(false);
+    flash(r.ok ? "أُرسل طلبك للمدير — بانتظار قراره ✓" : (d.error ?? "تعذّر إرسال الطلب"));
   }
 
   // فتح نافذة تأكيد البصمة قبل التسجيل
@@ -169,6 +180,21 @@ export default function TechOpsBar({ techName }: { techName: string }) {
       {adjOpen && <TechAdjustments onClose={() => setAdjOpen(false)} />}
       {salaryOpen && <SalaryModal onClose={() => setSalaryOpen(false)} />}
       {toast && <div className="fixed bottom-24 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-slate-900/90 px-5 py-2 text-sm font-semibold text-white shadow-lg">{toast}</div>}
+
+      {/* دخول متأخّر: سؤال الفني هل نسي البصمة في وقتها؟ */}
+      {excusePrompt && (
+        <div className="fixed inset-0 z-[86] flex items-center justify-center bg-black/60 p-5" onClick={() => !excuseBusy && setExcusePrompt(false)}>
+          <div className="w-full max-w-xs rounded-3xl bg-white p-6 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 text-3xl">⏰</div>
+            <div className="mb-1 text-base font-extrabold text-slate-800">سجّلت دخولاً متأخّراً</div>
+            <p className="mb-5 text-xs leading-relaxed text-slate-500">هل نسيت البصمة في وقتها؟ يمكنك إرسال طلب للمدير لإعفائك من خصم التأخير — يبقى معلّقاً حتى قراره.</p>
+            <div className="grid gap-2">
+              <button onClick={submitExcuse} disabled={excuseBusy} className="rounded-xl bg-amber-500 py-2.5 font-bold text-white hover:bg-amber-600 disabled:opacity-60">{excuseBusy ? "..." : "نعم، أرسل طلباً للمدير"}</button>
+              <button onClick={() => setExcusePrompt(false)} disabled={excuseBusy} className="rounded-xl bg-slate-100 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200">لا، تأخّرت فعلاً</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* المكتب يطلب موقعي الآن — شفافية للفني + تفعيل الإذن إن كان محجوباً */}
       {trackReq && (

@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 type Item = { date: string; type: string; label: string; amount: number; reason?: string };
+type Day = { date: string; amount: number; note: string };
 type Statement = {
   daysPaid: number; cleanDays: number; dailyAmount: number; baseEarned: number; overtime: number; bonuses: number; credits: number;
-  attendanceDeductions: number; confirmedDeductions: number; advances: number; net: number; periodFrom: string; periodTo: string; items: Item[];
+  attendanceDeductions: number; confirmedDeductions: number; advances: number; net: number; periodFrom: string; periodTo: string; items: Item[]; dayDetails: Day[];
 };
 type Period = { from: string | null; to: string | null };
 type Archive = { id: number; periodFrom: string; periodTo: string; net: number; daysPaid: number; createdAt: string; paidByUser: string | null };
@@ -22,6 +23,7 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [choosing, setChoosing] = useState(false);
+  const [expand, setExpand] = useState<string | null>(null); // الخانة المفتوحة لعرض تفاصيلها
 
   const load = useCallback(() => {
     const q = isManager ? `?technicianId=${technicianId}` : "";
@@ -65,20 +67,24 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
               {!period?.from && <div className="mt-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">لم تُضبط فترة — يُحتسب كل السجل</div>}
             </div>
 
-            {/* التفصيل */}
+            {/* التفصيل — كل خانة قابلة للنقر لعرض تفاصيلها */}
+            <p className="mb-1.5 text-center text-[11px] text-slate-400">اضغط أي خانة لعرض تفاصيلها 👇</p>
             <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
-              <Cell label={`مبالغ الأيام (${st.daysPaid})`} value={num(st.baseEarned)} tone="pos" />
-              <Cell label="الإضافي" value={num(st.overtime)} tone="pos" />
-              <Cell label="المكافآت" value={num(st.bonuses)} tone="pos" />
-              <Cell label="إضافة للحساب (قبض)" value={num(st.credits ?? 0)} tone="pos" />
-              <Cell label="خصم الحضور" value={num(st.attendanceDeductions)} tone="neg" />
-              <Cell label="خصومات مؤكّدة" value={num(st.confirmedDeductions)} tone="neg" />
-              <Cell label="سحب من الحساب (صرف)" value={num(st.advances ?? 0)} tone="neg" />
-              <Cell label="بصمات سليمة" value={String(st.cleanDays)} tone="mut" />
+              <Cell k="days" label={`مبالغ الأيام (${st.daysPaid})`} value={num(st.baseEarned)} tone="pos" expand={expand} setExpand={setExpand} />
+              <Cell k="overtime" label="الإضافي" value={num(st.overtime)} tone="pos" expand={expand} setExpand={setExpand} />
+              <Cell k="bonus" label="المكافآت" value={num(st.bonuses)} tone="pos" expand={expand} setExpand={setExpand} />
+              <Cell k="credit" label="إضافة للحساب (قبض)" value={num(st.credits ?? 0)} tone="pos" expand={expand} setExpand={setExpand} />
+              <Cell k="attded" label="خصم الحضور" value={num(st.attendanceDeductions)} tone="neg" expand={expand} setExpand={setExpand} />
+              <Cell k="confded" label="خصومات مؤكّدة" value={num(st.confirmedDeductions)} tone="neg" expand={expand} setExpand={setExpand} />
+              <Cell k="advance" label="سحب من الحساب (صرف)" value={num(st.advances ?? 0)} tone="neg" expand={expand} setExpand={setExpand} />
+              <Cell k="clean" label="بصمات سليمة" value={String(st.cleanDays)} tone="mut" expand={expand} setExpand={setExpand} />
             </div>
 
-            {/* التفاصيل المؤثّرة */}
-            <div className="mb-1 text-sm font-bold text-slate-700">البنود المؤثّرة</div>
+            {/* لوحة التفاصيل للخانة المختارة */}
+            {expand && <DetailPanel cat={expand} st={st} onClose={() => setExpand(null)} />}
+
+            {/* كل البنود المؤثّرة */}
+            <div className="mb-1 text-sm font-bold text-slate-700">كل البنود المؤثّرة</div>
             {st.items.length === 0 ? (
               <div className="mb-3 rounded-lg border border-dashed border-slate-300 p-3 text-center text-xs text-slate-400">لا بنود مؤثّرة (كل البصمات سليمة)</div>
             ) : (
@@ -140,7 +146,57 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   );
 }
 
-function Cell({ label, value, tone }: { label: string; value: string; tone: "pos" | "neg" | "mut" }) {
+function Cell({ k, label, value, tone, expand, setExpand }: { k: string; label: string; value: string; tone: "pos" | "neg" | "mut"; expand: string | null; setExpand: (v: string | null) => void }) {
   const c = tone === "pos" ? "text-emerald-700 bg-emerald-50" : tone === "neg" ? "text-rose-700 bg-rose-50" : "text-slate-500 bg-slate-50";
-  return <div className={`rounded-lg px-3 py-2 ${c}`}><div className="text-[11px] opacity-80">{label}</div><div className="font-bold">{value}</div></div>;
+  const active = expand === k;
+  return (
+    <button type="button" onClick={() => setExpand(active ? null : k)}
+      className={`rounded-lg px-3 py-2 text-right transition ${c} ${active ? "ring-2 ring-mynet-blue" : "hover:brightness-95"}`}>
+      <div className="text-[11px] opacity-80">{label}</div>
+      <div className="font-bold">{value} <span className="text-[10px] opacity-60">{active ? "▲" : "▾"}</span></div>
+    </button>
+  );
+}
+
+// لوحة تفاصيل الخانة المختارة — تعرض بنودها المفصّلة
+function DetailPanel({ cat, st, onClose }: { cat: string; st: Statement; onClose: () => void }) {
+  const titles: Record<string, string> = {
+    days: "تفصيل مبالغ الأيام", overtime: "تفصيل الإضافي", bonus: "تفصيل المكافآت", credit: "تفصيل الإضافات للحساب (قبض)",
+    attded: "تفصيل خصم الحضور", confded: "تفصيل الخصومات المؤكّدة", advance: "تفصيل السحب من الحساب (صرف)", clean: "الأيام السليمة",
+  };
+  let rows: { date: string; label: string; amount: number; reason?: string }[] = [];
+  if (cat === "days") rows = st.dayDetails.map((d) => ({ date: d.date, label: d.note, amount: d.amount }));
+  else if (cat === "clean") rows = st.dayDetails.filter((d) => d.note === "بصمة سليمة").map((d) => ({ date: d.date, label: "بصمة سليمة", amount: d.amount }));
+  else {
+    const types: Record<string, string[]> = {
+      overtime: ["overtime"], bonus: ["bonus"], credit: ["credit"],
+      attded: ["late", "early"], confded: ["deduction"], advance: ["advance"],
+    };
+    const wanted = types[cat] ?? [];
+    rows = st.items.filter((it) => wanted.includes(it.type)).map((it) => ({ date: it.date, label: it.label, amount: it.amount, reason: it.reason }));
+  }
+  return (
+    <div className="mb-3 rounded-xl border border-mynet-blue/30 bg-mynet-blue/5 p-3">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-sm font-bold text-slate-700">{titles[cat] ?? "تفاصيل"}</span>
+        <button onClick={onClose} className="text-xs text-slate-400 hover:text-slate-600">إغلاق ✕</button>
+      </div>
+      {rows.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-center text-xs text-slate-400">لا بنود في هذه الخانة</div>
+      ) : (
+        <ul className="space-y-1">
+          {rows.map((r, i) => (
+            <li key={i} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-1.5 text-xs shadow-sm">
+              <div className="min-w-0">
+                <span className="font-semibold text-slate-700">{r.label}</span>
+                <span className="mr-1 text-slate-400" dir="ltr"> {r.date}</span>
+                {r.reason && <div className="truncate text-[11px] text-slate-500">{r.reason}</div>}
+              </div>
+              <span className={`shrink-0 font-bold ${r.amount > 0 ? "text-emerald-600" : r.amount < 0 ? "text-rose-600" : "text-slate-500"}`}>{r.amount === 0 ? "—" : signed(r.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }

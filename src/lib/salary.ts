@@ -6,6 +6,7 @@
 export type SalaryAttendance = {
   dayKey: string | null; checkIn: Date | null;
   lateDeduction: number | null; earlyDeduction: number | null; overtimeAddition: number | null;
+  lateExcuse?: string | null; // pending/approved ⇒ خصم التأخير مُعلَّق (لا يُحتسب)
 };
 export type SalaryLeave = { dayKey: string; kind: string; paid: boolean; status: string; reason: string };
 export type SalaryAdjustment = { dayKey: string; kind: string; amount: number; status: string; reason: string };
@@ -13,11 +14,12 @@ export type SalaryMoneyTx = { dayKey: string; moneyIn: number; moneyOut: number;
 export type SalaryPeriod = { from: string; to: string };
 
 export type SalaryItem = { date: string; type: string; label: string; amount: number; reason?: string };
+export type SalaryDay = { date: string; amount: number; note: string }; // تفصيل مبالغ الأيام
 export type SalaryResult = {
   daysPaid: number; cleanDays: number; dailyAmount: number;
   baseEarned: number; overtime: number; bonuses: number; credits: number;
   attendanceDeductions: number; confirmedDeductions: number; advances: number; net: number;
-  periodFrom: string; periodTo: string; items: SalaryItem[];
+  periodFrom: string; periodTo: string; items: SalaryItem[]; dayDetails: SalaryDay[];
 };
 
 // كشف راتب فنيٍّ من قاعدة البيانات (مشترك بين مسار الراتب وحسابات المدير)
@@ -98,7 +100,7 @@ export async function statementForTechnician(
   const dateRange = p ? { gte: new Date(`${p.from}T00:00:00+03:00`), lte: new Date(`${p.to}T23:59:59.999+03:00`) } : undefined;
 
   const [att, leaves, adj, money] = await Promise.all([
-    prisma.attendance.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true } }),
+    prisma.attendance.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true, lateExcuse: true } }),
     prisma.leave.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
     prisma.adjustment.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
     accountId
@@ -175,6 +177,7 @@ export function computeSalary(
   period?: SalaryPeriod | null,
 ): SalaryResult {
   const items: SalaryItem[] = [];
+  const dayDetails: SalaryDay[] = [];
   let baseEarned = 0, overtime = 0, bonuses = 0, attDed = 0, confDed = 0, advances = 0, credits = 0;
   let daysPaid = 0, cleanDays = 0;
   const keys: string[] = [];
@@ -186,12 +189,17 @@ export function computeSalary(
     keys.push(a.dayKey);
     const dm = dailyAmountFor(salary, a.dayKey);
     baseEarned += dm; daysPaid++;
-    const late = a.lateDeduction ?? 0, early = a.earlyDeduction ?? 0, ot = a.overtimeAddition ?? 0;
+    // خصم التأخير مُعلَّق إن كان هناك طلب «نسيت البصمة» معلّق أو مقبول — لا يُحتسب
+    const lateHeld = a.lateExcuse === "pending" || a.lateExcuse === "approved";
+    const late = lateHeld ? 0 : (a.lateDeduction ?? 0), early = a.earlyDeduction ?? 0, ot = a.overtimeAddition ?? 0;
     attDed += late + early; overtime += ot;
-    if (late) items.push({ date: a.dayKey, type: "late", label: "خصم تأخير", amount: -late });
-    if (early) items.push({ date: a.dayKey, type: "early", label: "خصم خروج مبكّر", amount: -early });
-    if (ot) items.push({ date: a.dayKey, type: "overtime", label: "إضافي", amount: ot });
-    if (!late && !early && !ot) cleanDays++; // بصمة سليمة — لا تُدرَج بالتفاصيل
+    const notes: string[] = [];
+    if (late) { items.push({ date: a.dayKey, type: "late", label: "خصم تأخير", amount: -late }); notes.push("تأخير"); }
+    if (early) { items.push({ date: a.dayKey, type: "early", label: "خصم خروج مبكّر", amount: -early }); notes.push("خروج مبكّر"); }
+    if (ot) { items.push({ date: a.dayKey, type: "overtime", label: "إضافي", amount: ot }); notes.push("إضافي"); }
+    if (lateHeld) notes.push(a.lateExcuse === "approved" ? "عُذر مقبول" : "طلب نسيان بصمة معلّق");
+    if (!late && !early && !ot && !lateHeld) cleanDays++; // بصمة سليمة
+    dayDetails.push({ date: a.dayKey, amount: dm, note: notes.length ? notes.join("، ") : "بصمة سليمة" });
   }
 
   for (const l of leaves) {
@@ -201,6 +209,7 @@ export function computeSalary(
       const dm = dailyAmountFor(salary, l.dayKey);
       baseEarned += dm; daysPaid++;
       items.push({ date: l.dayKey, type: "leave-paid", label: "إجازة براتب", amount: dm, reason: l.reason });
+      dayDetails.push({ date: l.dayKey, amount: dm, note: "إجازة براتب" });
     } else if (l.kind === "day") {
       items.push({ date: l.dayKey, type: "leave-unpaid", label: "إجازة بلا راتب", amount: 0, reason: l.reason });
     } else {
@@ -227,9 +236,10 @@ export function computeSalary(
   const sorted = keys.filter(Boolean).sort();
   const dailyAmount = daysPaid > 0 ? Math.round(baseEarned / daysPaid) : dailyAmountFor(salary, todayKey);
   items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  dayDetails.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return {
     daysPaid, cleanDays, dailyAmount,
     baseEarned, overtime, bonuses, credits, attendanceDeductions: attDed, confirmedDeductions: confDed, advances, net,
-    periodFrom: period?.from ?? (sorted[0] ?? todayKey), periodTo: period?.to ?? todayKey, items,
+    periodFrom: period?.from ?? (sorted[0] ?? todayKey), periodTo: period?.to ?? todayKey, items, dayDetails,
   };
 }

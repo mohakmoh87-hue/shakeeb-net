@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { baghdadDayKey, computeAttendance, parseHHMM, distanceMeters } from "@/lib/attendance";
+import { baghdadDayKey, computeAttendance, parseHHMM, distanceMeters, baghdadMinutesOfDay } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
 import { endSupport } from "@/lib/field";
 
@@ -68,13 +68,28 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const tech = await getTechSession();
   if (!tech) return NextResponse.json({ error: "دخول الفني مطلوب" }, { status: 401 });
-  const parsed = z.object({ action: z.enum(["in", "out"]), lat: z.coerce.number().optional(), lng: z.coerce.number().optional() }).safeParse(await request.json().catch(() => null));
+  const parsed = z.object({ action: z.enum(["in", "out", "excuse"]), lat: z.coerce.number().optional(), lng: z.coerce.number().optional() }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "إجراء غير صحيح" }, { status: 400 });
 
   // بيانات الفني (بما فيها الدعم) — البصمة تتحوّل لمكتب الدعم إن كان الفني مُعاراً
   const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { towerId: true, supportTowerId: true, shiftStart: true, shiftEnd: true, entryGraceMin: true, exitGraceMin: true, lateRatePerMin: true, overtimeRatePerMin: true } });
   const stampOffice = t?.supportTowerId ?? tech.towerId; // مكتب البصمة الحالي (الدعم أو الأصلي)
   const onSupport = t?.supportTowerId != null;
+
+  // إجراء «نسيت البصمة»: طلب إعفاء من خصم تأخير الدخول (لا يحتاج موقعاً) — يبقى معلّقاً حتى قرار المدير
+  if (parsed.data.action === "excuse") {
+    const rec0 = await todayRecord(tech.technicianId);
+    if (!rec0?.checkIn) return NextResponse.json({ error: "لا توجد بصمة دخول اليوم" }, { status: 400 });
+    if (rec0.lateExcuse) return NextResponse.json({ error: "الطلب مُرسَل مسبقاً — بانتظار قرار المدير" }, { status: 400 });
+    const startMin0 = parseHHMM(t?.shiftStart);
+    const grace0 = Math.max(0, t?.entryGraceMin ?? 0);
+    if (startMin0 == null || baghdadMinutesOfDay(rec0.checkIn) <= startMin0 + grace0) {
+      return NextResponse.json({ error: "لا يوجد تأخير على بصمة دخولك" }, { status: 400 });
+    }
+    await prisma.attendance.update({ where: { id: rec0.id }, data: { lateExcuse: "pending" } });
+    await notify({ agentId: tech.agentId, towerId: rec0.towerId, type: "deduction", title: "طلب «نسيت البصمة»", body: `${tech.name}: طلب إعفاء من خصم تأخير الدخول`, refType: "technician", refId: tech.technicianId });
+    return NextResponse.json({ ok: true, lateExcuse: "pending" });
+  }
 
   // البصمة الجغرافية (منع صارم): يجب أن يكون الفني داخل نطاق مكتب البصمة الحالي
   const geoErr = await geofenceError(stampOffice, parsed.data.lat, parsed.data.lng);
@@ -89,8 +104,11 @@ export async function POST(request: Request) {
     const created = await prisma.attendance.create({
       data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: stampOffice, dayKey: key, checkIn: now, checkoutBy: null },
     });
-    await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkin", title: "بصمة دخول", body: `${tech.name} سجّل الدخول${onSupport ? " (دعم)" : ""}`, refType: "technician", refId: tech.technicianId });
-    return NextResponse.json({ ok: true, state: "in", checkIn: created.checkIn });
+    // كشف التأخّر: دخول بعد (بدء الدوام + سماحية الدخول) ⇒ نُتيح للفني زر «هل نسيت البصمة؟»
+    const startMin = parseHHMM(t?.shiftStart);
+    const isLate = startMin != null && baghdadMinutesOfDay(now) > startMin + Math.max(0, t?.entryGraceMin ?? 0);
+    await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkin", title: "بصمة دخول", body: `${tech.name} سجّل الدخول${onSupport ? " (دعم)" : ""}${isLate ? " (متأخّر)" : ""}`, refType: "technician", refId: tech.technicianId });
+    return NextResponse.json({ ok: true, state: "in", checkIn: created.checkIn, late: isLate, canExcuse: isLate });
   }
 
   // خروج
@@ -130,11 +148,30 @@ export async function PATCH(request: Request) {
     technicianId: z.coerce.number(),
     mode: z.enum(["now", "scheduled"]).optional(),
     addDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    excuseDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // يوم طلب «نسيت البصمة»
+    excuse: z.enum(["approve", "reject"]).optional(), // قرار المدير على الطلب
   }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
 
   const t = await prisma.technician.findUnique({ where: { id: parsed.data.technicianId } });
   if (!t || t.isDeleted || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
+
+  // قرار المدير على طلب «نسيت البصمة»: قبول ⇒ إعادة الدخول لوقته المحدّد (صفر خصم)؛ رفض ⇒ يُثبَّت الخصم
+  if (parsed.data.excuseDay && parsed.data.excuse) {
+    const rec = await prisma.attendance.findFirst({ where: { technicianId: t.id, dayKey: parsed.data.excuseDay } });
+    if (!rec?.checkIn) return NextResponse.json({ error: "لا توجد بصمة لهذا اليوم" }, { status: 404 });
+    if (rec.lateExcuse !== "pending") return NextResponse.json({ error: "الطلب مُقرَّر مسبقاً" }, { status: 400 });
+    if (parsed.data.excuse === "reject") {
+      await prisma.attendance.update({ where: { id: rec.id }, data: { lateExcuse: "rejected" } });
+      return NextResponse.json({ ok: true, excuse: "rejected" });
+    }
+    // قبول: يُعاد وقت الدخول إلى بدء دوامه ⇒ يُلغى تأخيره؛ ويُعاد حساب اليوم إن كان خرج
+    const startMin = parseHHMM(t.shiftStart);
+    const newCheckIn = startMin != null ? bgTimeUtc(parsed.data.excuseDay, startMin) : rec.checkIn;
+    const recalc = rec.checkOut ? computeAttendance(t, newCheckIn, rec.checkOut) : {};
+    await prisma.attendance.update({ where: { id: rec.id }, data: { checkIn: newCheckIn, lateExcuse: "approved", ...recalc } });
+    return NextResponse.json({ ok: true, excuse: "approved" });
+  }
 
   // إضافة بصمة يوم كامل (دخول=بدء الدوام، خروج=نهايته) — بلا خصم/إضافي
   if (parsed.data.addDay) {

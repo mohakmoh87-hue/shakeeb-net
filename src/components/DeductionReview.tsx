@@ -6,6 +6,7 @@ type Adj = {
   id: number; technicianId: number; technicianName: string; kind: string; source: string;
   amount: number; reason: string; overrunMin: number | null; status: string; dayKey: string; decidedBy: string | null;
 };
+type LateExcuse = { technicianId: number; technicianName: string; dayKey: string; checkIn: string | null; lateMinutes: number; estDeduction: number };
 type Tech = { id: number; name: string };
 const STATUS: Record<string, { label: string; cls: string }> = {
   pending: { label: "معلّق", cls: "bg-amber-100 text-amber-700" },
@@ -17,8 +18,10 @@ const num = (n: number) => Number(n).toLocaleString("en-US");
 // مراجعة الخصومات (تجاوز الوقت) + إضافة خصم/مكافأة يدوية للفني.
 export default function DeductionReview({ officeId, officeName, onClose, onChange }: { officeId: number | null; officeName: string; onClose: () => void; onChange: () => void }) {
   const [rows, setRows] = useState<Adj[]>([]);
+  const [excuses, setExcuses] = useState<LateExcuse[]>([]);
   const [techs, setTechs] = useState<Tech[]>([]);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [busyEx, setBusyEx] = useState<string | null>(null);
   // نموذج الخصم اليدوي
   const [openForm, setOpenForm] = useState(false);
   const [fTech, setFTech] = useState("");
@@ -30,7 +33,7 @@ export default function DeductionReview({ officeId, officeName, onClose, onChang
 
   const load = useCallback(() => {
     const q = officeId != null ? `?officeId=${officeId}` : "";
-    fetch(`/api/field/adjustments${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => d && setRows(d.adjustments ?? []));
+    fetch(`/api/field/adjustments${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setRows(d.adjustments ?? []); setExcuses(d.lateExcuses ?? []); } });
     fetch(`/api/field/technicians${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => d && setTechs(d.technicians ?? []));
   }, [officeId]);
   useEffect(() => { load(); }, [load]);
@@ -40,6 +43,24 @@ export default function DeductionReview({ officeId, officeName, onClose, onChang
     const r = await fetch("/api/field/adjustments", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
     const d = await r.json().catch(() => ({}));
     setBusyId(null);
+    if (!r.ok) { alert(d.error ?? "تعذّر"); return; }
+    load(); onChange();
+  }
+  async function del(id: number) {
+    if (!confirm("حذف هذا الخصم/المكافأة نهائياً؟")) return;
+    setBusyId(id);
+    const r = await fetch(`/api/field/adjustments?id=${id}`, { method: "DELETE" });
+    const d = await r.json().catch(() => ({}));
+    setBusyId(null);
+    if (!r.ok) { alert(d.error ?? "تعذّر الحذف"); return; }
+    load(); onChange();
+  }
+  // قرار المدير على طلب «نسيت البصمة»: قبول ⇒ لا خصم + دخول بوقته؛ رفض ⇒ يُثبَّت خصم التأخير
+  async function decideExcuse(technicianId: number, dayKey: string, excuse: "approve" | "reject") {
+    setBusyEx(`${technicianId}|${dayKey}`);
+    const r = await fetch("/api/field/attendance", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId, excuseDay: dayKey, excuse }) });
+    const d = await r.json().catch(() => ({}));
+    setBusyEx(null);
     if (!r.ok) { alert(d.error ?? "تعذّر"); return; }
     load(); onChange();
   }
@@ -94,6 +115,31 @@ export default function DeductionReview({ officeId, officeName, onClose, onChang
           </div>
         )}
 
+        {/* طلبات «نسيت البصمة» (تأخير الدخول) — قبول = لا خصم، رفض = يُثبّت الخصم */}
+        {excuses.length > 0 && (
+          <>
+            <div className="mb-2 text-sm font-bold text-amber-700">طلبات «نسيت البصمة» ({excuses.length})</div>
+            <ul className="mb-4 space-y-2">
+              {excuses.map((e) => {
+                const k = `${e.technicianId}|${e.dayKey}`;
+                return (
+                  <li key={k} className="rounded-2xl border border-amber-200 bg-white p-3.5 shadow-sm">
+                    <div className="text-base font-bold text-amber-800">👷 {e.technicianName}</div>
+                    <div className="mt-0.5 text-sm text-slate-500">
+                      تأخّر <b>{e.lateMinutes}</b> دقيقة — خصم مُقدّر <b>{num(e.estDeduction)}</b> د.ع
+                      <span className="mr-2 text-slate-400" dir="ltr">{e.dayKey}</span>
+                    </div>
+                    <div className="mt-2.5 flex gap-2">
+                      <button onClick={() => decideExcuse(e.technicianId, e.dayKey, "approve")} disabled={busyEx === k} className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">قبول (لا خصم)</button>
+                      <button onClick={() => decideExcuse(e.technicianId, e.dayKey, "reject")} disabled={busyEx === k} className="flex-1 rounded-xl bg-rose-500 py-2.5 text-sm font-bold text-white hover:bg-rose-600 disabled:opacity-60">رفض (يُخصم)</button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+
         <div className="mb-2 text-sm font-bold text-amber-700">المعلّقة ({pending.length})</div>
         {pending.length === 0 ? (
           <div className="mb-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-center text-sm text-slate-400">لا خصومات معلّقة</div>
@@ -105,6 +151,7 @@ export default function DeductionReview({ officeId, officeName, onClose, onChang
                 <div className="mt-2.5 flex gap-2">
                   <button onClick={() => decide(a.id, "confirmed")} disabled={busyId === a.id} className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">تأكيد الخصم</button>
                   <button onClick={() => decide(a.id, "rejected")} disabled={busyId === a.id} className="flex-1 rounded-xl bg-slate-400 py-2.5 text-sm font-bold text-white hover:bg-slate-500 disabled:opacity-60">إلغاء</button>
+                  <button onClick={() => del(a.id)} disabled={busyId === a.id} title="حذف نهائي" className="shrink-0 rounded-xl bg-rose-50 px-3 py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-60">🗑</button>
                 </div>
               </li>
             ))}
@@ -120,7 +167,10 @@ export default function DeductionReview({ officeId, officeName, onClose, onChang
                 return (
                   <li key={a.id} className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm">
                     <div className="min-w-0"><Row a={a} compact /></div>
-                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${st.cls}`}>{st.label}</span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${st.cls}`}>{st.label}</span>
+                      <button onClick={() => del(a.id)} disabled={busyId === a.id} title="حذف نهائي" className="rounded-lg px-1.5 py-1 text-sm text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-60">🗑</button>
+                    </div>
                   </li>
                 );
               })}

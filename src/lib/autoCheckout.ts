@@ -38,11 +38,11 @@ export async function runAutoCheckout(): Promise<{ closed: number }> {
     const upd = await prisma.attendance.updateMany({ where: { id: rec.id, checkOut: null }, data: { checkOut: checkoutAt, checkoutBy: "auto", checkOutTowerId: outTower, ...calc } }).catch(() => ({ count: 0 }));
     if (!upd || upd.count === 0) continue; // أُغلق من عمليةٍ أخرى — تفادي التكرار
 
-    // غرامة نسيان بصمة الخروج (تُعتمد فوراً وتظهر بتفاصيل الراتب)
+    // غرامة نسيان بصمة الخروج: تُنشأ «معلّقة» فلا تُخصم حتى يقرّرها المدير في نافذة المراجعة
     const penalty = t.missedCheckoutPenalty ?? 0;
     if (penalty > 0) {
       await prisma.adjustment.create({
-        data: { technicianId: rec.technicianId, agentId: t.agentId, towerId: t.towerId, kind: "deduction", source: "missed-checkout", amount: penalty, reason: `غرامة نسيان بصمة الخروج (${rec.dayKey})`, status: "confirmed", dayKey: rec.dayKey ?? todayKey, decidedBy: "النظام", decidedAt: new Date() },
+        data: { technicianId: rec.technicianId, agentId: t.agentId, towerId: t.towerId, kind: "deduction", source: "missed-checkout", amount: penalty, reason: `غرامة نسيان بصمة الخروج (${rec.dayKey})`, status: "pending", dayKey: rec.dayKey ?? todayKey },
       }).catch(() => {});
     }
     // إنهاء الدعم إن كان الفني مُعاراً (يعود لمكتبه بنهاية الدوام)
