@@ -121,3 +121,11 @@ html[data-app-mode] [data-app-safetop] { padding-top: max(0.75rem, env(safe-area
 /* إحساس تطبيق أصلي: لا ارتداد للتمرير، لا وميض لمس */
 html[data-app-mode], html[data-app-mode] body { overscroll-behavior: none; }
 html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
+
+/* ===== مؤشّرات خريطة تتبّع الفنيين (Leaflet DivIcon مع اسم الفني فوق المؤشّر) ===== */
+.leaflet-container { font-family: inherit; background: #e5e7eb; }
+.tm-pin { position: relative; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.tm-name { background: #0e3039; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 7px; white-space: nowrap; margin-bottom: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.tm-dot { width: 16px; height: 16px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.45); }
+.tm-fresh .tm-dot { background: #10b981; }
+.tm-stale .tm-dot { background: #f59e0b; }

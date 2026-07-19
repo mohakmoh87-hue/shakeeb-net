@@ -10,6 +10,7 @@ import CardTypeManager from "@/components/CardTypeManager";
 import DeductionReview from "@/components/DeductionReview";
 import NotificationsBell from "@/components/NotificationsBell";
 import FieldAppMenu from "@/components/FieldAppMenu";
+import FieldTracker from "@/components/FieldTracker";
 
 type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number; timeTracked?: boolean };
@@ -628,6 +629,9 @@ export default function FieldManagementPage() {
 
       {/* شريط الفني السفلي: بصمة + عمليات */}
       {role === "technician" && <TechOpsBar techName={myName} />}
+
+      {/* تتبّع الفنيين على الخريطة (مدير/مستخدم المكتب فقط) — ودجة دائمة + نافذة كبيرة */}
+      {role !== "" && role !== "technician" && <FieldTracker />}
     </div>
   );
 }

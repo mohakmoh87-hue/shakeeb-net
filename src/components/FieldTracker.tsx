@@ -1,0 +1,184 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import type { TrackPoint } from "./TrackMap";
+
+const TrackMap = dynamic(() => import("./TrackMap"), { ssr: false });
+
+type Tech = { id: number; name: string; towerId: number | null; office: string };
+type Loc = { id: number; name: string; lat: number | null; lng: number | null; at: string | null; fresh: boolean };
+
+// تتبّع الفنيين على الخريطة (مدير/مستخدم المكتب):
+// - ودجة دائمة أسفل يمين الشاشة على المتصفح (سطح المكتب) + زر عائم على الهاتف/التطبيق.
+// - الضغط يفتح نافذة كبيرة (متصفح + تطبيق) بخريطة كل المؤشّرات، وزر إغلاق أعلى اليسار.
+// - المدير يرى فنيّي كل مكاتبه دفعةً واحدة؛ الموظف فنيّي مكتبه فقط. العزل من الخادم.
+export default function FieldTracker() {
+  const [techs, setTechs] = useState<Tech[]>([]);
+  const [manager, setManager] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [locs, setLocs] = useState<Map<number, Loc>>(new Map());
+  const [big, setBig] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [, tick] = useState(0);
+  const selRef = useRef(selected);
+  selRef.current = selected;
+
+  useEffect(() => {
+    fetch("/api/field/trackable-techs")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setTechs(d.technicians ?? []); setManager(!!d.manager); } })
+      .catch(() => {});
+  }, []);
+
+  // نبضة التتبع كل 30ث للمحدَّدين + جلب مواقعهم
+  const beat = useCallback(async () => {
+    const ids = [...selRef.current];
+    if (ids.length === 0) { setLocs(new Map()); return; }
+    const r = await fetch("/api/field/track", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianIds: ids }) }).catch(() => null);
+    const d = await r?.json().catch(() => null);
+    if (d?.locations) setLocs(new Map((d.locations as Loc[]).map((l) => [l.id, l])));
+  }, []);
+  useEffect(() => { beat(); const t = setInterval(beat, 30_000); const tk = setInterval(() => tick((x) => x + 1), 5_000); return () => { clearInterval(t); clearInterval(tk); }; }, [beat]);
+  useEffect(() => { beat(); }, [selected, beat]);
+
+  // إيقاف نهائي للتتبع عند إلغاء التحديد/الإغلاق/مغادرة الصفحة
+  const stop = useCallback((ids: number[]) => {
+    if (ids.length === 0) return;
+    fetch("/api/field/track", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianIds: ids }), keepalive: true }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    const onHide = () => { const ids = [...selRef.current]; if (ids.length) navigator.sendBeacon?.("/api/field/track", new Blob([JSON.stringify({ action: "stop", technicianIds: ids })], { type: "application/json" })); };
+    window.addEventListener("pagehide", onHide);
+    return () => { window.removeEventListener("pagehide", onHide); stop([...selRef.current]); };
+  }, [stop]);
+
+  function toggle(id: number) {
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) { n.delete(id); stop([id]); setLocs((m) => { const mm = new Map(m); mm.delete(id); return mm; }); }
+      else n.add(id);
+      return n;
+    });
+  }
+  function selectAll() { setSelected(new Set(techs.map((t) => t.id))); }
+  function clearAll() { stop([...selRef.current]); setSelected(new Set()); setLocs(new Map()); }
+
+  const points: TrackPoint[] = useMemo(
+    () => [...selected]
+      .map((id) => locs.get(id))
+      .filter((l): l is Loc => !!l && l.lat != null && l.lng != null)
+      .map((l) => ({ id: l.id, name: l.name, lat: l.lat as number, lng: l.lng as number, fresh: l.fresh })),
+    [selected, locs],
+  );
+
+  const ago = (at: string | null) => {
+    if (!at) return null;
+    const s = Math.max(0, Math.round((Date.now() - new Date(at).getTime()) / 1000));
+    return s < 60 ? `قبل ${s}ث` : `قبل ${Math.round(s / 60)}د`;
+  };
+
+  // مجموعات المكاتب (للمدير متعدّد المكاتب)
+  const groups = useMemo(() => {
+    const m = new Map<string, Tech[]>();
+    for (const t of techs) { const k = t.office || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(t); }
+    return [...m.entries()];
+  }, [techs]);
+
+  if (techs.length === 0) return null; // لا فنيين ضمن صلاحيتك (أو جلسة فني) ⇒ لا ودجة
+
+  const activeCount = points.length;
+
+  // قائمة اختيار الفنيين (مشتركة بين الودجة والنافذة)
+  const list = (
+    <div className="space-y-2">
+      {(manager && groups.length > 1 ? groups : [["", techs] as [string, Tech[]]]).map(([office, arr]) => (
+        <div key={office || "all"}>
+          {manager && groups.length > 1 && <div className="mb-1 mt-1 text-[11px] font-bold text-slate-400">🏢 {office}</div>}
+          <div className="space-y-1">
+            {arr.map((t) => {
+              const on = selected.has(t.id);
+              const l = locs.get(t.id);
+              const has = on && l && l.lat != null;
+              return (
+                <label key={t.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 ${on ? "border-emerald-300 bg-emerald-50/60" : "border-slate-200 bg-white"}`}>
+                  <input type="checkbox" checked={on} onChange={() => toggle(t.id)} className="h-4 w-4 accent-emerald-600" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">👷 {t.name}</span>
+                  {on && (
+                    <span className="shrink-0 text-[10px]">
+                      {has ? <span className={l!.fresh ? "text-emerald-600" : "text-amber-600"}>{l!.fresh ? "🟢" : "🟡"} {ago(l!.at)}</span> : <span className="text-slate-400">⏳ بانتظار…</span>}
+                    </span>
+                  )}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <>
+      {/* ودجة دائمة أسفل يمين الشاشة — سطح المكتب فقط (تُخفى على الهاتف/التطبيق) */}
+      <div className="fixed bottom-4 right-4 z-[45] hidden w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl md:block">
+        <div className="flex items-center justify-between bg-gradient-to-l from-sky-600 to-sky-700 px-3 py-2 text-white">
+          <button onClick={() => setBig(true)} className="flex items-center gap-1.5 text-sm font-extrabold" title="تكبير الخريطة">
+            📍 تتبع الفنيين {activeCount > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px]">{activeCount}</span>}
+          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setBig(true)} className="rounded-md px-1.5 py-0.5 text-xs hover:bg-white/20" title="تكبير">⛶</button>
+            <button onClick={() => setCollapsed((c) => !c)} className="rounded-md px-1.5 py-0.5 text-xs hover:bg-white/20" title={collapsed ? "توسيع" : "طيّ"}>{collapsed ? "▲" : "▼"}</button>
+          </div>
+        </div>
+        {!collapsed && (
+          <div className="flex flex-col">
+            <div className="flex gap-1.5 px-2.5 pt-2">
+              <button onClick={selectAll} className="flex-1 rounded-lg bg-emerald-600 py-1 text-[11px] font-bold text-white">تتبّع الكل ({techs.length})</button>
+              <button onClick={clearAll} className="flex-1 rounded-lg bg-slate-200 py-1 text-[11px] font-bold text-slate-600">إيقاف الكل</button>
+            </div>
+            <div className="max-h-40 overflow-y-auto px-2.5 py-2">{list}</div>
+            <div className="relative h-44 border-t border-slate-200">
+              <TrackMap points={points} className="h-full w-full" />
+              {points.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70 text-center text-[11px] text-slate-400">اختر فنّياً لعرض موقعه على الخريطة</div>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* زر عائم على الهاتف/التطبيق — يفتح النافذة الكبيرة */}
+      <button onClick={() => setBig(true)} className="fixed bottom-24 right-4 z-[45] flex items-center gap-1.5 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-xl active:scale-95 md:hidden">
+        📍 تتبع {activeCount > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px]">{activeCount}</span>}
+      </button>
+
+      {/* النافذة الكبيرة (متصفح + تطبيق) */}
+      {big && (
+        <div className="fixed inset-0 z-[85] flex flex-col bg-black/60 p-0 sm:p-4" onClick={() => setBig(false)}>
+          <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden bg-slate-50 shadow-2xl sm:h-[92vh] sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5" data-app-safetop>
+              <h3 className="text-base font-extrabold text-slate-800">📍 تتبع الفنيين {activeCount > 0 && `(${activeCount})`}</h3>
+              {/* زر الإغلاق في أعلى اليسار (آخر عنصر ⇒ يسار في RTL) */}
+              <button onClick={() => setBig(false)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-bold text-slate-600 hover:bg-slate-200">✕ إغلاق</button>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col md:flex-row-reverse">
+              <div className="relative min-h-[45vh] flex-1 md:min-h-0">
+                <TrackMap points={points} className="h-full w-full" />
+                {points.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/60 text-center text-sm text-slate-400">اختر فنّياً واحداً أو أكثر لعرض مواقعهم</div>}
+              </div>
+              <div className="flex max-h-[35vh] shrink-0 flex-col border-t border-slate-200 bg-white md:max-h-none md:w-72 md:border-l md:border-t-0">
+                <div className="flex gap-2 p-3">
+                  <button onClick={selectAll} className="flex-1 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white">تتبّع الكل ({techs.length})</button>
+                  <button onClick={clearAll} className="flex-1 rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-600">إيقاف الكل</button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">{list}</div>
+              </div>
+            </div>
+            <div className="border-t border-slate-200 bg-white px-4 py-2 text-center text-[11px] text-slate-400">
+              يتحدّث كل 30 ثانية · يتطلّب أن يكون تطبيق الفني مفتوحاً أو موقظاً وإذن الموقع مفعّلاً · إغلاق النافذة يوقف الطلب ويُبقي آخر موقع
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
