@@ -126,6 +126,8 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
 .leaflet-container { font-family: inherit; background: #e5e7eb; }
 .tm-pin { position: relative; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; line-height: 1; }
 .tm-name { background: #0e3039; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 7px; white-space: nowrap; margin-bottom: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+/* أقرب عامود اشتراكات — نصّ صغير بجانب اسم الفني فوق مؤشّره */
+.tm-pole { margin-right: 5px; padding-right: 5px; border-right: 1px solid rgba(255,255,255,.35); color: #7dd3fc; font-size: 10px; font-weight: 600; }
 .tm-dot { width: 16px; height: 16px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.45); }
 .tm-fresh .tm-dot { background: #10b981; }
 .tm-stale .tm-dot { background: #f59e0b; }

@@ -7,7 +7,7 @@ import type { TrackPoint } from "./TrackMap";
 const TrackMap = dynamic(() => import("./TrackMap"), { ssr: false });
 
 type Tech = { id: number; name: string; towerId: number | null; office: string };
-type Loc = { id: number; name: string; lat: number | null; lng: number | null; at: string | null; fresh: boolean };
+type Loc = { id: number; name: string; lat: number | null; lng: number | null; at: string | null; fresh: boolean; pole?: string | null };
 
 type Ctx = {
   techs: Tech[];
@@ -94,7 +94,7 @@ export function FieldTrackerProvider({ enabled, children }: { enabled: boolean; 
   const clearAll = () => { stop([...selRef.current]); setSelected(new Set()); setLocs(new Map()); };
 
   const points: TrackPoint[] = useMemo(
-    () => [...selected].map((id) => locs.get(id)).filter((l): l is Loc => !!l && l.lat != null && l.lng != null).map((l) => ({ id: l.id, name: l.name, lat: l.lat as number, lng: l.lng as number, fresh: l.fresh })),
+    () => [...selected].map((id) => locs.get(id)).filter((l): l is Loc => !!l && l.lat != null && l.lng != null).map((l) => ({ id: l.id, name: l.name, lat: l.lat as number, lng: l.lng as number, fresh: l.fresh, pole: l.pole ?? null })),
     [selected, locs],
   );
   const ago = (at: string | null) => {

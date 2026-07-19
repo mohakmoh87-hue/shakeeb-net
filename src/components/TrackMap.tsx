@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import type * as LeafletNS from "leaflet";
 
-export type TrackPoint = { id: number; name: string; lat: number; lng: number; fresh: boolean };
+export type TrackPoint = { id: number; name: string; lat: number; lng: number; fresh: boolean; pole?: string | null };
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
@@ -26,9 +26,11 @@ export default function TrackMap({ points, className }: { points: TrackPoint[]; 
     layer.clearLayers();
     const pts: [number, number][] = [];
     for (const p of pointsRef.current) {
+      // أقرب عامود اشتراكات: نصٌّ بجانب الاسم فقط (لا مؤشّر له على الخريطة)
+      const poleHtml = p.pole ? `<span class="tm-pole" dir="ltr">${escapeHtml(p.pole)}</span>` : "";
       const icon = L.divIcon({
         className: "",
-        html: `<div class="tm-pin ${p.fresh ? "tm-fresh" : "tm-stale"}"><span class="tm-name">${escapeHtml(p.name)}</span><span class="tm-dot"></span></div>`,
+        html: `<div class="tm-pin ${p.fresh ? "tm-fresh" : "tm-stale"}"><span class="tm-name">${escapeHtml(p.name)}${poleHtml}</span><span class="tm-dot"></span></div>`,
         iconSize: [0, 0],
         iconAnchor: [0, 0],
       });

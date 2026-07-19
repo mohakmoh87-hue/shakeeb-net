@@ -66,12 +66,43 @@ export async function PUT(request: Request) {
   const newlyStarted = r.techs.filter((t) => !isFresh(t.trackReqAt));
   await prisma.technician.updateMany({ where: { id: { in: r.techs.map((t) => t.id) } }, data: { trackReqAt: now } });
   await wakeTechs(newlyStarted, "track-start");
+
+  // أقرب عامود اشتراكات لكل فني (يظهر نصاً بجانب اسمه على الخريطة — لا كمؤشّر):
+  // نجلب أعمدة صندوقٍ يضمّ كل المواقع (+هامش ~2كم) ثم أقرب عامود ضمن 2كم لكل فني.
+  const located = r.techs.filter((t) => t.trackLat != null && t.trackLng != null);
+  const nearestPole = new Map<number, string>();
+  if (located.length > 0) {
+    const pad = 0.02; // ≈ 2كم
+    const lats = located.map((t) => t.trackLat as number), lngs = located.map((t) => t.trackLng as number);
+    const poles = await prisma.mapPoint.findMany({
+      where: {
+        lat: { gte: Math.min(...lats) - pad, lte: Math.max(...lats) + pad },
+        lng: { gte: Math.min(...lngs) - pad, lte: Math.max(...lngs) + pad },
+      },
+      take: 20000, // الجدول كله ~15 ألف نقطة خفيفة — لا اقتطاع كي لا يفوت الأقرب
+    });
+    const dist2 = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+      const dLat = aLat - bLat, dLng = (aLng - bLng) * Math.cos((aLat * Math.PI) / 180);
+      return dLat * dLat + dLng * dLng; // مقارنة نسبية تكفي لاختيار الأقرب
+    };
+    const maxD2 = (2 / 111) * (2 / 111); // لا معنى لعامودٍ أبعد من ~2كم
+    for (const t of located) {
+      let best: string | null = null, bestD = Infinity;
+      for (const p of poles) {
+        const d = dist2(t.trackLat as number, t.trackLng as number, p.lat, p.lng);
+        if (d < bestD) { bestD = d; best = p.name; }
+      }
+      if (best && bestD <= maxD2) nearestPole.set(t.id, best);
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     locations: r.techs.map((t) => ({
       id: t.id, name: t.name,
       lat: t.trackLat, lng: t.trackLng,
       at: t.trackAt, fresh: !!t.trackAt && now.getTime() - t.trackAt.getTime() < 3 * 60_000,
+      pole: nearestPole.get(t.id) ?? null,
     })),
   });
 }
