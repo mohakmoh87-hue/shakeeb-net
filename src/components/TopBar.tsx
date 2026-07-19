@@ -61,23 +61,8 @@ export default function TopBar({
     window.location.href = "/login";
   }
 
-  // خارج الرئيسية: شريط علوي رفيع فيه الشعار (كي يظهر شعار SHAKEEB في كل الصفحات) + عودة للرئيسية + خروج
-  if (pathname !== "/dashboard") {
-    return (
-      <header className="no-print hidden border-b border-slate-200 bg-gradient-to-b from-white to-slate-100 shadow-sm md:block">
-        <div className="flex items-center justify-between gap-3 px-4 py-2">
-          <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2.5" title="الصفحة الرئيسية">
-            <img src="/icons/logo.png" alt="SHAKEEB" className="h-9 w-9 rounded-lg shadow" />
-            <span className="text-base font-extrabold text-mynet-blue">{brand ?? "SHAKEEB"}</span>
-          </button>
-          <div className="flex items-center gap-2">
-            <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-blue-50 hover:text-mynet-blue">← الرئيسية</button>
-            <button onClick={logout} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:bg-red-100 hover:text-red-600">🚪 خروج</button>
-          </div>
-        </div>
-      </header>
-    );
-  }
+  // يظهر شريط الأدوات الكامل في الصفحة الرئيسية فقط
+  if (pathname !== "/dashboard") return null;
 
   return (
     <header className="no-print hidden border-b border-slate-200 bg-gradient-to-b from-white to-slate-100 shadow-sm md:block">
