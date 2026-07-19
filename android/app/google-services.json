@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "838541273256",
+    "project_id": "shakeeb-net",
+    "storage_bucket": "shakeeb-net.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:838541273256:android:5ba056a6618777b68ffa9d",
+        "android_client_info": {
+          "package_name": "com.shakeebnet.field"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKK0WqqxmiDetPd6d1zR1oMlpRJp0q0yA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
