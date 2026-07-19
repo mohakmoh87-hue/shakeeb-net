@@ -123,7 +123,7 @@ export async function runOfficeSync(
 
   // كل كروت البرنامج (البِن → الكارت)
   const cards = await prisma.rechargeCard.findMany({
-    select: { id: true, serial: true, useDate: true, subscriberId: true, price: true },
+    select: { id: true, serial: true, useDate: true, subscriberId: true },
   });
   const cardBySerial = new Map(cards.map((c) => [(c.serial ?? "").trim(), c]));
 
@@ -211,7 +211,7 @@ export async function runOfficeSync(
   }
 
   // السيناريو 1: كارت "مستخدم" في البرنامج (أمس) لمشترك هذا المكتب لكن لا تفعيل مقابل في SAS
-  //   الإجراء: إرجاع الكارت غير مستخدم + خصم سعره من ديون الكارتات (تصفير price) + إبلاغ.
+  //   الإجراء: إرجاع الكارت غير مستخدم إلى المخزن فقط — دون أي تغيير على ديون الكارتات (يبقى سعره كما هو) + إبلاغ.
   const usedYesterday = cards.filter(
     (c) => c.useDate && c.subscriberId != null && withinRange(c.useDate, start, end) && subById.has(c.subscriberId),
   );
@@ -221,24 +221,23 @@ export async function runOfficeSync(
     const key = `${sub.sasId}|${(c.serial ?? "").trim()}`;
     if (sasUserPinSet.has(key)) continue; // للكارت تفعيل فعلي في SAS → سليم
 
-    const originalPrice = c.price ?? 0;
     await prisma.$transaction([
-      // إرجاع الكارت للمخزون كغير مستخدم + تصفير سعره (خصم قيمته من ديون الكارتات)
+      // إرجاع الكارت للمخزون كغير مستخدم — يبقى سعره (دين الكارت) كما هو دون زيادة أو نقصان
       prisma.rechargeCard.update({
         where: { id: c.id },
-        data: { useDate: null, subscriberId: null, userName: null, reservedBy: null, reservedAt: null, price: 0 },
+        data: { useDate: null, subscriberId: null, userName: null, reservedBy: null, reservedAt: null },
       }),
       prisma.auditLog.create({
         data: {
           action: "SYNC_PHANTOM_CARD", entity: "rechargeCard", entityId: String(c.id),
-          details: `تفعيل وهمي (${officeName}) — إرجاع كارت ${c.serial} للمخزن وخصم ${originalPrice} من ديون الكارتات`,
+          details: `تفعيل وهمي (${officeName}) — إرجاع كارت ${c.serial} للمخزن دون تغيير ديون الكارتات`,
         },
       }),
     ]);
     phantom++;
     events.push({
       scenario: 1, subscriber: sub.name ?? sub.netUser, pin: c.serial,
-      detail: `إرجاع الكارت وخصم ${originalPrice} من ديون الكارتات`,
+      detail: `إرجاع الكارت للمخزن دون تغيير ديون الكارتات`,
     });
   }
 
