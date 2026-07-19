@@ -11,7 +11,6 @@ const schema = z.object({
   isAdmin: z.coerce.boolean().default(false),
   permissions: z.array(z.string()).default([]),
   towerId: z.coerce.number().nullable().optional(),
-  managerPhone: z.string().nullable().optional(),
   isActive: z.coerce.boolean().default(true),
 });
 
@@ -25,7 +24,7 @@ export async function GET() {
     orderBy: { id: "asc" },
     select: {
       id: true, fullName: true, username: true, isAdmin: true,
-      permissions: true, towerId: true, managerPhone: true, isActive: true,
+      permissions: true, towerId: true, isActive: true,
     },
   });
   return NextResponse.json(users);
@@ -64,7 +63,7 @@ export async function POST(request: Request) {
       password: await hashPassword(password),
       permissions: permissions.join(","),
     },
-    select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, managerPhone: true, isActive: true },
+    select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, isActive: true },
   });
   return NextResponse.json(created, { status: 201 });
 }

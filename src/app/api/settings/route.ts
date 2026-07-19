@@ -4,12 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 
 // المفاتيح المعروفة للإعدادات
-const KNOWN = ["office", "dollar", "phone", "country", "whatsapp", "silent", "reminderTime", "reportTime", "backupTime"] as const;
+const KNOWN = ["office", "dollar", "country", "whatsapp", "silent", "reminderTime", "reportTime", "backupTime"] as const;
 
 const schema = z.object({
   office: z.string().nullable().optional(),
   dollar: z.string().nullable().optional(),
-  phone: z.string().nullable().optional(),
   country: z.string().nullable().optional(),
   whatsapp: z.string().nullable().optional(), // 1 = تفعيل واتساب لكل المشتركين
   silent: z.string().nullable().optional(), // 1 = إرسال صامت افتراضي بلا تأكيد

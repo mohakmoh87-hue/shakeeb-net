@@ -70,7 +70,6 @@ export default function SettingsPage() {
       <form onSubmit={save} className="max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <Field label="اسم النظام (الافتراضي في الوصولات)" value={form.office} onChange={(v) => set("office", v)} />
         <Field label="سعر صرف الدولار (دينار)" value={form.dollar} onChange={(v) => set("dollar", v)} type="number" />
-        <Field label="هاتف عام" value={form.phone} onChange={(v) => set("phone", v)} />
         <Field label="رمز الدولة" value={form.country} onChange={(v) => set("country", v)} placeholder="964" />
         <Field label="وقت إرسال تذكير انتهاء الاشتراك (يومياً)" value={form.reminderTime || "13:00"} onChange={(v) => set("reminderTime", v)} type="time" />
         <Field label="وقت إرسال تقرير المدير (يومياً)" value={form.reportTime || "23:55"} onChange={(v) => set("reportTime", v)} type="time" />

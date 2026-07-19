@@ -14,18 +14,17 @@ type User = {
   isAdmin: boolean;
   permissions: string | null;
   towerId: number | null;
-  managerPhone: string | null;
   isActive: boolean;
 };
 
 type Form = {
   fullName: string; username: string; password: string;
   isAdmin: boolean; permissions: Set<string>; towerId: number | "";
-  managerPhone: string; isActive: boolean;
+  isActive: boolean;
 };
 const emptyForm = (): Form => ({
   fullName: "", username: "", password: "", isAdmin: false,
-  permissions: new Set(), towerId: "", managerPhone: "", isActive: true,
+  permissions: new Set(), towerId: "", isActive: true,
 });
 
 export default function UsersPage() {
@@ -54,7 +53,7 @@ export default function UsersPage() {
     setForm({
       fullName: u.fullName, username: u.username, password: "", isAdmin: u.isAdmin,
       permissions: new Set((u.permissions ?? "").split(",").filter(Boolean)),
-      towerId: u.towerId ?? "", managerPhone: u.managerPhone ?? "", isActive: u.isActive,
+      towerId: u.towerId ?? "", isActive: u.isActive,
     });
     setError(""); setModal(true);
   }
@@ -68,7 +67,7 @@ export default function UsersPage() {
       const payload = {
         fullName: form.fullName, username: form.username, password: form.password || undefined,
         isAdmin: form.isAdmin, permissions: [...form.permissions],
-        towerId: form.towerId || null, managerPhone: form.managerPhone || null, isActive: form.isActive,
+        towerId: form.towerId || null, isActive: form.isActive,
       };
       const res = await fetch(editId ? `/api/users/${editId}` : "/api/users", {
         method: editId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -98,7 +97,7 @@ export default function UsersPage() {
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-right text-sm">
           <thead className="bg-slate-50 text-slate-600">
-            <tr><th className="p-3">#</th><th className="p-3">الاسم</th><th className="p-3">المستخدم</th><th className="p-3">النوع</th><th className="p-3">المكتب</th><th className="p-3">رقم المدير</th><th className="p-3">الحالة</th><th className="p-3">إجراءات</th></tr>
+            <tr><th className="p-3">#</th><th className="p-3">الاسم</th><th className="p-3">المستخدم</th><th className="p-3">النوع</th><th className="p-3">المكتب</th><th className="p-3">الحالة</th><th className="p-3">إجراءات</th></tr>
           </thead>
           <tbody>
             {users.map((u) => (
@@ -108,7 +107,6 @@ export default function UsersPage() {
                 <td className="p-3" dir="ltr">{u.username}</td>
                 <td className="p-3">{u.isAdmin ? <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">مدير</span> : "مستخدم"}</td>
                 <td className="p-3">{towerName(u.towerId)}</td>
-                <td className="p-3" dir="ltr">{u.managerPhone ?? "—"}</td>
                 <td className="p-3">{u.isActive ? <span className="text-emerald-600">مفعّل</span> : <span className="text-slate-400">موقوف</span>}</td>
                 <td className="p-3"><div className="flex gap-2">
                   <button onClick={() => openEdit(u)} className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-600 hover:bg-blue-100">تعديل</button>
@@ -135,8 +133,6 @@ export default function UsersPage() {
                   <option value="">— كل المكاتب —</option>
                   {towers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">رقم المدير (واتساب التقرير)</label>
-                <input value={form.managerPhone} onChange={(e) => setForm({ ...form, managerPhone: e.target.value })} dir="ltr" placeholder="07..." className="w-full rounded-lg border border-slate-300 px-3 py-2" /></div>
               <div className="flex items-end gap-4">
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isAdmin} onChange={(e) => setForm({ ...form, isAdmin: e.target.checked })} /> مدير كامل الصلاحيات</label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> مفعّل</label>

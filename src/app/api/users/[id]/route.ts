@@ -11,7 +11,6 @@ const schema = z.object({
   isAdmin: z.coerce.boolean().default(false),
   permissions: z.array(z.string()).default([]),
   towerId: z.coerce.number().nullable().optional(),
-  managerPhone: z.string().nullable().optional(),
   isActive: z.coerce.boolean().default(true),
 });
 
@@ -50,7 +49,7 @@ export async function PUT(
       permissions: permissions.join(","),
       ...(password && password.length >= 4 ? { password: await hashPassword(password) } : {}),
     },
-    select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, managerPhone: true, isActive: true },
+    select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, isActive: true },
   });
   return NextResponse.json(updated);
 }
