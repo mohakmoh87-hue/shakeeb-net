@@ -1,14 +1,15 @@
-// تتبع الموقع في الخلفية داخل التطبيق الأصلي (Capacitor) عبر خدمة نظام.
-// يعمل والتطبيق مُبعَد للخلفية، ويُطفأ تماماً حين يوقف الخادم الطلب (بلا استهلاك بطارية).
-// في المتصفح العادي: كل الدوال تعيد "unsupported" ولا تفعل شيئاً (الموقع لا يتأثر).
-// الإضافة الأصلية بلا JS — تُسجَّل عبر registerPlugin، والنوع يُستورَد type-only (يُمحى بالبناء).
-
+// جسر التطبيق الأصلي (Capacitor) لتتبّع الموقع في الخلفية.
+// آلية العمل: المدير يضغط «تتبع» ⇒ الخادم يرسل إشعار FCM ⇒ خدمة أصلية (Java) تبدأ
+// وترسل الموقع حتى والتطبيق مُغلَق، وتُطفأ حين يوقف المدير التتبع. لا استهلاك بلا طلب.
+// دور الويب هنا: تسجيل رمز جهاز FCM ليتمكّن الخادم من إيقاظنا + فتح الإعدادات عند رفض الإذن.
+// في المتصفح العادي: كل الدوال تعيد بهدوء دون أثر (الموقع لا يتأثر).
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { BackgroundGeolocationPlugin } from "@capacitor-community/background-geolocation";
 
+// جسر رمز FCM (إضافة Java: PushTokenPlugin)
+const PushToken = registerPlugin<{ getToken(): Promise<{ token: string }> }>("PushToken");
+// إضافة المجتمع — نستعملها فقط لفتح إعدادات التطبيق عند الحاجة
 const BG = registerPlugin<BackgroundGeolocationPlugin>("BackgroundGeolocation");
-
-let watcherId: string | null = null;
 
 // هل نحن داخل التطبيق الأصلي (لا المتصفح)؟
 export function isNativeApp(): boolean {
@@ -19,49 +20,20 @@ export function isNativeApp(): boolean {
   }
 }
 
-export type NativeTrackResult = "ok" | "denied" | "unsupported";
-
-// يبدأ خدمة تتبع الموقع الأصلية (مرّة واحدة). callback يُرسل الموقع للخادم ويعيد
-// هل يبقى التتبع مطلوباً؛ إن لا → تُطفأ الخدمة تلقائياً.
-export async function startNativeTracking(
-  onLocation: (lat: number, lng: number) => Promise<boolean>,
-): Promise<NativeTrackResult> {
-  if (!isNativeApp()) return "unsupported";
-  if (watcherId) return "ok"; // تعمل أصلاً
-  return new Promise<NativeTrackResult>((resolve) => {
-    let settled = false;
-    BG.addWatcher(
-      {
-        requestPermissions: true,
-        stale: false,
-        backgroundTitle: "شكيب نت — تتبع الموقع",
-        backgroundMessage: "مكتبك يتابع موقعك أثناء الدوام",
-        distanceFilter: 15, // تحديث عند تحرّك ~15م
-      },
-      (location, error) => {
-        if (error) {
-          if (error.code === "NOT_AUTHORIZED" && !settled) { settled = true; resolve("denied"); }
-          return;
-        }
-        if (!settled) { settled = true; resolve("ok"); }
-        if (location) {
-          void onLocation(location.latitude, location.longitude)
-            .then((keep) => { if (!keep) void stopNativeTracking(); }) // الخادم أوقف الطلب → إطفاء الخدمة
-            .catch(() => {});
-        }
-      },
-    ).then((id) => { watcherId = id; }).catch(() => { if (!settled) { settled = true; resolve("denied"); } });
-  });
-}
-
-// يوقف خدمة التتبع تماماً (لا خدمة، لا بطارية).
-export async function stopNativeTracking(): Promise<void> {
-  if (!watcherId) return;
-  const id = watcherId;
-  watcherId = null;
+// تسجيل رمز جهاز FCM على الخادم (مرّة عند فتح التطبيق) ليتمكّن من إيقاظ خدمة التتبع.
+export async function registerPushToken(): Promise<void> {
+  if (!isNativeApp()) return;
   try {
-    await BG.removeWatcher({ id });
-  } catch { /* تجاهل */ }
+    const { token } = await PushToken.getToken();
+    if (!token) return;
+    await fetch("/api/field/push-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }).catch(() => {});
+  } catch {
+    /* تجاهل — لا يؤثر على بقية التطبيق */
+  }
 }
 
 // فتح إعدادات التطبيق (لتفعيل إذن الموقع «السماح دائماً» يدوياً إن رُفض)
@@ -69,5 +41,7 @@ export async function openNativeSettings(): Promise<void> {
   if (!isNativeApp()) return;
   try {
     await BG.openSettings();
-  } catch { /* تجاهل */ }
+  } catch {
+    /* تجاهل */
+  }
 }

@@ -641,6 +641,7 @@ model Technician {
   trackLat   Float? // آخر موقع (يُستبدل كل دقيقة)
   trackLng   Float?
   trackAt    DateTime? // وقت آخر تحديث موقع
+  fcmToken  String? // رمز جهاز FCM (التطبيق الأصلي) — لإيقاظ الخدمة عند طلب التتبع
   isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
 

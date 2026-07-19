@@ -5,7 +5,7 @@ import TechLeaveModal from "./TechLeaveModal";
 import TechAdjustments from "./TechAdjustments";
 import SalaryModal from "./SalaryModal";
 import { bioConfirm, bioReRegister } from "@/lib/biometric";
-import { isNativeApp, startNativeTracking, stopNativeTracking, openNativeSettings } from "@/lib/nativeTracking";
+import { isNativeApp, registerPushToken, openNativeSettings } from "@/lib/nativeTracking";
 
 type AttState = "none" | "in" | "done";
 const fmtTime = (d: string | null) => (d ? new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "");
@@ -54,33 +54,27 @@ export default function TechOpsBar({ techName }: { techName: string }) {
         { enableHighAccuracy: true, timeout: 20_000, maximumAge: 10_000 },
       );
     };
-    // إرسال الموقع للخادم؛ يعيد هل يبقى التتبع مطلوباً (للخدمة الأصلية لتُطفئ نفسها)
-    const postLoc = async (lat: number, lng: number): Promise<boolean> => {
-      const r = await fetch("/api/field/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat, lng }) }).catch(() => null);
-      const d = await r?.json().catch(() => null);
-      return !!d?.tracking;
-    };
     const check = async () => {
       const d = await fetch("/api/field/track").then((r) => (r.ok ? r.json() : null)).catch(() => null);
       if (stopped) return;
       if (d?.tracking) {
         setTrackReq(true);
-        if (isNativeApp()) {
-          // التطبيق الأصلي: خدمة خلفية تعمل والتطبيق مُبعَد وتُطفأ تلقائياً عند إيقاف الخادم
-          const res = await startNativeTracking(postLoc);
-          if (!stopped) setGeoBlocked(res === "denied");
-        } else if (!locTimer) {
+        // التطبيق الأصلي: خدمة أصلية تُوقظها إشعارات FCM وتعمل والتطبيق مُغلَق — لا شيء من الويب.
+        if (!isNativeApp() && !locTimer) {
           sendLoc(); locTimer = setInterval(sendLoc, 30_000); // المتصفح: إرسال فوري ثم كل 30ث
         }
       } else {
         setTrackReq(false); setGeoBlocked(false);
-        if (isNativeApp()) void stopNativeTracking(); else stopLoc();
+        if (!isNativeApp()) stopLoc(); // الأصلي يُطفأ عبر إشعار FCM من الخادم
       }
     };
     check();
     const checkTimer = setInterval(check, 30_000);
-    return () => { stopped = true; clearInterval(checkTimer); stopLoc(); if (isNativeApp()) void stopNativeTracking(); };
+    return () => { stopped = true; clearInterval(checkTimer); stopLoc(); };
   }, []);
+
+  // التطبيق الأصلي: سجّل رمز جهاز FCM (مرّة) ليتمكّن الخادم من إيقاظ خدمة التتبع عند الطلب.
+  useEffect(() => { void registerPushToken(); }, []);
 
   function flash(msg: string) { setToast(msg); setTimeout(() => setToast(""), 4200); }
 
