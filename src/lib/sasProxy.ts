@@ -1,14 +1,15 @@
 import { fetch as undiciFetch, Agent } from "undici";
+import { lookup } from "node:dns/promises";
 
 const insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
-// حماية SSRF: يمنع البروكسي (على Vercel) من الاتصال بعناوين داخلية/محلية.
-// لا يؤثّر على العامل المحلي (خادم SAS المحلي مسار منفصل)، ولا على لوحات SAS العامة.
-function isBlockedHost(host: string): boolean {
-  const h = host.replace(/:\d+$/, "").trim().toLowerCase(); // إزالة المنفذ
-  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal") || h.endsWith(".local")) return true;
-  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!m) return false; // اسم مضيف (ليس IP) — يُسمح (لوحات SAS تُعرَّف عادةً بـ IP عام)
+// هل العنوان (IP) داخليّ/خاص يجب حجبه؟ (IPv4 نطاقات خاصة + بيانات السحابة الوصفية + CGNAT؛ IPv6 محلي)
+function isBlockedIp(ip: string): boolean {
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) {
+    const h = ip.toLowerCase();
+    return h === "::1" || h === "::" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80"); // loopback/ULA/link-local
+  }
   const [a, b] = [Number(m[1]), Number(m[2])];
   if (a === 127 || a === 0 || a === 10) return true;               // loopback / هذا المضيف / خاص
   if (a === 169 && b === 254) return true;                          // link-local (بيانات السحابة الوصفية)
@@ -16,6 +17,23 @@ function isBlockedHost(host: string): boolean {
   if (a === 172 && b >= 16 && b <= 31) return true;                 // خاص
   if (a === 100 && b >= 64 && b <= 127) return true;                // CGNAT
   return false;
+}
+
+// حماية SSRF: يمنع البروكسي (على Vercel) من الاتصال بعناوين داخلية/محلية — للـIP الحرفي وللأسماء
+// بعد ترجمتها (DNS) كي لا يُخدَع باسمٍ يُترجم لعنوان داخلي. لا يؤثّر على العامل المحلي (مسار منفصل)
+// ولا على لوحات SAS العامة (IP عام حرفي أو اسم يُترجم لعنوان عام يمرّ كما هو).
+async function isBlockedHost(host: string): Promise<boolean> {
+  const h = host.replace(/:\d+$/, "").trim().toLowerCase(); // إزالة المنفذ
+  if (!h || h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal") || h.endsWith(".local")) return true;
+  // IP حرفي (IPv4 أو IPv6): افحصه مباشرةً — العناوين العامة تمرّ
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h.includes(":")) return isBlockedIp(h);
+  // اسم مضيف: ترجمه واحجب إن ترجم لأي عنوان داخلي؛ وفشل الترجمة ⇒ حجب احتياطاً (fail-closed)
+  try {
+    const addrs = await lookup(h, { all: true });
+    return addrs.length === 0 || addrs.some((x) => isBlockedIp(x.address));
+  } catch {
+    return true;
+  }
 }
 
 // معالج بروكسي مشترك للوحة SAS4
@@ -26,7 +44,7 @@ export async function proxyToSas(
   basePrefix?: string, // للـ HTML: يُعاد كتابة <base href> إلى هذه البادئة
   onJsonBody?: (text: string) => void, // التقاط جسم JSON (مثل قائمة المستخدمين)
 ): Promise<Response> {
-  if (isBlockedHost(host)) return new Response("blocked host", { status: 403 });
+  if (await isBlockedHost(host)) return new Response("blocked host", { status: 403 });
   const url = new URL(request.url);
   const target = `https://${host}/${upstreamPath}${url.search}`;
 

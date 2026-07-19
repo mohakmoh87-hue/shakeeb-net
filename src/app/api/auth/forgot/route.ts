@@ -34,7 +34,9 @@ export async function POST(request: Request) {
   const token = crypto.randomBytes(24).toString("base64url");
   await prisma.user.update({ where: { id: user.id }, data: { resetToken: token, resetExpiry: new Date(Date.now() + 30 * 60 * 1000) } });
 
-  const origin = `${new URL(request.url).protocol}//${new URL(request.url).host}`;
+  // الدومين الموثوق من متغيّر البيئة (يمنع تسميم الرابط عبر ترويسة Host مزوّرة) — وإلا Host الطلب
+  const configured = (process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/+$/, "");
+  const origin = configured || `${new URL(request.url).protocol}//${new URL(request.url).host}`;
   const link = `${origin}/reset?token=${token}`;
   await sendMail({
     to: email,

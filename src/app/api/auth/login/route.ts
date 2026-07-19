@@ -21,8 +21,8 @@ async function agentBlockReason(agentId: number | null): Promise<string | null> 
 }
 
 export async function POST(request: Request) {
-  // تحديد معدّل عام لمنع تخمين كلمات السر/الرموز (يحمي دخول المستخدم والفني معاً)
-  if (!rateLimit(`login:${clientIp(request)}`, 12, 60_000)) {
+  // backstop فضفاض لكل IP ضد الرشّ (60/دقيقة) — لا يمسّ مكتباً مزدحماً خلف إنترنت واحد
+  if (!rateLimit(`login-ip:${clientIp(request)}`, 60, 60_000)) {
     return NextResponse.json({ error: "محاولات كثيرة — انتظر دقيقة" }, { status: 429 });
   }
   const body = await request.json().catch(() => null);
@@ -35,6 +35,11 @@ export async function POST(request: Request) {
   }
 
   const { username, password } = parsed.data;
+  // حدّ لكل اسم مستخدم (10/دقيقة) — لا يعتمد على IP فلا يُتجاوز بتبديل الترويسة، ولا يُعطّل المكتب
+  // المزدحم لأن مستخدميه مختلفون. يعمل مع قفل الحساب في القاعدة (5 محاولات → 15 دقيقة).
+  if (!rateLimit(`login-user:${username.trim().toLowerCase()}`, 10, 60_000)) {
+    return NextResponse.json({ error: "محاولات كثيرة على هذا الحساب — انتظر دقيقة" }, { status: 429 });
+  }
   const user = await prisma.user.findUnique({ where: { username } });
 
   // دخول موحّد: إن لم يكن اسم المستخدم لمستخدمٍ (اليوزر فريد على مستوى النظام) فقد يكون فنّياً.
