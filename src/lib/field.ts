@@ -122,6 +122,36 @@ export function isFieldManager(session: SessionPayload): boolean {
   return !!session.isAdmin || session.towerId == null;
 }
 
+// حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (+ صورها) — يُستدعى من الكرون السحابي وتنظيف العامل.
+// يشمل أيضاً بطاقات النمط القديم (محصَّلة ومحذوفة ناعماً) لتحرير المساحة.
+export async function purgeOldArchivedCards(): Promise<number> {
+  const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+  const old = await prisma.taskCard.findMany({
+    where: { OR: [{ archivedAt: { lt: cutoff } }, { settled: true, isDeleted: true }] },
+    select: { id: true }, take: 1000,
+  });
+  if (old.length === 0) return 0;
+  const ids = old.map((c) => c.id);
+  await prisma.$transaction([
+    prisma.cardPhoto.deleteMany({ where: { cardId: { in: ids } } }),
+    prisma.taskCard.deleteMany({ where: { id: { in: ids } } }),
+  ]);
+  return ids.length;
+}
+
+// سجلّ تغييرات البطاقة (داخل البطاقة نفسها): يُلحق حدثاً JSON {at,by,text} — تأجيل/تحويل/نقل/إنجاز…
+// لا يُفشل العملية الأصلية إن تعثّر، ويُقصّ لآخر 100 حدث.
+export async function appendCardHistory(cardId: number, by: string, text: string): Promise<void> {
+  try {
+    const card = await prisma.taskCard.findUnique({ where: { id: cardId }, select: { history: true } });
+    let arr: { at: string; by: string; text: string }[] = [];
+    try { arr = card?.history ? JSON.parse(card.history) : []; } catch { arr = []; }
+    arr.push({ at: new Date().toISOString(), by, text });
+    if (arr.length > 100) arr = arr.slice(-100);
+    await prisma.taskCard.update({ where: { id: cardId }, data: { history: JSON.stringify(arr) } });
+  } catch { /* لا يُفشل العملية الأصلية */ }
+}
+
 // المكتب الفعّال: أي مستخدم يستطيع عرض/مساعدة أي مكتب (تعاون بين المكاتب وقت الضغط).
 // عند عدم تحديد مكتب: المدير يبدأ بلا مكتب (أول مكتب)، ومستخدم المكتب يبدأ بمكتبه.
 export function resolveFieldOffice(session: SessionPayload, requested: number | null): number | null {

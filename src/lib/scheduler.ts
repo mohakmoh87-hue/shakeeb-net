@@ -311,6 +311,8 @@ export function startScheduler() {
     if (nowHM === "03:00") {
       purgeOldMessages(3).catch((e) => console.error("[scheduler] purge messages:", e));
       purgeTransferredSubscribers(30).catch((e) => console.error("[scheduler] purge transferred:", e));
+      // حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (احتياط محلي — الكرون السحابي يفعلها أيضاً)
+      import("@/lib/field").then((m) => m.purgeOldArchivedCards()).catch((e) => console.error("[scheduler] purge archive:", e));
     }
   }, { timezone: TZ });
 

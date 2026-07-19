@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resolveCardActor } from "@/lib/field";
+import { appendCardHistory, resolveCardActor } from "@/lib/field";
+
+// تنسيق وقت بغداد للعرض في سجل التغييرات (dd/MM HH:mm)
+const fmtBg = (d: Date) => d.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 export const dynamic = "force-dynamic";
 
@@ -27,5 +30,7 @@ export async function POST(request: Request) {
     where: { id: cardId },
     data: { startedAt: null, postponedTo: postponeTo },
   });
+  // سجل التغييرات داخل البطاقة: من أجّل وإلى متى
+  await appendCardHistory(cardId, auth.actor.name, `تأجيل البطاقة إلى ${fmtBg(postponeTo)}`);
   return NextResponse.json(updated);
 }

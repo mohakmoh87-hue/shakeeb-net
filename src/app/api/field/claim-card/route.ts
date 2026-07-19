@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTechSession } from "@/lib/auth";
-import { cardOfficeId } from "@/lib/field";
+import { appendCardHistory, cardOfficeId } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
 
   const card = await prisma.taskCard.findFirst({
     where: { id: cardId, isDeleted: false },
-    select: { id: true, technicianId: true, done: true },
+    select: { id: true, technicianId: true, done: true, assignee: true },
   });
   if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
   if (card.done) return NextResponse.json({ error: "البطاقة منجزة" }, { status: 400 });
@@ -44,5 +44,7 @@ export async function POST(request: Request) {
     data: { technicianId: me.id, assignee: me.name },
     select: { id: true, technicianId: true, assignee: true },
   });
+  // سجل التغييرات: تحويل البطاقة من الفني السابق إلى المحوِّل
+  await appendCardHistory(cardId, me.name, `تحويل البطاقة من «${card.assignee ?? "فني"}» إلى «${me.name}»`);
   return NextResponse.json({ ok: true, card: updated });
 }

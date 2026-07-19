@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { agentOwnsCard, agentOwnsList, canOperateCard, canOperateList, resolveListActor } from "@/lib/field";
+import { agentOwnsCard, agentOwnsList, appendCardHistory, canOperateCard, canOperateList, resolveListActor } from "@/lib/field";
 
 const VIEW_ONLY = { error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" };
 
@@ -57,7 +57,36 @@ export async function PATCH(request: Request) {
   if (typeof b.position === "number") data.position = b.position;
   // ملاحظة: الإنجاز (done=true) يتمّ عبر /api/field/complete فقط (بحقوله الواجبة)
   if (b.done === false) { data.done = false; data.completedAt = null; }
+
+  // الحالة القديمة قبل التعديل — لتسجيل التغييرات المهمّة في سجل البطاقة
+  const before = await prisma.taskCard.findUnique({
+    where: { id: Number(b.id) },
+    select: { technicianId: true, assignee: true, listId: true, dueDate: true, kind: true, done: true },
+  });
   const updated = await prisma.taskCard.update({ where: { id: Number(b.id) }, data });
+
+  // سجل التغييرات داخل البطاقة (تغيير الفني / نقل عمود / الموعد / النوع / إلغاء الإنجاز)
+  if (before) {
+    const by = s.fullName ?? s.username;
+    const events: string[] = [];
+    if ("technicianId" in data && before.technicianId !== updated.technicianId) {
+      events.push(`تغيير الفني من «${before.assignee ?? "بلا فني"}» إلى «${updated.assignee ?? "بلا فني"}»`);
+    }
+    if ("listId" in data && before.listId !== updated.listId) {
+      const [fromL, toL] = await Promise.all([
+        prisma.taskList.findUnique({ where: { id: before.listId }, select: { name: true } }),
+        prisma.taskList.findUnique({ where: { id: updated.listId }, select: { name: true } }),
+      ]);
+      events.push(`نقل البطاقة من عمود «${fromL?.name ?? before.listId}» إلى «${toL?.name ?? updated.listId}»`);
+    }
+    if ("dueDate" in data && String(before.dueDate ?? "") !== String(updated.dueDate ?? "")) {
+      const fmt = (d: Date | null) => (d ? d.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit" }) : "بلا موعد");
+      events.push(`تغيير الموعد من ${fmt(before.dueDate)} إلى ${fmt(updated.dueDate)}`);
+    }
+    if ("kind" in data && before.kind !== updated.kind) events.push(`تغيير النوع من «${before.kind}» إلى «${updated.kind}»`);
+    if (b.done === false && before.done) events.push("إلغاء الإنجاز (أُعيدت للانتظار)");
+    for (const text of events) await appendCardHistory(Number(b.id), by, text);
+  }
   return NextResponse.json(updated);
 }
 

@@ -21,7 +21,11 @@ type Card = {
   amount: number | null; serviceDetails: string | null; completedAt: string | null;
   materialsInfo: string | null;
   startedAt: string | null; durationSec: number | null; postponedTo: string | null;
+  history: string | null;
 };
+// أحداث سجل تغييرات البطاقة (JSON داخل حقل history)
+type CardEvent = { at: string; by: string; text: string };
+const parseHistory = (h?: string | null): CardEvent[] => { try { return h ? (JSON.parse(h) as CardEvent[]) : []; } catch { return []; } };
 
 // تنسيق مدة بالثواني إلى نص عربي مقروء
 function fmtDuration(sec: number | null): string {
@@ -80,6 +84,7 @@ export default function FieldManagementPage() {
   const [leaveModal, setLeaveModal] = useState(false);
   const [leavePending, setLeavePending] = useState(0);
   const [typesModal, setTypesModal] = useState(false);
+  const [archiveModal, setArchiveModal] = useState(false);
   const [dedModal, setDedModal] = useState(false);
   const [dedPending, setDedPending] = useState(0);
 
@@ -308,8 +313,6 @@ export default function FieldManagementPage() {
                     onClick={() => setSel(c)}
                     className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md"
                   >
-                    {/* شريط لون التصنيف (النوع) */}
-                    <div className={`mb-1.5 h-1.5 w-10 rounded-full ${kindColor(c.kind)}`} />
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
                     {phoneOf(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📱 {phoneOf(c.description)}</div>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -404,6 +407,11 @@ export default function FieldManagementPage() {
           {canManage && (
             <button onClick={() => setTypesModal(true)} className="rounded-lg bg-sky-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-sky-700">
               ⏱ الأنواع والأوقات
+            </button>
+          )}
+          {!isTech && (
+            <button onClick={() => setArchiveModal(true)} className="rounded-lg bg-slate-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-slate-700">
+              🗂️ الأرشيف
             </button>
           )}
           {officeId != null && (
@@ -573,6 +581,20 @@ export default function FieldManagementPage() {
                 </div>
               </>
             )}
+            {/* سجل تغييرات البطاقة — كل حدث بوقته وفاعله (تأجيل/تحويل/نقل/إنجاز…) */}
+            {parseHistory(sel.history).length > 0 && (
+              <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                <div className="mb-1.5 text-xs font-bold text-slate-600">🕓 سجل التغييرات</div>
+                <ul className="max-h-44 space-y-1 overflow-y-auto">
+                  {parseHistory(sel.history).slice().reverse().map((e, i) => (
+                    <li key={i} className="rounded bg-white px-2 py-1 text-[11px] leading-relaxed text-slate-600">
+                      <span dir="ltr" className="font-semibold text-slate-400">{fmtDateTime(e.at)}</span> — <b className="text-slate-700">{e.by}</b>: {e.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="flex items-center justify-end">
               {canOperate && !isTech && <button onClick={deleteCard} className="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100">🗑️ حذف البطاقة</button>}
             </div>
@@ -592,6 +614,11 @@ export default function FieldManagementPage() {
       {/* نافذة الدعم المؤقّت */}
       {supportModal && officeId != null && (
         <SupportModal officeId={officeId} onClose={() => setSupportModal(false)} onChange={() => load(officeId)} />
+      )}
+
+      {/* نافذة الأرشيف: البطاقات المحصَّلة (أسبوع ثم تُحذف نهائياً) بفلاتر تاريخ/فني/نوع */}
+      {archiveModal && (
+        <ArchiveModal technicians={technicians} cardTypes={cardTypes} onClose={() => setArchiveModal(false)} />
       )}
 
       {/* نافذة إنجاز البطاقة بحقولها الواجبة */}
@@ -855,7 +882,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
 
   async function submit() {
     setErr("");
-    if (nAmount <= 0) { setErr("المبلغ مطلوب"); return; }
+    if (nAmount < 0) { setErr("المبلغ لا يكون سالباً"); return; } // الصفر مسموح (بطاقات مجانية)
     if (isTransfer) {
       if (!newUser.trim()) { setErr("اليوزر الجديد مطلوب لإنجاز التحويل"); return; }
     } else if (fullFields) {
@@ -896,7 +923,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
           </>
         )}
 
-        <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-red-500">*</span></label>
+        <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-slate-400">(0 = مجاني)</span></label>
         <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
 
         {/* سحب كود مكافأة المشترك خصماً من المبلغ — يظهر دائماً عند تفعيل نظام المكافآت للمكتب */}
@@ -1018,4 +1045,128 @@ function compressImage(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+// نافذة أرشيف البطاقات المحصَّلة: تبقى أسبوعاً بعد التحصيل ثم تُحذف نهائياً.
+// فلاتر: تاريخ الإنجاز + الفني + النوع (تُجمع معاً). حذف نهائي يدوي للمدير فقط.
+function ArchiveModal({ technicians, cardTypes, onClose }: { technicians: Technician[]; cardTypes: CardType[]; onClose: () => void }) {
+  type ArchCard = {
+    id: number; title: string; description: string | null; kind: string; assignee: string | null;
+    technicianId: number | null; amount: number | null; serviceDetails: string | null; durationSec: number | null;
+    completedAt: string | null; archivedAt: string | null; history: string | null; office: string | null;
+  };
+  const [rows, setRows] = useState<ArchCard[]>([]);
+  const [isMgr, setIsMgr] = useState(false);
+  const [date, setDate] = useState("");
+  const [tech, setTech] = useState("");
+  const [kind, setKind] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [openId, setOpenId] = useState<number | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const qs = new URLSearchParams();
+    if (date) qs.set("date", date);
+    if (tech) qs.set("technicianId", tech);
+    if (kind) qs.set("kind", kind);
+    fetch(`/api/field/archive?${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setRows(d.cards ?? []); setIsMgr(!!d.isManager); } })
+      .finally(() => setLoading(false));
+  }, [date, tech, kind]);
+  useEffect(() => { load(); }, [load]);
+
+  async function del(id: number) {
+    if (!confirm("حذف البطاقة نهائياً من الأرشيف؟ لا يمكن التراجع.")) return;
+    const r = await fetch(`/api/field/archive?id=${id}`, { method: "DELETE" });
+    if (r.ok) load();
+    else alert(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "تعذّر الحذف");
+  }
+
+  const total = rows.reduce((s, c) => s + (c.amount ?? 0), 0);
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={onClose}>
+      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+          <h3 className="text-base font-extrabold text-slate-800">🗂️ أرشيف البطاقات</h3>
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+        </div>
+
+        {/* الفلاتر: تاريخ الإنجاز / الفني / النوع */}
+        <div className="flex flex-wrap items-end gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
+          <div>
+            <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">تاريخ الإنجاز</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs" />
+          </div>
+          <div>
+            <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">الفني</label>
+            <select value={tech} onChange={(e) => setTech(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+              <option value="">— الكل —</option>
+              {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">النوع</label>
+            <select value={kind} onChange={(e) => setKind(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+              <option value="">— الكل —</option>
+              {cardTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+            </select>
+          </div>
+          {(date || tech || kind) && (
+            <button onClick={() => { setDate(""); setTech(""); setKind(""); }} className="rounded-lg bg-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إظهار الكل</button>
+          )}
+          <span className="mr-auto self-center text-[11px] text-slate-400">{rows.length} بطاقة · مجموع {total.toLocaleString("en-US")} د.ع</span>
+        </div>
+
+        {/* القائمة */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {loading ? (
+            <div className="p-8 text-center text-sm text-slate-400">جاري التحميل…</div>
+          ) : rows.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-400">لا توجد بطاقات بالأرشيف — تُحفظ هنا أسبوعاً بعد التحصيل ثم تُحذف نهائياً</div>
+          ) : (
+            <ul className="space-y-1.5">
+              {rows.map((c) => (
+                <li key={c.id} className="rounded-lg border border-slate-200 bg-white">
+                  <button onClick={() => setOpenId(openId === c.id ? null : c.id)} className="flex w-full flex-wrap items-center gap-1.5 px-3 py-2 text-right">
+                    <span className="text-sm font-semibold text-slate-800">{c.title}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold text-white ${kindColor(c.kind)}`}>{c.kind}</span>
+                    {c.office && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">🏢 {c.office}</span>}
+                    <span className="mr-auto flex items-center gap-1.5 text-[11px] text-slate-500">
+                      {c.assignee && <span>👤 {c.assignee}</span>}
+                      <b className="text-emerald-700">{(c.amount ?? 0).toLocaleString("en-US")} د.ع</b>
+                      {c.completedAt && <span dir="ltr">{fmtDateTime(c.completedAt)}</span>}
+                    </span>
+                  </button>
+                  {openId === c.id && (
+                    <div className="border-t border-slate-100 px-3 py-2 text-xs text-slate-600">
+                      {c.description && <div className="mb-1 whitespace-pre-wrap">{c.description}</div>}
+                      {c.serviceDetails && <div className="mb-1">🔧 التفاصيل: {c.serviceDetails}</div>}
+                      {c.durationSec != null && <div className="mb-1">⏱ المدة: {fmtDuration(c.durationSec)}</div>}
+                      {parseHistory(c.history).length > 0 && (
+                        <ul className="mb-1 mt-1 space-y-0.5 rounded bg-slate-50 p-1.5">
+                          {parseHistory(c.history).slice().reverse().map((e, i) => (
+                            <li key={i} className="text-[11px] text-slate-500"><span dir="ltr">{fmtDateTime(e.at)}</span> — <b>{e.by}</b>: {e.text}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {isMgr && (
+                        <div className="mt-1.5 flex justify-end">
+                          <button onClick={() => del(c.id)} className="rounded bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-100">🗑️ حذف نهائي</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="border-t border-slate-100 bg-slate-50 px-4 py-1.5 text-center text-[10px] text-slate-400">
+          تُحذف بطاقات الأرشيف نهائياً بعد أسبوع من التحصيل تلقائياً{isMgr ? " — والحذف اليدوي متاح لك كمدير" : " — الحذف اليدوي للمدير فقط"}
+        </div>
+      </div>
+    </div>
+  );
 }

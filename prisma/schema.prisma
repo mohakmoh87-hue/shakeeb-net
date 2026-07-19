@@ -758,12 +758,15 @@ model TaskCard {
   materialsInfo String? // JSON بالمواد المباعة من الذمم (للعرض)
   completedAt   DateTime?
   settled       Boolean   @default(false) // تمّ التحصيل (اكمال)
+  archivedAt    DateTime? // وقت الأرشفة (بعد التحصيل) — تبقى بالأرشيف أسبوعاً ثم تُحذف نهائياً
+  history       String? // سجل تغييرات البطاقة JSON [{at,by,text}] (تأجيل/تحويل/نقل…)
   createdAt    DateTime  @default(now())
   isDeleted    Boolean   @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([listId])
   @@index([technicianId])
+  @@index([archivedAt])
   @@map("task_cards")
 }
 
@@ -977,6 +980,7 @@ model MaintenanceLog {
   cardTitle      String?
   kind           String? // نوع البطاقة (صيانة/تنصيب...)
   durationSec    Int? // مدة إنجاز الفني للبطاقة بالثواني
+  amount         Float? // مبلغ البطاقة المستلم من المشترك
   date           DateTime @default(now())
   createdAt      DateTime @default(now())
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resolveCardActor } from "@/lib/field";
+import { appendCardHistory, resolveCardActor } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -22,5 +22,6 @@ export async function POST(request: Request) {
     where: { id: cardId },
     data: { startedAt: new Date(), postponedTo: null },
   });
+  await appendCardHistory(cardId, auth.actor.name, "بدء العمل على البطاقة");
   return NextResponse.json(updated);
 }

@@ -82,10 +82,15 @@ export async function POST(request: Request) {
   const total = cards.reduce((s, c) => s + (c.amount ?? 0), 0);
 
   if (ids.length > 0) {
+    // أرشفة بدل الحذف: تبقى البطاقة بالأرشيف أسبوعاً ثم تُحذف نهائياً (أو يحذفها المدير يدوياً).
+    // الصور تُحذف فوراً لتوفير مساحة القاعدة — بيانات البطاقة تكفي للأرشيف.
     await prisma.$transaction([
-      prisma.taskCard.updateMany({ where: { id: { in: ids } }, data: { settled: true, isDeleted: true } }),
+      prisma.taskCard.updateMany({ where: { id: { in: ids } }, data: { settled: true, archivedAt: new Date() } }),
       prisma.cardPhoto.deleteMany({ where: { cardId: { in: ids } } }),
     ]);
+    const byName = session.fullName ?? session.username;
+    const { appendCardHistory } = await import("@/lib/field");
+    await Promise.all(ids.map((id) => appendCardHistory(id, byName, "تحصيل وأرشفة البطاقة")));
   }
   return NextResponse.json({ ok: true, settledCount: ids.length, total });
 }

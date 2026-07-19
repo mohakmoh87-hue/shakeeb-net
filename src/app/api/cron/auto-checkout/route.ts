@@ -13,5 +13,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   }
   const r = await runAutoCheckout();
-  return NextResponse.json({ ok: true, closed: r.closed });
+  // تنظيف الأرشيف: حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (لا يعتمد على حواسيب المكاتب)
+  const { purgeOldArchivedCards } = await import("@/lib/field");
+  const purged = await purgeOldArchivedCards().catch(() => 0);
+  return NextResponse.json({ ok: true, closed: r.closed, purgedArchive: purged });
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getOrCreatePettyAccount, endSupport, resolveCardActor } from "@/lib/field";
+import { appendCardHistory, getOrCreatePettyAccount, endSupport, resolveCardActor } from "@/lib/field";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
@@ -80,9 +80,9 @@ export async function POST(request: Request) {
   // مدة الإنجاز = من وقت البدء حتى الآن (null للتوصيل بلا بدء)
   const durationSec = card.startedAt ? Math.max(0, Math.round((Date.now() - card.startedAt.getTime()) / 1000)) : null;
 
-  // التحقّق من الحقول الواجبة
-  if (amount == null || amount <= 0) {
-    return NextResponse.json({ error: "المبلغ مطلوب" }, { status: 400 });
+  // التحقّق من الحقول الواجبة — المبلغ قد يكون صفراً (بطاقات مجانية)، لكنه يجب أن يُحدَّد
+  if (amount == null || amount < 0) {
+    return NextResponse.json({ error: "المبلغ مطلوب (يمكن أن يكون صفراً)" }, { status: 400 });
   }
   if (isTransfer) {
     if (!newUser?.trim()) return NextResponse.json({ error: "اليوزر الجديد مطلوب لإنجاز التحويل" }, { status: 400 });
@@ -191,6 +191,10 @@ export async function POST(request: Request) {
     });
   });
 
+  // سجل التغييرات داخل البطاقة: من أنجزها وبأي مبلغ (الصافي المُحصَّل)
+  const paidNet = Math.max(0, amount - rewardDiscount);
+  await appendCardHistory(cardId, actor.name, `إنجاز البطاقة — المبلغ ${paidNet.toLocaleString("en-US")} د.ع`);
+
   // ===== خصم معلّق عند تجاوز الوقت (عمود «محسوب بالوقت» + نوع له وقت مسموح + غير توصيل) =====
   let overrunResult: { amount: number; overrunMin: number } | null = null;
   if (!isDelivery && list?.timeTracked && durationSec != null && (type?.execMinutes ?? 0) > 0 && (type?.overrunDeduction ?? 0) > 0) {
@@ -261,7 +265,7 @@ export async function POST(request: Request) {
           data: {
             subscriberId: sub.id,
             details: `تحويل اليوزر من «${sub.netUser ?? "—"}» إلى «${nu}»`,
-            technicianName: tech?.name ?? null, cardTitle: card.title, kind: card.kind, durationSec, date: new Date(),
+            technicianName: tech?.name ?? null, cardTitle: card.title, kind: card.kind, durationSec, amount: paidNet, date: new Date(),
           },
         });
       }
@@ -275,6 +279,7 @@ export async function POST(request: Request) {
             cardTitle: card.title,
             kind: card.kind,
             durationSec,
+            amount: paidNet,
             date: new Date(),
           },
         });

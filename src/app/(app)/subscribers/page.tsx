@@ -70,7 +70,7 @@ export default function SubscribersPage() {
   const [form, setForm] = useState<Partial<Subscriber>>({});
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<"info" | "receipts" | "invoices" | "maintenance">("info");
-  const [maintLogs, setMaintLogs] = useState<{ id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; date: string }[]>([]);
+  const [maintLogs, setMaintLogs] = useState<{ id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; amount: number | null; date: string }[]>([]);
   const [activating, setActivating] = useState<Subscriber | null>(null);
   const [addingDebt, setAddingDebt] = useState<Subscriber | null>(null);
   const [showAllTowers, setShowAllTowers] = useState(false);
@@ -362,16 +362,17 @@ export default function SubscribersPage() {
               <div className="flex-1 overflow-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="sticky top-0 bg-slate-50 text-slate-600">
-                    <tr><th className="p-2">التاريخ</th><th className="p-2">النوع</th><th className="p-2">التفاصيل</th><th className="p-2">الفني</th><th className="p-2">المدة</th></tr>
+                    <tr><th className="p-2">التاريخ والوقت</th><th className="p-2">النوع</th><th className="p-2">التفاصيل</th><th className="p-2">المبلغ</th><th className="p-2">الفني</th><th className="p-2">المدة</th></tr>
                   </thead>
                   <tbody>
                     {maintLogs.length === 0 ? (
-                      <tr><td colSpan={5} className="p-6 text-center text-slate-400">لا توجد صيانات لهذا المشترك</td></tr>
+                      <tr><td colSpan={6} className="p-6 text-center text-slate-400">لا توجد صيانات لهذا المشترك</td></tr>
                     ) : maintLogs.map((m) => (
                       <tr key={m.id} className="border-t border-slate-100 align-top">
-                        <td className="p-2 whitespace-nowrap" dir="ltr">{formatDate(m.date)}</td>
+                        <td className="p-2 whitespace-nowrap" dir="ltr">{new Date(m.date).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                         <td className="p-2 whitespace-nowrap">{m.kind ?? "صيانة"}</td>
                         <td className="p-2 text-slate-700">{m.details}</td>
+                        <td className="p-2 whitespace-nowrap font-semibold text-emerald-700">{m.amount != null ? Number(m.amount).toLocaleString("en-US") : "—"}</td>
                         <td className="p-2 whitespace-nowrap text-slate-500">{m.technicianName ?? "—"}</td>
                         <td className="p-2 whitespace-nowrap text-slate-500">{m.durationSec != null ? (m.durationSec >= 3600 ? `${Math.floor(m.durationSec / 3600)}س ${Math.floor((m.durationSec % 3600) / 60)}د` : m.durationSec >= 60 ? `${Math.floor(m.durationSec / 60)}د` : `${m.durationSec}ث`) : "—"}</td>
                       </tr>
