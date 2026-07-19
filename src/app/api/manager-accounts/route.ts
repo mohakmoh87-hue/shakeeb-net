@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
-import { statementForTechnician } from "@/lib/salary";
+import { statementForTechnician, currentPeriodFromDays } from "@/lib/salary";
+import { baghdadDayKey } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +11,11 @@ export async function GET() {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
 
-  // فترة احتساب الرواتب العامة للوكيل (إن ضُبطت) — يُحسب الصافي ضمنها فقط
-  const agent = g.session.agentId != null ? await prisma.agent.findUnique({ where: { id: g.session.agentId }, select: { salaryPeriodFrom: true, salaryPeriodTo: true } }) : null;
-  const period = agent?.salaryPeriodFrom && agent?.salaryPeriodTo ? { from: agent.salaryPeriodFrom, to: agent.salaryPeriodTo } : null;
+  // فترة احتساب الرواتب: يومان من الشهر تتكرّران — تُحسب الفترة الحالية منهما
+  const agent = g.session.agentId != null ? await prisma.agent.findUnique({ where: { id: g.session.agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
+  const cur = currentPeriodFromDays(agent?.salaryFromDay, agent?.salaryToDay, baghdadDayKey(new Date()));
+  const period = cur; // { from, to } للحساب ضمن الفترة الحالية
+  const salaryPeriodInfo = { fromDay: agent?.salaryFromDay ?? null, toDay: agent?.salaryToDay ?? null, from: cur?.from ?? null, to: cur?.to ?? null };
 
   const [dailyAgg, cardsAgg, mgr, employeeAccounts, mgrTxs, masterAgg] = await Promise.all([
     // مجموع المبالغ اليومية = صافي كل حركات التقرير اليومي عبر كل الأيام (باستثناء الماستر)
@@ -61,6 +64,6 @@ export async function GET() {
     masterBalance,
     employees,
     transactions: mgrTxs,
-    salaryPeriod: period,
+    salaryPeriod: salaryPeriodInfo,
   });
 }

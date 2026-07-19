@@ -30,8 +30,10 @@ model Agent {
   approved   Boolean   @default(true) // موافقة المالك — التجريبي يبدأ false حتى يوافق المالك
   backupEmail String? // إيميل النسخ الاحتياطي/الاسترجاع — تُرسل إليه نسخة يومية
   // فترة احتساب رواتب الموظفين (عامة لكل مكاتب الوكيل) — يضبطها المدير ويغيّرها متى شاء
-  salaryPeriodFrom String? // YYYY-MM-DD (بغداد) — بداية الفترة (شامل)
-  salaryPeriodTo   String? // YYYY-MM-DD (بغداد) — نهاية الفترة (شامل)
+  salaryPeriodFrom String? // (مهجور) YYYY-MM-DD — بداية الفترة بالتاريخ الكامل (النموذج القديم)
+  salaryPeriodTo   String? // (مهجور) YYYY-MM-DD — نهاية الفترة بالتاريخ الكامل (النموذج القديم)
+  salaryFromDay    Int? // يوم بداية الفترة (1-31) — متكرّرة كل شهر بلا شهر/سنة
+  salaryToDay      Int? // يوم نهاية الفترة في الشهر التالي (1-31)
   isDeleted  Boolean   @default(false)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @default(now()) @updatedAt

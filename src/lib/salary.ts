@@ -75,6 +75,33 @@ export function lastDayOfMonthKey(dayKey: string): string {
   return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
 }
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+// يقصّ اليوم إلى آخر يوم فعليّ في الشهر (m1 = 1-12) — مثلاً 31 في شباط ⇒ 28/29
+function clampDay(y: number, m1: number, day: number): number {
+  const last = new Date(Date.UTC(y, m1, 0)).getUTCDate();
+  return Math.min(Math.max(1, day), last);
+}
+
+// الفترة الحالية من يومَي البداية/النهاية (متكرّرة شهرياً بلا شهر/سنة):
+// تمتدّ من «يوم البداية» في شهرٍ إلى «يوم النهاية» في الشهر التالي (نحو ٣٠-٣١ يوماً).
+// ترتبط بالوقت الحالي: النهاية = أقرب «يوم النهاية» ≥ اليوم؛ والبداية = «يوم البداية» من الشهر السابق لها.
+export function currentPeriodFromDays(
+  fromDay: number | null | undefined,
+  toDay: number | null | undefined,
+  todayKey: string,
+): SalaryPeriod | null {
+  if (!fromDay || !toDay) return null;
+  const [ty, tm, td] = todayKey.split("-").map(Number);
+  // شهر النهاية: هذا الشهر إن لم يتجاوز اليوم «يوم النهاية»، وإلا الشهر التالي
+  let ey = ty, em = tm;
+  if (td > clampDay(ty, tm, toDay)) { em = tm + 1; if (em > 12) { em = 1; ey = ty + 1; } }
+  const endDay = clampDay(ey, em, toDay);
+  // شهر البداية = الشهر السابق لشهر النهاية
+  let sy = ey, sm = em - 1; if (sm < 1) { sm = 12; sy = ey - 1; }
+  const startDay = clampDay(sy, sm, fromDay);
+  return { from: `${sy}-${pad2(sm)}-${pad2(startDay)}`, to: `${ey}-${pad2(em)}-${pad2(endDay)}` };
+}
+
 export function computeSalary(
   salary: number,
   attendances: SalaryAttendance[],

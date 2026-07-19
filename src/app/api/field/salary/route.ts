@@ -3,15 +3,16 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { statementForTechnician as statementFor, type SalaryPeriod } from "@/lib/salary";
+import { statementForTechnician as statementFor, currentPeriodFromDays, type SalaryPeriod } from "@/lib/salary";
+import { baghdadDayKey } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
 
-// فترة احتساب الرواتب العامة للوكيل (من/إلى شامل) أو null إن لم تُضبط
+// الفترة الحالية للوكيل — تُحسب من يومَي البداية/النهاية (متكرّرة شهرياً)، أو null إن لم تُضبط
 async function periodOfAgent(agentId: number | null): Promise<SalaryPeriod | null> {
   if (agentId == null) return null;
-  const a = await prisma.agent.findUnique({ where: { id: agentId }, select: { salaryPeriodFrom: true, salaryPeriodTo: true } });
-  return a?.salaryPeriodFrom && a?.salaryPeriodTo ? { from: a.salaryPeriodFrom, to: a.salaryPeriodTo } : null;
+  const a = await prisma.agent.findUnique({ where: { id: agentId }, select: { salaryFromDay: true, salaryToDay: true } });
+  return currentPeriodFromDays(a?.salaryFromDay, a?.salaryToDay, baghdadDayKey(new Date()));
 }
 
 // GET: للفني → كشفه + أرشيفه (قراءة). للمدير → كشف فني ?technicianId، أو قائمة فنيّي المكتب.

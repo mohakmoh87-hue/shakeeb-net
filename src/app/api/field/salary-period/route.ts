@@ -2,35 +2,38 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
+import { currentPeriodFromDays } from "@/lib/salary";
+import { baghdadDayKey } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
 
-// فترة احتساب الرواتب عامة لكل مكاتب الوكيل — يقرؤها/يضبطها المدير
-async function agentPeriod(agentId: number | null) {
-  if (agentId == null) return { from: null as string | null, to: null as string | null };
-  const a = await prisma.agent.findUnique({ where: { id: agentId }, select: { salaryPeriodFrom: true, salaryPeriodTo: true } });
-  return { from: a?.salaryPeriodFrom ?? null, to: a?.salaryPeriodTo ?? null };
+// فترة احتساب الرواتب عامة لكل مكاتب الوكيل — يومان من الشهر (بداية/نهاية) تتكرّر شهرياً.
+async function agentDays(agentId: number | null) {
+  if (agentId == null) return { fromDay: null as number | null, toDay: null as number | null };
+  const a = await prisma.agent.findUnique({ where: { id: agentId }, select: { salaryFromDay: true, salaryToDay: true } });
+  return { fromDay: a?.salaryFromDay ?? null, toDay: a?.salaryToDay ?? null };
 }
 
-// GET: الفترة الحالية
+// GET: يومَا الفترة + الفترة الحالية المحسوبة (from/to بالتاريخ الكامل للعرض)
 export async function GET() {
   const g = await guard("field.manage");
   if (g.error) return g.error;
-  return NextResponse.json(await agentPeriod(g.session.agentId));
+  const days = await agentDays(g.session.agentId);
+  const current = currentPeriodFromDays(days.fromDay, days.toDay, baghdadDayKey(new Date()));
+  return NextResponse.json({ ...days, from: current?.from ?? null, to: current?.to ?? null });
 }
 
-// PUT: ضبط الفترة (from ≤ to، صيغة YYYY-MM-DD)
-const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+// PUT: ضبط يومَي الفترة (1-31). البداية في شهر والنهاية في الشهر التالي — تتكرّر للأبد حتى تُغيَّر.
 export async function PUT(request: Request) {
   const g = await guard("field.manage");
   if (g.error) return g.error;
   if (g.session.agentId == null) return NextResponse.json({ error: "لا وكيل مرتبط بالحساب" }, { status: 400 });
   const parsed = z.object({
-    from: z.string().regex(dayRe, "تاريخ غير صحيح"),
-    to: z.string().regex(dayRe, "تاريخ غير صحيح"),
+    fromDay: z.coerce.number().int().min(1).max(31),
+    toDay: z.coerce.number().int().min(1).max(31),
   }).safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
-  if (parsed.data.from > parsed.data.to) return NextResponse.json({ error: "تاريخ البداية بعد النهاية" }, { status: 400 });
-  await prisma.agent.update({ where: { id: g.session.agentId }, data: { salaryPeriodFrom: parsed.data.from, salaryPeriodTo: parsed.data.to } });
-  return NextResponse.json({ ok: true, from: parsed.data.from, to: parsed.data.to });
+  if (!parsed.success) return NextResponse.json({ error: "أدخل يومَي البداية والنهاية (1 إلى 31)" }, { status: 400 });
+  await prisma.agent.update({ where: { id: g.session.agentId }, data: { salaryFromDay: parsed.data.fromDay, salaryToDay: parsed.data.toDay } });
+  const current = currentPeriodFromDays(parsed.data.fromDay, parsed.data.toDay, baghdadDayKey(new Date()));
+  return NextResponse.json({ ok: true, fromDay: parsed.data.fromDay, toDay: parsed.data.toDay, from: current?.from ?? null, to: current?.to ?? null });
 }
