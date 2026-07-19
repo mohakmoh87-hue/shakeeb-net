@@ -347,15 +347,17 @@ model BoxDep {
 // ===== حساب مصروف/مقبوض المدير (لا يؤثر على التقرير اليومي) =====
 model ManagerTx {
   id        Int      @id @default(autoincrement())
-  type      String // expense | receipt | card-payment
+  type      String // expense | receipt | card-payment | salary
   amount    Float
   notes     String?
   date      DateTime @default(now())
   userId    Int?
+  agentId   Int? // الوكيل (المستأجر) مالك الحركة — عزل حسابات المدير بين الوكلاء
   isDeleted Boolean  @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([type])
+  @@index([agentId])
   @@map("manager_tx")
 }
 

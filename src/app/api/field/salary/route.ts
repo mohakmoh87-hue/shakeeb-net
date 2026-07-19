@@ -94,6 +94,7 @@ export async function POST(request: Request) {
         await tx.managerTx.create({
           data: {
             type: "salary", amount: paid, userId: g.session.userId,
+            agentId: t.agentId ?? g.session.agentId ?? -1, // عزل المستأجر
             notes: `راتب الفني ${t.name} (${from} → ${to}) — أيام ${result.daysPaid}`,
           },
         });

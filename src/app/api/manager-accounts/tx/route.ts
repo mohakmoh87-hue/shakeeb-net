@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
   const session = await getSession();
+  const agentId = g.session.agentId ?? -1; // عزل المستأجر
 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
@@ -37,11 +38,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, id: created.id, master: true }, { status: 201 });
   }
 
-  // منع تسديد كارتات أكثر من الدين المتبقّي
+  // منع تسديد كارتات أكثر من الدين المتبقّي — ضمن كروت/حركات الوكيل فقط
   if (type === "card-payment") {
     const [cardsAgg, paid] = await Promise.all([
-      prisma.rechargeCard.aggregate({ _sum: { price: true } }),
-      prisma.managerTx.aggregate({ where: { isDeleted: false, type: "card-payment" }, _sum: { amount: true } }),
+      prisma.rechargeCard.aggregate({ where: { agentId }, _sum: { price: true } }),
+      prisma.managerTx.aggregate({ where: { isDeleted: false, type: "card-payment", agentId }, _sum: { amount: true } }),
     ]);
     const remaining = (cardsAgg._sum.price ?? 0) - (paid._sum.amount ?? 0);
     if (amount > remaining + 0.001) {
@@ -50,17 +51,18 @@ export async function POST(request: Request) {
   }
 
   const created = await prisma.managerTx.create({
-    data: { type, amount, notes: notes ?? null, userId: session?.userId },
+    data: { type, amount, notes: notes ?? null, userId: session?.userId, agentId },
   });
   return NextResponse.json(created, { status: 201 });
 }
 
-// حذف حركة مدير (عكسي)
+// حذف حركة مدير (عكسي) — مقيّد بحركات وكيل المستخدم (عزل)
 export async function DELETE(request: Request) {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
+  const agentId = g.session.agentId ?? -1;
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "معرّف غير صحيح" }, { status: 400 });
-  await prisma.managerTx.updateMany({ where: { id, isDeleted: false }, data: { isDeleted: true } });
+  await prisma.managerTx.updateMany({ where: { id, isDeleted: false, agentId }, data: { isDeleted: true } });
   return NextResponse.json({ ok: true });
 }
