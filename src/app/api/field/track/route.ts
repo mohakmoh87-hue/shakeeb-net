@@ -70,7 +70,7 @@ export async function PUT(request: Request) {
   // أقرب عامود اشتراكات لكل فني (يظهر نصاً بجانب اسمه على الخريطة — لا كمؤشّر):
   // نجلب أعمدة صندوقٍ يضمّ كل المواقع (+هامش ~2كم) ثم أقرب عامود ضمن 2كم لكل فني.
   const located = r.techs.filter((t) => t.trackLat != null && t.trackLng != null);
-  const nearestPole = new Map<number, string>();
+  const nearestPole = new Map<number, { name: string; meters: number }>();
   if (located.length > 0) {
     const pad = 0.02; // ≈ 2كم
     const lats = located.map((t) => t.trackLat as number), lngs = located.map((t) => t.trackLng as number);
@@ -92,7 +92,8 @@ export async function PUT(request: Request) {
         const d = dist2(t.trackLat as number, t.trackLng as number, p.lat, p.lng);
         if (d < bestD) { bestD = d; best = p.name; }
       }
-      if (best && bestD <= maxD2) nearestPole.set(t.id, best);
+      // المسافة بالمتر: جذر المسافة النسبية (بالدرجات) × ~111.32كم/درجة
+      if (best && bestD <= maxD2) nearestPole.set(t.id, { name: best, meters: Math.round(Math.sqrt(bestD) * 111320) });
     }
   }
 
@@ -102,7 +103,8 @@ export async function PUT(request: Request) {
       id: t.id, name: t.name,
       lat: t.trackLat, lng: t.trackLng,
       at: t.trackAt, fresh: !!t.trackAt && now.getTime() - t.trackAt.getTime() < 3 * 60_000,
-      pole: nearestPole.get(t.id) ?? null,
+      pole: nearestPole.get(t.id)?.name ?? null,
+      poleDistM: nearestPole.get(t.id)?.meters ?? null,
     })),
   });
 }
