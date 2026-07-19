@@ -11,10 +11,9 @@ export async function GET() {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
 
-  // فترة احتساب الرواتب: يومان من الشهر تتكرّران — تُحسب الفترة الحالية منهما
+  // فترة احتساب الرواتب: يومان من الشهر تتكرّران — تُحسب فترة كل فنيٍّ (مجمّدة) داخل كشفه
   const agent = g.session.agentId != null ? await prisma.agent.findUnique({ where: { id: g.session.agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
   const cur = currentPeriodFromDays(agent?.salaryFromDay, agent?.salaryToDay, baghdadDayKey(new Date()));
-  const period = cur; // { from, to } للحساب ضمن الفترة الحالية
   const salaryPeriodInfo = { fromDay: agent?.salaryFromDay ?? null, toDay: agent?.salaryToDay ?? null, from: cur?.from ?? null, to: cur?.to ?? null };
 
   const [dailyAgg, cardsAgg, mgr, employeeAccounts, mgrTxs, masterAgg] = await Promise.all([
@@ -39,9 +38,10 @@ export async function GET() {
   const cardPayments = sumBy("card-payment");
   const managerExpenses = sumBy("expense");
   const managerReceipts = sumBy("receipt");
+  const salaryFromTotal = sumBy("salary"); // رواتب سُدِّدت «من المبلغ الكلي» (خارج التقرير اليومي)
 
   const cardDebtRemaining = cardDebtAdded - cardPayments;
-  const totalAvailable = cumulativeDaily - cardPayments - managerExpenses + managerReceipts;
+  const totalAvailable = cumulativeDaily - cardPayments - managerExpenses - salaryFromTotal + managerReceipts;
 
   // الموظفون (الفنيون): الراتب المتبقي (صافي كشف الراتب) + ما سحبه للعرض
   const employees: { id: number; name: string | null; withdrawn: number; technicianId: number | null; net: number | null }[] = [];
@@ -49,7 +49,7 @@ export async function GET() {
     const a = await prisma.moneyTx.aggregate({ where: { isDeleted: false, accountId: acc.id }, _sum: { moneyOut: true } });
     const tech = await prisma.technician.findFirst({ where: { accountId: acc.id, isDeleted: false }, select: { id: true, name: true, salary: true } });
     let net: number | null = null;
-    if (tech) net = (await statementForTechnician(tech.id, tech.salary ?? 0, period)).net;
+    if (tech) net = (await statementForTechnician(tech.id, tech.salary ?? 0, agent?.salaryFromDay, agent?.salaryToDay)).net;
     employees.push({ id: acc.id, name: tech?.name ?? acc.name, withdrawn: a._sum.moneyOut ?? 0, technicianId: tech?.id ?? null, net });
   }
 
@@ -61,6 +61,7 @@ export async function GET() {
     cardDebtRemaining,
     managerExpenses,
     managerReceipts,
+    salaryFromTotal,
     masterBalance,
     employees,
     transactions: mgrTxs,

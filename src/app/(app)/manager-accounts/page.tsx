@@ -37,7 +37,7 @@ type MasterDetail = { balance: number; days: { day: string; in: number; out: num
 
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
 const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات" };
+const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات", salary: "راتب فني (من الكلي)" };
 
 export default function ManagerAccountsPage() {
   const [data, setData] = useState<Data | null>(null);

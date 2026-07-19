@@ -24,13 +24,53 @@ export type SalaryResult = {
 import { prisma } from "./prisma";
 import { baghdadDayKey } from "./attendance";
 
-export async function statementForTechnician(technicianId: number, salary: number, period?: SalaryPeriod | null): Promise<SalaryResult> {
-  const todayKey = baghdadDayKey(new Date());
-  const p = period && period.from && period.to ? period : null;
-  const dayRange = p ? { gte: p.from, lte: p.to } : undefined; // dayKey ISO يقارن نصياً = زمنياً
+// أقدم سجلّ غير مُسدَّد يؤثّر على راتب الفني (مفتاح يوم بغداد) — لتثبيت الفترة المجمّدة.
+// (السجلات المُسدَّدة تُحذَف/تُعلَّم عند التسديد، فالمتبقّي هو غير المُسدَّد.)
+async function earliestUnsettledKey(technicianId: number, accountId: number | null): Promise<string | null> {
+  const [att, lv, adj, mt] = await Promise.all([
+    prisma.attendance.findFirst({ where: { technicianId }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
+    prisma.leave.findFirst({ where: { technicianId, status: "approved" }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
+    prisma.adjustment.findFirst({ where: { technicianId, status: "confirmed" }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
+    accountId
+      ? prisma.moneyTx.findFirst({ where: { accountId, isDeleted: false, salaryStatementId: null }, orderBy: { date: "asc" }, select: { date: true } })
+      : Promise.resolve(null),
+  ]);
+  const keys: string[] = [];
+  if (att?.dayKey) keys.push(att.dayKey);
+  if (lv?.dayKey) keys.push(lv.dayKey);
+  if (adj?.dayKey) keys.push(adj.dayKey);
+  if (mt?.date) keys.push(baghdadDayKey(mt.date));
+  return keys.length ? keys.sort()[0] : null;
+}
 
+// الفترة الحالية لفنيٍّ بعينه — «مجمّدة»: إن بقيت سجلات غير مُسدَّدة من فترة سابقة (أقدم من
+// بداية الفترة المفتوحة)، نبقى على تلك الفترة حتى يُسدّدها المدير (فلا تتدحرج ولا يضيع مبلغ)؛
+// وإلا فالفترة المفتوحة الحالية. أي شيء بعد «إلى» يُرحَّل للفترة التالية تلقائياً.
+export async function periodForTechnician(
+  technicianId: number,
+  accountId: number | null,
+  fromDay: number | null | undefined,
+  toDay: number | null | undefined,
+  todayKey: string,
+): Promise<SalaryPeriod | null> {
+  const open = currentPeriodFromDays(fromDay, toDay, todayKey);
+  if (!open) return null;
+  const earliest = await earliestUnsettledKey(technicianId, accountId);
+  if (earliest && earliest < open.from) return currentPeriodFromDays(fromDay, toDay, earliest);
+  return open;
+}
+
+export async function statementForTechnician(
+  technicianId: number,
+  salary: number,
+  fromDay: number | null | undefined,
+  toDay: number | null | undefined,
+): Promise<SalaryResult> {
+  const todayKey = baghdadDayKey(new Date());
   const tech = await prisma.technician.findUnique({ where: { id: technicianId }, select: { accountId: true } });
   const accountId = tech?.accountId ?? null;
+  const p = await periodForTechnician(technicianId, accountId, fromDay, toDay, todayKey);
+  const dayRange = p ? { gte: p.from, lte: p.to } : undefined; // dayKey ISO يقارن نصياً = زمنياً
   // حدود التاريخ لحركات حساب الموظف (بغداد UTC+3)
   const dateRange = p ? { gte: new Date(`${p.from}T00:00:00+03:00`), lte: new Date(`${p.to}T23:59:59.999+03:00`) } : undefined;
 

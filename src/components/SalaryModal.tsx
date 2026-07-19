@@ -21,6 +21,7 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   const [techName, setTechName] = useState(name ?? "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [choosing, setChoosing] = useState(false);
 
   const load = useCallback(() => {
     const q = isManager ? `?technicianId=${technicianId}` : "";
@@ -31,14 +32,16 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   }, [isManager, technicianId]);
   useEffect(() => { load(); }, [load]);
 
-  async function settle() {
-    if (!confirm(`تسديد راتب «${techName}»؟ سيُسجَّل صرفٌ بمقدار الصافي، ويُصفَّر سجل الحضور والخصومات والإجازات ضمن الفترة فقط. أي حركة أو خصم بتاريخ بعد نهاية الفترة يُرحَّل للشهر القادم.`)) return;
+  async function settle(source: "daily" | "total") {
+    const where = source === "daily" ? "كمصروفٍ في التقرير اليومي لليوم" : "خصماً من المبلغ الكلي (دون ظهوره في التقرير اليومي)";
+    if (!confirm(`تسديد راتب «${techName}» ${where}؟\nيُصفَّر سجل الحضور والخصومات والإجازات ضمن الفترة فقط، وأي حركة بعد نهاية الفترة تُرحَّل للفترة القادمة.`)) return;
     setBusy(true); setMsg("");
-    const r = await fetch("/api/field/salary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId }) });
+    const r = await fetch("/api/field/salary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId, source }) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { setMsg(d.error ?? "تعذّر التسديد"); return; }
-    setMsg(`تم التسديد ✓ (صُرف ${num(d.paid)} د.ع)`); load(); onSettled?.();
+    setChoosing(false);
+    setMsg(`تم التسديد ✓ (صُرف ${num(d.paid)} د.ع ${source === "daily" ? "من التقرير اليومي" : "من المبلغ الكلي"})`); load(); onSettled?.();
   }
 
   return (
@@ -94,9 +97,26 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
             )}
 
             {isManager && (
-              <button onClick={settle} disabled={busy} className="mb-4 w-full rounded-xl bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-60">
-                {busy ? "..." : `💵 تسديد الراتب (${num(Math.max(0, st.net))} د.ع)`}
-              </button>
+              !choosing ? (
+                <button onClick={() => setChoosing(true)} disabled={busy} className="mb-4 w-full rounded-xl bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-60">
+                  {busy ? "..." : `💵 تسديد الراتب (${num(Math.max(0, st.net))} د.ع)`}
+                </button>
+              ) : (
+                <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                  <div className="mb-2 text-center text-sm font-bold text-slate-700">اختر طريقة التسديد ({num(Math.max(0, st.net))} د.ع)</div>
+                  <div className="grid gap-2">
+                    <button onClick={() => settle("daily")} disabled={busy} className="rounded-xl bg-mynet-blue px-3 py-2.5 text-right font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
+                      🧾 من التقرير اليومي
+                      <span className="block text-[11px] font-normal opacity-90">يُسجَّل مصروفاً في تقرير اليوم — يُنقص المبلغ الكلي مرّة واحدة</span>
+                    </button>
+                    <button onClick={() => settle("total")} disabled={busy} className="rounded-xl bg-emerald-600 px-3 py-2.5 text-right font-bold text-white hover:bg-emerald-700 disabled:opacity-60">
+                      🏦 من المبلغ الكلي
+                      <span className="block text-[11px] font-normal opacity-90">يُخصم من المبلغ الكلي فقط — دون أي تغيير على التقرير اليومي</span>
+                    </button>
+                    <button onClick={() => setChoosing(false)} disabled={busy} className="rounded-xl bg-slate-100 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-60">إلغاء</button>
+                  </div>
+                </div>
+              )
             )}
 
             {/* الأرشيف */}
