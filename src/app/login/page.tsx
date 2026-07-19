@@ -78,9 +78,7 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white">
-            نت
-          </div>
+          <img src="/icons/logo.png" alt="SHAKEEB" className="mx-auto mb-3 h-16 w-16 rounded-2xl shadow" />
           <h1 className="text-2xl font-bold text-slate-800">SHAKEEB</h1>
           <p className="mt-1 text-sm text-slate-500">
             نظام إدارة وكيل الانترنت

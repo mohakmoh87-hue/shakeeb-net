@@ -169,7 +169,7 @@ export default function AboutPage() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">نت</div>
+            <img src="/icons/logo.png" alt="SHAKEEB" className="h-10 w-10 rounded-xl" />
             <div>
               <div className="font-extrabold leading-tight">SHAKEEB</div>
               <div className="text-[11px] text-slate-500">نظام إدارة وكلاء الإنترنت</div>
