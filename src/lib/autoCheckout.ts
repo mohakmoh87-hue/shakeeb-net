@@ -32,7 +32,9 @@ export async function runAutoCheckout(): Promise<{ closed: number }> {
     if (!t) continue;
     const checkoutAt = scheduledCheckout(rec.checkIn, t.shiftEnd);
     const calc = computeAttendance(t, rec.checkIn, checkoutAt); // خروج بوقته ⇒ بلا إضافي
-    await prisma.attendance.update({ where: { id: rec.id }, data: { checkOut: checkoutAt, checkoutBy: "auto", ...calc } }).catch(() => {});
+    // إغلاق ذرّي مشروط بأن السجل ما زال مفتوحاً — يمنع الغرامة المكرّرة إن تسابق التدارك والكرون
+    const upd = await prisma.attendance.updateMany({ where: { id: rec.id, checkOut: null }, data: { checkOut: checkoutAt, checkoutBy: "auto", ...calc } }).catch(() => ({ count: 0 }));
+    if (!upd || upd.count === 0) continue; // أُغلق من عمليةٍ أخرى — تفادي التكرار
 
     // غرامة نسيان بصمة الخروج (تُعتمد فوراً وتظهر بتفاصيل الراتب)
     const penalty = t.missedCheckoutPenalty ?? 0;

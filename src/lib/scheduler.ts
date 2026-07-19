@@ -321,6 +321,9 @@ export function startScheduler() {
     const { isLeaderNow } = await import("@/lib/hybridAgent");
     if (!isLeaderNow()) return;
     void ensureOfficeWhatsApp();
+    // تدارك بصمة الخروج المنسيّة لأيامٍ سابقة عند إقلاع الحاسبة صباحاً (تُغلَق ولو كانت الحاسبات
+    // مغلقة ساعة الجدولة 00:15). لا يحتاج واتساب — يُنفَّذ فوراً.
+    import("@/lib/autoCheckout").then((m) => m.runAutoCheckout()).then((r) => { if (r.closed) console.log(`[scheduler] تدارك خروج تلقائي عند الإقلاع: أُغلق ${r.closed}`); }).catch((e) => console.error("[scheduler] startup autoCheckout:", e));
     // بعد إتاحة وقت لاتصال الواتساب: تدارك تقرير الأمس + إفراغ الرسائل المؤجّلة
     setTimeout(() => {
       catchUpManagerReport().catch((e) => console.error("[scheduler] catchup report:", e));
