@@ -7,6 +7,7 @@ import { computeDateTo } from "@/lib/subscription";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { sasBaseUrl, sasLogin, sasFetchUser } from "@/lib/sas4";
+import { sasHostBlocked } from "@/lib/sasProxy";
 import { grantReward, sendRewardGrantMessage } from "@/lib/rewards";
 
 const schema = z.object({
@@ -85,7 +86,7 @@ export async function POST(
   // 2) بدون كارت: التاريخ اليدوي إن حُدّد، وإلا الحساب الطبيعي حسب نظام المكتب
   let dateTo: Date | null = null;
 
-  if (cardId && subscriber.sasId && tower?.loginUrl && tower.username && tower.password) {
+  if (cardId && subscriber.sasId && tower?.loginUrl && tower.username && tower.password && !(await sasHostBlocked(tower.loginUrl))) {
     try {
       const base = sasBaseUrl(tower.loginUrl);
       const token = await sasLogin(base, tower.username, tower.password);

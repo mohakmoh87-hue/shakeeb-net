@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
 import { sasBaseUrl, sasLogin } from "@/lib/sas4";
+import { sasHostBlocked } from "@/lib/sasProxy";
 
 const schema = z.object({ towerId: z.coerce.number() });
 
@@ -25,6 +26,10 @@ export async function POST(request: Request) {
   const tower = await prisma.tower.findUnique({ where: { id: parsed.data.towerId } });
   if (!tower || !tower.loginUrl || !tower.username || !tower.password) {
     return NextResponse.json({ error: "بيانات المكتب ناقصة" }, { status: 400 });
+  }
+  // حماية SSRF: امنع اتصال الخادم بعنوان لوحة داخلي/محلي (يمرّ IP العام للوحات SAS)
+  if (await sasHostBlocked(tower.loginUrl)) {
+    return NextResponse.json({ error: "عنوان لوحة المكتب غير مسموح" }, { status: 403 });
   }
 
   try {

@@ -36,6 +36,16 @@ async function isBlockedHost(host: string): Promise<boolean> {
   }
 }
 
+// حماية SSRF لمسارات الجلب المباشر (/sas4/token, /sas4/fetch, التفعيل): يستخرج مضيف SAS من
+// رابط دخول المكتب ويفحصه بنفس قاعدة البروكسي — يمرّر IP العام (لوحات SAS) ويحجب الداخلي/المحلي.
+// سلوك مطابق للبروكسي المُطبَّق أصلاً على العامل المحلي، فلا يمسّ SAS المحلي (IP عام) ولا السحابي.
+export async function sasHostBlocked(loginUrl: string | null | undefined): Promise<boolean> {
+  if (!loginUrl) return false;
+  const host = loginUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/#.*$/, "").trim();
+  if (!host) return false;
+  return isBlockedHost(host);
+}
+
 // معالج بروكسي مشترك للوحة SAS4
 export async function proxyToSas(
   request: Request,
