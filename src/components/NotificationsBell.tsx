@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { isNativeApp, getFcmToken } from "@/lib/nativeTracking";
 
 type Notif = { id: number; type: string; title: string; body: string; read: boolean; createdAt: string };
 const ICON: Record<string, string> = { checkin: "🟢", checkout: "🔴", leave: "📅", deduction: "💠" };
@@ -29,6 +30,8 @@ export default function NotificationsBell() {
 
   // حالة اشتراك Push الحالية
   useEffect(() => {
+    // التطبيق الأصلي: WebView لا يدعم Web Push — نستعمل FCM (زرّ التفعيل يسجّل رمز الجهاز)
+    if (isNativeApp()) { setPush(localStorage.getItem("fcmOn") === "1" ? "on" : "off"); return; }
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) { setPush("unsupported"); return; }
     if (Notification.permission === "denied") { setPush("denied"); return; }
     navigator.serviceWorker.getRegistration().then((reg) => reg?.pushManager.getSubscription()).then((sub) => setPush(sub ? "on" : "off")).catch(() => {});
@@ -40,6 +43,15 @@ export default function NotificationsBell() {
   }
 
   async function enablePush() {
+    // التطبيق الأصلي: سجّل رمز FCM (WebView لا يدعم Web Push)
+    if (isNativeApp()) {
+      setPush("busy");
+      const token = await getFcmToken();
+      if (!token) { setPush("off"); alert("تعذّر الحصول على رمز الإشعارات — تأكّد من السماح بالإشعارات في إعدادات التطبيق"); return; }
+      const r = await fetch("/api/push/fcm-token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) }).catch(() => null);
+      if (r?.ok) { localStorage.setItem("fcmOn", "1"); setPush("on"); } else setPush("off");
+      return;
+    }
     if (push === "unsupported") { alert("هذا الجهاز/المتصفح لا يدعم الإشعارات"); return; }
     setPush("busy");
     try {

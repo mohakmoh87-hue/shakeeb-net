@@ -51,6 +51,17 @@ export async function stopNativeTracking(): Promise<void> {
   try { await NativeTrack.stopTracking(); } catch { /* تجاهل */ }
 }
 
+// رمز جهاز FCM من التطبيق الأصلي (للمدير: إشعارات الهاتف عبر FCM بدل Web Push غير المدعوم).
+export async function getFcmToken(): Promise<string | null> {
+  if (!isNativeApp()) return null;
+  try {
+    const { token } = await NativeTrack.getToken();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
 // فتح إعدادات التطبيق (لتفعيل إذن الموقع «السماح دائماً» يدوياً إن رُفض)
 export async function openNativeSettings(): Promise<void> {
   if (!isNativeApp()) return;

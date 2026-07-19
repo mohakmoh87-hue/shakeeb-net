@@ -50,24 +50,16 @@ async function accessToken(sa: ServiceAccount): Promise<string> {
 
 export type FcmResult = { ok: boolean; error?: string; invalidToken?: boolean };
 
-// إرسال رسالة data-only عالية الأولوية لجهاز واحد.
-// invalidToken=true ⇒ الرمز لم يعد صالحاً (يجب مسحه من قاعدة البيانات).
-export async function sendFcmData(deviceToken: string | null | undefined, data: Record<string, string>): Promise<FcmResult> {
+// إرسال رسالة FCM لجهاز واحد. message = جسم رسالة FCM v1 (بلا token — يُضاف هنا).
+async function sendFcm(deviceToken: string, message: Record<string, unknown>): Promise<FcmResult> {
   const sa = serviceAccount();
   if (!sa) return { ok: false, error: "no-service-account" };
-  if (!deviceToken) return { ok: false, error: "no-device-token" };
   try {
     const token = await accessToken(sa);
     const res = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        message: {
-          token: deviceToken,
-          android: { priority: "high", ttl: "120s" }, // أولوية عالية توقظ التطبيق المُغلَق
-          data, // كل القيم نصّية
-        },
-      }),
+      body: JSON.stringify({ message: { token: deviceToken, ...message } }),
     });
     if (res.ok) return { ok: true };
     const err = (await res.json().catch(() => ({}))) as {
@@ -80,4 +72,23 @@ export async function sendFcmData(deviceToken: string | null | undefined, data: 
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
+}
+
+// رسالة data-only عالية الأولوية (لإيقاظ خدمة التتبع حتى والتطبيق مُغلَق).
+export async function sendFcmData(deviceToken: string | null | undefined, data: Record<string, string>): Promise<FcmResult> {
+  if (!deviceToken) return { ok: false, error: "no-device-token" };
+  return sendFcm(deviceToken, { android: { priority: "high", ttl: "120s" }, data });
+}
+
+// رسالة إشعار (عنوان/نص) — يعرضها أندرويد في شريط الإشعارات تلقائياً والتطبيق مُغلَق/بالخلفية.
+export async function sendFcmNotification(
+  deviceToken: string | null | undefined,
+  title: string,
+  body: string,
+): Promise<FcmResult> {
+  if (!deviceToken) return { ok: false, error: "no-device-token" };
+  return sendFcm(deviceToken, {
+    notification: { title, body },
+    android: { priority: "high", notification: { sound: "default" } },
+  });
 }

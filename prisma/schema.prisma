@@ -55,6 +55,7 @@ model User {
   permissions String? // صلاحيات مفصولة بفواصل
   towerId   Int? // البرج الذي يتحكم به هذا المستخدم (المكتب)
   managerPhone String? // رقم المدير لإرسال التقرير اليومي
+  fcmToken  String? // رمز جهاز FCM (التطبيق الأصلي) — لإشعارات الهاتف حين لا يدعم المتصفح Web Push
   isActive  Boolean  @default(true)
   isDeleted Boolean  @default(false)
   failedAttempts Int   @default(0) // محاولات دخول فاشلة متتالية (لمنع التخمين)

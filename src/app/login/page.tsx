@@ -132,8 +132,8 @@ export default function LoginPage() {
           </div>
         </form>
 
-        {/* تجربة أسبوع (لحسابات الوكلاء الجديدة) */}
-        <div className="mt-5 border-t border-slate-200 pt-4 text-center">
+        {/* تجربة أسبوع + الصفحة التعريفية — للموقع فقط، تُخفى داخل التطبيق (data-site-only) */}
+        <div data-site-only className="mt-5 border-t border-slate-200 pt-4 text-center">
           <p className="mb-2 text-sm text-slate-500">أول مرة؟ جرّب النظام مجاناً</p>
           <button
             onClick={() => { setTrialOpen(true); setTErr(""); }}
