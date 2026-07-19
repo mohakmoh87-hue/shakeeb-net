@@ -42,6 +42,27 @@ export async function resolveCardActor(cardId: number): Promise<
   return { ok: true, actor: { isTech: true, userId: null, agentId: tech.agentId, name: tech.name, technicianId: tech.technicianId, session: null } };
 }
 
+// يحلّ الفاعل ويتحقّق من حقّه في إضافة بطاقة إلى عمود (list).
+// المستخدم: كتابة على مكتب ضمن وكيله. الفني: عمود ضمن مكتبه هو حصراً (بطاقته تُسنَد إليه).
+export async function resolveListActor(listId: number): Promise<
+  | { ok: true; actor: FieldActor }
+  | { ok: false; status: number; error: string }
+> {
+  const user = await getSession();
+  if (user) {
+    if (!(await agentOwnsList(user, listId))) return { ok: false, status: 403, error: "العمود لا يتبع حسابك" };
+    if (!(await canOperateList(user, listId))) return { ok: false, status: 403, error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" };
+    return { ok: true, actor: { isTech: false, userId: user.userId, agentId: user.agentId, name: user.fullName ?? user.username, technicianId: null, session: user } };
+  }
+  const tech = await getTechSession();
+  if (!tech) return { ok: false, status: 401, error: "غير مصرّح" };
+  const officeId = await listOfficeId(listId);
+  if (officeId == null || officeId !== (tech.towerId ?? null)) {
+    return { ok: false, status: 403, error: "العمود ليس في مكتبك" };
+  }
+  return { ok: true, actor: { isTech: true, userId: null, agentId: tech.agentId, name: tech.name, technicianId: tech.technicianId, session: null } };
+}
+
 // عزل المستأجر للوحات الفنيين: هل مكتب اللوحة يتبع أحد مكاتب وكيل المستخدم؟
 // (يسمح بالتعاون بين مكاتب نفس الوكيل، ويمنع الوصول لبيانات وكيل آخر)
 async function agentOwnsTower(session: SessionPayload, towerId: number | null | undefined): Promise<boolean> {

@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { agentOwnsCard, agentOwnsList, canOperateCard, canOperateList } from "@/lib/field";
+import { agentOwnsCard, agentOwnsList, canOperateCard, canOperateList, resolveListActor } from "@/lib/field";
 
 const VIEW_ONLY = { error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" };
 
-// إنشاء بطاقة جديدة في عمود — مع خياراتها مباشرةً (فني، تاريخ، نوع، وصف)
+// إنشاء بطاقة جديدة في عمود — مع خياراتها مباشرةً (فني، تاريخ، نوع، وصف).
+// الفاعل: مستخدم المكتب/المدير (يختار الفني)، أو الفني نفسه (تُسنَد البطاقة إليه تلقائياً).
 export async function POST(request: Request) {
-  const s = await getSession();
-  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const b = await request.json().catch(() => null);
   if (!b?.listId || !b?.title?.trim()) return NextResponse.json({ error: "بيانات ناقصة" }, { status: 400 });
-  if (!(await agentOwnsList(s, Number(b.listId)))) return NextResponse.json({ error: "العمود لا يتبع حسابك" }, { status: 403 });
-  if (!(await canOperateList(s, Number(b.listId)))) return NextResponse.json(VIEW_ONLY, { status: 403 });
+  const auth = await resolveListActor(Number(b.listId));
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const actor = auth.actor;
+  // الفني: تُسنَد البطاقة إليه حصراً (لا يختار فنياً آخر). المستخدم: حسب اختياره.
+  const technicianId = actor.isTech ? actor.technicianId : (b.technicianId != null ? Number(b.technicianId) : null);
+  const assignee = actor.isTech ? actor.name : (b.assignee ? String(b.assignee) : null);
   const count = await prisma.taskCard.count({ where: { listId: Number(b.listId), isDeleted: false } });
   const created = await prisma.taskCard.create({
     data: {
@@ -21,8 +24,8 @@ export async function POST(request: Request) {
       position: count,
       // نوع البطاقة = اسم الفئة (CardType) كما اختاره المستخدم — لا يُقسَر إلى maintenance/delivery
       kind: b.kind ? String(b.kind).trim() : "صيانة",
-      assignee: b.assignee ? String(b.assignee) : null,
-      technicianId: b.technicianId != null ? Number(b.technicianId) : null,
+      assignee,
+      technicianId,
       dueDate: b.dueDate ? new Date(b.dueDate) : null,
       description: b.description ? String(b.description) : null,
       label: b.label ? String(b.label) : null,

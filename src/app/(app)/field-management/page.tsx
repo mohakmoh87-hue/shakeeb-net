@@ -315,21 +315,24 @@ export default function FieldManagementPage() {
                 ))}
               </div>
 
-              {/* إضافة بطاقة — للمكتب الذي يجوز الكتابة عليه فقط (لا للفني) */}
-              {canOperate && !isTech && (
+              {/* إضافة بطاقة — للمكتب أو للفني (تُسنَد له تلقائياً) */}
+              {canOperate && (
               <div className="p-2">
                 {addingTo === l.id ? (
                   <div className="space-y-1.5 rounded-lg bg-white p-2 shadow-inner">
                     <textarea autoFocus value={cardText} onChange={(e) => setCardText(e.target.value)} rows={2} placeholder="عنوان البطاقة..." className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <select value={cardKind} onChange={(e) => { if (e.target.value === "__new__") createType(); else setCardKind(e.target.value); }} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                    <div className={isTech ? "" : "grid grid-cols-2 gap-1.5"}>
+                      <select value={cardKind} onChange={(e) => { if (e.target.value === "__new__") createType(); else setCardKind(e.target.value); }} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
                         {cardTypes.map((t) => <option key={t.id} value={t.name}>{t.deliveryOnly ? "🚚" : "🔧"} {t.name}</option>)}
                         {canManage && <option value="__new__">➕ نوع جديد…</option>}
                       </select>
-                      <select value={cardTech} onChange={(e) => setCardTech(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
-                        <option value="">— بدون فني —</option>
-                        {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isSupport ? " (دعم)" : ""}</option>)}
-                      </select>
+                      {/* الفني تُسنَد له البطاقة تلقائياً — لا يختار فنياً */}
+                      {!isTech && (
+                        <select value={cardTech} onChange={(e) => setCardTech(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                          <option value="">— بدون فني —</option>
+                          {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isSupport ? " (دعم)" : ""}</option>)}
+                        </select>
+                      )}
                     </div>
                     <input type="date" value={cardDue} onChange={(e) => setCardDue(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs" />
                     <div className="flex gap-1">
