@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { exportAgentBackup } from "@/lib/backup";
 import { sendMail, mailerConfigured } from "@/lib/mailer";
+import { baghdadDayKey } from "@/lib/attendance";
 
 // إرسال نسخة احتياطية لوكيل واحد إلى إيميله المضبوط
 export async function sendAgentBackupEmail(agentId: number): Promise<{ ok: boolean; error?: string }> {
@@ -19,22 +20,32 @@ export async function sendAgentBackupEmail(agentId: number): Promise<{ ok: boole
 }
 
 // المهمة اليومية: إرسال نسخة كل وكيل لديه إيميل نسخ مضبوط إلى إيميله.
-// agentId اختياري: يُمرَّر من المجدول (قائد كل وكيل ينفّذ لوكيله فقط) لتفادي التكرار
-// عند تعدّد قادة الوكلاء. بلا agentId يشمل كل الوكلاء (للاستخدام اليدوي).
+// تعمل من الكرون السحابي (حتى لو كانت الحاسبات مغلقة) ومن مجدول الحاسبة —
+// بعلامة lastBackupDate (يوم بغداد) تمنع إرسال نسختين لنفس اليوم.
+// agentId اختياري: يُمرَّر من المجدول (قائد كل وكيل ينفّذ لوكيله فقط).
 export async function runDailyBackups(agentId?: number | null): Promise<{ total: number; sent: number; failed: number }> {
   if (!mailerConfigured()) {
     console.warn("[backup] لم تُضبط بيانات SMTP — تخطّي النسخ اليومي بالبريد");
     return { total: 0, sent: 0, failed: 0 };
   }
+  const todayKey = baghdadDayKey(new Date());
   const agents = await prisma.agent.findMany({
-    where: { isDeleted: false, backupEmail: { not: null }, ...(agentId != null ? { id: agentId } : {}) },
+    // لم تُرسَل نسخة اليوم بعد (من السحابة أو الحاسبة) — منع الازدواج
+    where: {
+      isDeleted: false, backupEmail: { not: null },
+      OR: [{ lastBackupDate: null }, { lastBackupDate: { not: todayKey } }],
+      ...(agentId != null ? { id: agentId } : {}),
+    },
     select: { id: true },
   });
   let sent = 0, failed = 0;
   for (const a of agents) {
     try {
       const r = await sendAgentBackupEmail(a.id);
-      if (r.ok) sent++; else { failed++; console.warn(`[backup] فشل إرسال نسخة الوكيل ${a.id}: ${r.error}`); }
+      if (r.ok) {
+        sent++;
+        await prisma.agent.update({ where: { id: a.id }, data: { lastBackupDate: todayKey } }).catch(() => {});
+      } else { failed++; console.warn(`[backup] فشل إرسال نسخة الوكيل ${a.id}: ${r.error}`); }
     } catch (e) { failed++; console.error(`[backup] خطأ نسخة الوكيل ${a.id}:`, e); }
   }
   console.log(`[backup] النسخ اليومي: ${sent} ناجحة، ${failed} فاشلة من ${agents.length}`);
