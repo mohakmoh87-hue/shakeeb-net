@@ -43,8 +43,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ role: "manager", name: t.name, salary: t.salary ?? 0, statement: result, history, period });
   }
 
-  // قائمة فنيّي المكتب مع صافي كل واحد
-  const towerFilter = reqOffice ? [reqOffice] : (agentTowers.length ? agentTowers : [-1]);
+  // قائمة فنيّي المكتب مع صافي كل واحد — لا يُقبل officeId إلا إن كان أحد مكاتب وكيل المستخدم (عزل)
+  const towerFilter = reqOffice && agentTowers.includes(reqOffice) ? [reqOffice] : (agentTowers.length ? agentTowers : [-1]);
   const techs = await prisma.technician.findMany({ where: { towerId: { in: towerFilter }, isDeleted: false }, select: { id: true, name: true, salary: true } });
   const list = await Promise.all(techs.map(async (t) => {
     const r = await statementFor(t.id, t.salary ?? 0, days.fromDay, days.toDay);
