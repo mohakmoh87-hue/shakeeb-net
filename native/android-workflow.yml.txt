@@ -1,0 +1,55 @@
+name: بناء تطبيق أندرويد (شكيب نت)
+
+# يبني ملف APK قابلاً للتثبيت في السحابة (بلا أدوات على جهازك).
+# يعمل عند الدفع لفرع native-app أو يدوياً من تبويب Actions.
+on:
+  workflow_dispatch:
+  push:
+    branches: [native-app]
+    paths:
+      - "android/**"
+      - "capacitor.config.ts"
+      - "native/**"
+      - ".github/workflows/android.yml"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true" # لا نحمّل Chromium في CI (غير لازم للبناء)
+    steps:
+      - name: جلب الكود
+        uses: actions/checkout@v4
+
+      - name: تهيئة Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: تثبيت الحزم
+        run: npm ci
+
+      - name: تهيئة Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: تهيئة Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: مزامنة Capacitor
+        run: npx cap sync android
+
+      - name: بناء APK (debug)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: رفع ملف APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shakeebnet-field-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

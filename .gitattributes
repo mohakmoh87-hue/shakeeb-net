@@ -1,0 +1,8 @@
+# يضمن أن سكربتات gradle تبقى بنهايات أسطر LF (وإلا يفشل البناء على Linux في CI)
+android/gradlew text eol=lf
+*.sh text eol=lf
+# الملفات الثنائية لا تُحوَّل نهايات أسطرها
+*.jar binary
+*.keystore binary
+*.png binary
+*.jpg binary
