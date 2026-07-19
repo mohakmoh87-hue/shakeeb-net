@@ -21,7 +21,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        registerPlugin(PushTokenPlugin.class); // جسر رمز FCM للويب
+        registerPlugin(NativeTrackPlugin.class); // جسر التتبّع الأصلي (رمز FCM + تشغيل/إيقاف)
         super.onCreate(savedInstanceState);
         ensureForegroundPermissions();
     }
