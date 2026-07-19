@@ -6,8 +6,12 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { BackgroundGeolocationPlugin } from "@capacitor-community/background-geolocation";
 
-// جسر رمز FCM (إضافة Java: PushTokenPlugin)
-const PushToken = registerPlugin<{ getToken(): Promise<{ token: string }> }>("PushToken");
+// جسر التتبّع الأصلي (إضافة Java: NativeTrackPlugin)
+const NativeTrack = registerPlugin<{
+  getToken(): Promise<{ token: string }>;
+  startTracking(): Promise<void>;
+  stopTracking(): Promise<void>;
+}>("NativeTrack");
 // إضافة المجتمع — نستعملها فقط لفتح إعدادات التطبيق عند الحاجة
 const BG = registerPlugin<BackgroundGeolocationPlugin>("BackgroundGeolocation");
 
@@ -24,7 +28,7 @@ export function isNativeApp(): boolean {
 export async function registerPushToken(): Promise<void> {
   if (!isNativeApp()) return;
   try {
-    const { token } = await PushToken.getToken();
+    const { token } = await NativeTrack.getToken();
     if (!token) return;
     await fetch("/api/field/push-token", {
       method: "POST",
@@ -34,6 +38,17 @@ export async function registerPushToken(): Promise<void> {
   } catch {
     /* تجاهل — لا يؤثر على بقية التطبيق */
   }
+}
+
+// تشغيل/إيقاف خدمة الموقع مباشرة حين يكون التطبيق مفتوحاً (احتياط موثوق لا ينتظر الإشعار).
+// حين يكون مُغلَقاً، تتكفّل FCM بالإيقاظ. آمنة للاستدعاء المتكرّر (الخدمة تحرس نفسها).
+export async function startNativeTracking(): Promise<void> {
+  if (!isNativeApp()) return;
+  try { await NativeTrack.startTracking(); } catch { /* تجاهل */ }
+}
+export async function stopNativeTracking(): Promise<void> {
+  if (!isNativeApp()) return;
+  try { await NativeTrack.stopTracking(); } catch { /* تجاهل */ }
 }
 
 // فتح إعدادات التطبيق (لتفعيل إذن الموقع «السماح دائماً» يدوياً إن رُفض)

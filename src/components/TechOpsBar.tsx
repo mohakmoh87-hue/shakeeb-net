@@ -5,7 +5,7 @@ import TechLeaveModal from "./TechLeaveModal";
 import TechAdjustments from "./TechAdjustments";
 import SalaryModal from "./SalaryModal";
 import { bioConfirm, bioReRegister } from "@/lib/biometric";
-import { isNativeApp, registerPushToken, openNativeSettings } from "@/lib/nativeTracking";
+import { isNativeApp, registerPushToken, startNativeTracking, stopNativeTracking, openNativeSettings } from "@/lib/nativeTracking";
 
 type AttState = "none" | "in" | "done";
 const fmtTime = (d: string | null) => (d ? new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "");
@@ -59,13 +59,16 @@ export default function TechOpsBar({ techName }: { techName: string }) {
       if (stopped) return;
       if (d?.tracking) {
         setTrackReq(true);
-        // التطبيق الأصلي: خدمة أصلية تُوقظها إشعارات FCM وتعمل والتطبيق مُغلَق — لا شيء من الويب.
-        if (!isNativeApp() && !locTimer) {
+        if (isNativeApp()) {
+          // التطبيق الأصلي: نشغّل الخدمة الأصلية مباشرة (احتياط لا ينتظر الإشعار)؛
+          // ونفس الخدمة تُوقظها FCM حين يكون التطبيق مُغلَقاً. تعمل والتطبيق مُبعَد.
+          void startNativeTracking();
+        } else if (!locTimer) {
           sendLoc(); locTimer = setInterval(sendLoc, 30_000); // المتصفح: إرسال فوري ثم كل 30ث
         }
       } else {
         setTrackReq(false); setGeoBlocked(false);
-        if (!isNativeApp()) stopLoc(); // الأصلي يُطفأ عبر إشعار FCM من الخادم
+        if (isNativeApp()) void stopNativeTracking(); else stopLoc();
       }
     };
     check();
