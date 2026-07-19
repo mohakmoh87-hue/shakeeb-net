@@ -89,6 +89,20 @@ export default function FieldTracker() {
 
   const activeCount = points.length;
 
+  // أسماء الفنيين على خط أفقي (مربّعات صح) — للودجة فوق الخريطة
+  const chips = techs.map((t) => {
+    const on = selected.has(t.id);
+    const l = locs.get(t.id);
+    const has = on && l && l.lat != null;
+    return (
+      <label key={t.id} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${on ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
+        <input type="checkbox" checked={on} onChange={() => toggle(t.id)} className="h-3.5 w-3.5 accent-emerald-600" />
+        <span className="whitespace-nowrap">{t.name}</span>
+        {on && (has ? <span>{l!.fresh ? "🟢" : "🟡"}</span> : <span className="text-slate-400">⏳</span>)}
+      </label>
+    );
+  });
+
   // قائمة اختيار الفنيين (مشتركة بين الودجة والنافذة)
   const list = (
     <div className="space-y-2">
@@ -120,27 +134,26 @@ export default function FieldTracker() {
 
   return (
     <>
-      {/* ودجة دائمة أسفل يمين الشاشة — سطح المكتب فقط (تُخفى على الهاتف/التطبيق) */}
-      <div className="fixed bottom-4 right-4 z-[45] hidden w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl md:block">
+      {/* ودجة دائمة أسفل يسار الشاشة — سطح المكتب فقط (تُخفى على الهاتف/التطبيق): مستطيل كبير */}
+      <div className="fixed bottom-4 left-4 z-[45] hidden w-[42rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl md:block">
         <div className="flex items-center justify-between bg-gradient-to-l from-sky-600 to-sky-700 px-3 py-2 text-white">
           <button onClick={() => setBig(true)} className="flex items-center gap-1.5 text-sm font-extrabold" title="تكبير الخريطة">
             📍 تتبع الفنيين {activeCount > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px]">{activeCount}</span>}
           </button>
           <div className="flex items-center gap-1">
+            <button onClick={selectAll} className="rounded-md bg-white/15 px-2 py-0.5 text-[11px] font-bold hover:bg-white/25">تتبّع الكل ({techs.length})</button>
+            <button onClick={clearAll} className="rounded-md bg-white/15 px-2 py-0.5 text-[11px] font-bold hover:bg-white/25">إيقاف الكل</button>
             <button onClick={() => setBig(true)} className="rounded-md px-1.5 py-0.5 text-xs hover:bg-white/20" title="تكبير">⛶</button>
             <button onClick={() => setCollapsed((c) => !c)} className="rounded-md px-1.5 py-0.5 text-xs hover:bg-white/20" title={collapsed ? "توسيع" : "طيّ"}>{collapsed ? "▲" : "▼"}</button>
           </div>
         </div>
         {!collapsed && (
           <div className="flex flex-col">
-            <div className="flex gap-1.5 px-2.5 pt-2">
-              <button onClick={selectAll} className="flex-1 rounded-lg bg-emerald-600 py-1 text-[11px] font-bold text-white">تتبّع الكل ({techs.length})</button>
-              <button onClick={clearAll} className="flex-1 rounded-lg bg-slate-200 py-1 text-[11px] font-bold text-slate-600">إيقاف الكل</button>
-            </div>
-            <div className="max-h-40 overflow-y-auto px-2.5 py-2">{list}</div>
-            <div className="relative h-44 border-t border-slate-200">
+            {/* أسماء الفنيين على خط أفقي (من اليمين لليسار) فوق الخريطة */}
+            <div className="flex max-h-24 flex-wrap content-start gap-1.5 overflow-y-auto border-b border-slate-100 px-3 py-2">{chips}</div>
+            <div className="relative h-[24rem] border-t border-slate-200">
               <TrackMap points={points} className="h-full w-full" />
-              {points.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70 text-center text-[11px] text-slate-400">اختر فنّياً لعرض موقعه على الخريطة</div>}
+              {points.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70 text-center text-sm text-slate-400">اختر فنّياً من الأعلى لعرض موقعه على الخريطة</div>}
             </div>
           </div>
         )}

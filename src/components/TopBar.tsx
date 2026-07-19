@@ -69,9 +69,7 @@ export default function TopBar({
       <div className="flex items-stretch justify-between gap-3 px-4 py-2.5">
         {/* الشعار والمستخدم */}
         <div className="flex items-center gap-3 border-l border-slate-200 pl-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-mynet-blue text-lg font-extrabold text-white shadow-md">
-            نت
-          </div>
+          <img src="/icons/logo.png" alt="SHAKEEB" className="h-12 w-12 rounded-xl shadow-md" />
           <div className="leading-tight">
             <div className="text-base font-extrabold text-mynet-blue">{brand ?? "SHAKEEB"}</div>
             <div className="text-xs font-medium text-slate-500">{fullName} — {roleLabel}</div>
