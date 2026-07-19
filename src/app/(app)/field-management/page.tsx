@@ -10,7 +10,7 @@ import CardTypeManager from "@/components/CardTypeManager";
 import DeductionReview from "@/components/DeductionReview";
 import NotificationsBell from "@/components/NotificationsBell";
 import FieldAppMenu from "@/components/FieldAppMenu";
-import { FieldTrackerProvider, FieldTrackerPanel } from "@/components/FieldTracker";
+import { FieldTrackerProvider } from "@/components/FieldTracker";
 
 type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number; timeTracked?: boolean };
@@ -40,6 +40,12 @@ type CardType = { id: number; name: string; deliveryOnly: boolean; execMinutes?:
 const KIND_COLORS = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-purple-500", "bg-pink-500", "bg-cyan-600", "bg-red-500", "bg-lime-600", "bg-indigo-500", "bg-orange-500"];
 const kindColor = (name: string) => KIND_COLORS[[...(name || "")].reduce((a, ch) => a + ch.charCodeAt(0), 0) % KIND_COLORS.length];
 const fmtDue = (d: string | null) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" }) : null);
+// رقم هاتف المشترك مُخزَّن ضمن وصف البطاقة (سطر «📱 الهاتف: …») — نستخرجه لعرضه على وجه البطاقة
+const phoneOf = (desc?: string | null): string | null => {
+  const m = desc?.match(/📱\s*الهاتف:\s*([^\n]+)/);
+  const v = m?.[1]?.trim();
+  return v && v !== "—" ? v : null;
+};
 
 export default function FieldManagementPage() {
   const router = useRouter();
@@ -305,6 +311,7 @@ export default function FieldManagementPage() {
                     {/* شريط لون التصنيف (النوع) */}
                     <div className={`mb-1.5 h-1.5 w-10 rounded-full ${kindColor(c.kind)}`} />
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
+                    {phoneOf(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📱 {phoneOf(c.description)}</div>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
                       <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
@@ -362,12 +369,7 @@ export default function FieldManagementPage() {
           </div>
         )}
       </div>
-        {/* لوحة الخريطة الجانبية — سطح المكتب فقط، آخر عنصر ⇒ يسار في RTL، تحجز مكانها فلا تغطّي الأعمدة */}
-        {canTrack && (
-          <aside className="hidden w-[24rem] shrink-0 md:block">
-            <FieldTrackerPanel />
-          </aside>
-        )}
+        {/* خريطة التتبّع: دبوس عائم أسفل اليسار (سطح المكتب) يفتح لوحة الخريطة، ويُغلَق بالنقر خارجها */}
       </div>
 
       {/* شريط سفلي (صفحة النت فقط، يُخفى داخل التطبيق عبر CSS): المكاتب + الأدوات — تصميم الموقع كما هو */}

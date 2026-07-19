@@ -34,9 +34,19 @@ export function FieldTrackerProvider({ enabled, children }: { enabled: boolean; 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [locs, setLocs] = useState<Map<number, Loc>>(new Map());
   const [big, setBig] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false); // سطح المكتب: دبوس ↔ لوحة الخريطة
   const [, tick] = useState(0);
   const selRef = useRef(selected);
   selRef.current = selected;
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  // إغلاق اللوحة العائمة عند النقر خارجها (تعود دبوساً)
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onDown = (e: MouseEvent) => { if (panelRef.current && !panelRef.current.contains(e.target as Node)) setPanelOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [panelOpen]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -104,6 +114,18 @@ export function FieldTrackerProvider({ enabled, children }: { enabled: boolean; 
           <button onClick={() => setBig(true)} className="fixed bottom-24 right-4 z-[45] flex items-center gap-1.5 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-xl active:scale-95 md:hidden">
             📍 تتبع {ctx.activeCount > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px]">{ctx.activeCount}</span>}
           </button>
+
+          {/* سطح المكتب: دبوس أسفل اليسار ↔ لوحة الخريطة (بحجمها الحالي)، تُغلَق بالنقر خارجها */}
+          {!panelOpen ? (
+            <button onClick={() => setPanelOpen(true)} className="fixed bottom-4 left-4 z-[45] hidden items-center gap-1.5 rounded-full bg-sky-600 px-4 py-3 text-sm font-extrabold text-white shadow-xl hover:bg-sky-700 md:flex" title="فتح خريطة التتبّع">
+              📍 تتبع الفنيين {ctx.activeCount > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px]">{ctx.activeCount}</span>}
+            </button>
+          ) : (
+            <div ref={panelRef} className="fixed bottom-4 left-4 z-[46] hidden h-[70vh] max-h-[44rem] w-[24rem] md:block">
+              <FieldTrackerPanel onCollapse={() => setPanelOpen(false)} />
+            </div>
+          )}
+
           {big && <BigModal ctx={ctx} onClose={() => setBig(false)} />}
         </>
       )}
@@ -133,7 +155,7 @@ function Chips({ ctx }: { ctx: Ctx }) {
 }
 
 // اللوحة الجانبية داخل تخطيط الصفحة (سطح المكتب) — تحجز مكانها ولا تطفو فوق الأعمدة.
-export function FieldTrackerPanel() {
+export function FieldTrackerPanel({ onCollapse }: { onCollapse?: () => void }) {
   const ctx = useTracker();
   if (!ctx || ctx.techs.length === 0) return null;
   const { techs, selectAll, clearAll, points, activeCount, openBig } = ctx;
@@ -145,6 +167,7 @@ export function FieldTrackerPanel() {
           <button onClick={selectAll} className="rounded-md bg-white/15 px-2 py-0.5 text-[11px] font-bold hover:bg-white/25">تتبّع الكل ({techs.length})</button>
           <button onClick={clearAll} className="rounded-md bg-white/15 px-2 py-0.5 text-[11px] font-bold hover:bg-white/25">إيقاف الكل</button>
           <button onClick={openBig} className="rounded-md px-1.5 py-0.5 text-xs hover:bg-white/20" title="تكبير">⛶</button>
+          {onCollapse && <button onClick={onCollapse} className="rounded-md px-1.5 py-0.5 text-sm hover:bg-white/20" title="طيّ إلى دبوس">▾</button>}
         </div>
       </div>
       {/* أسماء الفنيين على خطّ أفقي فوق الخريطة */}
