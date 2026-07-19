@@ -27,8 +27,8 @@ const schema = z.object({
 });
 
 export async function GET() {
-  // القراءة متاحة لإدارة المكاتب أو المشتركين (لقائمة المكاتب في صفحاتهم)
-  const g = await guardAny("offices.manage", "subscribers.manage", "subscriptions.manage");
+  // القراءة متاحة لإدارة المكاتب أو المشتركين أو المالية (لقائمة المكاتب في صفحاتهم — مثل الصندوق)
+  const g = await guardAny("offices.manage", "subscribers.manage", "subscriptions.manage", "finance.view", "finance.manage");
   if (g.error) return g.error;
 
   // عزل المستأجر: مستخدم المكتب يرى مكتبه؛ مدير الوكيل يرى كل مكاتب وكيله فقط
