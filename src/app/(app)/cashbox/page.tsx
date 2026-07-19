@@ -17,7 +17,8 @@ type Tx = {
   date: string | null;
   sourceType: string | null;
 };
-type Account = { id: number; name: string | null };
+type Account = { id: number; name: string | null; towerId: number | null };
+type Tower = { id: number; name: string | null };
 
 const fmt = (n: number | null | undefined) =>
   n == null ? "0" : Number(n).toLocaleString("en-US");
@@ -27,6 +28,7 @@ export default function CashboxPage() {
   const [txs, setTxs] = useState<Tx[]>([]);
   const [summary, setSummary] = useState({ totalIn: 0, totalOut: 0, balance: 0 });
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [towers, setTowers] = useState<Tower[]>([]);
 
   const [type, setType] = useState<"in" | "out">("in");
   const [amount, setAmount] = useState("");
@@ -58,8 +60,12 @@ export default function CashboxPage() {
   useEffect(() => {
     load(from, to);
     fetch("/api/accounts").then((r) => void (r.ok && r.json().then(setAccounts)));
+    fetch("/api/towers").then((r) => void (r.ok && r.json().then(setTowers)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
+
+  // اسم المكتب لعرضه بجانب اسم الحساب (لتمييز الحسابات المتكرّرة مثل «نثرية»)
+  const towerName = (id: number | null) => towers.find((t) => t.id === id)?.name ?? null;
 
   // النقر على اسم الحقل: تصاعدي ثم تنازلي عند التكرار
   function sortBy(key: SortKey) {
@@ -186,9 +192,12 @@ export default function CashboxPage() {
             className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
           >
             <option value="">— بدون حساب —</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
+            {accounts.map((a) => {
+              const office = towerName(a.towerId);
+              return (
+                <option key={a.id} value={a.id}>{a.name}{office ? ` — ${office}` : ""}</option>
+              );
+            })}
           </select>
 
           <label className="mb-1 block text-sm font-medium text-slate-700">ملاحظات</label>
