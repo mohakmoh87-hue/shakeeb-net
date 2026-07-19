@@ -43,9 +43,28 @@ async function earliestUnsettledKey(technicianId: number, accountId: number | nu
   return keys.length ? keys.sort()[0] : null;
 }
 
+// أحدث فترة «مكتملة» (انقضى يوم نهايتها) بالنسبة لليوم — تنتهي عند آخر «يوم نهاية» ≤ اليوم.
+// تُستعمل للتجميد: عند التأخّر يُسدَّد الفني حتى يوم النهاية الأخير المنقضي بالضبط.
+function lastCompletedPeriod(
+  fromDay: number | null | undefined,
+  toDay: number | null | undefined,
+  todayKey: string,
+): SalaryPeriod | null {
+  if (!fromDay || !toDay) return null;
+  const [ty, tm, td] = todayKey.split("-").map(Number);
+  // شهر النهاية = هذا الشهر إن بلغنا يوم النهاية، وإلا الشهر السابق
+  let ey = ty, em = tm;
+  if (td < clampDay(ty, tm, toDay)) { em = tm - 1; if (em < 1) { em = 12; ey = ty - 1; } }
+  const endDay = clampDay(ey, em, toDay);
+  let sy = ey, sm = em - 1; if (sm < 1) { sm = 12; sy = ey - 1; }
+  const startDay = clampDay(sy, sm, fromDay);
+  return { from: `${sy}-${pad2(sm)}-${pad2(startDay)}`, to: `${ey}-${pad2(em)}-${pad2(endDay)}` };
+}
+
 // الفترة الحالية لفنيٍّ بعينه — «مجمّدة»: إن بقيت سجلات غير مُسدَّدة من فترة سابقة (أقدم من
-// بداية الفترة المفتوحة)، نبقى على تلك الفترة حتى يُسدّدها المدير (فلا تتدحرج ولا يضيع مبلغ)؛
-// وإلا فالفترة المفتوحة الحالية. أي شيء بعد «إلى» يُرحَّل للفترة التالية تلقائياً.
+// بداية الفترة المفتوحة)، نبقى على أحدث فترة مكتملة حتى يُسدّدها المدير (فلا تتدحرج ولا يضيع
+// مبلغ) — ويُوسَّع مبدؤها ليشمل أقدم سجل إن كان أبكر. وإلا فالفترة المفتوحة الحالية.
+// أي شيء بعد «إلى» (يوم النهاية) يُرحَّل للفترة التالية تلقائياً.
 export async function periodForTechnician(
   technicianId: number,
   accountId: number | null,
@@ -56,7 +75,11 @@ export async function periodForTechnician(
   const open = currentPeriodFromDays(fromDay, toDay, todayKey);
   if (!open) return null;
   const earliest = await earliestUnsettledKey(technicianId, accountId);
-  if (earliest && earliest < open.from) return currentPeriodFromDays(fromDay, toDay, earliest);
+  if (earliest && earliest < open.from) {
+    const completed = lastCompletedPeriod(fromDay, toDay, todayKey) ?? open;
+    // نضمّ أي متراكم أقدم من بداية الفترة المكتملة لتسويته دفعةً واحدة دون ضياع
+    return { from: earliest < completed.from ? earliest : completed.from, to: completed.to };
+  }
   return open;
 }
 
