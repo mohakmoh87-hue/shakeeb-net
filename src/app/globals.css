@@ -95,28 +95,29 @@ body {
 /* خلفية لوحة إدارة الفنيين — المتصفح: أزرق شكيب كما هو. التطبيق: غرافيتي احترافي (يُبدَّل أدناه) */
 .field-canvas { background: linear-gradient(160deg, #1c8fe6 0%, #0f6fbf 60%, #0a4f8a 100%); }
 
-@media all and (display-mode: standalone) {
-  /* إخفاء واجهة الموقع الكاملة (الشريط العلوي + القائمة المنسدلة) وأي عنصر خاصّ بالموقع */
-  [data-site-chrome], [data-site-only] { display: none !important; }
-  /* إظهار عناصر التطبيق */
-  [data-app-only] { display: block !important; }
-  /* توسيط اللوحة الفارغة داخل التطبيق */
-  [data-empty] { align-items: center !important; justify-content: center !important; }
+/* ===== وضع التطبيق: يُفعَّل بـ html[data-app-mode] (PWA مثبّت أو التطبيق الأصلي Capacitor) ===== */
+/* يضبطه سكربت الرأس مبكّراً (بلا وميض) + AppModeInit احتياطاً. التطبيق الأصلي لا يُبلّغ standalone. */
+/* إخفاء واجهة الموقع الكاملة (الشريط العلوي + القائمة المنسدلة) وأي عنصر خاصّ بالموقع */
+html[data-app-mode] [data-site-chrome],
+html[data-app-mode] [data-site-only] { display: none !important; }
+/* إظهار عناصر التطبيق */
+html[data-app-mode] [data-app-only] { display: block !important; }
+/* توسيط اللوحة الفارغة داخل التطبيق */
+html[data-app-mode] [data-empty] { align-items: center !important; justify-content: center !important; }
 
-  /* ===== ثيم التطبيق: غرافيتي عميق + كهرماني/ذهبي (جِدّ والتزام) — لا يمسّ صفحة النت ===== */
-  /* خلفية اللوحة: تدرّج غرافيتي احترافي بدل الأزرق */
-  .field-canvas { background: linear-gradient(160deg, #3b4a5e 0%, #24303f 55%, #121a26 100%) !important; }
-  /* اللون الأساسي (mynet-blue) → كهرماني عبر متغيّرات الجذر (يعيد تلوين كل الأزرار والروابط في التطبيق) */
-  :root {
-    --mynet-blue: #d97706;      /* amber-600 */
-    --mynet-blue-dark: #b45309; /* amber-700 */
-    --mynet-blue-deep: #92400e; /* amber-800 */
-  }
-  /* الشاشة كاملة الارتفاع بلا شريط علوي */
-  [data-app-fullheight] { height: 100dvh !important; }
-  /* مساحة آمنة أعلى الترويسة (شقّ/شريط الحالة) */
-  [data-app-safetop] { padding-top: max(0.75rem, env(safe-area-inset-top)) !important; }
-  /* إحساس تطبيق أصلي: لا ارتداد للتمرير، لا وميض لمس */
-  html, body { overscroll-behavior: none; }
-  * { -webkit-tap-highlight-color: transparent; }
+/* ===== ثيم التطبيق: غرافيتي عميق + كهرماني/ذهبي (جِدّ والتزام) — لا يمسّ صفحة النت ===== */
+/* خلفية اللوحة: تدرّج غرافيتي احترافي بدل الأزرق */
+html[data-app-mode] .field-canvas { background: linear-gradient(160deg, #3b4a5e 0%, #24303f 55%, #121a26 100%) !important; }
+/* اللون الأساسي (mynet-blue) → كهرماني عبر متغيّرات الجذر (يعيد تلوين كل الأزرار والروابط في التطبيق) */
+html[data-app-mode] {
+  --mynet-blue: #d97706;      /* amber-600 */
+  --mynet-blue-dark: #b45309; /* amber-700 */
+  --mynet-blue-deep: #92400e; /* amber-800 */
 }
+/* الشاشة كاملة الارتفاع بلا شريط علوي */
+html[data-app-mode] [data-app-fullheight] { height: 100dvh !important; }
+/* مساحة آمنة أعلى الترويسة (شقّ/شريط الحالة) */
+html[data-app-mode] [data-app-safetop] { padding-top: max(0.75rem, env(safe-area-inset-top)) !important; }
+/* إحساس تطبيق أصلي: لا ارتداد للتمرير، لا وميض لمس */
+html[data-app-mode], html[data-app-mode] body { overscroll-behavior: none; }
+html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }

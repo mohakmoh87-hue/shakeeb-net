@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, getTechSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveLocation, extractNetUser, areaFromTowerName, gmapsUrl, wazeUrl } from "@/lib/mapLocation";
 
@@ -7,9 +7,11 @@ export const dynamic = "force-dynamic";
 
 // موقع مشترك على الخريطة: بـ ?netUser= أو ?subscriberId= أو ?text= (لبطاقة يدوية).
 // المنطقة تُشتق من مكتب المشترك (أو ?towerId=) — أدقّ من لاحقة اليوزر.
+// يقبل جلسة المستخدم أو جلسة الفني (لزر الخريطة في بطاقاته). عزل الفني بوكيله.
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  const tech = session ? null : await getTechSession();
+  if (!session && !tech) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
   const url = new URL(request.url);
   let netUser = url.searchParams.get("netUser");
@@ -17,7 +19,8 @@ export async function GET(request: Request) {
   const text = url.searchParams.get("text");
   let towerId = Number(url.searchParams.get("towerId")) || null;
 
-  if (!netUser && subscriberId) {
+  // مسار subscriberId للمستخدمين فقط (الفني يستعمل نصّ البطاقة/اليوزر — عزل بيانات وكيله)
+  if (!netUser && subscriberId && !tech) {
     const s = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { netUser: true, towerId: true } });
     netUser = s?.netUser ?? null;
     if (s?.towerId && !towerId) towerId = s.towerId;
@@ -27,9 +30,13 @@ export async function GET(request: Request) {
 
   // منطقة الخريطة من مكتب المشترك: الإعداد اليدوي (mapArea) هو الأساس،
   // وإلا نستنتجها من اسم المكتب (توافقاً مع المكاتب القديمة قبل ضبط الإعداد)
+  // الفني: المكتب مقصور على وكيله (وإلا نتجاهل التلميح).
   let areaHint: string | null = null;
   if (towerId) {
-    const t = await prisma.tower.findUnique({ where: { id: towerId }, select: { name: true, mapArea: true } });
+    const t = await prisma.tower.findFirst({
+      where: tech ? { id: towerId, agentId: tech.agentId } : { id: towerId },
+      select: { name: true, mapArea: true },
+    });
     areaHint = (t?.mapArea && t.mapArea.trim()) ? t.mapArea.trim() : areaFromTowerName(t?.name);
   }
 

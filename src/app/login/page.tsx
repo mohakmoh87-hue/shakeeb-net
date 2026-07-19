@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import InstallApp from "@/components/InstallApp";
+import { isAppMode } from "@/lib/appMode";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -50,9 +51,8 @@ export default function LoginPage() {
         setError(data.error ?? "فشل تسجيل الدخول");
         return;
       }
-      // في التطبيق المثبّت (standalone): يبقى الجميع على إدارة الفنيين. وإلا التوجيه حسب الدور.
-      const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
-      window.location.href = standalone ? "/field-management" : (data.redirect ?? "/dashboard");
+      // في التطبيق (PWA مثبّت أو التطبيق الأصلي): يبقى الجميع على إدارة الفنيين. وإلا التوجيه حسب الدور.
+      window.location.href = isAppMode() ? "/field-management" : (data.redirect ?? "/dashboard");
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {
