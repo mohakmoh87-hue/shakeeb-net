@@ -10,7 +10,7 @@ import CardTypeManager from "@/components/CardTypeManager";
 import DeductionReview from "@/components/DeductionReview";
 import NotificationsBell from "@/components/NotificationsBell";
 import FieldAppMenu from "@/components/FieldAppMenu";
-import FieldTracker from "@/components/FieldTracker";
+import { FieldTrackerProvider, FieldTrackerPanel } from "@/components/FieldTracker";
 
 type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number; timeTracked?: boolean };
@@ -120,6 +120,7 @@ export default function FieldManagementPage() {
 
 
   const isTech = role === "technician";
+  const canTrack = role !== "" && role !== "technician"; // تتبّع الفنيين للمدير/الموظف فقط
   async function techLogout() {
     await fetch("/api/field/tech-logout", { method: "POST" });
     router.replace("/login");
@@ -228,6 +229,7 @@ export default function FieldManagementPage() {
   if (loading) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
 
   return (
+    <FieldTrackerProvider enabled={canTrack}>
     <div data-app-fullheight className="field-canvas flex h-[calc(100dvh-52px)] flex-col md:h-screen">
       {/* ترويسة اللوحة */}
       <div data-app-safetop className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
@@ -254,8 +256,10 @@ export default function FieldManagementPage() {
         </div>
       </div>
 
+      {/* صف: اللوحة (يمين) + لوحة خريطة التتبّع الجانبية (يسار، سطح المكتب — تحجز مكانها) */}
+      <div className="flex min-h-0 flex-1 gap-3 px-4 pb-4">
       {/* الأعمدة */}
-      <div data-empty={lists.length === 0 ? "1" : undefined} className="flex flex-1 items-start gap-3 overflow-x-auto px-4 pb-4">
+      <div data-empty={lists.length === 0 ? "1" : undefined} className="flex min-w-0 flex-1 items-start gap-3 overflow-x-auto">
         {/* حالة فارغة أنيقة (تظهر داخل التطبيق فقط عبر CSS) */}
         {lists.length === 0 && (
           <div data-app-only>
@@ -356,6 +360,13 @@ export default function FieldManagementPage() {
             <input value={newList} onChange={(e) => setNewList(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addList()} placeholder="+ إضافة عمود جديد" className="w-full rounded-lg bg-white/90 px-3 py-2 text-sm outline-none" />
             {newList.trim() && <button onClick={addList} className="mt-1 w-full rounded-lg bg-white py-1.5 text-sm font-semibold text-mynet-blue">إضافة العمود</button>}
           </div>
+        )}
+      </div>
+        {/* لوحة الخريطة الجانبية — سطح المكتب فقط، آخر عنصر ⇒ يسار في RTL، تحجز مكانها فلا تغطّي الأعمدة */}
+        {canTrack && (
+          <aside className="hidden w-[24rem] shrink-0 md:block">
+            <FieldTrackerPanel />
+          </aside>
         )}
       </div>
 
@@ -629,10 +640,8 @@ export default function FieldManagementPage() {
 
       {/* شريط الفني السفلي: بصمة + عمليات */}
       {role === "technician" && <TechOpsBar techName={myName} />}
-
-      {/* تتبّع الفنيين على الخريطة (مدير/مستخدم المكتب فقط) — ودجة دائمة + نافذة كبيرة */}
-      {role !== "" && role !== "technician" && <FieldTracker />}
     </div>
+    </FieldTrackerProvider>
   );
 }
 
