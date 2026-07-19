@@ -5,7 +5,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 // الإضافات الأصلية (موقع الخلفية/الإشعارات) تُضاف لاحقاً وتُستدعى من كود الويب عبر جسر Capacitor.
 const config: CapacitorConfig = {
   appId: "com.shakeebnet.field",
-  appName: "شكيب نت",
+  appName: "SHAKEEB",
   webDir: "native/www",
   server: {
     url: "https://shakeebnet.com/field-management",

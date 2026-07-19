@@ -117,7 +117,7 @@ public class LocationForegroundService extends Service {
     private void startAsForeground() {
         createChannel();
         Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("شكيب نت — تتبع الموقع")
+                .setContentTitle("SHAKEEB — تتبع الموقع")
                 .setContentText("مكتبك يتابع موقعك أثناء الدوام")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setOngoing(true)
