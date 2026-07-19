@@ -24,15 +24,22 @@ export default function OwnerPage() {
   const [credAgent, setCredAgent] = useState<Agent | null>(null); // تعديل بيانات دخول مدير وكيل
   const [showAccount, setShowAccount] = useState(false); // إعدادات حساب المالك
   const [dbSize, setDbSize] = useState<DbSize | null>(null); // مؤشّر حجم قاعدة البيانات
+  const [dbSizeAt, setDbSizeAt] = useState<Date | null>(null); // وقت آخر قراءة للحجم
   const [showDbDetail, setShowDbDetail] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/owner/agents").then((r) => r.ok ? r.json() : { agents: [] }).then((d) => { setAgents(d.agents ?? []); setLoading(false); });
   }, []);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    fetch("/api/owner/db-size").then((r) => (r.ok ? r.json() : null)).then((d) => d && setDbSize(d));
+  // قراءة الحجم حيّةً (بلا كاش) + تحديث تلقائي كل دقيقة
+  const loadDbSize = useCallback(() => {
+    fetch("/api/owner/db-size", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setDbSize(d); setDbSizeAt(new Date()); } });
   }, []);
+  useEffect(() => {
+    loadDbSize();
+    const t = setInterval(loadDbSize, 60_000);
+    return () => clearInterval(t);
+  }, [loadDbSize]);
 
   async function addAgent() {
     setMsg("");
@@ -85,10 +92,24 @@ export default function OwnerPage() {
               {dbSize.level === "danger" && <span className="mr-2 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">تحذير: تجاوز 80%!</span>}
               {dbSize.level === "warn" && <span className="mr-2 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">تنبيه: تجاوز 60%</span>}
             </div>
-            <div className="text-sm font-extrabold text-slate-700" dir="ltr">
-              {dbSize.usedMB} MB / {dbSize.limitMB} MB <span className={`${dbSize.level === "danger" ? "text-red-600" : dbSize.level === "warn" ? "text-amber-600" : "text-emerald-600"}`}>({dbSize.percent}%)</span>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-extrabold text-slate-700" dir="ltr">
+                {dbSize.usedMB} MB / {dbSize.limitMB} MB <span className={`${dbSize.level === "danger" ? "text-red-600" : dbSize.level === "warn" ? "text-amber-600" : "text-emerald-600"}`}>({dbSize.percent}%)</span>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); loadDbSize(); }}
+                className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-200"
+                title="إعادة قراءة الحجم من القاعدة الآن"
+              >
+                🔄 تحديث
+              </button>
             </div>
           </div>
+          {dbSizeAt && (
+            <div className="mt-1 text-[10px] text-slate-400">
+              آخر قراءة: {dbSizeAt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · تُقرأ حيّةً من القاعدة وتتحدّث تلقائياً كل دقيقة · أعداد الصفوف تقديرية (إحصاءات Postgres)
+            </div>
+          )}
           {/* شريط الامتلاء */}
           <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-200" dir="ltr">
             <div
