@@ -45,12 +45,12 @@ export default function AccountsPage() {
       addLabel="إضافة حساب"
       fields={fields}
       columns={[
-        { header: "#", render: (r) => r.id },
-        { header: "الاسم", render: (r) => r.name },
-        { header: "المكتب", render: (r) => towerName(r.towerId) },
-        { header: "النوع", render: (r) => r.typeName ?? "—" },
-        { header: "موظف", render: (r) => (r.isEmployee ? "✓" : "—") },
-        { header: "ملاحظات", render: (r) => r.notes ?? "—" },
+        { header: "#", render: (r) => r.id, sortValue: (r) => r.id },
+        { header: "الاسم", render: (r) => r.name, sortValue: (r) => r.name ?? "" },
+        { header: "المكتب", render: (r) => towerName(r.towerId), sortValue: (r) => towerName(r.towerId) },
+        { header: "النوع", render: (r) => r.typeName ?? "—", sortValue: (r) => r.typeName ?? "" },
+        { header: "موظف", render: (r) => (r.isEmployee ? "✓" : "—"), sortValue: (r) => (r.isEmployee ? 1 : 0) },
+        { header: "ملاحظات", render: (r) => r.notes ?? "—", sortValue: (r) => r.notes ?? "" },
       ]}
     />
   );

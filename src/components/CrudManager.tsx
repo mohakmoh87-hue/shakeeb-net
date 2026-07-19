@@ -16,6 +16,8 @@ export type Field = {
 export type Column<T> = {
   header: string;
   render: (row: T) => React.ReactNode;
+  // عند توفيره يصبح رأس العمود قابلاً للنقر للفرز تصاعدي/تنازلي على هذه القيمة
+  sortValue?: (row: T) => string | number | boolean | null | undefined;
 };
 
 type Row = { id: number } & Record<string, unknown>;
@@ -57,6 +59,28 @@ export default function CrudManager<T extends Row>({
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [sort, setSort] = useState<{ i: number; dir: "asc" | "desc" } | null>(null);
+
+  // ترتيب الصفوف حسب العمود المختار (تصاعدي/تنازلي) — القيم الفارغة تبقى في الأسفل دائماً
+  const col = sort ? columns[sort.i] : null;
+  const sortedRows = col?.sortValue
+    ? [...rows].sort((a, b) => {
+        const va = col.sortValue!(a);
+        const vb = col.sortValue!(b);
+        const dir = sort!.dir === "asc" ? 1 : -1;
+        const ea = va === null || va === undefined || va === "";
+        const eb = vb === null || vb === undefined || vb === "";
+        if (ea && eb) return 0;
+        if (ea) return 1; // الفارغ أسفلاً
+        if (eb) return -1;
+        if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+        return String(va).localeCompare(String(vb), "ar", { numeric: true }) * dir;
+      })
+    : rows;
+
+  function toggleSort(i: number) {
+    setSort((s) => (s && s.i === i ? { i, dir: s.dir === "asc" ? "desc" : "asc" } : { i, dir: "asc" }));
+  }
 
   function toggleSel(id: number) {
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -229,7 +253,21 @@ export default function CrudManager<T extends Row>({
               )}
               {columns.map((c, i) => (
                 <th key={i} className="p-3 font-semibold">
-                  {c.header}
+                  {c.sortValue ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(i)}
+                      className="flex items-center gap-1 font-semibold transition hover:text-mynet-blue"
+                      title="اضغط للترتيب تصاعدي/تنازلي"
+                    >
+                      {c.header}
+                      <span className={`text-[11px] ${sort?.i === i ? "text-mynet-blue" : "text-slate-300"}`}>
+                        {sort?.i === i ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}
+                      </span>
+                    </button>
+                  ) : (
+                    c.header
+                  )}
                 </th>
               ))}
               <th className="p-3 font-semibold">إجراءات</th>
@@ -255,7 +293,7 @@ export default function CrudManager<T extends Row>({
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
+              sortedRows.map((row) => (
                 <tr
                   key={row.id}
                   className={`border-t border-slate-100 hover:bg-slate-50 ${selected.has(row.id) ? "bg-blue-50" : ""}`}
