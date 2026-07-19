@@ -23,15 +23,20 @@ export async function GET(request: Request) {
   const toImg = (qr: string | null | undefined) =>
     qr ? QRCode.toDataURL(qr, { margin: 1, width: 320 }).catch(() => null) : Promise.resolve(null);
 
-  // الوكيل المحلي: تشغيل واتساب مباشرةً (Chromium متاح هنا)
+  // الحاسبة القائدة فقط تستضيف واتساب وتنشر حالته. حاسبةٌ غير قائدة يجب ألّا تبدأ عميلاً
+  // لمكتبٍ لا تملك جلسته، وإلا نشرت حالة "منقطع" فوق الحالة الحقيقية فتُفصَل الجلسة الحيّة خطأً.
   if (process.env.RUN_WORKER === "1") {
-    const { startWhatsApp, whatsappStatus } = await import("@/lib/whatsapp");
-    await startWhatsApp(officeId);
-    const st = whatsappStatus(officeId);
-    return NextResponse.json({ state: st.state, qrImage: await toImg(st.qr), error: st.error });
+    const { isLeaderNow } = await import("@/lib/hybridAgent");
+    if (isLeaderNow()) {
+      const { startWhatsApp, whatsappStatus } = await import("@/lib/whatsapp");
+      await startWhatsApp(officeId);
+      const st = whatsappStatus(officeId);
+      return NextResponse.json({ state: st.state, qrImage: await toImg(st.qr), error: st.error });
+    }
+    // ليست القائدة: تتصرّف كالموقع (تُسجّل الطلب وتقرأ الحالة المنشورة) — بلا تشغيل محلّي
   }
 
-  // الموقع: سجّل طلب اتصال ليلتقطه الوكيل، واقرأ آخر حالة/QR نشرها الوكيل في السحابة
+  // الموقع (أو عاملٌ غير قائد): سجّل طلب اتصال ليلتقطه القائد، واقرأ آخر حالة/QR نشرها في السحابة
   await prisma.waSession.upsert({
     where: { towerId: officeId },
     update: { requestedAt: new Date() },

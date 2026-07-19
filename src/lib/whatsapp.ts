@@ -176,12 +176,9 @@ export function startWaRequestPoller() {
         if (!mine.has(r.towerId)) continue;
         const st = store(r.towerId);
         const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
-        // فصل مطلوب من الموقع: القاعدة تقول "disconnected" بينما الوكيل ما زال يحمل عميلاً حيّاً
-        if (r.state === "disconnected" && alive) {
-          console.log(`[whatsapp] طلب فصل من الموقع لمكتب ${r.towerId} — تنفيذ الفصل وحذف الجلسة`);
-          await logoutWhatsApp(r.towerId);
-          continue;
-        }
+        // لا نُنفّذ الفصل هنا اعتماداً على حالة "disconnected" في القاعدة: فقد تنشرها حاسبةٌ أخرى
+        // خطأً فوق جلسة حيّة فتُحذَف الجلسة بلا سبب. الفصل الصريح يتم فقط عبر waRelay kind="logout"
+        // (يُنشئه زر الفصل اليدوي، وينفّذه مُستطلِع المُرحِّل).
         // اتصال مطلوب: requestedAt حديث والوكيل غير نشط
         if (r.requestedAt && r.requestedAt >= since && !alive) {
           void startWhatsApp(r.towerId);
