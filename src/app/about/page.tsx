@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-// الصفحة التعريفية العامة (ترويجية) — تُفتح من زر «اكتشف مزايا شكيب نت» في صفحة الدخول.
+// الصفحة التعريفية العامة (ترويجية) — تُفتح من زر «اكتشف مزايا SHAKEEB» في صفحة الدخول.
 // موجّهة للوكيل المستقبلي: كل المزايا بالتفصيل، بلا أي مصطلحات تقنية.
 
 type Section = { icon: string; title: string; tint: string; intro?: string; items: { t: string; d?: string }[] };
@@ -42,7 +42,7 @@ const SECTIONS: Section[] = [
   },
   {
     icon: "🖥️", title: "لوحة SAS داخل برنامجك — بلا فتح متصفحات ولا حفظ باسوردات", tint: "from-cyan-500 to-teal-700",
-    intro: "تدير لوحة السيرفر لكل مكاتبك من داخل شكيب نت مباشرة.",
+    intro: "تدير لوحة السيرفر لكل مكاتبك من داخل SHAKEEB مباشرة.",
     items: [
       { t: "دخول تلقائي للوحة كل مكتب", d: "اضغط اسم المكتب وتفتح لوحة SAS مسجَّلة الدخول جاهزة — من الحاسوب أو الهاتف بواجهة ملائمة." },
       { t: "استيراد المشتركين بضغطة", d: "اسحب مشتركي السيرفر إلى برنامجك بأسمائهم ويوزراتهم وتواريخهم دفعة واحدة." },
@@ -159,7 +159,7 @@ const SECTIONS: Section[] = [
 export default function AboutPage() {
   const [phone, setPhone] = useState("");
   useEffect(() => {
-    document.title = "مزايا شكيب نت — نظام إدارة وكلاء الإنترنت";
+    document.title = "مزايا SHAKEEB — نظام إدارة وكلاء الإنترنت";
     fetch("/api/public/contact").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.phone) setPhone(d.phone); });
   }, []);
 
@@ -171,7 +171,7 @@ export default function AboutPage() {
           <div className="flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">نت</div>
             <div>
-              <div className="font-extrabold leading-tight">شكيب نت</div>
+              <div className="font-extrabold leading-tight">SHAKEEB</div>
               <div className="text-[11px] text-slate-500">نظام إدارة وكلاء الإنترنت</div>
             </div>
           </div>
@@ -184,7 +184,7 @@ export default function AboutPage() {
         <div className="mx-auto max-w-3xl">
           <h1 className="text-3xl font-extrabold leading-snug sm:text-4xl">أدِر شغلك كلّه من مكان واحد —<br />المشتركون، الكروت، الفنيون، والحسابات</h1>
           <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-blue-100 sm:text-base">
-            شكيب نت نظام متكامل صُمّم خصيصاً لوكلاء الإنترنت: يفعّل ويذكّر ويزامن ويحاسب ويراقب — تلقائياً — وأنت تتابع كل شيء من هاتفك.
+            SHAKEEB نظام متكامل صُمّم خصيصاً لوكلاء الإنترنت: يفعّل ويذكّر ويزامن ويحاسب ويراقب — تلقائياً — وأنت تتابع كل شيء من هاتفك.
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             <a href="/login" className="rounded-2xl bg-white px-6 py-3 font-extrabold text-blue-700 shadow-lg hover:bg-blue-50">🎁 جرّبه مجاناً لمدة أسبوع</a>
@@ -240,7 +240,7 @@ export default function AboutPage() {
               </a>
             )}
           </div>
-          <div className="mt-8 text-xs text-slate-400">شكيب نت — نظام إدارة وكلاء الإنترنت</div>
+          <div className="mt-8 text-xs text-slate-400">SHAKEEB — نظام إدارة وكلاء الإنترنت</div>
         </div>
       </section>
     </main>

@@ -3,8 +3,8 @@ import type { MetadataRoute } from "next";
 // بيان تطبيق الويب (PWA) — يجعل الموقع قابلاً للتثبيت كتطبيق مستقلّ.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "شكيب نت — إدارة الفنيين",
-    short_name: "شكيب نت",
+    name: "SHAKEEB — إدارة الفنيين",
+    short_name: "SHAKEEB",
     description: "تطبيق إدارة الفنيين: الحضور والإجازات والرواتب والإشعارات",
     start_url: "/field-management",
     scope: "/",

@@ -256,7 +256,7 @@ async function sendActivationMessage(a: {
       remaining: a.remaining,
       carry: a.carry,
       dateTo: formatDate(a.dateTo),
-      office: office?.name ?? "شكيب نت",
+      office: office?.name ?? "SHAKEEB",
     });
 
     const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId); // واتساب مكتب المشترك

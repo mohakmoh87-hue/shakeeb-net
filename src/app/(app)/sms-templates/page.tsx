@@ -30,7 +30,7 @@ const VARS: { token: string; label: string; sample: string }[] = [
   { token: "{paid}", label: "المبلغ الواصل", sample: "20,000" },
   { token: "{dateTo}", label: "تاريخ الانتهاء", sample: "10/07/2026" },
   { token: "{carry}", label: "الدين المتبقّي", sample: "5,000" },
-  { token: "{office}", label: "اسم المكتب", sample: "شكيب نت" },
+  { token: "{office}", label: "اسم المكتب", sample: "SHAKEEB" },
   { token: "{kind}", label: "نوع العمل (صيانة/تنصيب) — للصيانة", sample: "صيانة" },
   { token: "{details}", label: "تفاصيل الصيانة — للصيانة", sample: "تبديل مقوّي" },
   { token: "{technician}", label: "اسم الفني — للصيانة", sample: "علي" },

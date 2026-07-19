@@ -24,7 +24,7 @@ async function register(name: string): Promise<string | null> {
   const cred = (await navigator.credentials.create({
     publicKey: {
       challenge,
-      rp: { name: "شكيب نت", id: location.hostname },
+      rp: { name: "SHAKEEB", id: location.hostname },
       user: { id: userId, name: name || "technician", displayName: name || "الفني" },
       pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
       authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },

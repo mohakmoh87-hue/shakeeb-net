@@ -73,7 +73,7 @@ export default function TopBar({
             نت
           </div>
           <div className="leading-tight">
-            <div className="text-base font-extrabold text-mynet-blue">{brand ?? "شكيب نت"}</div>
+            <div className="text-base font-extrabold text-mynet-blue">{brand ?? "SHAKEEB"}</div>
             <div className="text-xs font-medium text-slate-500">{fullName} — {roleLabel}</div>
           </div>
         </div>

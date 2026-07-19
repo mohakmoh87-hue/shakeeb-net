@@ -85,7 +85,7 @@ export default function InstallApp() {
                   <li>3️⃣ اضغط <b>«تثبيت»</b> ثم <b>«فتح»</b>.</li>
                   <li>4️⃣ عند أول فتح: اسمح بالموقع <b>«طوال الوقت»</b> والإشعارات.</li>
                 </ol>
-                <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">هذا هو التطبيق الرسمي لشكيب نت. لن يستهلك موقعك أو بطاريتك إلا حين يطلب مكتبك التتبّع.</div>
+                <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">هذا هو التطبيق الرسمي لـ SHAKEEB. لن يستهلك موقعك أو بطاريتك إلا حين يطلب مكتبك التتبّع.</div>
               </>
             )}
 

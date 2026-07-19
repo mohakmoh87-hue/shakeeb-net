@@ -5,7 +5,7 @@ import nodemailer from "nodemailer";
 //   SMTP_PASS  = «كلمة مرور التطبيق» (App Password) المكوّنة من 16 حرفاً
 //   SMTP_HOST  = smtp.gmail.com   (اختياري — هذه القيمة الافتراضية)
 //   SMTP_PORT  = 587              (اختياري)
-//   SMTP_FROM  = "شكيب نت <yourname@gmail.com>"  (اختياري — الافتراضي SMTP_USER)
+//   SMTP_FROM  = "SHAKEEB <yourname@gmail.com>"  (اختياري — الافتراضي SMTP_USER)
 // إن لم تُضبط SMTP_USER/PASS يعمل النظام لكن دون إرسال فعلي (no-op) مع تسجيل تحذير.
 
 export function mailerConfigured(): boolean {

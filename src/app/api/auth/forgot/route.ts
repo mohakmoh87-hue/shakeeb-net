@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   const link = `${origin}/reset?token=${token}`;
   await sendMail({
     to: email,
-    subject: "استرجاع كلمة السر — شكيب نت",
+    subject: "استرجاع كلمة السر — SHAKEEB",
     text: `طلبتَ إعادة تعيين كلمة سر حسابك (${user.username}).\n\nافتح هذا الرابط خلال 30 دقيقة لتعيين كلمة سر جديدة:\n${link}\n\nإن لم تطلب ذلك، تجاهل هذه الرسالة.`,
   });
   return generic;

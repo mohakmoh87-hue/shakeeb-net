@@ -50,7 +50,7 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
   const pkgNameMap = new Map(packages.map((p) => [p.id, p.name]));
   const offices = await prisma.tower.findMany({ select: { id: true, name: true, waEnabled: true, agentId: true } });
   const officeMap = new Map(offices.map((o) => [o.id, o]));
-  const fallbackOffice = await getSetting("office", "شكيب نت");
+  const fallbackOffice = await getSetting("office", "SHAKEEB");
   // قالب "expiring" لكل وكيل (يُجلب مرّة ويُخزَّن) — عزل المستأجر
   const tplCache = new Map<number, string | null>();
   async function templateFor(agentId: number | null): Promise<string | null> {

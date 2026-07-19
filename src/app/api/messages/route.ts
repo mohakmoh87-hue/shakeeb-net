@@ -101,7 +101,7 @@ export async function POST(request: Request) {
   // خريطة المكاتب (الاسم + تفعيل واتساب) لتحديد اسم المكتب لكل مشترك وجلسة واتساب مكتبه
   const offices = await prisma.tower.findMany({ select: { id: true, name: true, waEnabled: true } });
   const officeMap = new Map(offices.map((o) => [o.id, o]));
-  const fallbackOfficeName = (await prisma.systemSetting.findFirst({ where: { type: "office" } }))?.value ?? "شكيب نت";
+  const fallbackOfficeName = (await prisma.systemSetting.findFirst({ where: { type: "office" } }))?.value ?? "SHAKEEB";
 
   // خريطة الباقات (السعر لمتغيّر {price}، والاسم لمتغيّر {package})
   const packages = await prisma.package.findMany({ select: { id: true, name: true, priceDinar: true } });

@@ -81,7 +81,7 @@ export default function LoginPage() {
           <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white">
             نت
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">شكيب نت</h1>
+          <h1 className="text-2xl font-bold text-slate-800">SHAKEEB</h1>
           <p className="mt-1 text-sm text-slate-500">
             نظام إدارة وكيل الانترنت
           </p>
@@ -146,7 +146,7 @@ export default function LoginPage() {
             href="/about" target="_blank" rel="noopener"
             className="mt-2 block w-full rounded-lg border-2 border-blue-200 bg-blue-50 py-2.5 text-center font-bold text-blue-700 transition hover:bg-blue-100"
           >
-            ✨ اكتشف مزايا شكيب نت
+            ✨ اكتشف مزايا SHAKEEB
           </a>
         </div>
 

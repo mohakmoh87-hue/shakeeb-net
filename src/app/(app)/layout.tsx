@@ -31,7 +31,7 @@ export default async function AppLayout({
   if (session.isOwner) redirect("/owner");
 
   // علامة الوكيل (تظهر بأعلى الشاشة لكل الوكيل)
-  let brand = "شكيب نت";
+  let brand = "SHAKEEB";
   if (session.agentId != null) {
     const agent = await prisma.agent.findUnique({ where: { id: session.agentId }, select: { name: true } });
     if (agent?.name) brand = agent.name;

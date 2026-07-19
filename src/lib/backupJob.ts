@@ -10,7 +10,7 @@ export async function sendAgentBackupEmail(agentId: number): Promise<{ ok: boole
   const today = new Date().toISOString().slice(0, 10);
   return sendMail({
     to: agent.backupEmail,
-    subject: `نسخة احتياطية — ${agent.name ?? "شكيب نت"} — ${today}`,
+    subject: `نسخة احتياطية — ${agent.name ?? "SHAKEEB"} — ${today}`,
     text:
       `مرفق نسخة احتياطية كاملة لبيانات «${agent.name ?? ""}» بتاريخ ${today}.\n\n` +
       `احتفظ بهذا الملف. لاسترجاع بياناتك في أي وقت: افتح البرنامج ← الإعدادات ← النسخ الاحتياطي ← «استرجاع عن طريق النسخة الاحتياطية» وارفع هذا الملف.`,

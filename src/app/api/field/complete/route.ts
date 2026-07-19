@@ -287,7 +287,7 @@ export async function POST(request: Request) {
           const text = renderTemplate(tpl.text, {
             name: sub.name, netUser: sub.netUser, kind: card.kind,
             details: serviceDetails?.trim() ?? "", amount, date: formatDate(new Date()),
-            technician: tech?.name ?? "", office: office?.name ?? "شكيب نت",
+            technician: tech?.name ?? "", office: office?.name ?? "SHAKEEB",
           });
           let res: { ok: boolean; error?: string };
           try { res = await sendViaProvider("WHATSAPP", sub.phone, text, towerId); }

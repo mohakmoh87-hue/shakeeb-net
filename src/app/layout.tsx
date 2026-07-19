@@ -10,10 +10,10 @@ const cairo = Cairo({
 });
 
 export const metadata: Metadata = {
-  title: "شكيب نت - إدارة وكيل الانترنت",
+  title: "SHAKEEB - إدارة وكيل الانترنت",
   description: "نظام إدارة اشتراكات وحسابات وكيل الانترنت",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "شكيب نت", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "SHAKEEB", statusBarStyle: "default" },
   icons: { icon: "/icons/favicon-32.png", apple: "/icons/apple-touch-icon.png" },
 };
 

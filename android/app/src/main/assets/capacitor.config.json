@@ -1,0 +1,12 @@
+{
+	"appId": "com.shakeebnet.field",
+	"appName": "شكيب نت",
+	"webDir": "native/www",
+	"server": {
+		"url": "https://shakeebnet.com/field-management",
+		"cleartext": false
+	},
+	"android": {
+		"allowMixedContent": false
+	}
+}

@@ -137,7 +137,7 @@ export async function sendRewardGrantMessage(a: {
     const text = renderTemplate(tpl, {
       name: a.name, netUser: a.netUser, code: a.code,
       balance: a.balance, granted: a.granted, amount: a.granted,
-      office: office?.name ?? "شكيب نت",
+      office: office?.name ?? "SHAKEEB",
     });
     const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId);
     await prisma.message.create({
@@ -158,7 +158,7 @@ export async function sendRewardUsedMessage(a: {
     if (office?.waEnabled === "0") return;
     const tpl = await rewardTemplate("rewardUsed", a.agentId);
     if (!tpl) return;
-    const text = renderTemplate(tpl, { name: a.name, amount: a.discount, balance: a.balance, office: office?.name ?? "شكيب نت" });
+    const text = renderTemplate(tpl, { name: a.name, amount: a.discount, balance: a.balance, office: office?.name ?? "SHAKEEB" });
     const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId);
     await prisma.message.create({
       data: { channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text, status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: a.createdByUser },

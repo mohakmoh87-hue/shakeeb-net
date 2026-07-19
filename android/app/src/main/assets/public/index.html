@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>شكيب نت</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0f6fbf; color: #fff;
+        font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; }
+      .box { text-align: center; }
+      .dot { width: 14px; height: 14px; border-radius: 50%; background: #fff; display: inline-block; margin: 0 3px; animation: b 1s infinite; }
+      .dot:nth-child(2){animation-delay:.15s} .dot:nth-child(3){animation-delay:.3s}
+      @keyframes b { 0%,100%{opacity:.3} 50%{opacity:1} }
+    </style>
+  </head>
+  <body>
+    <!-- شاشة انتظار داخلية؛ التطبيق يحمّل الموقع الحيّ عبر server.url في capacitor.config -->
+    <div class="box">
+      <div style="font-size:22px;font-weight:800;margin-bottom:12px">شكيب نت</div>
+      <div><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    </div>
+  </body>
+</html>

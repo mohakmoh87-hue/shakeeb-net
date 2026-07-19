@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-// سكربت PowerShell لإعداد وكيل شكيب نت على حاسبة المكتب (النظام الهجين).
+// سكربت PowerShell لإعداد وكيل SHAKEEB على حاسبة المكتب (النظام الهجين).
 // عام (بلا أسرار)، لكنه لا يعمل لتنصيب جديد إلا برمز تنصيب صالح (INSTALL_TOKEN)
 // يولَّد من: حسابات المدير ← «تنصيب حاسبة مكتب». لا إدخال روابط يدوياً إطلاقاً.
 // ملاحظة: لا يحتوي السكربت على أي حرف backtick (لتفادي تعارضه مع قالب JS).
@@ -12,7 +12,7 @@ $repo = "https://github.com/mohakmoh87-hue/shakeeb-net.git"
 $root = Join-Path $env:LOCALAPPDATA "ShakeebNet"
 $app  = Join-Path $root "app"
 
-Write-Host "===== اعداد وكيل شكيب نت =====" -ForegroundColor Cyan
+Write-Host "===== اعداد وكيل SHAKEEB =====" -ForegroundColor Cyan
 
 # تنصيب جديد يتطلب رمز تنصيب مؤقت (يُفشل مبكراً قبل تثبيت أي شيء)
 if (-not (Test-Path (Join-Path $app ".env")) -and -not $env:INSTALL_TOKEN) {

@@ -1,4 +1,4 @@
-// ===== عامل شكيب نت المستقل =====
+// ===== عامل SHAKEEB المستقل =====
 // يشغّل المجدول + واتساب + خادم الصحّة + نبضة النظام الهجين، بلا الاعتماد على مُسجِّل Next.
 // يُشغَّل على حاسبة المكتب عبر: npx tsx src/worker.ts
 import fs from "node:fs";
@@ -42,7 +42,7 @@ function ensureSingleInstance(): Promise<void> {
     const probe = net.createServer();
     probe.once("error", (e: NodeJS.ErrnoException) => {
       if (e.code === "EADDRINUSE") {
-        console.error("[worker] ⛔ عامل شكيب نت يعمل بالفعل على هذه الحاسبة — تم إيقاف هذه النسخة المكرّرة.");
+        console.error("[worker] ⛔ عامل SHAKEEB يعمل بالفعل على هذه الحاسبة — تم إيقاف هذه النسخة المكرّرة.");
         process.exit(0);
       }
       resolve(); // خطأ آخر غير متوقّع — نُكمل على أي حال
@@ -54,7 +54,7 @@ function ensureSingleInstance(): Promise<void> {
 (async () => {
   await ensureSingleInstance();
   killOrphanBrowsers(); // نظّف متصفّحات يتيمة من تشغيل سابق قبل بدء الواتساب
-  console.log("[worker] بدء عامل شكيب نت المستقل...");
+  console.log("[worker] بدء عامل SHAKEEB المستقل...");
   try {
     const { startScheduler } = await import("@/lib/scheduler");
     const { startLocalSasServer } = await import("@/lib/localSasServer");

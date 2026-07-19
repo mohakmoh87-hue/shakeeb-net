@@ -76,7 +76,7 @@ export default function MobileNav({ brand, fullName, roleLabel }: { brand?: stri
       <header className="no-print sticky top-0 z-40 flex items-center justify-between border-b border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur md:hidden">
         <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-mynet-blue text-sm font-bold text-white shadow">نت</span>
-          <span className="text-base font-bold text-slate-800">{brand ?? "شكيب نت"}</span>
+          <span className="text-base font-bold text-slate-800">{brand ?? "SHAKEEB"}</span>
         </button>
         <button
           onClick={() => setOpen(true)}

@@ -64,7 +64,7 @@ export default function ReceiptTemplatePage() {
         {/* المحرّر */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <Field label="نص الترويسة (اسم المكتب)">
-            <input value={t.headerText} onChange={(e) => set("headerText", e.target.value)} placeholder="شكيب نت للانترنت" className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue" />
+            <input value={t.headerText} onChange={(e) => set("headerText", e.target.value)} placeholder="SHAKEEB" className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue" />
           </Field>
           <Field label="نص التذييل">
             <input value={t.footerText} onChange={(e) => set("footerText", e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue" />
@@ -108,7 +108,7 @@ export default function ReceiptTemplatePage() {
                   ? <img src={t.logo} alt="شعار" className="mx-auto mb-2 h-14 object-contain" />
                   : <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl text-xl font-bold text-white" style={{ backgroundColor: t.headerColor }}>نت</div>
               )}
-              <h1 className="text-xl font-bold" style={{ color: t.headerColor }}>{t.headerText || "شكيب نت للانترنت"}</h1>
+              <h1 className="text-xl font-bold" style={{ color: t.headerColor }}>{t.headerText || "SHAKEEB"}</h1>
               <p className="text-sm text-slate-500">وصل تفعيل / تجديد اشتراك</p>
             </div>
             <div className="space-y-1.5">
