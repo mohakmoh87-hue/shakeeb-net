@@ -523,7 +523,7 @@ export default function SubscribersPage() {
       {/* خيارات الحذف */}
       {delMenu && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setDelMenu(false)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="mb-4 text-center text-lg font-bold text-slate-800">حذف المشتركين</h3>
             <button onClick={deleteCurrentList} className="mb-2 w-full rounded-lg bg-red-600 py-3 font-semibold text-white hover:bg-red-700">
               🗑️ حذف القائمة الحالية
@@ -545,7 +545,7 @@ export default function SubscribersPage() {
         <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 p-4" onClick={() => setWaNotice(null)}>
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-md rounded-3xl bg-white p-7 text-center shadow-2xl`}
+            className={`max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-7 text-center shadow-2xl`}
           >
             <div className={`mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full text-5xl ${waNotice === "no-whatsapp" ? "bg-red-100" : "bg-amber-100"}`}>
               {waNotice === "no-whatsapp" ? "⚠️" : "📵"}
@@ -568,7 +568,7 @@ export default function SubscribersPage() {
       {/* قائمة عمليات المشترك → إضافة بطاقة في لوحة إدارة الفنيين */}
       {opsSub && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={closeOps}>
-          <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-1 text-center text-lg font-bold text-slate-800">عمليات المشترك</div>
             <div className="mb-4 text-center text-sm text-slate-500">{opsSub.name ?? opsSub.netUser ?? `مشترك #${opsSub.id}`}</div>
 

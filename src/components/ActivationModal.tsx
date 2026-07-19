@@ -200,7 +200,7 @@ export default function ActivationModal({
       {/* إشعار كبير وسط الشاشة: هذا المشترك محوّل إلى يوزر جديد */}
       {subscriber.transferredTo && !transferSeen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.stopPropagation()}>
-          <div className="w-full max-w-md rounded-3xl bg-white p-7 text-center shadow-2xl">
+          <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-7 text-center shadow-2xl">
             <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-amber-100 text-5xl">🔁</div>
             <h2 className="mb-2 text-2xl font-extrabold text-amber-700">تنبيه: مشترك محوّل</h2>
             <p className="mb-1 text-lg text-slate-700">هذا المشترك قد تحوّل إلى اليوزر:</p>

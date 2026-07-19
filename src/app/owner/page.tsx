@@ -148,7 +148,7 @@ export default function OwnerPage() {
 
       {adding && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setAdding(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="mb-4 text-center text-lg font-bold text-slate-800">➕ وكيل جديد</h3>
             {msg && <div className="mb-3 rounded bg-red-50 px-3 py-2 text-center text-sm text-red-600">{msg}</div>}
             <div className="space-y-2">
@@ -202,7 +202,7 @@ function CredModal({ agent, onClose, onSaved }: { agent: Agent; onClose: () => v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-1 text-center text-lg font-bold text-slate-800">🔑 بيانات دخول مدير «{agent.name}»</h3>
         <p className="mb-4 text-center text-xs text-slate-500">يمكنك عرضها وتعديلها. الباسورد المعروض متاح فقط إن ضبطتَه من هنا سابقاً.</p>
         {msg && <div className="mb-3 rounded bg-red-50 px-3 py-2 text-center text-sm text-red-600">{msg}</div>}
@@ -248,7 +248,7 @@ function AccountModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-4 text-center text-lg font-bold text-slate-800">⚙️ حساب المالك</h3>
         {msg && <div className="mb-3 rounded bg-emerald-50 px-3 py-2 text-center text-sm text-emerald-700">{msg}</div>}
         <div className="space-y-2">

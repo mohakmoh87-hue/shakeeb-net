@@ -160,7 +160,7 @@ export default function LoginPage() {
 
       {forgotOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setForgotOpen(false)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="mb-1 text-center text-lg font-bold text-slate-800">استرجاع كلمة السر</h2>
             <p className="mb-4 text-center text-xs text-slate-500">أدخل اسم المستخدم؛ سنرسل رابط إعادة التعيين إلى إيميل الاسترجاع المضبوط لحسابك.</p>
             {forgotMsg ? (
@@ -178,7 +178,7 @@ export default function LoginPage() {
 
       {trialOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setTrialOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {tDone ? (
               <div className="text-center">
                 <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-4xl">✓</div>

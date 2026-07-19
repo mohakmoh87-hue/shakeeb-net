@@ -806,7 +806,7 @@ function PostponeModal({ card, onClose, onDone }: { card: Card; onClose: () => v
   }
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-1 text-lg font-bold text-slate-800">📅 تأجيل: {card.title}</h3>
         <p className="mb-3 text-sm text-slate-500">المشترك غير متواجد — حدّد الموعد الذي يريده.</p>
         <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />

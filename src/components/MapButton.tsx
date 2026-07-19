@@ -58,7 +58,7 @@ export default function MapButton({
       )}
       {open && loc && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
-          <div className="w-full max-w-xs rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[92dvh] w-full max-w-xs overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-1 text-center text-lg font-bold text-slate-800">📍 موقع المشترك</div>
             <div className="mb-4 text-center text-xs text-slate-400" dir="ltr">{loc.name}</div>
             <a href={loc.gmaps} target="_blank" rel="noreferrer" className="mb-2 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-bold text-white hover:bg-emerald-700">

@@ -40,7 +40,7 @@ export default function CompletionNotifier() {
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onClick={() => setQueue((q) => q.slice(1))}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-3xl bg-white p-7 text-center shadow-2xl"
+        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-7 text-center shadow-2xl"
         style={{ animation: "popIn .25s ease-out" }}
       >
         <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-5xl">✅</div>
