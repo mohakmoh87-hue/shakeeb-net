@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
-import { getOrCreatePettyAccount, canOperateCard, endSupport } from "@/lib/field";
+import { getOrCreatePettyAccount, endSupport, resolveCardActor } from "@/lib/field";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
@@ -53,9 +52,6 @@ const schema = z.object({
 // جزء بقيمة المواد المباعة (مبيعات)، والباقي مقبوض في حساب "نثرية". وإن كان المبلغ
 // أقل من قيمة المواد فكامله يُسجَّل للمبيعات فقط.
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
-
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
@@ -65,12 +61,15 @@ export async function POST(request: Request) {
   const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false } });
   if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
   if (card.done) return NextResponse.json({ error: "البطاقة منجزة مسبقاً" }, { status: 400 });
-  if (!(await canOperateCard(session, cardId))) return NextResponse.json({ error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" }, { status: 403 });
+  // الفاعل: مستخدم المكتب/المدير، أو الفني نفسه على بطاقته المسندة إليه (بعزل صارم)
+  const auth = await resolveCardActor(cardId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const actor = auth.actor;
   if (card.technicianId == null) {
     return NextResponse.json({ error: "يجب توجيه البطاقة لفني قبل إنجازها" }, { status: 400 });
   }
   // نوع البطاقة (معزول بالوكيل): توصيل (مبلغ فقط) / تحويل (يوزر جديد إلزامي) / صيانة وغيرها (حقول كاملة)
-  const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false, agentId: session.agentId ?? -1 } });
+  const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false, agentId: actor.agentId ?? -1 } });
   const isDelivery = type?.deliveryOnly ?? card.kind === "توصيل";
   const isTransfer = card.kind === "تحويل";
 
@@ -136,7 +135,7 @@ export async function POST(request: Request) {
     if (rewardSubId) {
       const r = await redeemReward(tx, {
         subscriberId: rewardSubId, billAmount: amount, context: "maintenance", refId: cardId,
-        towerId, agentId: session.agentId ?? null, createdByUser: String(session.userId ?? ""), createdByName: session.fullName ?? undefined,
+        towerId, agentId: actor.agentId ?? null, createdByUser: String(actor.userId ?? ""), createdByName: actor.name ?? undefined,
       });
       rewardDiscount = r?.discount ?? 0;
     }
@@ -159,7 +158,7 @@ export async function POST(request: Request) {
       await tx.moneyTx.create({
         data: {
           moneyIn: salesShare, moneyOut: 0, date: new Date(), serverDate: new Date(),
-          userId: session.userId, sourceType: "sale", sourceId: cardId, towerId,
+          userId: actor.userId, sourceType: "sale", sourceId: cardId, towerId,
           notes: `مبيع ذمم — تكت #${cardId}: ` + soldInfo.map((s) => `${s.name}×${s.qty}`).join("، "),
         },
       });
@@ -169,7 +168,7 @@ export async function POST(request: Request) {
       await tx.moneyTx.create({
         data: {
           moneyIn: pettyShare, moneyOut: 0, date: new Date(), serverDate: new Date(),
-          userId: session.userId, accountId: petty.id, sourceType: "manual", towerId,
+          userId: actor.userId, accountId: petty.id, sourceType: "manual", towerId,
           notes: `نثرية — ${isDelivery ? "توصيل" : "صيانة"} تكت #${cardId}` + (rewardDiscount > 0 ? ` (مكافأة −${rewardDiscount})` : ""),
         },
       });
@@ -202,13 +201,13 @@ export async function POST(request: Request) {
       if (amount > 0) {
         await prisma.adjustment.create({
           data: {
-            technicianId: card.technicianId, agentId: session.agentId ?? null, towerId,
+            technicianId: card.technicianId, agentId: actor.agentId ?? null, towerId,
             kind: "deduction", source: "overrun", amount, overrunMin,
             reason: `تجاوز وقت «${card.kind}» ${overrunMin} دقيقة (تكت #${cardId})`,
             cardId, status: "pending", dayKey: baghdadDayKey(new Date()),
           },
         }).catch(() => {}); // لا يُفشل الإنجاز إن تعذّر إنشاء الخصم
-        await notify({ agentId: session.agentId ?? null, towerId, type: "deduction", title: "خصم تجاوز وقت معلّق", body: `${tech?.name ?? "فني"}: تجاوز «${card.kind}» ${overrunMin} دقيقة — خصم ${amount.toLocaleString("en-US")}`, refType: "adjustment" });
+        await notify({ agentId: actor.agentId ?? null, towerId, type: "deduction", title: "خصم تجاوز وقت معلّق", body: `${tech?.name ?? "فني"}: تجاوز «${card.kind}» ${overrunMin} دقيقة — خصم ${amount.toLocaleString("en-US")}`, refType: "adjustment" });
         overrunResult = { amount, overrunMin };
       }
     }
@@ -222,7 +221,7 @@ export async function POST(request: Request) {
         const remaining = await prisma.taskCard.count({ where: { id: { in: ids }, done: false, isDeleted: false } });
         if (remaining === 0) {
           await endSupport(tech.id);
-          await notify({ agentId: session.agentId ?? null, towerId: tech.towerId, type: "checkout", title: "انتهاء الدعم", body: `${tech.name} أكمل بطاقات الدعم وعاد لمكتبه`, refType: "technician", refId: tech.id });
+          await notify({ agentId: actor.agentId ?? null, towerId: tech.towerId, type: "checkout", title: "انتهاء الدعم", body: `${tech.name} أكمل بطاقات الدعم وعاد لمكتبه`, refType: "technician", refId: tech.id });
         }
       }
     } catch { /* تجاهل إن كان supportCardIds غير صالح */ }
@@ -232,16 +231,16 @@ export async function POST(request: Request) {
   if (rewardSubId && rewardDiscount > 0) {
     const rs = await prisma.subscriber.findUnique({ where: { id: rewardSubId }, select: { phone: true, waEnabled: true, name: true, rewardBalance: true } });
     if (rs) void sendRewardUsedMessage({
-      subscriberId: rewardSubId, officeId: towerId, agentId: session.agentId ?? null,
-      phone: rs.phone, waEnabled: rs.waEnabled, name: rs.name, discount: rewardDiscount, balance: rs.rewardBalance ?? 0, createdByUser: String(session.userId ?? ""),
+      subscriberId: rewardSubId, officeId: towerId, agentId: actor.agentId ?? null,
+      phone: rs.phone, waEnabled: rs.waEnabled, name: rs.name, discount: rewardDiscount, balance: rs.rewardBalance ?? 0, createdByUser: String(actor.userId ?? ""),
     });
   }
 
   // سجل تدقيق: من أنجز أي بطاقة ولأي مكتب (مساءلة، خاصة عند الدعم بين المكاتب)
   await prisma.auditLog.create({
     data: {
-      userId: session.userId, action: "COMPLETE_CARD", entity: "taskCard", entityId: String(cardId),
-      details: `إنجاز بطاقة «${card.title}» (${card.kind}) — فني ${tech?.name ?? card.technicianId} — مكتب ${towerId ?? "?"} — مبلغ ${amount}`,
+      userId: actor.userId, action: "COMPLETE_CARD", entity: "taskCard", entityId: String(cardId),
+      details: `إنجاز بطاقة «${card.title}» (${card.kind}) — فني ${tech?.name ?? card.technicianId} — مكتب ${towerId ?? "?"} — مبلغ ${amount} — بواسطة ${actor.isTech ? "الفني نفسه" : (actor.name || "المكتب")}`,
     },
   }).catch(() => {});
 
@@ -298,7 +297,7 @@ export async function POST(request: Request) {
             data: {
               channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
               status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
-              createdByUser: String(session.userId ?? ""),
+              createdByUser: String(actor.userId ?? ""),
             },
           });
         }

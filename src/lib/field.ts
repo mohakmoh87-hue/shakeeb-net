@@ -1,7 +1,46 @@
 import { prisma } from "@/lib/prisma";
 import type { SessionPayload } from "@/lib/auth";
+import { getSession, getTechSession } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
 import { can } from "@/lib/rbac";
+
+// فاعل عمليات البطاقة: مستخدم (مدير/موظف مكتب) أو فني — لتوحيد التحقّق والإسناد.
+export type FieldActor = {
+  isTech: boolean;
+  userId: number | null;   // إسناد الحركات المالية/التدقيق (null للفني)
+  agentId: number | null;
+  name: string;            // للعرض والتدقيق
+  technicianId: number | null; // معرّف الفني (للفني فقط)
+  session: SessionPayload | null; // مسار المستخدم فقط
+};
+
+// يحلّ الفاعل ويتحقّق من حقّه في العمل على بطاقة (بدء/إنجاز/تأجيل).
+// المستخدم: كتابة على مكتب ضمن وكيله (canOperateCard). الفني: بطاقته المسندة إليه
+// حصراً وضمن مكاتب وكيله (عزل صارم) — لا يمسّ بطاقات غيره ولا وكيلاً آخر.
+export async function resolveCardActor(cardId: number): Promise<
+  | { ok: true; actor: FieldActor }
+  | { ok: false; status: number; error: string }
+> {
+  const user = await getSession();
+  if (user) {
+    if (!(await canOperateCard(user, cardId))) {
+      return { ok: false, status: 403, error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" };
+    }
+    return { ok: true, actor: { isTech: false, userId: user.userId, agentId: user.agentId, name: user.fullName ?? user.username, technicianId: null, session: user } };
+  }
+  const tech = await getTechSession();
+  if (!tech) return { ok: false, status: 401, error: "غير مصرّح" };
+  const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false }, select: { technicianId: true } });
+  if (!card) return { ok: false, status: 404, error: "البطاقة غير موجودة" };
+  if (card.technicianId !== tech.technicianId) return { ok: false, status: 403, error: "هذه البطاقة ليست مسندة إليك" };
+  // عزل الوكيل: مكتب البطاقة يجب أن يتبع وكيل الفني (يشمل مكتبه ومكتب الدعم ضمن نفس الوكيل)
+  const officeId = await cardOfficeId(cardId);
+  const office = officeId != null ? await prisma.tower.findUnique({ where: { id: officeId }, select: { agentId: true } }) : null;
+  if (!office || office.agentId == null || office.agentId !== tech.agentId) {
+    return { ok: false, status: 403, error: "البطاقة ليست ضمن مكاتبك" };
+  }
+  return { ok: true, actor: { isTech: true, userId: null, agentId: tech.agentId, name: tech.name, technicianId: tech.technicianId, session: null } };
+}
 
 // عزل المستأجر للوحات الفنيين: هل مكتب اللوحة يتبع أحد مكاتب وكيل المستخدم؟
 // (يسمح بالتعاون بين مكاتب نفس الوكيل، ويمنع الوصول لبيانات وكيل آخر)

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, getTechSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ownsTower } from "@/lib/guard";
 
@@ -22,8 +22,11 @@ async function matchFromText(text: string, towerId: number | null) {
 
 // رصيد مكافأة مشترك — بـ ?subscriberId= أو ?cardId= (يحلّ مشترك بطاقة الصيانة)
 export async function GET(request: Request) {
+  // الفاعل: مستخدم المكتب/المدير أو الفني (لإنجاز بطاقته) — كلاهما بعزل الوكيل
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  const tech = session ? null : await getTechSession();
+  if (!session && !tech) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  const actorAgentId = session ? session.agentId : tech!.agentId;
 
   const url = new URL(request.url);
   let subscriberId = Number(url.searchParams.get("subscriberId")) || null;
@@ -40,7 +43,11 @@ export async function GET(request: Request) {
   if (!subscriberId) return NextResponse.json({ found: false });
 
   const sub = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { id: true, name: true, netUser: true, towerId: true, rewardBalance: true, rewardCode: true } });
-  if (!sub || !(await ownsTower(session, sub.towerId))) return NextResponse.json({ found: false });
+  // عزل الوكيل: المستخدم عبر ownsTower؛ الفني عبر تطابق وكيل مكتب المشترك
+  const owned = session
+    ? await ownsTower(session, sub?.towerId)
+    : sub?.towerId != null && (await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { agentId: true } }))?.agentId === actorAgentId;
+  if (!sub || !owned) return NextResponse.json({ found: false });
 
   const office = sub.towerId ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { rewardsEnabled: true } }) : null;
   return NextResponse.json({

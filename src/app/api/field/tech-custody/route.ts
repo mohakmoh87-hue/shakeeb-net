@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, getTechSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 // مواد ذمّة فني معيّن (مع سعر البيع) — لاختيارها عند إنجاز البطاقة.
+// الفاعل: مستخدم المكتب (ذمّة أي فني ضمن وكيله) أو الفني نفسه (ذمّته حصراً).
 export async function GET(request: Request) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
-  const technicianId = Number(new URL(request.url).searchParams.get("technicianId"));
-  if (!technicianId) return NextResponse.json({ materials: [] });
+  const user = await getSession();
+  const tech = user ? null : await getTechSession();
+  if (!user && !tech) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+
+  let technicianId: number;
+  if (tech) {
+    technicianId = tech.technicianId; // الفني يرى ذمّته فقط
+  } else {
+    technicianId = Number(new URL(request.url).searchParams.get("technicianId"));
+    if (!technicianId) return NextResponse.json({ materials: [] });
+    // عزل الوكيل: الفني المطلوب يجب أن يتبع وكيل المستخدم
+    const t = await prisma.technician.findUnique({ where: { id: technicianId }, select: { agentId: true } });
+    if (!t || t.agentId !== user!.agentId) return NextResponse.json({ materials: [] });
+  }
 
   const rows = await prisma.custody.findMany({
     where: { technicianId, isDeleted: false, qty: { gt: 0 } },

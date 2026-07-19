@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
-import { canOperateCard } from "@/lib/field";
+import { resolveCardActor } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
 // تأجيل بطاقة (المشترك غير متواجد) — يجب تحديد موعد، وتعود البطاقة للانتظار لحين الموعد.
+// الفاعل: مستخدم المكتب/المدير، أو الفني نفسه على بطاقته المسندة إليه (بعزل صارم).
 export async function POST(request: Request) {
-  const s = await getSession();
-  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const b = await request.json().catch(() => null);
   const cardId = Number(b?.cardId);
   const postponeTo = b?.postponeTo ? new Date(b.postponeTo) : null;
@@ -20,7 +18,8 @@ export async function POST(request: Request) {
   const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false } });
   if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
   if (card.done) return NextResponse.json({ error: "البطاقة منجزة" }, { status: 400 });
-  if (!(await canOperateCard(s, cardId))) return NextResponse.json({ error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" }, { status: 403 });
+  const auth = await resolveCardActor(cardId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   if (!card.startedAt) return NextResponse.json({ error: "ابدأ البطاقة أولاً قبل التأجيل" }, { status: 400 });
 
   // يُلغى وقت البدء (المدة لا تُحتسب على التأجيل) ويُسجَّل الموعد الجديد

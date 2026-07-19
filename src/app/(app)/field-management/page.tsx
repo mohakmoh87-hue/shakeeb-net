@@ -271,7 +271,7 @@ export default function FieldManagementPage() {
             <div
               key={l.id}
               onDragOver={(e) => e.preventDefault()}
-              onDrop={() => { if (!canOperate) return; const c = cards.find((x) => x.id === dragId); if (c) moveCard(c, l.id); setDragId(null); }}
+              onDrop={() => { if (!canOperate || isTech) return; const c = cards.find((x) => x.id === dragId); if (c) moveCard(c, l.id); setDragId(null); }}
               className="flex max-h-full w-[280px] shrink-0 flex-col rounded-xl bg-slate-100 shadow-lg"
             >
               <div className="flex items-center justify-between px-3 py-2">
@@ -292,8 +292,8 @@ export default function FieldManagementPage() {
                 {listCards.map((c) => (
                   <div
                     key={c.id}
-                    draggable={canOperate}
-                    onDragStart={() => canOperate && setDragId(c.id)}
+                    draggable={canOperate && !isTech}
+                    onDragStart={() => canOperate && !isTech && setDragId(c.id)}
                     onClick={() => setSel(c)}
                     className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md"
                   >
@@ -315,8 +315,8 @@ export default function FieldManagementPage() {
                 ))}
               </div>
 
-              {/* إضافة بطاقة — للمكتب الذي يجوز الكتابة عليه فقط */}
-              {canOperate && (
+              {/* إضافة بطاقة — للمكتب الذي يجوز الكتابة عليه فقط (لا للفني) */}
+              {canOperate && !isTech && (
               <div className="p-2">
                 {addingTo === l.id ? (
                   <div className="space-y-1.5 rounded-lg bg-white p-2 shadow-inner">
@@ -523,7 +523,12 @@ export default function FieldManagementPage() {
                 {sel.durationSec != null && <div className="text-slate-600">⏱ مدة الإنجاز: <b>{fmtDuration(sel.durationSec)}</b></div>}
                 {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
               </div>
-            ) : !canOperate ? null : !sel.startedAt ? (
+            ) : !(canOperate && (!isTech || sel.technicianId === myTechId)) ? (
+              // الفني يرى بطاقة زميله بلا أزرار عمل (يحوّلها لنفسه أولاً)
+              isTech && sel.technicianId != null && sel.technicianId !== myTechId
+                ? <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-center text-xs text-slate-400">هذه البطاقة على {sel.assignee ?? "فني آخر"} — حوّلها لك للعمل عليها.</div>
+                : null
+            ) : !sel.startedAt ? (
               <button
                 onClick={startCard}
                 className="mb-3 w-full rounded-lg bg-mynet-blue px-4 py-3 text-base font-bold text-white hover:bg-mynet-blue-dark"
@@ -552,7 +557,7 @@ export default function FieldManagementPage() {
               </>
             )}
             <div className="flex items-center justify-end">
-              {canOperate && <button onClick={deleteCard} className="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100">🗑️ حذف البطاقة</button>}
+              {canOperate && !isTech && <button onClick={deleteCard} className="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100">🗑️ حذف البطاقة</button>}
             </div>
           </div>
         </div>
