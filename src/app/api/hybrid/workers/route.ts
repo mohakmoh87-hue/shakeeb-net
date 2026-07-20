@@ -13,7 +13,8 @@ export async function GET() {
   const agentId = g.session?.agentId ?? -1;
 
   const [workers, leader, towers] = await Promise.all([
-    prisma.hybridWorker.findMany({ where: { OR: [{ agentId }, { agentId: null }] }, orderBy: [{ priority: "asc" }, { id: "asc" }] }),
+    // تُخفى المحظورة (المحذوفة) فلا تعود للظهور رغم استمرار نبضتها
+    prisma.hybridWorker.findMany({ where: { blocked: false, OR: [{ agentId }, { agentId: null }] }, orderBy: [{ priority: "asc" }, { id: "asc" }] }),
     computeLeaderMachineId(agentId),
     prisma.tower.findMany({ where: { isDeleted: false, agentId }, select: { id: true, name: true } }),
   ]);
@@ -56,15 +57,19 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-// حذف حاسبة من القائمة (مثلاً حاسبة قديمة أُزيلت)
+// حذف حاسبة من القائمة: حظر ناعم (blocked=true) بدل الحذف الفعلي — كي لا تعيد نبضتها
+// إنشاء الصفّ فتظهر ثانيةً. تبقى مخفيّة، وعاملها يتوقّف تلقائياً عند تحديث كوده.
 export async function DELETE(request: Request) {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
-  // عزل المستأجر: لا يُحذف إلا حاسبة تتبع وكيل المدير أو غير مُطالَب بها
+  // عزل المستأجر: لا تُحظر إلا حاسبة تتبع وكيل المدير أو غير مُطالَب بها
   const agentId = g.session?.agentId ?? null;
-  const del = await prisma.hybridWorker.deleteMany({ where: { id, OR: [{ agentId }, { agentId: null }] } });
-  if (del.count === 0) return NextResponse.json({ error: "الحاسبة لا تتبع حسابك" }, { status: 403 });
+  const upd = await prisma.hybridWorker.updateMany({
+    where: { id, OR: [{ agentId }, { agentId: null }] },
+    data: { blocked: true, approved: false },
+  });
+  if (upd.count === 0) return NextResponse.json({ error: "الحاسبة لا تتبع حسابك" }, { status: 403 });
   return NextResponse.json({ ok: true });
 }

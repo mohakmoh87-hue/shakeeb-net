@@ -27,14 +27,23 @@ export function startHybridAgent() {
   const towerId = process.env.WORKER_TOWER_ID ? Number(process.env.WORKER_TOWER_ID) : null;
   let loggedOk = false;
 
+  let timer: ReturnType<typeof setInterval> | null = null;
   async function beat() {
     try {
       const row = await prisma.hybridWorker.upsert({
         where: { machineId: id },
         update: { lastSeen: new Date(), name },
         create: { machineId: id, name, towerId, lastSeen: new Date() },
-        select: { agentId: true, approved: true },
+        select: { agentId: true, approved: true, blocked: true },
       });
+      // محظورة (حذفها المدير): توقّف تماماً — أغلق الواتساب نظيفاً ثم اخرج (لا تعد للظهور)
+      if (row.blocked) {
+        console.log(`[hybrid-agent] ⛔ هذه الحاسبة (${id}) محظورة من المدير — إيقاف العامل.`);
+        leaderNow = false;
+        if (timer) { clearInterval(timer); timer = null; }
+        try { const { destroyAllWhatsApp } = await import("@/lib/whatsapp"); await destroyAllWhatsApp(); } catch { /* تجاهل */ }
+        process.exit(0);
+      }
       myAgentId = row.agentId ?? null;
       // قائد وكيل هذه الحاسبة فقط (يستضيف واتساب مكاتب هذا الوكيل). غير معتمَد/بلا وكيل ⇒ ليس قائداً.
       if (row.approved && myAgentId != null) {
@@ -49,6 +58,6 @@ export function startHybridAgent() {
     }
   }
   void beat();
-  setInterval(() => { void beat(); }, 20000);
+  timer = setInterval(() => { void beat(); }, 20000);
   console.log(`[hybrid-agent] بدأت نبضة الحاسبة (${id})`);
 }
