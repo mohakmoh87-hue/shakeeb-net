@@ -41,9 +41,15 @@ export async function GET(request: Request) {
       const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } });
       const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
       // تحسين مهم: لا تُشغّل مطابقة المشترك (الثقيلة) إن كانت مكافآت المكتب مُعطّلة
-      const office = board?.towerId != null ? await prisma.tower.findUnique({ where: { id: board.towerId }, select: { rewardsEnabled: true } }) : null;
+      const office = board?.towerId != null ? await prisma.tower.findUnique({ where: { id: board.towerId }, select: { rewardsEnabled: true, agentId: true } }) : null;
       if (office?.rewardsEnabled !== "1") return NextResponse.json({ found: false });
       subscriberId = await matchFromText(`${card.title}\n${card.description ?? ""}`, board?.towerId ?? null);
+      if (!subscriberId) {
+        // مكافآت المكتب مفعّلة لكن لا مشترك مطابق لنصّ البطاقة: نعيد حالة التفعيل (بعزل
+        // الوكيل) كي يظهر صندوق المكافأة ويجيب «ليس لديه كود» فوراً بدل غياب أي رد
+        const owned = session ? await ownsTower(session, board?.towerId ?? null) : office.agentId === actorAgentId;
+        return NextResponse.json({ found: false, rewardsEnabled: owned });
+      }
     }
   }
   if (!subscriberId) return NextResponse.json({ found: false });

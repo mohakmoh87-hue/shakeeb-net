@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 
@@ -34,21 +34,42 @@ export default function NewInvoicePage() {
   const [reward, setReward] = useState<{ balance: number } | null>(null);
   const [rewardPulled, setRewardPulled] = useState(false);
   const [noCode, setNoCode] = useState(false);
+  const [rewardBusy, setRewardBusy] = useState(false); // ضُغط «سحب» والاستعلام لم يكتمل بعد
+  const rewardLookup = useRef<Promise<{ balance: number } | null> | null>(null); // استعلام الرصيد الجاري
 
   useEffect(() => {
     fetch("/api/items").then((r) => void (r.ok && r.json().then(setItems)));
   }, []);
 
-  // جلب رصيد مكافأة المشترك المختار
+  // جلب رصيد مكافأة المشترك المختار — مع الاحتفاظ بوعد الاستعلام: ضغطة «سحب» قبل
+  // اكتماله تنتظره فيأتي الجواب صحيحاً فوراً (لا «ليس لديه كود» خاطئة على شبكة بطيئة)
   useEffect(() => {
-    setRewardsOn(false); setReward(null); setRewardPulled(false); setNoCode(false);
-    if (!sub) return;
-    fetch(`/api/rewards/lookup?subscriberId=${sub.id}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (!d?.found) return;
-      setRewardsOn(!!d.rewardsEnabled);
-      if (d.rewardsEnabled && (d.balance ?? 0) > 0) setReward({ balance: d.balance });
-    });
+    setRewardsOn(false); setReward(null); setRewardPulled(false); setNoCode(false); setRewardBusy(false);
+    if (!sub) { rewardLookup.current = null; return; }
+    rewardLookup.current = fetch(`/api/rewards/lookup?subscriberId=${sub.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d?.found) return null;
+        setRewardsOn(!!d.rewardsEnabled);
+        if (d.rewardsEnabled && (d.balance ?? 0) > 0) {
+          const rw = { balance: d.balance as number };
+          setReward(rw);
+          return rw;
+        }
+        return null;
+      })
+      .catch(() => null);
   }, [sub]);
+
+  // سحب الكود: فوري إن اكتمل الاستعلام، وإلا ينتظره (زر «…») ثم يجيب بدقة
+  async function pullReward() {
+    if (rewardBusy || rewardPulled) return;
+    if (reward) { setNoCode(false); setRewardPulled(true); return; }
+    setRewardBusy(true);
+    const rw = await (rewardLookup.current ?? Promise.resolve(null));
+    setRewardBusy(false);
+    if (rw) { setNoCode(false); setRewardPulled(true); } else setNoCode(true);
+  }
 
   useEffect(() => {
     if (sub) return; // لا تبحث بعد الاختيار
@@ -242,12 +263,12 @@ export default function NewInvoicePage() {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-fuchsia-800">🎁 كود المكافأة</span>
                 {!rewardPulled ? (
-                  <button type="button" onClick={() => { if (reward) setRewardPulled(true); else setNoCode(true); }} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700">سحب كود المكافأة</button>
+                  <button type="button" onClick={pullReward} disabled={rewardBusy} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700 disabled:opacity-50">{rewardBusy ? "…" : "سحب كود المكافأة"}</button>
                 ) : (
-                  <button type="button" onClick={() => setRewardPulled(false)} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إلغاء السحب</button>
+                  <button type="button" onClick={() => { setRewardPulled(false); setNoCode(false); }} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إلغاء السحب — يبقى الكود للمشترك</button>
                 )}
               </div>
-              {noCode && !rewardPulled && <div className="mt-2 text-xs font-semibold text-slate-500">ليس لديه كود</div>}
+              {noCode && !rewardPulled && <div className="mt-2 text-xs font-semibold text-slate-500">ليس لديه كود خصم</div>}
               {rewardPulled && reward && (
                 <div className="mt-2 text-xs text-fuchsia-700">خُصم <b>{fmt(discount)}</b> د.ع{reward.balance > total && <span> (يبقى {fmt(reward.balance - total)} للمشترك)</span>}</div>
               )}

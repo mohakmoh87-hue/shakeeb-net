@@ -5,8 +5,9 @@ import { appendCardHistory, cardOfficeId } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
-// تحويل بطاقة على الفني نفسه: الفني يأخذ بطاقةً مسندة لفنيٍّ آخر في نفس مكتبه.
-// عزل صارم: البطاقة يجب أن تكون في مكتب الفني، ومُسندة لفنيٍّ آخر، وغير منجزة.
+// تحويل بطاقة على الفني نفسه: الفني يأخذ بطاقةً غير مُسندة (يستلمها)
+// أو مسندة لفنيٍّ آخر في نفس مكتبه (يحوّلها لنفسه).
+// عزل صارم: البطاقة يجب أن تكون في مكتب الفني، وغير منجزة.
 export async function POST(request: Request) {
   const tech = await getTechSession();
   if (!tech) return NextResponse.json({ error: "دخول الفني مطلوب" }, { status: 401 });
@@ -26,8 +27,7 @@ export async function POST(request: Request) {
   if (office == null || office !== (tech.towerId ?? null)) {
     return NextResponse.json({ error: "البطاقة ليست في مكتبك" }, { status: 403 });
   }
-  // شرط الطلب: مُسندة لفنيٍّ آخر (لا لنفسه ولا بلا فني)
-  if (card.technicianId == null) return NextResponse.json({ error: "البطاقة غير مُسندة لفني — لا يمكن تحويلها لك" }, { status: 400 });
+  // شرط الطلب: غير مُسندة (يستلمها) أو مُسندة لفنيٍّ آخر (يحوّلها لنفسه) — لا إن كانت عليه أصلاً
   if (card.technicianId === tech.technicianId) return NextResponse.json({ error: "البطاقة عليك أصلاً" }, { status: 400 });
 
   // تأكيد أن الفني الحالي للبطاقة يتبع نفس المكتب (عزل إضافي)
@@ -44,7 +44,9 @@ export async function POST(request: Request) {
     data: { technicianId: me.id, assignee: me.name },
     select: { id: true, technicianId: true, assignee: true },
   });
-  // سجل التغييرات: تحويل البطاقة من الفني السابق إلى المحوِّل
-  await appendCardHistory(cardId, me.name, `تحويل البطاقة من «${card.assignee ?? "فني"}» إلى «${me.name}»`);
+  // سجل التغييرات: استلام بطاقة غير مُسندة أو تحويلها من الفني السابق
+  await appendCardHistory(cardId, me.name, card.technicianId == null
+    ? `استلام البطاقة (كانت بلا فني) بواسطة «${me.name}»`
+    : `تحويل البطاقة من «${card.assignee ?? "فني"}» إلى «${me.name}»`);
   return NextResponse.json({ ok: true, card: updated });
 }

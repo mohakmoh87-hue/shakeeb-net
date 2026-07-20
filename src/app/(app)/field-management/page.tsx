@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import MapButton from "@/components/MapButton";
 import TechOpsBar from "@/components/TechOpsBar";
@@ -106,6 +106,18 @@ export default function FieldManagementPage() {
     });
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // تحديث تلقائي كل ٥ ثوانٍ ما دامت الصفحة مفتوحة (يشاهد الفني البطاقات الجديدة فوراً بلا خروج/دخول).
+  // يتوقّف مؤقتاً أثناء أي نافذة/تحرير/سحب كي لا يقاطع الكتابة، وحين تكون الشاشة مخفيّة.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.hidden) return;
+      if (sel || completing || postponing || dragId != null || addingTo != null) return;
+      load(officeId);
+    }, 5000);
+    return () => clearInterval(t);
+  }, [load, officeId, sel, completing, postponing, dragId, addingTo]);
+
   // اسم الدور الحالي (للفني: اسمه ومعرّفه) — لعرضه في الشريط السفلي وللتحويل على نفسه
   useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.name) setMyName(d.name); if (d?.technicianId != null) setMyTechId(d.technicianId); }); }, []);
 
@@ -520,13 +532,15 @@ export default function FieldManagementPage() {
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">الفني المسؤول</label>
             {isTech ? (
-              // الفني: يرى المسؤول، ويستطيع تحويل البطاقة على نفسه إن كانت على فنيٍّ آخر بمكتبه
+              // الفني: يرى المسؤول، ويستلم البطاقة غير المُسندة أو يحوّلها على نفسه من فنيٍّ آخر بمكتبه
               <div className="mb-3">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                   👤 {sel.assignee ?? "بدون فني"}{sel.technicianId != null && sel.technicianId === myTechId ? " (أنت)" : ""}
                 </div>
-                {!sel.done && sel.technicianId != null && sel.technicianId !== myTechId && (
-                  <button onClick={claimCard} className="mt-2 w-full rounded-lg bg-mynet-blue py-2.5 text-sm font-bold text-white hover:bg-mynet-blue-dark">↪️ حوّلها لي</button>
+                {!sel.done && myTechId != null && sel.technicianId !== myTechId && (
+                  <button onClick={claimCard} className="mt-2 w-full rounded-lg bg-mynet-blue py-2.5 text-sm font-bold text-white hover:bg-mynet-blue-dark">
+                    {sel.technicianId == null ? "🙋 أستلمها أنا" : "↪️ حوّلها لي"}
+                  </button>
                 )}
               </div>
             ) : technicians.length > 0 ? (
@@ -884,6 +898,8 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
   const [reward, setReward] = useState<{ balance: number; name: string | null } | null>(null); // رصيد مكافأة المشترك (إن وُجد)
   const [rewardPulled, setRewardPulled] = useState(false); // سُحب الكود لهذا الإنجاز
   const [noCode, setNoCode] = useState(false); // «ليس لديه كود» عند السحب
+  const [rewardBusy, setRewardBusy] = useState(false); // ضُغط «سحب» والاستعلام لم يكتمل بعد
+  const rewardLookup = useRef<Promise<{ balance: number; name: string | null } | null> | null>(null); // استعلام الرصيد الجاري
   const [mats, setMats] = useState<CustodyMat[]>([]);
   const [picked, setPicked] = useState<Record<number, number>>({}); // itemId -> qty
   const [busy, setBusy] = useState(false);
@@ -896,17 +912,34 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
       .then((d) => d && setMats(d.materials ?? []));
   }, [card.technicianId, fullFields]);
 
-  // رصيد مكافأة مشترك البطاقة (لسحبها خصماً) — للصيانة/التوصيل لا التحويل
+  // رصيد مكافأة مشترك البطاقة (لسحبها خصماً) — للصيانة/التوصيل لا التحويل.
+  // نحتفظ بوعد الاستعلام: ضغطة «سحب» تنتظره إن لم يكتمل بعد فيأتي الجواب صحيحاً فوراً (لا «ليس لديه كود» خاطئة)
   useEffect(() => {
     if (isTransfer) return;
-    fetch(`/api/rewards/lookup?cardId=${card.id}`)
+    rewardLookup.current = fetch(`/api/rewards/lookup?cardId=${card.id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!d?.found) return;
+        if (!d) return null;
         setRewardsOn(!!d.rewardsEnabled);
-        if (d.rewardsEnabled && (d.balance ?? 0) > 0) setReward({ balance: d.balance, name: d.name });
-      });
+        if (d.found && d.rewardsEnabled && (d.balance ?? 0) > 0) {
+          const rw = { balance: d.balance as number, name: (d.name ?? null) as string | null };
+          setReward(rw);
+          return rw;
+        }
+        return null;
+      })
+      .catch(() => null);
   }, [card.id, isTransfer]);
+
+  // سحب الكود: فوري إن اكتمل الاستعلام، وإلا ينتظره (زر «…») ثم يجيب بدقة
+  async function pullReward() {
+    if (rewardBusy || rewardPulled) return;
+    if (reward) { setNoCode(false); setRewardPulled(true); return; }
+    setRewardBusy(true);
+    const rw = await (rewardLookup.current ?? Promise.resolve(null));
+    setRewardBusy(false);
+    if (rw) { setNoCode(false); setRewardPulled(true); } else setNoCode(true);
+  }
 
   const materialsTotal = Object.entries(picked).reduce((s, [id, q]) => {
     const m = mats.find((x) => x.itemId === Number(id)); return s + (m ? m.priceSale * q : 0);
@@ -984,12 +1017,12 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-fuchsia-800">🎁 كود المكافأة</span>
               {!rewardPulled ? (
-                <button type="button" onClick={() => { if (reward) setRewardPulled(true); else setNoCode(true); }} disabled={nAmount <= 0} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700 disabled:opacity-50">سحب كود المكافأة</button>
+                <button type="button" onClick={pullReward} disabled={nAmount <= 0 || rewardBusy} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700 disabled:opacity-50">{rewardBusy ? "…" : "سحب كود المكافأة"}</button>
               ) : (
-                <button type="button" onClick={() => setRewardPulled(false)} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إلغاء السحب</button>
+                <button type="button" onClick={() => { setRewardPulled(false); setNoCode(false); }} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إلغاء السحب — يبقى الكود للمشترك</button>
               )}
             </div>
-            {noCode && !rewardPulled && <div className="mt-2 text-xs font-semibold text-slate-500">ليس لديه كود</div>}
+            {noCode && !rewardPulled && <div className="mt-2 text-xs font-semibold text-slate-500">ليس لديه كود خصم</div>}
             {rewardPulled && reward && (
               <div className="mt-2 text-xs text-fuchsia-700">
                 خُصم <b>{Math.min(reward.balance, nAmount).toLocaleString("en-US")}</b> د.ع — المتبقّي على الزبون: <b>{Math.max(0, nAmount - reward.balance).toLocaleString("en-US")}</b> د.ع
