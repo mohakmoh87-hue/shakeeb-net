@@ -17,6 +17,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [checkOut, setCheckOut] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false); // قائمة التطبيق السفلية (وضع التطبيق فقط)
   const [toast, setToast] = useState("");
   const [leaveMode, setLeaveMode] = useState<"day" | "time" | null>(null);
   const [adjOpen, setAdjOpen] = useState(false);
@@ -254,26 +255,104 @@ export default function TechOpsBar({ techName }: { techName: string }) {
         </div>
       )}
 
-      {/* الشريط السفلي الثابت */}
-      <div className="fixed inset-x-0 bottom-0 z-[70] border-t border-slate-200 bg-white/95 px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur">
-        <div className="mx-auto flex max-w-md items-center justify-center gap-3">
-          <button onClick={() => setOpsOpen((o) => !o)}
-            className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-100 font-bold text-slate-700 hover:bg-slate-200">
-            ⚙️ عمليات <span className="text-xs">▾</span>
-          </button>
-          <button onClick={openBio} disabled={busy || state === "done"}
-            className={`flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl font-extrabold text-white shadow-md transition ${btn.cls} disabled:opacity-90`}>
-            <span>{btn.icon}</span>{busy ? "..." : btn.label}
+      {/* الشريط السفلي الثابت (المتصفح فقط — داخل التطبيق تحلّ محله قائمة التطبيق) */}
+      <div data-site-only>
+        <div className="fixed inset-x-0 bottom-0 z-[70] border-t border-slate-200 bg-white/95 px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur">
+          <div className="mx-auto flex max-w-md items-center justify-center gap-3">
+            <button onClick={() => setOpsOpen((o) => !o)}
+              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-100 font-bold text-slate-700 hover:bg-slate-200">
+              ⚙️ عمليات <span className="text-xs">▾</span>
+            </button>
+            <button onClick={openBio} disabled={busy || state === "done"}
+              className={`flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl font-extrabold text-white shadow-md transition ${btn.cls} disabled:opacity-90`}>
+              <span>{btn.icon}</span>{busy ? "..." : btn.label}
+            </button>
+          </div>
+          {(checkIn || checkOut) && (
+            <div className="mx-auto mt-1 max-w-md text-center text-[11px] text-slate-500">
+              {checkIn && <>دخول: <b>{fmtTime(checkIn)}</b></>}{checkOut && <> · خروج: <b>{fmtTime(checkOut)}</b></>}
+            </div>
+          )}
+        </div>
+        {/* مساحة أسفل الصفحة كي لا يغطّي الشريط المحتوى */}
+        <div className="h-24" />
+      </div>
+
+      {/* وضع التطبيق: شريط «القائمة» بنفس نسق قائمة المدير — البصمة والعمليات داخل القائمة فقط */}
+      <div data-app-only>
+        <div className="fixed inset-x-0 bottom-0 z-[70] border-t border-white/15 bg-black/25 px-4 pt-2.5 pb-[max(12px,env(safe-area-inset-bottom))] backdrop-blur">
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="relative flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white/95 font-extrabold text-mynet-blue shadow-lg active:scale-[0.99] transition"
+          >
+            <span className="text-lg">☰</span> القائمة
+            <span className="mx-1 text-xs font-normal text-slate-400">·</span>
+            <span className="max-w-[45%] truncate text-sm font-semibold text-slate-500">{techName}</span>
+            {/* مؤشّر بصمة معلّقة: أخضر = عليك بصمة دخول، أحمر = عليك بصمة خروج */}
+            {state !== "done" && (
+              <span className={`absolute left-3 h-3 w-3 rounded-full ring-2 ring-white ${state === "none" ? "bg-emerald-500" : "bg-red-500"}`} />
+            )}
           </button>
         </div>
-        {(checkIn || checkOut) && (
-          <div className="mx-auto mt-1 max-w-md text-center text-[11px] text-slate-500">
-            {checkIn && <>دخول: <b>{fmtTime(checkIn)}</b></>}{checkOut && <> · خروج: <b>{fmtTime(checkOut)}</b></>}
+        <div className="h-20" />
+
+        {/* النافذة السفلية — نفس تصميم قائمة المدير */}
+        {menuOpen && (
+          <div className="fixed inset-0 z-[75] flex items-end bg-black/50 backdrop-blur-sm" onClick={() => setMenuOpen(false)}>
+            <div
+              className="max-h-[85vh] w-full overflow-y-auto rounded-t-3xl bg-slate-50 pb-[max(16px,env(safe-area-inset-bottom))] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* مقبض */}
+              <div className="sticky top-0 z-10 flex flex-col items-center bg-slate-50 pt-2.5">
+                <div className="mb-2 h-1.5 w-12 rounded-full bg-slate-300" />
+              </div>
+
+              <div className="px-5 pb-4">
+                {/* البصمة */}
+                <div className="mb-1.5 flex items-center gap-2 text-xs font-bold text-slate-400">
+                  <span>👆 البصمة</span><div className="h-px flex-1 bg-slate-200" />
+                </div>
+                <button
+                  onClick={() => { setMenuOpen(false); openBio(); }}
+                  disabled={busy || state === "done"}
+                  className={`flex h-14 w-full items-center justify-center gap-2 rounded-2xl font-extrabold text-white shadow-md transition active:scale-[0.98] ${btn.cls} disabled:opacity-90`}
+                >
+                  <span>{btn.icon}</span>{busy ? "..." : btn.label}
+                </button>
+                {(checkIn || checkOut) && (
+                  <div className="mt-1.5 text-center text-[11px] text-slate-500">
+                    {checkIn && <>دخول: <b>{fmtTime(checkIn)}</b></>}{checkOut && <> · خروج: <b>{fmtTime(checkOut)}</b></>}
+                  </div>
+                )}
+
+                {/* الأدوات */}
+                <div className="mb-1.5 mt-4 flex items-center gap-2 text-xs font-bold text-slate-400">
+                  <span>🧰 الأدوات</span><div className="h-px flex-1 bg-slate-200" />
+                </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {([
+                    { key: "leave", icon: "📅", label: "طلب إجازة", sub: "يوم كامل", cls: "from-amber-500 to-amber-700", on: () => setLeaveMode("day") },
+                    { key: "tleave", icon: "⏱️", label: "إجازة زمنية", sub: "ساعات من اليوم", cls: "from-sky-600 to-sky-800", on: () => setLeaveMode("time") },
+                    { key: "adjust", icon: "💠", label: "الخصومات والمكافآت", sub: "سجلّي", cls: "from-rose-600 to-rose-800", on: () => setAdjOpen(true) },
+                    { key: "salary", icon: "💰", label: "الراتب", sub: "كشف حسابي", cls: "from-emerald-600 to-emerald-800", on: () => setSalaryOpen(true) },
+                  ] as const).map((t) => (
+                    <button
+                      key={t.key}
+                      onClick={() => { setMenuOpen(false); t.on(); }}
+                      className={`relative flex flex-col items-start gap-1 rounded-2xl bg-gradient-to-br ${t.cls} p-3.5 text-right text-white shadow-md active:scale-[0.98] transition`}
+                    >
+                      <span className="text-2xl leading-none">{t.icon}</span>
+                      <span className="text-sm font-extrabold">{t.label}</span>
+                      <span className="text-[11px] font-medium text-white/80">{t.sub}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
-      {/* مساحة أسفل الصفحة كي لا يغطّي الشريط المحتوى */}
-      <div className="h-24" />
     </>
   );
 }
