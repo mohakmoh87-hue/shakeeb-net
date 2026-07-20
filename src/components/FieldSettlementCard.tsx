@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type Item = { title: string; kind: string; amount: number };
+type Item = { title: string; kind: string; amount: number; netUser?: string | null };
 type Tech = { id: number; name: string; towerId: number | null; pendingTotal: number; pendingCount: number; items?: Item[] };
 type Office = { id: number; name: string | null };
 
@@ -82,7 +82,10 @@ export default function FieldSettlementCard() {
           ) : (
             (t.items ?? []).map((it, idx) => (
               <div key={idx} className="flex items-center justify-between gap-2 text-xs">
-                <span className="min-w-0 truncate text-slate-600">{it.kind ? `${it.kind} — ` : ""}{it.title}</span>
+                <span className="min-w-0 truncate text-slate-600">
+                  {it.kind ? `${it.kind} — ` : ""}{it.title}
+                  {it.netUser && <span className="text-slate-400" dir="ltr"> · 👤 {it.netUser}</span>}
+                </span>
                 <span className="shrink-0 font-semibold text-emerald-700">{fmt(it.amount)} د.ع</span>
               </div>
             ))

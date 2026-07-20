@@ -29,14 +29,16 @@ export async function GET() {
   // البطاقات المنجزة غير المحصّلة (تفاصيل كل تكت) لبناء المجموع + تفصيله لكل فني
   const cards = await prisma.taskCard.findMany({
     where: { done: true, settled: false, isDeleted: false, technicianId: { in: technicians.map((t) => t.id) } },
-    select: { id: true, title: true, kind: true, amount: true, technicianId: true },
+    select: { id: true, title: true, kind: true, amount: true, technicianId: true, description: true },
     orderBy: { id: "asc" },
   });
-  const byTech = new Map<number, { title: string; kind: string; amount: number }[]>();
+  const byTech = new Map<number, { title: string; kind: string; amount: number; netUser: string | null }[]>();
   for (const c of cards) {
     if (c.technicianId == null) continue;
+    // اليوزر مخزّن في وصف البطاقة كسطر «👤 اليوزر: X»
+    const netUser = c.description?.match(/اليوزر\s*[:：]\s*([^\n]+)/)?.[1]?.trim();
     const arr = byTech.get(c.technicianId) ?? [];
-    arr.push({ title: c.title, kind: c.kind, amount: c.amount ?? 0 });
+    arr.push({ title: c.title, kind: c.kind, amount: c.amount ?? 0, netUser: netUser && netUser !== "—" ? netUser : null });
     byTech.set(c.technicianId, arr);
   }
 
