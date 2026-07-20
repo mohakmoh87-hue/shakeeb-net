@@ -14,6 +14,18 @@ const TARGETS = [
   { key: "search", label: "بحث مخصّص (اسم/يوزر/هاتف)" },
 ] as const;
 
+// أسماء عربية لقوالب الأحداث (القوالب الحرة تظهر باسمها كما هو)
+const EVENT_LABELS: Record<string, string> = {
+  activation: "تفعيل الاشتراك",
+  expiring: "تذكير قبل الانتهاء",
+  debtPaid: "تسديد دين",
+  debts: "مطالبة بالديون",
+  maintenance: "الصيانة/التنصيب",
+  reward: "منح المكافأة",
+  rewardUsed: "استخدام المكافأة",
+  other: "أخرى (عام)",
+};
+
 export default function ComposePage() {
   return (
     <Suspense fallback={<div className="p-6 text-slate-400">جاري التحميل...</div>}>
@@ -148,7 +160,7 @@ function ComposeInner() {
         >
           <option value="">— اختر قالباً لتحميل نصّه —</option>
           {templates.map((t) => (
-            <option key={t.id} value={t.id}>{t.type}</option>
+            <option key={t.id} value={t.id}>{EVENT_LABELS[t.type ?? ""] ?? t.type}</option>
           ))}
         </select>
         {templates.length === 0 && <div className="mb-4 -mt-2 text-xs text-slate-400">لا قوالب محفوظة بعد — أضِفها من صفحة «قوالب الرسائل».</div>}

@@ -4,13 +4,31 @@
 
 export type Channel = "SMS" | "WHATSAPP" | "TELEGRAM";
 
-// استبدال المتغيّرات في القالب ببيانات المشترك
+// أسماء عربية للمتغيّرات — تُشتق قيمها تلقائياً من نظيراتها الإنكليزية إن لم تُمرَّر صراحةً،
+// فتدعم كل مواضع الإرسال القائمة قوالبَ بمتغيّرات عربية ({اسم_المشترك}...) بلا أي تعديل عليها.
+const ARABIC_ALIASES: [string, string][] = [
+  ["package", "نوع_الباقة"],
+  ["card", "البطاقة"],
+  ["netUser", "اسم_المستخدم"],
+  ["name", "اسم_المشترك"],
+  ["price", "مبلغ_الاشتراك"],
+  ["paid", "المبلغ_المستلم"],
+  ["remaining", "المبلغ_المتبقي"],
+  ["carry", "اجمالي_الديون"],
+  ["dateTo", "تاريخ_الانتهاء"],
+];
+
+// استبدال المتغيّرات في القالب ببيانات المشترك (يدعم الأسماء الإنكليزية والعربية معاً)
 export function renderTemplate(
   template: string,
   vars: Record<string, string | number | null | undefined>,
 ): string {
-  return template.replace(/\{(\w+)\}/g, (_, key) => {
-    const v = vars[key];
+  const all: Record<string, string | number | null | undefined> = { ...vars };
+  for (const [en, ar] of ARABIC_ALIASES) {
+    if (all[ar] === undefined && vars[en] !== undefined) all[ar] = vars[en];
+  }
+  return template.replace(/\{([\w؀-ۿ]+)\}/g, (_, key) => {
+    const v = all[key];
     return v === null || v === undefined ? "" : String(v);
   });
 }

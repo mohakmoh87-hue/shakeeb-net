@@ -9,6 +9,7 @@ import { formatDate } from "@/lib/format";
 import { sasBaseUrl, sasLogin, sasFetchUser } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
 import { grantReward, sendRewardGrantMessage } from "@/lib/rewards";
+import { getEffectiveTemplate } from "@/lib/smsTemplates";
 
 const schema = z.object({
   packageId: z.coerce.number(),
@@ -236,14 +237,15 @@ async function sendActivationMessage(a: {
   try {
     if (a.waEnabled === false || !a.phone) return; // يحترم خيار واتساب لكل مشترك
 
-    // مكتب المشترك: اسمه + تفعيل واتساب المكتب
-    const office = a.officeId ? await prisma.tower.findUnique({ where: { id: a.officeId }, select: { name: true, waEnabled: true } }) : null;
+    // مكتب المشترك: اسمه + تفعيل واتساب المكتب + وكيله (لجلب قالب وكيله حصراً)
+    const office = a.officeId ? await prisma.tower.findUnique({ where: { id: a.officeId }, select: { name: true, waEnabled: true, agentId: true } }) : null;
     if (office?.waEnabled === "0") return;
 
-    const tpl = await prisma.smsTemplate.findFirst({ where: { type: "activation" } });
-    if (!tpl?.text || tpl.enable === "0") return; // لا قالب تفعيل مكتوب
+    // قالب تفعيل وكيل مكتب المشترك (عزل — كان يُجلب بلا تحديد وكيل) مع النص الافتراضي عند غيابه
+    const tplText = await getEffectiveTemplate("activation", office?.agentId ?? null);
+    if (!tplText) return; // معطَّل أو لا قالب
 
-    const text = renderTemplate(tpl.text, {
+    const text = renderTemplate(tplText, {
       name: a.name,
       netUser: a.netUser,
       package: a.packageName,

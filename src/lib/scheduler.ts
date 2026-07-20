@@ -19,9 +19,8 @@ async function getSetting(type: string, fallback = ""): Promise<string> {
 // جلب قالب رسالة حسب التصنيف
 // قالب رسالة لوكيل محدّد (عزل المستأجر) — كل وكيل قوالبه الخاصّة
 async function getTemplate(type: string, agentId: number | null): Promise<string | null> {
-  const t = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1 } });
-  if (!t || (t.enable && t.enable === "0")) return null;
-  return t.text ?? null;
+  const { getEffectiveTemplate } = await import("@/lib/smsTemplates");
+  return getEffectiveTemplate(type, agentId); // نص الوكيل، وإلا الافتراضي؛ null إن مُعطَّل
 }
 
 // تاريخ يوم معيّن بصيغة YYYY-MM-DD (توقيت بغداد)

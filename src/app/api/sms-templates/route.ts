@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, guardAny } from "@/lib/guard";
+import { EVENT_TYPES } from "@/lib/smsTemplates";
 
 const schema = z.object({
-  type: z.string().min(1, "اسم القالب مطلوب"),
+  type: z.string().min(1, "اسم القالب مطلوب")
+    .refine((v) => !v.startsWith("__"), "اسم القالب غير مسموح")
+    .refine((v) => !(EVENT_TYPES as readonly string[]).includes(v), "هذا الاسم محجوز لقالب تلقائي"),
   text: z.string().nullable().optional(),
   enable: z.string().nullable().optional(),
 });
@@ -14,7 +17,10 @@ export async function GET() {
   const g = await guardAny("templates.manage", "messaging.manage");
   if (g.error) return g.error;
 
-  const templates = await prisma.smsTemplate.findMany({ where: { agentId: g.session?.agentId ?? -1 }, orderBy: { id: "asc" } });
+  const templates = await prisma.smsTemplate.findMany({
+    where: { agentId: g.session?.agentId ?? -1, NOT: { type: { startsWith: "__" } } }, // بلا صفوف العلامات الداخلية
+    orderBy: { id: "asc" },
+  });
   return NextResponse.json(templates);
 }
 

@@ -285,8 +285,8 @@ export async function POST(request: Request) {
           },
         });
       }
-      // رسالة واتساب للمشترك (قالب "رسالة الصيانة/التنصيب")
-      const tpl = await prisma.smsTemplate.findFirst({ where: { type: "maintenance" } });
+      // رسالة واتساب للمشترك (قالب "رسالة الصيانة/التنصيب") — قالب وكيل الفاعل حصراً (عزل)
+      const tpl = await prisma.smsTemplate.findFirst({ where: { type: "maintenance", agentId: actor.agentId ?? -1 } });
       if (sub.phone && tpl?.text && tpl.enable !== "0") {
         const office = towerId ? await prisma.tower.findUnique({ where: { id: towerId }, select: { name: true, waEnabled: true } }) : null;
         if (office?.waEnabled !== "0") {
