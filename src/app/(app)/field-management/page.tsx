@@ -286,7 +286,8 @@ export default function FieldManagementPage() {
           </div>
         )}
         {lists.map((l) => {
-          const listCards = cards.filter((c) => c.listId === l.id).sort((a, b) => a.position - b.position);
+          // البطاقات المنجزة تنتقل لعمود «المنجزة» فتُستبعَد من عمودها الأصلي
+          const listCards = cards.filter((c) => c.listId === l.id && !c.done).sort((a, b) => a.position - b.position);
           return (
             <div
               key={l.id}
@@ -370,6 +371,33 @@ export default function FieldManagementPage() {
             </div>
           );
         })}
+
+        {/* عمود «المنجزة»: يجمع بطاقات الفنيين المنجزة (بانتظار الإكمال/التحصيل) من كل الأعمدة */}
+        {lists.length > 0 && (() => {
+          const doneCards = cards.filter((c) => c.done).sort((a, b) => String(b.completedAt ?? "").localeCompare(String(a.completedAt ?? "")));
+          return (
+            <div className="flex max-h-full w-[280px] shrink-0 flex-col rounded-xl bg-emerald-50 shadow-lg ring-1 ring-emerald-200">
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="font-bold text-emerald-800">✅ المنجزة <span className="text-xs font-normal text-emerald-500">({doneCards.length})</span></span>
+              </div>
+              <div className="flex-1 space-y-2 overflow-y-auto px-2 pb-2">
+                {doneCards.length === 0 ? (
+                  <div className="px-2 py-6 text-center text-[11px] leading-relaxed text-emerald-700/60">لا بطاقات منجزة — تنتقل هنا عند ضغط الفني «إنجاز»، ثم «اكمال» من «تحصيل الفنيين» لأرشفتها</div>
+                ) : doneCards.map((c) => (
+                  <div key={c.id} onClick={() => setSel(c)} className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md">
+                    <div className="text-sm font-medium text-slate-800">{c.title}</div>
+                    {facePhoneOf(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {facePhoneOf(c.description)}</div>}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
+                      {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
+                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-700">✓ {c.amount != null ? `${Number(c.amount).toLocaleString("en-US")} د.ع` : "منجزة"}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* إضافة عمود — للمدير فقط */}
         {canManage && (
@@ -924,11 +952,14 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={onClose}>
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
+      <div className="flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
           <h3 className="text-lg font-bold text-slate-800">{isTransfer ? "🔁 إنجاز تحويل" : isDelivery ? "🚚 إنجاز توصيل" : "🔧 إنجاز صيانة"}: {card.title}</h3>
           <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
         </div>
+        {/* الجسم القابل للتمرير — الأزرار في تذييل ثابت أسفله فلا تتداخل */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5">
+          <div className="h-1" />
 
         {isTransfer && (
           <>
@@ -1003,8 +1034,9 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
           </div>
         )}
 
-        {/* زر التأكيد ملتصق بأسفل النافذة دائماً (لا يختفي تحت معاينة الصورة على الهاتف) */}
-        <div className="sticky bottom-0 -mx-5 -mb-5 mt-2 border-t border-slate-100 bg-white px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-3">
+        </div>
+        {/* تذييل ثابت: زر التأكيد دائماً ظاهر أسفل النافذة (لا يتداخل مع الصورة/الأزرار) */}
+        <div className="shrink-0 border-t border-slate-100 bg-white px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
           {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
           <button onClick={submit} disabled={busy} className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
             {busy ? "جارٍ الإنجاز…" : "✓ تأكيد الإنجاز"}

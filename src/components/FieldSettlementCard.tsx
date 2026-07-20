@@ -67,7 +67,7 @@ export default function FieldSettlementCard() {
           </button>
           <button
             onClick={() => settle(t)}
-            disabled={t.pendingTotal <= 0 || busyId === t.id}
+            disabled={t.pendingCount <= 0 || busyId === t.id}
             className="rounded-lg bg-mynet-blue px-3 py-1.5 text-xs font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-40"
           >
             {busyId === t.id ? "…" : "اكمال"}

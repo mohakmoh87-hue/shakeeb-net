@@ -233,6 +233,7 @@ model Subscriber {
   @@index([phone])
   @@index([name])
   @@index([isDeleted, towerId, name]) // يطابق فلترة+ترتيب قائمة المشتركين
+  @@index([towerId, netUser]) // مطابقة اليوزر السريعة لسحب كود المكافأة
   @@map("subscribers")
 }
 

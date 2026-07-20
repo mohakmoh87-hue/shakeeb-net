@@ -5,18 +5,21 @@ import { ownsTower } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
-// يحاول إيجاد مشترك من نصّ البطاقة (يوزر) ضمن مكتب معيّن — لسحب كود المكافأة في الصيانة
+// يحاول إيجاد مشترك من نصّ البطاقة (يوزر) ضمن مكتب معيّن — لسحب كود المكافأة في الصيانة.
+// مطابقة تامّة على netUser (المخزَّن في وصف البطاقة كما هو) لاستخدام الفهرس — بلا مسح كامل بطيء.
 async function matchFromText(text: string, towerId: number | null) {
-  const userLine = text.match(/اليوزر\s*[:：]\s*([^\n]+)/);
-  const explicit = userLine?.[1]?.trim();
-  const where = towerId != null ? { towerId } : {};
+  const where = towerId != null ? { towerId, isDeleted: false } : { isDeleted: false };
+  // 1) سطر «👤 اليوزر: X» الصريح (يوجد في بطاقات المشتركين) — مطابقة تامّة مفهرسة
+  const explicit = text.match(/اليوزر\s*[:：]\s*([^\n]+)/)?.[1]?.trim();
   if (explicit && explicit !== "—") {
-    const s = await prisma.subscriber.findFirst({ where: { isDeleted: false, netUser: { equals: explicit, mode: "insensitive" }, ...where }, select: { id: true } });
+    const s = await prisma.subscriber.findFirst({ where: { ...where, netUser: explicit }, select: { id: true } });
     if (s) return s.id;
   }
-  const words = [...new Set(text.split(/[\s،,\n]+/).map((w) => w.trim()).filter((w) => w.length >= 3))];
+  // 2) احتياط محدود: أطول 5 كلمات فقط (مطابقة تامّة مفهرسة — لا mode insensitive الذي يمنع الفهرس)
+  const words = [...new Set(text.split(/[\s،,\n]+/).map((w) => w.trim()).filter((w) => w.length >= 4))]
+    .sort((a, b) => b.length - a.length).slice(0, 5);
   if (words.length === 0) return null;
-  const s = await prisma.subscriber.findFirst({ where: { isDeleted: false, netUser: { in: words, mode: "insensitive" }, ...where }, select: { id: true } });
+  const s = await prisma.subscriber.findFirst({ where: { ...where, netUser: { in: words } }, select: { id: true } });
   return s?.id ?? null;
 }
 
@@ -37,6 +40,9 @@ export async function GET(request: Request) {
     if (card) {
       const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } });
       const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
+      // تحسين مهم: لا تُشغّل مطابقة المشترك (الثقيلة) إن كانت مكافآت المكتب مُعطّلة
+      const office = board?.towerId != null ? await prisma.tower.findUnique({ where: { id: board.towerId }, select: { rewardsEnabled: true } }) : null;
+      if (office?.rewardsEnabled !== "1") return NextResponse.json({ found: false });
       subscriberId = await matchFromText(`${card.title}\n${card.description ?? ""}`, board?.towerId ?? null);
     }
   }
