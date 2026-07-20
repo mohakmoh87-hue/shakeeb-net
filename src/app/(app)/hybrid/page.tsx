@@ -7,11 +7,13 @@ type Worker = {
   id: number; machineId: string; name: string | null; towerId: number | null;
   officeName: string | null; priority: number; approved: boolean; lastSeen: string; online: boolean; isLeader: boolean;
 };
+type Blocked = { id: number; machineId: string; name: string | null; lastSeen: string; online: boolean };
 
 const fmtTime = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 export default function HybridWorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [blocked, setBlocked] = useState<Blocked[]>([]);
   const [denied, setDenied] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [edits, setEdits] = useState<Record<number, string>>({});
@@ -20,7 +22,7 @@ export default function HybridWorkersPage() {
   const load = useCallback(() => {
     fetch("/api/hybrid/workers").then((r) => {
       if (r.status === 403) { setDenied(true); setLoaded(true); return; }
-      if (r.ok) r.json().then((d) => { setWorkers(d.workers ?? []); setLoaded(true); });
+      if (r.ok) r.json().then((d) => { setWorkers(d.workers ?? []); setBlocked(d.blocked ?? []); setLoaded(true); });
       else setLoaded(true);
     });
   }, []);
@@ -42,8 +44,12 @@ export default function HybridWorkersPage() {
     if (r.ok) load();
   }
   async function remove(w: Worker) {
-    if (!confirm(`حذف الحاسبة «${w.name ?? w.machineId}» نهائياً؟\nلن تعود جزءاً من النظام الهجين إلا إذا سُجّلت ووُوفق عليها من جديد.`)) return;
+    if (!confirm(`حذف الحاسبة «${w.name ?? w.machineId}»؟\nستُخفى نهائياً ولن تعود للظهور. يمكنك رفع الحظر عنها لاحقاً من قسم «الحاسبات المحظورة».`)) return;
     const r = await fetch(`/api/hybrid/workers?id=${w.id}`, { method: "DELETE" });
+    if (r.ok) load();
+  }
+  async function unblock(b: Blocked) {
+    const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.id, blocked: false }) });
     if (r.ok) load();
   }
 
@@ -117,6 +123,34 @@ export default function HybridWorkersPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* الحاسبات المحظورة (المحذوفة) — لرفع الحظر عند الحاجة */}
+      {blocked.length > 0 && (
+        <div className="mt-6">
+          <h2 className="mb-2 text-sm font-bold text-slate-600">🚫 الحاسبات المحظورة ({blocked.length})</h2>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
+            <table className="w-full text-right text-sm">
+              <tbody>
+                {blocked.map((b) => (
+                  <tr key={b.id} className="border-t border-slate-100 first:border-t-0">
+                    <td className="p-3">
+                      <span className="font-semibold text-slate-600">{b.name ?? b.machineId.slice(0, 8)}</span>
+                      <span className="mr-2 text-[10px] text-slate-300" dir="ltr">{b.machineId.slice(0, 13)}…</span>
+                    </td>
+                    <td className="p-3">
+                      <span className={`text-xs ${b.online ? "text-emerald-600" : "text-slate-400"}`}>{b.online ? "🟢 تعمل حالياً" : "🔴 متوقّفة"}</span>
+                    </td>
+                    <td className="p-3 text-left">
+                      <button onClick={() => unblock(b)} className="rounded bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">↩️ رفع الحظر</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-400">رفع الحظر يُعيد الحاسبة لقائمة الانتظار (تحتاج اعتماداً من جديد). «تعمل حالياً» تعني أن العامل ما زال شغّالاً على تلك الحاسبة بكود قديم.</p>
         </div>
       )}
     </div>

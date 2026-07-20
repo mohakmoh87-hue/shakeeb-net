@@ -863,7 +863,8 @@ model HybridWorker {
   id        Int      @id @default(autoincrement())
   machineId  String  @unique // معرّف ثابت للحاسبة (يولّده المُنصِّب)
   agentId    Int? // الوكيل المالك للحاسبة — تُحدَّد عند اعتماد المدير؛ عزل جلسات الواتساب لكل وكيل
-  name       String? // اسم الحاسبة (يحدّده المدير للتمييز)
+  name       String? // اسم الجهاز التلقائي (hostname) — تكتبه نبضة العامل
+  displayName String? // الاسم الذي يحدّده المدير — لا تلمسه النبضة (يمنع رجوعه للاسم القديم)
   approved   Boolean @default(false) // لا تصبح جزءاً فعّالاً من النظام الهجين إلا بموافقة المدير
   blocked    Boolean @default(false) // محظورة: حذفها المدير — تُخفى من اللوحة ويتوقّف عاملها إن اكتشفها
   nodeNumber Int? // رقم العقدة في نظام المعرّفات المُنطَّقة (السحابة=0، الحواسيب 1..)؛ نطاقها = nodeNumber×10^8

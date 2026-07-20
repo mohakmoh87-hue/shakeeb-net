@@ -12,21 +12,28 @@ export async function GET() {
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? -1;
 
-  const [workers, leader, towers] = await Promise.all([
+  const [workers, blockedWorkers, leader, towers] = await Promise.all([
     // تُخفى المحظورة (المحذوفة) فلا تعود للظهور رغم استمرار نبضتها
     prisma.hybridWorker.findMany({ where: { blocked: false, OR: [{ agentId }, { agentId: null }] }, orderBy: [{ priority: "asc" }, { id: "asc" }] }),
+    prisma.hybridWorker.findMany({ where: { blocked: true, OR: [{ agentId }, { agentId: null }] }, orderBy: [{ id: "asc" }] }),
     computeLeaderMachineId(agentId),
     prisma.tower.findMany({ where: { isDeleted: false, agentId }, select: { id: true, name: true } }),
   ]);
   const tn = new Map(towers.map((t) => [t.id, t.name]));
+  // الاسم المعروض = ما حدّده المدير (displayName) وإلا اسم الجهاز التلقائي
+  const shown = (w: { displayName: string | null; name: string | null }) => w.displayName ?? w.name;
 
   return NextResponse.json({
     leaderMachineId: leader,
     workers: workers.map((w) => ({
-      id: w.id, machineId: w.machineId, name: w.name, towerId: w.towerId,
+      id: w.id, machineId: w.machineId, name: shown(w), towerId: w.towerId,
       officeName: w.towerId != null ? tn.get(w.towerId) ?? null : null,
       priority: w.priority, approved: w.approved, lastSeen: w.lastSeen,
       online: isOnline(w.lastSeen), isLeader: leader === w.machineId,
+    })),
+    // الحاسبات المحظورة (المحذوفة) — لرفع الحظر عند الحاجة
+    blocked: blockedWorkers.map((w) => ({
+      id: w.id, machineId: w.machineId, name: shown(w), lastSeen: w.lastSeen, online: isOnline(w.lastSeen),
     })),
   });
 }
@@ -46,12 +53,15 @@ export async function PATCH(request: Request) {
   }
   const data: Record<string, unknown> = {};
   if (b?.priority != null && Number.isFinite(Number(b.priority))) data.priority = Math.max(0, Math.round(Number(b.priority)));
-  if (typeof b?.name === "string") data.name = b.name.trim().slice(0, 120) || null;
+  // الاسم يُحفظ في displayName كي لا تطمسه نبضة العامل (تكتب name = اسم الجهاز)
+  if (typeof b?.name === "string") data.displayName = b.name.trim().slice(0, 120) || null;
   if (typeof b?.approved === "boolean") {
     data.approved = b.approved;
     // الاعتماد يُطالِب الحاسبة لوكيل هذا المدير (عزل جلسات الواتساب)
     if (b.approved && agentId != null) data.agentId = agentId;
   }
+  // رفع الحظر عن حاسبة محظورة (تعود للظهور كحاسبة بانتظار الاعتماد)
+  if (b?.blocked === false) data.blocked = false;
   if (Object.keys(data).length === 0) return NextResponse.json({ error: "لا تغيير" }, { status: 400 });
   await prisma.hybridWorker.update({ where: { id }, data });
   return NextResponse.json({ ok: true });
