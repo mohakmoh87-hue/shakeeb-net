@@ -1003,10 +1003,13 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
           </div>
         )}
 
-        {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
-        <button onClick={submit} disabled={busy} className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
-          {busy ? "جارٍ الإنجاز…" : "✓ تأكيد الإنجاز"}
-        </button>
+        {/* زر التأكيد ملتصق بأسفل النافذة دائماً (لا يختفي تحت معاينة الصورة على الهاتف) */}
+        <div className="sticky bottom-0 -mx-5 -mb-5 mt-2 border-t border-slate-100 bg-white px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-3">
+          {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
+          <button onClick={submit} disabled={busy} className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+            {busy ? "جارٍ الإنجاز…" : "✓ تأكيد الإنجاز"}
+          </button>
+        </div>
       </div>
     </div>
   );

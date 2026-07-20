@@ -72,5 +72,23 @@ function ensureSingleInstance(): Promise<void> {
   }
 })();
 
+// إغلاق نظيف عند إيقاف العامل/إطفاء الحاسبة: نُغلق متصفّحات الواتساب بأمان كي تُفرَّغ
+// حالة الجلسة إلى القرص (يمنع تسجيل الخروج وطلب QR جديد بعد الإطفاء المفاجئ).
+// ويندوز يُرسل للعملية إشارة عند الإطفاء/إغلاق النافذة — نلتقطها ونُمهل الإغلاق ثوانٍ.
+let shuttingDown = false;
+async function gracefulShutdown(sig: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[worker] إيقاف (${sig}) — إغلاق نظيف لجلسات الواتساب لحفظها...`);
+  try {
+    const { destroyAllWhatsApp } = await import("@/lib/whatsapp");
+    await destroyAllWhatsApp();
+  } catch { /* تجاهل */ }
+  process.exit(0);
+}
+for (const sig of ["SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"] as const) {
+  try { process.on(sig, () => { void gracefulShutdown(sig); }); } catch { /* قد لا تُدعَم كل الإشارات على ويندوز */ }
+}
+
 // إبقاء العملية حيّة
 setInterval(() => {}, 1 << 30);

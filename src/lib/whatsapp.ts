@@ -222,6 +222,21 @@ export async function logoutWhatsApp(officeId: number): Promise<void> {
   publish(officeId); // انشر "disconnected" للسحابة فوراً
 }
 
+// إغلاق نظيف لكل جلسات الواتساب على هذه الحاسبة قبل إطفاء العملية: destroy فقط (لا logout)
+// كي يُفرِغ كروميوم حالة الجلسة إلى القرص. الإطفاء المفاجئ دون هذا يترك الجلسة نصف-مكتوبة
+// فتُرفَض عند الإقلاع التالي (تسجيل خروج وطلب QR). يُستدعى من معالج إيقاف العامل.
+export async function destroyAllWhatsApp(): Promise<void> {
+  const tasks: Promise<unknown>[] = [];
+  for (const s of offices().values()) {
+    if (s.client) {
+      try { tasks.push(Promise.resolve(s.client.destroy()).catch(() => {})); } catch { /* تجاهل */ }
+      s.client = null;
+    }
+  }
+  // حدّ زمني كي لا يعلّق الإطفاء طويلاً (مهلة ويندوز للإغلاق محدودة)
+  await Promise.race([Promise.allSettled(tasks), new Promise((r) => setTimeout(r, 6000))]);
+}
+
 // حالة واتساب المكاتب كما نشرها الوكيل في السحابة (Neon) — تقرأها كل مسارات الموقع.
 // مهمّة لأن الموقع (Vercel) لا يملك عميل واتساب في ذاكرته؛ الحالة الحقيقية في القاعدة.
 // إن لم يوجد قائد متصل (وكيل مُعتمَد نشط)، لا شيء يستضيف واتساب فعلياً ⇒ الكل "غير متصل".
