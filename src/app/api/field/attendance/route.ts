@@ -42,7 +42,23 @@ export async function GET(request: Request) {
   }
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
-  const reqOffice = Number(new URL(request.url).searchParams.get("officeId")) || null;
+  const url = new URL(request.url);
+  // سجل بصمات فنيٍّ محدّد (للمدير): كل بصماته بتاريخها ووقتَي الدخول/الخروج
+  const logTechId = Number(url.searchParams.get("technicianId")) || null;
+  if (logTechId) {
+    const t = await prisma.technician.findUnique({ where: { id: logTechId } });
+    if (!t || t.isDeleted || !(await ownsTower(session, t.towerId))) {
+      return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
+    }
+    const recs = await prisma.attendance.findMany({
+      where: { technicianId: logTechId },
+      orderBy: { dayKey: "desc" },
+      select: { id: true, dayKey: true, checkIn: true, checkOut: true, checkoutBy: true, lateExcuse: true },
+      take: 120,
+    });
+    return NextResponse.json({ role: "manager", log: recs });
+  }
+  const reqOffice = Number(url.searchParams.get("officeId")) || null;
   const key = baghdadDayKey(new Date());
   const agentTowers = await agentTowerIds(session);
   // عزل الوكيل: لا يُعرض حضور مكتبٍ لا يتبع وكيل المستخدم

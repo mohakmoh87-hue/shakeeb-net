@@ -19,7 +19,7 @@ type Card = {
   assignee: string | null; technicianId: number | null; kind: string;
   label: string | null; dueDate: string | null; position: number; done: boolean;
   amount: number | null; serviceDetails: string | null; completedAt: string | null;
-  materialsInfo: string | null;
+  materialsInfo: string | null; techNote: string | null;
   startedAt: string | null; durationSec: number | null; postponedTo: string | null;
   history: string | null;
 };
@@ -44,12 +44,16 @@ type CardType = { id: number; name: string; deliveryOnly: boolean; execMinutes?:
 const KIND_COLORS = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-purple-500", "bg-pink-500", "bg-cyan-600", "bg-red-500", "bg-lime-600", "bg-indigo-500", "bg-orange-500"];
 const kindColor = (name: string) => KIND_COLORS[[...(name || "")].reduce((a, ch) => a + ch.charCodeAt(0), 0) % KIND_COLORS.length];
 const fmtDue = (d: string | null) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" }) : null);
-// رقم هاتف المشترك مُخزَّن ضمن وصف البطاقة (سطر «📱 الهاتف: …») — نستخرجه لعرضه على وجه البطاقة
-const phoneOf = (desc?: string | null): string | null => {
-  const m = desc?.match(/📱\s*الهاتف:\s*([^\n]+)/);
-  const v = m?.[1]?.trim();
+// أسطر مخزّنة ضمن وصف البطاقة. رقم الهاتف من القاعدة (📱 الهاتف) يظهر بفتح البطاقة فقط.
+const lineOf = (desc: string | null | undefined, emoji: string, label: string): string | null => {
+  const re = new RegExp(`${emoji}\\s*${label}:\\s*([^\\n]+)`);
+  const v = desc?.match(re)?.[1]?.trim();
   return v && v !== "—" ? v : null;
 };
+const phoneOf = (desc?: string | null): string | null => lineOf(desc, "📱", "الهاتف"); // هاتف القاعدة (بفتح البطاقة)
+// على وجه البطاقة (بلا فتح): الهاتف الإضافي من النافذة المنبثقة إن وُجد، والملاحظة المكتوبة فيها
+const facePhoneOf = (desc?: string | null): string | null => lineOf(desc, "📞", "هاتف إضافي");
+const faceNoteOf = (desc?: string | null): string | null => lineOf(desc, "📝", "ملاحظة");
 
 export default function FieldManagementPage() {
   const router = useRouter();
@@ -314,7 +318,10 @@ export default function FieldManagementPage() {
                     className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md"
                   >
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
-                    {phoneOf(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📱 {phoneOf(c.description)}</div>}
+                    {/* على الوجه: هاتف النافذة المنبثقة (إن وُجد) + ملاحظتها — رقم القاعدة يظهر بفتح البطاقة فقط */}
+                    {facePhoneOf(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {facePhoneOf(c.description)}</div>}
+                    {faceNoteOf(c.description) && <div className="mt-0.5 text-xs text-slate-500">📝 {faceNoteOf(c.description)}</div>}
+                    {c.techNote && <div className="mt-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">🗒️ {c.techNote}</div>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
                       <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
@@ -540,6 +547,17 @@ export default function FieldManagementPage() {
               );
             })()}
 
+            {/* ملاحظة الفني — حقل يكتب فيه الفني (تظهر على وجه البطاقة ويراها الجميع) */}
+            <label className="mb-1 block text-xs font-semibold text-slate-500">🗒️ ملاحظة الفني</label>
+            <textarea
+              value={sel.techNote ?? ""}
+              onChange={(e) => setSel({ ...sel, techNote: e.target.value })}
+              onBlur={() => { void fetch("/api/field/card-note", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: sel.id, techNote: sel.techNote }) }).then(() => load()); }}
+              rows={2}
+              placeholder="ملاحظة يكتبها الفني على البطاقة…"
+              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+
             {sel.done ? (
               <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
                 <div className="mb-1 font-bold text-emerald-700">✓ منجزة (بانتظار التحصيل)</div>
@@ -626,6 +644,7 @@ export default function FieldManagementPage() {
         <CompletionModal
           card={completing}
           deliveryOnly={isDeliveryKind(completing.kind)}
+          photoRequired={isTech}
           onClose={() => setCompleting(null)}
           onDone={() => { setCompleting(null); load(officeId); }}
         />
@@ -822,10 +841,12 @@ function PostponeModal({ card, onClose, onDone }: { card: Card; onClose: () => v
 
 /* ========== نافذة إنجاز البطاقة ========== */
 type CustodyMat = { itemId: number; name: string; priceSale: number; available: number };
-function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; deliveryOnly: boolean; onClose: () => void; onDone: () => void }) {
+function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }: { card: Card; deliveryOnly: boolean; photoRequired: boolean; onClose: () => void; onDone: () => void }) {
   const isTransfer = card.kind === "تحويل";
   const isDelivery = deliveryOnly && !isTransfer;
   const fullFields = !isDelivery && !isTransfer; // صيانة/تنصيب: تفاصيل + صورة + مواد
+  // الصورة إلزامية على الفني فقط؛ اختيارية للمدير والمستخدم (وغير مطلوبة للتوصيل أصلاً)
+  const photoMandatory = fullFields && photoRequired;
   const [details, setDetails] = useState("");
   const [newUser, setNewUser] = useState("");
   const [amount, setAmount] = useState("");
@@ -887,7 +908,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
       if (!newUser.trim()) { setErr("اليوزر الجديد مطلوب لإنجاز التحويل"); return; }
     } else if (fullFields) {
       if (!details.trim()) { setErr("تفاصيل الصيانة مطلوبة"); return; }
-      if (!photo) { setErr("رفع صورة مطلوب"); return; }
+      if (photoMandatory && !photo) { setErr("رفع صورة مطلوب"); return; }
     }
     setBusy(true);
     const materials = Object.entries(picked).map(([id, q]) => ({ itemId: Number(id), qty: q }));
@@ -967,9 +988,9 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
               </div>
             )}
 
-            <label className="mb-1 block text-xs font-semibold text-slate-500">صورة العمل <span className="text-red-500">*</span></label>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">صورة العمل {photoMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400">(اختياري)</span>}</label>
             <input type="file" accept="image/*" capture="environment" onChange={onFile} className="mb-2 w-full text-sm" />
-            <p className="mb-2 text-[11px] text-slate-400">أي حجم صورة مقبول — تُضغط تلقائياً (≤ 1.5MB) قبل الرفع.</p>
+            <p className="mb-2 text-[11px] text-slate-400">أي حجم صورة مقبول — تُضغط تلقائياً (≤ 1.5MB) قبل الرفع.{!photoMandatory && " الصورة إلزامية على الفني فقط."}</p>
             {preparing && <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">جاري ضغط الصورة…</div>}
             {photo && <img src={photo} alt="preview" className="mb-3 max-h-40 rounded-lg border border-slate-200" />}
           </>

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { TrackPoint } from "./TrackMap";
+import { fmtAgo } from "./TrackMap";
 
 const TrackMap = dynamic(() => import("./TrackMap"), { ssr: false });
 
@@ -94,14 +95,10 @@ export function FieldTrackerProvider({ enabled, children }: { enabled: boolean; 
   const clearAll = () => { stop([...selRef.current]); setSelected(new Set()); setLocs(new Map()); };
 
   const points: TrackPoint[] = useMemo(
-    () => [...selected].map((id) => locs.get(id)).filter((l): l is Loc => !!l && l.lat != null && l.lng != null).map((l) => ({ id: l.id, name: l.name, lat: l.lat as number, lng: l.lng as number, fresh: l.fresh, pole: l.pole ?? null, poleDistM: l.poleDistM ?? null })),
+    () => [...selected].map((id) => locs.get(id)).filter((l): l is Loc => !!l && l.lat != null && l.lng != null).map((l) => ({ id: l.id, name: l.name, lat: l.lat as number, lng: l.lng as number, fresh: l.fresh, pole: l.pole ?? null, poleDistM: l.poleDistM ?? null, at: l.at })),
     [selected, locs],
   );
-  const ago = (at: string | null) => {
-    if (!at) return null;
-    const s = Math.max(0, Math.round((Date.now() - new Date(at).getTime()) / 1000));
-    return s < 60 ? `قبل ${s}ث` : `قبل ${Math.round(s / 60)}د`;
-  };
+  const ago = (at: string | null) => (at ? fmtAgo(at) : null);
 
   const ctx: Ctx = { techs, manager, selected, toggle, selectAll, clearAll, locs, points, activeCount: points.length, openBig: () => setBig(true), ago };
 
@@ -133,24 +130,46 @@ export function FieldTrackerProvider({ enabled, children }: { enabled: boolean; 
   );
 }
 
-// أسماء الفنيين على خطّ أفقي (مربّعات صح)
-function Chips({ ctx }: { ctx: Ctx }) {
-  const { techs, selected, toggle, locs } = ctx;
+// قائمة منسدلة لاختيار من تريد تتبّعه (تدعم التعدّد): اختيار اسم يضيفه، وتظهر المتتبَّعون
+// كمربّعات صغيرة مع حالتهم وآخر ظهورهم وزر إزالة. للمدير: مجموعة لكل مكتب داخل القائمة.
+function TechPicker({ ctx, groups }: { ctx: Ctx; groups?: [string, Tech[]][] }) {
+  const { techs, manager, selected, toggle, locs, ago } = ctx;
+  const grouped = manager && groups && groups.length > 1;
+  const untracked = (arr: Tech[]) => arr.filter((t) => !selected.has(t.id));
   return (
-    <>
-      {techs.map((t) => {
-        const on = selected.has(t.id);
-        const l = locs.get(t.id);
-        const has = on && l && l.lat != null;
-        return (
-          <label key={t.id} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${on ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
-            <input type="checkbox" checked={on} onChange={() => toggle(t.id)} className="h-3.5 w-3.5 accent-emerald-600" />
-            <span className="whitespace-nowrap">{t.name}</span>
-            {on && (has ? <span>{l!.fresh ? "🟢" : "🟡"}</span> : <span className="text-slate-400">⏳</span>)}
-          </label>
-        );
-      })}
-    </>
+    <div className="space-y-1.5">
+      <select
+        value=""
+        onChange={(e) => { const id = Number(e.target.value); if (id) toggle(id); }}
+        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500"
+      >
+        <option value="">➕ اختر فنّياً لتتبّعه…</option>
+        {grouped
+          ? groups!.map(([office, arr]) => (
+              <optgroup key={office || "—"} label={`🏢 ${office || "—"}`}>
+                {untracked(arr).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </optgroup>
+            ))
+          : untracked(techs).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+      </select>
+      {selected.size > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {[...selected].map((id) => {
+            const t = techs.find((x) => x.id === id);
+            if (!t) return null;
+            const l = locs.get(id);
+            const has = l && l.lat != null;
+            return (
+              <span key={id} className="flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-800">
+                <span className="whitespace-nowrap">{t.name}</span>
+                <span className="text-[10px] font-normal">{has ? <span className={l!.fresh ? "text-emerald-600" : "text-amber-600"}>{l!.fresh ? "🟢" : "🟡"} {ago(l!.at)}</span> : <span className="text-slate-400">⏳</span>}</span>
+                <button onClick={() => toggle(id)} className="text-emerald-500 hover:text-rose-600" title="إيقاف تتبّعه">✕</button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -170,8 +189,8 @@ export function FieldTrackerPanel({ onCollapse }: { onCollapse?: () => void }) {
           {onCollapse && <button onClick={onCollapse} className="rounded-md px-1.5 py-0.5 text-sm hover:bg-white/20" title="طيّ إلى دبوس">▾</button>}
         </div>
       </div>
-      {/* أسماء الفنيين على خطّ أفقي فوق الخريطة */}
-      <div className="flex max-h-28 flex-wrap content-start gap-1.5 overflow-y-auto border-b border-slate-100 px-3 py-2"><Chips ctx={ctx} /></div>
+      {/* قائمة منسدلة لاختيار الفنيين فوق الخريطة */}
+      <div className="max-h-32 overflow-y-auto border-b border-slate-100 px-3 py-2"><TechPicker ctx={ctx} /></div>
       {/* الخريطة تملأ ما تبقّى من ارتفاع اللوحة */}
       <div className="relative min-h-0 flex-1">
         <TrackMap points={points} className="h-full w-full" />
@@ -183,36 +202,12 @@ export function FieldTrackerPanel({ onCollapse }: { onCollapse?: () => void }) {
 
 // النافذة الكبيرة (متصفح + تطبيق) — خريطة كل المؤشّرات + قائمة جانبية، وزر إغلاق أعلى اليسار.
 function BigModal({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
-  const { techs, manager, selected, toggle, selectAll, clearAll, locs, points, activeCount, ago } = ctx;
+  const { techs, selectAll, clearAll, points, activeCount } = ctx;
   const groups = useMemo(() => {
     const m = new Map<string, Tech[]>();
     for (const t of techs) { const k = t.office || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(t); }
     return [...m.entries()];
   }, [techs]);
-
-  const list = (
-    <div className="space-y-2">
-      {(manager && groups.length > 1 ? groups : [["", techs] as [string, Tech[]]]).map(([office, arr]) => (
-        <div key={office || "all"}>
-          {manager && groups.length > 1 && <div className="mb-1 mt-1 text-[11px] font-bold text-slate-400">🏢 {office}</div>}
-          <div className="space-y-1">
-            {arr.map((t) => {
-              const on = selected.has(t.id);
-              const l = locs.get(t.id);
-              const has = on && l && l.lat != null;
-              return (
-                <label key={t.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 ${on ? "border-emerald-300 bg-emerald-50/60" : "border-slate-200 bg-white"}`}>
-                  <input type="checkbox" checked={on} onChange={() => toggle(t.id)} className="h-4 w-4 accent-emerald-600" />
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">👷 {t.name}</span>
-                  {on && <span className="shrink-0 text-[10px]">{has ? <span className={l!.fresh ? "text-emerald-600" : "text-amber-600"}>{l!.fresh ? "🟢" : "🟡"} {ago(l!.at)}</span> : <span className="text-slate-400">⏳ بانتظار…</span>}</span>}
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 z-[85] flex flex-col bg-black/60 p-0 sm:p-4" onClick={onClose}>
@@ -232,7 +227,7 @@ function BigModal({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
               <button onClick={selectAll} className="flex-1 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white">تتبّع الكل ({techs.length})</button>
               <button onClick={clearAll} className="flex-1 rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-600">إيقاف الكل</button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">{list}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"><TechPicker ctx={ctx} groups={groups} /></div>
           </div>
         </div>
         <div className="border-t border-slate-200 bg-white px-4 py-2 text-center text-[11px] text-slate-400">

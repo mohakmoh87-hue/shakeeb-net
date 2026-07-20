@@ -14,13 +14,17 @@ const schema = z.object({
   towerId: z.coerce.number().nullable().optional(), // للمدير: اختيار مكتب المخزن
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const g = await guard("inventory.manage");
   if (g.error) return g.error;
 
-  // مخزن مستقل لكل مكتب؛ المدير يرى كل المكاتب
+  // مخزن مستقل لكل مكتب؛ المدير يرى كل المكاتب — مع فلتر اختياري بمكتب معيّن (officeId)
+  const officeId = Number(new URL(request.url).searchParams.get("officeId")) || null;
+  const scope = await towerScope(g.session);
+  // الفلتر لا يتجاوز العزل: يُطبَّق فقط إن كان المكتب يتبع الوكيل
+  const officeFilter = officeId != null && (await ownsTower(g.session, officeId)) ? { towerId: officeId } : {};
   const items = await prisma.item.findMany({
-    where: { isDeleted: false, ...(await towerScope(g.session)) },
+    where: { isDeleted: false, ...scope, ...officeFilter },
     orderBy: { id: "asc" },
   });
   return NextResponse.json(items);

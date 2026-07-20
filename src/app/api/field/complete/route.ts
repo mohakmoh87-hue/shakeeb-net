@@ -88,7 +88,8 @@ export async function POST(request: Request) {
     if (!newUser?.trim()) return NextResponse.json({ error: "اليوزر الجديد مطلوب لإنجاز التحويل" }, { status: 400 });
   } else if (!isDelivery) {
     if (!serviceDetails?.trim()) return NextResponse.json({ error: "تفاصيل الصيانة مطلوبة" }, { status: 400 });
-    if (!photo?.trim()) return NextResponse.json({ error: "رفع صورة مطلوب" }, { status: 400 });
+    // الصورة إلزامية على الفني فقط؛ اختيارية للمدير والمستخدم
+    if (actor.isTech && !photo?.trim()) return NextResponse.json({ error: "رفع صورة مطلوب" }, { status: 400 });
   }
 
   const tech = await prisma.technician.findUnique({ where: { id: card.technicianId } });

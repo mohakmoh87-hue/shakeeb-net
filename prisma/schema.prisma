@@ -757,6 +757,7 @@ model TaskCard {
   postponedTo  DateTime? // موعد التأجيل (عند عدم تواجد المشترك)
   // بيانات الإنجاز
   serviceDetails String? // تفاصيل الصيانة
+  techNote      String? // ملاحظة يكتبها الفني على البطاقة (تُعرض على وجهها)
   amount        Float? // المبلغ المستلم من الزبون
   materialsInfo String? // JSON بالمواد المباعة من الذمم (للعرض)
   completedAt   DateTime?

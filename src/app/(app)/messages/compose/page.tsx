@@ -6,12 +6,6 @@ import PageHeader from "@/components/PageHeader";
 
 type Template = { id: number; type: string | null; text: string | null };
 
-const CHANNELS = [
-  { key: "SMS", label: "SMS", icon: "✉️" },
-  { key: "WHATSAPP", label: "واتساب", icon: "💬" },
-  { key: "TELEGRAM", label: "تيليغرام", icon: "✈️" },
-] as const;
-
 const TARGETS = [
   { key: "all", label: "كل المشتركين" },
   { key: "expiring", label: "المشتركون قرب الانتهاء" },
@@ -32,7 +26,7 @@ function ComposeInner() {
   const search = useSearchParams();
   const preSub = search.get("subscriberId");
 
-  const [channel, setChannel] = useState<"SMS" | "WHATSAPP" | "TELEGRAM">("SMS");
+  const channel = "WHATSAPP"; // واتساب فقط (لا SMS/تيليغرام)
   const [target, setTarget] = useState<"all" | "expiring" | "expiringRange" | "debtors" | "search" | "one">(
     preSub ? "one" : "all",
   );
@@ -87,25 +81,11 @@ function ComposeInner() {
   return (
     <div className="p-6">
       <PageHeader
-        title={preSub ? "إرسال رسالة" : "إرسال رسالة للكل"}
-        subtitle="إرسال إشعار للمشتركين عبر SMS أو واتساب أو تيليغرام"
+        title={preSub ? "إرسال رسالة واتساب" : "إرسال رسالة واتساب للكل"}
+        subtitle="إرسال إشعار واتساب للمشتركين"
       />
 
       <div className="max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        {/* القناة */}
-        <label className="mb-1 block text-sm font-medium text-slate-700">القناة</label>
-        <div className="mb-4 flex gap-2">
-          {CHANNELS.map((c) => (
-            <button
-              key={c.key}
-              onClick={() => setChannel(c.key)}
-              className={`flex-1 rounded-lg py-2 font-semibold transition ${channel === c.key ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-            >
-              {c.icon} {c.label}
-            </button>
-          ))}
-        </div>
-
         {/* المستلمون */}
         {!preSub && (
           <>
@@ -158,23 +138,20 @@ function ComposeInner() {
         )}
 
         {/* قالب جاهز */}
-        {templates.length > 0 && (
-          <>
-            <label className="mb-1 block text-sm font-medium text-slate-700">قالب جاهز (اختياري)</label>
-            <select
-              onChange={(e) => {
-                const t = templates.find((x) => x.id === Number(e.target.value));
-                if (t?.text) setText(t.text);
-              }}
-              className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
-            >
-              <option value="">— اختر قالباً لتحميله —</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>{t.type}</option>
-              ))}
-            </select>
-          </>
-        )}
+        <label className="mb-1 block text-sm font-medium text-slate-700">اختر قالباً جاهزاً (اختياري)</label>
+        <select
+          onChange={(e) => {
+            const t = templates.find((x) => x.id === Number(e.target.value));
+            if (t?.text) setText(t.text);
+          }}
+          className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
+        >
+          <option value="">— اختر قالباً لتحميل نصّه —</option>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>{t.type}</option>
+          ))}
+        </select>
+        {templates.length === 0 && <div className="mb-4 -mt-2 text-xs text-slate-400">لا قوالب محفوظة بعد — أضِفها من صفحة «قوالب الرسائل».</div>}
 
         {/* النص */}
         <label className="mb-1 block text-sm font-medium text-slate-700">نص الرسالة</label>
@@ -208,7 +185,7 @@ function ComposeInner() {
         </button>
 
         <p className="mt-3 text-center text-xs text-slate-500">
-          واتساب يُرسل فعلياً عبر الجلسة المربوطة في الإعدادات. أما SMS/تيليغرام فتُسجَّل دون إرسال فعلي حتى ربط مزوّد.
+          يُرسل واتساب فعلياً عبر جلسة المكتب المربوطة في الإعدادات.
         </p>
       </div>
     </div>

@@ -130,6 +130,8 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
 .tm-pole { margin-right: 5px; padding-right: 5px; border-right: 1px solid rgba(255,255,255,.35); color: #7dd3fc; font-size: 10px; font-weight: 600; }
 /* المسافة بالمتر حتى أقرب عامود */
 .tm-dist { margin-right: 4px; color: #fcd34d; font-size: 10px; font-weight: 600; }
+/* آخر ظهور (أونلاين) بجانب الاسم */
+.tm-ago { margin-right: 5px; padding-right: 5px; border-right: 1px solid rgba(255,255,255,.35); color: #86efac; font-size: 10px; font-weight: 600; }
 .tm-dot { width: 16px; height: 16px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.45); }
 .tm-fresh .tm-dot { background: #10b981; }
 .tm-stale .tm-dot { background: #f59e0b; }

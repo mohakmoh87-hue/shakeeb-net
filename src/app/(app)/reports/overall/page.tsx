@@ -32,7 +32,7 @@ export default function OverallReport() {
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<NotActSub[]>([]);
   const [checked, setChecked] = useState<Set<number>>(new Set());
-  const [channel, setChannel] = useState<"SMS" | "WHATSAPP" | "TELEGRAM">("WHATSAPP");
+  const channel = "WHATSAPP"; // واتساب فقط
   const [text, setText] = useState("");
   const [loadingList, setLoadingList] = useState(false);
   const [sending, setSending] = useState(false);
@@ -166,13 +166,7 @@ export default function OverallReport() {
               {/* إرسال الرسالة */}
               <div className="w-full shrink-0 space-y-3 p-4 md:w-[300px] md:overflow-y-auto">
                 <div className="text-sm font-semibold text-slate-700">المحدّدون: <span className="text-mynet-blue">{checked.size}</span></div>
-                <div className="flex gap-1">
-                  {(["SMS", "WHATSAPP", "TELEGRAM"] as const).map((c) => (
-                    <button key={c} onClick={() => setChannel(c)} className={`flex-1 rounded-lg py-1.5 text-xs font-semibold ${channel === c ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600"}`}>
-                      {c === "SMS" ? "SMS" : c === "WHATSAPP" ? "واتساب" : "تيليغرام"}
-                    </button>
-                  ))}
-                </div>
+                <div className="rounded-lg bg-emerald-50 py-1.5 text-center text-xs font-semibold text-emerald-700">💬 إرسال عبر واتساب</div>
                 <textarea value={text} onChange={(e) => setText(e.target.value)} rows={8} placeholder="اكتب نص الرسالة... يمكنك استخدام {name} {dateTo} {carry} {office}" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                 {result && <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-700">{result}</div>}
                 <button onClick={send} disabled={sending} className="w-full rounded-lg bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-60">

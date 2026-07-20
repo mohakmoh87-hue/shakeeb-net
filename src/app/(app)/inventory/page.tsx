@@ -29,6 +29,7 @@ export default function InventoryPage() {
   const [sellItem, setSellItem] = useState<Item | null>(null);
   const [transferItem, setTransferItem] = useState<Item | null>(null);
   const [custodyOpen, setCustodyOpen] = useState(false);
+  const [filterTower, setFilterTower] = useState(""); // فلتر مكتب (للمدير)
 
   const loadCustodies = useCallback(() => {
     fetch("/api/inventory/custody").then((r) => void (r.ok && r.json().then((d) => setCustodies(d.custodies ?? []))));
@@ -67,16 +68,29 @@ export default function InventoryPage() {
         key={refreshKey}
         title="المخزن"
         subtitle="المواد والكميات والأسعار — مخزن مستقل لكل مكتب"
-        apiBase="/api/items"
+        apiBase={filterTower ? `/api/items?officeId=${filterTower}` : "/api/items"}
         addLabel="إضافة مادة"
         fields={fields}
         headerExtra={
-          <button
-            onClick={() => { loadCustodies(); setCustodyOpen(true); }}
-            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-amber-600"
-          >
-            🧰 ذمم الفنيين
-          </button>
+          <>
+            {isAdmin && towers.length > 0 && (
+              <select
+                value={filterTower}
+                onChange={(e) => setFilterTower(e.target.value)}
+                title="اختر مكتباً لعرض مخزنه فقط"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-mynet-blue"
+              >
+                <option value="">كل المكاتب</option>
+                {towers.map((t) => <option key={t.id} value={t.id}>{t.name ?? `#${t.id}`}</option>)}
+              </select>
+            )}
+            <button
+              onClick={() => { loadCustodies(); setCustodyOpen(true); }}
+              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-amber-600"
+            >
+              🧰 ذمم الفنيين
+            </button>
+          </>
         }
         rowActions={(r) => (
           <div className="flex gap-1.5">
