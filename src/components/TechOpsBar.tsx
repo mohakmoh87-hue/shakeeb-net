@@ -278,9 +278,10 @@ export default function TechOpsBar({ techName }: { techName: string }) {
         <div className="h-24" />
       </div>
 
-      {/* وضع التطبيق: شريط «القائمة» بنفس نسق قائمة المدير — البصمة والعمليات داخل القائمة فقط */}
+      {/* وضع التطبيق: شريط «القائمة» بنفس نسق قائمة المدير — البصمة والعمليات داخل القائمة فقط.
+          ضمن تدفّق الصفحة (لا fixed) كقائمة المدير تماماً: أي نافذة (تفاصيل/إنجاز) تغطّيه فلا يحجب أزرارها */}
       <div data-app-only>
-        <div className="fixed inset-x-0 bottom-0 z-[70] border-t border-white/15 bg-black/25 px-4 pt-2.5 pb-[max(12px,env(safe-area-inset-bottom))] backdrop-blur">
+        <div className="border-t border-white/15 bg-black/25 px-4 pt-2.5 pb-[max(12px,env(safe-area-inset-bottom))] backdrop-blur">
           <button
             onClick={() => setMenuOpen(true)}
             className="relative flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white/95 font-extrabold text-mynet-blue shadow-lg active:scale-[0.99] transition"
@@ -294,7 +295,6 @@ export default function TechOpsBar({ techName }: { techName: string }) {
             )}
           </button>
         </div>
-        <div className="h-20" />
 
         {/* النافذة السفلية — نفس تصميم قائمة المدير */}
         {menuOpen && (
