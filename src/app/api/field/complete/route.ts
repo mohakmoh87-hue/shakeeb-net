@@ -34,10 +34,10 @@ async function matchSubscriber(text: string, towerId: number | null) {
 
 const schema = z.object({
   cardId: z.coerce.number().int().positive(),
-  serviceDetails: z.string().optional(),
+  serviceDetails: z.string().nullish(), // يقبل نصاً/غياباً/null
   amount: z.coerce.number().min(0).optional(),
-  newUser: z.string().optional(), // اليوزر الجديد (إلزامي لبطاقة التحويل)
-  photo: z.string().max(2_000_000, "حجم الصورة كبير جداً").optional(), // data URL (JPEG مضغوط) — حدّ ~1.5 ميغا
+  newUser: z.string().nullish(), // اليوزر الجديد (إلزامي لبطاقة التحويل)
+  photo: z.string().max(2_000_000, "حجم الصورة كبير جداً").nullish(), // data URL — null عند عدم رفع صورة (اختيارية للمدير/المستخدم)
   materials: z
     .array(z.object({ itemId: z.coerce.number().int().positive(), qty: z.coerce.number().positive() }))
     .optional()
