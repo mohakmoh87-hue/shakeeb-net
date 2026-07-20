@@ -17,8 +17,10 @@ export async function POST(request: Request) {
   });
 
   const origin = `${new URL(request.url).protocol}//${new URL(request.url).host}`;
-  // أمر PowerShell واحد: يمرّر الرمز ثم يشغّل المُنصِّب (يجلب رابط القاعدة تلقائياً بالرمز)
-  const command = `powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:INSTALL_TOKEN='${token}'; iwr -UseBasicParsing '${origin}/api/hybrid/setup.ps1' | iex"`;
+  // أمر PowerShell واحد يُلصَق مباشرةً في نافذة PowerShell (كما في التعليمات): يضبط الرمز ثم
+  // يشغّل المُنصِّب. لا نغلّفه بـ `powershell -Command "..."` لأن ذلك يجعل PowerShell الخارجي
+  // يوسّع $env:INSTALL_TOKEN (الفارغ) قبل التنفيذ فيكسر الأمر عند لصقه دفعة واحدة.
+  const command = `$env:INSTALL_TOKEN='${token}'; iwr -UseBasicParsing '${origin}/api/hybrid/setup.ps1' | iex`;
 
   return NextResponse.json({ token, command, expiresAt });
 }
