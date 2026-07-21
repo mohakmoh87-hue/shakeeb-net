@@ -56,6 +56,15 @@ export async function guardOwner() {
   return { session };
 }
 
+// تأكيد كلمة سر السوبر أدمن (المالك) نفسه — للعمليات الحساسة (حذف وكيل، تغيير مفتاح القاعدة)
+export async function confirmOwnerPassword(userId: number, password: string | undefined | null): Promise<boolean> {
+  if (!password) return false;
+  const { verifyPassword } = await import("@/lib/auth");
+  const owner = await prisma.user.findUnique({ where: { id: userId }, select: { password: true, isOwner: true } });
+  if (!owner?.isOwner) return false;
+  return verifyPassword(password, owner.password);
+}
+
 // حارس لمسارات الـ API: يتحقق من الجلسة والصلاحية
 // يُرجع الجلسة عند النجاح، أو NextResponse بخطأ عند الفشل
 export async function guard(permission: Permission) {

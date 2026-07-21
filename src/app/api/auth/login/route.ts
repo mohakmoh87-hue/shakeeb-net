@@ -48,7 +48,10 @@ export async function POST(request: Request) {
     if (tech?.code && (await verifyPassword(password, tech.code))) {
       const blocked = await agentBlockReason(tech.agentId);
       if (blocked) return NextResponse.json({ error: blocked }, { status: 403 });
-      await setTechSession({ kind: "technician", technicianId: tech.id, name: tech.name, username: tech.username ?? "", agentId: tech.agentId, towerId: tech.towerId });
+      // جهاز واحد فقط: رمز جلسة جديد بكل دخول — يُبطل جلسة أي جهاز سابق فوراً
+      const sessionToken = crypto.randomUUID();
+      await prisma.technician.update({ where: { id: tech.id }, data: { sessionToken } });
+      await setTechSession({ kind: "technician", technicianId: tech.id, name: tech.name, username: tech.username ?? "", agentId: tech.agentId, towerId: tech.towerId, sessionToken });
       return NextResponse.json({ ok: true, redirect: "/field-management" });
     }
     return NextResponse.json({ error: "اسم المستخدم أو كلمة السر غير صحيحة" }, { status: 401 });

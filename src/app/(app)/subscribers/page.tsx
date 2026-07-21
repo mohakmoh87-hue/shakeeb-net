@@ -107,6 +107,28 @@ export default function SubscribersPage() {
     else { const d = await res.json().catch(() => ({})); setOpsMsg(d.error ?? "تعذّرت الإضافة"); }
   }
 
+  // نافذة تسديد دين منبثقة (بلا مغادرة الصفحة): + يملأ كامل الدين، أو مبلغ يدوي
+  const [payDebtOpen, setPayDebtOpen] = useState(false);
+  const [payAmount, setPayAmount] = useState("");
+  const [payBusy, setPayBusy] = useState(false);
+  const [payErr, setPayErr] = useState("");
+  async function payDebt() {
+    if (!selected || payBusy) return;
+    const n = Number(payAmount) || 0;
+    if (n <= 0) { setPayErr("أدخل مبلغاً صحيحاً أو اضغط + لتسديد كامل الدين"); return; }
+    setPayBusy(true); setPayErr("");
+    const r = await fetch(`/api/debts/${selected.id}/pay`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: n }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setPayBusy(false);
+    if (!r.ok) { setPayErr(d.error ?? "تعذّر التسديد"); return; }
+    setPayDebtOpen(false); setPayAmount("");
+    setMsg(`✓ سُدِّد ${n.toLocaleString("en-US")} د.ع — المتبقّي ${Number(d.newCarry ?? 0).toLocaleString("en-US")} د.ع`);
+    load(query, showAllTowers);
+  }
+
   // إرسال «وصل ملخص الاشتراك» واتساب فوراً (قالب «ملخص الاشتراك» في قوالب الرسائل)
   const [summaryBusy, setSummaryBusy] = useState(false);
   async function sendSummary() {
@@ -460,6 +482,14 @@ export default function SubscribersPage() {
             ✅ تفعيل الاشتراك
           </button>
           <BigStat label="ديون الاشتراكات" value={fmt(form.carry)} color="text-red-600" />
+          {/* تسديد دين بنافذة منبثقة — بلا توجيه لصفحة الديون */}
+          <button
+            onClick={() => { if (selected) { setPayDebtOpen(true); setPayAmount(""); setPayErr(""); } }}
+            disabled={!selected || (form.carry ?? 0) <= 0}
+            className="w-full rounded-lg bg-red-600 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-40"
+          >
+            💵 تسديد دين
+          </button>
           {/* الايام المتبقية: أخضر إن ≥ 0، أحمر إن سالب */}
           <div className={`flex items-center justify-between rounded px-3 py-2 ${remaining >= 0 ? "bg-emerald-500" : "bg-red-600"}`}>
             <span className="text-xs font-semibold text-white">الايام المتبقية للاشتراك</span>
@@ -647,6 +677,42 @@ export default function SubscribersPage() {
           onClose={() => setActivating(null)}
           onDone={() => { setActivating(null); load(query, showAllTowers); }}
         />
+      )}
+
+      {/* نافذة تسديد الدين المنبثقة: كم عليه + «+» يملأ كامل الدين أو مبلغ يدوي */}
+      {payDebtOpen && selected && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setPayDebtOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-1 text-lg font-bold text-slate-800">💵 تسديد دين: {selected.name}</h3>
+            <div className="mb-3 flex items-center justify-between rounded-lg bg-red-50 px-3 py-2">
+              <span className="text-sm text-slate-600">الدين الحالي عليه:</span>
+              <span className="text-lg font-extrabold text-red-600">{fmt(form.carry)} د.ع</span>
+            </div>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ الواصل</label>
+            <div className="mb-2 flex gap-2">
+              <input
+                type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)}
+                placeholder="اكتب المبلغ يدوياً..." dir="ltr"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
+              />
+              <button
+                onClick={() => setPayAmount(String(form.carry ?? 0))}
+                title="تسديد كامل الدين"
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-lg font-extrabold text-white hover:bg-emerald-700"
+              >
+                +
+              </button>
+            </div>
+            <p className="mb-2 text-[11px] text-slate-400">اضغط «+» ليصل كامل المبلغ، أو اكتب المبلغ الواصل يدوياً فقط.</p>
+            {payErr && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{payErr}</div>}
+            <div className="flex gap-2">
+              <button onClick={() => void payDebt()} disabled={payBusy} className="flex-1 rounded-lg bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+                {payBusy ? "جارٍ التسديد..." : "✓ تسديد"}
+              </button>
+              <button onClick={() => setPayDebtOpen(false)} className="rounded-lg bg-slate-200 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-300">إلغاء</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {addingDebt && (

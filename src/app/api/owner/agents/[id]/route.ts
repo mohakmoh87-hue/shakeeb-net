@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guardOwner } from "@/lib/guard";
+import { guardOwner, confirmOwnerPassword } from "@/lib/guard";
 import { hashPassword } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -60,9 +60,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 // حذف وكيل نهائياً: تُمحى كل بياناته من قاعدة البيانات.
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+// عملية حساسة: تتطلب إدخال كلمة سر السوبر أدمن (المالك) للتأكيد.
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await guardOwner();
   if (g.error) return g.error;
+  const body = await request.json().catch(() => null);
+  if (!(await confirmOwnerPassword(g.session.userId, body?.ownerPassword))) {
+    return NextResponse.json({ error: "كلمة سر السوبر أدمن مطلوبة وغير صحيحة — لا يمكن حذف الوكيل بدونها" }, { status: 403 });
+  }
   const { id } = await params;
   const agentId = Number(id);
   const agent = await prisma.agent.findUnique({ where: { id: agentId } });

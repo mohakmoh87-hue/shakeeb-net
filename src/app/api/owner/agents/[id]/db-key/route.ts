@@ -1,15 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guardOwner } from "@/lib/guard";
+import { guardOwner, confirmOwnerPassword } from "@/lib/guard";
 import { regenerateAgentRoleUrl } from "@/lib/agentDbRole";
 
 export const dynamic = "force-dynamic";
 
 // إعادة توليد مفتاح قاعدة بيانات الوكيل (RLS): يبدّل كلمة سر دوره عند الشك بتسريب.
-// الحواسيب القديمة تفقد الاتصال حتى تُجدَّد تنصيباتها برمز جديد. للمالك فقط.
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+// الحواسيب القديمة تفقد الاتصال حتى تُجدَّد تنصيباتها برمز جديد. للمالك فقط،
+// وبتأكيد كلمة سر السوبر أدمن (عملية حساسة).
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await guardOwner();
   if (g.error) return g.error;
+  const body = await request.json().catch(() => null);
+  if (!(await confirmOwnerPassword(g.session.userId, body?.ownerPassword))) {
+    return NextResponse.json({ error: "كلمة سر السوبر أدمن مطلوبة وغير صحيحة — لا يمكن تغيير مفتاح القاعدة بدونها" }, { status: 403 });
+  }
   const { id } = await params;
   const agentId = Number(id);
   if (!Number.isFinite(agentId)) return NextResponse.json({ error: "معرّف غير صالح" }, { status: 400 });

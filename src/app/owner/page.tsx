@@ -54,14 +54,25 @@ export default function OwnerPage() {
   }
   async function remove(a: Agent) {
     if (!confirm(`حذف الوكيل «${a.name}» نهائياً؟\nسيُمحى كل شيء: ${a.officeCount} مكتب، ${a.userCount} مستخدم، وكل المشتركين والحسابات والكروت. لا يمكن التراجع.`)) return;
-    if (!confirm("تأكيد أخير: حذف نهائي لكل بيانات هذا الوكيل؟")) return;
-    const r = await fetch(`/api/owner/agents/${a.id}`, { method: "DELETE" });
-    if (r.ok) load(); else alert("تعذّر الحذف");
+    // عملية حساسة: تأكيد بكلمة سر السوبر أدمن (تُتحقّق في الخادم)
+    const ownerPassword = prompt("🔒 أدخل كلمة سر السوبر أدمن لتأكيد الحذف النهائي:");
+    if (!ownerPassword) return;
+    const r = await fetch(`/api/owner/agents/${a.id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ownerPassword }),
+    });
+    if (r.ok) load(); else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
   }
   // إعادة توليد مفتاح قاعدة بيانات الوكيل (عند الشك بتسريب) — تفقد الحواسيب اتصالها حتى تُجدَّد تنصيباتها
   async function regenKey(a: Agent) {
     if (!confirm(`إعادة توليد مفتاح قاعدة بيانات الوكيل «${a.name}»؟\nستتوقف حواسيب مكاتبه المُنصَّبة عن الاتصال حتى تُعيد تنصيبها برمز جديد من «حسابات المدير». استخدمها عند الشك بتسريب المفتاح فقط.`)) return;
-    const r = await fetch(`/api/owner/agents/${a.id}/db-key`, { method: "POST" });
+    // عملية حساسة: تأكيد بكلمة سر السوبر أدمن (تُتحقّق في الخادم)
+    const ownerPassword = prompt("🔒 أدخل كلمة سر السوبر أدمن لتأكيد تغيير مفتاح القاعدة:");
+    if (!ownerPassword) return;
+    const r = await fetch(`/api/owner/agents/${a.id}/db-key`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ownerPassword }),
+    });
     if (r.ok) alert("✓ أُعيد توليد المفتاح. جدّد تنصيب حواسيب هذا الوكيل برموز جديدة.");
     else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّرت العملية"); }
   }

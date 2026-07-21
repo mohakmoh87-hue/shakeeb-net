@@ -78,6 +78,9 @@ export interface TechSessionPayload {
   username: string;
   agentId: number | null;
   towerId: number | null;
+  // جهاز واحد فقط: رمز جلسة يتجدّد بكل تسجيل دخول ويُخزَّن على صف الفني —
+  // الدخول من جهاز جديد يُبطل جلسة الجهاز السابق فوراً
+  sessionToken?: string;
 }
 export async function setTechSession(payload: TechSessionPayload) {
   const token = await new SignJWT({ ...payload })
@@ -93,9 +96,12 @@ export async function getTechSession(): Promise<TechSessionPayload | null> {
   const payload = await verifyToken(token);
   if (!payload || (payload as unknown as { kind?: string }).kind !== "technician") return null;
   const p = payload as unknown as TechSessionPayload;
-  const tech = await prisma.technician.findUnique({ where: { id: p.technicianId }, select: { id: true, name: true, username: true, agentId: true, towerId: true, isDeleted: true } });
+  const tech = await prisma.technician.findUnique({ where: { id: p.technicianId }, select: { id: true, name: true, username: true, agentId: true, towerId: true, isDeleted: true, sessionToken: true } });
   if (!tech || tech.isDeleted) return null;
-  return { kind: "technician", technicianId: tech.id, name: tech.name, username: tech.username ?? "", agentId: tech.agentId, towerId: tech.towerId };
+  // جهاز واحد فقط: رمز الجلسة يجب أن يطابق آخر تسجيل دخول — دخول جهاز جديد يُبطل السابق.
+  // (جلسات ما قبل الميزة: صف الفني بلا رمز ⇒ تُقبل حتى أول دخول جديد يثبّت رمزاً)
+  if (tech.sessionToken && p.sessionToken !== tech.sessionToken) return null;
+  return { kind: "technician", technicianId: tech.id, name: tech.name, username: tech.username ?? "", agentId: tech.agentId, towerId: tech.towerId, sessionToken: p.sessionToken };
 }
 
 export async function getSession(): Promise<SessionPayload | null> {
