@@ -84,6 +84,7 @@ export default function FieldManagementPage() {
   const [myOfficeId, setMyOfficeId] = useState<number | null>(null);
   const [role, setRole] = useState<string>("");
   const [myName, setMyName] = useState("");
+  const [supportInfo, setSupportInfo] = useState<string | null>(null); // شريط دعم اليوم الكامل (للفني المُعار)
   const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
@@ -103,6 +104,7 @@ export default function FieldManagementPage() {
         setCardTypes(d.cardTypes ?? []); setOfficeId(d.officeId ?? null);
         setIsManager(!!d.isManager); setCanManage(!!d.canManage); setRole(d.role ?? "");
         setCanOperate(d.canOperate !== false); setMyOfficeId(d.myOfficeId ?? null);
+        setSupportInfo(d.supportInfo ?? null);
       }
       setLoading(false);
     });
@@ -284,6 +286,13 @@ export default function FieldManagementPage() {
           )}
         </div>
       </div>
+
+      {/* شريط دعم اليوم الكامل: لوحة الفني مقلوبة لمكتب الدعم حتى إنهائه */}
+      {supportInfo && (
+        <div className="mx-4 mb-2 rounded-lg bg-amber-400/90 px-3 py-2 text-center text-sm font-bold text-amber-950 shadow">
+          {supportInfo}
+        </div>
+      )}
 
       {/* صف: اللوحة (يمين) + لوحة خريطة التتبّع الجانبية (يسار، سطح المكتب — تحجز مكانها) */}
       <div className="flex min-h-0 flex-1 gap-3 px-4 pb-4">

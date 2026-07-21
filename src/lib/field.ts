@@ -57,7 +57,11 @@ export async function resolveListActor(listId: number): Promise<
   const tech = await getTechSession();
   if (!tech) return { ok: false, status: 401, error: "غير مصرّح" };
   const officeId = await listOfficeId(listId);
-  if (officeId == null || officeId !== (tech.towerId ?? null)) {
+  // مكتبه الفعّال: أثناء دعم «يوم كامل» يصبح مكتبُ الدعم مكتبَه (لوحته مقلوبة إليه)
+  let effectiveOffice = tech.towerId ?? null;
+  const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true, supportKind: true } });
+  if (me?.supportTowerId != null && me.supportKind === "day") effectiveOffice = me.supportTowerId;
+  if (officeId == null || officeId !== effectiveOffice) {
     return { ok: false, status: 403, error: "العمود ليس في مكتبك" };
   }
   return { ok: true, actor: { isTech: true, userId: null, agentId: tech.agentId, name: tech.name, technicianId: tech.technicianId, session: null } };

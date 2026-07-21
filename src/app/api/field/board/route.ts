@@ -29,9 +29,22 @@ export async function GET(request: Request) {
   // الفني: لوحة مكتبه الأصلي، بلا إدارة — ولا يُحرم منها أثناء الدعم المؤقت
   const tech = await getTechSession();
   if (tech) {
+    const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true, supportKind: true } });
+
+    // دعم «يوم كامل»: تُقلب لوحته كلياً — يرى كل بطاقات المكتب الطالب للدعم،
+    // ولا يرى أي بطاقة من مكتبه الأصلي، حتى ينتهي الدعم فيعود تلقائياً.
+    if (me?.supportTowerId != null && me.supportTowerId !== tech.towerId && me.supportKind === "day") {
+      const data = await buildBoard(me.supportTowerId, tech.agentId);
+      const sOffice = await prisma.tower.findUnique({ where: { id: me.supportTowerId }, select: { name: true } });
+      return NextResponse.json({
+        ...data, offices: [], officeId: me.supportTowerId, isManager: false, canManage: false,
+        canOperate: true, myOfficeId: me.supportTowerId, role: "technician",
+        supportInfo: `🤝 أنت في دعم يوم كامل لمكتب «${sOffice?.name ?? "آخر"}» — هذه لوحته، وستعود للوحة مكتبك عند إنهاء الدعم`,
+      });
+    }
+
     const data = await buildBoard(tech.towerId, tech.agentId);
-    // مُعارٌ لدعم مؤقت؟ تُضاف له (وله وحده) بطاقاته في مكتب الدعم بعمودٍ افتراضي «دعم مؤقت»
-    const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true } });
+    // مُعارٌ لدعم بطاقات محدّدة؟ تُضاف له (وله وحده) بطاقاته في مكتب الدعم بعمودٍ افتراضي «دعم مؤقت»
     if (me?.supportTowerId != null && me.supportTowerId !== tech.towerId) {
       const sBoard = await getOrCreateBoard(me.supportTowerId);
       const sLists = await prisma.taskList.findMany({ where: { boardId: sBoard.id, isDeleted: false }, select: { id: true } });
