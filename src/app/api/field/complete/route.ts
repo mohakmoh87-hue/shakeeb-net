@@ -224,7 +224,7 @@ export async function POST(request: Request) {
             cardId, status: "pending", dayKey: baghdadDayKey(new Date()),
           },
         }).catch(() => {}); // لا يُفشل الإنجاز إن تعذّر إنشاء الخصم
-        await notify({ agentId: actor.agentId ?? null, towerId, type: "deduction", title: "خصم تجاوز وقت معلّق", body: `${tech?.name ?? "فني"}: تجاوز «${card.kind}» ${overrunMin} دقيقة — خصم ${amount.toLocaleString("en-US")}`, refType: "adjustment" });
+        await notify({ agentId: actor.agentId ?? null, towerId, type: "deduction", title: "خصم تجاوز وقت معلّق", body: `${tech?.name ?? "فني"}: تجاوز «${card.kind}» ${overrunMin} دقيقة — خصم ${amount.toLocaleString("en-US")}`, refType: "adjustment", url: "/field-management?open=deductions" });
         overrunResult = { amount, overrunMin };
       }
     }

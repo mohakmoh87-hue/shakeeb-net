@@ -125,6 +125,21 @@ export default function FieldManagementPage() {
   // اسم الدور الحالي (للفني: اسمه ومعرّفه) — لعرضه في الشريط السفلي وللتحويل على نفسه
   useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.name) setMyName(d.name); if (d?.technicianId != null) setMyTechId(d.technicianId); }); }, []);
 
+  // فتح نافذة المراجعة من نقر إشعار: (1) نقرة داخل الجرس (حدث bell:open-modal)،
+  // (2) نقرة إشعار الهاتف Push تفتح ?open=deductions|leaves — فيصل المدير للموافقة مباشرة
+  useEffect(() => {
+    if (!canManage) return;
+    const openModal = (which: string) => {
+      if (which === "deductions") setDedModal(true);
+      else if (which === "leaves") setLeaveModal(true);
+    };
+    const onBell = (e: Event) => openModal(String((e as CustomEvent).detail ?? ""));
+    window.addEventListener("bell:open-modal", onBell);
+    const q = new URLSearchParams(window.location.search).get("open");
+    if (q) { openModal(q); window.history.replaceState(null, "", window.location.pathname); }
+    return () => window.removeEventListener("bell:open-modal", onBell);
+  }, [canManage]);
+
   // عدد طلبات الإجازة المعلّقة (للمدير) — بشارة على زر الإجازات
   const loadLeavePending = useCallback((office?: number | null) => {
     if (!canManage) return;

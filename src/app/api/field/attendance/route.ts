@@ -103,7 +103,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "لا يوجد تأخير على بصمة دخولك" }, { status: 400 });
     }
     await prisma.attendance.update({ where: { id: rec0.id }, data: { lateExcuse: "pending" } });
-    await notify({ agentId: tech.agentId, towerId: rec0.towerId, type: "deduction", title: "طلب «نسيت البصمة»", body: `${tech.name}: طلب إعفاء من خصم تأخير الدخول`, refType: "technician", refId: tech.technicianId });
+    await notify({ agentId: tech.agentId, towerId: rec0.towerId, type: "deduction", title: "طلب «نسيت البصمة»", body: `${tech.name}: طلب إعفاء من خصم تأخير الدخول`, refType: "technician", refId: tech.technicianId, url: "/field-management?open=deductions" });
     return NextResponse.json({ ok: true, lateExcuse: "pending" });
   }
 

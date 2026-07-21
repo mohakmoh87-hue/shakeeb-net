@@ -4,7 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { isNativeApp, getFcmToken } from "@/lib/nativeTracking";
 
 type Notif = { id: number; type: string; title: string; body: string; read: boolean; createdAt: string };
-const ICON: Record<string, string> = { checkin: "🟢", checkout: "🔴", leave: "📅", deduction: "💠" };
+const ICON: Record<string, string> = { checkin: "🟢", checkout: "🔴", leave: "📅", deduction: "💠", cardDone: "✅" };
+// الإشعارات القابلة للفتح: نقرها يفتح نافذة المراجعة/الموافقة المناسبة في لوحة إدارة الفنيين
+const ACTION: Record<string, { modal: string; hint: string }> = {
+  deduction: { modal: "deductions", hint: "اضغط للمراجعة والموافقة ←" }, // يشمل «نسيت البصمة» والخصومات
+  leave: { modal: "leaves", hint: "اضغط لمراجعة الإجازة ←" },
+};
 const fmt = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 function urlB64ToUint8Array(base64: string) {
@@ -94,18 +99,33 @@ export default function NotificationsBell() {
               <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400">لا إشعارات</div>
             ) : (
               <ul className="space-y-1.5">
-                {items.map((n) => (
-                  <li key={n.id} className={`rounded-lg border px-3 py-2 ${n.read ? "border-slate-200 bg-white" : "border-mynet-blue/30 bg-blue-50/50"}`}>
-                    <div className="flex items-start gap-2">
-                      <span className="text-lg leading-none">{ICON[n.type] ?? "🔔"}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-bold text-slate-800">{n.title}</div>
-                        <div className="text-xs text-slate-600">{n.body}</div>
-                        <div className="mt-0.5 text-[10px] text-slate-400" dir="ltr">{fmt(n.createdAt)}</div>
+                {items.map((n) => {
+                  const action = ACTION[n.type];
+                  return (
+                    <li
+                      key={n.id}
+                      onClick={() => {
+                        if (!action) return;
+                        // فتح نافذة المراجعة المناسبة في لوحة إدارة الفنيين (الجرس يعيش فيها)
+                        setOpen(false);
+                        window.dispatchEvent(new CustomEvent("bell:open-modal", { detail: action.modal }));
+                      }}
+                      className={`rounded-lg border px-3 py-2 ${n.read ? "border-slate-200 bg-white" : "border-mynet-blue/30 bg-blue-50/50"} ${action ? "cursor-pointer transition hover:border-mynet-blue hover:bg-blue-50" : ""}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="text-lg leading-none">{ICON[n.type] ?? "🔔"}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-bold text-slate-800">{n.title}</div>
+                          <div className="text-xs text-slate-600">{n.body}</div>
+                          <div className="mt-0.5 flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400" dir="ltr">{fmt(n.createdAt)}</span>
+                            {action && <span className="text-[10px] font-bold text-mynet-blue">{action.hint}</span>}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
