@@ -16,9 +16,11 @@ export async function GET(request: Request) {
   const date = (url.searchParams.get("date") ?? "").trim();
   const technicianId = Number(url.searchParams.get("technicianId")) || null;
   const kind = (url.searchParams.get("kind") ?? "").trim();
+  const officeId = Number(url.searchParams.get("officeId")) || null; // فلتر مكتب (اختياري)
 
-  // المكاتب المسموحة (عزل المستأجر)
-  const towers = isFieldManager(session) ? await agentTowerIds(session) : (session.towerId != null ? [session.towerId] : []);
+  // المكاتب المسموحة (عزل المستأجر) — وفلتر المكتب المطلوب ضمنها حصراً
+  const allTowers = isFieldManager(session) ? await agentTowerIds(session) : (session.towerId != null ? [session.towerId] : []);
+  const towers = officeId != null && allTowers.includes(officeId) ? [officeId] : allTowers;
   const boards = await prisma.taskBoard.findMany({ where: { towerId: { in: towers.length ? towers : [-1] } }, select: { id: true, towerId: true } });
   const lists = await prisma.taskList.findMany({ where: { boardId: { in: boards.map((b) => b.id) } }, select: { id: true, boardId: true } });
   const boardTower = new Map(boards.map((b) => [b.id, b.towerId]));
@@ -48,8 +50,20 @@ export async function GET(request: Request) {
   const towersInfo = await prisma.tower.findMany({ where: { id: { in: towers.length ? towers : [-1] } }, select: { id: true, name: true } });
   const towerName = new Map(towersInfo.map((t) => [t.id, t.name]));
 
+  // خيارات فلتر «الفني» من الأرشيف نفسه (ضمن النطاق المسموح، قبل فلتري الفني/النوع):
+  // تشمل فنيي الدعم/المكاتب الأخرى الذين نفّذوا بطاقات هنا — لا فنيي المكتب الحاليين فقط
+  const archTechs = await prisma.taskCard.findMany({
+    where: { listId: { in: lists.length ? lists.map((l) => l.id) : [-1] }, archivedAt: { not: null }, isDeleted: false, technicianId: { not: null } },
+    select: { technicianId: true, assignee: true },
+    distinct: ["technicianId"],
+  });
+  const techOptions = archTechs
+    .map((t) => ({ id: t.technicianId as number, name: t.assignee ?? `فني #${t.technicianId}` }))
+    .sort((a, b) => a.name.localeCompare(b.name, "ar"));
+
   return NextResponse.json({
     isManager: isFieldManager(session),
+    techOptions,
     cards: cards.map((c) => ({
       ...c,
       office: (() => { const tid = listTower.get(c.listId); return tid != null ? towerName.get(tid) ?? null : null; })(),

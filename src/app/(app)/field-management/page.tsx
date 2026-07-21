@@ -742,7 +742,7 @@ export default function FieldManagementPage() {
 
       {/* نافذة الأرشيف: البطاقات المحصَّلة (أسبوع ثم تُحذف نهائياً) بفلاتر تاريخ/فني/نوع */}
       {archiveModal && (
-        <ArchiveModal technicians={technicians} cardTypes={cardTypes} onClose={() => setArchiveModal(false)} />
+        <ArchiveModal cardTypes={cardTypes} offices={offices} onClose={() => setArchiveModal(false)} />
       )}
 
       {/* نافذة إنجاز البطاقة بحقولها الواجبة */}
@@ -1220,8 +1220,9 @@ function compressImage(file: File): Promise<string> {
 }
 
 // نافذة أرشيف البطاقات المحصَّلة: تبقى أسبوعاً بعد التحصيل ثم تُحذف نهائياً.
-// فلاتر: تاريخ الإنجاز + الفني + النوع (تُجمع معاً). حذف نهائي يدوي للمدير فقط.
-function ArchiveModal({ technicians, cardTypes, onClose }: { technicians: Technician[]; cardTypes: CardType[]; onClose: () => void }) {
+// فلاتر: المكتب + تاريخ الإنجاز + الفني + النوع (تُجمع معاً). حذف نهائي يدوي للمدير فقط.
+// قائمة «الفني» تُبنى من الأرشيف نفسه — فتشمل فنيي الدعم/المكاتب الأخرى الذين نفّذوا بطاقات.
+function ArchiveModal({ cardTypes, offices, onClose }: { cardTypes: CardType[]; offices: Office[]; onClose: () => void }) {
   type ArchCard = {
     id: number; title: string; description: string | null; kind: string; assignee: string | null;
     technicianId: number | null; amount: number | null; serviceDetails: string | null; durationSec: number | null;
@@ -1229,6 +1230,8 @@ function ArchiveModal({ technicians, cardTypes, onClose }: { technicians: Techni
   };
   const [rows, setRows] = useState<ArchCard[]>([]);
   const [isMgr, setIsMgr] = useState(false);
+  const [techOptions, setTechOptions] = useState<{ id: number; name: string }[]>([]);
+  const [office, setOffice] = useState("");
   const [date, setDate] = useState("");
   const [tech, setTech] = useState("");
   const [kind, setKind] = useState("");
@@ -1238,14 +1241,15 @@ function ArchiveModal({ technicians, cardTypes, onClose }: { technicians: Techni
   const load = useCallback(() => {
     setLoading(true);
     const qs = new URLSearchParams();
+    if (office) qs.set("officeId", office);
     if (date) qs.set("date", date);
     if (tech) qs.set("technicianId", tech);
     if (kind) qs.set("kind", kind);
     fetch(`/api/field/archive?${qs}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) { setRows(d.cards ?? []); setIsMgr(!!d.isManager); } })
+      .then((d) => { if (d) { setRows(d.cards ?? []); setIsMgr(!!d.isManager); setTechOptions(d.techOptions ?? []); } })
       .finally(() => setLoading(false));
-  }, [date, tech, kind]);
+  }, [office, date, tech, kind]);
   useEffect(() => { load(); }, [load]);
 
   async function del(id: number) {
@@ -1265,17 +1269,27 @@ function ArchiveModal({ technicians, cardTypes, onClose }: { technicians: Techni
           <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
         </div>
 
-        {/* الفلاتر: تاريخ الإنجاز / الفني / النوع */}
+        {/* الفلاتر: المكتب / تاريخ الإنجاز / الفني / النوع */}
         <div className="flex flex-wrap items-end gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
+          {offices.length > 1 && (
+            <div>
+              <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">المكتب</label>
+              <select value={office} onChange={(e) => setOffice(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="">— كل المكاتب —</option>
+                {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `مكتب ${o.id}`}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">تاريخ الإنجاز</label>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs" />
           </div>
           <div>
             <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">الفني</label>
+            {/* من الأرشيف نفسه: يشمل فنيي الدعم الذين نفّذوا بطاقات هنا */}
             <select value={tech} onChange={(e) => setTech(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
               <option value="">— الكل —</option>
-              {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {techOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
           <div>
@@ -1285,8 +1299,8 @@ function ArchiveModal({ technicians, cardTypes, onClose }: { technicians: Techni
               {cardTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
             </select>
           </div>
-          {(date || tech || kind) && (
-            <button onClick={() => { setDate(""); setTech(""); setKind(""); }} className="rounded-lg bg-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إظهار الكل</button>
+          {(office || date || tech || kind) && (
+            <button onClick={() => { setOffice(""); setDate(""); setTech(""); setKind(""); }} className="rounded-lg bg-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إظهار الكل</button>
           )}
           <span className="mr-auto self-center text-[11px] text-slate-400">{rows.length} بطاقة · مجموع {total.toLocaleString("en-US")} د.ع</span>
         </div>
@@ -1307,6 +1321,8 @@ function ArchiveModal({ technicians, cardTypes, onClose }: { technicians: Techni
                     {c.office && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">🏢 {c.office}</span>}
                     <span className="mr-auto flex items-center gap-1.5 text-[11px] text-slate-500">
                       {c.assignee && <span>👤 {c.assignee}</span>}
+                      {/* المدة المستغرقة ظاهرة على البطاقة مباشرة (بلا فتحها) */}
+                      {c.durationSec != null && <span className="rounded bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">⏱ {fmtDuration(c.durationSec)}</span>}
                       <b className="text-emerald-700">{(c.amount ?? 0).toLocaleString("en-US")} د.ع</b>
                       {c.completedAt && <span dir="ltr">{fmtDateTime(c.completedAt)}</span>}
                     </span>
