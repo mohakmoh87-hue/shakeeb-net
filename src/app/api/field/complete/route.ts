@@ -117,9 +117,10 @@ export async function POST(request: Request) {
     }
   }
 
-  // سحب كود المكافأة (اختياري): نحلّ مشترك البطاقة ونتحقّق من تفعيل النظام لهذا المكتب
+  // سحب كود المكافأة (اختياري): نحلّ مشترك البطاقة ونتحقّق من تفعيل النظام لهذا المكتب.
+  // التوصيل مستثنى: مكافأته تُطبَّق عند تفعيل الاشتراك (المصدر المالي الوحيد للتوصيل).
   let rewardSubId: number | null = null;
-  if (useReward && !isTransfer && towerId) {
+  if (useReward && !isTransfer && !isDelivery && towerId) {
     const off = await prisma.tower.findUnique({ where: { id: towerId }, select: { rewardsEnabled: true } });
     if (off?.rewardsEnabled === "1") {
       const s = await matchSubscriber(`${card.title}\n${card.description ?? ""}`, towerId);
@@ -127,8 +128,11 @@ export async function POST(request: Request) {
     }
   }
 
-  // حساب النثرية إن لزم (قد لا يُستخدم إن غطّت المكافأة كامل المبلغ)
-  const petty = amount > 0 ? await getOrCreatePettyAccount(towerId) : null;
+  // حساب النثرية إن لزم (قد لا يُستخدم إن غطّت المكافأة كامل المبلغ).
+  // ⚠️ التوصيل مستثنى كلياً من الحسابات: مبلغه يُسجَّل مالياً مرة واحدة فقط عند تفعيل
+  // الاشتراك من المستخدم — الإنجاز يخزّنه على البطاقة كرقم قراءة فقط بذمّة الفني
+  // (ليُعرف كم يسدّد للمستخدم) بلا أي قيد في الصندوق أو التقارير (يمنع الازدواج).
+  const petty = !isDelivery && amount > 0 ? await getOrCreatePettyAccount(towerId) : null;
 
   let salesShare = 0, pettyShare = 0, rewardDiscount = 0;
   await prisma.$transaction(async (tx) => {
