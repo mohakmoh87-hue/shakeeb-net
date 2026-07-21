@@ -23,24 +23,29 @@ export default function ReceiptPrintStyle() {
     max-width: 80mm !important;
     margin: 0 !important;
   }
+  /* عرض الورقة 80مم. صندوق الكتابة 68مم موسَّط ⇒ فراغ أبيض حقيقي ~6مم بكل جانب
+     (لا يُطبَع فلا تقصّه الطابعة) + حشو داخلي 4مم ⇒ يبدأ النص على بُعد ~10مم من حافة الورق،
+     وهو أكبر من الهامش غير القابل للطباعة في أي طابعة حرارية/عادية. الكتابة + الهامشان = 80مم. */
   .print-area {
-    width: 80mm !important;
-    max-width: 80mm !important;
+    width: 68mm !important;
+    max-width: 68mm !important;
     box-sizing: border-box !important;
-    /* هامش جانبي أوسع (7مم) كي لا تُقصّ القيم على حافة الورق في الطابعات العادية */
-    padding: 4mm 7mm !important;
-    margin: 0 !important;
+    padding: 3mm 4mm !important;
+    margin: 0 auto !important;   /* توسيط الكتابة على الورقة ⇒ هامشان متساويان */
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
     background: #fff !important;
     color: #000 !important;
   }
-  /* الطابعة الحرارية أحادية اللون: أسود على أبيض، بلا خلفيات ملوّنة */
+  /* الطابعة الحرارية أحادية اللون: أسود على أبيض، بلا خلفيات ملوّنة، وكسر الكلمات الطويلة */
   .print-area *:not(img) {
     color: #000 !important;
     border-color: #000 !important;
     background: transparent !important;
+    max-width: 100% !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
   }
 }
 `;
