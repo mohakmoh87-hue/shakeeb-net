@@ -46,13 +46,18 @@ export async function POST(request: Request) {
     data: { agentId: session.agentId, towerId, kind, refId: id },
   });
 
-  // حالة العامل: نبضة حديثة (٩٠ ثانية) لأي حاسبة معتمدة لهذا الوكيل = الطابعة جاهزة
+  // حالة الطابعة: عزل المكاتب — إن كانت لجلسة واتساب مكتب الوصل مالكة مسجّلة
+  // (hostMachineId = حاسبة المكتب) نفحص نبضة تلك الحاسبة تحديداً؛ وإلا أي حاسبة للوكيل
+  const waRow = towerId != null
+    ? await prisma.waSession.findUnique({ where: { towerId }, select: { hostMachineId: true } })
+    : null;
   const worker = await prisma.hybridWorker.findFirst({
     where: {
       agentId: session.agentId ?? -1,
       approved: true,
       blocked: false,
       lastSeen: { gte: new Date(Date.now() - 90_000) },
+      ...(waRow?.hostMachineId ? { machineId: waRow.hostMachineId } : {}),
     },
     select: { id: true },
   });

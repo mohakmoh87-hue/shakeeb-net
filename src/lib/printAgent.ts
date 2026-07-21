@@ -116,10 +116,23 @@ export function startPrintAgent() {
       if (pend.length === 0) return;
 
       const aid = getWorkerAgentId();
+      // عزل طابعات المكاتب: حاسبة المكتب = مالكة جلسة واتسابه (wa_sessions.hostMachineId).
+      // وصل مكتبٍ له مالكة مسجّلة يُطبع على حاسبتها حصراً — لا يلتقطه أحد غيرها أبداً
+      // (يمنع طباعة وصل المواصلات على طابعة الرسالة). بلا مالكة مسجّلة: امتلاك مجلد
+      // الجلسة، ثم القائد لليتيم بعد 15ث (حالة الحاسبة الواحدة لعدّة مكاتب).
+      const mid = process.env.MACHINE_ID || null;
+      const towerIds = [...new Set(pend.map((j) => j.towerId).filter((x): x is number => x != null))];
+      const ownerOf = new Map<number, string | null>();
+      if (towerIds.length) {
+        const rows = await prisma.waSession.findMany({ where: { towerId: { in: towerIds } }, select: { towerId: true, hostMachineId: true } });
+        for (const r of rows) ownerOf.set(r.towerId, r.hostMachineId ?? null);
+      }
       for (const job of pend) {
-        // حاسبة مكتب الوصل تطبعه فوراً؛ القائد يلتقط اليتيم بعد 15 ثانية
-        const mine = job.towerId != null && hostsOfficeLocally(job.towerId);
-        const orphan = isLeaderNow() && aid != null && job.agentId === aid &&
+        const owner = job.towerId != null ? ownerOf.get(job.towerId) ?? null : null;
+        const mine = owner != null
+          ? mid != null && owner === mid // ملكية صريحة ⇒ حاسبة المكتب حصراً
+          : job.towerId != null && hostsOfficeLocally(job.towerId);
+        const orphan = owner == null && isLeaderNow() && aid != null && job.agentId === aid &&
           Date.now() - job.createdAt.getTime() > 15_000;
         if (mine || orphan) await processJob(job);
       }
