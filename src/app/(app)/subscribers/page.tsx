@@ -106,6 +106,17 @@ export default function SubscribersPage() {
     else { const d = await res.json().catch(() => ({})); setOpsMsg(d.error ?? "تعذّرت الإضافة"); }
   }
 
+  // إرسال «وصل ملخص الاشتراك» واتساب فوراً (قالب «ملخص الاشتراك» في قوالب الرسائل)
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  async function sendSummary() {
+    if (!selected || summaryBusy) return;
+    setSummaryBusy(true); setMsg("");
+    const res = await fetch(`/api/subscribers/${selected.id}/summary`, { method: "POST" });
+    const d = await res.json().catch(() => ({}));
+    setSummaryBusy(false);
+    setMsg(res.ok ? "✓ أُرسل ملخص الاشتراك واتساب للمشترك" : (d.error ?? "تعذّر إرسال الملخص"));
+  }
+
   function toggleCheck(id: number) {
     setChecked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
@@ -425,8 +436,8 @@ export default function SubscribersPage() {
 
           {msg &&<div className="mt-2 rounded bg-blue-50 px-2 py-1 text-center text-xs text-blue-700">{msg}</div>}
           <div className="mt-2 flex items-center gap-2">
-            <button onClick={() => selected && router.push(`/messages/compose?subscriberId=${selected.id}`)} disabled={!selected} className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">
-              <span>💬</span> ارسال ملخص
+            <button onClick={() => void sendSummary()} disabled={!selected || summaryBusy} title="يرسل وصل ملخص الاشتراك واتساب فوراً (قالب «ملخص الاشتراك» في قوالب الرسائل)" className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">
+              <span>💬</span> {summaryBusy ? "جارٍ الإرسال..." : "ارسال ملخص"}
             </button>
             {selected && <MapButton subscriberId={selected.id} />}
           </div>
