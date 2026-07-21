@@ -332,12 +332,12 @@ export default function SubscribersPage() {
                       <th className="p-2">#</th><th className="p-2">التاريخ والوقت</th><th className="p-2">الباقة</th>
                       <th className="p-2">أشهر</th><th className="p-2">القيمة</th><th className="p-2">الواصل</th>
                       <th className="p-2">الدين</th><th className="p-2">ينتهي</th>
-                      {can("receipts.void") && <th className="p-2"></th>}
+                      <th className="p-2"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {receipts.length === 0 ? (
-                      <tr><td colSpan={can("receipts.void") ? 9 : 8} className="p-6 text-center text-slate-400">لا توجد وصولات لهذا المشترك</td></tr>
+                      <tr><td colSpan={9} className="p-6 text-center text-slate-400">لا توجد وصولات لهذا المشترك</td></tr>
                     ) : receipts.map((rc) => (
                       <tr key={rc.id} className="border-t border-slate-100">
                         <td className="p-2 text-slate-400">{rc.id}</td>
@@ -348,11 +348,14 @@ export default function SubscribersPage() {
                         <td className="p-2 text-emerald-600">{fmt(rc.moneyIn)}</td>
                         <td className="p-2 text-red-600">{fmt(rc.moneyCarry)}</td>
                         <td className="p-2" dir="ltr">{formatDate(rc.dateTo)}</td>
-                        {can("receipts.void") && (
-                          <td className="p-2">
-                            <button onClick={() => voidReceipt(rc.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑</button>
-                          </td>
-                        )}
+                        <td className="p-2">
+                          <div className="flex gap-1.5">
+                            <a href={`/subscriptions/${rc.id}/receipt`} target="_blank" rel="noopener noreferrer" className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-100" title="إعادة طباعة الوصل">🖨 طباعة</a>
+                            {can("receipts.void") && (
+                              <button onClick={() => voidReceipt(rc.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑</button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
