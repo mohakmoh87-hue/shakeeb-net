@@ -13,25 +13,27 @@ const esc = (s: string | null | undefined) =>
 function wrap(body: string, fontSize: number): string {
   return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  @page { size: 80mm 120mm; margin: 0; }
+  /* بلا مقاس صفحة ثابت: ارتفاع الـPDF يُقاس من طول المحتوى نفسه (في printAgent)
+     ⇒ الطباعة تبدأ من رأس الورقة وتنتهي بنهاية الكتابة — ورقة واحدة دائماً */
+  @page { margin: 0; }
   html, body { width: 80mm; background: #fff; color: #000; font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
   /* كل النص أسود خالص وعريض (بولد) — طلب صريح لوضوح الطباعة الحرارية */
-  .print-area { width: 68mm; max-width: 68mm; margin: 0 auto; padding: 3mm 4mm; font-size: ${fontSize}px;
+  .print-area { width: 68mm; max-width: 68mm; margin: 0 auto; padding: 1mm 4mm 2mm; font-size: ${fontSize}px;
                 font-weight: 700; color: #000; }
   .print-area * { color: #000 !important; border-color: #000 !important; background: transparent !important;
                   font-weight: 700 !important; opacity: 1 !important;
                   max-width: 100%; overflow-wrap: break-word; word-break: break-word; }
   .hdr h1, .b, .line .b, thead th { font-weight: 800 !important; }
-  .hdr { text-align: center; border-bottom: 2px dashed #999; padding-bottom: 8px; margin-bottom: 10px; }
+  .hdr { text-align: center; border-bottom: 2px dashed #999; padding-bottom: 5px; margin-bottom: 6px; }
   .hdr h1 { font-size: 1.25em; font-weight: 800; }
   .hdr p { font-size: 0.85em; }
-  .hdr img { max-height: 48px; margin: 0 auto 6px; display: block; }
-  .line { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+  .hdr img { max-height: 44px; margin: 0 auto 4px; display: block; }
+  .line { display: flex; justify-content: space-between; align-items: center; padding: 1px 0; }
   .line .lbl { opacity: 0.75; }
   .b { font-weight: 700; }
-  .sep { border-top: 1px dashed #bbb; margin: 6px 0; }
-  .notes { margin-top: 8px; font-size: 0.85em; border: 1px solid #ccc; border-radius: 4px; padding: 5px; }
-  .ftr { margin-top: 12px; border-top: 2px dashed #999; padding-top: 8px; text-align: center; font-size: 0.8em; }
+  .sep { border-top: 1px dashed #bbb; margin: 4px 0; }
+  .notes { margin-top: 6px; font-size: 0.85em; border: 1px solid #ccc; border-radius: 4px; padding: 4px; }
+  .ftr { margin-top: 7px; border-top: 2px dashed #999; padding-top: 5px; text-align: center; font-size: 0.8em; }
   table { width: 100%; text-align: right; border-collapse: collapse; font-size: 0.95em; }
   th, td { padding: 3px 4px; border-bottom: 1px solid #ddd; }
   thead th { border-bottom: 1px solid #888; font-weight: 700; }

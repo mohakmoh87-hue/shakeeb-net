@@ -4,7 +4,9 @@
 export default function ReceiptPrintStyle() {
   const css = `
 @media print {
-  @page { size: 80mm 120mm; margin: 0; }
+  /* بلا ارتفاع ثابت: يتبع ورق الطابعة (لفة 80مم) ⇒ يطبع من رأس الورقة ويُقصّ
+     بنهاية الكتابة — لا صفحة ثانية أبداً */
+  @page { margin: 0; }
   html, body {
     width: 80mm !important;
     margin: 0 !important;

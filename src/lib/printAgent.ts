@@ -13,6 +13,7 @@ import { subscriptionReceiptHtml, invoiceReceiptHtml } from "@/lib/printReceiptH
 type Browser = { newPage: () => Promise<Page>; close: () => Promise<void> };
 type Page = {
   setContent: (html: string, opts?: { waitUntil?: string }) => Promise<void>;
+  evaluate: <T>(fn: () => T) => Promise<T>;
   pdf: (opts: Record<string, unknown>) => Promise<Uint8Array>;
   close: () => Promise<void>;
 };
@@ -33,11 +34,16 @@ async function htmlToPdf(html: string): Promise<string> {
   const page = await b.newPage();
   try {
     await page.setContent(html, { waitUntil: "networkidle0" });
+    // ارتفاع الصفحة = طول المحتوى الفعلي (+2مم أماناً): تبدأ الطباعة من رأس الورقة
+    // وتُقصّ بنهاية الكتابة — ورقة واحدة دائماً مهما طال الوصل أو قصُر.
+    const px = await page.evaluate(() => document.documentElement.scrollHeight);
+    const mm = Math.min(Math.max(Math.ceil(px * 25.4 / 96) + 2, 40), 500);
     const pdf = await page.pdf({
       width: "80mm",
-      height: "120mm",
+      height: `${mm}mm`,
       printBackground: true,
-      preferCSSPageSize: true,
+      preferCSSPageSize: false,
+      pageRanges: "1", // ضمانة صلبة: صفحة واحدة فقط مهما حدث
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
     });
     const file = path.join(os.tmpdir(), `shakeeb-receipt-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
