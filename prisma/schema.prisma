@@ -747,6 +747,7 @@ model TaskCard {
   description  String?
   assignee     String? // اسم الفني/الموظف (للعرض)
   technicianId Int? // الفني المسؤول (لتجميع التحصيل)
+  subscriberId Int? // المشترك المصدر (لبطاقات العمليات) — لمنع بطاقتين فعّالتين لنفس المشترك
   kind         String    @default("maintenance") // maintenance = صيانة | delivery = توصيل
   label        String? // لون/تصنيف
   dueDate      DateTime?
@@ -772,6 +773,7 @@ model TaskCard {
   @@index([listId])
   @@index([technicianId])
   @@index([archivedAt])
+  @@index([subscriberId])
   @@map("task_cards")
 }
 

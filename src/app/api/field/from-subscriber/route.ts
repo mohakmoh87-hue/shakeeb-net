@@ -34,6 +34,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 
+  // منع بطاقتين فعّالتين لنفس المشترك: إن كانت له بطاقة «مرفوعة» (غير محصّلة/اكمال) نرفض
+  // ونذكر تفاصيلها. تُرفع بطاقة جديدة فقط بعد إكمال (تحصيل) البطاقة الحالية.
+  const active = await prisma.taskCard.findFirst({
+    where: { subscriberId: sub.id, settled: false, isDeleted: false },
+    orderBy: { id: "desc" },
+    select: { kind: true, done: true, assignee: true, createdAt: true, listId: true },
+  });
+  if (active) {
+    const activeList = await prisma.taskList.findUnique({ where: { id: active.listId }, select: { name: true } });
+    const when = active.createdAt.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const status = active.done ? "منجزة — بانتظار التحصيل" : "قيد التنفيذ";
+    const who = active.assignee ? ` · الفني: ${active.assignee}` : "";
+    return NextResponse.json({
+      error: `⚠️ هذا المشترك لديه بطاقة مرفوعة بالفعل:\n«${active.kind}» في عمود «${activeList?.name ?? "?"}» — ${status}${who}\nبتاريخ ${when}.\nأكمِل (حصّل) البطاقة الحالية قبل رفع بطاقة جديدة.`,
+    }, { status: 409 });
+  }
+
   // لوحة إدارة الفنيين الخاصّة بمكتب المشترك (مستقلّة لكل مكتب، تُنشأ إن لم توجد)
   const board = await getOrCreateBoard(sub.towerId ?? null);
 
@@ -59,8 +76,8 @@ export async function POST(request: Request) {
   if (note) descLines.push(`📝 ملاحظة: ${note}`);
   const position = await prisma.taskCard.count({ where: { listId: list.id, isDeleted: false } });
   const card = await prisma.taskCard.create({
-    // نوع البطاقة يُؤخذ تلقائياً من العملية (توصيل/تحويل/صيانة/اعادة)
-    data: { listId: list.id, title, description: descLines.join("\n"), position, kind: operation },
+    // نوع البطاقة يُؤخذ تلقائياً من العملية (توصيل/تحويل/صيانة/اعادة) + ربط المشترك (لمنع التكرار)
+    data: { listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id },
   });
 
   return NextResponse.json({ ok: true, listName: list.name, card }, { status: 201 });

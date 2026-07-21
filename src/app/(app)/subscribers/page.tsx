@@ -614,15 +614,18 @@ export default function SubscribersPage() {
         </div>
       )}
 
-      {/* نتيجة العملية — إشعار قصير */}
-      {opsMsg && (
-        <div className="pointer-events-none fixed inset-x-0 top-3 z-[75] flex justify-center px-3">
-          <div className="pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-2xl">
-            <span className="flex-1">{opsMsg}</span>
-            <button onClick={() => setOpsMsg("")} className="shrink-0 rounded-full px-2 text-lg leading-none text-slate-400 hover:bg-black/10" title="إغلاق">✕</button>
+      {/* نتيجة العملية — إشعار (أخضر للنجاح، كهرماني للتحذير/الخطأ مثل «بطاقة مرفوعة») */}
+      {opsMsg && (() => {
+        const ok = opsMsg.startsWith("✓");
+        return (
+          <div className="pointer-events-none fixed inset-x-0 top-3 z-[75] flex justify-center px-3">
+            <div className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border px-4 py-3 text-sm font-semibold shadow-2xl ${ok ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-amber-400 bg-amber-50 text-amber-900"}`}>
+              <span className="flex-1 whitespace-pre-line leading-relaxed">{opsMsg}</span>
+              <button onClick={() => setOpsMsg("")} className="shrink-0 rounded-full px-2 text-lg leading-none text-slate-400 hover:bg-black/10" title="إغلاق">✕</button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {activating && (
         <ActivationModal
