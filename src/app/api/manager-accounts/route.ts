@@ -38,8 +38,9 @@ export async function GET() {
   const masterBalance = (masterAgg._sum.moneyIn ?? 0) - (masterAgg._sum.moneyOut ?? 0);
 
   const cumulativeDaily = (dailyAgg._sum.moneyIn ?? 0) - (dailyAgg._sum.moneyOut ?? 0);
-  const cardDebtAdded = cardsAgg._sum.price ?? 0;
   const sumBy = (t: string) => mgr.find((m) => m.type === t)?._sum.amount ?? 0;
+  // ديون الكارتات = كلفة الكروت المضافة + الإضافات اليدوية − الإنقاصات اليدوية
+  const cardDebtAdded = (cardsAgg._sum.price ?? 0) + sumBy("card-debt-add") - sumBy("card-debt-sub");
   const cardPayments = sumBy("card-payment");
   const managerExpenses = sumBy("expense");
   const managerReceipts = sumBy("receipt");

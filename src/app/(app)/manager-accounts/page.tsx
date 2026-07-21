@@ -33,11 +33,11 @@ type Data = {
   transactions: MgrTx[];
   salaryPeriod: { fromDay: number | null; toDay: number | null; from: string | null; to: string | null } | null;
 };
-type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string }[] };
+type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number; offices?: { towerId: number; name: string; net: number }[] }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string }[] };
 
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
 const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات", salary: "راتب فني (من الكلي)" };
+const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات", salary: "راتب فني (من الكلي)", "card-debt-add": "إضافة يدوية لديون الكارتات", "card-debt-sub": "إنقاص يدوي من ديون الكارتات" };
 
 export default function ManagerAccountsPage() {
   const [data, setData] = useState<Data | null>(null);
@@ -126,10 +126,10 @@ export default function ManagerAccountsPage() {
     else { const d = await res.json().catch(() => ({})); setPriceMsg(d.error ?? "فشل"); }
   }
 
-  async function submit(type: "expense" | "receipt" | "card-payment" | "master-receipt" | "master-expense") {
+  async function submit(type: "expense" | "receipt" | "card-payment" | "master-receipt" | "master-expense" | "card-debt-add" | "card-debt-sub") {
     setError("");
     if (!amount || Number(amount) <= 0) { setError("أدخل مبلغاً صحيحاً"); return; }
-    if ((type === "expense" || type === "receipt") && !notes.trim()) { setError("اكتب سبب/ملاحظة الحركة"); return; }
+    if ((type === "expense" || type === "receipt" || type === "card-debt-add" || type === "card-debt-sub") && !notes.trim()) { setError("اكتب سبب/ملاحظة الحركة"); return; }
     setBusy(true);
     const res = await fetch("/api/manager-accounts/tx", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -232,6 +232,11 @@ export default function ManagerAccountsPage() {
               <button onClick={() => submit("receipt")} disabled={busy} className="rounded-lg bg-emerald-600 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">+ قبض</button>
             </div>
             <button onClick={() => submit("card-payment")} disabled={busy} className="mt-2 w-full rounded-lg bg-mynet-blue py-2.5 font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">💳 تسديد ديون كارتات (متبقّي {fmt(data.cardDebtRemaining)})</button>
+            {/* تعديل يدوي لديون الكارتات: إضافة أو إنقاص (بملاحظة توضّح السبب) */}
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button onClick={() => submit("card-debt-sub")} disabled={busy} className="rounded-lg border border-mynet-blue/40 bg-blue-50 py-2 text-xs font-semibold text-mynet-blue hover:bg-blue-100 disabled:opacity-60">➖ إنقاص من ديون الكارتات</button>
+              <button onClick={() => submit("card-debt-add")} disabled={busy} className="rounded-lg border border-mynet-blue/40 bg-blue-50 py-2 text-xs font-semibold text-mynet-blue hover:bg-blue-100 disabled:opacity-60">➕ إضافة لديون الكارتات</button>
+            </div>
             {/* حساب الماستر — مستقل تماماً عن بقية الحسابات */}
             <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-2">
               <div className="mb-1.5 text-center text-xs font-semibold text-indigo-700">🅜 حساب الماستر (مستقل) — الرصيد {fmt(data.masterBalance)}</div>
@@ -411,11 +416,23 @@ export default function ManagerAccountsPage() {
                   </thead>
                   <tbody>
                     {masterDetail.days.map((d) => (
-                      <tr key={d.day} className="border-t border-slate-100">
+                      <tr key={d.day} className="border-t border-slate-100 align-top">
                         <td className="p-3 font-medium" dir="ltr">{d.day}</td>
                         <td className="p-3 text-emerald-600">{d.in ? fmt(d.in) : "—"}</td>
                         <td className="p-3 text-red-600">{d.out ? fmt(d.out) : "—"}</td>
-                        <td className={`p-3 font-bold ${d.net >= 0 ? "text-indigo-700" : "text-red-600"}`}>{fmt(d.net)}</td>
+                        <td className={`p-3 font-bold ${d.net >= 0 ? "text-indigo-700" : "text-red-600"}`}>
+                          {fmt(d.net)}
+                          {/* تفصيل ماستر كل مكتب في هذا اليوم — لا المجموع فقط */}
+                          {(d.offices?.length ?? 0) > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {d.offices!.map((o) => (
+                                <span key={o.towerId} className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                                  🏢 {o.name}: {fmt(o.net)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
                         <td className="p-3 text-slate-400">{d.count}</td>
                       </tr>
                     ))}

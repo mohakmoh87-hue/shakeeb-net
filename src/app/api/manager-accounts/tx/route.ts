@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, agentTowerIds } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 
 const schema = z.object({
-  type: z.enum(["expense", "receipt", "card-payment", "master-receipt", "master-expense"]),
+  // card-debt-add / card-debt-sub: تعديل يدوي لديون الكارتات (زيادة/إنقاص)
+  type: z.enum(["expense", "receipt", "card-payment", "master-receipt", "master-expense", "card-debt-add", "card-debt-sub"]),
   amount: z.coerce.number().positive("المبلغ يجب أن يكون أكبر من صفر"),
   notes: z.string().nullable().optional(),
+  officeId: z.coerce.number().optional().nullable(), // مكتب حركة الماستر (اختياري)
 });
 
 // تسجيل حركة في حساب المدير (مصروف/مقبوض/تسديد كارتات) — لا تؤثر على التقرير اليومي
@@ -22,29 +24,37 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
-  const { type, amount, notes } = parsed.data;
+  const { type, amount, notes, officeId } = parsed.data;
 
-  // حساب الماستر: مستقل تماماً — يُسجَّل كحركة MoneyTx بنوع "master" (لا يدخل بالمجموع)
+  // حساب الماستر: مستقل تماماً — يُسجَّل كحركة MoneyTx بنوع "master" (لا يدخل بالمجموع).
+  // المكتب إلزامي الحسم: المختار (ضمن مكاتب الوكيل) ثم مكتب المستخدم ثم أول مكاتب الوكيل —
+  // بلا مكتب كانت الحركة تختفي من تقرير اليوم وتفاصيل الماستر (كلها معزولة بالمكاتب).
   if (type === "master-receipt" || type === "master-expense") {
+    const towers = await agentTowerIds(g.session);
+    let towerId = officeId != null && towers.includes(officeId) ? officeId : session?.towerId ?? null;
+    if (towerId == null || !towers.includes(towerId)) towerId = towers[0] ?? null;
+    if (towerId == null) return NextResponse.json({ error: "لا مكتب لتسجيل حركة الماستر عليه" }, { status: 400 });
     const isIn = type === "master-receipt";
     const created = await prisma.moneyTx.create({
       data: {
         moneyIn: isIn ? amount : 0, moneyOut: isIn ? 0 : amount,
         notes: notes ?? (isIn ? "قبض ماستر" : "صرف ماستر"),
         date: new Date(), serverDate: new Date(), userId: session?.userId,
-        sourceType: "master", towerId: session?.towerId ?? null,
+        sourceType: "master", towerId,
       },
     });
     return NextResponse.json({ ok: true, id: created.id, master: true }, { status: 201 });
   }
 
   // منع تسديد كارتات أكثر من الدين المتبقّي — ضمن كروت/حركات الوكيل فقط
+  // (يشمل التعديلات اليدوية: card-debt-add يزيد الدين وcard-debt-sub يُنقصه)
   if (type === "card-payment") {
-    const [cardsAgg, paid] = await Promise.all([
+    const [cardsAgg, mgr] = await Promise.all([
       prisma.rechargeCard.aggregate({ where: { agentId }, _sum: { price: true } }),
-      prisma.managerTx.aggregate({ where: { isDeleted: false, type: "card-payment", agentId }, _sum: { amount: true } }),
+      prisma.managerTx.groupBy({ by: ["type"], where: { isDeleted: false, agentId, type: { in: ["card-payment", "card-debt-add", "card-debt-sub"] } }, _sum: { amount: true } }),
     ]);
-    const remaining = (cardsAgg._sum.price ?? 0) - (paid._sum.amount ?? 0);
+    const sumBy = (t: string) => mgr.find((m) => m.type === t)?._sum.amount ?? 0;
+    const remaining = (cardsAgg._sum.price ?? 0) + sumBy("card-debt-add") - sumBy("card-debt-sub") - sumBy("card-payment");
     if (amount > remaining + 0.001) {
       return NextResponse.json({ error: `المبلغ أكبر من ديون الكارتات المتبقّية (${remaining.toLocaleString("en-US")})` }, { status: 400 });
     }
