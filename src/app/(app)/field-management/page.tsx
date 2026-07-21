@@ -50,10 +50,12 @@ const lineOf = (desc: string | null | undefined, emoji: string, label: string): 
   const v = desc?.match(re)?.[1]?.trim();
   return v && v !== "—" ? v : null;
 };
-const phoneOf = (desc?: string | null): string | null => lineOf(desc, "📱", "الهاتف"); // هاتف القاعدة (بفتح البطاقة)
+const phoneOf = (desc?: string | null): string | null => lineOf(desc, "📱", "الهاتف"); // هاتف القاعدة (المخزون)
 // على وجه البطاقة (بلا فتح): الهاتف الإضافي من النافذة المنبثقة إن وُجد، والملاحظة المكتوبة فيها
 const facePhoneOf = (desc?: string | null): string | null => lineOf(desc, "📞", "هاتف إضافي");
 const faceNoteOf = (desc?: string | null): string | null => lineOf(desc, "📝", "ملاحظة");
+// الهاتف الظاهر على وجه البطاقة: المُدخَل في النافذة المنبثقة إن وُجد، وإلا الرقم المخزون للمشترك
+const faceCallPhone = (desc?: string | null): string | null => facePhoneOf(desc) ?? phoneOf(desc);
 
 export default function FieldManagementPage() {
   const router = useRouter();
@@ -331,8 +333,8 @@ export default function FieldManagementPage() {
                     className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md"
                   >
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
-                    {/* على الوجه: هاتف النافذة المنبثقة (إن وُجد) + ملاحظتها — رقم القاعدة يظهر بفتح البطاقة فقط */}
-                    {facePhoneOf(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {facePhoneOf(c.description)}</div>}
+                    {/* على الوجه: هاتف النافذة المنبثقة إن وُجد وإلا الرقم المخزون + الملاحظة — واسم المشترك يظهر بفتح البطاقة فقط */}
+                    {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
                     {faceNoteOf(c.description) && <div className="mt-0.5 text-xs text-slate-500">📝 {faceNoteOf(c.description)}</div>}
                     {c.techNote && <div className="mt-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">🗒️ {c.techNote}</div>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -398,7 +400,7 @@ export default function FieldManagementPage() {
                 ) : doneCards.map((c) => (
                   <div key={c.id} onClick={() => setSel(c)} className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md">
                     <div className="text-sm font-medium text-slate-800">{c.title}</div>
-                    {facePhoneOf(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {facePhoneOf(c.description)}</div>}
+                    {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
                       <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}

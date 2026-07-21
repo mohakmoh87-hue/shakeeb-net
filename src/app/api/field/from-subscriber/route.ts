@@ -47,11 +47,13 @@ export async function POST(request: Request) {
     list = await prisma.taskList.create({ data: { boardId: board.id, name: operation, position: count } });
   }
 
-  // البطاقة: الاسم عنواناً، والهاتف واليوزر في الوصف + الهاتف الإضافي والملاحظة (إن كُتبا)
-  const title = sub.name?.trim() || sub.netUser?.trim() || `مشترك #${sub.id}`;
+  // العنوان = اليوزر (يظهر على وجه البطاقة، لا اسم المشترك). الاسم والرقم المخزون في الوصف
+  // (يظهران بفتح البطاقة فقط). الهاتف الإضافي والملاحظة (إن كُتبا) يظهران على الوجه أيضاً.
+  const title = sub.netUser?.trim() || sub.name?.trim() || `مشترك #${sub.id}`;
   const descLines = [
-    `📱 الهاتف: ${sub.phone?.trim() || "—"}`,
-    `👤 اليوزر: ${sub.netUser?.trim() || "—"}`,
+    `📱 الهاتف: ${sub.phone?.trim() || "—"}`,   // الرقم المخزون — يظهر بفتح البطاقة أو على الوجه إن لم يُدخَل هاتف إضافي
+    `👤 اليوزر: ${sub.netUser?.trim() || "—"}`,  // (يبقى للمطابقة الآلية للمكافآت)
+    `🧑 المشترك: ${sub.name?.trim() || "—"}`,    // اسم المشترك — يظهر بفتح البطاقة فقط
   ];
   if (extraPhone) descLines.push(`📞 هاتف إضافي: ${extraPhone}`);
   if (note) descLines.push(`📝 ملاحظة: ${note}`);
