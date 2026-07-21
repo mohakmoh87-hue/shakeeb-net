@@ -17,6 +17,21 @@ export async function POST(request: Request) {
   const auth = await resolveCardActor(cardId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
+  // الفني: بطاقة جارية واحدة فقط — لا «بدء» لبطاقة ثانية حتى يُنهي الأولى
+  // (إنجاز أو تأجيل أو ميجاوب). المدير/المستخدم غير مقيّدين.
+  if (auth.actor.isTech && auth.actor.technicianId != null) {
+    const running = await prisma.taskCard.findFirst({
+      where: {
+        technicianId: auth.actor.technicianId, done: false, isDeleted: false,
+        startedAt: { not: null }, postponedTo: null, id: { not: cardId },
+      },
+      select: { title: true },
+    });
+    if (running) {
+      return NextResponse.json({ error: `لديك بطاقة جارية «${running.title}» — أنجزها أو أجّلها أو اضغط «ميجاوب» قبل بدء بطاقة أخرى` }, { status: 400 });
+    }
+  }
+
   // يبدأ الاحتساب من جديد (يلغي أي تأجيل سابق)
   const updated = await prisma.taskCard.update({
     where: { id: cardId },

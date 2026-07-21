@@ -249,9 +249,22 @@ export default function FieldManagementPage() {
   }
   async function startCard() {
     if (!sel || !canOperate) return;
+    const wasVirtual = sel.listId === -1; // بطاقة عمود «دعم مؤقت» الافتراضي — تبقى فيه بعد البدء
     const r = await fetch("/api/field/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cardId: sel.id }) });
-    if (r.ok) { const c = await r.json(); setSel(c); setCards((x) => x.map((y) => (y.id === c.id ? c : y))); }
+    if (r.ok) { const c = await r.json(); if (wasVirtual) c.listId = -1; setSel(c); setCards((x) => x.map((y) => (y.id === c.id ? c : y))); }
     else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر البدء"); }
+  }
+  // «ميجاوب»: اتصل الفني ولم يجب المشترك — البطاقة تبقى بمكانها، تُرسل رسالة
+  // واتساب لطيفة للمشترك، ويتحرّر قفل «البدء» ليعمل الفني على بطاقة أخرى
+  async function noAnswerCard() {
+    if (!sel || !canOperate) return;
+    if (!confirm("«ميجاوب»: ستبقى البطاقة بمكانها وتُرسل رسالة للمشترك أننا اتصلنا ولم يجب. متابعة؟")) return;
+    const r = await fetch("/api/field/no-answer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cardId: sel.id }) });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      alert(d.messaged ? "✓ أُرسلت رسالة «اتصلنا ولم تجب» للمشترك" : "سُجّلت المحاولة — تعذّر إرسال الرسالة (لا هاتف/واتساب)");
+      setSel(null); load(officeId);
+    } else alert(d.error ?? "تعذّرت العملية");
   }
   async function deleteCard() {
     if (!sel || !canOperate) return;
@@ -636,6 +649,20 @@ export default function FieldManagementPage() {
                 {sel.serviceDetails && <div className="text-slate-600">التفاصيل: {sel.serviceDetails}</div>}
                 {sel.durationSec != null && <div className="text-slate-600">⏱ مدة الإنجاز: <b>{fmtDuration(sel.durationSec)}</b></div>}
                 {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
+                {/* تحميل صورة العمل التي رفعها الفني على الجهاز/الحاسبة */}
+                <button
+                  onClick={async () => {
+                    const d = await fetch(`/api/field/card-photo?cardId=${sel.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+                    if (!d?.photo) { alert("لا صورة لهذه البطاقة"); return; }
+                    const a = document.createElement("a");
+                    a.href = d.photo;
+                    a.download = `card-${sel.id}-photo.jpg`;
+                    a.click();
+                  }}
+                  className="mt-2 rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100"
+                >
+                  ⬇️ تحميل صورة العمل
+                </button>
               </div>
             ) : !(canOperate && (!isTech || sel.technicianId === myTechId)) ? (
               // الفني يرى بطاقة زميله بلا أزرار عمل (يحوّلها لنفسه أولاً)
@@ -652,20 +679,27 @@ export default function FieldManagementPage() {
             ) : (
               <>
                 <div className="mb-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-center text-xs font-semibold text-emerald-700">⏱ بدأ العمل: {fmtDateTime(sel.startedAt)}</div>
-                <div className="mb-3 grid grid-cols-2 gap-2">
+                <div className="mb-3 grid grid-cols-3 gap-2">
                   <button
                     onClick={() => { setCompleting(sel); setSel(null); }}
                     disabled={sel.technicianId == null}
                     title={sel.technicianId == null ? "وجّه البطاقة لفني أولاً" : ""}
-                    className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    className="rounded-lg bg-emerald-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
                   >
                     ✓ إنجاز
                   </button>
                   <button
                     onClick={() => { setPostponing(sel); setSel(null); }}
-                    className="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-600"
+                    className="rounded-lg bg-amber-500 px-3 py-2.5 text-sm font-bold text-white hover:bg-amber-600"
                   >
                     📅 تأجيل
+                  </button>
+                  <button
+                    onClick={() => void noAnswerCard()}
+                    title="اتصلتُ بالمشترك ولم يجب — البطاقة تبقى وتُرسل له رسالة"
+                    className="rounded-lg bg-slate-500 px-3 py-2.5 text-sm font-bold text-white hover:bg-slate-600"
+                  >
+                    📵 ميجاوب
                   </button>
                 </div>
               </>
@@ -931,6 +965,7 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
   const rewardLookup = useRef<Promise<{ balance: number; name: string | null } | null> | null>(null); // استعلام الرصيد الجاري
   const [mats, setMats] = useState<CustodyMat[]>([]);
   const [picked, setPicked] = useState<Record<number, number>>({}); // itemId -> qty
+  const [noSale, setNoSale] = useState(false); // «بلا مبيع»: خيار إلزامي بديل عن اختيار مادة (المبلغ صفر)
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -978,6 +1013,7 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
   const pettyShare = Math.max(0, nAmount - materialsTotal);
 
   function togglePick(m: CustodyMat) {
+    setNoSale(false); // اختيار مادة يلغي «بلا مبيع»
     setPicked((p) => { const n = { ...p }; if (n[m.itemId]) delete n[m.itemId]; else n[m.itemId] = 1; return n; });
   }
   function setQty(itemId: number, q: number, max: number) {
@@ -994,17 +1030,22 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
   async function submit() {
     setErr("");
     if (nAmount < 0) { setErr("المبلغ لا يكون سالباً"); return; } // الصفر مسموح (بطاقات مجانية)
+    // حد أدنى إلزامي: أي مبلغ مُدخَل لا يقل عن 1000 دينار
+    if (nAmount > 0 && nAmount < 1000) { setErr("المبلغ لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
     if (isTransfer) {
       if (!newUser.trim()) { setErr("اليوزر الجديد مطلوب لإنجاز التحويل"); return; }
     } else if (fullFields) {
       if (!details.trim()) { setErr("تفاصيل الصيانة مطلوبة"); return; }
       if (photoMandatory && !photo) { setErr("رفع صورة مطلوب"); return; }
+      // إلزامي: مادة من الذمّة أو «بلا مبيع» (بلا مبيع ⇒ المبلغ يبقى صفراً)
+      if (Object.keys(picked).length === 0 && !noSale) { setErr("اختر مادة من ذمّتك أو «بلا مبيع» (إلزامي)"); return; }
+      if (noSale && Object.keys(picked).length === 0 && nAmount > 0) { setErr("مع «بلا مبيع» يبقى المبلغ صفراً"); return; }
     }
     setBusy(true);
     const materials = Object.entries(picked).map(([id, q]) => ({ itemId: Number(id), qty: q }));
     const r = await fetch("/api/field/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cardId: card.id, serviceDetails: details, amount: nAmount, newUser, photo, materials, useReward: rewardPulled }),
+      body: JSON.stringify({ cardId: card.id, serviceDetails: details, amount: nAmount, newUser, photo, materials, useReward: rewardPulled, noSale }),
     });
     const d = await r.json().catch(() => null);
     setBusy(false);
@@ -1063,26 +1104,38 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
 
         {fullFields && (
           <>
-            <label className="mb-1 block text-xs font-semibold text-slate-500">المواد المُستهلَكة من ذمّتك (اختياري)</label>
-            {mats.length === 0 ? (
-              <div className="mb-3 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">لا مواد بذمّتك.</div>
-            ) : (
-              <div className="mb-3 space-y-1.5">
-                {mats.map((m) => {
-                  const on = picked[m.itemId] != null;
-                  return (
-                    <div key={m.itemId} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm ${on ? "border-amber-300 bg-amber-50" : "border-slate-200"}`}>
-                      <input type="checkbox" checked={on} onChange={() => togglePick(m)} className="h-4 w-4 accent-amber-500" />
-                      <span className="flex-1 text-slate-700">{m.name} <span className="text-xs text-slate-400">({m.priceSale.toLocaleString("en-US")} — متاح {m.available})</span></span>
-                      {on && <input type="number" value={picked[m.itemId]} min={1} max={m.available} onChange={(e) => setQty(m.itemId, Number(e.target.value), m.available)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" dir="ltr" />}
-                    </div>
-                  );
-                })}
+            <label className="mb-1 block text-xs font-semibold text-slate-500">المواد المُستهلَكة من ذمّتك <span className="text-red-500">* إلزامي</span> — اختر مادةً أو «بلا مبيع»</label>
+            <div className="mb-3 space-y-1.5">
+              {/* «بلا مبيع»: خيار دائم لكل الفنيين — ليس مادة، بلا مبلغ (يبقى صفراً) */}
+              <div className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm ${noSale ? "border-slate-500 bg-slate-100" : "border-slate-200"}`}>
+                <input type="checkbox" checked={noSale} onChange={() => { setNoSale((v) => !v); setPicked({}); }} className="h-4 w-4 accent-slate-600" />
+                <span className="flex-1 font-semibold text-slate-700">🚫 بلا مبيع <span className="text-xs font-normal text-slate-400">(لم تُبَع أي مادة — المبلغ صفر)</span></span>
               </div>
-            )}
+              {mats.map((m) => {
+                const on = picked[m.itemId] != null;
+                return (
+                  <div key={m.itemId} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm ${on ? "border-amber-300 bg-amber-50" : "border-slate-200"}`}>
+                    <input type="checkbox" checked={on} onChange={() => togglePick(m)} className="h-4 w-4 accent-amber-500" />
+                    <span className="flex-1 text-slate-700">{m.name} <span className="text-xs text-slate-400">({m.priceSale.toLocaleString("en-US")} — متاح {m.available})</span></span>
+                    {on && <input type="number" value={picked[m.itemId]} min={1} max={m.available} onChange={(e) => setQty(m.itemId, Number(e.target.value), m.available)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" dir="ltr" />}
+                  </div>
+                );
+              })}
+              {mats.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">لا مواد بذمّتك — اختر «بلا مبيع».</div>}
+            </div>
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">صورة العمل {photoMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400">(اختياري)</span>}</label>
-            <input type="file" accept="image/*" capture="environment" onChange={onFile} className="mb-2 w-full text-sm" />
+            {/* مصدران للصورة: كاميرا الهاتف مباشرة، أو الاستوديو/ملفات الجهاز */}
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+                📷 الكاميرا
+                <input type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" />
+              </label>
+              <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100">
+                🖼 الاستوديو
+                <input type="file" accept="image/*" onChange={onFile} className="hidden" />
+              </label>
+            </div>
             <p className="mb-2 text-[11px] text-slate-400">أي حجم صورة مقبول — تُضغط تلقائياً (≤ 1.5MB) قبل الرفع.{!photoMandatory && " الصورة إلزامية على الفني فقط."}</p>
             {preparing && <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">جاري ضغط الصورة…</div>}
             {photo && <img src={photo} alt="preview" className="mb-3 max-h-40 rounded-lg border border-slate-200" />}

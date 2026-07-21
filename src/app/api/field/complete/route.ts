@@ -43,6 +43,7 @@ const schema = z.object({
     .optional()
     .default([]),
   useReward: z.boolean().optional().default(false), // سحب كود مكافأة المشترك خصماً من المبلغ
+  noSale: z.boolean().optional().default(false), // «بلا مبيع»: لا مادة مباعة (المبلغ صفر) — خيار وليس مادة
 });
 
 // إنجاز بطاقة — بحقولها الواجبة حسب النوع:
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
-  const { cardId, serviceDetails, amount, newUser, photo, materials, useReward } = parsed.data;
+  const { cardId, serviceDetails, amount, newUser, photo, materials, useReward, noSale } = parsed.data;
 
   const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false } });
   if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
@@ -84,12 +85,23 @@ export async function POST(request: Request) {
   if (amount == null || amount < 0) {
     return NextResponse.json({ error: "المبلغ مطلوب (يمكن أن يكون صفراً)" }, { status: 400 });
   }
+  // حد أدنى إلزامي: أي مبلغ مُدخَل لا يقل عن 1000 دينار (الصفر مسموح مع «بلا مبيع»/المجاني)
+  if (amount > 0 && amount < 1000) {
+    return NextResponse.json({ error: "المبلغ لا يقل عن 1000 دينار (أو صفر للمجاني)" }, { status: 400 });
+  }
   if (isTransfer) {
     if (!newUser?.trim()) return NextResponse.json({ error: "اليوزر الجديد مطلوب لإنجاز التحويل" }, { status: 400 });
   } else if (!isDelivery) {
     if (!serviceDetails?.trim()) return NextResponse.json({ error: "تفاصيل الصيانة مطلوبة" }, { status: 400 });
     // الصورة إلزامية على الفني فقط؛ اختيارية للمدير والمستخدم
     if (actor.isTech && !photo?.trim()) return NextResponse.json({ error: "رفع صورة مطلوب" }, { status: 400 });
+    // إلزامي: اختيار مادة من ذمّة الفني أو «بلا مبيع» صراحةً (بلا مبيع ⇒ المبلغ صفر)
+    if (materials.length === 0 && !noSale) {
+      return NextResponse.json({ error: "اختر مادة من الذمّة أو «بلا مبيع» (إلزامي)" }, { status: 400 });
+    }
+    if (noSale && materials.length === 0 && amount > 0) {
+      return NextResponse.json({ error: "مع «بلا مبيع» يبقى المبلغ صفراً — أو اختر المادة المباعة" }, { status: 400 });
+    }
   }
 
   const tech = await prisma.technician.findUnique({ where: { id: card.technicianId } });

@@ -17,6 +17,7 @@ const EVENTS: { type: string; name: string; hint: string }[] = [
   { type: "reward", name: "منح المكافأة", hint: "تُرسل عند منح مكافأة التفعيل (الكود + الرصيد)" },
   { type: "rewardUsed", name: "استخدام المكافأة", hint: "تُرسل عند خصم/استخدام كود المكافأة" },
   { type: "subSummary", name: "ملخص الاشتراك (وصل)", hint: "تُرسل بزر «💬 ارسال ملخص» في صفحة المشتركين — وصل فوري بحالة اشتراك المشترك" },
+  { type: "noAnswer", name: "ميجاوب (لم يرد)", hint: "تُرسل عند ضغط الفني «📵 ميجاوب» على البطاقة — تخبر المشترك أننا اتصلنا ولم يجب، والبطاقة تبقى بمكانها" },
   { type: "other", name: "أخرى (عام)", hint: "قالب عام قديم — يظهر ضمن القوالب الجاهزة عند الإرسال اليدوي" },
 ];
 const EVENT_TYPES = EVENTS.map((e) => e.type);
@@ -69,6 +70,11 @@ const EXTRA_VARS: Record<string, { token: string; label: string }[]> = {
     { token: "{phone}", label: "هاتف المشترك" },
     { token: "{كود_الخصم}", label: "كود الخصم" },
     { token: "{رصيد_المكافأة}", label: "رصيد المكافأة" },
+  ],
+  noAnswer: [
+    { token: "{kind}", label: "نوع البطاقة" },
+    { token: "{technician}", label: "اسم الفني" },
+    { token: "{office}", label: "اسم المكتب" },
   ],
 };
 
