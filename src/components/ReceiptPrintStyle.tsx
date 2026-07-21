@@ -38,11 +38,14 @@ export default function ReceiptPrintStyle() {
     background: #fff !important;
     color: #000 !important;
   }
-  /* الطابعة الحرارية أحادية اللون: أسود على أبيض، بلا خلفيات ملوّنة، وكسر الكلمات الطويلة */
+  /* الطابعة الحرارية أحادية اللون: كل النص أسود خالص وعريض (بولد) لوضوح الطباعة،
+     بلا خلفيات ملوّنة، وكسر الكلمات الطويلة */
   .print-area *:not(img) {
     color: #000 !important;
     border-color: #000 !important;
     background: transparent !important;
+    font-weight: 700 !important;
+    opacity: 1 !important;
     max-width: 100% !important;
     overflow-wrap: break-word !important;
     word-break: break-word !important;

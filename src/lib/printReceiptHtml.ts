@@ -15,9 +15,13 @@ function wrap(body: string, fontSize: number): string {
   * { box-sizing: border-box; margin: 0; padding: 0; }
   @page { size: 80mm 120mm; margin: 0; }
   html, body { width: 80mm; background: #fff; color: #000; font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
-  .print-area { width: 68mm; max-width: 68mm; margin: 0 auto; padding: 3mm 4mm; font-size: ${fontSize}px; }
+  /* كل النص أسود خالص وعريض (بولد) — طلب صريح لوضوح الطباعة الحرارية */
+  .print-area { width: 68mm; max-width: 68mm; margin: 0 auto; padding: 3mm 4mm; font-size: ${fontSize}px;
+                font-weight: 700; color: #000; }
   .print-area * { color: #000 !important; border-color: #000 !important; background: transparent !important;
+                  font-weight: 700 !important; opacity: 1 !important;
                   max-width: 100%; overflow-wrap: break-word; word-break: break-word; }
+  .hdr h1, .b, .line .b, thead th { font-weight: 800 !important; }
   .hdr { text-align: center; border-bottom: 2px dashed #999; padding-bottom: 8px; margin-bottom: 10px; }
   .hdr h1 { font-size: 1.25em; font-weight: 800; }
   .hdr p { font-size: 0.85em; }
