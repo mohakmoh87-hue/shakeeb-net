@@ -196,6 +196,14 @@ export async function POST(request: Request) {
   const paidNet = Math.max(0, amount - rewardDiscount);
   await appendCardHistory(cardId, actor.name, `إنجاز البطاقة — المبلغ ${paidNet.toLocaleString("en-US")} د.ع`);
 
+  // إشعار إنجاز البطاقة (جرس + Push للهاتف/المتصفح حتى والبرنامج مغلق) — لا يضيع أي إنجاز
+  await notify({
+    agentId: actor.agentId ?? null, towerId, type: "cardDone",
+    title: `✅ أُنجزت بطاقة «${card.kind ?? "مهمة"}»`,
+    body: `${card.title}${actor.name ? ` — بواسطة ${actor.name}` : ""}${paidNet > 0 ? ` — المبلغ ${paidNet.toLocaleString("en-US")} د.ع` : ""}`,
+    refType: "card", refId: cardId,
+  });
+
   // ===== خصم معلّق عند تجاوز الوقت (عمود «محسوب بالوقت» + نوع له وقت مسموح + غير توصيل) =====
   let overrunResult: { amount: number; overrunMin: number } | null = null;
   if (!isDelivery && list?.timeTracked && durationSec != null && (type?.execMinutes ?? 0) > 0 && (type?.overrunDeduction ?? 0) > 0) {
