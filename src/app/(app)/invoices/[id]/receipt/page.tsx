@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import PrintButton from "@/components/PrintButton";
 import ReceiptPrintStyle from "@/components/ReceiptPrintStyle";
-import AutoPrint from "@/components/AutoPrint";
+import SilentPrint from "@/components/SilentPrint";
 import { getReceiptTemplate } from "@/lib/receiptTemplate";
 import { getSession } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
@@ -41,8 +41,8 @@ export default async function InvoiceReceipt({
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">
       <ReceiptPrintStyle />
-      <AutoPrint />
       <div className="w-full max-w-md">
+        <SilentPrint kind="invoice" id={invoice.id} />
         <div className="no-print mb-4 flex justify-between">
           <a href="/invoices" className="rounded-lg bg-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-300">
             ← فاتورة جديدة

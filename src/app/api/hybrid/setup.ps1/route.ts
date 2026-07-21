@@ -23,6 +23,12 @@ if (-not (Test-Path (Join-Path $app ".env")) -and -not $env:INSTALL_TOKEN) {
 }
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 
+# ايقاف اي عامل قديم يعمل الان (لتطبيق التحديث فورا ومنع قفل الملفات اثناء التثبيت)
+try {
+  Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*worker.ts*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | Where-Object { $_.CommandLine -like '*worker-loop*' -or $_.CommandLine -like '*worker.ts*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+} catch { }
+
 function Have($c) { return $null -ne (Get-Command $c -ErrorAction SilentlyContinue) }
 function RefreshPath {
   $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
@@ -93,14 +99,15 @@ $oldBat = Join-Path ([Environment]::GetFolderPath('Startup')) 'ShakeebNetAgent.b
 if (Test-Path $oldBat) { Remove-Item $oldBat -Force -ErrorAction SilentlyContinue }
 $vbs = Join-Path ([Environment]::GetFolderPath('Startup')) 'ShakeebNetAgent.vbs'
 try {
-  $vbsLines = @('Set sh = CreateObject("WScript.Shell")', ('sh.CurrentDirectory = "' + $app + '"'), 'sh.Run "cmd /c npx tsx src\worker.ts", 0, False')
+  # الغلاف worker-loop.cmd = حلقة (سحب اخر كود ثم تشغيل العامل): تحديث ذاتي تلقائي بلا زيارة المكتب
+  $vbsLines = @('Set sh = CreateObject("WScript.Shell")', ('sh.CurrentDirectory = "' + $app + '"'), 'sh.Run "cmd /c worker-loop.cmd", 0, False')
   Set-Content -Encoding ascii -Path $vbs -Value $vbsLines
-  Write-Host "سُجّل التشغيل التلقائي المخفي عند الاقلاع." -ForegroundColor Green
+  Write-Host "سُجّل التشغيل التلقائي المخفي عند الاقلاع (مع التحديث الذاتي)." -ForegroundColor Green
   # 6) تشغيل العامل الان مخفياً (بلا نافذة يمكن إغلاقها بالخطأ)
   Start-Process wscript.exe -ArgumentList ('"' + $vbs + '"')
 } catch {
   Write-Host "تعذّر التشغيل المخفي — سيعمل بنافذة." -ForegroundColor Yellow
-  Start-Process cmd -ArgumentList '/c npx tsx src/worker.ts' -WorkingDirectory $app
+  Start-Process cmd -ArgumentList '/c worker-loop.cmd' -WorkingDirectory $app
 }
 
 Write-Host ""

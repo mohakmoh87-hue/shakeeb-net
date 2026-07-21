@@ -60,17 +60,40 @@ function ensureSingleInstance(): Promise<void> {
     const { startLocalSasServer } = await import("@/lib/localSasServer");
     const { startHybridAgent } = await import("@/lib/hybridAgent");
     const { startWaRequestPoller, startWaRelayPoller } = await import("@/lib/whatsapp");
+    const { startPrintAgent } = await import("@/lib/printAgent");
     startScheduler();
     startLocalSasServer(); // يشمل /health + لوحة SAS + عمليات SAS محلياً (المنفذ 47615)
     startHybridAgent();
     startWaRequestPoller();
     startWaRelayPoller();
+    startPrintAgent(); // الطباعة الصامتة لوصولات المكتب على الطابعة الافتراضية
+    startSelfUpdateWatcher(); // تحديث ذاتي: يلتقط تحديثات الكود ويعيد التشغيل عبر الغلاف
     console.log("[worker] ✅ العامل يعمل. اتركه مفتوحاً.");
   } catch (e) {
     console.error("[worker] ❌ فشل بدء العامل:", e);
     process.exit(1);
   }
 })();
+
+// ===== التحديث الذاتي =====
+// كل 10 دقائق: git fetch ومقارنة HEAD مع origin/main. عند وجود تحديث نُغلق بنظافة
+// (حفظ جلسات الواتساب) ونخرج — غلاف التشغيل worker-loop.cmd يسحب الجديد ويعيد التشغيل.
+// النتيجة: تحديثات الكود تصل حواسيب المكاتب تلقائياً بلا أي تدخّل يدوي.
+function startSelfUpdateWatcher() {
+  const check = () => {
+    try {
+      execSync("git fetch --quiet", { stdio: "ignore", timeout: 60_000 });
+      const local = execSync("git rev-parse HEAD", { timeout: 15_000 }).toString().trim();
+      const remote = execSync("git rev-parse origin/main", { timeout: 15_000 }).toString().trim();
+      if (local && remote && local !== remote) {
+        console.log(`[worker] 🔄 تحديث جديد (${remote.slice(0, 7)}) — إعادة تشغيل للتحديث...`);
+        void gracefulShutdown("UPDATE");
+      }
+    } catch { /* لا شبكة/لا git — دورة قادمة */ }
+  };
+  setTimeout(check, 90_000); // أول فحص بعد استقرار التشغيل
+  setInterval(check, 10 * 60_000);
+}
 
 // إغلاق نظيف عند إيقاف العامل/إطفاء الحاسبة: نُغلق متصفّحات الواتساب بأمان كي تُفرَّغ
 // حالة الجلسة إلى القرص (يمنع تسجيل الخروج وطلب QR جديد بعد الإطفاء المفاجئ).

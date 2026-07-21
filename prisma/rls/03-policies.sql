@@ -173,6 +173,12 @@ CREATE POLICY rls_wa_relays ON wa_relays TO agent_worker
   USING ("towerId" IN (SELECT id FROM towers WHERE "agentId" = current_agent_id()))
   WITH CHECK ("towerId" IN (SELECT id FROM towers WHERE "agentId" = current_agent_id()));
 
+ALTER TABLE print_jobs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_print_jobs ON print_jobs;
+CREATE POLICY rls_print_jobs ON print_jobs TO agent_worker
+  USING ("towerId" IN (SELECT id FROM towers WHERE "agentId" = current_agent_id()))
+  WITH CHECK ("towerId" IN (SELECT id FROM towers WHERE "agentId" = current_agent_id()));
+
 ALTER TABLE wa_sessions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS rls_wa_sessions ON wa_sessions;
 CREATE POLICY rls_wa_sessions ON wa_sessions TO agent_worker

@@ -15,9 +15,10 @@ GRANT SELECT (id, name, "officeCap", "planExpiry", "isTrial", approved,
               "isDeleted", "createdAt", "updatedAt")
   ON agents TO agent_worker;
 
--- ---------- قراءة + كتابة كاملة (رسائل ومُرحِّل الواتساب) ----------
-GRANT SELECT, INSERT, UPDATE, DELETE ON messages  TO agent_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON wa_relays TO agent_worker;
+-- ---------- قراءة + كتابة كاملة (رسائل ومُرحِّل الواتساب وأوامر الطباعة) ----------
+GRANT SELECT, INSERT, UPDATE, DELETE ON messages   TO agent_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON wa_relays  TO agent_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON print_jobs TO agent_worker; -- الطباعة الصامتة
 
 -- ---------- قراءة + إنشاء + تحديث ----------
 GRANT SELECT, INSERT, UPDATE ON subscribers    TO agent_worker; -- المزامنة تنشئ وتحدّث

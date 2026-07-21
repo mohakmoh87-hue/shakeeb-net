@@ -849,6 +849,25 @@ model InstallToken {
   @@map("install_tokens")
 }
 
+// ===== أوامر الطباعة الصامتة =====
+// يُنشأ أمر عند فتح/طباعة وصل من أي جهاز، ويلتقطه العامل المحلي بحاسبة المكتب
+// فيولّد PDF الوصل ويطبعه بصمت على الطابعة الافتراضية (بلا نافذة حوار إطلاقاً).
+model PrintJob {
+  id        Int       @id @default(autoincrement())
+  agentId   Int? // الوكيل (عزل المستأجر)
+  towerId   Int? // مكتب الطابعة (مكتب الوصل)
+  kind      String // subscription | invoice
+  refId     Int // معرّف الوصل (subscriptionEntry.id أو invoice.id)
+  status    String    @default("pending") // pending | printing | done | failed
+  error     String?
+  createdAt DateTime  @default(now())
+  doneAt    DateTime?
+
+  updatedAt DateTime @default(now()) @updatedAt
+  @@index([status, createdAt])
+  @@map("print_jobs")
+}
+
 model WaSession {
   towerId     Int       @id // المكتب
   state       String    @default("disconnected") // disconnected|starting|qr|authenticated|ready|error
