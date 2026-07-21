@@ -62,7 +62,12 @@ export async function GET(request: Request) {
         }
       }
     }
-    return NextResponse.json({ ...data, offices: [], officeId: tech.towerId, isManager: false, canManage: false, canOperate: true, myOfficeId: tech.towerId, role: "technician" });
+    return NextResponse.json({
+      ...data, offices: [], officeId: tech.towerId, isManager: false, canManage: false, canOperate: true, myOfficeId: tech.towerId, role: "technician",
+      // مكتب الدعم (إن وُجد): تحتاجه الواجهة لزر خريطة بطاقات عمود «دعم مؤقت»
+      // (منطقة الخريطة تُشتق من مكتب البطاقة الحقيقي لا من مكتب الفني الأصلي)
+      supportOfficeId: me?.supportTowerId ?? null,
+    });
   }
 
   const session = await getSession();

@@ -26,9 +26,14 @@ export async function GET() {
     where: { isDeleted: false, ...(await agentOfficeFilter(session)) }, select: { id: true, name: true }, orderBy: { id: "asc" },
   });
 
-  // البطاقات المنجزة غير المحصّلة (تفاصيل كل تكت) لبناء المجموع + تفصيله لكل فني
+  // البطاقات المنجزة غير المحصّلة — محصورة بلوحات مكاتب المُشاهد (المدير: مكاتب وكيله؛
+  // الموظف: مكتبه فقط) — فبطاقات الفني المُعار «دعماً» في مكتبي تظهر لي، وبطاقات
+  // مكتبه الأصلي لا تظهر (كلٌّ يحصّل بطاقات مكتبه فقط)
+  const viewTowers = manager ? agentTowers : [session.towerId ?? -1];
+  const viewBoards = await prisma.taskBoard.findMany({ where: { towerId: { in: viewTowers }, isDeleted: false }, select: { id: true } });
+  const viewLists = await prisma.taskList.findMany({ where: { boardId: { in: viewBoards.map((b) => b.id) } }, select: { id: true } });
   const cards = await prisma.taskCard.findMany({
-    where: { done: true, settled: false, isDeleted: false, technicianId: { in: technicians.map((t) => t.id) } },
+    where: { done: true, settled: false, isDeleted: false, technicianId: { in: technicians.map((t) => t.id) }, listId: { in: viewLists.map((l) => l.id) } },
     select: { id: true, title: true, kind: true, amount: true, technicianId: true, description: true },
     orderBy: { id: "asc" },
   });
@@ -65,19 +70,26 @@ export async function POST(request: Request) {
   const technicianId = Number(b?.technicianId);
   if (!technicianId) return NextResponse.json({ error: "technicianId مطلوب" }, { status: 400 });
 
-  // عزل المستأجر: مستخدم المكتب يحصّل فنيّي مكتبه؛ المدير فنيّي وكيله فقط
+  // عزل المستأجر: مستخدم المكتب يحصّل فنيّي مكتبه (ومنهم المُعار «دعماً» لمكتبه —
+  // يتصرّف كفنيٍّ تابع له طوال الدعم)؛ المدير فنيّي وكيله فقط
   const tech = await prisma.technician.findUnique({ where: { id: technicianId } });
   if (!tech) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
+  const myOffice = session.towerId ?? null;
   if (isFieldManager(session)) {
     const agentTowers = await agentTowerIds(session);
     const ok = (tech.towerId != null && agentTowers.includes(tech.towerId)) || (tech.supportTowerId != null && agentTowers.includes(tech.supportTowerId));
     if (!ok) return NextResponse.json({ error: "لا يمكنك تحصيل فني وكيل آخر" }, { status: 403 });
-  } else if (tech.towerId !== (session.towerId ?? null)) {
+  } else if (tech.towerId !== myOffice && tech.supportTowerId !== myOffice) {
     return NextResponse.json({ error: "لا يمكنك تحصيل فني مكتب آخر" }, { status: 403 });
   }
 
+  // التحصيل محصور ببطاقات لوحات مكاتب المُحصِّل (المدير: مكاتب وكيله؛ الموظف: مكتبه) —
+  // فتحصيلي لفنيٍّ مُعار لي لا يلمس بطاقات مكتبه الأصلي غير المحصّلة
+  const settleTowers = isFieldManager(session) ? await agentTowerIds(session) : [myOffice ?? -1];
+  const settleBoards = await prisma.taskBoard.findMany({ where: { towerId: { in: settleTowers }, isDeleted: false }, select: { id: true } });
+  const settleLists = await prisma.taskList.findMany({ where: { boardId: { in: settleBoards.map((b) => b.id) } }, select: { id: true } });
   const cards = await prisma.taskCard.findMany({
-    where: { technicianId, done: true, settled: false, isDeleted: false },
+    where: { technicianId, done: true, settled: false, isDeleted: false, listId: { in: settleLists.map((l) => l.id) } },
     select: { id: true, amount: true },
   });
   const ids = cards.map((c) => c.id);

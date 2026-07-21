@@ -85,6 +85,7 @@ export default function FieldManagementPage() {
   const [role, setRole] = useState<string>("");
   const [myName, setMyName] = useState("");
   const [supportInfo, setSupportInfo] = useState<string | null>(null); // شريط دعم اليوم الكامل (للفني المُعار)
+  const [supportOfficeId, setSupportOfficeId] = useState<number | null>(null); // مكتب الدعم (لخريطة بطاقات «دعم مؤقت»)
   const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
@@ -105,6 +106,7 @@ export default function FieldManagementPage() {
         setIsManager(!!d.isManager); setCanManage(!!d.canManage); setRole(d.role ?? "");
         setCanOperate(d.canOperate !== false); setMyOfficeId(d.myOfficeId ?? null);
         setSupportInfo(d.supportInfo ?? null);
+        setSupportOfficeId(d.supportOfficeId ?? null);
       }
       setLoading(false);
     });
@@ -370,7 +372,8 @@ export default function FieldManagementPage() {
                       {!c.done && !c.postponedTo && c.startedAt && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-sky-700">⏱ جارية</span>}
                     </div>
                     <div className="mt-1.5">
-                      <MapButton text={`${c.title}\n${c.description ?? ""}`} towerId={officeId} size="sm" />
+                      {/* بطاقة «دعم مؤقت» (listId=-1): منطقة الخريطة من مكتب الدعم لا مكتب الفني */}
+                      <MapButton text={`${c.title}\n${c.description ?? ""}`} towerId={c.listId === -1 ? (supportOfficeId ?? officeId) : officeId} size="sm" />
                     </div>
                   </div>
                 ))}
@@ -523,7 +526,7 @@ export default function FieldManagementPage() {
             <div className="mb-3 flex items-start justify-between gap-2">
               <input value={sel.title} onChange={(e) => setSel({ ...sel, title: e.target.value })} onBlur={() => saveCard({ title: sel.title })} className="flex-1 rounded-lg border border-transparent px-2 py-1 text-lg font-bold text-slate-800 hover:border-slate-200 focus:border-mynet-blue" />
               {/* زر الخريطة — يستخرج اليوزر من عنوان/وصف البطاقة (يدوية أو تلقائية) ويرشد الفني للموقع */}
-              <MapButton text={`${sel.title}\n${sel.description ?? ""}`} towerId={officeId} />
+              <MapButton text={`${sel.title}\n${sel.description ?? ""}`} towerId={sel.listId === -1 ? (supportOfficeId ?? officeId) : officeId} />
               <button onClick={() => setSel(null)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
             </div>
 

@@ -153,6 +153,22 @@ export async function POST(request: Request) {
     for (const s of soldInfo) {
       const item = await tx.item.findUnique({ where: { id: s.itemId } });
       await tx.item.update({ where: { id: s.itemId }, data: { count: (item?.count ?? 0) - s.qty } });
+      // فنيٌّ مُعار «دعماً» يبيع من ذمّته في مكتب آخر: تُرحَّل المادة لمكتب البطاقة ثم
+      // تُباع منه فوراً — المصدر نقص أعلاه، ومادة الوجهة تُنشأ إن غابت (صافي مخزونها
+      // صفر: ترحيل + بيع فوري)، وقيد المبيعات يُسجَّل لمكتب البطاقة أدناه أصلاً.
+      // فيتصرّف الفني كأنه تابع للمكتب الطالب للدعم من كل النواحي.
+      if (item?.towerId != null && towerId != null && item.towerId !== towerId) {
+        const destItem = await tx.item.findFirst({ where: { name: item.name, towerId, isDeleted: false } });
+        if (!destItem) {
+          await tx.item.create({
+            data: {
+              name: item.name, category: item.category, priceDinar: item.priceDinar,
+              priceSale: item.priceSale, priceSale2: item.priceSale2, barcode: item.barcode,
+              count: 0, towerId,
+            },
+          });
+        }
+      }
       const custody = await tx.custody.findFirst({
         where: { technicianId: card.technicianId!, itemId: s.itemId, isDeleted: false },
       });
