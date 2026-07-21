@@ -77,11 +77,11 @@ export default function InvoicesReport() {
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
             <table className="w-full text-right text-sm">
               <thead className="bg-slate-50 text-slate-600">
-                <tr><th className="p-2">رقم</th><th className="p-2">التاريخ</th><th className="p-2">المشترك</th><th className="p-2">المواد</th><th className="p-2">الإجمالي</th><th className="p-2">المدفوع</th><th className="p-2">المتبقّي</th>{can("receipts.void") && <th className="no-print p-2"></th>}</tr>
+                <tr><th className="p-2">رقم</th><th className="p-2">التاريخ</th><th className="p-2">المشترك</th><th className="p-2">المواد</th><th className="p-2">الإجمالي</th><th className="p-2">المدفوع</th><th className="p-2">المتبقّي</th><th className="no-print p-2"></th></tr>
               </thead>
               <tbody>
                 {data.invoices.length === 0 ? (
-                  <tr><td colSpan={can("receipts.void") ? 8 : 7} className="p-4 text-center text-slate-400">لا توجد فواتير</td></tr>
+                  <tr><td colSpan={8} className="p-4 text-center text-slate-400">لا توجد فواتير</td></tr>
                 ) : data.invoices.map((inv) => (
                   <tr key={inv.id} className="border-t border-slate-100">
                     <td className="p-2">#{inv.number}</td>
@@ -91,11 +91,14 @@ export default function InvoicesReport() {
                     <td className="p-2 font-semibold">{fmt(inv.totalMy)}</td>
                     <td className="p-2 text-emerald-600">{fmt(inv.waselHim)}</td>
                     <td className="p-2 text-red-600">{fmt((inv.totalMy ?? 0) - (inv.waselHim ?? 0))}</td>
-                    {can("receipts.void") && (
-                      <td className="no-print p-2">
-                        <button onClick={() => voidInvoice(inv.id)} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑 حذف</button>
-                      </td>
-                    )}
+                    <td className="no-print p-2">
+                      <div className="flex gap-1.5">
+                        <a href={`/invoices/${inv.id}/receipt`} target="_blank" rel="noopener noreferrer" className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-100" title="إعادة طباعة الوصل">🖨 طباعة</a>
+                        {can("receipts.void") && (
+                          <button onClick={() => voidInvoice(inv.id)} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑 حذف</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -101,11 +101,11 @@ export default function DetailedReport() {
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
               <table className="w-full text-right text-sm">
                 <thead className="bg-slate-50 text-slate-600">
-                  <tr><th className="p-2">#</th><th className="p-2">المشترك</th><th className="p-2">الباقة</th><th className="p-2">أشهر</th><th className="p-2">القيمة</th><th className="p-2">المُحصّل</th><th className="p-2">التاريخ</th>{can("receipts.void") && <th className="no-print p-2"></th>}</tr>
+                  <tr><th className="p-2">#</th><th className="p-2">المشترك</th><th className="p-2">الباقة</th><th className="p-2">أشهر</th><th className="p-2">القيمة</th><th className="p-2">المُحصّل</th><th className="p-2">التاريخ</th><th className="no-print p-2"></th></tr>
                 </thead>
                 <tbody>
                   {data.entries.length === 0 ? (
-                    <tr><td colSpan={can("receipts.void") ? 8 : 7} className="p-4 text-center text-slate-400">لا توجد عمليات</td></tr>
+                    <tr><td colSpan={8} className="p-4 text-center text-slate-400">لا توجد عمليات</td></tr>
                   ) : data.entries.map((e) => (
                     <tr key={e.id} className="border-t border-slate-100">
                       <td className="p-2">{e.id}</td>
@@ -115,9 +115,14 @@ export default function DetailedReport() {
                       <td className="p-2">{fmt(e.money)}</td>
                       <td className="p-2 text-emerald-600">{fmt(e.moneyIn)}</td>
                       <td className="p-2">{fmtDate(e.date)}</td>
-                      {can("receipts.void") && (
-                        <td className="no-print p-2"><button onClick={() => voidEntry(e.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100">🗑 حذف</button></td>
-                      )}
+                      <td className="no-print p-2">
+                        <div className="flex gap-1.5">
+                          <a href={`/subscriptions/${e.id}/receipt`} target="_blank" rel="noopener noreferrer" className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-100" title="إعادة طباعة الوصل">🖨 طباعة</a>
+                          {can("receipts.void") && (
+                            <button onClick={() => voidEntry(e.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100">🗑 حذف</button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

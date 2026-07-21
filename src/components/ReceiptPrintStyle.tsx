@@ -4,7 +4,7 @@
 export default function ReceiptPrintStyle() {
   const css = `
 @media print {
-  @page { size: 80mm auto; margin: 0; }
+  @page { size: 80mm 120mm; margin: 0; }
   html, body {
     width: 80mm !important;
     margin: 0 !important;
