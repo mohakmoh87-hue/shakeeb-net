@@ -25,12 +25,17 @@ export async function GET(request: Request) {
   const reqOffice = new URL(request.url).searchParams.get("officeId");
   const officeId = resolveFieldOffice(session, reqOffice ? Number(reqOffice) : null);
   const isManager = can(session, "field.manage");
+  // فنيّو المكتب + المُعارون له «دعماً» (يتصرّفون كفنييه: ذمم مواد، بطاقات، تحصيل)
   const rows = await prisma.technician.findMany({
-    where: { towerId: officeId ?? null, isDeleted: false },
+    where: {
+      isDeleted: false,
+      OR: [{ towerId: officeId ?? null }, ...(officeId != null ? [{ supportTowerId: officeId }] : [])],
+    },
     orderBy: { id: "asc" },
   });
   const technicians = rows.map((t) => {
-    const base = { id: t.id, name: t.name, phone: t.phone, towerId: t.towerId, username: t.username };
+    const isSupport = officeId != null && t.towerId !== officeId && t.supportTowerId === officeId;
+    const base = { id: t.id, name: t.name, phone: t.phone, towerId: t.towerId, username: t.username, isSupport };
     if (!isManager) return base;
     // بيانات المدير الكاملة (بلا هاش الرمز)
     return {

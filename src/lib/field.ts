@@ -175,7 +175,54 @@ export async function getOrCreatePettyAccount(towerId: number | null) {
 }
 
 // إنهاء دعم فني: يعيده لمكتبه الأصلي (يمسح حقول الدعم كلّها).
+// الذمم المتبقية من مواد مكتب الدعم تُرحَّل تلقائياً معه: كمية مكتب الدعم تنقص
+// (المادة غادرت مع الفني)، وتُضاف لمادة بنفس الاسم بمخزن مكتبه الأصلي (تُنشأ إن
+// غابت — يُعتمد اسم المادة للمطابقة)، وتبقى بذمّته لكن على مادة مكتبه.
 export async function endSupport(technicianId: number) {
+  const tech = await prisma.technician.findUnique({
+    where: { id: technicianId },
+    select: { name: true, towerId: true, supportTowerId: true },
+  });
+  const supportOffice = tech?.supportTowerId ?? null;
+  const homeOffice = tech?.towerId ?? null;
+  if (supportOffice != null && homeOffice != null && supportOffice !== homeOffice) {
+    try {
+      const rows = await prisma.custody.findMany({ where: { technicianId, isDeleted: false, qty: { gt: 0 } } });
+      for (const c of rows) {
+        const item = await prisma.item.findFirst({ where: { id: c.itemId, isDeleted: false } });
+        if (!item || item.towerId !== supportOffice) continue; // ذمم مواد مكتب الدعم فقط
+        await prisma.$transaction(async (tx) => {
+          await tx.item.update({ where: { id: item.id }, data: { count: { decrement: c.qty } } });
+          let home = await tx.item.findFirst({ where: { name: item.name, towerId: homeOffice, isDeleted: false } });
+          if (home) {
+            await tx.item.update({ where: { id: home.id }, data: { count: { increment: c.qty } } });
+          } else {
+            home = await tx.item.create({
+              data: {
+                name: item.name, category: item.category, priceDinar: item.priceDinar,
+                priceSale: item.priceSale, priceSale2: item.priceSale2, barcode: item.barcode,
+                count: c.qty, towerId: homeOffice,
+              },
+            });
+          }
+          // إعادة ربط الذمة بمادة مكتبه (دمجاً مع ذمة قائمة لنفس المادة إن وُجدت)
+          const homeCustody = await tx.custody.findFirst({ where: { technicianId, itemId: home.id, isDeleted: false } });
+          if (homeCustody) {
+            await tx.custody.update({ where: { id: homeCustody.id }, data: { qty: homeCustody.qty + c.qty } });
+            await tx.custody.update({ where: { id: c.id }, data: { qty: 0, isDeleted: true } });
+          } else {
+            await tx.custody.update({ where: { id: c.id }, data: { itemId: home.id, towerId: homeOffice } });
+          }
+          await tx.auditLog.create({
+            data: {
+              action: "SUPPORT_CUSTODY_TRANSFER", entity: "custody", entityId: String(c.id),
+              details: `انتهاء دعم ${tech?.name ?? technicianId}: ترحيل «${item.name}»×${c.qty} من مكتب الدعم (${supportOffice}) إلى مخزن مكتبه (${homeOffice}) — بقيت بذمّته`,
+            },
+          }).catch(() => {});
+        });
+      }
+    } catch { /* أفضل جهد — لا يُعطَّل إنهاء الدعم بترحيل الذمم */ }
+  }
   await prisma.technician.update({ where: { id: technicianId }, data: { supportTowerId: null, supportKind: null, supportCardIds: null } });
 }
 

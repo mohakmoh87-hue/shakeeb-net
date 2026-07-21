@@ -16,7 +16,7 @@ type Item = {
   towerId: number | null;
 };
 type Tower = { id: number; name: string | null };
-type Tech = { id: number; name: string; towerId: number | null };
+type Tech = { id: number; name: string; towerId: number | null; isSupport?: boolean };
 type Custody = { id: number; technicianId: number; itemId: number; qty: number; technicianName: string; itemName: string };
 
 const fmt = (n: number | null) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
@@ -323,7 +323,7 @@ function CustodyModal({ custodies, onClose, onDone }: {
             <select value={techId} onChange={(e) => setTechId(e.target.value)} disabled={!itemId}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100">
               <option value="">{itemId ? "اختر الفني…" : "اختر المادة أولاً"}</option>
-              {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {techs.map((t) => <option key={t.id} value={t.id}>{t.name}{t.isSupport ? " (دعم)" : ""}</option>)}
             </select>
           </L>
           <L label="الكمية"><Inp value={qty} onChange={setQty} type="number" /></L>

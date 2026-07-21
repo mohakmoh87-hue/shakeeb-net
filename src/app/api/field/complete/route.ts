@@ -354,5 +354,26 @@ export async function POST(request: Request) {
     // تجاهل: الإنجاز تمّ بنجاح بغضّ النظر عن الرسالة/السجل
   }
 
+  // فاتورة مبيع تلقائية لمواد الإنجاز — تظهر في «سجل وصولات المبيع» (توثيق فقط:
+  // بلا أي قيد مالي أو خصم مخزون إضافي — كلاهما سُجِّل أعلاه ضمن الإنجاز نفسه،
+  // فلا ازدواج). مكتب الفاتورة = مكتب البطاقة (مكتب الدعم للفني المُعار).
+  if (soldInfo.length > 0) {
+    try {
+      const last = await prisma.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } });
+      const inv = await prisma.invoice.create({
+        data: {
+          date: new Date(), number: (last?.number ?? 0) + 1,
+          itemsCount: soldInfo.reduce((s, x) => s + x.qty, 0),
+          totalMy: materialsTotal, waselHim: salesShare,
+          note: `مبيع ذمم — تكت #${cardId} («${card.kind ?? ""}») — الفني ${tech?.name ?? ""}`,
+          user: actor.name, type: "بيع صيانة", subscriberId: matchedSubscriber, towerId,
+        },
+      });
+      await prisma.invoiceItem.createMany({
+        data: soldInfo.map((s) => ({ invoiceId: inv.id, itemId: s.itemId, count: s.qty, price: s.price })),
+      });
+    } catch { /* توثيق فقط — لا يُفشل الإنجاز */ }
+  }
+
   return NextResponse.json({ ok: true, salesShare, pettyShare, rewardDiscount, hasPhoto: !!photo, matchedSubscriber, messaged, overrun: overrunResult });
 }
