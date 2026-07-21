@@ -874,6 +874,9 @@ model WaSession {
   qr          String? // نص الـQR الخام (يحوّله الموقع لصورة)
   error       String?
   requestedAt DateTime? // طلب اتصال من الموقع (يلتقطه الوكيل ويبدأ التشغيل)
+  // مالكة الجلسة الحصرية (MACHINE_ID لحاسبةٍ وصلت ready): أي حاسبة أخرى تحمل نسخة
+  // قديمة من هذه الجلسة تحذفها ذاتياً — يمنع تقاتل حاسبتين على نفس الجلسة (إبطال واتساب)
+  hostMachineId String?
   updatedAt   DateTime  @updatedAt
 
   @@map("wa_sessions")

@@ -36,10 +36,14 @@ const SESSION_DIR = path.join(process.cwd(), ".wwebjs_auth");
 // نشر حالة/رمز الواتساب لهذا المكتب إلى السحابة (Neon) ليقرأها الموقع ويعرض الـQR من الإنترنت
 function publish(officeId: number) {
   const s = store(officeId);
+  // ملكية حصرية: بلوغ "ready" على هذه الحاسبة يسجّلها مالكةً للجلسة — فتحذف بقية
+  // الحواسيب نسخها القديمة ذاتياً (يمنع تقاتل حاسبتين على نفس الجلسة وإبطالها من واتساب)
+  const mid = process.env.MACHINE_ID || null;
+  const own = s.state === "ready" && mid ? { hostMachineId: mid } : {};
   prisma.waSession.upsert({
     where: { towerId: officeId },
-    update: { state: s.state, qr: s.qr, error: s.lastError },
-    create: { towerId: officeId, state: s.state, qr: s.qr, error: s.lastError },
+    update: { state: s.state, qr: s.qr, error: s.lastError, ...own },
+    create: { towerId: officeId, state: s.state, qr: s.qr, error: s.lastError, ...own },
   }).catch(() => { /* لا نُفشل الواتساب بسبب النشر */ });
 }
 
@@ -191,10 +195,32 @@ export function startWaRequestPoller() {
   const gg = globalThis as unknown as { __waPollerStarted?: boolean };
   if (gg.__waPollerStarted) return;
   gg.__waPollerStarted = true;
-  setInterval(() => {
+  setInterval(async () => {
     try {
-      for (const id of localOfficeIds()) {
+      const ids = localOfficeIds();
+      if (ids.length === 0) return;
+      // ملكية الجلسات الحصرية: جلسةٌ مالكتها حاسبة أخرى ⇒ نسختي المحلية قديمة (بقايا
+      // استضافة سابقة) — تُحذف ذاتياً بدل إحيائها والتقاتل معها (يُبطل واتساب الجلسة كلها)
+      const mid = process.env.MACHINE_ID || null;
+      const owners = new Map<number, string | null>();
+      if (mid) {
+        try {
+          const rows = await prisma.waSession.findMany({ where: { towerId: { in: ids } }, select: { towerId: true, hostMachineId: true } });
+          for (const r of rows) owners.set(r.towerId, r.hostMachineId ?? null);
+        } catch { /* تعذّرت القراءة — نكمل بلا فحص الملكية هذه الدورة */ }
+      }
+      for (const id of ids) {
         const st = store(id);
+        const owner = owners.get(id) ?? null;
+        if (mid && owner && owner !== mid) {
+          // لا نلمس جلسة حيّة عندي (احتياط: الملكية ستُصحَّح عند ready القادمة)
+          const aliveHere = st.client && (st.state === "ready" || st.state === "authenticated");
+          if (!aliveHere) {
+            deleteSessionDir(id);
+            console.log(`[whatsapp] 🧹 حُذفت نسخة جلسة قديمة لمكتب ${id} — الجلسة مملوكة لحاسبة أخرى`);
+            continue;
+          }
+        }
         const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
         const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
         if (!alive && !recentlyTried) void startWhatsApp(id); // أعد وصل جلسة هذه الحاسبة
@@ -233,6 +259,8 @@ export async function logoutWhatsApp(officeId: number): Promise<void> {
   s.lastError = null;
   s.startedAt = null;
   deleteSessionDir(officeId); // امسح كل أثر للجلسة فور الفصل
+  // الفصل يُلغي ملكية الجلسة — الربط القادم يحدّد المالكة الجديدة (أول من يصل ready)
+  await prisma.waSession.update({ where: { towerId: officeId }, data: { hostMachineId: null } }).catch(() => {});
   publish(officeId); // انشر "disconnected" للسحابة فوراً
 }
 
