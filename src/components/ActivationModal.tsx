@@ -188,7 +188,13 @@ export default function ActivationModal({
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "فشل التفعيل"); return; }
-      if (print && data.entryId) window.open(`/subscriptions/${data.entryId}/receipt`, "_blank");
+      // طباعة مباشرة بلا فتح أي تاب: أمر طباعة صامتة تلتقطه حاسبة مكتب المشترك فوراً
+      if (print && data.entryId) {
+        void fetch("/api/print", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "subscription", id: data.entryId }),
+        }).catch(() => {});
+      }
       onDone();
     } catch {
       setError("تعذّر الاتصال بالخادم");

@@ -6,7 +6,9 @@ import { getSession } from "@/lib/auth";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
 
 const schema = z.object({
-  subscriberId: z.coerce.number({ error: "اختر المشترك" }), // إلزامي
+  subscriberId: z.coerce.number().optional().nullable(), // إلزامي إلا مع البيع المباشر
+  direct: z.boolean().optional().default(false), // بيع مباشر: بلا مشترك (نقدي)
+  customerName: z.string().max(120).optional().nullable(), // اسم الزبون (اختياري للبيع المباشر)
   items: z
     .array(
       z.object({
@@ -21,6 +23,7 @@ const schema = z.object({
   useReward: z.boolean().optional().default(false), // سحب كود مكافأة المشترك خصماً
 });
 
+// سجل وصولات فواتير المبيع (المكان الوحيد لعرضها) — مع اسم المشترك/الزبون
 export async function GET() {
   const g = await guard("inventory.manage");
   if (g.error) return g.error;
@@ -30,7 +33,15 @@ export async function GET() {
     orderBy: { id: "desc" },
     take: 200,
   });
-  return NextResponse.json(invoices);
+  const subIds = [...new Set(invoices.map((i) => i.subscriberId).filter((x): x is number => x != null))];
+  const subs = subIds.length
+    ? await prisma.subscriber.findMany({ where: { id: { in: subIds } }, select: { id: true, name: true, netUser: true } })
+    : [];
+  const nameMap = new Map(subs.map((s) => [s.id, s.name ?? s.netUser ?? `#${s.id}`]));
+  return NextResponse.json(invoices.map((i) => ({
+    ...i,
+    subscriberName: i.subscriberId != null ? nameMap.get(i.subscriberId) ?? null : null,
+  })));
 }
 
 export async function POST(request: Request) {
@@ -46,20 +57,25 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { subscriberId, items, note, paid, useReward } = parsed.data;
+  const { subscriberId, direct, customerName, items, note, paid, useReward } = parsed.data;
 
-  // المشترك إلزامي (لمعرفة صاحب الدين والمكتب)
-  const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
-  if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
-    return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
+  // المشترك إلزامي إلا في البيع المباشر (نقدي بلا مشترك — لا دين ولا مكافأة)
+  let subscriber: Awaited<ReturnType<typeof prisma.subscriber.findUnique>> = null;
+  if (!direct) {
+    if (!subscriberId) return NextResponse.json({ error: "اختر المشترك أو فعّل «بيع مباشر»" }, { status: 400 });
+    subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
+    if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
+      return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
+    }
   }
+  const towerId = subscriber?.towerId ?? g.session.towerId ?? null;
 
   const total = items.reduce((s, it) => s + it.count * it.price, 0);
   const itemsCount = items.reduce((s, it) => s + it.count, 0);
 
-  // أهلية سحب كود المكافأة: مفعّل للمكتب + رصيد للمشترك
+  // أهلية سحب كود المكافأة: مفعّل للمكتب + رصيد للمشترك (لا مكافأة في البيع المباشر)
   let rewardEligible = false;
-  if (useReward && (subscriber.rewardBalance ?? 0) > 0) {
+  if (!direct && subscriber && useReward && (subscriber.rewardBalance ?? 0) > 0) {
     const off = subscriber.towerId ? await prisma.tower.findUnique({ where: { id: subscriber.towerId }, select: { rewardsEnabled: true } }) : null;
     rewardEligible = off?.rewardsEnabled === "1";
   }
@@ -74,9 +90,9 @@ export async function POST(request: Request) {
   let rewardDiscount = 0;
   const invoice = await prisma.$transaction(async (tx) => {
     // خصم كود المكافأة أولاً (بحدّ الإجمالي، يبقى الباقي للمشترك)
-    if (rewardEligible) {
+    if (rewardEligible && subscriber) {
       const r = await redeemReward(tx, {
-        subscriberId, billAmount: total, context: "sale", towerId: subscriber.towerId,
+        subscriberId: subscriber.id, billAmount: total, context: "sale", towerId: subscriber.towerId,
         agentId: session?.agentId ?? null, createdByUser: session?.username, createdByName: session?.fullName ?? undefined,
       });
       rewardDiscount = r?.discount ?? 0;
@@ -84,6 +100,7 @@ export async function POST(request: Request) {
     const netTotal = Math.max(0, total - rewardDiscount); // المستحقّ بعد المكافأة
     const remainder = Math.max(0, netTotal - paid); // الدين على المشترك من هذه الفاتورة
 
+    const buyer = direct ? (customerName?.trim() || "بيع مباشر") : (subscriber?.name ?? subscriber?.id ?? "");
     const inv = await tx.invoice.create({
       data: {
         date: new Date(),
@@ -91,11 +108,15 @@ export async function POST(request: Request) {
         itemsCount,
         totalMy: netTotal,
         waselHim: paid,
-        note: (note ?? "") + (rewardDiscount > 0 ? ` (مكافأة −${rewardDiscount.toLocaleString("en-US")} من إجمالي ${total.toLocaleString("en-US")})` : "") || null,
+        note: [
+          direct && customerName?.trim() ? `الزبون: ${customerName.trim()}` : "",
+          note ?? "",
+          rewardDiscount > 0 ? `(مكافأة −${rewardDiscount.toLocaleString("en-US")} من إجمالي ${total.toLocaleString("en-US")})` : "",
+        ].filter(Boolean).join(" — ") || null,
         user: session?.username,
-        type: "بيع",
-        subscriberId,
-        towerId: subscriber.towerId,
+        type: direct ? "بيع مباشر" : "بيع",
+        subscriberId: subscriber?.id ?? null,
+        towerId,
       },
     });
 
@@ -112,17 +133,17 @@ export async function POST(request: Request) {
       await tx.moneyTx.create({
         data: {
           moneyIn: paid, moneyOut: 0,
-          notes: `فاتورة بيع #${number} - ${subscriber.name ?? subscriberId}`,
+          notes: `فاتورة بيع #${number} - ${buyer}`,
           date: new Date(), serverDate: new Date(), userId: session?.userId,
-          sourceType: "invoice", sourceId: inv.id, towerId: subscriber.towerId,
+          sourceType: "invoice", sourceId: inv.id, towerId,
         },
       });
     }
 
-    // إضافة المتبقّي كدين على المشترك (فواتير بالدين)
-    if (remainder > 0) {
+    // إضافة المتبقّي كدين على المشترك (فواتير بالدين) — البيع المباشر بلا دين (نقدي)
+    if (remainder > 0 && subscriber) {
       await tx.subscriber.update({
-        where: { id: subscriberId },
+        where: { id: subscriber.id },
         data: { carry: (subscriber.carry ?? 0) + remainder },
       });
     }
@@ -130,11 +151,11 @@ export async function POST(request: Request) {
     return inv;
   });
 
-  // رسالة تأكيد استخدام المكافأة (أفضل جهد)
-  if (rewardDiscount > 0) {
-    const rs = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { phone: true, waEnabled: true, name: true, rewardBalance: true } });
+  // رسالة تأكيد استخدام المكافأة (أفضل جهد) — لا تحدث في البيع المباشر
+  if (rewardDiscount > 0 && subscriber) {
+    const rs = await prisma.subscriber.findUnique({ where: { id: subscriber.id }, select: { phone: true, waEnabled: true, name: true, rewardBalance: true } });
     if (rs) void sendRewardUsedMessage({
-      subscriberId, officeId: subscriber.towerId, agentId: session?.agentId ?? null,
+      subscriberId: subscriber.id, officeId: subscriber.towerId, agentId: session?.agentId ?? null,
       phone: rs.phone, waEnabled: rs.waEnabled, name: rs.name, discount: rewardDiscount, balance: rs.rewardBalance ?? 0, createdByUser: session?.username,
     });
   }

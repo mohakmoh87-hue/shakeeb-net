@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import PrintButton from "@/components/PrintButton";
+import PrintNowButton from "@/components/PrintNowButton";
 import { formatDate } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 
@@ -117,7 +118,7 @@ export default function DetailedReport() {
                       <td className="p-2">{fmtDate(e.date)}</td>
                       <td className="no-print p-2">
                         <div className="flex gap-1.5">
-                          <a href={`/subscriptions/${e.id}/receipt`} target="_blank" rel="noopener noreferrer" className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-100" title="إعادة طباعة الوصل">🖨 طباعة</a>
+                          <PrintNowButton kind="subscription" id={e.id} />
                           {can("receipts.void") && (
                             <button onClick={() => voidEntry(e.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100">🗑 حذف</button>
                           )}

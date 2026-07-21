@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import ActivationModal, { type ActSubscriber } from "@/components/ActivationModal";
 import AddDebtModal from "@/components/AddDebtModal";
 import MapButton from "@/components/MapButton";
+import PrintNowButton from "@/components/PrintNowButton";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 
@@ -361,7 +362,7 @@ export default function SubscribersPage() {
                         <td className="p-2" dir="ltr">{formatDate(rc.dateTo)}</td>
                         <td className="p-2">
                           <div className="flex gap-1.5">
-                            <a href={`/subscriptions/${rc.id}/receipt`} target="_blank" rel="noopener noreferrer" className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-100" title="إعادة طباعة الوصل">🖨 طباعة</a>
+                            <PrintNowButton kind="subscription" id={rc.id} />
                             {can("receipts.void") && (
                               <button onClick={() => voidReceipt(rc.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑</button>
                             )}
