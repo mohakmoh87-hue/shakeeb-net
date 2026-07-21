@@ -76,6 +76,20 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
     }
   } catch { /* تجاهل */ }
 
+  // شفاء ذاتي: قتل أي كروم يتيم ما يزال ماسكاً جلسة هذا المكتب تحديداً (بقايا عملية
+  // أُوقفت قسراً أثناء تحديث/انهيار) — يمنع خطأ "The browser is already running for
+  // ...session-office-X" الذي يحجب فتح الواتساب حتى بعد إعادة تشغيل العامل.
+  // آمن: عميلنا لهذا المكتب دُمِّر أعلاه، ولا عامل آخر على نفس الحاسبة (قفل المنفذ).
+  if (process.platform === "win32") {
+    try {
+      const { execSync } = await import("node:child_process");
+      execSync(
+        `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name='chrome.exe'\\" | Where-Object { $_.CommandLine -like '*session-office-${officeId}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
+        { stdio: "ignore", timeout: 20000 },
+      );
+    } catch { /* لا شيء ليُقتل أو تعذّر — نتابع */ }
+  }
+
   console.log(`[whatsapp] بدء إقلاع واتساب مكتب ${officeId}...`);
   // تحميل المكتبة (CJS) بأمان: نجرّب require المباشر أولاً (يعمل مع tsx/Node)،
   // ثم import مع مراعاة تداخل default — لأن الصادرات قد تُوضَع تحت default.
