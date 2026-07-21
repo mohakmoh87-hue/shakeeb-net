@@ -29,6 +29,7 @@ export default function CrudManager<T extends Row>({
   columns,
   fields,
   searchable = false,
+  clientSearch,
   addLabel = "إضافة",
   rowActions,
   headerExtra,
@@ -42,6 +43,8 @@ export default function CrudManager<T extends Row>({
   columns: Column<T>[];
   fields: Field[];
   searchable?: boolean;
+  // بحث فوري في جهة العميل على الصفوف المحمّلة (بلا خادم): يعيد النص الذي يُبحَث فيه لكل صف
+  clientSearch?: { placeholder?: string; get: (row: T) => string };
   addLabel?: string;
   rowActions?: (row: T) => React.ReactNode;
   headerExtra?: React.ReactNode;
@@ -52,6 +55,7 @@ export default function CrudManager<T extends Row>({
   const [rows, setRows] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [cQuery, setCQuery] = useState(""); // بحث فوري في جهة العميل
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<T | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
@@ -77,6 +81,12 @@ export default function CrudManager<T extends Row>({
         return String(va).localeCompare(String(vb), "ar", { numeric: true }) * dir;
       })
     : rows;
+
+  // بحث فوري (جهة العميل) فوق الصفوف المرتّبة — يفلتر بالنص العائد من clientSearch.get
+  const cq = cQuery.trim().toLowerCase();
+  const visibleRows = clientSearch && cq
+    ? sortedRows.filter((r) => clientSearch.get(r).toLowerCase().includes(cq))
+    : sortedRows;
 
   function toggleSort(i: number) {
     setSort((s) => (s && s.i === i ? { i, dir: s.dir === "asc" ? "desc" : "asc" } : { i, dir: "asc" }));
@@ -210,6 +220,17 @@ export default function CrudManager<T extends Row>({
         </div>
       )}
 
+      {clientSearch && (
+        <div className="mb-4">
+          <input
+            value={cQuery}
+            onChange={(e) => setCQuery(e.target.value)}
+            placeholder={clientSearch.placeholder ?? "ابحث..."}
+            className="w-full max-w-md rounded-lg border border-slate-300 px-4 py-2 outline-none focus:border-mynet-blue focus:ring-2 focus:ring-blue-100"
+          />
+        </div>
+      )}
+
       {selectable && (onBulkDelete || onDeleteAll) && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
           {onBulkDelete && (
@@ -283,17 +304,17 @@ export default function CrudManager<T extends Row>({
                   جاري التحميل...
                 </td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : visibleRows.length === 0 ? (
               <tr>
                 <td
                   colSpan={columns.length + (selectable ? 2 : 1)}
                   className="p-8 text-center text-slate-400"
                 >
-                  لا توجد سجلات
+                  {cq ? "لا توجد نتائج مطابقة" : "لا توجد سجلات"}
                 </td>
               </tr>
             ) : (
-              sortedRows.map((row) => (
+              visibleRows.map((row) => (
                 <tr
                   key={row.id}
                   className={`border-t border-slate-100 hover:bg-slate-50 ${selected.has(row.id) ? "bg-blue-50" : ""}`}
@@ -337,7 +358,7 @@ export default function CrudManager<T extends Row>({
       </div>
 
       <div className="mt-3 text-sm text-slate-500">
-        العدد: {rows.length}
+        العدد: {cq ? `${visibleRows.length} من ${rows.length}` : rows.length}
       </div>
 
       {modalOpen && (

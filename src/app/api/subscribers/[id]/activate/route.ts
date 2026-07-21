@@ -122,6 +122,9 @@ export async function POST(
   const newCarry = master ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + grandTotal - paid;
 
   let rewardGrant: { code: string; balance: number; granted: number } | null = null;
+  // كود/رصيد الخصم للرسالة — يُلتقط داخل المعاملة (الكود الجديد الممنوح إن وُجد، وإلا الحالي)
+  let msgRewardCode: string | null = subscriber.rewardCode ?? null;
+  let msgRewardBalance = subscriber.rewardBalance ?? 0;
   try {
     const result = await prisma.$transaction(async (tx) => {
       // استهلاك الكارت ذرّياً عند التأكيد فقط (يمنع تعارض مكتبين)
@@ -157,6 +160,7 @@ export async function POST(
           hadGap, rewardAmount: pkg.rewardAmount ?? 0, months, refId: entry.id,
           createdByUser: session?.username, createdByName: session?.fullName,
         });
+        if (rewardGrant) { msgRewardCode = rewardGrant.code; msgRewardBalance = rewardGrant.balance; }
       }
       if (effPaid > 0) {
         await tx.moneyTx.create({
@@ -194,6 +198,7 @@ export async function POST(
       remaining: Math.max(0, total + delivery - paid),
       carry: newCarry,
       dateTo,
+      code: msgRewardCode, balance: msgRewardBalance, // كود/رصيد الخصم بعد هذا التفعيل
       createdByUser: session?.username,
     });
 
@@ -232,6 +237,8 @@ async function sendActivationMessage(a: {
   remaining: number;
   carry: number;
   dateTo: Date;
+  code?: string | null;
+  balance?: number;
   createdByUser?: string;
 }): Promise<void> {
   try {
@@ -259,6 +266,7 @@ async function sendActivationMessage(a: {
       remaining: a.remaining,
       carry: a.carry,
       dateTo: formatDate(a.dateTo),
+      code: a.code, balance: a.balance ?? 0, // كود/رصيد الخصم (فارغ لمن لا رصيد له)
       office: office?.name ?? "SHAKEEB",
     });
 

@@ -75,6 +75,7 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
       carry: sub.carry ?? 0,
       remaining: sub.carry ?? 0,
       price: sub.packageId ? priceMap.get(sub.packageId) ?? 0 : 0,
+      code: sub.rewardCode, balance: sub.rewardBalance ?? 0, // كود/رصيد الخصم (فارغ لمن لا رصيد له)
       office: office?.name ?? fallbackOffice,
     });
     const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId); // واتساب مكتب المشترك

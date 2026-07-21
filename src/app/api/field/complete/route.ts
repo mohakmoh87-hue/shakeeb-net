@@ -19,7 +19,7 @@ async function matchSubscriber(text: string, towerId: number | null) {
   if (explicit && explicit !== "—") {
     const s = await prisma.subscriber.findFirst({
       where: { isDeleted: false, netUser: { equals: explicit, mode: "insensitive" }, ...where },
-      select: { id: true, name: true, phone: true, netUser: true, towerId: true },
+      select: { id: true, name: true, phone: true, netUser: true, towerId: true, rewardCode: true, rewardBalance: true },
     });
     if (s) return s;
   }
@@ -28,7 +28,7 @@ async function matchSubscriber(text: string, towerId: number | null) {
   if (words.length === 0) return null;
   return prisma.subscriber.findFirst({
     where: { isDeleted: false, netUser: { in: words, mode: "insensitive" }, ...where },
-    select: { id: true, name: true, phone: true, netUser: true, towerId: true },
+    select: { id: true, name: true, phone: true, netUser: true, towerId: true, rewardCode: true, rewardBalance: true },
   });
 }
 
@@ -294,6 +294,7 @@ export async function POST(request: Request) {
             name: sub.name, netUser: sub.netUser, kind: card.kind,
             details: serviceDetails?.trim() ?? "", amount, date: formatDate(new Date()),
             technician: tech?.name ?? "", office: office?.name ?? "SHAKEEB",
+            code: sub.rewardCode, balance: sub.rewardBalance ?? 0, // كود/رصيد الخصم
           });
           let res: { ok: boolean; error?: string };
           try { res = await sendViaProvider("WHATSAPP", sub.phone, text, towerId); }

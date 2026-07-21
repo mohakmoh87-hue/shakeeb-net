@@ -30,19 +30,26 @@ export async function GET() {
   });
   const officeName = new Map(offices.map((o) => [o.id, o.name ?? ""]));
 
+  // فنيّو مكاتب المستخدم + الفنيون المُعارون «دعماً» إلى أحد مكاتبه (يُتتبَّعون من المكتب الطالب
+  // للدعم ما دام الدعم قائماً). عند انتهاء الدعم يعود التتبع لمكتبهم الأصلي تلقائياً.
   const techs = await prisma.technician.findMany({
-    where: { isDeleted: false, towerId: { in: towerIds } },
-    select: { id: true, name: true, towerId: true },
+    where: { isDeleted: false, OR: [{ towerId: { in: towerIds } }, { supportTowerId: { in: towerIds } }] },
+    select: { id: true, name: true, towerId: true, supportTowerId: true },
     orderBy: [{ towerId: "asc" }, { id: "asc" }],
   });
 
   return NextResponse.json({
     manager,
-    technicians: techs.map((t) => ({
-      id: t.id,
-      name: t.name,
-      towerId: t.towerId,
-      office: t.towerId != null ? officeName.get(t.towerId) ?? "" : "",
-    })),
+    technicians: techs.map((t) => {
+      // المكتب الفعّال للتتبع = مكتب الدعم إن كان مُعاراً، وإلا مكتبه الأصلي
+      const onSupport = t.supportTowerId != null && towerIds.includes(t.supportTowerId);
+      const effTower = onSupport ? t.supportTowerId! : t.towerId;
+      return {
+        id: t.id,
+        name: onSupport ? `${t.name} (دعم)` : t.name,
+        towerId: t.towerId,
+        office: effTower != null ? officeName.get(effTower) ?? "" : "",
+      };
+    }),
   });
 }

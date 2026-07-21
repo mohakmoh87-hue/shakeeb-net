@@ -11,7 +11,10 @@ const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET ?? "dev-secret-change-me",
 );
 const COOKIE = "mynet_session";
-const MAX_AGE = 60 * 60 * 8; // 8 ساعات
+// جلسة طويلة الأمد (سنة كاملة) — يبقى تسجيل الدخول محفوظاً في التطبيق (APK/PWA) والمتصفح
+// «للأبد» حتى تسجيل الخروج الصريح. الأمان محفوظ: getSession/getTechSession يعيدان التحقق من
+// القاعدة في كل طلب، فتعطيل/حذف الحساب يُنهي الجلسة فوراً مهما طال عمر التوكن.
+const MAX_AGE = 60 * 60 * 24 * 365; // سنة
 
 import type { Permission } from "./rbac";
 

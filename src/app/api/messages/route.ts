@@ -131,6 +131,7 @@ export async function POST(request: Request) {
       carry: sub.carry ?? 0,
       remaining: sub.carry ?? 0,
       price: sub.packageId ? priceMap.get(sub.packageId) ?? 0 : 0,
+      code: sub.rewardCode, balance: sub.rewardBalance ?? 0, // كود/رصيد الخصم (فارغ لمن لا رصيد له)
       office: office?.name ?? fallbackOfficeName,
     });
     // الإرسال من جلسة واتساب مكتب المشترك

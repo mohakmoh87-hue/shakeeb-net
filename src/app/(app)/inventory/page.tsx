@@ -71,6 +71,7 @@ export default function InventoryPage() {
         apiBase={filterTower ? `/api/items?officeId=${filterTower}` : "/api/items"}
         addLabel="إضافة مادة"
         fields={fields}
+        clientSearch={{ placeholder: "🔍 ابحث باسم المادة...", get: (r) => `${r.name ?? ""} ${r.category ?? ""} ${r.barcode ?? ""}` }}
         headerExtra={
           <>
             {isAdmin && towers.length > 0 && (

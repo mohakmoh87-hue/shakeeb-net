@@ -73,6 +73,7 @@ export async function POST(
     subscriberId, name: subscriber.name, netUser: subscriber.netUser,
     phone: subscriber.phone, waEnabled: subscriber.waEnabled,
     towerId: subscriber.towerId, amount, newCarry,
+    code: subscriber.rewardCode, balance: subscriber.rewardBalance ?? 0,
     createdByUser: session?.username ?? null,
   }).catch(() => {});
 
@@ -84,6 +85,7 @@ async function sendDebtPaidMessage(a: {
   subscriberId: number; name: string | null; netUser: string | null;
   phone: string | null; waEnabled: boolean | null;
   towerId: number | null; amount: number; newCarry: number;
+  code?: string | null; balance?: number;
   createdByUser?: string | null;
 }): Promise<void> {
   try {
@@ -101,6 +103,7 @@ async function sendDebtPaidMessage(a: {
       paid: a.amount, // {المبلغ_المستلم}
       carry: a.newCarry, // {اجمالي_الديون} بعد التسديد
       remaining: a.newCarry,
+      code: a.code, balance: a.balance ?? 0, // كود/رصيد الخصم
       office: office?.name ?? "",
     });
 
