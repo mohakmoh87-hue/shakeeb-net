@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, hashPassword } from "@/lib/auth";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { can } from "@/lib/rbac";
-import { resolveFieldOffice } from "@/lib/field";
+import { resolveFieldOffice, parseExtraTowers } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -25,21 +25,30 @@ export async function GET(request: Request) {
   const reqOffice = new URL(request.url).searchParams.get("officeId");
   const officeId = resolveFieldOffice(session, reqOffice ? Number(reqOffice) : null);
   const isManager = can(session, "field.manage");
-  // فنيّو المكتب + المُعارون له «دعماً» (يتصرّفون كفنييه: ذمم مواد، بطاقات، تحصيل)
-  const rows = await prisma.technician.findMany({
+  // فنيّو المكتب + المُعارون له «دعماً» + من مكاتبهم الإضافية تشمل هذا المكتب
+  // (كلاهما يتصرّف كفنيّ المكتب: ذمم مواد، بطاقات، تحصيل)
+  const candidates = await prisma.technician.findMany({
     where: {
       isDeleted: false,
-      OR: [{ towerId: officeId ?? null }, ...(officeId != null ? [{ supportTowerId: officeId }] : [])],
+      OR: [
+        { towerId: officeId ?? null },
+        ...(officeId != null ? [{ supportTowerId: officeId }, { extraTowerIds: { not: null } }] : []),
+      ],
     },
     orderBy: { id: "asc" },
   });
+  const rows = candidates.filter((t) =>
+    t.towerId === (officeId ?? null) ||
+    (officeId != null && (t.supportTowerId === officeId || parseExtraTowers(t.extraTowerIds).includes(officeId))),
+  );
   const technicians = rows.map((t) => {
     const isSupport = officeId != null && t.towerId !== officeId && t.supportTowerId === officeId;
-    const base = { id: t.id, name: t.name, phone: t.phone, towerId: t.towerId, username: t.username, isSupport };
+    const isExtra = officeId != null && t.towerId !== officeId && parseExtraTowers(t.extraTowerIds).includes(officeId);
+    const base = { id: t.id, name: t.name, phone: t.phone, towerId: t.towerId, username: t.username, isSupport, isExtra };
     if (!isManager) return base;
     // بيانات المدير الكاملة (بلا هاش الرمز)
     return {
-      ...base, plainCode: t.plainCode, salary: t.salary,
+      ...base, plainCode: t.plainCode, salary: t.salary, extraTowerIds: parseExtraTowers(t.extraTowerIds),
       shiftStart: t.shiftStart, shiftEnd: t.shiftEnd, entryGraceMin: t.entryGraceMin, exitGraceMin: t.exitGraceMin,
       lateRatePerMin: t.lateRatePerMin, overtimeRatePerMin: t.overtimeRatePerMin, paidLeavesPerMonth: t.paidLeavesPerMonth,
       missedCheckoutPenalty: t.missedCheckoutPenalty,
@@ -116,6 +125,13 @@ export async function PATCH(request: Request) {
   if (typeof b.code === "string" && b.code.trim()) {
     if (b.code.trim().length < 4) return NextResponse.json({ error: "رمز الدخول 4 خانات على الأقل" }, { status: 400 });
     data.code = await hashPassword(b.code.trim()); data.plainCode = b.code.trim();
+  }
+  // المكاتب الإضافية الدائمة — المدير فقط (الحارس أعلاه field.manage)، ضمن مكاتب
+  // وكيله حصراً، ويُستبعد مكتب الفني الأصلي تلقائياً (عزل المستأجر)
+  if (Array.isArray(b.extraTowerIds)) {
+    const towers = await agentTowerIds(g.session);
+    const clean = [...new Set((b.extraTowerIds as unknown[]).map(Number).filter((x) => Number.isFinite(x) && towers.includes(x) && x !== tech.towerId))];
+    data.extraTowerIds = JSON.stringify(clean);
   }
   await prisma.technician.update({ where: { id }, data });
   return NextResponse.json({ ok: true });

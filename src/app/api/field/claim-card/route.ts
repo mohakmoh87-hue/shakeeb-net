@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTechSession } from "@/lib/auth";
-import { appendCardHistory, cardOfficeId } from "@/lib/field";
+import { appendCardHistory, cardOfficeId, techEffectiveOfficesById } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -22,10 +22,11 @@ export async function POST(request: Request) {
   if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
   if (card.done) return NextResponse.json({ error: "البطاقة منجزة" }, { status: 400 });
 
-  // العزل: البطاقة يجب أن تتبع مكتب الفني نفسه (عبر لوحة مكتبه)
+  // العزل: البطاقة ضمن مكاتب الفني الفعّالة (الأصلي + الإضافية الدائمة + الدعم المؤقت)
   const office = await cardOfficeId(cardId);
-  if (office == null || office !== (tech.towerId ?? null)) {
-    return NextResponse.json({ error: "البطاقة ليست في مكتبك" }, { status: 403 });
+  const effective = await techEffectiveOfficesById(tech.technicianId);
+  if (office == null || !effective.includes(office)) {
+    return NextResponse.json({ error: "البطاقة ليست في مكاتبك" }, { status: 403 });
   }
   // شرط الطلب: غير مُسندة (يستلمها) أو مُسندة لفنيٍّ آخر (يحوّلها لنفسه) — لا إن كانت عليه أصلاً
   if (card.technicianId === tech.technicianId) return NextResponse.json({ error: "البطاقة عليك أصلاً" }, { status: 400 });

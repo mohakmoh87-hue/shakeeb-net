@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope } from "@/lib/guard";
+import { techEffectiveOffices } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -60,17 +61,19 @@ export async function POST(request: Request) {
   const tech = await prisma.technician.findFirst({ where: { id: technicianId, isDeleted: false } });
   if (!tech) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
 
-  // عزل المكاتب: المادة من مكتب المستخدم، والفني من مكتبه أو مُعارٌ له «دعماً»
-  // (الفني المُعار يتصرّف كفنيّ المكتب الطالب: يستلم من مخزنه ويرجع إليه)
+  // مكاتب الفني الفعّالة: الأصلي + الإضافية الدائمة + الدعم المؤقت —
+  // يستلم/يرجع مواد أي مكتب منها كفنيّ أصلي فيه
+  const effective = techEffectiveOffices(tech);
+  // عزل المكاتب: المادة من مكتب المستخدم، والفني من مكتبه أو ضمن مكاتبه الفعّالة
   if (session && !session.isAdmin && session.towerId != null) {
-    const techOk = tech.towerId === session.towerId || tech.supportTowerId === session.towerId;
+    const techOk = effective.includes(session.towerId);
     if (item.towerId !== session.towerId || !techOk) {
       return NextResponse.json({ error: "الفني أو المادة ليست ضمن مكتبك" }, { status: 403 });
     }
   }
-  // المادة يجب أن تكون من مكتب الفني أو من المكتب الذي يدعمه مؤقتاً
-  if (item.towerId != null && tech.towerId != null && item.towerId !== tech.towerId && item.towerId !== tech.supportTowerId) {
-    return NextResponse.json({ error: "الفني والمادة من مكتبين مختلفين" }, { status: 400 });
+  // المادة يجب أن تكون من أحد مكاتب الفني الفعّالة
+  if (item.towerId != null && !effective.includes(item.towerId)) {
+    return NextResponse.json({ error: "المادة ليست من مكاتب هذا الفني" }, { status: 400 });
   }
 
   const existing = await prisma.custody.findFirst({

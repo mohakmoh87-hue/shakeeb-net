@@ -7,6 +7,7 @@ import TrackModal from "./TrackModal";
 
 type Tech = {
   id: number; name: string; phone: string | null; username: string | null; plainCode?: string | null;
+  towerId?: number | null; extraTowerIds?: number[]; isSupport?: boolean; isExtra?: boolean;
   salary?: number | null; shiftStart?: string | null; shiftEnd?: string | null;
   entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null; missedCheckoutPenalty?: number | null;
 };
@@ -25,6 +26,13 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   const [attTech, setAttTech] = useState<Tech | null>(null);
   const [isManager, setIsManager] = useState(true); // مستخدم المكتب يرى القائمة والتتبع فقط
   const [trackIds, setTrackIds] = useState<number[] | null>(null); // فتح نافذة التتبع بفنيين محدّدين
+  // المكاتب الإضافية الدائمة (يضبطها المدير): كل مكاتب الوكيل عدا مكتب الفني الأصلي
+  const [allOffices, setAllOffices] = useState<{ id: number; name: string | null }[]>([]);
+  const [extraSel, setExtraSel] = useState<Set<number>>(new Set());
+  const [editHome, setEditHome] = useState<number | null>(null); // مكتب الفني الأصلي (للاستبعاد)
+  useEffect(() => {
+    fetch("/api/towers").then((r) => (r.ok ? r.json() : [])).then((d) => setAllOffices(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     fetch(`/api/field/technicians${officeId != null ? `?officeId=${officeId}` : ""}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setTechs(d.technicians ?? []); setIsManager(d.isManager !== false); } });
@@ -32,7 +40,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   useEffect(() => { load(); }, [load]);
 
   const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
-  function startAdd() { setEditId(null); setF(EMPTY); setOpenForm(true); setMsg(""); }
+  function startAdd() { setEditId(null); setF(EMPTY); setExtraSel(new Set()); setEditHome(officeId); setOpenForm(true); setMsg(""); }
   function startEdit(t: Tech) {
     setEditId(t.id);
     setF({
@@ -42,13 +50,15 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
       lateRatePerMin: String(t.lateRatePerMin ?? 0), overtimeRatePerMin: String(t.overtimeRatePerMin ?? 0), paidLeavesPerMonth: String(t.paidLeavesPerMonth ?? 0),
       missedCheckoutPenalty: String(t.missedCheckoutPenalty ?? 0),
     });
+    setExtraSel(new Set(t.extraTowerIds ?? []));
+    setEditHome(t.towerId ?? officeId);
     setOpenForm(true); setMsg("");
   }
 
   async function save() {
     setBusy(true); setMsg("");
     const body: Record<string, unknown> = { ...f, officeId };
-    if (editId) body.id = editId;
+    if (editId) { body.id = editId; body.extraTowerIds = [...extraSel]; }
     const r = await fetch("/api/field/technicians", { method: editId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
@@ -96,6 +106,33 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
               <L label="سعر دقيقة الإضافي"><I v={f.overtimeRatePerMin} on={(v) => set("overtimeRatePerMin", v)} num /></L>
               <L label="غرامة نسيان الخروج"><I v={f.missedCheckoutPenalty} on={(v) => set("missedCheckoutPenalty", v)} num /></L>
             </div>
+
+            {/* المكاتب الإضافية الدائمة (تعديل فقط، للمدير): يرى وينفذ بطاقاتها ويأخذ ذممها
+                كأنه فني أصلي فيها — مكتبه الأصلي مستبعد تلقائياً، وكل بطاقة تُحسب لمكتبها */}
+            {editId != null && allOffices.filter((o) => o.id !== editHome).length > 0 && (
+              <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-2.5">
+                <div className="mb-1 text-xs font-bold text-indigo-800">
+                  🏢 مكتبه الأصلي: {allOffices.find((o) => o.id === editHome)?.name ?? "—"}
+                </div>
+                <div className="mb-1.5 text-[11px] text-slate-600">مكاتب إضافية — يشوف تكتاتها وينفذها ويأخذ ذمماً منها كأنه فني أصلي فيها (كل بطاقة تُحسب لمكتبها):</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {allOffices.filter((o) => o.id !== editHome).map((o) => {
+                    const on = extraSel.has(o.id);
+                    return (
+                      <label key={o.id} className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${on ? "border-indigo-400 bg-indigo-100 text-indigo-800" : "border-slate-200 bg-white text-slate-600"}`}>
+                        <input
+                          type="checkbox" checked={on}
+                          onChange={() => setExtraSel((s) => { const n = new Set(s); if (n.has(o.id)) n.delete(o.id); else n.add(o.id); return n; })}
+                          className="h-3.5 w-3.5 accent-indigo-600"
+                        />
+                        {o.name ?? `مكتب ${o.id}`}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="mt-3 flex gap-2">
               <button onClick={save} disabled={busy} className="flex-1 rounded-lg bg-mynet-blue py-2 font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-60">{busy ? "..." : "حفظ"}</button>
               <button onClick={() => { setOpenForm(false); setEditId(null); }} className="rounded-lg bg-slate-100 px-4 py-2 font-semibold text-slate-600">إلغاء</button>

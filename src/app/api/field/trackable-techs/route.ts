@@ -30,20 +30,26 @@ export async function GET() {
   });
   const officeName = new Map(offices.map((o) => [o.id, o.name ?? ""]));
 
-  // فنيّو مكاتب المستخدم + الفنيون المُعارون «دعماً» إلى أحد مكاتبه (يُتتبَّعون من المكتب الطالب
-  // للدعم ما دام الدعم قائماً). عند انتهاء الدعم يعود التتبع لمكتبهم الأصلي تلقائياً.
-  const techs = await prisma.technician.findMany({
-    where: { isDeleted: false, OR: [{ towerId: { in: towerIds } }, { supportTowerId: { in: towerIds } }] },
-    select: { id: true, name: true, towerId: true, supportTowerId: true },
+  // فنيّو مكاتب المستخدم + المُعارون «دعماً» إليها + من مكاتبهم الإضافية الدائمة
+  // تشمل أحد مكاتبه — الفني متعدد المكاتب يظهر في تتبع كل مكاتبه (كأنه أصلي فيها).
+  const { parseExtraTowers } = await import("@/lib/field");
+  const candidates = await prisma.technician.findMany({
+    where: { isDeleted: false, OR: [{ towerId: { in: towerIds } }, { supportTowerId: { in: towerIds } }, { extraTowerIds: { not: null } }] },
+    select: { id: true, name: true, towerId: true, supportTowerId: true, extraTowerIds: true },
     orderBy: [{ towerId: "asc" }, { id: "asc" }],
   });
+  const techs = candidates.filter((t) =>
+    (t.towerId != null && towerIds.includes(t.towerId)) ||
+    (t.supportTowerId != null && towerIds.includes(t.supportTowerId)) ||
+    parseExtraTowers(t.extraTowerIds).some((x) => towerIds.includes(x)),
+  );
 
   return NextResponse.json({
     manager,
     technicians: techs.map((t) => {
       // المكتب الفعّال للتتبع = مكتب الدعم إن كان مُعاراً، وإلا مكتبه الأصلي
       const onSupport = t.supportTowerId != null && towerIds.includes(t.supportTowerId);
-      const effTower = onSupport ? t.supportTowerId! : t.towerId;
+      const effTower = onSupport ? t.supportTowerId! : (t.towerId != null && towerIds.includes(t.towerId) ? t.towerId : parseExtraTowers(t.extraTowerIds).find((x) => towerIds.includes(x)) ?? t.towerId);
       return {
         id: t.id,
         name: onSupport ? `${t.name} (دعم)` : t.name,

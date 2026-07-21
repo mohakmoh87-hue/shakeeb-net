@@ -57,14 +57,37 @@ export async function resolveListActor(listId: number): Promise<
   const tech = await getTechSession();
   if (!tech) return { ok: false, status: 401, error: "غير مصرّح" };
   const officeId = await listOfficeId(listId);
-  // مكتبه الفعّال: أثناء دعم «يوم كامل» يصبح مكتبُ الدعم مكتبَه (لوحته مقلوبة إليه)
-  let effectiveOffice = tech.towerId ?? null;
-  const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true, supportKind: true } });
-  if (me?.supportTowerId != null && me.supportKind === "day") effectiveOffice = me.supportTowerId;
-  if (officeId == null || officeId !== effectiveOffice) {
-    return { ok: false, status: 403, error: "العمود ليس في مكتبك" };
+  // مكاتب الفني الفعّالة: الأصلي + الإضافية الدائمة + مكتب الدعم المؤقت
+  const effective = await techEffectiveOfficesById(tech.technicianId);
+  if (officeId == null || !effective.includes(officeId)) {
+    return { ok: false, status: 403, error: "العمود ليس في مكاتبك" };
   }
   return { ok: true, actor: { isTech: true, userId: null, agentId: tech.agentId, name: tech.name, technicianId: tech.technicianId, session: null } };
+}
+
+// ===== مكاتب الفني الفعّالة =====
+// المكاتب الإضافية الدائمة (JSON على صف الفني — يضبطها المدير فقط)
+export function parseExtraTowers(s: string | null | undefined): number[] {
+  try {
+    const a = JSON.parse(s ?? "[]");
+    return Array.isArray(a) ? a.map(Number).filter((x) => Number.isFinite(x) && x > 0) : [];
+  } catch { return []; }
+}
+// مكاتب الفني الفعّالة = الأصلي + الإضافية الدائمة + مكتب الدعم المؤقت (أثناءه فقط).
+// تُستخدم موحّدةً في كل الفحوصات (لوحات/بطاقات/ذمم/تحويل) — فلا تعارض بين النظامين.
+export function techEffectiveOffices(t: { towerId: number | null; supportTowerId?: number | null; extraTowerIds?: string | null }): number[] {
+  const set = new Set<number>();
+  if (t.towerId != null) set.add(t.towerId);
+  for (const id of parseExtraTowers(t.extraTowerIds)) set.add(id);
+  if (t.supportTowerId != null) set.add(t.supportTowerId);
+  return [...set];
+}
+export async function techEffectiveOfficesById(technicianId: number): Promise<number[]> {
+  const t = await prisma.technician.findUnique({
+    where: { id: technicianId },
+    select: { towerId: true, supportTowerId: true, extraTowerIds: true },
+  });
+  return t ? techEffectiveOffices(t) : [];
 }
 
 // عزل المستأجر للوحات الفنيين: هل مكتب اللوحة يتبع أحد مكاتب وكيل المستخدم؟
@@ -181,11 +204,13 @@ export async function getOrCreatePettyAccount(towerId: number | null) {
 export async function endSupport(technicianId: number) {
   const tech = await prisma.technician.findUnique({
     where: { id: technicianId },
-    select: { name: true, towerId: true, supportTowerId: true },
+    select: { name: true, towerId: true, supportTowerId: true, extraTowerIds: true },
   });
   const supportOffice = tech?.supportTowerId ?? null;
   const homeOffice = tech?.towerId ?? null;
-  if (supportOffice != null && homeOffice != null && supportOffice !== homeOffice) {
+  // مكتب الدعم ضمن مكاتبه الإضافية الدائمة؟ لا ترحيل — فهو باقٍ يعمل فيه كأصلي
+  const stillHis = supportOffice != null && parseExtraTowers(tech?.extraTowerIds).includes(supportOffice);
+  if (supportOffice != null && homeOffice != null && supportOffice !== homeOffice && !stillHis) {
     try {
       const rows = await prisma.custody.findMany({ where: { technicianId, isDeleted: false, qty: { gt: 0 } } });
       for (const c of rows) {

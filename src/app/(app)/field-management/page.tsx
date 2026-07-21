@@ -177,10 +177,11 @@ export default function FieldManagementPage() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
-  // تبديل المكتب — الموظف (غير المدير) يُؤكَّد له الانتقال لغير مكتبه (مشاهدة فقط)
+  // تبديل المكتب — الموظف (غير المدير) يُؤكَّد له الانتقال لغير مكتبه (مشاهدة فقط).
+  // الفني متعدد المكاتب: تبديل مباشر — كل مكاتبه المعروضة يتصرف فيها كأصلي (لا «مشاهدة»)
   function switchOffice(id: number) {
     if (id === officeId) return;
-    if (!canManage && myOfficeId != null && id !== myOfficeId) {
+    if (!isTech && !canManage && myOfficeId != null && id !== myOfficeId) {
       const name = offices.find((o) => o.id === id)?.name ?? `مكتب ${id}`;
       if (!confirm(`ستنتقل إلى مكتب «${name}» — مشاهدة فقط بلا تعديل. متابعة؟`)) return;
     }

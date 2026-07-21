@@ -36,14 +36,16 @@ async function ownedTechs(ids: number[]) {
   if (!session) return { error: NextResponse.json({ error: "غير مصرّح" }, { status: 401 }) };
   const techs = await prisma.technician.findMany({
     where: { id: { in: ids }, isDeleted: false },
-    select: { id: true, name: true, towerId: true, supportTowerId: true, trackReqAt: true, trackLat: true, trackLng: true, trackAt: true, fcmToken: true },
+    select: { id: true, name: true, towerId: true, supportTowerId: true, extraTowerIds: true, trackReqAt: true, trackLat: true, trackLng: true, trackAt: true, fcmToken: true },
   });
   // العزل: المدير ⇒ مكاتب وكيله فقط؛ مستخدم المكتب ⇒ مكتبه فقط (ownsTower يفحص الاثنين).
-  // إضافةً: الفني المُعار «دعماً» يُتتبَّع أيضاً من المكتب الطالب للدعم (supportTowerId) طوال الدعم.
+  // إضافةً: الفني يُتتبَّع من مكتب الدعم المؤقت ومن مكاتبه الإضافية الدائمة (كأنه أصلي فيها).
+  const { techEffectiveOffices } = await import("@/lib/field");
   const allowed = [] as typeof techs;
   for (const t of techs) {
-    if (await ownsTower(session, t.towerId)) { allowed.push(t); continue; }
-    if (t.supportTowerId != null && (await ownsTower(session, t.supportTowerId))) allowed.push(t);
+    for (const office of techEffectiveOffices(t)) {
+      if (await ownsTower(session, office)) { allowed.push(t); break; }
+    }
   }
   if (allowed.length === 0) return { error: NextResponse.json({ error: "لا فنيين ضمن صلاحيتك" }, { status: 403 }) };
   return { session, techs: allowed };

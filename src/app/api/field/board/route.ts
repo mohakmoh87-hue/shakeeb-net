@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { agentTowerIds } from "@/lib/guard";
-import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOfficeIn } from "@/lib/field";
+import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOfficeIn, parseExtraTowers } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   // الفني: لوحة مكتبه الأصلي، بلا إدارة — ولا يُحرم منها أثناء الدعم المؤقت
   const tech = await getTechSession();
   if (tech) {
-    const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true, supportKind: true } });
+    const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true, supportKind: true, extraTowerIds: true } });
 
     // دعم «يوم كامل»: تُقلب لوحته كلياً — يرى كل بطاقات المكتب الطالب للدعم،
     // ولا يرى أي بطاقة من مكتبه الأصلي، حتى ينتهي الدعم فيعود تلقائياً.
@@ -43,9 +43,20 @@ export async function GET(request: Request) {
       });
     }
 
-    const data = await buildBoard(tech.towerId, tech.agentId);
+    // مكاتب إضافية دائمة: مبدّل مكاتب للفني (الأصلي + الإضافية) — يفتح أي لوحة منها
+    // كاملة ويتصرف فيها كفنيّ أصلي. المطلوب عبر ?officeId يجب أن يكون ضمن مكاتبه.
+    const extras = parseExtraTowers(me?.extraTowerIds);
+    const myOffices = [...new Set([tech.towerId, ...extras].filter((x): x is number => x != null))];
+    const reqOfficeT = Number(new URL(request.url).searchParams.get("officeId")) || null;
+    const viewOffice = reqOfficeT != null && myOffices.includes(reqOfficeT) ? reqOfficeT : tech.towerId;
+    const techOffices = myOffices.length > 1
+      ? await prisma.tower.findMany({ where: { id: { in: myOffices }, isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" } })
+      : [];
+
+    const data = await buildBoard(viewOffice, tech.agentId);
     // مُعارٌ لدعم بطاقات محدّدة؟ تُضاف له (وله وحده) بطاقاته في مكتب الدعم بعمودٍ افتراضي «دعم مؤقت»
-    if (me?.supportTowerId != null && me.supportTowerId !== tech.towerId) {
+    // (على لوحة مكتبه الأصلي فقط، وليس مكتب دعمٍ هو أصلاً ضمن مكاتبه الإضافية)
+    if (viewOffice === tech.towerId && me?.supportTowerId != null && me.supportTowerId !== tech.towerId && !myOffices.includes(me.supportTowerId)) {
       const sBoard = await getOrCreateBoard(me.supportTowerId);
       const sLists = await prisma.taskList.findMany({ where: { boardId: sBoard.id, isDeleted: false }, select: { id: true } });
       const sCards = await prisma.taskCard.findMany({
@@ -63,7 +74,8 @@ export async function GET(request: Request) {
       }
     }
     return NextResponse.json({
-      ...data, offices: [], officeId: tech.towerId, isManager: false, canManage: false, canOperate: true, myOfficeId: tech.towerId, role: "technician",
+      // offices: مبدّل المكاتب للفني متعدد المكاتب (فارغ لفني المكتب الواحد — لا مبدّل)
+      ...data, offices: techOffices, officeId: viewOffice, isManager: false, canManage: false, canOperate: true, myOfficeId: tech.towerId, role: "technician",
       // مكتب الدعم (إن وُجد): تحتاجه الواجهة لزر خريطة بطاقات عمود «دعم مؤقت»
       // (منطقة الخريطة تُشتق من مكتب البطاقة الحقيقي لا من مكتب الفني الأصلي)
       supportOfficeId: me?.supportTowerId ?? null,
