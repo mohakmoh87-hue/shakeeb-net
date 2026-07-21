@@ -27,7 +27,8 @@ export default function ReceiptPrintStyle() {
     width: 80mm !important;
     max-width: 80mm !important;
     box-sizing: border-box !important;
-    padding: 3mm 4mm !important;
+    /* هامش جانبي أوسع (7مم) كي لا تُقصّ القيم على حافة الورق في الطابعات العادية */
+    padding: 4mm 7mm !important;
     margin: 0 !important;
     box-shadow: none !important;
     border: none !important;

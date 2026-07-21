@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import PrintButton from "@/components/PrintButton";
 import ReceiptPrintStyle from "@/components/ReceiptPrintStyle";
+import AutoPrint from "@/components/AutoPrint";
 import { getReceiptTemplate } from "@/lib/receiptTemplate";
 import { getSession } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
@@ -37,6 +38,7 @@ export default async function ReceiptPage({
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">
       <ReceiptPrintStyle />
+      <AutoPrint />
       <div className="w-full max-w-sm">
         {/* أزرار التحكم (تختفي عند الطباعة) */}
         <div className="no-print mb-4 flex justify-between">
