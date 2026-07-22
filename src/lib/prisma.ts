@@ -17,13 +17,18 @@ function createAdapter() {
   if (process.env.DB_DRIVER === "pg") {
     // DB_SSL_CA_B64 (اختياري): شهادة CA بصيغة base64 — قواعد مثل Aiven توقّع شهادة
     // خادمها بمرجع خاص بالمشروع، فنمرّرها صراحةً ليبقى التحقق الكامل من TLS قائماً.
+    // ملاحظة إلزامية: sslmode داخل الرابط يطغى على إعداد ssl الصريح في مكتبة pg،
+    // فنحذفه من الرابط عند تمرير الشهادة — وإلا فُحصت الشهادة بمخازن النظام وفشلت.
     const caB64 = process.env.DB_SSL_CA_B64;
-    return new PrismaPg({
-      connectionString: process.env.DATABASE_URL,
-      ...(caB64
-        ? { ssl: { ca: Buffer.from(caB64, "base64").toString("utf8"), rejectUnauthorized: true } }
-        : {}),
-    });
+    if (caB64) {
+      const cs = new URL(process.env.DATABASE_URL ?? "");
+      cs.searchParams.delete("sslmode");
+      return new PrismaPg({
+        connectionString: cs.toString(),
+        ssl: { ca: Buffer.from(caB64, "base64").toString("utf8"), rejectUnauthorized: true },
+      });
+    }
+    return new PrismaPg({ connectionString: process.env.DATABASE_URL });
   }
   return new PrismaNeon({ connectionString: process.env.DATABASE_URL });
 }
