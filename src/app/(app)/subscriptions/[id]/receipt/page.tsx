@@ -26,8 +26,11 @@ export default async function ReceiptPage({
     ? await prisma.subscriber.findUnique({ where: { id: entry.subscriberId } })
     : null;
 
-  // اسم العلامة من الوكيل الحالي، ثم الإعداد العام، ثم الافتراضي
   const session = await getSession();
+  // عزل الوكلاء (IDOR): الوصل يُعرض لمن يملك مكتبه فقط — كان يُفتح بالمعرّف لأي مستخدم مسجّل
+  const { ownsTower } = await import("@/lib/guard");
+  const entryTower = entry.towerId ?? subscriber?.towerId ?? null;
+  if (!session || !(await ownsTower(session, entryTower))) notFound();
   const agent = session?.agentId != null
     ? await prisma.agent.findUnique({ where: { id: session.agentId }, select: { name: true } })
     : null;
