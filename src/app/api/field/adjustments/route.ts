@@ -70,7 +70,9 @@ export async function GET(request: Request) {
     const tt = techById.get(r.technicianId);
     const startMin = parseHHMM(tt?.shiftStart);
     const grace = Math.max(0, tt?.entryGraceMin ?? 0);
-    const lateMin = r.checkIn && startMin != null ? Math.max(0, baghdadMinutesOfDay(r.checkIn) - (startMin + grace)) : 0;
+    // تجاوُز السماحية يُلغيها — الدقائق تُحسب من بدء الدوام نفسه (نفس قاعدة computeAttendance)
+    const ciMin = r.checkIn && startMin != null ? baghdadMinutesOfDay(r.checkIn) : null;
+    const lateMin = ciMin != null && startMin != null && ciMin > startMin + grace ? ciMin - startMin : 0;
     return {
       technicianId: r.technicianId, technicianName: nameById.get(r.technicianId) ?? `#${r.technicianId}`,
       dayKey: r.dayKey, checkIn: r.checkIn, lateMinutes: lateMin, estDeduction: lateMin * Math.max(0, tt?.lateRatePerMin ?? 0),
