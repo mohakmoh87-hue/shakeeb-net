@@ -1,0 +1,52 @@
+# قياس استخدام Azure الشهري وإرساله للوحة المالك — يومياً + يدوياً عند الطلب.
+# لا يضع أي مفتاح Azure داخل التطبيق: المهمة تقرأ المقاييس ثم تُرسل الأرقام فقط
+# إلى نقطة /api/owner/hosting-usage المحميّة بـ CRON_SECRET.
+# الأسرار المطلوبة: AZURE_CREDENTIALS (موجود) + CRON_SECRET + APP_BASE_URL.
+name: hosting-usage
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 3 * * *" # 03:20 UTC يومياً (~06:20 بغداد)
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: قياس Azure وإرساله
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+        run: |
+          set -euo pipefail
+          RID="/subscriptions/5d135ad6-bd0a-4e2e-91f0-52aede7b201b/resourceGroups/rg-shakeeb-test/providers/Microsoft.App/containerapps/app-shakeeb-test"
+          MONTH_START="$(date -u +%Y-%m-01T00:00:00Z)"
+          MONTH="$(date -u +%Y-%m)"
+
+          # إجمالي الطلبات منذ بداية الشهر (تجميع يومي ثم جمعها)
+          REQ=$(az monitor metrics list --resource "$RID" --metric Requests \
+                --aggregation Total --start-time "$MONTH_START" --interval P1D \
+                --query "value[0].timeseries[0].data[].total" -o tsv \
+                | awk '{s+=$1} END {printf "%d", s+0}')
+
+          # ثواني-المعالج التقريبية: متوسط النانو-كور × ثواني الشهر ÷ 1e9 (أفضل تقدير متاح)
+          NANO=$(az monitor metrics list --resource "$RID" --metric UsageNanoCores \
+                 --aggregation Average --start-time "$MONTH_START" --interval P1D \
+                 --query "value[0].timeseries[0].data[].average" -o tsv \
+                 | awk '{if($1!=""){s+=$1;n++}} END {if(n>0) printf "%d", s/n; else print 0}')
+          NOW_EPOCH=$(date -u +%s); START_EPOCH=$(date -u -d "$MONTH_START" +%s)
+          ELAPSED=$(( NOW_EPOCH - START_EPOCH ))
+          VCPU_SEC=$(awk -v n="$NANO" -v e="$ELAPSED" 'BEGIN{printf "%d", (n/1000000000.0)*e}')
+
+          echo "شهر=$MONTH طلبات=$REQ ثواني-معالج≈$VCPU_SEC"
+          BODY=$(printf '{"month":"%s","requests":%s,"vcpuSeconds":%s,"source":"github-actions"}' "$MONTH" "$REQ" "$VCPU_SEC")
+          code=$(curl -s -o /tmp/resp -w "%{http_code}" -X POST "$APP_BASE_URL/api/owner/hosting-usage" \
+                 -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -d "$BODY")
+          echo "الاستجابة: $code $(cat /tmp/resp)"
+          test "$code" = "200"
