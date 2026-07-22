@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { purgeSubscribers } from "@/lib/subscriberDelete";
 
 const schema = z.object({
@@ -69,10 +69,17 @@ export async function PUT(
   if (!existing || !(await ownsTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
-  const data =
-    g.session && !g.session.isAdmin && g.session.towerId != null
-      ? { ...parsed.data, towerId: g.session.towerId }
-      : parsed.data;
+  // عزل المستأجر: مستخدم المكتب يُفرض مكتبه؛ والمدير لا يُسمح له بنقل المشترك إلا
+  // لمكتب يتبع وكيله (يمنع نقله لمكتب وكيل آخر عبر towerId من الطلب).
+  let data = parsed.data;
+  if (g.session && !g.session.isAdmin && g.session.towerId != null) {
+    data = { ...parsed.data, towerId: g.session.towerId };
+  } else if (parsed.data.towerId != null) {
+    const agentTowers = await agentTowerIds(g.session ?? null);
+    if (!agentTowers.includes(parsed.data.towerId)) {
+      return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
+    }
+  }
 
   const updated = await prisma.subscriber.update({
     where: { id: Number(id) },

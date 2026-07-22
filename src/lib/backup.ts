@@ -139,6 +139,7 @@ async function allRealTables(): Promise<Set<string>> {
 
 // إدراج صفوف جدول (بأعمدتها وقيمها) مع إجبار agentId على الوكيل الهدف.
 // الجدول مُتحقَّق منه من المُستدعي (قائمة بيضاء)؛ هنا نتحقّق من أسماء الأعمدة أيضاً.
+// الصفوف مُصفّاة مسبقاً من المُستدعي (عزل المستأجر: لا تُقبل إلا صفوف مكاتب الوكيل الهدف).
 async function insertRows(tx: typeof prisma, table: string, rows: Row[], targetAgentId: number, hasAgentId: boolean) {
   for (const row of rows) {
     const cols = Object.keys(row).filter((c) => SAFE_IDENT.test(c)); // تجاهل أي اسم عمود غير آمن
@@ -166,15 +167,44 @@ async function resyncSequence(tx: typeof prisma, table: string) {
 // استرجاع كامل (استبدال): يمسح بيانات الوكيل الحالية ويُدرج بيانات الملف تحت الوكيل الهدف
 export async function importAgentBackup(targetAgentId: number, backup: AgentBackup): Promise<{ ok: boolean; tablesRestored: number; rowsRestored: number }> {
   const agentTableSet = new Set(await columnsWith("agentId"));
+  const towerTableSet = new Set(await columnsWith("towerId")); // جداول مرتبطة بالمكتب
   const realTables = await allRealTables(); // قائمة بيضاء لأسماء الجداول الحقيقية
+
+  // ===== عزل المستأجر في الاستعادة =====
+  // اتصال الموقع يتجاوز RLS، فالتحقق هنا هو خط الدفاع الوحيد ضد ملف ملغّم يحقن صفوفاً
+  // في مكاتب وكيل آخر. القاعدة: لا يُقبل إلا صف يخصّ مكاتب الوكيل الهدف.
+  // مكاتب الوكيل الهدف = معرّفات صفوف جدول towers في الملف (تُدرَج بـagentId=الهدف حصراً).
+  const idOf = (r: Row) => Number((r as { id?: unknown }).id);
+  const num = (v: unknown) => (v == null ? NaN : Number(v));
+  const allowedTowerIds = new Set<number>((backup.tables["towers"] ?? []).map(idOf).filter(Number.isFinite));
+  // سلسلة لوحات الفنيين (لا towerId مباشر): list→board→card — تُقبل بالتبعية لمكاتب مقبولة
+  const okBoards = new Set<number>((backup.tables["task_boards"] ?? []).filter((r) => allowedTowerIds.has(num(r.towerId))).map(idOf).filter(Number.isFinite));
+  const okLists = new Set<number>((backup.tables["task_lists"] ?? []).filter((r) => okBoards.has(num(r.boardId))).map(idOf).filter(Number.isFinite));
+  const okCards = new Set<number>((backup.tables["task_cards"] ?? []).filter((r) => okLists.has(num(r.listId))).map(idOf).filter(Number.isFinite));
+
+  // يقرّر إن كان الصف يخصّ الوكيل الهدف (يمنع الحقن عبر المستأجرين):
+  // - جدول فيه agentId ⇒ يُجبَر agentId=الهدف عند الإدراج ⇒ آمن دائماً.
+  // - جدول فيه towerId (بلا agentId) ⇒ towerId يجب أن يكون ضمن مكاتب الهدف.
+  // - سلسلة اللوحات ⇒ يجب أن يكون الأب (board/list/card) مقبولاً.
+  function rowBelongs(table: string, row: Row): boolean {
+    if (agentTableSet.has(table)) return true;
+    if (table === "task_lists") return okBoards.has(num(row.boardId));
+    if (table === "task_cards") return okLists.has(num(row.listId));
+    if (table === "card_photos") return okCards.has(num(row.cardId));
+    if (towerTableSet.has(table)) return allowedTowerIds.has(num(row.towerId));
+    return true;
+  }
 
   let tablesRestored = 0, rowsRestored = 0;
   await prisma.$transaction(async (tx) => {
     await deleteAgentData(tx as typeof prisma, targetAgentId);
 
-    for (const [table, rows] of Object.entries(backup.tables)) {
+    for (const [table, rowsRaw] of Object.entries(backup.tables)) {
       // أمان: تجاهُل أي جدول باسم غير آمن أو غير موجود فعلاً أو مستثنى (يمنع الحقن عبر ملف ملغّم)
-      if (!SAFE_IDENT.test(table) || !realTables.has(table) || EXCLUDE.has(table) || !Array.isArray(rows) || rows.length === 0) continue;
+      if (!SAFE_IDENT.test(table) || !realTables.has(table) || EXCLUDE.has(table) || !Array.isArray(rowsRaw) || rowsRaw.length === 0) continue;
+      // عزل المستأجر: أسقِط أي صف لا يخصّ مكاتب الوكيل الهدف قبل الإدراج
+      const rows = rowsRaw.filter((r) => rowBelongs(table, r));
+      if (rows.length === 0) continue;
       const hasAgentId = agentTableSet.has(table);
       await insertRows(tx as typeof prisma, table, rows, targetAgentId, hasAgentId);
       await resyncSequence(tx as typeof prisma, table);
