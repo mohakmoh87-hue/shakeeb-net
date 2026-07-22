@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     take: 300,
     select: {
       id: true, listId: true, title: true, description: true, kind: true, assignee: true, technicianId: true,
-      amount: true, serviceDetails: true, durationSec: true, completedAt: true, archivedAt: true, history: true,
+      amount: true, subAmount: true, serviceDetails: true, durationSec: true, completedAt: true, archivedAt: true, history: true,
     },
   });
 

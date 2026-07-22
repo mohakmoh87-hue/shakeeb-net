@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type Item = { title: string; kind: string; amount: number; netUser?: string | null };
-type Tech = { id: number; name: string; towerId: number | null; pendingTotal: number; pendingCount: number; items?: Item[] };
+type Item = { title: string; kind: string; amount: number; subAmount?: number; netUser?: string | null };
+type Tech = { id: number; name: string; towerId: number | null; pendingTotal: number; saleTotal?: number; subTotal?: number; pendingCount: number; items?: Item[] };
 type Office = { id: number; name: string | null };
 
 const fmt = (n: number) => Number(n).toLocaleString("en-US");
@@ -86,12 +86,17 @@ export default function FieldSettlementCard() {
                   {it.kind ? `${it.kind} — ` : ""}{it.title}
                   {it.netUser && <span className="text-slate-400" dir="ltr"> · 👤 {it.netUser}</span>}
                 </span>
-                <span className="shrink-0 font-semibold text-emerald-700">{fmt(it.amount)} د.ع</span>
+                <span className="shrink-0 font-semibold">
+                  <span className="text-emerald-700">{fmt(it.amount)}</span>
+                  {(it.subAmount ?? 0) > 0 && <span className="text-indigo-700"> + اشتراك {fmt(it.subAmount ?? 0)}</span>}
+                  <span className="text-slate-500"> د.ع</span>
+                </span>
               </div>
             ))
           )}
+          {/* المجموع الكلي المستلم من الفني = المبيع + الاشتراك */}
           <div className="mt-1 flex items-center justify-between border-t border-slate-100 pt-1 text-xs font-bold">
-            <span className="text-slate-700">المجموع</span>
+            <span className="text-slate-700">المجموع الكلي (مبيع {fmt(t.saleTotal ?? 0)} + اشتراك {fmt(t.subTotal ?? 0)})</span>
             <span className="text-emerald-700">{fmt(t.pendingTotal)} د.ع</span>
           </div>
         </div>

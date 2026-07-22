@@ -18,7 +18,7 @@ type Card = {
   id: number; listId: number; title: string; description: string | null;
   assignee: string | null; technicianId: number | null; kind: string;
   label: string | null; dueDate: string | null; position: number; done: boolean;
-  amount: number | null; serviceDetails: string | null; completedAt: string | null;
+  amount: number | null; subAmount: number | null; serviceDetails: string | null; completedAt: string | null;
   materialsInfo: string | null; techNote: string | null;
   startedAt: string | null; durationSec: number | null; postponedTo: string | null;
   history: string | null;
@@ -655,7 +655,8 @@ export default function FieldManagementPage() {
             {sel.done ? (
               <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
                 <div className="mb-1 font-bold text-emerald-700">✓ منجزة (بانتظار التحصيل)</div>
-                {sel.amount != null && <div className="text-slate-600">المبلغ: <b>{Number(sel.amount).toLocaleString("en-US")}</b> د.ع</div>}
+                {sel.amount != null && <div className="text-slate-600">المبيع: <b>{Number(sel.amount).toLocaleString("en-US")}</b> د.ع</div>}
+                {(sel.subAmount ?? 0) > 0 && <div className="text-slate-600">اشتراك (يُسجَّل عند التفعيل): <b className="text-indigo-700">{Number(sel.subAmount).toLocaleString("en-US")}</b> د.ع</div>}
                 {sel.serviceDetails && <div className="text-slate-600">التفاصيل: {sel.serviceDetails}</div>}
                 {sel.durationSec != null && <div className="text-slate-600">⏱ مدة الإنجاز: <b>{fmtDuration(sel.durationSec)}</b></div>}
                 {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
@@ -959,12 +960,18 @@ type CustodyMat = { itemId: number; name: string; priceSale: number; available: 
 function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }: { card: Card; deliveryOnly: boolean; photoRequired: boolean; onClose: () => void; onDone: () => void }) {
   const isTransfer = card.kind === "تحويل";
   const isDelivery = deliveryOnly && !isTransfer;
-  const fullFields = !isDelivery && !isTransfer; // صيانة/تنصيب: تفاصيل + صورة + مواد
-  // الصورة إلزامية على الفني فقط؛ اختيارية للمدير والمستخدم (وغير مطلوبة للتوصيل أصلاً)
+  const fullFields = !isDelivery && !isTransfer; // صيانة/تنصيب/اعادة: تفاصيل + صورة
+  // «التدفق الكامل» = كل الأنواع عدا التوصيل (يشمل التحويل بشروطه القديمة + الجديدة):
+  // مواد متسلسلة + «المبيع» + «اشتراك»
+  const fullFlow = !isDelivery;
+  // الصورة إلزامية على الفني فقط؛ اختيارية للمدير والمستخدم (وغير مطلوبة للتوصيل/التحويل)
   const photoMandatory = fullFields && photoRequired;
   const [details, setDetails] = useState("");
   const [newUser, setNewUser] = useState("");
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(""); // «التوصيل» فقط: مبلغه المعلوماتي
+  const [saleStr, setSaleStr] = useState("0"); // «المبيع»: يتزامن مع مجموع المواد حتى أول تعديل يدوي
+  const [saleDirty, setSaleDirty] = useState(false);
+  const [subStr, setSubStr] = useState(""); // «اشتراك»: إلزامي كتابته يدوياً ولو 0
   const [photo, setPhoto] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false); // جاري ضغط الصورة
   const [rewardsOn, setRewardsOn] = useState(false); // مكتب المشترك مفعّل للمكافآت
@@ -974,22 +981,23 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
   const [rewardBusy, setRewardBusy] = useState(false); // ضُغط «سحب» والاستعلام لم يكتمل بعد
   const rewardLookup = useRef<Promise<{ balance: number; name: string | null } | null> | null>(null); // استعلام الرصيد الجاري
   const [mats, setMats] = useState<CustodyMat[]>([]);
-  const [picked, setPicked] = useState<Record<number, number>>({}); // itemId -> qty
-  const [noSale, setNoSale] = useState(false); // «بلا مبيع»: خيار إلزامي بديل عن اختيار مادة (المبلغ صفر)
+  // سلسلة قوائم المواد: الأولى إلزامية (مادة أو «بلا مبيع»)، وكل اختيار يُظهر قائمة اختيارية جديدة
+  type MatRow = { itemId: number | "nosale" | ""; qty: number };
+  const [rows, setRows] = useState<MatRow[]>([{ itemId: "", qty: 1 }]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    if (!fullFields || card.technicianId == null) return;
+    if (!fullFlow || card.technicianId == null) return;
     fetch(`/api/field/tech-custody?technicianId=${card.technicianId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setMats(d.materials ?? []));
-  }, [card.technicianId, fullFields]);
+  }, [card.technicianId, fullFlow]);
 
-  // رصيد مكافأة مشترك البطاقة (لسحبها خصماً) — للصيانة/التوصيل لا التحويل.
+  // رصيد مكافأة مشترك البطاقة (يخصم من «المبيع» حصراً) — لكل التدفق الكامل بما فيه التحويل
   // نحتفظ بوعد الاستعلام: ضغطة «سحب» تنتظره إن لم يكتمل بعد فيأتي الجواب صحيحاً فوراً (لا «ليس لديه كود» خاطئة)
   useEffect(() => {
-    if (isTransfer) return;
+    if (isDelivery) return;
     rewardLookup.current = fetch(`/api/rewards/lookup?cardId=${card.id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -1003,7 +1011,7 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
         return null;
       })
       .catch(() => null);
-  }, [card.id, isTransfer]);
+  }, [card.id, isDelivery]);
 
   // سحب الكود: فوري إن اكتمل الاستعلام، وإلا ينتظره (زر «…») ثم يجيب بدقة
   async function pullReward() {
@@ -1015,19 +1023,46 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
     if (rw) { setNoCode(false); setRewardPulled(true); } else setNoCode(true);
   }
 
-  const materialsTotal = Object.entries(picked).reduce((s, [id, q]) => {
-    const m = mats.find((x) => x.itemId === Number(id)); return s + (m ? m.priceSale * q : 0);
+  // المشتقات: المواد المختارة + «بلا مبيع» + المجاميع
+  const noSale = rows[0]?.itemId === "nosale";
+  const pickedRows = rows.filter((r): r is { itemId: number; qty: number } => typeof r.itemId === "number");
+  const materialsTotal = pickedRows.reduce((s, r) => {
+    const m = mats.find((x) => x.itemId === r.itemId); return s + (m ? m.priceSale * r.qty : 0);
   }, 0);
-  const nAmount = Number(amount) || 0;
-  const salesShare = Math.min(nAmount, materialsTotal);
-  const pettyShare = Math.max(0, nAmount - materialsTotal);
+  const nSale = noSale ? 0 : Number(saleStr) || 0;
+  const nSub = Number(subStr) || 0;
+  const nAmount = Number(amount) || 0; // للتوصيل فقط
 
-  function togglePick(m: CustodyMat) {
-    setNoSale(false); // اختيار مادة يلغي «بلا مبيع»
-    setPicked((p) => { const n = { ...p }; if (n[m.itemId]) delete n[m.itemId]; else n[m.itemId] = 1; return n; });
+  // «المبيع» يتزامن تلقائياً مع مجموع المواد حتى أول تعديل يدوي (زر ↺ يعيد المزامنة)
+  useEffect(() => {
+    if (!saleDirty && !noSale) setSaleStr(String(materialsTotal));
+    if (noSale) setSaleStr("0");
+  }, [materialsTotal, saleDirty, noSale]);
+
+  // تغيير قائمة: «بلا مبيع» (الأولى فقط) يطوي السلسلة؛ واختيار مادة بآخر قائمة يضيف قائمة جديدة
+  function setRowItem(idx: number, value: string) {
+    setRows((rs) => {
+      const next = rs.map((r, i) => (i === idx ? { ...r, itemId: value === "nosale" ? "nosale" as const : (value === "" ? "" as const : Number(value)) } : r));
+      if (idx === 0 && value === "nosale") return [{ itemId: "nosale" as const, qty: 1 }];
+      const compact = next.filter((r, i) => r.itemId !== "" || i === next.length - 1);
+      const last = compact[compact.length - 1];
+      if (last && last.itemId !== "") compact.push({ itemId: "", qty: 1 });
+      return compact.length ? compact : [{ itemId: "", qty: 1 }];
+    });
   }
-  function setQty(itemId: number, q: number, max: number) {
-    setPicked((p) => ({ ...p, [itemId]: Math.max(1, Math.min(q, max)) }));
+  function setRowQty(idx: number, q: number) {
+    setRows((rs) => rs.map((r, i) => {
+      if (i !== idx || typeof r.itemId !== "number") return r;
+      const m = mats.find((x) => x.itemId === r.itemId);
+      return { ...r, qty: Math.max(1, Math.min(q, m?.available ?? 99)) };
+    }));
+  }
+  function removeRow(idx: number) {
+    setRows((rs) => {
+      const next = rs.filter((_, i) => i !== idx);
+      if (!next.length || next[next.length - 1].itemId !== "") next.push({ itemId: "", qty: 1 });
+      return next;
+    });
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1039,23 +1074,35 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
 
   async function submit() {
     setErr("");
-    if (nAmount < 0) { setErr("المبلغ لا يكون سالباً"); return; } // الصفر مسموح (بطاقات مجانية)
-    // حد أدنى إلزامي: أي مبلغ مُدخَل لا يقل عن 1000 دينار
-    if (nAmount > 0 && nAmount < 1000) { setErr("المبلغ لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
-    if (isTransfer) {
-      if (!newUser.trim()) { setErr("اليوزر الجديد مطلوب لإنجاز التحويل"); return; }
-    } else if (fullFields) {
-      if (!details.trim()) { setErr("تفاصيل الصيانة مطلوبة"); return; }
-      if (photoMandatory && !photo) { setErr("رفع صورة مطلوب"); return; }
-      // إلزامي: مادة من الذمّة أو «بلا مبيع» (بلا مبيع ⇒ المبلغ يبقى صفراً)
-      if (Object.keys(picked).length === 0 && !noSale) { setErr("اختر مادة من ذمّتك أو «بلا مبيع» (إلزامي)"); return; }
-      if (noSale && Object.keys(picked).length === 0 && nAmount > 0) { setErr("مع «بلا مبيع» يبقى المبلغ صفراً"); return; }
+    if (isDelivery) {
+      // التوصيل كما هو: مبلغ معلوماتي، الصفر جائز، وما فوقه ≥ 1000
+      if (nAmount < 0) { setErr("المبلغ لا يكون سالباً"); return; }
+      if (nAmount > 0 && nAmount < 1000) { setErr("المبلغ لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
+    } else {
+      if (isTransfer && !newUser.trim()) { setErr("اليوزر الجديد مطلوب لإنجاز التحويل"); return; }
+      if (fullFields) {
+        if (!details.trim()) { setErr("تفاصيل الصيانة مطلوبة"); return; }
+        if (photoMandatory && !photo) { setErr("رفع صورة مطلوب"); return; }
+      }
+      // القائمة الأولى إلزامية: مادة أو «بلا مبيع»
+      if (pickedRows.length === 0 && !noSale) { setErr("اختر مادة من ذمّتك أو «بلا مبيع» (إلزامي)"); return; }
+      // «المبيع»: 0 جائز، وما فوقه ≥ 1000
+      if (nSale > 0 && nSale < 1000) { setErr("مبلغ المبيع لا يقل عن 1000 دينار (أو صفر)"); return; }
+      // «اشتراك»: إلزامي كتابته يدوياً ولو 0، وما فوق الصفر ≥ 1000
+      if (subStr.trim() === "") { setErr("أدخِل مبلغ «اشتراك» — اكتب 0 إن لم يُستلم اشتراك"); return; }
+      if (nSub > 0 && nSub < 1000) { setErr("مبلغ الاشتراك لا يقل عن 1000 دينار (أو صفر)"); return; }
     }
     setBusy(true);
-    const materials = Object.entries(picked).map(([id, q]) => ({ itemId: Number(id), qty: q }));
+    const materials = pickedRows.map((r) => ({ itemId: r.itemId, qty: r.qty }));
     const r = await fetch("/api/field/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cardId: card.id, serviceDetails: details, amount: nAmount, newUser, photo, materials, useReward: rewardPulled, noSale }),
+      body: JSON.stringify({
+        cardId: card.id, serviceDetails: details, newUser, photo,
+        amount: isDelivery ? nAmount : undefined,
+        sale: isDelivery ? undefined : nSale,
+        subscription: isDelivery ? undefined : nSub,
+        materials, useReward: rewardPulled, noSale,
+      }),
     });
     const d = await r.json().catch(() => null);
     setBusy(false);
@@ -1088,16 +1135,76 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
           </>
         )}
 
-        <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-slate-400">(0 = مجاني)</span></label>
-        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        {/* التوصيل فقط: مبلغه المعلوماتي كما هو */}
+        {isDelivery && (<>
+          <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-slate-400">(0 = مجاني)</span></label>
+          <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </>)}
 
-        {/* سحب كود مكافأة المشترك خصماً من المبلغ — يظهر دائماً عند تفعيل نظام المكافآت للمكتب */}
-        {fullFields && rewardsOn && (
+        {/* سلسلة قوائم المواد: الأولى إلزامية (مادة أو «بلا مبيع») وكل اختيار يُظهر قائمة جديدة */}
+        {fullFlow && (
+          <>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">المواد من ذمّتك <span className="text-red-500">* الأولى إلزامية</span> — وبجانب كل مادة الكمية</label>
+            <div className="mb-3 space-y-1.5">
+              {rows.map((row, idx) => {
+                const chosen = typeof row.itemId === "number" ? mats.find((m) => m.itemId === row.itemId) : null;
+                return (
+                  <div key={idx} className="flex items-center gap-1.5">
+                    <select
+                      value={row.itemId === "" ? "" : String(row.itemId)}
+                      onChange={(e) => setRowItem(idx, e.target.value)}
+                      className={`min-w-0 flex-1 rounded-lg border px-2 py-2 text-sm ${row.itemId !== "" ? "border-amber-300 bg-amber-50" : "border-slate-300"}`}
+                    >
+                      <option value="">{idx === 0 ? "— اختر مادة أو «بلا مبيع» —" : "— مادة إضافية (اختياري) —"}</option>
+                      {idx === 0 && <option value="nosale">🚫 بلا مبيع (لا مادة — المبيع صفر)</option>}
+                      {mats.map((m) => (
+                        <option key={m.itemId} value={m.itemId}>{m.name} ({m.priceSale.toLocaleString("en-US")} — متاح {m.available})</option>
+                      ))}
+                    </select>
+                    {chosen && (
+                      <input type="number" value={row.qty} min={1} max={chosen.available}
+                        onChange={(e) => setRowQty(idx, Number(e.target.value))}
+                        className="w-16 shrink-0 rounded-lg border border-slate-300 px-2 py-2 text-sm" dir="ltr" title="الكمية" />
+                    )}
+                    {row.itemId !== "" && !noSale && (
+                      <button type="button" onClick={() => removeRow(idx)} className="shrink-0 rounded-full px-1.5 text-red-400 hover:text-red-600" title="إزالة">✕</button>
+                    )}
+                  </div>
+                );
+              })}
+              {mats.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">لا مواد بذمّتك — اختر «بلا مبيع».</div>}
+            </div>
+
+            {/* «المبيع»: مجموع المواد تلقائياً — قابل للتعديل زيادةً ونقصاناً (يوزَّع نسبياً على الفاتورة) */}
+            <label className="mb-1 block text-xs font-semibold text-slate-500">
+              المبيع <span className="text-slate-400">(مجموع المواد {materialsTotal.toLocaleString("en-US")} — عدّله وسيوزَّع على أسعار الفاتورة نسبياً)</span>
+            </label>
+            <div className="mb-3 flex items-center gap-1.5">
+              <input type="number" value={saleStr} disabled={noSale}
+                onChange={(e) => { setSaleDirty(true); setSaleStr(e.target.value); }}
+                placeholder="0" dir="ltr" className="w-full rounded-lg border border-emerald-300 px-3 py-2 text-sm disabled:bg-slate-100" />
+              {saleDirty && !noSale && (
+                <button type="button" onClick={() => { setSaleDirty(false); setSaleStr(String(materialsTotal)); }}
+                  className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200" title="إعادة لمجموع المواد">↺</button>
+              )}
+            </div>
+
+            {/* «اشتراك»: إلزامي كتابته يدوياً ولو 0 — معلوماتي بلا أثر مالي (يُسجَّل عند التفعيل) */}
+            <label className="mb-1 block text-xs font-semibold text-slate-500">
+              اشتراك <span className="text-red-500">* إلزامي</span> <span className="text-slate-400">(اكتب 0 إن لم يُستلم — يظهر بذمّتك ويُسجَّل مالياً عند التفعيل)</span>
+            </label>
+            <input type="number" value={subStr} onChange={(e) => setSubStr(e.target.value)}
+              placeholder="اكتب المبلغ أو 0" dir="ltr" className="mb-3 w-full rounded-lg border border-indigo-300 px-3 py-2 text-sm" />
+          </>
+        )}
+
+        {/* سحب كود المكافأة — يخصم من «المبيع» حصراً (لا يلمس «اشتراك») */}
+        {fullFlow && rewardsOn && (
           <div className="mb-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-fuchsia-800">🎁 كود المكافأة</span>
+              <span className="text-sm font-semibold text-fuchsia-800">🎁 كود المكافأة <span className="text-[10px] font-normal">(يخصم من المبيع فقط)</span></span>
               {!rewardPulled ? (
-                <button type="button" onClick={pullReward} disabled={nAmount <= 0 || rewardBusy} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700 disabled:opacity-50">{rewardBusy ? "…" : "سحب كود المكافأة"}</button>
+                <button type="button" onClick={pullReward} disabled={nSale <= 0 || rewardBusy} className="rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-fuchsia-700 disabled:opacity-50">{rewardBusy ? "…" : "سحب كود المكافأة"}</button>
               ) : (
                 <button type="button" onClick={() => { setRewardPulled(false); setNoCode(false); }} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300">إلغاء السحب — يبقى الكود للمشترك</button>
               )}
@@ -1105,8 +1212,8 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
             {noCode && !rewardPulled && <div className="mt-2 text-xs font-semibold text-slate-500">ليس لديه كود خصم</div>}
             {rewardPulled && reward && (
               <div className="mt-2 text-xs text-fuchsia-700">
-                خُصم <b>{Math.min(reward.balance, nAmount).toLocaleString("en-US")}</b> د.ع — المتبقّي على الزبون: <b>{Math.max(0, nAmount - reward.balance).toLocaleString("en-US")}</b> د.ع
-                {reward.balance > nAmount && <span> (يبقى للمشترك {(reward.balance - nAmount).toLocaleString("en-US")} د.ع)</span>}
+                يُخصم من المبيع <b>{Math.min(reward.balance, nSale).toLocaleString("en-US")}</b> د.ع — صافي المبيع: <b>{Math.max(0, nSale - reward.balance).toLocaleString("en-US")}</b> د.ع
+                {reward.balance > nSale && <span> (يبقى للمشترك {(reward.balance - nSale).toLocaleString("en-US")} د.ع)</span>}
               </div>
             )}
           </div>
@@ -1114,26 +1221,6 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
 
         {fullFields && (
           <>
-            <label className="mb-1 block text-xs font-semibold text-slate-500">المواد المُستهلَكة من ذمّتك <span className="text-red-500">* إلزامي</span> — اختر مادةً أو «بلا مبيع»</label>
-            <div className="mb-3 space-y-1.5">
-              {/* «بلا مبيع»: خيار دائم لكل الفنيين — ليس مادة، بلا مبلغ (يبقى صفراً) */}
-              <div className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm ${noSale ? "border-slate-500 bg-slate-100" : "border-slate-200"}`}>
-                <input type="checkbox" checked={noSale} onChange={() => { setNoSale((v) => !v); setPicked({}); }} className="h-4 w-4 accent-slate-600" />
-                <span className="flex-1 font-semibold text-slate-700">🚫 بلا مبيع <span className="text-xs font-normal text-slate-400">(لم تُبَع أي مادة — المبلغ صفر)</span></span>
-              </div>
-              {mats.map((m) => {
-                const on = picked[m.itemId] != null;
-                return (
-                  <div key={m.itemId} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm ${on ? "border-amber-300 bg-amber-50" : "border-slate-200"}`}>
-                    <input type="checkbox" checked={on} onChange={() => togglePick(m)} className="h-4 w-4 accent-amber-500" />
-                    <span className="flex-1 text-slate-700">{m.name} <span className="text-xs text-slate-400">({m.priceSale.toLocaleString("en-US")} — متاح {m.available})</span></span>
-                    {on && <input type="number" value={picked[m.itemId]} min={1} max={m.available} onChange={(e) => setQty(m.itemId, Number(e.target.value), m.available)} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" dir="ltr" />}
-                  </div>
-                );
-              })}
-              {mats.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400">لا مواد بذمّتك — اختر «بلا مبيع».</div>}
-            </div>
-
             <label className="mb-1 block text-xs font-semibold text-slate-500">صورة العمل {photoMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400">(اختياري)</span>}</label>
             {/* مصدران للصورة: كاميرا الهاتف مباشرة، أو الاستوديو/ملفات الجهاز */}
             <div className="mb-2 grid grid-cols-2 gap-2">
@@ -1152,10 +1239,12 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
           </>
         )}
 
-        {nAmount > 0 && fullFields && Object.keys(picked).length > 0 && (
+        {/* الملخّص: المبيع فاتورة حقيقية، والاشتراك رقم بذمّتك يُسجَّل عند التفعيل */}
+        {fullFlow && (nSale > 0 || nSub > 0) && (
           <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
-            <div>قيمة المواد المباعة: <b>{materialsTotal.toLocaleString("en-US")}</b></div>
-            <div>يُسجَّل للمبيعات: <b className="text-emerald-700">{salesShare.toLocaleString("en-US")}</b> — للنثرية: <b className="text-blue-700">{pettyShare.toLocaleString("en-US")}</b></div>
+            <div>🧾 المبيع (فاتورة): <b className="text-emerald-700">{nSale.toLocaleString("en-US")}</b>{materialsTotal > 0 && nSale !== materialsTotal && <span className="text-slate-400"> (مجموع المواد {materialsTotal.toLocaleString("en-US")} — يوزَّع الفرق نسبياً)</span>}</div>
+            <div>📄 اشتراك (بذمّتك — يُسجَّل عند التفعيل): <b className="text-indigo-700">{nSub.toLocaleString("en-US")}</b></div>
+            <div>💰 الكلي المستلم منك عند الاكمال: <b>{(nSale + nSub).toLocaleString("en-US")}</b> د.ع</div>
           </div>
         )}
 
@@ -1234,7 +1323,7 @@ function compressImage(file: File): Promise<string> {
 function ArchiveModal({ cardTypes, offices, onClose }: { cardTypes: CardType[]; offices: Office[]; onClose: () => void }) {
   type ArchCard = {
     id: number; title: string; description: string | null; kind: string; assignee: string | null;
-    technicianId: number | null; amount: number | null; serviceDetails: string | null; durationSec: number | null;
+    technicianId: number | null; amount: number | null; subAmount: number | null; serviceDetails: string | null; durationSec: number | null;
     completedAt: string | null; archivedAt: string | null; history: string | null; office: string | null;
   };
   const [rows, setRows] = useState<ArchCard[]>([]);
@@ -1325,6 +1414,8 @@ function ArchiveModal({ cardTypes, offices, onClose }: { cardTypes: CardType[]; 
               {rows.map((c) => (
                 <li key={c.id} className="rounded-lg border border-slate-200 bg-white">
                   <button onClick={() => setOpenId(openId === c.id ? null : c.id)} className="flex w-full flex-wrap items-center gap-1.5 px-3 py-2 text-right">
+                    {/* رقم التكت ظاهر على كل بطاقة */}
+                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-white" dir="ltr">#{c.id}</span>
                     <span className="text-sm font-semibold text-slate-800">{c.title}</span>
                     <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold text-white ${kindColor(c.kind)}`}>{c.kind}</span>
                     {c.office && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">🏢 {c.office}</span>}
@@ -1332,7 +1423,8 @@ function ArchiveModal({ cardTypes, offices, onClose }: { cardTypes: CardType[]; 
                       {c.assignee && <span>👤 {c.assignee}</span>}
                       {/* المدة المستغرقة ظاهرة على البطاقة مباشرة (بلا فتحها) */}
                       {c.durationSec != null && <span className="rounded bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">⏱ {fmtDuration(c.durationSec)}</span>}
-                      <b className="text-emerald-700">{(c.amount ?? 0).toLocaleString("en-US")} د.ع</b>
+                      <b className="text-emerald-700">مبيع {(c.amount ?? 0).toLocaleString("en-US")}</b>
+                      {(c.subAmount ?? 0) > 0 && <b className="text-indigo-700">اشتراك {(c.subAmount ?? 0).toLocaleString("en-US")}</b>}
                       {c.completedAt && <span dir="ltr">{fmtDateTime(c.completedAt)}</span>}
                     </span>
                   </button>

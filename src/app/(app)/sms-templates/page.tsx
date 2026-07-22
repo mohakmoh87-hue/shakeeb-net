@@ -53,7 +53,9 @@ const EXTRA_VARS: Record<string, { token: string; label: string }[]> = {
     { token: "{details}", label: "تفاصيل الصيانة" },
     { token: "{technician}", label: "اسم الفني" },
     { token: "{date}", label: "تاريخ العملية" },
-    { token: "{amount}", label: "المبلغ" },
+    { token: "{amount}", label: "المبلغ الكلي (مبيع+اشتراك)" },
+    { token: "{المبيع}", label: "مبلغ المبيع" },
+    { token: "{الاشتراك}", label: "مبلغ الاشتراك" },
     { token: "{office}", label: "اسم المكتب" },
   ],
   reward: [

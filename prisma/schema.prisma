@@ -762,7 +762,8 @@ model TaskCard {
   // بيانات الإنجاز
   serviceDetails String? // تفاصيل الصيانة
   techNote      String? // ملاحظة يكتبها الفني على البطاقة (تُعرض على وجهها)
-  amount        Float? // المبلغ المستلم من الزبون
+  amount        Float? // «المبيع» الصافي (المالي عبر فاتورة الصيانة) — وللتوصيل: مبلغه المعلوماتي
+  subAmount     Float? // «اشتراك»: استلمه الفني للاشتراك — معلوماتي بلا أثر مالي (يُسجَّل عند التفعيل)
   materialsInfo String? // JSON بالمواد المباعة من الذمم (للعرض)
   completedAt   DateTime?
   settled       Boolean   @default(false) // تمّ التحصيل (اكمال)
