@@ -4,8 +4,19 @@ import { guardOwner } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
-// حد خطة Neon الحالية (ميغابايت) — للمؤشّر فقط
-const LIMIT_MB = 500;
+// حد خطة القاعدة (ميغابايت) — للمؤشّر فقط. يُضبط من البيئة حسب المزود:
+// Neon المجاني 500 (الافتراضي — الإنتاج الحالي)، Aiven المجاني 1000.
+const LIMIT_MB = Number(process.env.DB_SIZE_LIMIT_MB) || 500;
+
+// هوية القاعدة الفعلية (مضيف واسم فقط — بلا بيانات اعتماد) ليعرف المالك أي قاعدة يخدم الموقع
+function dbIdentity(): { dbHost: string; dbName: string } {
+  try {
+    const u = new URL(process.env.DATABASE_URL ?? "");
+    return { dbHost: u.hostname, dbName: u.pathname.replace(/^\//, "") };
+  } catch {
+    return { dbHost: "غير معروف", dbName: "" };
+  }
+}
 
 // مؤشّر حجم قاعدة البيانات (للمالك): الحجم الكلي + أكبر الجداول + نسبة الامتلاء
 export async function GET() {
@@ -27,6 +38,7 @@ export async function GET() {
   const percent = Math.round((usedMB / LIMIT_MB) * 1000) / 10;
 
   return NextResponse.json({
+    ...dbIdentity(),
     usedMB: Math.round(usedMB * 10) / 10,
     limitMB: LIMIT_MB,
     percent,

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Manager = { id: number; username: string; plainPassword: string | null };
-type DbSize = { usedMB: number; limitMB: number; percent: number; level: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
+type DbSize = { dbHost?: string; dbName?: string; usedMB: number; limitMB: number; percent: number; level: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
 type Agent = {
   id: number; name: string; officeCap: number; planExpiry: string | null;
   isTrial: boolean; approved: boolean; officeCount: number; userCount: number; subscriberCount: number;
@@ -102,6 +102,11 @@ export default function OwnerPage() {
               🗄️ حجم قاعدة البيانات
               {dbSize.level === "danger" && <span className="mr-2 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">تحذير: تجاوز 80%!</span>}
               {dbSize.level === "warn" && <span className="mr-2 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">تنبيه: تجاوز 60%</span>}
+              {dbSize.dbHost && (
+                <div className="mt-0.5 text-[11px] font-semibold text-slate-500" dir="ltr" title="القاعدة التي يتصل بها الموقع فعلياً الآن">
+                  {dbSize.dbHost}{dbSize.dbName ? ` / ${dbSize.dbName}` : ""}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <div className="text-sm font-extrabold text-slate-700" dir="ltr">
