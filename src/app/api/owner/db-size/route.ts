@@ -23,7 +23,7 @@ export async function GET() {
   const g = await guardOwner();
   if (g.error) return g.error;
 
-  const [[db], tables] = await Promise.all([
+  const [[db], tables, [totals]] = await Promise.all([
     prisma.$queryRawUnsafe<{ bytes: bigint }[]>(
       `SELECT pg_database_size(current_database()) AS bytes`,
     ),
@@ -32,16 +32,25 @@ export async function GET() {
        FROM pg_stat_user_tables s
        ORDER BY pg_total_relation_size(s.relid) DESC LIMIT 8`,
     ),
+    // إجمالي الصفوف الحيّة والجداول — لعرض «الحجم الكلي» بلمحة
+    prisma.$queryRawUnsafe<{ rows: bigint; tables: bigint }[]>(
+      `SELECT COALESCE(sum(n_live_tup), 0) AS rows, count(*) AS tables FROM pg_stat_user_tables`,
+    ),
   ]);
 
   const usedMB = Number(db?.bytes ?? 0) / 1024 / 1024;
+  const freeMB = Math.max(0, LIMIT_MB - usedMB);
   const percent = Math.round((usedMB / LIMIT_MB) * 1000) / 10;
+  const r1 = (n: number) => Math.round(n * 10) / 10;
 
   return NextResponse.json({
     ...dbIdentity(),
-    usedMB: Math.round(usedMB * 10) / 10,
+    usedMB: r1(usedMB),
+    freeMB: r1(freeMB), // المتبقي حتى حدّ الخطة
     limitMB: LIMIT_MB,
     percent,
+    totalRows: Number(totals?.rows ?? 0), // إجمالي الصفوف الحيّة في القاعدة
+    tableCount: Number(totals?.tables ?? 0), // عدد الجداول
     level: percent >= 80 ? "danger" : percent >= 60 ? "warn" : "ok",
     topTables: tables.map((t) => ({ table: t.tbl, mb: Math.round((Number(t.total) / 1024 / 1024) * 100) / 100, rows: Number(t.rows) })),
   });

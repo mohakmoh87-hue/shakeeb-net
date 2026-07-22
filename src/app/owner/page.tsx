@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Manager = { id: number; username: string; plainPassword: string | null };
-type DbSize = { dbHost?: string; dbName?: string; usedMB: number; limitMB: number; percent: number; level: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
+type DbSize = { dbHost?: string; dbName?: string; usedMB: number; freeMB?: number; limitMB: number; percent: number; totalRows?: number; tableCount?: number; level: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
 type Agent = {
   id: number; name: string; officeCap: number; planExpiry: string | null;
   isTrial: boolean; approved: boolean; officeCount: number; userCount: number; subscriberCount: number;
@@ -132,6 +132,27 @@ export default function OwnerPage() {
               className={`h-full rounded-full transition-all ${dbSize.level === "danger" ? "bg-red-500" : dbSize.level === "warn" ? "bg-amber-500" : "bg-emerald-500"}`}
               style={{ width: `${Math.min(100, Math.max(1, dbSize.percent))}%` }}
             />
+          </div>
+          {/* تفصيل: مستخدم · متبقٍّ · إجمالي الصفوف والجداول */}
+          <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-slate-200">
+              <div className="text-[10px] text-slate-400">مستخدم</div>
+              <div className="text-sm font-extrabold text-slate-700" dir="ltr">{dbSize.usedMB} MB</div>
+            </div>
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-slate-200">
+              <div className="text-[10px] text-slate-400">المتبقي</div>
+              <div className={`text-sm font-extrabold ${dbSize.level === "danger" ? "text-red-600" : dbSize.level === "warn" ? "text-amber-600" : "text-emerald-600"}`} dir="ltr">
+                {dbSize.freeMB != null ? `${dbSize.freeMB} MB` : "—"}
+              </div>
+            </div>
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-slate-200">
+              <div className="text-[10px] text-slate-400">إجمالي الصفوف</div>
+              <div className="text-sm font-extrabold text-slate-700" dir="ltr">{dbSize.totalRows != null ? dbSize.totalRows.toLocaleString("en-US") : "—"}</div>
+            </div>
+            <div className="rounded-lg bg-white/70 px-2.5 py-1.5 ring-1 ring-slate-200">
+              <div className="text-[10px] text-slate-400">عدد الجداول</div>
+              <div className="text-sm font-extrabold text-slate-700" dir="ltr">{dbSize.tableCount ?? "—"}</div>
+            </div>
           </div>
           <div className="mt-1 text-[11px] text-slate-400">اضغط لعرض أكبر الجداول {showDbDetail ? "▲" : "▼"}</div>
           {showDbDetail && (
