@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
+  // جذر العمل = مجلد المشروع نفسه: يمنع استنتاجاً خاطئاً عند وجود lockfiles أعلى
+  // (مثل نسخ العمل worktrees)، ويضمن أن server.js يخرج في .next/standalone مباشرة.
+  turbopack: { root: path.resolve(__dirname) },
+  // مخرجات standalone: خادم Node مكتفٍ بذاته في .next/standalone للنشر في حاويات
+  // (Cloud Run). فرسل يتجاهل هذا الخيار ويستعمل مهايئه الخاص — لا أثر على الإنتاج.
+  output: "standalone",
   // undici يُحمَّل كحزمة Node خارجية (لتكامل SAS4 مع الشهادات الموقّعة ذاتياً)
   serverExternalPackages: ["undici", "whatsapp-web.js", "puppeteer", "puppeteer-core", "qrcode"],
   // استبعاد مكتبات العامل الثقيلة (واتساب/متصفّح) من حزم دوال الاستضافة (Vercel) —

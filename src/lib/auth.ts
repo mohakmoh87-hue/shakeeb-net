@@ -4,7 +4,13 @@ import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
 // مفتاح توقيع الجلسة: مطلوب في الإنتاج (فشل واضح إن غاب بدل استخدام مفتاح عام صامت)
-if (!process.env.AUTH_SECRET && process.env.NODE_ENV === "production") {
+// يُستثنى طور البناء: Cloud Build يقيّم الوحدات أثناء «جمع بيانات الصفحات» بلا متغيرات
+// بيئة (الأسرار تُحقن وقت التشغيل فقط) — الفشل الصريح يبقى قائماً عند الإقلاع الفعلي.
+if (
+  !process.env.AUTH_SECRET &&
+  process.env.NODE_ENV === "production" &&
+  process.env.NEXT_PHASE !== "phase-production-build"
+) {
   throw new Error("AUTH_SECRET غير مضبوط في الإنتاج — أوقف التشغيل بدل استخدام مفتاح افتراضي عام");
 }
 const SECRET = new TextEncoder().encode(

@@ -4,7 +4,12 @@ import { jwtVerify } from "jose";
 
 // حماية المسارات (Proxy - بديل middleware في Next 16)
 // فحص مبدئي خفيف للجلسة: يتحقق من صلاحية التوكن فقط (jose يعمل في بيئة edge)
-if (!process.env.AUTH_SECRET && process.env.NODE_ENV === "production") {
+// يُستثنى طور البناء (Cloud Build بلا متغيرات بيئة) — الفشل الصريح يبقى وقت التشغيل
+if (
+  !process.env.AUTH_SECRET &&
+  process.env.NODE_ENV === "production" &&
+  process.env.NEXT_PHASE !== "phase-production-build"
+) {
   throw new Error("AUTH_SECRET غير مضبوط في الإنتاج");
 }
 const SECRET = new TextEncoder().encode(

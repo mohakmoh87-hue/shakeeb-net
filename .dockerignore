@@ -1,0 +1,14 @@
+# يُستنسخ داخل الصورة فقط ما يلزم البناء — الباقي ضجيج أو أسرار
+node_modules
+.next
+.git
+.claude
+.vercel
+.vscode
+.env
+.env.*
+*.log
+*.output
+Dockerfile
+.dockerignore
+.gcloudignore

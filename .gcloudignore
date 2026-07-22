@@ -1,0 +1,14 @@
+# ما يُرفع إلى Cloud Build عند gcloud run deploy --source
+# (نفس منطق .dockerignore + استثناء .git الضخم)
+.gcloudignore
+.git
+.gitignore
+node_modules
+.next
+.claude
+.vercel
+.vscode
+.env
+.env.*
+*.log
+*.output
