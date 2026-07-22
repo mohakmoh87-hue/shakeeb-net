@@ -22,7 +22,7 @@ async function readSession(req: NextRequest): Promise<{ authed: boolean; isTech:
   const token = req.cookies.get("mynet_session")?.value;
   if (!token) return { authed: false, isTech: false };
   try {
-    const { payload } = await jwtVerify(token, SECRET);
+    const { payload } = await jwtVerify(token, SECRET, { algorithms: ["HS256"] });
     return { authed: true, isTech: (payload as { kind?: string }).kind === "technician" };
   } catch {
     return { authed: false, isTech: false };

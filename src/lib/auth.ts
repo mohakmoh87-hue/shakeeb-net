@@ -56,7 +56,9 @@ export async function verifyToken(
   token: string,
 ): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, SECRET);
+    // تثبيت الخوارزمية على HS256 حصراً (دفاع في العمق): يمنع أي توكن موقّع بخوارزمية
+    // أخرى (none/RS256) — كل توكناتنا HS256 فلا أثر على الجلسات القائمة أو الجديدة.
+    const { payload } = await jwtVerify(token, SECRET, { algorithms: ["HS256"] });
     return payload as unknown as SessionPayload;
   } catch {
     return null;
