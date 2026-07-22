@@ -28,7 +28,7 @@ export interface SyncResult {
     activations: number; internal: number; external: number;
     phantom: number; markedUsed: number; duplicates: number; imported: number;
   };
-  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean };
+  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean; skippedPkg: number };
   events: SyncEvent[];
   reportSent: boolean | null; // true=أُرسل، false=مؤجّل (واتساب مقطوع)، null=لا تقرير
   error?: string;
@@ -86,7 +86,7 @@ export async function runOfficeSync(
   const empty: SyncResult = {
     office: officeName,
     phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0 },
-    phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false },
+    phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0 },
     events: [], reportSent: null,
   };
 
@@ -245,7 +245,7 @@ export async function runOfficeSync(
   // تجلب كل مشتركي الساس (500/صفحة مع تأخير)، فتقوم بأمرين:
   //  (أ) استيراد كل مشترك موجود في الساس وغير موجود في البرنامج (استيراد شامل — السيناريو 7 لكامل القاعدة).
   //  (ب) تصحيح تاريخ الانتهاء بصمت للمشتركين الموجودين عند اختلافه (السيناريوهان 4 و5).
-  let checked = 0, dateFixed = 0, phase2Imported = 0, phase2Failed = false;
+  let checked = 0, dateFixed = 0, phase2Imported = 0, phase2Failed = false, skippedPkg = 0;
   try {
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
@@ -253,6 +253,12 @@ export async function runOfficeSync(
       select: { id: true, sasId: true, dateTo: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
+
+    // فئات الاشتراك التي أضافها المدير في البرنامج (للمطابقة بالاسم، بلا حساسية حالة/فراغات):
+    // مشتركٌ فئته في الساس غير موجودة ضمنها ⇒ لا يُمَسّ إطلاقاً — لا تصحيح تاريخ انتهائه
+    // ولا أيامه المتبقية (بطلب صريح: فئة مجهولة = اتركه كما هو)
+    const progPackages = await prisma.package.findMany({ select: { name: true } });
+    const knownPkg = new Set(progPackages.map((p) => (p.name ?? "").trim().toLowerCase()).filter(Boolean));
 
     const toImport: {
       name: string | null; netUser: string | null; phone: string | null;
@@ -272,7 +278,12 @@ export async function runOfficeSync(
         });
         continue;
       }
-      // موجود → تصحيح التاريخ بصمت عند الاختلاف
+      // موجود → لكن إن كانت فئته في الساس غير موجودة ضمن فئات البرنامج ⇒ لا أي تعديل
+      // عليه (لا تاريخ انتهاء ولا أيام متبقية) — يُحصى فقط للتقرير.
+      const sasPkg = (u.packageName ?? "").trim().toLowerCase();
+      if (sasPkg && !knownPkg.has(sasPkg)) { skippedPkg++; continue; }
+
+      // فئته معروفة → تصحيح التاريخ بصمت عند الاختلاف
       checked++;
       if (validDate && calendarDiffers(p.dateTo, validDate)) {
         await prisma.subscriber.update({ where: { id: p.id }, data: { dateTo: validDate } });
@@ -293,7 +304,7 @@ export async function runOfficeSync(
   const result: SyncResult = {
     office: officeName,
     phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported },
-    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed },
+    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg },
     events, reportSent: null,
   };
 
@@ -319,6 +330,7 @@ function buildReportText(r: SyncResult, day: Date): string {
   let text = `📋 تقرير المزامنة اليومي — ${r.office}\n`;
   text += `تفعيلات ${formatDate(day)}: ${p1.activations} | كروت البرنامج: ${p1.internal} | خارجي: ${p1.external}\n`;
   text += `تصحيح تواريخ: ${r.phase2.dateFixed} من ${r.phase2.checked} مشترك\n`;
+  if (r.phase2.skippedPkg > 0) text += `⏭️ تُركوا بلا تعديل (فئتهم غير مضافة بالبرنامج): ${r.phase2.skippedPkg} مشترك\n`;
   if (r.phase2.imported > 0) text += `🆕 استيراد شامل من الساس: ${r.phase2.imported} مشترك\n`;
 
   const byScenario = (s: SyncEvent["scenario"]) => r.events.filter((e) => e.scenario === s);
