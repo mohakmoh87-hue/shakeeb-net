@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.subscriber.update({ where: { id: sub.id }, data: { rewardCode: null, rewardBalance: 0 } });
+    await tx.subscriber.update({ where: { id: sub.id }, data: { rewardCode: null, rewardBalance: 0, rewardGrantCount: 0 } });
     await tx.rewardLog.create({
       data: {
         agentId: g.session?.agentId ?? null, towerId: sub.towerId, subscriberId: sub.id,

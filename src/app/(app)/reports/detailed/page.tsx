@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import PrintButton from "@/components/PrintButton";
 import PrintNowButton from "@/components/PrintNowButton";
+import MoneyTxModal from "@/components/MoneyTxModal";
 import { formatDate } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 
@@ -44,6 +45,7 @@ export default function DetailedReport() {
   const [from, setFrom] = useState(iso(firstOfMonth));
   const [to, setTo] = useState(iso(new Date()));
   const [data, setData] = useState<Data | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null); // حركة مالية مفتوحة التفاصيل
   const { can } = usePermission();
 
   const load = useCallback(() => {
@@ -143,14 +145,14 @@ export default function DetailedReport() {
                   {data.money.length === 0 ? (
                     <tr><td colSpan={can("receipts.void") ? 6 : 5} className="p-4 text-center text-slate-400">لا توجد حركات</td></tr>
                   ) : data.money.map((m) => (
-                    <tr key={m.id} className="border-t border-slate-100">
+                    <tr key={m.id} onClick={() => setDetailId(m.id)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" title="عرض التفاصيل">
                       <td className="p-2">{m.id}</td>
                       <td className="p-2 text-emerald-600">{m.moneyIn ? fmt(m.moneyIn) : "—"}</td>
                       <td className="p-2 text-red-600">{m.moneyOut ? fmt(m.moneyOut) : "—"}</td>
                       <td className="p-2 text-slate-600">{m.notes ?? "—"}</td>
                       <td className="p-2">{fmtDate(m.date)}</td>
                       {can("receipts.void") && (
-                        <td className="no-print p-2"><button onClick={() => voidMoney(m.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100">🗑 حذف</button></td>
+                        <td className="no-print p-2"><button onClick={(e) => { e.stopPropagation(); voidMoney(m.id); }} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100">🗑 حذف</button></td>
                       )}
                     </tr>
                   ))}
@@ -160,6 +162,9 @@ export default function DetailedReport() {
           </div>
         </div>
       )}
+
+      {/* نافذة تفاصيل الحركة المالية */}
+      {detailId != null && <MoneyTxModal id={detailId} onClose={() => setDetailId(null)} />}
     </div>
   );
 }

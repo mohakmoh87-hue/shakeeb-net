@@ -210,6 +210,7 @@ model Subscriber {
   transferredTo String? // اليوزر الجديد بعد التحويل (للتنبيه)
   rewardCode   String? // كود المكافأة الحالي (8 خانات) — نظام أكواد المكافآت
   rewardBalance Int?  @default(0) // رصيد المكافأة المتراكم (يُخصم عند الاستخدام)
+  rewardGrantCount Int @default(0) // عدد منح المكافأة المتراكمة منذ آخر سحب — عند 10 يتوقف المنح حتى سحبٍ (كلي/جزئي) يصفّره
   sasId        Int? // معرّف المشترك في SAS4 (للربط والتفعيل)
   cardCode     String? // cardID
   // حقول شاشة المشترك التفصيلية

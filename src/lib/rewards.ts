@@ -6,6 +6,10 @@ import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 // عند كل تفعيل يتراكم رصيد مكافأة (= مبلغ الباقة × عدد الأشهر) ويُولَّد كود 8 خانات
 // ويُرسل للمشترك بواتساب. يُستخدم عند الصيانة أو البيع من المخزن كخصم، فيُخصم بحدّ
 // الفاتورة ويبقى الباقي. عند انقطاع التجديد (فجوة) يُصفَّر الرصيد قبل المنح الجديد.
+// حد التراكم: 10 منح دون أي سحب ⇒ يتوقف المنح؛ أي سحب (كلي أو جزئي) يصفّر العدّاد
+// فيستأنف المنح بكود جديد حتى الحد نفسه.
+
+export const REWARD_MAX_GRANTS = 10;
 
 // أحرف/أرقام بلا الملتبس (O0I1) — كود واضح للقراءة
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -34,10 +38,17 @@ export async function grantReward(
 ): Promise<{ code: string; balance: number; granted: number } | null> {
   const granted = Math.max(0, Math.round((opts.rewardAmount || 0) * (opts.months || 1)));
   if (granted <= 0) return null;
+  // حد التراكم: بلغ 10 منح دون سحب ⇒ لا مكافأة جديدة (انقطاع التجديد يبدأ عدّاً جديداً لأن الرصيد يُصفَّر)
+  const cur = await tx.subscriber.findUnique({ where: { id: opts.subscriberId }, select: { rewardGrantCount: true } });
+  const count = Math.max(0, cur?.rewardGrantCount ?? 0);
+  if (!opts.hadGap && count >= REWARD_MAX_GRANTS) return null;
   const base = opts.hadGap ? 0 : Math.max(0, opts.currentBalance || 0);
   const balance = base + granted;
   const code = genRewardCode();
-  await tx.subscriber.update({ where: { id: opts.subscriberId }, data: { rewardCode: code, rewardBalance: balance } });
+  await tx.subscriber.update({
+    where: { id: opts.subscriberId },
+    data: { rewardCode: code, rewardBalance: balance, rewardGrantCount: opts.hadGap ? 1 : count + 1 },
+  });
   await tx.rewardLog.create({
     data: {
       agentId: opts.agentId ?? null, towerId: opts.towerId ?? null, subscriberId: opts.subscriberId,
@@ -59,11 +70,15 @@ export async function reverseRewardGrant(
   if (!grant) return 0;
   const already = await tx.rewardLog.findFirst({ where: { subscriberId: opts.subscriberId, refId: opts.entryId, kind: "reverse" } });
   if (already) return 0; // عُكِس مسبقاً
-  const sub = await tx.subscriber.findUnique({ where: { id: opts.subscriberId }, select: { rewardBalance: true, rewardCode: true, name: true } });
+  const sub = await tx.subscriber.findUnique({ where: { id: opts.subscriberId }, select: { rewardBalance: true, rewardCode: true, name: true, rewardGrantCount: true } });
   const bal = sub?.rewardBalance ?? 0;
   const back = Math.min(bal, grant.amount); // لا يتجاوز الرصيد الحالي (قد يكون استُخدم جزئياً)
   const balanceAfter = Math.max(0, bal - back);
-  await tx.subscriber.update({ where: { id: opts.subscriberId }, data: { rewardBalance: balanceAfter, rewardCode: balanceAfter > 0 ? sub?.rewardCode ?? null : null } });
+  await tx.subscriber.update({
+    where: { id: opts.subscriberId },
+    // عكس المنح يُنقص عدّاد التراكم واحداً (المنحة أُلغيت فلا تُحسب ضمن حد الـ10)
+    data: { rewardBalance: balanceAfter, rewardCode: balanceAfter > 0 ? sub?.rewardCode ?? null : null, rewardGrantCount: Math.max(0, (sub?.rewardGrantCount ?? 0) - 1) },
+  });
   await tx.rewardLog.create({
     data: {
       agentId: opts.agentId ?? null, towerId: opts.towerId ?? null, subscriberId: opts.subscriberId,
@@ -97,7 +112,8 @@ export async function redeemReward(
   const balanceAfter = bal - discount;
   await tx.subscriber.update({
     where: { id: opts.subscriberId },
-    data: { rewardBalance: balanceAfter, rewardCode: balanceAfter > 0 ? sub?.rewardCode ?? null : null },
+    // أي سحب (كلي أو جزئي) يصفّر عدّاد التراكم — يستأنف المنح بكود جديد حتى حد الـ10
+    data: { rewardBalance: balanceAfter, rewardCode: balanceAfter > 0 ? sub?.rewardCode ?? null : null, rewardGrantCount: 0 },
   });
   await tx.rewardLog.create({
     data: {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import MoneyTxModal from "@/components/MoneyTxModal";
 import { formatDate } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 
@@ -43,6 +44,7 @@ export default function CashboxPage() {
   const [to, setTo] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [detailId, setDetailId] = useState<number | null>(null); // حركة مفتوحة التفاصيل
 
   const load = useCallback((f = "", t = "") => {
     const qs = new URLSearchParams();
@@ -237,7 +239,7 @@ export default function CashboxPage() {
                 <tr><td colSpan={can("receipts.void") ? 7 : 6} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
               ) : (
                 sortedTxs.map((t) => (
-                  <tr key={t.id} className="border-t border-slate-100">
+                  <tr key={t.id} onClick={() => setDetailId(t.id)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" title="عرض التفاصيل">
                     <td className="p-3">{t.id}</td>
                     <td className="p-3">{fmtDate(t.date)}</td>
                     <td className="p-3 font-semibold text-emerald-600">{t.moneyIn ? fmt(t.moneyIn) : "—"}</td>
@@ -246,7 +248,7 @@ export default function CashboxPage() {
                     <td className="p-3 text-slate-600">{t.notes ?? "—"}</td>
                     {can("receipts.void") && (
                       <td className="p-3">
-                        <button onClick={() => voidTx(t)} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑 حذف</button>
+                        <button onClick={(e) => { e.stopPropagation(); voidTx(t); }} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑 حذف</button>
                       </td>
                     )}
                   </tr>
@@ -256,6 +258,9 @@ export default function CashboxPage() {
           </table>
         </div>
       </div>
+
+      {/* نافذة تفاصيل الحركة المالية */}
+      {detailId != null && <MoneyTxModal id={detailId} onClose={() => setDetailId(null)} />}
     </div>
   );
 }
