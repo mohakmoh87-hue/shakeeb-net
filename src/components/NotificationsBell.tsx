@@ -31,7 +31,8 @@ export default function NotificationsBell() {
       if (!d) return; setItems(d.notifications ?? []); setUnread(d.unread ?? 0);
     });
   }, []);
-  useEffect(() => { load(); const t = setInterval(load, 20000); return () => clearInterval(t); }, [load]);
+  // تحديث الجرس كل 60ث (كان 20ث) — حمية بولنغ؛ الأحداث العاجلة تصل Push فوراً على أي حال
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, [load]);
 
   // حالة اشتراك Push الحالية
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
+import { getAgentSetting, setAgentSetting } from "@/lib/agentSettings";
 
 // المفاتيح المعروفة للإعدادات
 const KNOWN = ["office", "dollar", "country", "whatsapp", "silent", "reminderTime", "reportTime", "backupTime"] as const;
@@ -17,21 +17,22 @@ const schema = z.object({
   backupTime: z.string().nullable().optional(), // وقت إرسال النسخة الاحتياطية يومياً (HH:MM)
 });
 
+// عزل الوكلاء: كل وكيل يقرأ ويكتب قيمه هو فقط (مفاتيح "key:agentId")؛
+// الوكيل الأول يرث قيمه القديمة من المفاتيح العامة تلقائياً (getAgentSetting)
 export async function GET() {
   const g = await guard("settings.manage");
   if (g.error) return g.error;
+  const agentId = g.session?.agentId ?? null;
 
-  const rows = await prisma.systemSetting.findMany({
-    where: { type: { in: [...KNOWN] } },
-  });
   const map: Record<string, string> = {};
-  for (const r of rows) if (r.type) map[r.type] = r.value ?? "";
+  for (const key of KNOWN) map[key] = await getAgentSetting(key, agentId, "");
   return NextResponse.json(map);
 }
 
 export async function POST(request: Request) {
   const g = await guard("settings.manage");
   if (g.error) return g.error;
+  const agentId = g.session?.agentId ?? null;
 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
@@ -42,15 +43,8 @@ export async function POST(request: Request) {
   for (const key of KNOWN) {
     const value = parsed.data[key];
     if (value === undefined) continue;
-    const existing = await prisma.systemSetting.findFirst({ where: { type: key } });
-    if (existing) {
-      await prisma.systemSetting.update({
-        where: { id: existing.id },
-        data: { value: value ?? "" },
-      });
-    } else {
-      await prisma.systemSetting.create({ data: { type: key, value: value ?? "" } });
-    }
+    // الكتابة على مفتاح الوكيل المعزول حصراً — لا يلمس قيم بقية الوكلاء أبداً
+    await setAgentSetting(key, agentId, value ?? "");
   }
   return NextResponse.json({ ok: true });
 }

@@ -11,10 +11,6 @@ const g = globalThis as unknown as { __schedulerStarted?: boolean };
 
 const TZ = "Asia/Baghdad";
 
-async function getSetting(type: string, fallback = ""): Promise<string> {
-  const s = await prisma.systemSetting.findFirst({ where: { type } });
-  return s?.value ?? s?.text ?? fallback;
-}
 
 // جلب قالب رسالة حسب التصنيف
 // قالب رسالة لوكيل محدّد (عزل المستأجر) — كل وكيل قوالبه الخاصّة
@@ -49,7 +45,13 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
   const pkgNameMap = new Map(packages.map((p) => [p.id, p.name]));
   const offices = await prisma.tower.findMany({ select: { id: true, name: true, waEnabled: true, agentId: true } });
   const officeMap = new Map(offices.map((o) => [o.id, o]));
-  const fallbackOffice = await getSetting("office", "SHAKEEB");
+  // اسم النظام الافتراضي لكل وكيل (معزول) — يُقرأ بحسب وكيل مكتب كل مستلم مع تخزين مؤقت
+  const { getAgentSetting } = await import("@/lib/agentSettings");
+  const fallbackCache = new Map<number | null, string>();
+  const fallbackOfficeFor = async (aid: number | null): Promise<string> => {
+    if (!fallbackCache.has(aid)) fallbackCache.set(aid, await getAgentSetting("office", aid, "SHAKEEB"));
+    return fallbackCache.get(aid)!;
+  };
   // قالب "expiring" لكل وكيل (يُجلب مرّة ويُخزَّن) — عزل المستأجر
   const tplCache = new Map<number, string | null>();
   async function templateFor(agentId: number | null): Promise<string | null> {
@@ -76,7 +78,7 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
       remaining: sub.carry ?? 0,
       price: sub.packageId ? priceMap.get(sub.packageId) ?? 0 : 0,
       code: sub.rewardCode, balance: sub.rewardBalance ?? 0, // كود/رصيد الخصم (فارغ لمن لا رصيد له)
-      office: office?.name ?? fallbackOffice,
+      office: office?.name ?? (await fallbackOfficeFor(office?.agentId ?? null)),
     });
     const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId); // واتساب مكتب المشترك
     await prisma.message.create({
@@ -261,12 +263,16 @@ export function startScheduler() {
   cron.schedule("* * * * *", async () => {
     const nowHM = baghdadHHMM();
     // القائد فقط ينفّذ العمل (إرسال/مزامنة/تنظيف) — يمنع الازدواج عند تعدّد الحواسيب
-    const { isLeaderNow } = await import("@/lib/hybridAgent");
+    const { isLeaderNow, getWorkerAgentId } = await import("@/lib/hybridAgent");
     if (!isLeaderNow()) return;
     // القائد يستضيف واتساب لكل المكاتب (يشمل حالة تولّي القيادة بعد انطفاء غيره)
     void ensureOfficeWhatsApp();
-    const reminderTime = (await getSetting("reminderTime", "13:00")).trim() || "13:00";
-    const reportTime = (await getSetting("reportTime", "23:55")).trim() || "23:55";
+    // أوقات وكيل هذا العامل حصراً (عزل الوكلاء): كل قائد وكيلٍ يقرأ أوقاته هو —
+    // تغيير وكيلٍ لأوقاته لا يمسّ بقية الوكلاء (كانت المفاتيح عامة مشتركة — سُدّت)
+    const { getAgentSetting } = await import("@/lib/agentSettings");
+    const wAgent = getWorkerAgentId();
+    const reminderTime = await getAgentSetting("reminderTime", wAgent, "13:00");
+    const reportTime = await getAgentSetting("reportTime", wAgent, "23:55");
     if (nowHM === reminderTime) {
       // الإرسال التلقائي فقط لمكاتب "الإرسال الصامت" (silent != "0")؛
       // مكاتب غير الصامتة تنتظر موافقة المستخدم عند أول دخول يومي.
@@ -279,12 +285,10 @@ export function startScheduler() {
       runManagerDailyReport(undefined, { oncePerDay: true }).catch((e) => console.error("[scheduler] managerReport:", e));
     }
     // نسخة احتياطية يومية إلى إيميل الوكيل (افتراضي 04:00 بغداد).
-    // قائد كل وكيل ينفّذها لوكيله فقط (تفادي التكرار عند تعدّد قادة الوكلاء).
-    const backupTime = (await getSetting("backupTime", "04:00")).trim() || "04:00";
+    // قائد كل وكيل ينفّذها لوكيله فقط بوقت وكيله (تفادي التكرار وعزل الأوقات).
+    const backupTime = await getAgentSetting("backupTime", wAgent, "04:00");
     if (nowHM === backupTime) {
-      const { getWorkerAgentId } = await import("@/lib/hybridAgent");
-      const wAgentId = getWorkerAgentId();
-      import("@/lib/backupJob").then((m) => m.runDailyBackups(wAgentId)).catch((e) => console.error("[scheduler] dailyBackup:", e));
+      import("@/lib/backupJob").then((m) => m.runDailyBackups(wAgent)).catch((e) => console.error("[scheduler] dailyBackup:", e));
     }
     // مزامنة اشتراكات كل مكتب حسب وقته المضبوط (مرحلتان: كروت الأمس ثم تصحيح التواريخ)
     try {

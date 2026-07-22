@@ -31,8 +31,9 @@ export default async function ReceiptPage({
   const agent = session?.agentId != null
     ? await prisma.agent.findUnique({ where: { id: session.agentId }, select: { name: true } })
     : null;
-  const officeSetting = await prisma.systemSetting.findFirst({ where: { type: "office" } });
-  const officeName = agent?.name || officeSetting?.value || "SHAKEEB";
+  // اسم النظام الافتراضي من إعدادات وكيل الجلسة حصراً (عزل الوكلاء)
+  const { getAgentSetting } = await import("@/lib/agentSettings");
+  const officeName = agent?.name || (await getAgentSetting("office", session?.agentId, "SHAKEEB"));
   const tpl = await getReceiptTemplate(session?.agentId ?? null);
 
   return (

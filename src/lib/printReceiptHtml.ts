@@ -44,13 +44,14 @@ function line(label: string, value: string, bold = false): string {
   return `<div class="line"><span class="lbl">${esc(label)}</span><span${bold ? ' class="b"' : ""}>${esc(value)}</span></div>`;
 }
 
-// اسم العلامة: اسم الوكيل ثم الإعداد العام ثم الافتراضي (نفس منطق صفحات الوصل)
+// اسم العلامة: اسم الوكيل ثم إعداد الوكيل «office» (معزول) ثم الافتراضي
 async function brandName(agentId: number | null): Promise<string> {
   const agent = agentId != null
     ? await prisma.agent.findUnique({ where: { id: agentId }, select: { name: true } })
     : null;
-  const officeSetting = await prisma.systemSetting.findFirst({ where: { type: "office" } });
-  return agent?.name || officeSetting?.value || "SHAKEEB";
+  if (agent?.name) return agent.name;
+  const { getAgentSetting } = await import("@/lib/agentSettings");
+  return getAgentSetting("office", agentId, "SHAKEEB");
 }
 
 function header(tpl: { showLogo: boolean; logo: string; headerText: string }, officeName: string, subtitle: string): string {

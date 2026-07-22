@@ -75,7 +75,10 @@ export default function TechOpsBar({ techName }: { techName: string }) {
       }
     };
     check();
-    const checkTimer = setInterval(check, 30_000);
+    // فحص «هل التتبع مطلوب؟» كل 60ث (كان 30ث) — حمية بولنغ: يخفّض طلبات كل فني طوال
+    // اليوم للنصف. عند تفعيل التتبع فعلاً يبقى إرسال الموقع كل 30ث (جودة التتبع كما هي)،
+    // والتطبيق الأصلي يُوقَظ فورياً عبر FCM أصلاً.
+    const checkTimer = setInterval(check, 60_000);
     return () => { stopped = true; clearInterval(checkTimer); stopLoc(); };
   }, []);
 
