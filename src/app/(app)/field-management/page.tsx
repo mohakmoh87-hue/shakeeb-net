@@ -113,15 +113,24 @@ export default function FieldManagementPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  // تحديث تلقائي كل ٥ ثوانٍ ما دامت الصفحة مفتوحة (يشاهد الفني البطاقات الجديدة فوراً بلا خروج/دخول).
+  // تحديث تلقائي كل ٢٠ ثانية (كان ٥ — حمية بولنغ: يخفّض طلبات كل جهاز فاتح للوحة ~٤ أضعاف).
   // يتوقّف مؤقتاً أثناء أي نافذة/تحرير/سحب كي لا يقاطع الكتابة، وحين تكون الشاشة مخفيّة.
+  // ولا يتأخر المستخدم فعلياً: كل تفاعل (إنجاز/نقل/إضافة/إغلاق نافذة) يحدّث فوراً أصلاً،
+  // والعودة للتبويب تُحدّث لحظياً عبر مستمع visibilitychange أدناه.
   useEffect(() => {
     const t = setInterval(() => {
       if (document.hidden) return;
       if (sel || completing || postponing || dragId != null || addingTo != null) return;
       load(officeId);
-    }, 5000);
-    return () => clearInterval(t);
+    }, 20000);
+    // العودة للتبويب/التطبيق ⇒ تحديث فوري (لا انتظار الدورة القادمة)
+    const onVisible = () => {
+      if (document.hidden) return;
+      if (sel || completing || postponing || dragId != null || addingTo != null) return;
+      load(officeId);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVisible); };
   }, [load, officeId, sel, completing, postponing, dragId, addingTo]);
 
   // اسم الدور الحالي (للفني: اسمه ومعرّفه) — لعرضه في الشريط السفلي وللتحويل على نفسه
