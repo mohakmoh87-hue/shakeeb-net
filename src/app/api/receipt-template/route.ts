@@ -35,9 +35,11 @@ export async function GET() {
   const g = await guard("receipt.template");
   if (g.error) return g.error;
   const key = receiptKey(g.session?.agentId);
-  // مفتاح الوكيل، ثم ارتداد للمفتاح القديم "receipt" (توافق مع الوكيل الأول)
+  // مفتاح الوكيل، ثم ارتداد للمفتاح القديم "receipt" — للوكيل الأول (1) حصراً:
+  // القالب القديم ملكه (ما قبل العزل)، وأي وكيل آخر بلا قالب يأخذ الافتراضي المحايد
+  // (كان الارتداد عاماً فيُظهر شعار/ترويسة الوكيل الأول لوكلاء جدد — سُدّ)
   let row = await prisma.systemSetting.findFirst({ where: { type: key } });
-  if (!row) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
+  if (!row && g.session?.agentId === 1) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
   let data = DEFAULT_RECEIPT;
   if (row?.text) {
     try { data = { ...DEFAULT_RECEIPT, ...JSON.parse(row.text) }; } catch { /* keep default */ }

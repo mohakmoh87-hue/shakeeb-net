@@ -28,7 +28,9 @@ export async function getReceiptTemplate(agentId?: number | null): Promise<Recei
   let row = agentId != null
     ? await prisma.systemSetting.findFirst({ where: { type: `receipt:${agentId}` } })
     : null;
-  if (!row) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
+  // الارتداد للمفتاح القديم "receipt" للوكيل الأول (1) حصراً — قالبه ما قبل العزل؛
+  // غيره يأخذ الافتراضي المحايد (سدّ تسريب شعار/ترويسة الوكيل الأول لوكلاء جدد)
+  if (!row && agentId === 1) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
   if (row?.text) {
     try { return { ...DEFAULT_RECEIPT, ...JSON.parse(row.text) }; } catch { /* ignore */ }
   }
