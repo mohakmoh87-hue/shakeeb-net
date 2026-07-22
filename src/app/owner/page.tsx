@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 
 type Manager = { id: number; username: string; plainPassword: string | null };
 type DbSize = { dbHost?: string; dbName?: string; usedMB: number; freeMB?: number; limitMB: number; percent: number; totalRows?: number; tableCount?: number; level: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
+type Metric = { used: number; limit: number; freePct: number; remaining?: number };
+type HostUsage = { hasData: boolean; month: string; updatedAt: string | null; requests: Metric; vcpuSeconds: Metric | null; gibSeconds: Metric | null };
 type Agent = {
   id: number; name: string; officeCap: number; planExpiry: string | null;
   isTrial: boolean; approved: boolean; officeCount: number; userCount: number; subscriberCount: number;
@@ -26,6 +28,7 @@ export default function OwnerPage() {
   const [dbSize, setDbSize] = useState<DbSize | null>(null); // مؤشّر حجم قاعدة البيانات
   const [dbSizeAt, setDbSizeAt] = useState<Date | null>(null); // وقت آخر قراءة للحجم
   const [showDbDetail, setShowDbDetail] = useState(false);
+  const [host, setHost] = useState<HostUsage | null>(null); // استخدام الاستضافة (Azure)
 
   const load = useCallback(() => {
     fetch("/api/owner/agents").then((r) => r.ok ? r.json() : { agents: [] }).then((d) => { setAgents(d.agents ?? []); setLoading(false); });
@@ -40,6 +43,13 @@ export default function OwnerPage() {
     const t = setInterval(loadDbSize, 60_000);
     return () => clearInterval(t);
   }, [loadDbSize]);
+  // استخدام الاستضافة (Azure) — يُحدَّث يومياً من مهمة مجدولة؛ نقرؤه عند الفتح فقط
+  useEffect(() => {
+    fetch("/api/owner/hosting-usage", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setHost(d); })
+      .catch(() => {});
+  }, []);
 
   async function addAgent() {
     setMsg("");
@@ -164,6 +174,50 @@ export default function OwnerPage() {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* مؤشّر استخدام الاستضافة (Azure) مقابل المنحة المجانية الشهرية */}
+      {host && (
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-bold text-slate-800">☁️ استخدام الاستضافة (Azure)
+              <span className="mr-2 text-[11px] font-normal text-slate-400">هذا الشهر · المنحة المجانية تتجدّد شهرياً</span>
+            </div>
+            <div className="text-sm font-extrabold text-emerald-600" dir="ltr">
+              {host.requests.used.toLocaleString("en-US")} / {(host.requests.limit / 1_000_000)}M طلب
+              <span className="text-slate-400"> ({host.requests.freePct}%)</span>
+            </div>
+          </div>
+          {!host.hasData && (
+            <div className="mt-1 text-[11px] text-amber-600">لم يصل قياس هذا الشهر بعد — يُحدَّث تلقائياً يومياً من Azure.</div>
+          )}
+          {/* شريط الطلبات */}
+          <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-200" dir="ltr">
+            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, Math.max(host.requests.used > 0 ? 1 : 0, host.requests.freePct))}%` }} />
+          </div>
+          {/* خانات: الطلبات المتبقية + المعالج + الذاكرة */}
+          <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
+              <div className="text-[10px] text-slate-400">الطلبات المتبقية</div>
+              <div className="text-sm font-extrabold text-slate-700" dir="ltr">{(host.requests.remaining ?? 0).toLocaleString("en-US")}</div>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
+              <div className="text-[10px] text-slate-400">ثواني المعالج</div>
+              <div className="text-sm font-extrabold text-slate-700" dir="ltr">
+                {host.vcpuSeconds ? `${host.vcpuSeconds.used.toLocaleString("en-US")} / ${(host.vcpuSeconds.limit / 1000)}K` : "—"}
+              </div>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
+              <div className="text-[10px] text-slate-400">ذاكرة (GiB·ث)</div>
+              <div className="text-sm font-extrabold text-slate-700" dir="ltr">
+                {host.gibSeconds ? `${host.gibSeconds.used.toLocaleString("en-US")} / ${(host.gibSeconds.limit / 1000)}K` : "—"}
+              </div>
+            </div>
+          </div>
+          {host.updatedAt && (
+            <div className="mt-1 text-[10px] text-slate-400">آخر تحديث من Azure: {new Date(host.updatedAt).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
           )}
         </div>
       )}
