@@ -10,11 +10,14 @@ neonConfig.webSocketConstructor = ws;
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
 
-// اختيار السائق عبر البيئة: الافتراضي Neon (إنتاج فرسل الحالي وحواسيب المكاتب كما هي)،
-// وعند DB_DRIVER=pg يعمل سائق PostgreSQL القياسي (node-postgres) لأي استضافة وقاعدة
-// قياسيتين مثل Cloud Run + Aiven — نفس الشيفرة على البيئتين بلا فرعين.
+// اختيار السائق تلقائياً من مضيف الرابط: neon.tech ← سائق Neon (إنتاج فرسل الحالي
+// وحواسيب المكاتب كما هي)، وأي مضيف آخر ← السائق القياسي pg (Aiven وغيرها) — فيكفي
+// تبديل DATABASE_URL وحده (موقعاً وحواسيب) دون متغيرات إضافية. DB_DRIVER يبقى تجاوزاً صريحاً.
 function createAdapter() {
-  if (process.env.DB_DRIVER === "pg") {
+  const driver =
+    process.env.DB_DRIVER ??
+    (/\.neon\.tech/i.test(process.env.DATABASE_URL ?? "") ? "neon" : "pg");
+  if (driver === "pg") {
     // DB_SSL_CA_B64 (اختياري): شهادة CA بصيغة base64 — قواعد مثل Aiven توقّع شهادة
     // خادمها بمرجع خاص بالمشروع، فنمرّرها صراحةً ليبقى التحقق الكامل من TLS قائماً.
     // ملاحظة إلزامية: sslmode داخل الرابط يطغى على إعداد ssl الصريح في مكتبة pg،

@@ -56,33 +56,42 @@ if (Test-Path (Join-Path $app ".git")) {
 }
 Set-Location $app
 
-# 3) الاعدادات (.env) — تُدخَل مرّة واحدة فقط
+# 3) الاعدادات (.env) — تنصيب جديد يجلبها بالرمز، ورمز صالح على تنصيب قائم يحدّث
+#    رابط القاعدة والشهادة فقط (مع الحفاظ على بقية الاسطر) — وهي آلية تبديل القاعدة رسمياً
 $envFile = Join-Path $app ".env"
-if (-not (Test-Path $envFile)) {
-  Write-Host ""
-  # رابط قاعدة البيانات: يُجلب حصراً برمز التنصيب المؤقت — لا إدخال يدوي
-  $db = ""
-  if ($env:INSTALL_TOKEN) {
-    Write-Host "جلب الإعدادات برمز التنصيب..." -ForegroundColor Yellow
-    try {
-      $cfg = iwr -UseBasicParsing "__ORIGIN__/api/hybrid/install-config?token=$($env:INSTALL_TOKEN)" | ConvertFrom-Json
-      $db = $cfg.databaseUrl
-    } catch { Write-Host "تعذر جلب الاعدادات بالرمز (قد يكون منتهيا)." -ForegroundColor Red }
-  }
-  if (-not $db) {
-    Write-Host "توقف التنصيب: الرمز غير صالح او منتهي الصلاحية (صالح 30 دقيقة ولمرة واحدة)." -ForegroundColor Red
-    Write-Host "ولد امر تنصيب جديدا من: حسابات المدير - (تنصيب حاسبة مكتب)." -ForegroundColor Yellow
-    Read-Host "اضغط Enter للانهاء"
-    exit 1
-  }
+$cfg = $null
+if ($env:INSTALL_TOKEN) {
+  Write-Host "جلب الإعدادات برمز التنصيب..." -ForegroundColor Yellow
+  try {
+    $cfg = iwr -UseBasicParsing "__ORIGIN__/api/hybrid/install-config?token=$($env:INSTALL_TOKEN)" | ConvertFrom-Json
+  } catch { Write-Host "تعذر جلب الاعدادات بالرمز (قد يكون منتهيا)." -ForegroundColor Red }
+}
+if (-not (Test-Path $envFile) -and (-not $cfg -or -not $cfg.databaseUrl)) {
+  Write-Host "توقف التنصيب: الرمز غير صالح او منتهي الصلاحية (صالح 30 دقيقة ولمرة واحدة)." -ForegroundColor Red
+  Write-Host "ولد امر تنصيب جديدا من: حسابات المدير - (تنصيب حاسبة مكتب)." -ForegroundColor Yellow
+  Read-Host "اضغط Enter للانهاء"
+  exit 1
+}
+if ($cfg -and $cfg.databaseUrl) {
   # إزالة channel_binding=require (يسبّب فشل اتصال مع سائق pg على بعض الإصدارات)
-  $db = ($db -replace '&channel_binding=require','') -replace '\?channel_binding=require&','?'
+  $db = ($cfg.databaseUrl -replace '&channel_binding=require','') -replace '\?channel_binding=require&','?'
   $db = $db.Trim()
-  $chars = (48..57) + (65..90) + (97..122)
-  $secret = -join ($chars | Get-Random -Count 48 | ForEach-Object { [char]$_ })
-  $machineId = [guid]::NewGuid().ToString()
-  $lines = @(("DATABASE_URL=" + $db), ("AUTH_SECRET=" + $secret), "RUN_WORKER=1", ("MACHINE_ID=" + $machineId))
+  # الاحتفاظ بكل الاسطر القائمة (AUTH_SECRET/MACHINE_ID/اعدادات اضافية) عدا الرابط والشهادة
+  $keep = @()
+  if (Test-Path $envFile) {
+    $keep = @(Get-Content $envFile | Where-Object { $_ -and $_ -notmatch '^(DATABASE_URL|DB_SSL_CA_B64)=' })
+  }
+  if (-not ($keep | Where-Object { $_ -match '^AUTH_SECRET=' })) {
+    $chars = (48..57) + (65..90) + (97..122)
+    $keep += ("AUTH_SECRET=" + (-join ($chars | Get-Random -Count 48 | ForEach-Object { [char]$_ })))
+  }
+  if (-not ($keep | Where-Object { $_ -match '^RUN_WORKER=' })) { $keep += "RUN_WORKER=1" }
+  if (-not ($keep | Where-Object { $_ -match '^MACHINE_ID=' })) { $keep += ("MACHINE_ID=" + [guid]::NewGuid().ToString()) }
+  $lines = @(("DATABASE_URL=" + $db))
+  if ($cfg.caB64) { $lines += ("DB_SSL_CA_B64=" + $cfg.caB64) }
+  $lines += $keep
   Set-Content -Encoding utf8 -Path $envFile -Value $lines
+  Write-Host "حُدّثت اعدادات الاتصال بقاعدة البيانات." -ForegroundColor Green
 }
 
 # 4) التثبيت والتوليد (العامل المستقل لا يحتاج next build)

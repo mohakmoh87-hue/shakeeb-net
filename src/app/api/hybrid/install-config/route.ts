@@ -24,5 +24,6 @@ export async function GET(request: Request) {
   // لمرّة واحدة: علّمه مستخدَماً بعد نجاح تجهيز الرابط
   await prisma.installToken.update({ where: { token }, data: { usedAt: new Date() } });
 
-  return NextResponse.json({ databaseUrl, agentId: row.agentId });
+  // شهادة CA للقاعدة (إن كانت مضبوطة — قواعد مثل Aiven): تُسلَّم للحاسبة لتوثيق TLS كاملاً
+  return NextResponse.json({ databaseUrl, agentId: row.agentId, caB64: process.env.DB_SSL_CA_B64 ?? null });
 }
