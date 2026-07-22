@@ -5,7 +5,9 @@
 # ===== 1) التبعيات =====
 FROM node:22-slim AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json prisma.config.ts ./
+# postinstall = prisma generate — يحتاج السكيمة أثناء npm ci
+COPY prisma ./prisma
 RUN npm ci
 
 # ===== 2) البناء =====
