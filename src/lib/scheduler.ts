@@ -274,12 +274,23 @@ export function startScheduler() {
     const wAgent = getWorkerAgentId();
     const reminderTime = await getAgentSetting("reminderTime", wAgent, "13:00");
     const reportTime = await getAgentSetting("reportTime", wAgent, "23:55");
-    if (nowHM === reminderTime) {
-      // الإرسال التلقائي فقط لمكاتب "الإرسال الصامت" (silent != "0")؛
-      // مكاتب غير الصامتة تنتظر موافقة المستخدم عند أول دخول يومي.
-      prisma.tower.findMany({ where: { isDeleted: false, NOT: { OR: [{ silent: "0" }, { waEnabled: "0" }] } }, select: { id: true } })
-        .then((offs) => runExpiringReminder(offs.map((o) => o.id)))
-        .catch((e) => console.error("[scheduler] expiring:", e));
+    // تذكير الانتهاء: وقتٌ خاص لكل مكتب (towers.reminderTime — مرتبط بوقت تشغيل حاسبته:
+    // مكتب يفتح 12:00 وآخر 2:00)، والمكتب بلا وقتٍ خاص يتبع وقت الوكيل العام.
+    // الإرسال التلقائي فقط لمكاتب "الإرسال الصامت" (silent != "0")؛
+    // مكاتب غير الصامتة تنتظر موافقة المستخدم عند أول دخول يومي.
+    {
+      const offs = await prisma.tower.findMany({
+        where: {
+          isDeleted: false,
+          ...(wAgent != null ? { agentId: wAgent } : {}), // عزل: مكاتب وكيل هذا العامل حصراً
+          NOT: { OR: [{ silent: "0" }, { waEnabled: "0" }] },
+        },
+        select: { id: true, reminderTime: true },
+      }).catch(() => [] as { id: number; reminderTime: string | null }[]);
+      const due = offs.filter((o) => (o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
+      if (due.length) {
+        runExpiringReminder(due).catch((e) => console.error("[scheduler] expiring:", e));
+      }
     }
     if (nowHM === reportTime) {
       // احتياطي: يُرسل تقرير أي مكتب لم يُرسَل تقريره اليوم (لمن أطفأ دون تسجيل خروج)
@@ -293,7 +304,7 @@ export function startScheduler() {
     }
     // مزامنة اشتراكات كل مكتب حسب وقته المضبوط (مرحلتان: كروت الأمس ثم تصحيح التواريخ)
     try {
-      const offices = await prisma.tower.findMany({ where: { isDeleted: false, syncEnabled: "1", syncTime: { not: null } }, select: { id: true, syncTime: true } });
+      const offices = await prisma.tower.findMany({ where: { isDeleted: false, syncEnabled: "1", syncTime: { not: null }, ...(wAgent != null ? { agentId: wAgent } : {}) }, select: { id: true, syncTime: true } });
       for (const o of offices) {
         if ((o.syncTime ?? "").trim() === nowHM) {
           const { runOfficeSync } = await import("@/lib/subscriptionSync");

@@ -23,6 +23,7 @@ const schema = z.object({
   waEnabled: z.string().nullable().optional(), // 1 = تفعيل واتساب المكتب
   syncTime: z.string().nullable().optional(), // وقت مزامنة الاشتراكات اليومية (HH:MM)
   syncEnabled: z.string().nullable().optional(), // 1 = تفعيل المزامنة التلقائية
+  reminderTime: z.string().nullable().optional(), // وقت تذكير الانتهاء الخاص بهذا المكتب (HH:MM)
   // موقع المكتب للبصمة الجغرافية
   lat: z.coerce.number().nullable().optional(),
   lng: z.coerce.number().nullable().optional(),
