@@ -23,13 +23,16 @@ const schema = z.object({
   useReward: z.boolean().optional().default(false), // سحب كود مكافأة المشترك خصماً
 });
 
-// سجل وصولات فواتير المبيع (المكان الوحيد لعرضها) — مع اسم المشترك/الزبون
+// سجل وصولات فواتير المبيع — مع اسم المشترك/الزبون.
+// العزل: فواتير مكاتب وكيل المستخدم فقط (+ فواتير بلا مكتب أنشأها هو) — كانت بلا فلترة
 export async function GET() {
   const g = await guard("inventory.manage");
   if (g.error) return g.error;
 
+  const { towerScope } = await import("@/lib/guard");
+  const scope = await towerScope(g.session);
   const invoices = await prisma.invoice.findMany({
-    where: { isDeleted: false },
+    where: { isDeleted: false, OR: [{ ...scope }, { towerId: null, user: g.session.username }] },
     orderBy: { id: "desc" },
     take: 200,
   });
