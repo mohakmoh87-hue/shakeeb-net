@@ -223,22 +223,15 @@ export async function runOfficeSync(
     const key = `${sub.sasId}|${(c.serial ?? "").trim()}`;
     if (sasUserPinSet.has(key)) continue; // للكارت تفعيل فعلي في SAS → سليم
 
-    await prisma.$transaction(async (tx) => {
-      // إرجاع الكارت للمخزون كغير مستخدم — يبقى سعره (دين الكارت) كما هو دون زيادة أو نقصان
-      await tx.rechargeCard.update({
-        where: { id: c.id },
-        data: { useDate: null, subscriberId: null, userName: null, reservedBy: null, reservedAt: null },
-      });
-      // توثيق بإدراج خام بلا RETURNING: العامل المحلي يتصل بدور الوكيل الذي له على
-      // audit_logs «إدراج فقط» بلا قراءة، بينما create في Prisma يضيف RETURNING
-      // (يتطلب صلاحية قراءة) فترفضه القاعدة وتفشل المعاملة كلها.
-      await tx.$executeRaw`INSERT INTO audit_logs (action, entity, "entityId", details)
-        VALUES ('SYNC_PHANTOM_CARD', 'rechargeCard', ${String(c.id)}, ${`تفعيل وهمي (${officeName}) — إرجاع كارت ${c.serial} للمخزن دون تغيير ديون الكارتات`})`;
-    });
+    // وضع آمن مؤقت — إبلاغ فقط بلا أي تغيير على الكارت:
+    // ثبت ميدانياً (21 كارتاً أُرجعت خطأً رغم أن تفعيلاتها حقيقية في SAS) أن كشف
+    // «الوهمي» يعطي إيجابيات كاذبة — الأرجح لأن sasFetchActivationsForDay يفترض أن
+    // ترقيم صفحات SAS تصاعدي (الأقدم أولاً) فيرجع قائمة أمس ناقصة/فارغة عند العكس.
+    // لا يُعاد التصرف التلقائي إلا بعد تدقيق الجلب على بيانات SAS الفعلية.
     phantom++;
     events.push({
       scenario: 1, subscriber: sub.name ?? sub.netUser, pin: c.serial,
-      detail: `إرجاع الكارت للمخزن دون تغيير ديون الكارتات`,
+      detail: `يبدو بلا تفعيل مقابل في SAS — لم يُغيَّر شيء (وضع آمن: يُدقَّق يدوياً)`,
     });
   }
 
