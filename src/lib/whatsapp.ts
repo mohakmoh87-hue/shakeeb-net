@@ -190,18 +190,55 @@ export function hostsOfficeLocally(officeId: number): boolean {
   try { return fs.existsSync(path.join(SESSION_DIR, `session-office-${officeId}`)); } catch { return false; }
 }
 
-// مستطلِع الاتصال: كل حاسبة تُبقي جلسات واتساب مكاتبها (الموجودة على قرصها) متصلة — بمهلة 60ث بين المحاولات.
+// عزل صارم: التخلّي محلياً عن جلسة مكتبٍ ليس لهذه الحاسبة (نُسِخت خطأً) — يهدم العميل
+// ويحذف الملفات المحلية، ودون logout (كي لا يُفصَل واتساب المكتب على حاسبته الحقيقية).
+// ويحرّر الملكية في القاعدة فقط إن كانت مسجّلة لهذه الحاسبة (فيعكس العرض «غير متصل»).
+async function abandonStrayOffice(officeId: number, mid: string | null) {
+  const st = store(officeId);
+  if (st.client) { try { await Promise.resolve(st.client.destroy()).catch(() => {}); } catch { /* تجاهل */ } st.client = null; }
+  st.state = "disconnected"; st.qr = null; st.lastError = null; st.startedAt = null;
+  deleteSessionDir(officeId);
+  if (mid) {
+    await prisma.waSession.updateMany({
+      where: { towerId: officeId, hostMachineId: mid },
+      data: { state: "disconnected", hostMachineId: null },
+    }).catch(() => {});
+  }
+}
+
+// مستطلِع الاتصال: كل حاسبة تُبقي جلسة مكتبها متصلة — بمهلة 60ث بين المحاولات.
 export function startWaRequestPoller() {
   const gg = globalThis as unknown as { __waPollerStarted?: boolean };
   if (gg.__waPollerStarted) return;
   gg.__waPollerStarted = true;
   setInterval(async () => {
     try {
-      const ids = localOfficeIds();
-      if (ids.length === 0) return;
-      // ملكية الجلسات الحصرية: جلسةٌ مالكتها حاسبة أخرى ⇒ نسختي المحلية قديمة (بقايا
-      // استضافة سابقة) — تُحذف ذاتياً بدل إحيائها والتقاتل معها (يُبطل واتساب الجلسة كلها)
       const mid = process.env.MACHINE_ID || null;
+      const ids = localOfficeIds();
+
+      // ===== عزل واتساب صارم: هذه الحاسبة مربوطة بمكتب (towerId) ⇒ تستضيف جلسته فقط =====
+      // أي جلسة مكتبٍ آخر على قرصها (نُسِخت خطأً/تسرّبت) تُحذف فوراً ولا تُستضاف أبداً —
+      // فلا تحجز حاسبةٌ مكتباً ليس لها حتى لو وُجدت ملفاته. (يُلغي «القائد يستضيف الكل».)
+      const { getWorkerTowerId } = await import("@/lib/hybridAgent");
+      const boundTower = getWorkerTowerId();
+      if (boundTower != null) {
+        for (const id of ids) {
+          if (id === boundTower) continue;
+          await abandonStrayOffice(id, mid);
+          console.log(`[whatsapp] 🧹 عزل صارم: حُذفت جلسة مكتب ${id} — هذه الحاسبة مربوطة بمكتب ${boundTower} فقط`);
+        }
+        if (hostsOfficeLocally(boundTower)) {
+          const st = store(boundTower);
+          const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
+          const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
+          // مكتبي: أستضيفه دائماً وأتجاهل أي ملكية قديمة عالقة لحاسبة أخرى — أثبّتها لي عند ready
+          if (!alive && !recentlyTried) void startWhatsApp(boundTower);
+        }
+        return;
+      }
+
+      // ===== غير مربوطة (توافق قديم): الملكية الحصرية — جلسةٌ مالكتها حاسبة أخرى تُحذف محلياً =====
+      if (ids.length === 0) return;
       const owners = new Map<number, string | null>();
       if (mid) {
         try {
@@ -213,7 +250,6 @@ export function startWaRequestPoller() {
         const st = store(id);
         const owner = owners.get(id) ?? null;
         if (mid && owner && owner !== mid) {
-          // لا نلمس جلسة حيّة عندي (احتياط: الملكية ستُصحَّح عند ready القادمة)
           const aliveHere = st.client && (st.state === "ready" || st.state === "authenticated");
           if (!aliveHere) {
             deleteSessionDir(id);
@@ -281,21 +317,31 @@ export async function destroyAllWhatsApp(): Promise<void> {
 
 // حالة واتساب المكاتب كما نشرها الوكيل في السحابة (Neon) — تقرأها كل مسارات الموقع.
 // مهمّة لأن الموقع (Vercel) لا يملك عميل واتساب في ذاكرته؛ الحالة الحقيقية في القاعدة.
-// إن لم يوجد قائد متصل (وكيل مُعتمَد نشط)، لا شيء يستضيف واتساب فعلياً ⇒ الكل "غير متصل".
+// «متصل» صادق فقط إذا كانت الحاسبة المُستضيفة لجلسة المكتب تُرسل نبضة الآن — وإلا فهي
+// حالة مجمّدة (مستضيفها مُطفأ) ⇒ «غير متصل». يمنع ظهور مكتبٍ «متصلاً» بعد إطفاء حاسبته.
 export async function readOfficeStates(officeIds: number[]): Promise<Record<number, WaState>> {
   const out: Record<number, WaState> = {};
   for (const id of officeIds) out[id] = "disconnected";
   if (officeIds.length === 0) return out;
-  const leader = await prisma.hybridWorker.findFirst({
-    where: { approved: true, lastSeen: { gte: new Date(Date.now() - 60_000) } },
-    select: { id: true },
+  // الحواسيب المستضيفة المتصلة الآن (معتمَدة، غير محظورة، نبضة خلال 60ث)
+  const onlineWorkers = await prisma.hybridWorker.findMany({
+    where: { approved: true, blocked: false, lastSeen: { gte: new Date(Date.now() - 60_000) } },
+    select: { machineId: true },
   });
-  if (!leader) return out; // لا وكيل نشط ⇒ لا اتصال واتساب
+  if (onlineWorkers.length === 0) return out; // لا حاسبة نشطة ⇒ لا اتصال واتساب فعلي
+  const online = new Set(onlineWorkers.map((w) => w.machineId));
   const rows = await prisma.waSession.findMany({
     where: { towerId: { in: officeIds } },
-    select: { towerId: true, state: true },
+    select: { towerId: true, state: true, hostMachineId: true },
   });
-  for (const r of rows) out[r.towerId] = (r.state as WaState) ?? "disconnected";
+  for (const r of rows) {
+    // «ready» صادقة فقط إذا كانت حاسبتها المستضيفة (hostMachineId) متصلة الآن؛ وإلا مُجمّدة
+    if (r.state === "ready" && (!r.hostMachineId || !online.has(r.hostMachineId))) {
+      out[r.towerId] = "disconnected";
+    } else {
+      out[r.towerId] = (r.state as WaState) ?? "disconnected";
+    }
+  }
   return out;
 }
 

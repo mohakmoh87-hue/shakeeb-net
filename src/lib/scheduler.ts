@@ -234,12 +234,18 @@ async function ensureOfficeWhatsApp() {
   officeWaStarted = true;
   try {
     const { startWhatsApp, hostsOfficeLocally } = await import("@/lib/whatsapp");
-    const { getWorkerAgentId } = await import("@/lib/hybridAgent");
+    const { getWorkerAgentId, getWorkerTowerId } = await import("@/lib/hybridAgent");
     const aid = getWorkerAgentId();
     if (aid == null) { officeWaStarted = false; return; } // بلا وكيل بعد (غير معتمَد) — لا تستضِف شيئاً
-    // مكاتب وكيل هذه الحاسبة التي تملك جلستها على قرصها فقط — كل حاسبة تستضيف مكتبها هي (مالكة الجلسة)
+    // عزل واتساب صارم: حاسبة مربوطة بمكتب (towerId) ⇒ تستضيف جلسة مكتبها فقط لا غير.
+    // غير المربوطة (توافق قديم): مكاتب وكيلها التي تملك جلستها على قرصها.
+    const boundTower = getWorkerTowerId();
     const offices = (await prisma.tower.findMany({
-      where: { isDeleted: false, agentId: aid, OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }] },
+      where: {
+        isDeleted: false, agentId: aid,
+        ...(boundTower != null ? { id: boundTower } : {}),
+        OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }],
+      },
       select: { id: true },
     })).filter((o) => hostsOfficeLocally(o.id));
     if (offices.length) console.log(`[scheduler] بدء واتساب ${offices.length} مكتب (جلساتها على هذه الحاسبة)`);
