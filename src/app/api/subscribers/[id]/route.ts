@@ -73,6 +73,15 @@ export async function PUT(
     g.session && !g.session.isAdmin && g.session.towerId != null
       ? { ...parsed.data, towerId: g.session.towerId }
       : parsed.data;
+  // عزل المستأجر: نقل المشترك لمكتب آخر مقصور على مكاتب وكيل المستخدم
+  // (كان الأدمن يستطيع تعيين towerId لمكتب وكيل آخر)
+  if (data.towerId != null && data.towerId !== existing.towerId) {
+    const { agentTowerIds } = await import("@/lib/guard");
+    const towers = await agentTowerIds(g.session);
+    if (!towers.includes(data.towerId)) {
+      return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
+    }
+  }
 
   const updated = await prisma.subscriber.update({
     where: { id: Number(id) },

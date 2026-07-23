@@ -24,6 +24,12 @@ export async function GET(request: Request) {
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const reqOffice = new URL(request.url).searchParams.get("officeId");
   const officeId = resolveFieldOffice(session, reqOffice ? Number(reqOffice) : null);
+  // عزل المستأجر: المكتب المطلوب يجب أن يتبع وكيل المستخدم (كان يُقبل معرّف أي مكتب —
+  // فتُكشف أسماء/رواتب/رموز فنيّي وكيل آخر)
+  if (officeId != null) {
+    const towers = await agentTowerIds(session);
+    if (!towers.includes(officeId)) return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+  }
   const isManager = can(session, "field.manage");
   // فنيّو المكتب + المُعارون له «دعماً» + من مكاتبهم الإضافية تشمل هذا المكتب
   // (كلاهما يتصرّف كفنيّ المكتب: ذمم مواد، بطاقات، تحصيل)

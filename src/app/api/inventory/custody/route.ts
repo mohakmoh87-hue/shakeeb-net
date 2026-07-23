@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, towerScope } from "@/lib/guard";
+import { guard, towerScope, agentTowerIds } from "@/lib/guard";
 import { techEffectiveOffices } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +64,15 @@ export async function POST(request: Request) {
   // مكاتب الفني الفعّالة: الأصلي + الإضافية الدائمة + الدعم المؤقت —
   // يستلم/يرجع مواد أي مكتب منها كفنيّ أصلي فيه
   const effective = techEffectiveOffices(tech);
+  // عزل المستأجر: الفني والمادة يجب أن يتبعا وكيل المستخدم (كان المدير يستطيع
+  // تسليم/إرجاع عهدة لفني وكيل آخر بالمعرّف)
+  const agentTowers = await agentTowerIds(session);
+  if (!effective.some((o) => agentTowers.includes(o))) {
+    return NextResponse.json({ error: "الفني لا يتبع حسابك" }, { status: 403 });
+  }
+  if (item.towerId != null && !agentTowers.includes(item.towerId)) {
+    return NextResponse.json({ error: "المادة لا تتبع حسابك" }, { status: 403 });
+  }
   // عزل المكاتب: المادة من مكتب المستخدم، والفني من مكتبه أو ضمن مكاتبه الفعّالة
   if (session && !session.isAdmin && session.towerId != null) {
     const techOk = effective.includes(session.towerId);

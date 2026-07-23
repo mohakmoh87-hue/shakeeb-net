@@ -77,7 +77,8 @@ export async function POST(request: Request) {
   const scope = await towerScope(g.session);
   let where: Record<string, unknown> = { isDeleted: false, ...scope };
   if (target === "one" && subscriberId) {
-    where = { id: subscriberId };
+    // عزل: حتى الإرسال الفردي محصور بمشتركي نطاق المستخدم (كان بلا فلترة)
+    where = { id: subscriberId, isDeleted: false, ...scope };
   } else if (target === "list") {
     where = { isDeleted: false, ...scope, id: { in: subscriberIds ?? [] } };
   } else if (target === "debtors") {
