@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, towerScope } from "@/lib/guard";
 
 // المشتركون الذين لم يفعّلوا اشتراكهم خلال المدة المحدّدة
 export async function GET(request: Request) {
@@ -12,16 +12,19 @@ export async function GET(request: Request) {
   const to = url.searchParams.get("to") ? new Date(url.searchParams.get("to")!) : new Date();
   to.setHours(23, 59, 59, 999);
 
+  // عزل المستأجر: مشتركو مكاتب المستخدم فقط (كان يعرض كل الوكلاء)
+  const scope = await towerScope(g.session);
+
   // معرّفات من فعّلوا خلال المدة
   const activated = await prisma.subscriptionEntry.groupBy({
     by: ["subscriberId"],
-    where: { isDeleted: false, date: { gte: from, lte: to }, subscriberId: { not: null } },
+    where: { isDeleted: false, date: { gte: from, lte: to }, subscriberId: { not: null }, ...scope },
   });
   const activatedIds = activated.map((a) => a.subscriberId).filter(Boolean) as number[];
 
   // المشتركون الذين ليسوا ضمن من فعّل
   const subscribers = await prisma.subscriber.findMany({
-    where: { isDeleted: false, id: { notIn: activatedIds } },
+    where: { isDeleted: false, id: { notIn: activatedIds }, ...scope },
     select: { id: true, name: true, phone: true, netUser: true, dateTo: true },
     orderBy: { name: "asc" },
     take: 5000,

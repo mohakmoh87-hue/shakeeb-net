@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, ownsTower } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +29,13 @@ export async function POST(request: Request) {
   const item = await prisma.item.findFirst({ where: { id: itemId, isDeleted: false } });
   if (!item) return NextResponse.json({ error: "المادة غير موجودة" }, { status: 404 });
 
-  // عزل المكاتب: مستخدم المكتب يبيع من مخزن مكتبه فقط
+  // عزل المكاتب والوكلاء: مستخدم المكتب يبيع من مخزن مكتبه فقط، والمدير من مخازن
+  // مكاتب وكيله فقط (كان الأدمن يستطيع البيع من مادة أي وكيل بالمعرّف)
   if (session && !session.isAdmin && session.towerId != null && item.towerId !== session.towerId) {
     return NextResponse.json({ error: "لا يمكنك البيع من مخزن مكتب آخر" }, { status: 403 });
+  }
+  if (item.towerId != null && !(await ownsTower(session, item.towerId))) {
+    return NextResponse.json({ error: "المادة لا تتبع حسابك" }, { status: 403 });
   }
 
   // المتوفّر بالمكتب = الكمية الكلية − ما هو بذمم الفنيين

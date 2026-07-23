@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { agentTowerIds } from "@/lib/guard";
 import { isFieldManager } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,11 @@ export async function GET(request: Request) {
   const since = sinceStr ? new Date(sinceStr) : new Date(Date.now() - 60 * 1000);
 
   const manager = isFieldManager(s);
-  const techWhere = manager ? { isDeleted: false } : { isDeleted: false, towerId: s.towerId ?? null };
+  // عزل المستأجر: المدير يرى فنيّي مكاتب وكيله فقط (كان يشمل كل الوكلاء)
+  const agentTowers = manager ? await agentTowerIds(s) : [];
+  const techWhere = manager
+    ? { isDeleted: false, OR: [{ towerId: { in: agentTowers.length ? agentTowers : [-1] } }, { supportTowerId: { in: agentTowers.length ? agentTowers : [-1] } }] }
+    : { isDeleted: false, towerId: s.towerId ?? null };
   const techs = await prisma.technician.findMany({ where: techWhere, select: { id: true, name: true } });
   const techMap = new Map(techs.map((t) => [t.id, t.name]));
 

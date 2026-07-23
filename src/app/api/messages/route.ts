@@ -18,17 +18,42 @@ const schema = z.object({
   search: z.string().optional(), // بحث مخصّص في الاسم/اليوزر/الهاتف
 });
 
-// سجل الرسائل
+// سجل الرسائل — عزل المستأجر (كان يعرض رسائل كل الوكلاء):
+// رسائل مشتركي مكاتب وكيل المستخدم + الرسائل غير المرتبطة بمشترك التي أرسلها مستخدمو وكيله
 export async function GET(request: Request) {
   const g = await guard("messaging.manage");
   if (g.error) return g.error;
 
   const channel = new URL(request.url).searchParams.get("channel");
-  const messages = await prisma.message.findMany({
+  const { agentTowerIds } = await import("@/lib/guard");
+  const towers = new Set(await agentTowerIds(g.session));
+  const agentUsers = await prisma.user.findMany({
+    where: { agentId: g.session?.agentId ?? -1 },
+    select: { username: true, id: true },
+  });
+  // بعض المسارات تسجّل اسم المستخدم وبعضها معرّفه الرقمي في createdByUser — والمجدول "scheduler"
+  const senders = new Set<string>([...agentUsers.map((u) => u.username), ...agentUsers.map((u) => String(u.id))]);
+
+  // لا علاقة مباشرة بين الرسالة والمشترك في المخطط — نجلب دفعة أكبر ثم نرشّح بمكاتب الوكيل
+  const batch = await prisma.message.findMany({
     where: { ...(channel ? { channel: channel as Channel } : {}) },
     orderBy: { id: "desc" },
-    take: 300,
+    take: 900,
   });
+  const subIds = [...new Set(batch.map((m) => m.subscriberId).filter((x): x is number => x != null))];
+  const subs = subIds.length
+    ? await prisma.subscriber.findMany({ where: { id: { in: subIds } }, select: { id: true, towerId: true } })
+    : [];
+  const subTower = new Map(subs.map((s) => [s.id, s.towerId]));
+  const messages = batch
+    .filter((m) => {
+      if (m.subscriberId != null) {
+        const tid = subTower.get(m.subscriberId);
+        return tid != null && towers.has(tid);
+      }
+      return m.createdByUser != null && senders.has(m.createdByUser);
+    })
+    .slice(0, 300);
   return NextResponse.json(messages);
 }
 

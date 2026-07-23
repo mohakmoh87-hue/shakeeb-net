@@ -24,7 +24,9 @@ export async function POST(request: Request) {
   const { packageId, serials } = parsed.data;
 
   // سعر كارت هذه الفئة المثبّت (يُطبَّق على الكروت الجديدة فقط)
-  const pkg = await prisma.package.findUnique({ where: { id: packageId }, select: { cardCost: true } });
+  // عزل: الفئة يجب أن تتبع وكيل المستخدم (كان يقبل معرّف باقة أي وكيل)
+  const pkg = await prisma.package.findFirst({ where: { id: packageId, agentId: g.session?.agentId ?? -1 }, select: { cardCost: true } });
+  if (!pkg) return NextResponse.json({ error: "الفئة غير موجودة ضمن حسابك" }, { status: 404 });
   const price = Number(pkg?.cardCost ?? 0);
 
   // تنظيف وإزالة الفراغات والمكرر
