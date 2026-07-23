@@ -18,6 +18,12 @@ function createAdapter() {
     process.env.DB_DRIVER ??
     (/\.neon\.tech/i.test(process.env.DATABASE_URL ?? "") ? "neon" : "pg");
   if (driver === "pg") {
+    // حجم تجمّع الاتصالات: قواعد مثل Aiven المجاني تحدّ الاتصالات المتزامنة (~20).
+    // كل نسخة تشغيل تفتح Pool افتراضيّه 10 — فمع عدة حواسيب مكاتب + الموقع نتجاوز الحد.
+    // نصغّره: حاسبة المكتب (عامل خلفي بسيط) تكفيها 2، والموقع 5. قابل للتجاوز بمتغيّر.
+    // idle: نحرّر الاتصال الخامل بعد 10ث فيعود لتجمّع القاعدة المشترك بسرعة.
+    const poolMax = Number(process.env.DB_POOL_MAX) || (process.env.RUN_WORKER === "1" ? 2 : 5);
+    const poolOpts = { max: poolMax, idleTimeoutMillis: 10_000 };
     // DB_SSL_CA_B64 (اختياري): شهادة CA بصيغة base64 — قواعد مثل Aiven توقّع شهادة
     // خادمها بمرجع خاص بالمشروع، فنمرّرها صراحةً ليبقى التحقق الكامل من TLS قائماً.
     // ملاحظة إلزامية: sslmode داخل الرابط يطغى على إعداد ssl الصريح في مكتبة pg،
@@ -29,9 +35,10 @@ function createAdapter() {
       return new PrismaPg({
         connectionString: cs.toString(),
         ssl: { ca: Buffer.from(caB64, "base64").toString("utf8"), rejectUnauthorized: true },
+        ...poolOpts,
       });
     }
-    return new PrismaPg({ connectionString: process.env.DATABASE_URL });
+    return new PrismaPg({ connectionString: process.env.DATABASE_URL, ...poolOpts });
   }
   return new PrismaNeon({ connectionString: process.env.DATABASE_URL });
 }
