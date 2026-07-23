@@ -22,12 +22,19 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
   showLogo: true,
 };
 
-// قراءة قالب الوصل المخزّن (server-side) للاستخدام في صفحات الطباعة
-// قالب الوصل لوكيل محدّد (عزل المستأجر): مفتاح الوكيل، ثم ارتداد للمفتاح القديم "receipt"
-export async function getReceiptTemplate(agentId?: number | null): Promise<ReceiptTemplate> {
-  let row = agentId != null
-    ? await prisma.systemSetting.findFirst({ where: { type: `receipt:${agentId}` } })
+// مفتاح قالب وصل مكتب محدّد (يغلب قالب الوكيل العام)
+export function receiptOfficeKey(agentId: number, towerId: number): string {
+  return `receipt:${agentId}:o${towerId}`;
+}
+
+// قراءة قالب الوصل المخزّن (server-side) للاستخدام في صفحات الطباعة.
+// الترتيب: قالب المكتب المخصّص (إن مُرّر towerId ووُجد) ← قالب الوكيل العام ← المفتاح
+// القديم "receipt" (للوكيل الأول حصراً) ← الافتراضي المحايد.
+export async function getReceiptTemplate(agentId?: number | null, towerId?: number | null): Promise<ReceiptTemplate> {
+  let row = agentId != null && towerId != null
+    ? await prisma.systemSetting.findFirst({ where: { type: receiptOfficeKey(agentId, towerId) } })
     : null;
+  if (!row && agentId != null) row = await prisma.systemSetting.findFirst({ where: { type: `receipt:${agentId}` } });
   // الارتداد للمفتاح القديم "receipt" للوكيل الأول (1) حصراً — قالبه ما قبل العزل؛
   // غيره يأخذ الافتراضي المحايد (سدّ تسريب شعار/ترويسة الوكيل الأول لوكلاء جدد)
   if (!row && agentId === 1) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });

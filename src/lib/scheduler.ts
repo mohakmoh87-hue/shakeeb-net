@@ -13,10 +13,10 @@ const TZ = "Asia/Baghdad";
 
 
 // جلب قالب رسالة حسب التصنيف
-// قالب رسالة لوكيل محدّد (عزل المستأجر) — كل وكيل قوالبه الخاصّة
-async function getTemplate(type: string, agentId: number | null): Promise<string | null> {
+// قالب المكتب المخصّص أولاً ثم قالب الوكيل العام (عزل المستأجر والمكتب)
+async function getTemplate(type: string, agentId: number | null, towerId?: number | null): Promise<string | null> {
   const { getEffectiveTemplate } = await import("@/lib/smsTemplates");
-  return getEffectiveTemplate(type, agentId); // نص الوكيل، وإلا الافتراضي؛ null إن مُعطَّل
+  return getEffectiveTemplate(type, agentId, towerId); // قالب المكتب ← الوكيل ← الافتراضي؛ null إن مُعطَّل
 }
 
 // تاريخ يوم معيّن بصيغة YYYY-MM-DD (توقيت بغداد)
@@ -52,12 +52,13 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
     if (!fallbackCache.has(aid)) fallbackCache.set(aid, await getAgentSetting("office", aid, "SHAKEEB"));
     return fallbackCache.get(aid)!;
   };
-  // قالب "expiring" لكل وكيل (يُجلب مرّة ويُخزَّن) — عزل المستأجر
-  const tplCache = new Map<number, string | null>();
-  async function templateFor(agentId: number | null): Promise<string | null> {
+  // قالب "expiring" لكل (وكيل، مكتب) — يُجلب مرّة ويُخزَّن؛ قالب المكتب يغلب قالب الوكيل
+  const tplCache = new Map<string, string | null>();
+  async function templateFor(agentId: number | null, towerId: number | null): Promise<string | null> {
     if (agentId == null) return null;
-    if (!tplCache.has(agentId)) tplCache.set(agentId, await getTemplate("expiring", agentId));
-    return tplCache.get(agentId) ?? null;
+    const key = `${agentId}:${towerId ?? 0}`;
+    if (!tplCache.has(key)) tplCache.set(key, await getTemplate("expiring", agentId, towerId));
+    return tplCache.get(key) ?? null;
   }
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -65,7 +66,7 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
   for (const sub of recipients) {
     const office = sub.towerId ? officeMap.get(sub.towerId) : null;
     if (office?.waEnabled === "0") continue; // مكتب معطّل الواتساب
-    const template = await templateFor(office?.agentId ?? null);
+    const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null);
     if (!template) continue; // لا قالب مفعّل لوكيل هذا المكتب
     if (i++ > 0) await sleep(10000); // تأخير 10 ثوانٍ بين رسالة وأخرى
     const text = renderTemplate(template, {

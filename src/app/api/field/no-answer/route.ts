@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   // الرسالة (أفضل جهد): تتطلب مشتركاً بهاتف وواتساب مفعّلاً له وللمكتب وقالباً مفعّلاً
   let messaged = false;
   if (sub?.phone && sub.waEnabled !== false && office?.waEnabled !== "0") {
-    const tpl = await getEffectiveTemplate("noAnswer", office?.agentId ?? actor.agentId ?? null);
+    const tpl = await getEffectiveTemplate("noAnswer", office?.agentId ?? actor.agentId ?? null, towerId);
     if (tpl) {
       const msg = renderTemplate(tpl, {
         name: sub.name, kind: card.kind, technician: actor.name, office: office?.name ?? "SHAKEEB",

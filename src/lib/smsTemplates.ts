@@ -59,10 +59,19 @@ export const DEFAULT_TEMPLATES: Record<string, string> = {
 {office}`,
 };
 
-// نص القالب الفعّال لوكيل: المحفوظ إن وُجد نصّه، وإلا الافتراضي (للأنواع الثلاثة).
-// يرجع null إن كان القالب معطَّلاً (enable = "0") أو لا نصّ له ولا افتراضي.
-export async function getEffectiveTemplate(type: string, agentId: number | null): Promise<string | null> {
-  const t = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1 } });
+// نص القالب الفعّال: قالب المكتب المخصّص أولاً (إن مُرّر towerId ووُجد)، ثم قالب الوكيل
+// العام (towerId فارغ)، ثم الافتراضي. يرجع null إن كان القالب الغالب معطَّلاً (enable = "0").
+export async function getEffectiveTemplate(type: string, agentId: number | null, towerId?: number | null): Promise<string | null> {
+  if (towerId != null) {
+    const o = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1, towerId } });
+    if (o) {
+      if (o.enable === "0") return null; // معطَّل لهذا المكتب تحديداً
+      const text = o.text?.trim();
+      if (text) return text;
+      // نص المكتب فارغ ⇒ يسقط لقالب الوكيل العام
+    }
+  }
+  const t = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1, towerId: null } });
   if (t?.enable === "0") return null;
   const text = t?.text?.trim();
   return text || DEFAULT_TEMPLATES[type] || null;

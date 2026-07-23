@@ -21,14 +21,31 @@ const DEFAULT: Tpl = {
   fontSize: 14, showLogo: true,
 };
 
+type Office = { id: number; name: string | null };
+
 export default function ReceiptTemplatePage() {
   const { can, me } = usePermission();
   const [t, setT] = useState<Tpl>(DEFAULT);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  // عزل قالب الوصل لكل مكتب: "" = قالب الوكيل العام، وإلا معرّف المكتب (قالبه يغلب العام)
+  const [offices, setOffices] = useState<Office[]>([]);
+  const [officeSel, setOfficeSel] = useState<string>("");
+  const [officeCustom, setOfficeCustom] = useState(false);
 
+  const load = (office: string) => {
+    const qs = office ? `?officeId=${office}` : "";
+    fetch(`/api/receipt-template${qs}`).then((r) => void (r.ok && r.json().then((d) => {
+      setT({ ...DEFAULT, ...d });
+      setOfficeCustom(!!d.officeCustom);
+      setSaved(false);
+      // موظف المكتب يُقيَّد بمكتبه من الخادم — نثبّت المبدّل عليه
+      if (d.officeId != null && String(d.officeId) !== office) setOfficeSel(String(d.officeId));
+    })));
+  };
+  useEffect(() => { load(officeSel); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [officeSel]);
   useEffect(() => {
-    fetch("/api/receipt-template").then((r) => void (r.ok && r.json().then((d) => setT({ ...DEFAULT, ...d }))));
+    fetch("/api/towers").then((r) => void (r.ok && r.json().then((rows: Office[]) => setOffices(rows))));
   }, []);
 
   const set = <K extends keyof Tpl>(k: K, v: Tpl[K]) => setT((s) => ({ ...s, [k]: v }));
@@ -45,10 +62,18 @@ export default function ReceiptTemplatePage() {
     setSaving(true); setSaved(false);
     const res = await fetch("/api/receipt-template", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(t),
+      body: JSON.stringify({ ...t, officeId: officeSel ? Number(officeSel) : null }),
     });
     setSaving(false);
-    if (res.ok) setSaved(true);
+    if (res.ok) { setSaved(true); if (officeSel) setOfficeCustom(true); }
+  }
+
+  // إزالة تخصيص المكتب: حذف قالبه فيعود لقالب الوكيل العام
+  async function resetOffice() {
+    if (!officeSel) return;
+    if (!confirm("إزالة قالب هذا المكتب والعودة لقالب الوكيل العام؟")) return;
+    const res = await fetch(`/api/receipt-template?officeId=${officeSel}`, { method: "DELETE" });
+    if (res.ok) load(officeSel);
   }
 
   if (!me) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
@@ -59,6 +84,21 @@ export default function ReceiptTemplatePage() {
   return (
     <div className="p-6">
       <PageHeader title="قالب الوصل المطبوع" subtitle="ترويسة وشعار وألوان الوصل الذي يُطبع للمشترك" />
+
+      {/* مبدّل المكتب: قالب الوصل معزول لكل مكتب — قالب المكتب يغلب قالب الوكيل العام */}
+      <div className="mb-4 flex max-w-5xl flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <span className="text-sm font-semibold text-slate-600">🏢 قالب:</span>
+        <select value={officeSel} onChange={(e) => setOfficeSel(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-mynet-blue">
+          <option value="">عام لكل المكاتب (الوكيل)</option>
+          {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `مكتب ${o.id}`}</option>)}
+        </select>
+        {officeSel && (officeCustom
+          ? <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">مخصّص لهذا المكتب</span>
+          : <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">يتبع القالب العام — الحفظ يجعله مخصّصاً</span>)}
+        {officeSel && officeCustom && (
+          <button onClick={resetOffice} className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">استخدام القالب العام</button>
+        )}
+      </div>
 
       <div className="grid max-w-5xl gap-6 lg:grid-cols-2">
         {/* المحرّر */}

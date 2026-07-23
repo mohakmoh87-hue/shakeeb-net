@@ -266,6 +266,11 @@ export async function POST(request: Request) {
         materialsInfo: soldInfo.length ? JSON.stringify(soldInfo) : null,
       },
     });
+    // سجل الإنجاز الدائم (البطاقة تُحذف من الأرشيف بعد أسبوع — هذا يبقى):
+    // لعدّ بطاقات الفني حسب الفئة في كشف راتبه
+    await tx.cardCompletion.create({
+      data: { cardId, technicianId: card.technicianId!, agentId: actor.agentId ?? null, towerId, kind: card.kind, completedAt: new Date() },
+    });
   });
 
   // سجل التغييرات داخل البطاقة + المجموع المستلم من الفني (مبيع + اشتراك؛ وللتوصيل مبلغه)
@@ -372,12 +377,17 @@ export async function POST(request: Request) {
           },
         });
       }
-      // رسالة واتساب للمشترك (قالب "رسالة الصيانة/التنصيب") — قالب وكيل الفاعل حصراً (عزل)
-      const tpl = await prisma.smsTemplate.findFirst({ where: { type: "maintenance", agentId: actor.agentId ?? -1 } });
-      if (sub.phone && tpl?.text && tpl.enable !== "0") {
+      // رسالة واتساب للمشترك (قالب "رسالة الصيانة/التنصيب") — قالب مكتب البطاقة المخصّص
+      // أولاً ثم قالب الوكيل العام (عزل المستأجر والمكتب)
+      const { getEffectiveTemplate } = await import("@/lib/smsTemplates");
+      const tplText = await getEffectiveTemplate("maintenance", actor.agentId ?? null, towerId);
+      // الهاتف الإضافي المسجَّل عند رفع البطاقة (📞 هاتف إضافي) يَغلب رقم المشترك المخزون
+      const altPhone = (card.description ?? "").match(/هاتف إضافي\s*[:：]\s*([^\n]+)/)?.[1]?.trim() || null;
+      const toPhone = altPhone || sub.phone;
+      if (toPhone && tplText) {
         const office = towerId ? await prisma.tower.findUnique({ where: { id: towerId }, select: { name: true, waEnabled: true } }) : null;
         if (office?.waEnabled !== "0") {
-          const text = renderTemplate(tpl.text, {
+          const text = renderTemplate(tplText, {
             name: sub.name, netUser: sub.netUser, kind: card.kind,
             details: serviceDetails?.trim() ?? "", date: formatDate(new Date()),
             // {amount} = المجموع المستلم؛ {المبيع}/{الاشتراك} تفصيلاً (وللتوصيل مبلغه في amount)
@@ -386,12 +396,12 @@ export async function POST(request: Request) {
             code: sub.rewardCode, balance: sub.rewardBalance ?? 0, // كود/رصيد الخصم
           });
           let res: { ok: boolean; error?: string };
-          try { res = await sendViaProvider("WHATSAPP", sub.phone, text, towerId); }
+          try { res = await sendViaProvider("WHATSAPP", toPhone, text, towerId); }
           catch (e) { res = { ok: false, error: e instanceof Error ? e.message : "تعذّر الإرسال" }; }
           messaged = res.ok;
           await prisma.message.create({
             data: {
-              channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
+              channel: "WHATSAPP", subscriberId: sub.id, phone: toPhone, text,
               status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
               createdByUser: String(actor.userId ?? ""),
             },

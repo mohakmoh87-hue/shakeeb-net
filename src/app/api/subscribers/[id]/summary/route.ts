@@ -32,7 +32,7 @@ export async function POST(
     : null;
   if (office?.waEnabled === "0") return NextResponse.json({ error: "واتساب المكتب معطَّل" }, { status: 400 });
 
-  const tpl = await getEffectiveTemplate("subSummary", office?.agentId ?? session?.agentId ?? null);
+  const tpl = await getEffectiveTemplate("subSummary", office?.agentId ?? session?.agentId ?? null, subscriber.towerId);
   if (!tpl) return NextResponse.json({ error: "قالب «ملخص الاشتراك» معطَّل — فعّله من قوالب الرسائل" }, { status: 400 });
 
   const pkg = subscriber.packageId

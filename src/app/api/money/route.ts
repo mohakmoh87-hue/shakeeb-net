@@ -20,14 +20,36 @@ export async function GET(request: Request) {
   const accountId = sp.get("accountId");
   const from = sp.get("from"); // yyyy-MM-dd (شامل)
   const to = sp.get("to"); // yyyy-MM-dd (شامل)
+  const q = (sp.get("q") ?? "").trim(); // بحث حر: ملاحظات / اسم الحساب / رقم الحركة / المبلغ
   // فلتر التاريخ حسب حقل date (يشمل يوم البداية ويوم النهاية كاملاً)
   const dateFilter: { gte?: Date; lte?: Date } = {};
   if (from) { const d = new Date(from); if (!isNaN(d.getTime())) dateFilter.gte = d; }
   if (to) { const d = new Date(to); if (!isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); dateFilter.lte = d; } }
+
+  // البحث الحر: يطابق الملاحظات، أو حساباً اسمه يحوي النص، أو رقم الحركة/المبلغ إن كان رقماً
+  let qWhere: object = {};
+  if (q) {
+    const qAccounts = await prisma.account.findMany({
+      where: { isDeleted: false, name: { contains: q, mode: "insensitive" } },
+      select: { id: true },
+    });
+    const qNum = Number(q.replace(/[,،]/g, ""));
+    qWhere = {
+      OR: [
+        { notes: { contains: q, mode: "insensitive" } },
+        ...(qAccounts.length ? [{ accountId: { in: qAccounts.map((a) => a.id) } }] : []),
+        ...(Number.isFinite(qNum) && qNum > 0 ? [{ id: qNum }, { moneyIn: qNum }, { moneyOut: qNum }] : []),
+      ],
+    };
+  }
+
   // صفحة الصندوق للحركات اليدوية فقط (المصروفات والمقبوضات) — التفعيلات/الفواتير تُدار من صفحاتها
   const where = {
     isDeleted: false,
-    OR: [{ sourceType: null }, { sourceType: "manual" }],
+    AND: [
+      { OR: [{ sourceType: null }, { sourceType: "manual" }] },
+      ...(q ? [qWhere] : []),
+    ],
     ...(await towerScope(g.session)),
     ...(accountId ? { accountId: Number(accountId) } : {}),
     ...(dateFilter.gte || dateFilter.lte ? { date: dateFilter } : {}),

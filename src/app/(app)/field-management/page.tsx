@@ -21,11 +21,48 @@ type Card = {
   amount: number | null; subAmount: number | null; serviceDetails: string | null; completedAt: string | null;
   materialsInfo: string | null; techNote: string | null;
   startedAt: string | null; durationSec: number | null; postponedTo: string | null;
-  history: string | null;
+  history: string | null; createdAt: string | null; hasPhoto?: boolean;
 };
 // أحداث سجل تغييرات البطاقة (JSON داخل حقل history)
 type CardEvent = { at: string; by: string; text: string };
 const parseHistory = (h?: string | null): CardEvent[] => { try { return h ? (JSON.parse(h) as CardEvent[]) : []; } catch { return []; } };
+// بطاقة أُعيدت من الأرشيف (من سجلها) — لعرض شارة «من الأرشيف» على وجهها
+const wasRestored = (h?: string | null): boolean => parseHistory(h).some((e) => e.text.includes("إعادة البطاقة من الأرشيف"));
+
+// عارض صورة عمل البطاقة: زر يجلب الصورة عند الطلب ويعرضها داخل البطاقة/الأرشيف
+function CardPhotoViewer({ cardId }: { cardId: number }) {
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [shown, setShown] = useState(false);
+  async function toggle() {
+    if (shown) { setShown(false); return; }
+    if (photo) { setShown(true); return; }
+    setBusy(true);
+    const d = await fetch(`/api/field/card-photo?cardId=${cardId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    setBusy(false);
+    if (!d?.photo) { alert("لا صورة لهذه البطاقة"); return; }
+    setPhoto(d.photo); setShown(true);
+  }
+  return (
+    <div className="mt-2">
+      <div className="flex gap-1.5">
+        <button onClick={toggle} className="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100">
+          {busy ? "..." : shown ? "🙈 إخفاء الصورة" : "📷 عرض صورة العمل"}
+        </button>
+        {photo && (
+          <button
+            onClick={() => { const a = document.createElement("a"); a.href = photo; a.download = `card-${cardId}-photo.jpg`; a.click(); }}
+            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200"
+          >
+            ⬇️ تحميل
+          </button>
+        )}
+      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {shown && photo && <img src={photo} alt="صورة العمل" className="mt-2 max-h-80 w-auto rounded-lg border border-slate-200" />}
+    </div>
+  );
+}
 
 // تنسيق مدة بالثواني إلى نص عربي مقروء
 function fmtDuration(sec: number | null): string {
@@ -393,6 +430,8 @@ export default function FieldManagementPage() {
                       {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة {c.amount != null ? `— ${Number(c.amount).toLocaleString("en-US")}` : ""}</span>}
                       {!c.done && c.postponedTo && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 مؤجّلة {fmtDateTime(c.postponedTo)}</span>}
                       {!c.done && !c.postponedTo && c.startedAt && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-sky-700">⏱ جارية</span>}
+                      {/* شارة الإعادة من الأرشيف — يعرفها الفني فيعود إليها */}
+                      {!c.done && wasRestored(c.history) && <span className="rounded bg-purple-50 px-1.5 py-0.5 font-semibold text-purple-700">↩️ معادة من الأرشيف</span>}
                     </div>
                     <div className="mt-1.5">
                       {/* بطاقة «دعم مؤقت» (listId=-1): منطقة الخريطة من مكتب الدعم لا مكتب الفني */}
@@ -660,20 +699,8 @@ export default function FieldManagementPage() {
                 {sel.serviceDetails && <div className="text-slate-600">التفاصيل: {sel.serviceDetails}</div>}
                 {sel.durationSec != null && <div className="text-slate-600">⏱ مدة الإنجاز: <b>{fmtDuration(sel.durationSec)}</b></div>}
                 {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
-                {/* تحميل صورة العمل التي رفعها الفني على الجهاز/الحاسبة */}
-                <button
-                  onClick={async () => {
-                    const d = await fetch(`/api/field/card-photo?cardId=${sel.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-                    if (!d?.photo) { alert("لا صورة لهذه البطاقة"); return; }
-                    const a = document.createElement("a");
-                    a.href = d.photo;
-                    a.download = `card-${sel.id}-photo.jpg`;
-                    a.click();
-                  }}
-                  className="mt-2 rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100"
-                >
-                  ⬇️ تحميل صورة العمل
-                </button>
+                {/* عرض/تحميل صورة العمل التي رفعها الفني — داخل البطاقة مباشرة */}
+                <CardPhotoViewer cardId={sel.id} />
               </div>
             ) : !(canOperate && (!isTech || sel.technicianId === myTechId)) ? (
               // الفني يرى بطاقة زميله بلا أزرار عمل (يحوّلها لنفسه أولاً)
@@ -715,8 +742,11 @@ export default function FieldManagementPage() {
                 </div>
               </>
             )}
-            {/* سجل تغييرات البطاقة — كل حدث بوقته وفاعله (تأجيل/تحويل/نقل/إنجاز…) */}
-            {parseHistory(sel.history).length > 0 && (
+            {/* بطاقة غير منجزة لها صورة عمل محفوظة (مثل المُعادة من الأرشيف): عرضها متاح */}
+            {!sel.done && sel.hasPhoto && <div className="mb-3"><CardPhotoViewer cardId={sel.id} /></div>}
+
+            {/* سجل تغييرات البطاقة — كل حدث بوقته وفاعله (تأجيل/تحويل/نقل/إنجاز…) + تاريخ الإنشاء */}
+            {(parseHistory(sel.history).length > 0 || sel.createdAt) && (
               <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                 <div className="mb-1.5 text-xs font-bold text-slate-600">🕓 سجل التغييرات</div>
                 <ul className="max-h-44 space-y-1 overflow-y-auto">
@@ -725,6 +755,12 @@ export default function FieldManagementPage() {
                       <span dir="ltr" className="font-semibold text-slate-400">{fmtDateTime(e.at)}</span> — <b className="text-slate-700">{e.by}</b>: {e.text}
                     </li>
                   ))}
+                  {/* تاريخ الإنشاء دوماً آخر السجل (البطاقات القديمة بلا حدث «إنشاء» مسجَّل) */}
+                  {sel.createdAt && !parseHistory(sel.history).some((e) => e.text.startsWith("إنشاء البطاقة")) && (
+                    <li className="rounded bg-white px-2 py-1 text-[11px] leading-relaxed text-slate-600">
+                      <span dir="ltr" className="font-semibold text-slate-400">{fmtDateTime(sel.createdAt)}</span> — 🟢 إنشاء البطاقة
+                    </li>
+                  )}
                 </ul>
               </div>
             )}
@@ -752,7 +788,7 @@ export default function FieldManagementPage() {
 
       {/* نافذة الأرشيف: البطاقات المحصَّلة (أسبوع ثم تُحذف نهائياً) بفلاتر تاريخ/فني/نوع */}
       {archiveModal && (
-        <ArchiveModal cardTypes={cardTypes} offices={offices} onClose={() => setArchiveModal(false)} />
+        <ArchiveModal cardTypes={cardTypes} offices={offices} onClose={() => setArchiveModal(false)} onChanged={() => load(officeId)} />
       )}
 
       {/* نافذة إنجاز البطاقة بحقولها الواجبة */}
@@ -1320,11 +1356,12 @@ function compressImage(file: File): Promise<string> {
 // نافذة أرشيف البطاقات المحصَّلة: تبقى أسبوعاً بعد التحصيل ثم تُحذف نهائياً.
 // فلاتر: المكتب + تاريخ الإنجاز + الفني + النوع (تُجمع معاً). حذف نهائي يدوي للمدير فقط.
 // قائمة «الفني» تُبنى من الأرشيف نفسه — فتشمل فنيي الدعم/المكاتب الأخرى الذين نفّذوا بطاقات.
-function ArchiveModal({ cardTypes, offices, onClose }: { cardTypes: CardType[]; offices: Office[]; onClose: () => void }) {
+function ArchiveModal({ cardTypes, offices, onClose, onChanged }: { cardTypes: CardType[]; offices: Office[]; onClose: () => void; onChanged?: () => void }) {
   type ArchCard = {
     id: number; title: string; description: string | null; kind: string; assignee: string | null;
     technicianId: number | null; amount: number | null; subAmount: number | null; serviceDetails: string | null; durationSec: number | null;
     completedAt: string | null; archivedAt: string | null; history: string | null; office: string | null;
+    createdAt: string | null; hasPhoto?: boolean;
   };
   const [rows, setRows] = useState<ArchCard[]>([]);
   const [isMgr, setIsMgr] = useState(false);
@@ -1355,6 +1392,16 @@ function ArchiveModal({ cardTypes, offices, onClose }: { cardTypes: CardType[]; 
     const r = await fetch(`/api/field/archive?id=${id}`, { method: "DELETE" });
     if (r.ok) load();
     else alert(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "تعذّر الحذف");
+  }
+
+  // استرجاع بطاقة من الأرشيف: تعود فعّالة لعمودها السابق ليعمل عليها الفني مجدداً
+  async function restore(c: ArchCard) {
+    if (!confirm(`إعادة البطاقة «${c.title}» من الأرشيف إلى عمودها باللوحة؟\nستعود فعّالة (غير منجزة) ويستطيع الفني العمل عليها مرة أخرى. تحصيل إنجازها الأول محفوظ ولا يتأثر.`)) return;
+    const r = await fetch("/api/field/archive", {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: c.id }),
+    });
+    if (r.ok) { load(); onChanged?.(); }
+    else alert(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "تعذّر الاسترجاع");
   }
 
   const total = rows.reduce((s, c) => s + (c.amount ?? 0), 0);
@@ -1433,18 +1480,25 @@ function ArchiveModal({ cardTypes, offices, onClose }: { cardTypes: CardType[]; 
                       {c.description && <div className="mb-1 whitespace-pre-wrap">{c.description}</div>}
                       {c.serviceDetails && <div className="mb-1">🔧 التفاصيل: {c.serviceDetails}</div>}
                       {c.durationSec != null && <div className="mb-1">⏱ المدة: {fmtDuration(c.durationSec)}</div>}
-                      {parseHistory(c.history).length > 0 && (
+                      {/* سجل التغييرات كاملاً — يبقى مع البطاقة بالأرشيف حتى حذفها التلقائي بعد أسبوع */}
+                      {(parseHistory(c.history).length > 0 || c.createdAt) && (
                         <ul className="mb-1 mt-1 space-y-0.5 rounded bg-slate-50 p-1.5">
                           {parseHistory(c.history).slice().reverse().map((e, i) => (
                             <li key={i} className="text-[11px] text-slate-500"><span dir="ltr">{fmtDateTime(e.at)}</span> — <b>{e.by}</b>: {e.text}</li>
                           ))}
+                          {c.createdAt && !parseHistory(c.history).some((e) => e.text.startsWith("إنشاء البطاقة")) && (
+                            <li className="text-[11px] text-slate-500"><span dir="ltr">{fmtDateTime(c.createdAt)}</span> — 🟢 إنشاء البطاقة</li>
+                          )}
                         </ul>
                       )}
-                      {isMgr && (
-                        <div className="mt-1.5 flex justify-end">
+                      {/* صورة العمل — محفوظة بالأرشيف وتُعرض هنا حتى الحذف التلقائي */}
+                      {c.hasPhoto && <CardPhotoViewer cardId={c.id} />}
+                      <div className="mt-1.5 flex justify-end gap-1.5">
+                        <button onClick={() => restore(c)} className="rounded bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-100">↩️ استرجاع للّوحة</button>
+                        {isMgr && (
                           <button onClick={() => del(c.id)} className="rounded bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-100">🗑️ حذف نهائي</button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )}
                 </li>

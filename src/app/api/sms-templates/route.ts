@@ -18,7 +18,8 @@ export async function GET() {
   if (g.error) return g.error;
 
   const templates = await prisma.smsTemplate.findMany({
-    where: { agentId: g.session?.agentId ?? -1, NOT: { type: { startsWith: "__" } } }, // بلا صفوف العلامات الداخلية
+    // بلا صفوف العلامات الداخلية ولا تخصيصات المكاتب (تُدار من قوالب الأحداث بمبدّل المكتب)
+    where: { agentId: g.session?.agentId ?? -1, towerId: null, NOT: { type: { startsWith: "__" } } },
     orderBy: { id: "asc" },
   });
   return NextResponse.json(templates);

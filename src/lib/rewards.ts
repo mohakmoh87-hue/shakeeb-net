@@ -130,12 +130,22 @@ const DEFAULT_GRANT_TPL =
 const DEFAULT_USED_TPL =
   "تم استخدام مكافأتك 🎉\nخُصِم {amount} د.ع.\nرصيدك المتبقّي: {balance} د.ع\n{office}";
 
-// جلب قالب مكافأة لوكيل محدّد (عزل المستأجر). يعيد null إن كان معطّلاً صراحةً.
-async function rewardTemplate(type: "reward" | "rewardUsed", agentId: number | null): Promise<string | null> {
-  const t = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1 } });
+// جلب قالب مكافأة: قالب المكتب المخصّص أولاً ثم قالب الوكيل العام (عزل المستأجر والمكتب).
+// يعيد null إن كان القالب الغالب معطّلاً صراحةً.
+async function rewardTemplate(type: "reward" | "rewardUsed", agentId: number | null, officeId?: number | null): Promise<string | null> {
+  const fallback = type === "reward" ? DEFAULT_GRANT_TPL : DEFAULT_USED_TPL;
+  if (officeId != null) {
+    const o = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1, towerId: officeId } });
+    if (o) {
+      if (o.enable === "0") return null; // معطّل لهذا المكتب تحديداً
+      const text = o.text?.trim();
+      if (text) return text; // نص المكتب الفارغ يسقط لقالب الوكيل
+    }
+  }
+  const t = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1, towerId: null } });
   if (t && t.enable === "0") return null; // معطّل صراحةً
   const text = t?.text?.trim();
-  return text && text.length > 0 ? text : (type === "reward" ? DEFAULT_GRANT_TPL : DEFAULT_USED_TPL);
+  return text && text.length > 0 ? text : fallback;
 }
 
 // إرسال رسالة منح المكافأة (بعد التفعيل، أفضل جهد — لا تُعطّل التفعيل)
@@ -148,7 +158,7 @@ export async function sendRewardGrantMessage(a: {
     if (a.waEnabled === false || !a.phone) return;
     const office = a.officeId ? await prisma.tower.findUnique({ where: { id: a.officeId }, select: { name: true, waEnabled: true } }) : null;
     if (office?.waEnabled === "0") return;
-    const tpl = await rewardTemplate("reward", a.agentId);
+    const tpl = await rewardTemplate("reward", a.agentId, a.officeId);
     if (!tpl) return;
     const text = renderTemplate(tpl, {
       name: a.name, netUser: a.netUser, code: a.code,
@@ -172,7 +182,7 @@ export async function sendRewardUsedMessage(a: {
     if (a.waEnabled === false || !a.phone) return;
     const office = a.officeId ? await prisma.tower.findUnique({ where: { id: a.officeId }, select: { name: true, waEnabled: true } }) : null;
     if (office?.waEnabled === "0") return;
-    const tpl = await rewardTemplate("rewardUsed", a.agentId);
+    const tpl = await rewardTemplate("rewardUsed", a.agentId, a.officeId);
     if (!tpl) return;
     const text = renderTemplate(tpl, { name: a.name, amount: a.discount, balance: a.balance, office: office?.name ?? "SHAKEEB" });
     const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId);

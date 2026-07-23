@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
-import { getOrCreateBoard } from "@/lib/field";
+import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +79,8 @@ export async function POST(request: Request) {
     // نوع البطاقة يُؤخذ تلقائياً من العملية (توصيل/تحويل/صيانة/اعادة) + ربط المشترك (لمنع التكرار)
     data: { listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id },
   });
+  // أول حدث في سجل التغييرات: إنشاء البطاقة (تاريخه ووقته وفاعله)
+  await appendCardHistory(card.id, g.session.fullName ?? g.session.username, "إنشاء البطاقة");
 
   return NextResponse.json({ ok: true, listName: list.name, card }, { status: 201 });
 }

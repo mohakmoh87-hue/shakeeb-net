@@ -7,6 +7,22 @@ import { statementForTechnician as statementFor } from "@/lib/salary";
 
 export const dynamic = "force-dynamic";
 
+// عدد البطاقات المنجزة حسب الفئة ضمن فترة الكشف — من سجل الإنجازات الدائم
+// (البطاقات تُحذف من الأرشيف بعد أسبوع، فالعدّ من card_completions الباقية دوماً)
+async function cardCountsFor(technicianId: number, from: string, to: string): Promise<{ kind: string; count: number }[]> {
+  const rows = await prisma.cardCompletion.groupBy({
+    by: ["kind"],
+    where: {
+      technicianId,
+      completedAt: { gte: new Date(`${from}T00:00:00+03:00`), lte: new Date(`${to}T23:59:59.999+03:00`) },
+    },
+    _count: { _all: true },
+  });
+  return rows
+    .map((r) => ({ kind: r.kind ?? "غير مصنّف", count: r._count._all }))
+    .sort((a, b) => b.count - a.count);
+}
+
 // يومَا احتساب الراتب للوكيل (من/إلى) — تُشتق منهما فترة كل فنيٍّ (مجمّدة) داخل الحساب
 async function salaryDaysOfAgent(agentId: number | null): Promise<{ fromDay: number | null; toDay: number | null }> {
   if (agentId == null) return { fromDay: null, toDay: null };
@@ -23,7 +39,8 @@ export async function GET(request: Request) {
     const result = await statementFor(tech.technicianId, t?.salary ?? 0, days.fromDay, days.toDay);
     const history = await prisma.salaryStatement.findMany({ where: { technicianId: tech.technicianId }, orderBy: { id: "desc" }, take: 12 });
     const period = days.fromDay ? { from: result.periodFrom, to: result.periodTo } : null;
-    return NextResponse.json({ role: "technician", name: t?.name, salary: t?.salary ?? 0, statement: result, history, period });
+    const cardCounts = await cardCountsFor(tech.technicianId, result.periodFrom, result.periodTo);
+    return NextResponse.json({ role: "technician", name: t?.name, salary: t?.salary ?? 0, statement: result, history, period, cardCounts });
   }
 
   const g = await guard("field.manage");
@@ -40,7 +57,8 @@ export async function GET(request: Request) {
     const result = await statementFor(technicianId, t.salary ?? 0, days.fromDay, days.toDay);
     const history = await prisma.salaryStatement.findMany({ where: { technicianId }, orderBy: { id: "desc" }, take: 12 });
     const period = days.fromDay ? { from: result.periodFrom, to: result.periodTo } : null;
-    return NextResponse.json({ role: "manager", name: t.name, salary: t.salary ?? 0, statement: result, history, period });
+    const cardCounts = await cardCountsFor(technicianId, result.periodFrom, result.periodTo);
+    return NextResponse.json({ role: "manager", name: t.name, salary: t.salary ?? 0, statement: result, history, period, cardCounts });
   }
 
   // قائمة فنيّي المكتب مع صافي كل واحد — لا يُقبل officeId إلا إن كان أحد مكاتب وكيل المستخدم (عزل)

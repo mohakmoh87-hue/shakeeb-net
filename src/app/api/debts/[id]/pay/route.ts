@@ -94,7 +94,7 @@ async function sendDebtPaidMessage(a: {
     const office = a.towerId ? await prisma.tower.findUnique({ where: { id: a.towerId }, select: { name: true, waEnabled: true, agentId: true } }) : null;
     if (office?.waEnabled === "0") return;
 
-    const tpl = await getEffectiveTemplate("debtPaid", office?.agentId ?? null);
+    const tpl = await getEffectiveTemplate("debtPaid", office?.agentId ?? null, a.towerId);
     if (!tpl) return; // معطَّل
 
     const text = renderTemplate(tpl, {

@@ -37,7 +37,8 @@ export default async function ReceiptPage({
   // اسم النظام الافتراضي من إعدادات وكيل الجلسة حصراً (عزل الوكلاء)
   const { getAgentSetting } = await import("@/lib/agentSettings");
   const officeName = agent?.name || (await getAgentSetting("office", session?.agentId, "SHAKEEB"));
-  const tpl = await getReceiptTemplate(session?.agentId ?? null);
+  // قالب مكتب الوصل المخصّص إن وُجد، وإلا قالب الوكيل العام
+  const tpl = await getReceiptTemplate(session?.agentId ?? null, entryTower);
 
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">
