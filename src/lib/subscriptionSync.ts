@@ -5,7 +5,7 @@ import {
 } from "@/lib/sas4";
 import { sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
-import { iraqYesterdayRange } from "@/lib/dailyReport";
+import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 
 // ============================================================================
 // المزامنة اليومية مع SAS — نسخة مطوّرة على مرحلتين متتاليتين لكل مكتب:
@@ -74,9 +74,34 @@ async function sendOrQueueReport(officeId: number, phone: string, text: string):
   return res.ok;
 }
 
+// قفل تزامن: يمنع تشغيل مزامنتين لنفس المكتب في آن واحد. كان الضغط المتكرّر على
+// «مزامنة الآن» يُشغّل نسخاً متوازية تقرأ الحالة نفسها فتُكرّر المعالجة والإرجاع.
+const syncRunning = new Set<number>();
+
 // تشغيل المزامنة لمكتب واحد (مرحلتان). forDay اختياري لأغراض الاختبار؛ الافتراضي "الأمس".
 // notify: يُرسل تقرير المدير فقط في المزامنة التلقائية (المجدول). المزامنة اليدوية (زر «مزامنة الآن») لا تُرسل شيئاً.
 export async function runOfficeSync(
+  officeId: number,
+  opts: { forDay?: Date; notify?: boolean } = {},
+): Promise<SyncResult> {
+  if (syncRunning.has(officeId)) {
+    return {
+      office: "المكتب",
+      phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0 },
+      phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0 },
+      events: [], reportSent: null,
+      error: "مزامنة هذا المكتب قيد التنفيذ بالفعل — تم تجاهل الطلب المكرّر",
+    };
+  }
+  syncRunning.add(officeId);
+  try {
+    return await runOfficeSyncInner(officeId, opts);
+  } finally {
+    syncRunning.delete(officeId);
+  }
+}
+
+async function runOfficeSyncInner(
   officeId: number,
   { forDay, notify = true }: { forDay?: Date; notify?: boolean } = {},
 ): Promise<SyncResult> {
@@ -110,14 +135,23 @@ export async function runOfficeSync(
     return { ...empty, error: (e as Error).message || "فشل الاتصال بـ SAS" };
   }
 
-  // جلب تفعيلات الأمس — عند فشل SAS: إشعار وعدم الانهيار
-  let acts: SasActivation[];
+  // جلب التفعيلات بنافذة موسّعة: **الأمس + اليوم** — عند فشل SAS: إشعار وعدم الانهيار.
+  // سبب التوسيع: وقت التفعيل في البرنامج ووقته في الساس قد يقعان على جانبَي منتصف الليل
+  // (أو يختلفان بفارق توقيت)، فيبدو كارتٌ مستخدمٌ فعلاً بلا تفعيل مقابل ⇒ إنذار «وهمي» كاذب.
+  const todayEnd = iraqTodayRange(forDay ?? new Date()).end;
+  let actsWide: SasActivation[];
   try {
-    acts = await sasFetchActivationsForDay(base, token, start, end);
+    actsWide = await sasFetchActivationsForDay(base, token, start, todayEnd);
   } catch (e) {
     if (notify) await notifySasDown(office.id, office.managerPhone, officeName);
     return { ...empty, error: (e as Error).message || "فشل جلب تقرير التفعيلات" };
   }
+  // السيناريوهات المُبلَّغة (تكرار/كارت خارجي/استيراد/تحديث حالة) تبقى على تفعيلات **الأمس**
+  // حصراً — كي لا تتكرّر التقارير ولا تظهر «تفعيلات مكرّرة» كاذبة لمن فعّل أمس واليوم.
+  const acts = actsWide.filter((a) => {
+    const d = a.createdAt ? new Date(a.createdAt) : null;
+    return d != null && !isNaN(d.getTime()) && d >= start && d <= end;
+  });
 
   // ===================== المرحلة 1: كروت وتفعيلات الأمس =====================
   const events: SyncEvent[] = [];
@@ -137,13 +171,17 @@ export async function runOfficeSync(
   const subBySasId = new Map(officeSubs.filter((s) => s.sasId).map((s) => [s.sasId as number, s]));
   const subById = new Map(officeSubs.map((s) => [s.id, s]));
 
-  // مجموعة (مشترك SAS | بِن) لكل تفعيلات الأمس (لكشف التفعيل الوهمي)
+  // مجموعة (مشترك SAS | بِن) من **النافذة الموسّعة** (الأمس + اليوم) — تُستخدم للتحقّق من
+  // «التفعيل الوهمي» فقط. توسيعها يمنع اعتبار كارتٍ حقيقيٍّ وهمياً لمجرّد وقوع تفعيله
+  // بعد منتصف الليل بتوقيت الساس (أو اختلاف التوقيت بين البرنامج والساس).
   const sasUserPinSet = new Set<string>();
-  // تجميع التفعيلات حسب مشترك SAS (لكشف التكرار — السيناريو 2)
-  const actsByUser = new Map<number, SasActivation[]>();
-  for (const a of acts) {
+  for (const a of actsWide) {
     const pin = (a.pin ?? "").trim();
     if (pin) sasUserPinSet.add(`${a.sasUserId}|${pin}`);
+  }
+  // تجميع تفعيلات **الأمس** حسب مشترك SAS (لكشف التكرار — السيناريو 2)
+  const actsByUser = new Map<number, SasActivation[]>();
+  for (const a of acts) {
     const list = actsByUser.get(a.sasUserId) ?? [];
     list.push(a);
     actsByUser.set(a.sasUserId, list);
@@ -217,20 +255,24 @@ export async function runOfficeSync(
   const usedYesterday = cards.filter(
     (c) => c.useDate && c.subscriberId != null && withinRange(c.useDate, start, end) && subById.has(c.subscriberId),
   );
-  for (const c of usedYesterday) {
+  // المشتبه بهم: كارت مستخدم أمس بلا تفعيل مقابل في النافذة الموسّعة (الأمس + اليوم)
+  const suspects = usedYesterday.filter((c) => {
     const sub = subById.get(c.subscriberId!);
-    if (!sub?.sasId) continue;
-    const key = `${sub.sasId}|${(c.serial ?? "").trim()}`;
-    if (sasUserPinSet.has(key)) continue; // للكارت تفعيل فعلي في SAS → سليم
+    if (!sub?.sasId) return false;
+    return !sasUserPinSet.has(`${sub.sasId}|${(c.serial ?? "").trim()}`);
+  });
 
-    // وضع آمن مؤقت — إبلاغ فقط بلا أي تغيير على الكارت:
-    // ثبت ميدانياً (21 كارتاً أُرجعت خطأً رغم أن تفعيلاتها حقيقية في SAS) أن كشف
-    // «الوهمي» يعطي إيجابيات كاذبة — الأرجح لأن sasFetchActivationsForDay يفترض أن
-    // ترقيم صفحات SAS تصاعدي (الأقدم أولاً) فيرجع قائمة أمس ناقصة/فارغة عند العكس.
-    // لا يُعاد التصرف التلقائي إلا بعد تدقيق الجلب على بيانات SAS الفعلية.
+  // 🛡️ وضع آمن — إبلاغ فقط بلا أي تغيير على الكارت (قرار جلسة الطوارئ، يبقى سارياً):
+  // ثبت ميدانياً أن كشف «الوهمي» يعطي إيجابيات كاذبة، والأرجح أن sasFetchActivationsForDay
+  // يفترض ترقيم صفحات تصاعدياً فيرجع قائمة ناقصة/فارغة عند العكس. النافذة الموسّعة أعلاه
+  // (الأمس + اليوم) تُقلّل الإنذار الكاذب، لكن لا يُعاد أي تصرّف تلقائي على الكروت قبل
+  // تدقيق الجلب على بيانات SAS الفعلية.
+  // ⚠️ وفي كل الأحوال: لا يُحذف أي وصل، ولا يُنقَص دين مشترك (carry) ولا دين كارت (price).
+  for (const c of suspects) {
+    const sub = subById.get(c.subscriberId!);
     phantom++;
     events.push({
-      scenario: 1, subscriber: sub.name ?? sub.netUser, pin: c.serial,
+      scenario: 1, subscriber: sub?.name ?? sub?.netUser ?? null, pin: c.serial,
       detail: `يبدو بلا تفعيل مقابل في SAS — لم يُغيَّر شيء (وضع آمن: يُدقَّق يدوياً)`,
     });
   }
@@ -331,8 +373,9 @@ function buildReportText(r: SyncResult, day: Date): string {
   const byScenario = (s: SyncEvent["scenario"]) => r.events.filter((e) => e.scenario === s);
   const s1 = byScenario(1), s3 = byScenario(3), s6 = byScenario(6), s2 = byScenario(2), s7 = byScenario(7);
 
+  // وضع آمن: هذه كروت مشتبه بها لم يتغيّر فيها شيء — تحتاج نظرة منك فقط
   if (s1.length) {
-    text += `\n🔴 تفعيلات وهمية أُرجعت كروتها (${s1.length}):\n`;
+    text += `\n🛡️ كروت مشتبهة (لم يُغيَّر فيها شيء — راجعها يدوياً) (${s1.length}):\n`;
     text += s1.map((e) => `• ${e.subscriber ?? "—"} — بِن ${e.pin ?? "؟"} — ${e.detail ?? ""}`).join("\n");
   }
   if (s3.length) {
