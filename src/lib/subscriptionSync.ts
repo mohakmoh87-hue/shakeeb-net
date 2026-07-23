@@ -41,12 +41,14 @@ function withinRange(d: Date | null | undefined, start: Date, end: Date): boolea
   return t >= start.getTime() && t <= end.getTime();
 }
 
-// هل يختلف التاريخان في اليوم التقويمي؟ (نتجاهل فروق الساعات)
-function calendarDiffers(a: Date | null | undefined, b: Date): boolean {
-  if (!a) return true;
-  const da = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
-  const db = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
-  return da !== db;
+// هل تاريخ انتهاء الساس أحدث (أبعد) من تاريخ البرنامج؟ (مقارنة بمستوى اليوم التقويمي).
+// المزامنة تُمدّد التاريخ للأمام فقط: برنامج بلا تاريخ ⇒ يُضبط من الساس؛ الساس أبعد ⇒ يُضبط؛
+// البرنامج أبعد أو مساوٍ ⇒ لا تغيير إطلاقاً (لا نُقصّر تاريخ انتهاء أي مشترك).
+function sasDateIsLater(programDate: Date | null | undefined, sasDate: Date): boolean {
+  if (!programDate) return true;
+  const dp = new Date(programDate.getFullYear(), programDate.getMonth(), programDate.getDate()).getTime();
+  const ds = new Date(sasDate.getFullYear(), sasDate.getMonth(), sasDate.getDate()).getTime();
+  return ds > dp;
 }
 
 // تفعيل بكارت (voucher)؟ الكارت في حقل pin؛ نستبعد التفعيل برصيد المستخدم
@@ -283,9 +285,10 @@ export async function runOfficeSync(
       const sasPkg = (u.packageName ?? "").trim().toLowerCase();
       if (sasPkg && !knownPkg.has(sasPkg)) { skippedPkg++; continue; }
 
-      // فئته معروفة → تصحيح التاريخ بصمت عند الاختلاف
+      // فئته معروفة → تمديد التاريخ للأمام فقط: إن كان تاريخ الساس أبعد من تاريخ
+      // البرنامج نضبطه مثل الساس؛ وإن كان تاريخ البرنامج أبعد (أو مساوياً) لا نغيّر شيئاً.
       checked++;
-      if (validDate && calendarDiffers(p.dateTo, validDate)) {
+      if (validDate && sasDateIsLater(p.dateTo, validDate)) {
         await prisma.subscriber.update({ where: { id: p.id }, data: { dateTo: validDate } });
         dateFixed++;
       }
