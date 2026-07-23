@@ -26,15 +26,19 @@ export default async function ReceiptPage({
     ? await prisma.subscriber.findUnique({ where: { id: entry.subscriberId } })
     : null;
 
-  // اسم العلامة من الوكيل الحالي، ثم الإعداد العام، ثم الافتراضي
   const session = await getSession();
+  // عزل الوكلاء (IDOR): الوصل يُعرض لمن يملك مكتبه فقط — كان يُفتح بالمعرّف لأي مستخدم مسجّل
+  const { ownsTower } = await import("@/lib/guard");
+  const entryTower = entry.towerId ?? subscriber?.towerId ?? null;
+  if (!session || !(await ownsTower(session, entryTower))) notFound();
   const agent = session?.agentId != null
     ? await prisma.agent.findUnique({ where: { id: session.agentId }, select: { name: true } })
     : null;
   // اسم النظام الافتراضي من إعدادات وكيل الجلسة حصراً (عزل الوكلاء)
   const { getAgentSetting } = await import("@/lib/agentSettings");
   const officeName = agent?.name || (await getAgentSetting("office", session?.agentId, "SHAKEEB"));
-  const tpl = await getReceiptTemplate(session?.agentId ?? null);
+  // قالب مكتب الوصل المخصّص إن وُجد، وإلا قالب الوكيل العام
+  const tpl = await getReceiptTemplate(session?.agentId ?? null, entryTower);
 
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">

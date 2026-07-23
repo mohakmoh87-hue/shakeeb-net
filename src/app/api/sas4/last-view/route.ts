@@ -17,9 +17,11 @@ export async function GET() {
     );
   }
 
-  // تمييز المستوردين مسبقاً
+  // تمييز المستوردين مسبقاً — ضمن مكاتب وكيل المستخدم فقط (تطابُق sasId مع وكيل آخر لا يعنينا)
+  const { agentTowerIds } = await import("@/lib/guard");
+  const towers = await agentTowerIds(session);
   const existing = await prisma.subscriber.findMany({
-    where: { sasId: { in: view.users.map((u) => u.sasId) } },
+    where: { sasId: { in: view.users.map((u) => u.sasId) }, towerId: { in: towers.length ? towers : [-1] } },
     select: { sasId: true },
   });
   const existingIds = new Set(existing.map((e) => e.sasId));

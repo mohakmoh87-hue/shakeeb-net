@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import MoneyTxModal from "@/components/MoneyTxModal";
 import { formatDate } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 
@@ -38,16 +39,19 @@ export default function CashboxPage() {
   const [saving, setSaving] = useState(false);
   const { can } = usePermission();
 
-  // بحث بالتاريخ (من – إلى) وترتيب الأعمدة
+  // بحث بالتاريخ (من – إلى) وبحث حر (كلمة/اسم حساب/مبلغ/رقم) وترتيب الأعمدة
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [detailId, setDetailId] = useState<number | null>(null); // حركة مفتوحة التفاصيل
 
-  const load = useCallback((f = "", t = "") => {
+  const load = useCallback((f = "", t = "", search = "") => {
     const qs = new URLSearchParams();
     if (f) qs.set("from", f);
     if (t) qs.set("to", t);
+    if (search.trim()) qs.set("q", search.trim());
     fetch(`/api/money${qs.toString() ? `?${qs}` : ""}`).then((r) => {
       if (r.ok)
         r.json().then((d) => {
@@ -58,7 +62,7 @@ export default function CashboxPage() {
   }, []);
 
   useEffect(() => {
-    load(from, to);
+    load(from, to, q);
     fetch("/api/accounts").then((r) => void (r.ok && r.json().then(setAccounts)));
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setTowers)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,7 +113,7 @@ export default function CashboxPage() {
       }
       setAmount("");
       setNotes("");
-      load(from, to);
+      load(from, to, q);
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {
@@ -122,7 +126,7 @@ export default function CashboxPage() {
     const label = t.sourceType === "debt" ? "تسديد الدين (سيرجع ديناً على المشترك)" : "الحركة المالية";
     if (!window.confirm(`حذف ${label}؟ سيُلغى مبلغها من الصندوق.`)) return;
     const res = await fetch(`/api/money/${t.id}/void`, { method: "POST" });
-    if (res.ok) load(from, to);
+    if (res.ok) load(from, to, q);
     else {
       const d = await res.json().catch(() => ({}));
       alert(d.error ?? "تعذّر الحذف");
@@ -149,9 +153,19 @@ export default function CashboxPage() {
           <label className="mb-1 block text-xs font-medium text-slate-600">إلى تاريخ</label>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
         </div>
-        <button onClick={() => load(from, to)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
-        {(from || to) && (
-          <button onClick={() => { setFrom(""); setTo(""); load("", ""); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
+        <div className="min-w-[200px] flex-1">
+          <label className="mb-1 block text-xs font-medium text-slate-600">بحث حر</label>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") load(from, to, q); }}
+            placeholder="كلمة من الملاحظات، اسم حساب، مبلغ، أو رقم حركة…"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
+          />
+        </div>
+        <button onClick={() => load(from, to, q)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
+        {(from || to || q) && (
+          <button onClick={() => { setFrom(""); setTo(""); setQ(""); load("", "", ""); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
         )}
         <span className="mr-auto self-center text-xs text-slate-400">{sortedTxs.length} حركة</span>
       </div>
@@ -237,7 +251,7 @@ export default function CashboxPage() {
                 <tr><td colSpan={can("receipts.void") ? 7 : 6} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
               ) : (
                 sortedTxs.map((t) => (
-                  <tr key={t.id} className="border-t border-slate-100">
+                  <tr key={t.id} onClick={() => setDetailId(t.id)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" title="عرض التفاصيل">
                     <td className="p-3">{t.id}</td>
                     <td className="p-3">{fmtDate(t.date)}</td>
                     <td className="p-3 font-semibold text-emerald-600">{t.moneyIn ? fmt(t.moneyIn) : "—"}</td>
@@ -246,7 +260,7 @@ export default function CashboxPage() {
                     <td className="p-3 text-slate-600">{t.notes ?? "—"}</td>
                     {can("receipts.void") && (
                       <td className="p-3">
-                        <button onClick={() => voidTx(t)} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑 حذف</button>
+                        <button onClick={(e) => { e.stopPropagation(); voidTx(t); }} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑 حذف</button>
                       </td>
                     )}
                   </tr>
@@ -256,6 +270,9 @@ export default function CashboxPage() {
           </table>
         </div>
       </div>
+
+      {/* نافذة تفاصيل الحركة المالية */}
+      {detailId != null && <MoneyTxModal id={detailId} onClose={() => setDetailId(null)} />}
     </div>
   );
 }

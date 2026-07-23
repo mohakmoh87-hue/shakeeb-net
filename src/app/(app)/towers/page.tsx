@@ -21,6 +21,7 @@ type Office = {
   waEnabled: string | null;
   syncTime: string | null;
   syncEnabled: string | null;
+  reminderTime: string | null;
   lat: number | null;
   lng: number | null;
   geoRadius: number | null;
@@ -171,6 +172,11 @@ export default function OfficesPage() {
                   </F>
                   <F label="العنوان"><I v={form.address} on={(v) => set("address", v)} ro={ro} /></F>
                   <F label="وقت مزامنة الاشتراكات (يومياً)"><input type="time" value={form.syncTime ?? ""} disabled={ro} onChange={(e) => set("syncTime", e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50" /></F>
+                  {/* وقت تذكير الانتهاء خاص بكل مكتب: مرتبط بوقت تشغيل حاسبته (مكتب يفتح 12:00 وآخر 2:00) */}
+                  <F label="وقت تذكير انتهاء الاشتراك (يومياً) — بحسب وقت فتح هذا المكتب">
+                    <input type="time" value={form.reminderTime ?? ""} disabled={ro} onChange={(e) => set("reminderTime", e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50" />
+                    <span className="mt-0.5 block text-[11px] text-slate-400">فارغ = الوقت العام (13:00). يُرسل التذكير حين تكون حاسبة هذا المكتب مشغّلة.</span>
+                  </F>
                   <F label="منطقة الخريطة (لتحديد مواقع المشتركين)">
                     <select value={form.mapArea ?? ""} disabled={ro} onChange={(e) => set("mapArea", e.target.value || null)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50">
                       <option value="">— بدون / غير محدّدة —</option>

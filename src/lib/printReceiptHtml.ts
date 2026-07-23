@@ -67,7 +67,8 @@ export async function subscriptionReceiptHtml(entryId: number, agentId: number |
     ? await prisma.subscriber.findUnique({ where: { id: entry.subscriberId } })
     : null;
   const officeName = await brandName(agentId);
-  const tpl = await getReceiptTemplate(agentId);
+  // قالب مكتب الوصل المخصّص إن وُجد، وإلا قالب الوكيل العام
+  const tpl = await getReceiptTemplate(agentId, entry.towerId);
 
   const rows = [
     line("رقم الوصل", `#${entry.id}`),
@@ -101,7 +102,8 @@ export async function invoiceReceiptHtml(invoiceId: number, agentId: number | nu
   const items = await prisma.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, name: true } });
   const nameMap = new Map(items.map((i) => [i.id, i.name]));
   const officeName = await brandName(agentId);
-  const tpl = await getReceiptTemplate(agentId);
+  // قالب مكتب الفاتورة المخصّص إن وُجد، وإلا قالب الوكيل العام
+  const tpl = await getReceiptTemplate(agentId, invoice.towerId);
 
   const tableRows = lines.map((l) =>
     `<tr><td>${esc(l.itemId ? nameMap.get(l.itemId) ?? "—" : "—")}</td><td>${fmt(l.count)}</td><td>${fmt(l.price)}</td><td class="b">${fmt((l.count ?? 0) * (l.price ?? 0))}</td></tr>`,

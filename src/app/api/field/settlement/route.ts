@@ -34,16 +34,16 @@ export async function GET() {
   const viewLists = await prisma.taskList.findMany({ where: { boardId: { in: viewBoards.map((b) => b.id) } }, select: { id: true } });
   const cards = await prisma.taskCard.findMany({
     where: { done: true, settled: false, isDeleted: false, technicianId: { in: technicians.map((t) => t.id) }, listId: { in: viewLists.map((l) => l.id) } },
-    select: { id: true, title: true, kind: true, amount: true, technicianId: true, description: true },
+    select: { id: true, title: true, kind: true, amount: true, subAmount: true, technicianId: true, description: true },
     orderBy: { id: "asc" },
   });
-  const byTech = new Map<number, { title: string; kind: string; amount: number; netUser: string | null }[]>();
+  const byTech = new Map<number, { title: string; kind: string; amount: number; subAmount: number; netUser: string | null }[]>();
   for (const c of cards) {
     if (c.technicianId == null) continue;
     // اليوزر مخزّن في وصف البطاقة كسطر «👤 اليوزر: X»
     const netUser = c.description?.match(/اليوزر\s*[:：]\s*([^\n]+)/)?.[1]?.trim();
     const arr = byTech.get(c.technicianId) ?? [];
-    arr.push({ title: c.title, kind: c.kind, amount: c.amount ?? 0, netUser: netUser && netUser !== "—" ? netUser : null });
+    arr.push({ title: c.title, kind: c.kind, amount: c.amount ?? 0, subAmount: c.subAmount ?? 0, netUser: netUser && netUser !== "—" ? netUser : null });
     byTech.set(c.technicianId, arr);
   }
 
@@ -52,11 +52,15 @@ export async function GET() {
     offices,
     technicians: technicians.map((t) => {
       const items = byTech.get(t.id) ?? [];
+      // المجموع الكلي المستلم من الفني = «المبيع» + «اشتراك» (وللتوصيل مبلغه في amount)
+      const saleTotal = items.reduce((s, x) => s + x.amount, 0);
+      const subTotal = items.reduce((s, x) => s + x.subAmount, 0);
       return {
         id: t.id, name: t.name, towerId: t.towerId,
-        pendingTotal: items.reduce((s, x) => s + x.amount, 0),
+        pendingTotal: saleTotal + subTotal,
+        saleTotal, subTotal,
         pendingCount: items.length,
-        items, // تفصيل كل تكت (عنوان + نوع + مبلغ)
+        items, // تفصيل كل تكت (عنوان + نوع + مبيع + اشتراك)
       };
     }),
   });
@@ -90,18 +94,16 @@ export async function POST(request: Request) {
   const settleLists = await prisma.taskList.findMany({ where: { boardId: { in: settleBoards.map((b) => b.id) } }, select: { id: true } });
   const cards = await prisma.taskCard.findMany({
     where: { technicianId, done: true, settled: false, isDeleted: false, listId: { in: settleLists.map((l) => l.id) } },
-    select: { id: true, amount: true },
+    select: { id: true, amount: true, subAmount: true },
   });
   const ids = cards.map((c) => c.id);
-  const total = cards.reduce((s, c) => s + (c.amount ?? 0), 0);
+  // المجموع المحصَّل من الفني = المبيع + الاشتراك (وللتوصيل مبلغه)
+  const total = cards.reduce((s, c) => s + (c.amount ?? 0) + (c.subAmount ?? 0), 0);
 
   if (ids.length > 0) {
     // أرشفة بدل الحذف: تبقى البطاقة بالأرشيف أسبوعاً ثم تُحذف نهائياً (أو يحذفها المدير يدوياً).
-    // الصور تُحذف فوراً لتوفير مساحة القاعدة — بيانات البطاقة تكفي للأرشيف.
-    await prisma.$transaction([
-      prisma.taskCard.updateMany({ where: { id: { in: ids } }, data: { settled: true, archivedAt: new Date() } }),
-      prisma.cardPhoto.deleteMany({ where: { cardId: { in: ids } } }),
-    ]);
+    // صور العمل تبقى مع البطاقة لعرضها من الأرشيف — وتُحذف معها بالتنظيف الأسبوعي/الحذف اليدوي.
+    await prisma.taskCard.updateMany({ where: { id: { in: ids } }, data: { settled: true, archivedAt: new Date() } });
     const byName = session.fullName ?? session.username;
     const { appendCardHistory } = await import("@/lib/field");
     await Promise.all(ids.map((id) => appendCardHistory(id, byName, "تحصيل وأرشفة البطاقة")));

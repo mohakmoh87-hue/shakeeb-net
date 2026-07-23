@@ -13,10 +13,10 @@ const TZ = "Asia/Baghdad";
 
 
 // جلب قالب رسالة حسب التصنيف
-// قالب رسالة لوكيل محدّد (عزل المستأجر) — كل وكيل قوالبه الخاصّة
-async function getTemplate(type: string, agentId: number | null): Promise<string | null> {
+// قالب المكتب المخصّص أولاً ثم قالب الوكيل العام (عزل المستأجر والمكتب)
+async function getTemplate(type: string, agentId: number | null, towerId?: number | null): Promise<string | null> {
   const { getEffectiveTemplate } = await import("@/lib/smsTemplates");
-  return getEffectiveTemplate(type, agentId); // نص الوكيل، وإلا الافتراضي؛ null إن مُعطَّل
+  return getEffectiveTemplate(type, agentId, towerId); // قالب المكتب ← الوكيل ← الافتراضي؛ null إن مُعطَّل
 }
 
 // تاريخ يوم معيّن بصيغة YYYY-MM-DD (توقيت بغداد)
@@ -52,12 +52,13 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
     if (!fallbackCache.has(aid)) fallbackCache.set(aid, await getAgentSetting("office", aid, "SHAKEEB"));
     return fallbackCache.get(aid)!;
   };
-  // قالب "expiring" لكل وكيل (يُجلب مرّة ويُخزَّن) — عزل المستأجر
-  const tplCache = new Map<number, string | null>();
-  async function templateFor(agentId: number | null): Promise<string | null> {
+  // قالب "expiring" لكل (وكيل، مكتب) — يُجلب مرّة ويُخزَّن؛ قالب المكتب يغلب قالب الوكيل
+  const tplCache = new Map<string, string | null>();
+  async function templateFor(agentId: number | null, towerId: number | null): Promise<string | null> {
     if (agentId == null) return null;
-    if (!tplCache.has(agentId)) tplCache.set(agentId, await getTemplate("expiring", agentId));
-    return tplCache.get(agentId) ?? null;
+    const key = `${agentId}:${towerId ?? 0}`;
+    if (!tplCache.has(key)) tplCache.set(key, await getTemplate("expiring", agentId, towerId));
+    return tplCache.get(key) ?? null;
   }
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -65,7 +66,7 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
   for (const sub of recipients) {
     const office = sub.towerId ? officeMap.get(sub.towerId) : null;
     if (office?.waEnabled === "0") continue; // مكتب معطّل الواتساب
-    const template = await templateFor(office?.agentId ?? null);
+    const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null);
     if (!template) continue; // لا قالب مفعّل لوكيل هذا المكتب
     if (i++ > 0) await sleep(10000); // تأخير 10 ثوانٍ بين رسالة وأخرى
     const text = renderTemplate(template, {
@@ -233,14 +234,22 @@ async function ensureOfficeWhatsApp() {
   officeWaStarted = true;
   try {
     const { startWhatsApp, hostsOfficeLocally } = await import("@/lib/whatsapp");
-    const { getWorkerAgentId } = await import("@/lib/hybridAgent");
+    const { getWorkerAgentId, getWorkerTowerId } = await import("@/lib/hybridAgent");
     const aid = getWorkerAgentId();
     if (aid == null) { officeWaStarted = false; return; } // بلا وكيل بعد (غير معتمَد) — لا تستضِف شيئاً
-    // مكاتب وكيل هذه الحاسبة التي تملك جلستها على قرصها فقط — كل حاسبة تستضيف مكتبها هي (مالكة الجلسة)
+    // عزل واتساب صارم: حاسبة مربوطة بمكتب (towerId) ⇒ تستضيف جلسة مكتبها فقط لا غير.
+    // غير المربوطة (توافق قديم): مكاتب وكيلها التي تملك جلستها على قرصها.
+    const boundTower = getWorkerTowerId();
     const offices = (await prisma.tower.findMany({
-      where: { isDeleted: false, agentId: aid, OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }] },
+      where: {
+        isDeleted: false, agentId: aid,
+        ...(boundTower != null ? { id: boundTower } : {}),
+        OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }],
+      },
       select: { id: true },
-    })).filter((o) => hostsOfficeLocally(o.id));
+      // الحاسبة المربوطة تبدأ مكتبها دائماً (تُظهر QR للربط إن لم تكن له ملفات بعد)؛
+      // غير المربوطة تبدأ ما تملك جلسته على قرصها فقط (توافق قديم).
+    })).filter((o) => boundTower != null || hostsOfficeLocally(o.id));
     if (offices.length) console.log(`[scheduler] بدء واتساب ${offices.length} مكتب (جلساتها على هذه الحاسبة)`);
     // إقلاع متتابع بفاصل زمني — تشغيل عدّة متصفّحات واتساب دفعةً واحدة يُزاحم موارد
     // الحاسبة فيعلق بعضها على "authenticated/starting". الفاصل يمنح كل مكتب فرصة الاستقرار.
@@ -273,12 +282,23 @@ export function startScheduler() {
     const wAgent = getWorkerAgentId();
     const reminderTime = await getAgentSetting("reminderTime", wAgent, "13:00");
     const reportTime = await getAgentSetting("reportTime", wAgent, "23:55");
-    if (nowHM === reminderTime) {
-      // الإرسال التلقائي فقط لمكاتب "الإرسال الصامت" (silent != "0")؛
-      // مكاتب غير الصامتة تنتظر موافقة المستخدم عند أول دخول يومي.
-      prisma.tower.findMany({ where: { isDeleted: false, NOT: { OR: [{ silent: "0" }, { waEnabled: "0" }] } }, select: { id: true } })
-        .then((offs) => runExpiringReminder(offs.map((o) => o.id)))
-        .catch((e) => console.error("[scheduler] expiring:", e));
+    // تذكير الانتهاء: وقتٌ خاص لكل مكتب (towers.reminderTime — مرتبط بوقت تشغيل حاسبته:
+    // مكتب يفتح 12:00 وآخر 2:00)، والمكتب بلا وقتٍ خاص يتبع وقت الوكيل العام.
+    // الإرسال التلقائي فقط لمكاتب "الإرسال الصامت" (silent != "0")؛
+    // مكاتب غير الصامتة تنتظر موافقة المستخدم عند أول دخول يومي.
+    {
+      const offs = await prisma.tower.findMany({
+        where: {
+          isDeleted: false,
+          ...(wAgent != null ? { agentId: wAgent } : {}), // عزل: مكاتب وكيل هذا العامل حصراً
+          NOT: { OR: [{ silent: "0" }, { waEnabled: "0" }] },
+        },
+        select: { id: true, reminderTime: true },
+      }).catch(() => [] as { id: number; reminderTime: string | null }[]);
+      const due = offs.filter((o) => (o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
+      if (due.length) {
+        runExpiringReminder(due).catch((e) => console.error("[scheduler] expiring:", e));
+      }
     }
     if (nowHM === reportTime) {
       // احتياطي: يُرسل تقرير أي مكتب لم يُرسَل تقريره اليوم (لمن أطفأ دون تسجيل خروج)
@@ -292,7 +312,7 @@ export function startScheduler() {
     }
     // مزامنة اشتراكات كل مكتب حسب وقته المضبوط (مرحلتان: كروت الأمس ثم تصحيح التواريخ)
     try {
-      const offices = await prisma.tower.findMany({ where: { isDeleted: false, syncEnabled: "1", syncTime: { not: null } }, select: { id: true, syncTime: true } });
+      const offices = await prisma.tower.findMany({ where: { isDeleted: false, syncEnabled: "1", syncTime: { not: null }, ...(wAgent != null ? { agentId: wAgent } : {}) }, select: { id: true, syncTime: true } });
       for (const o of offices) {
         if ((o.syncTime ?? "").trim() === nowHM) {
           const { runOfficeSync } = await import("@/lib/subscriptionSync");

@@ -52,7 +52,8 @@ export async function GET(request: Request) {
   if (g.error) return g.error;
   const reqOffice = Number(new URL(request.url).searchParams.get("officeId")) || null;
   const agentTowers = await agentTowerIds(g.session);
-  const towerFilter = reqOffice ? [reqOffice] : (agentTowers.length ? agentTowers : [-1]);
+  // عزل: لا يُقبل مكتب مطلوب إلا ضمن مكاتب وكيل المستخدم (كان يُمرَّر أي معرّف)
+  const towerFilter = reqOffice && agentTowers.includes(reqOffice) ? [reqOffice] : (agentTowers.length ? agentTowers : [-1]);
   const techs = await prisma.technician.findMany({ where: { towerId: { in: towerFilter }, isDeleted: false }, select: { id: true, name: true, shiftStart: true, entryGraceMin: true, lateRatePerMin: true } });
   const nameById = new Map(techs.map((t) => [t.id, t.name]));
   const techById = new Map(techs.map((t) => [t.id, t]));
@@ -70,7 +71,9 @@ export async function GET(request: Request) {
     const tt = techById.get(r.technicianId);
     const startMin = parseHHMM(tt?.shiftStart);
     const grace = Math.max(0, tt?.entryGraceMin ?? 0);
-    const lateMin = r.checkIn && startMin != null ? Math.max(0, baghdadMinutesOfDay(r.checkIn) - (startMin + grace)) : 0;
+    // تجاوُز السماحية يُلغيها — الدقائق تُحسب من بدء الدوام نفسه (نفس قاعدة computeAttendance)
+    const ciMin = r.checkIn && startMin != null ? baghdadMinutesOfDay(r.checkIn) : null;
+    const lateMin = ciMin != null && startMin != null && ciMin > startMin + grace ? ciMin - startMin : 0;
     return {
       technicianId: r.technicianId, technicianName: nameById.get(r.technicianId) ?? `#${r.technicianId}`,
       dayKey: r.dayKey, checkIn: r.checkIn, lateMinutes: lateMin, estDeduction: lateMin * Math.max(0, tt?.lateRatePerMin ?? 0),

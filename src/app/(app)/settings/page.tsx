@@ -71,7 +71,10 @@ export default function SettingsPage() {
         <Field label="اسم النظام (الافتراضي في الوصولات)" value={form.office} onChange={(v) => set("office", v)} />
         <Field label="سعر صرف الدولار (دينار)" value={form.dollar} onChange={(v) => set("dollar", v)} type="number" />
         <Field label="رمز الدولة" value={form.country} onChange={(v) => set("country", v)} placeholder="964" />
-        <Field label="وقت إرسال تذكير انتهاء الاشتراك (يومياً)" value={form.reminderTime || "13:00"} onChange={(v) => set("reminderTime", v)} type="time" />
+        {/* وقت تذكير الانتهاء انتقل لصفحة المكاتب (لكل مكتب وقته بحسب وقت فتحه وتشغيل حاسبته) */}
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
+          ⏰ وقت تذكير انتهاء الاشتراك صار <b>لكل مكتب على حدة</b> — اضبطه من صفحة <a href="/towers" className="font-bold underline">المكاتب</a> (حقل «وقت تذكير انتهاء الاشتراك») بحسب وقت فتح كل مكتب وتشغيل حاسبته.
+        </div>
         <Field label="وقت إرسال تقرير المدير (يومياً)" value={form.reportTime || "23:55"} onChange={(v) => set("reportTime", v)} type="time" />
         <Field label="وقت إرسال النسخة الاحتياطية للإيميل (يومياً)" value={form.backupTime || "04:00"} onChange={(v) => set("backupTime", v)} type="time" />
 

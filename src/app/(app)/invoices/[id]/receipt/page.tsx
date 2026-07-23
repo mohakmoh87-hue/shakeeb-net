@@ -20,6 +20,21 @@ export default async function InvoiceReceipt({
   const invoice = await prisma.invoice.findUnique({ where: { id: Number(id) } });
   if (!invoice) notFound();
 
+  // عزل الوكلاء (IDOR): الفاتورة تُعرض لمن يملك مكتبها فقط — كانت تُفتح بالمعرّف لأي مستخدم مسجّل
+  {
+    const s = await getSession();
+    const { ownsTower } = await import("@/lib/guard");
+    const invSub = invoice.subscriberId
+      ? await prisma.subscriber.findUnique({ where: { id: invoice.subscriberId }, select: { towerId: true } })
+      : null;
+    const invTower = invoice.towerId ?? invSub?.towerId ?? null;
+    // فاتورة بلا مكتب (بيع مباشر من مدير بلا مكتب): تُعرض لمنشئها أو للمالك فقط
+    const ok = invTower != null
+      ? !!s && (await ownsTower(s, invTower))
+      : !!s && (invoice.user === s.username || s.isOwner);
+    if (!ok) notFound();
+  }
+
   const lines = await prisma.invoiceItem.findMany({
     where: { invoiceId: invoice.id, isDeleted: false },
   });
@@ -37,7 +52,8 @@ export default async function InvoiceReceipt({
   // اسم النظام الافتراضي من إعدادات وكيل الجلسة حصراً (عزل الوكلاء)
   const { getAgentSetting } = await import("@/lib/agentSettings");
   const officeName = agent?.name || (await getAgentSetting("office", session?.agentId, "SHAKEEB"));
-  const tpl = await getReceiptTemplate(session?.agentId ?? null);
+  // قالب مكتب الفاتورة المخصّص إن وُجد، وإلا قالب الوكيل العام
+  const tpl = await getReceiptTemplate(session?.agentId ?? null, invoice.towerId);
 
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">

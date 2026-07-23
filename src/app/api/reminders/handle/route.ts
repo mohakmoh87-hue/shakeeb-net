@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
+import { guard, ownsTower } from "@/lib/guard";
 import { runExpiringReminder } from "@/lib/scheduler";
 
 const schema = z.object({
@@ -18,6 +18,11 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
   const { officeId, send } = parsed.data;
+
+  // عزل المستأجر: لا إرسال/ختم تذكير لمكتبٍ لا يتبع وكيل المستخدم
+  if (!(await ownsTower(g.session, officeId))) {
+    return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+  }
 
   if (send) {
     // runExpiringReminder يختم lastReminderDate=today تلقائياً

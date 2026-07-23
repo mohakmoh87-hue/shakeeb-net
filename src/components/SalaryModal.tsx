@@ -19,6 +19,7 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   const [st, setSt] = useState<Statement | null>(null);
   const [history, setHistory] = useState<Archive[]>([]);
   const [period, setPeriod] = useState<Period | null>(null);
+  const [cardCounts, setCardCounts] = useState<{ kind: string; count: number }[]>([]); // بطاقات منجزة حسب الفئة ضمن الفترة
   const [techName, setTechName] = useState(name ?? "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -29,7 +30,7 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
     const q = isManager ? `?technicianId=${technicianId}` : "";
     fetch(`/api/field/salary${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (!d) return;
-      setSt(d.statement ?? null); setHistory(d.history ?? []); setPeriod(d.period ?? null); if (d.name) setTechName(d.name);
+      setSt(d.statement ?? null); setHistory(d.history ?? []); setPeriod(d.period ?? null); setCardCounts(d.cardCounts ?? []); if (d.name) setTechName(d.name);
     });
   }, [isManager, technicianId]);
   useEffect(() => { load(); }, [load]);
@@ -82,6 +83,25 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
 
             {/* لوحة التفاصيل للخانة المختارة */}
             {expand && <DetailPanel cat={expand} st={st} onClose={() => setExpand(null)} />}
+
+            {/* البطاقات المنجزة خلال فترة الراتب — عدد فقط لكل فئة (من السجل الدائم) */}
+            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-1.5 text-sm font-bold text-slate-700">
+                🗂️ بطاقات منجزة خلال الفترة
+                <span className="mr-1 text-xs font-normal text-slate-400">({num(cardCounts.reduce((s, c) => s + c.count, 0))} بطاقة)</span>
+              </div>
+              {cardCounts.length === 0 ? (
+                <div className="text-xs text-slate-400">لا بطاقات منجزة ضمن هذه الفترة</div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {cardCounts.map((c) => (
+                    <span key={c.kind} className="rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                      {c.kind} <b className="text-mynet-blue">×{num(c.count)}</b>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* كل البنود المؤثّرة */}
             <div className="mb-1 text-sm font-bold text-slate-700">كل البنود المؤثّرة</div>

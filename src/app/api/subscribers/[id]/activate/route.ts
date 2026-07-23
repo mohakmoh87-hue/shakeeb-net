@@ -249,7 +249,7 @@ async function sendActivationMessage(a: {
     if (office?.waEnabled === "0") return;
 
     // قالب تفعيل وكيل مكتب المشترك (عزل — كان يُجلب بلا تحديد وكيل) مع النص الافتراضي عند غيابه
-    const tplText = await getEffectiveTemplate("activation", office?.agentId ?? null);
+    const tplText = await getEffectiveTemplate("activation", office?.agentId ?? null, a.officeId);
     if (!tplText) return; // معطَّل أو لا قالب
 
     const text = renderTemplate(tplText, {

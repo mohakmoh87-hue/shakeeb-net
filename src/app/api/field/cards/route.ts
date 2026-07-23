@@ -31,6 +31,8 @@ export async function POST(request: Request) {
       label: b.label ? String(b.label) : null,
     },
   });
+  // أول حدث في سجل التغييرات: إنشاء البطاقة (تاريخه ووقته وفاعله)
+  await appendCardHistory(created.id, actor.name ?? "مستخدم", "إنشاء البطاقة");
   return NextResponse.json(created, { status: 201 });
 }
 
@@ -56,7 +58,12 @@ export async function PATCH(request: Request) {
   if (typeof b.listId === "number") data.listId = b.listId;
   if (typeof b.position === "number") data.position = b.position;
   // ملاحظة: الإنجاز (done=true) يتمّ عبر /api/field/complete فقط (بحقوله الواجبة)
-  if (b.done === false) { data.done = false; data.completedAt = null; }
+  if (b.done === false) {
+    data.done = false; data.completedAt = null;
+    // إلغاء الإنجاز يلغي آخر سجل إنجاز دائم للبطاقة (كي لا يُعدّ في كشف الراتب)
+    const lastComp = await prisma.cardCompletion.findFirst({ where: { cardId: Number(b.id) }, orderBy: { id: "desc" }, select: { id: true } });
+    if (lastComp) await prisma.cardCompletion.delete({ where: { id: lastComp.id } }).catch(() => {});
+  }
 
   // الحالة القديمة قبل التعديل — لتسجيل التغييرات المهمّة في سجل البطاقة
   const before = await prisma.taskCard.findUnique({

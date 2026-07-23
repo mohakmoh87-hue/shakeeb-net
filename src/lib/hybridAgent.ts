@@ -6,6 +6,7 @@ import { computeLeaderMachineId } from "@/lib/hybridLeader";
 // الافتراضي false حتى تُحسم أول نبضة (لا يُصبح قائداً إلا بعد اعتماده وربطه بوكيل).
 let leaderNow = false;
 let myAgentId: number | null = null; // وكيل هذه الحاسبة (يُقرأ من صفّها بعد الاعتماد)
+let myTowerId: number | null = null; // مكتب هذه الحاسبة (عزل صارم: تستضيف جلسة مكتبها فقط)
 let mid = "";
 
 export function getMachineId(): string {
@@ -15,6 +16,10 @@ export function getMachineId(): string {
 export function isLeaderNow(): boolean { return leaderNow; }
 // وكيل هذه الحاسبة (لحصر جلسات الواتساب بمكاتب هذا الوكيل)
 export function getWorkerAgentId(): number | null { return myAgentId; }
+// مكتب هذه الحاسبة المُلزِم (عزل واتساب صارم): إن كان محدَّداً، تستضيف هذه الحاسبة
+// جلسة هذا المكتب فقط لا غير — حتى لو وُجدت ملفات جلسات مكاتب أخرى على قرصها.
+// null = غير مربوطة (سلوك متوافق قديم: تستضيف ما تملك جلسته).
+export function getWorkerTowerId(): number | null { return myTowerId; }
 
 // نبضة دورية: تسجّل هذه الحاسبة وتحدّث حالة القيادة.
 export function startHybridAgent() {
@@ -32,9 +37,11 @@ export function startHybridAgent() {
     try {
       const row = await prisma.hybridWorker.upsert({
         where: { machineId: id },
-        update: { lastSeen: new Date(), name },
+        // ربط المكتب: env WORKER_TOWER_ID (إن وُجد) يُثبّت/يُصحّح الربط في القاعدة؛
+        // وإلا يبقى ما ضبطه المدير مركزياً (لا يُدهَس بـnull عند غياب الـenv)
+        update: { lastSeen: new Date(), name, ...(towerId != null ? { towerId } : {}) },
         create: { machineId: id, name, towerId, lastSeen: new Date() },
-        select: { agentId: true, approved: true, blocked: true },
+        select: { agentId: true, approved: true, blocked: true, towerId: true },
       });
       // محظورة (حذفها المدير): توقّف تماماً — أغلق الواتساب نظيفاً ثم اخرج (لا تعد للظهور)
       if (row.blocked) {
@@ -45,6 +52,7 @@ export function startHybridAgent() {
         process.exit(0);
       }
       myAgentId = row.agentId ?? null;
+      myTowerId = row.towerId ?? null; // مكتب هذه الحاسبة المُلزِم (عزل واتساب صارم)
       // قائد وكيل هذه الحاسبة فقط (يستضيف واتساب مكاتب هذا الوكيل). غير معتمَد/بلا وكيل ⇒ ليس قائداً.
       if (row.approved && myAgentId != null) {
         const leader = await computeLeaderMachineId(myAgentId);

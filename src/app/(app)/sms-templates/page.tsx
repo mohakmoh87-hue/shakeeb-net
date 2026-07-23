@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { usePermission } from "@/lib/usePermission";
 
-type EventTpl = { type: string; text: string; enable: string };
+type EventTpl = { type: string; text: string; enable: string; officeCustom?: boolean; reset?: boolean };
 type CustomTpl = { id: number; name: string; text: string; dirty?: boolean };
+type Office = { id: number; name: string | null };
 
 // القوالب المربوطة بالأحداث (لا تُحذف ولا يُعاد تسميتها — تُعطَّل بمفتاح «مفعّل»)
 const EVENTS: { type: string; name: string; hint: string }[] = [
@@ -53,7 +54,9 @@ const EXTRA_VARS: Record<string, { token: string; label: string }[]> = {
     { token: "{details}", label: "تفاصيل الصيانة" },
     { token: "{technician}", label: "اسم الفني" },
     { token: "{date}", label: "تاريخ العملية" },
-    { token: "{amount}", label: "المبلغ" },
+    { token: "{amount}", label: "المبلغ الكلي (مبيع+اشتراك)" },
+    { token: "{المبيع}", label: "مبلغ المبيع" },
+    { token: "{الاشتراك}", label: "مبلغ الاشتراك" },
     { token: "{office}", label: "اسم المكتب" },
   ],
   reward: [
@@ -92,8 +95,9 @@ const SAMPLE: Record<string, string> = {
 };
 
 // استبدال متغيّرات المعاينة (نفس نمط الخادم: إنكليزي + عربي)
-function renderSample(text: string): string {
-  return text.replace(/\{([\w؀-ۿ]+)\}/g, (_, key) => SAMPLE[key] ?? "");
+// اسم المكتب الحقيقي يُمرَّر ليحل محل القيمة التجريبية — فتطابق المعاينة ما يصل فعلاً
+function renderSample(text: string, officeName?: string | null): string {
+  return text.replace(/\{([\w؀-ۿ]+)\}/g, (_, key) => (key === "office" && officeName ? officeName : SAMPLE[key] ?? ""));
 }
 
 // عرض النص بين نجمتين *هكذا* بخط عريض (تنسيق واتساب)
@@ -110,17 +114,30 @@ export default function SmsTemplatesPage() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  // عزل القوالب لكل مكتب: "" = قوالب الوكيل العامة، وإلا معرّف المكتب (قالبه يغلب العام)
+  const [offices, setOffices] = useState<Office[]>([]);
+  const [officeSel, setOfficeSel] = useState<string>("");
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // قوالب الأحداث تُعاد قراءتها عند تبديل المكتب (قالب المكتب إن وُجد وإلا العام)
   useEffect(() => {
-    fetch("/api/sms-templates/bulk").then((r) => void (r.ok && r.json().then((rows: EventTpl[]) => {
+    const qs = officeSel ? `?officeId=${officeSel}` : "";
+    fetch(`/api/sms-templates/bulk${qs}`).then((r) => void (r.ok && r.json().then((d: { templates: EventTpl[]; officeId: number | null }) => {
       const m: Record<string, EventTpl> = {};
-      for (const t of rows) m[t.type] = t;
+      for (const t of d.templates ?? []) m[t.type] = t;
       setEvents(m);
+      setSaved(false);
+      // موظف المكتب يُقيَّد بمكتبه من الخادم — نثبّت المبدّل على مكتبه الفعلي
+      if (d.officeId != null && String(d.officeId) !== officeSel) setOfficeSel(String(d.officeId));
     })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeSel]);
+
+  useEffect(() => {
     fetch("/api/sms-templates").then((r) => void (r.ok && r.json().then((rows: { id: number; type: string | null; text: string | null }[]) => {
       setCustoms(rows.filter((r2) => r2.type && !EVENT_TYPES.includes(r2.type)).map((r2) => ({ id: r2.id, name: r2.type ?? "", text: r2.text ?? "" })));
     })));
+    fetch("/api/towers").then((r) => void (r.ok && r.json().then((rows: Office[]) => setOffices(rows))));
   }, []);
 
   const isEvent = sel.startsWith("event:");
@@ -134,13 +151,15 @@ export default function SmsTemplatesPage() {
 
   const setText = (text: string) => {
     setSaved(false);
-    if (isEvent) setEvents((m) => ({ ...m, [selType]: { ...(m[selType] ?? { type: selType, enable: "1" }), type: selType, text, enable: m[selType]?.enable ?? "1" } }));
+    // التعديل تحت مكتب يجعله تخصيصاً لذلك المكتب (ويلغي أي «استخدام القالب العام» معلّق)
+    if (isEvent) setEvents((m) => ({ ...m, [selType]: { ...(m[selType] ?? { type: selType, enable: "1" }), type: selType, text, enable: m[selType]?.enable ?? "1", reset: false, ...(officeSel ? { officeCustom: true } : {}) } }));
     else setCustoms((cs) => cs.map((c) => (c.id === selId ? { ...c, text, dirty: true } : c)));
   };
   const setEnable = (on: boolean) => {
     if (!isEvent) return;
     setSaved(false);
-    setEvents((m) => ({ ...m, [selType]: { ...(m[selType] ?? { type: selType, text: "" }), type: selType, text: m[selType]?.text ?? "", enable: on ? "1" : "0" } }));
+    // تبديل التفعيل تحت مكتب يجعله تخصيصاً لذلك المكتب أيضاً
+    setEvents((m) => ({ ...m, [selType]: { ...(m[selType] ?? { type: selType, text: "" }), type: selType, text: m[selType]?.text ?? "", enable: on ? "1" : "0", reset: false, ...(officeSel ? { officeCustom: true } : {}) } }));
   };
 
   // إدراج سطر حقل كامل (أو رمز متغيّر) بموضع المؤشر — بسطر جديد إن لم يكن المؤشر بداية سطر
@@ -199,16 +218,26 @@ export default function SmsTemplatesPage() {
     if (sel === `custom:${c.id}`) setSel("event:activation");
   }
 
+  // إزالة تخصيص المكتب لقالب: يعود لقالب الوكيل العام (تُحفظ عند «حفظ القوالب»)
+  function resetToAgent(type: string) {
+    setSaved(false);
+    setEvents((m) => ({ ...m, [type]: { ...(m[type] ?? { type, text: "", enable: "1" }), type, reset: true, officeCustom: false } }));
+  }
+
   async function save() {
     setSaving(true); setSaved(false); setErr("");
-    // قوالب الأحداث دفعة واحدة
-    const templates = EVENTS.map((e) => {
-      const t = events[e.type] ?? { type: e.type, text: "", enable: "1" };
-      return { type: e.type, text: t.text ?? "", enable: t.enable ?? "1" };
-    });
+    // قوالب الأحداث دفعة واحدة (مع المكتب المختار إن وُجد — قالب المكتب يغلب العام).
+    // تحت مكتب: تُرسل المخصّصة/المُلغاة فقط — غير المخصّصة تبقى تابعة للقالب العام
+    const templates = EVENTS
+      .map((e) => {
+        const t = events[e.type] ?? { type: e.type, text: "", enable: "1" };
+        return { type: e.type, text: t.text ?? "", enable: t.enable ?? "1", officeCustom: !!t.officeCustom, ...(t.reset ? { reset: true } : {}) };
+      })
+      .filter((t) => !officeSel || t.officeCustom || t.reset)
+      .map(({ officeCustom: _oc, ...t }) => t);
     const r1 = await fetch("/api/sms-templates/bulk", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ templates }),
+      body: JSON.stringify({ templates, officeId: officeSel ? Number(officeSel) : null }),
     });
     // القوالب الحرة المعدَّلة
     let ok = r1.ok;
@@ -220,7 +249,17 @@ export default function SmsTemplatesPage() {
       ok = ok && r2.ok;
     }
     setSaving(false);
-    if (ok) { setSaved(true); setCustoms((cs) => cs.map((c) => ({ ...c, dirty: false }))); }
+    if (ok) {
+      setSaved(true); setCustoms((cs) => cs.map((c) => ({ ...c, dirty: false })));
+      // إعادة القراءة: تعكس حالة التخصيص الفعلية (خاصة بعد «استخدام قالب الوكيل»)
+      const qs = officeSel ? `?officeId=${officeSel}` : "";
+      const d = await fetch(`/api/sms-templates/bulk${qs}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (d?.templates) {
+        const m: Record<string, EventTpl> = {};
+        for (const t of d.templates as EventTpl[]) m[t.type] = t;
+        setEvents(m);
+      }
+    }
     else setErr("تعذّر حفظ بعض القوالب — أعد المحاولة");
   }
 
@@ -229,11 +268,28 @@ export default function SmsTemplatesPage() {
     return <div className="p-6"><PageHeader title="قوالب الرسائل" /><div className="rounded-lg bg-red-50 px-4 py-3 text-red-600">ليس لديك صلاحية إدارة قوالب الرسائل.</div></div>;
   }
 
-  const preview = renderSample(curText);
+  // اسم المكتب الحقيقي للمعاينة: المكتب المختار بالمبدّل، وإلا أول مكاتب الوكيل، وإلا اسم الوكيل
+  const previewOffice = (officeSel ? offices.find((o) => String(o.id) === officeSel)?.name : null)
+    ?? offices[0]?.name ?? me?.agentName ?? null;
+  const preview = renderSample(curText, previewOffice);
 
   return (
     <div className="p-6" dir="rtl">
       <PageHeader title="قوالب الرسائل" subtitle="قوالب بتنسيق واتساب (*النص العريض*) بمتغيّرات تُستبدل ببيانات كل مشترك عند الإرسال" />
+
+      {/* مبدّل المكتب: قوالب الأحداث معزولة لكل مكتب — قالب المكتب يغلب قالب الوكيل العام */}
+      <div className="mb-4 flex max-w-7xl flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <span className="text-sm font-semibold text-slate-600">🏢 قوالب:</span>
+        <select value={officeSel} onChange={(e) => setOfficeSel(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-mynet-blue">
+          <option value="">عامة لكل المكاتب (الوكيل)</option>
+          {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `مكتب ${o.id}`}</option>)}
+        </select>
+        <span className="text-xs text-slate-400">
+          {officeSel
+            ? "تعديلاتك هنا تخص هذا المكتب فقط وتغلب القالب العام — والقوالب غير المخصّصة تتبع العام تلقائياً"
+            : "القالب العام يسري على كل مكتب ليس له قالب مخصّص"}
+        </span>
+      </div>
 
       <div className="grid max-w-7xl gap-5 lg:grid-cols-[260px_1fr_1fr]">
         {/* قائمة القوالب */}
@@ -277,15 +333,29 @@ export default function SmsTemplatesPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-start justify-between gap-2">
             <div>
-              <div className="text-base font-bold text-slate-800">{curName}</div>
+              <div className="flex items-center gap-1.5 text-base font-bold text-slate-800">
+                {curName}
+                {/* حالة التخصيص لهذا المكتب: مخصّص له أو يتبع قالب الوكيل العام */}
+                {isEvent && officeSel && (curEvent?.officeCustom
+                  ? <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">مخصّص لهذا المكتب</span>
+                  : <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">يتبع القالب العام</span>)}
+              </div>
               <div className="mt-0.5 text-xs text-slate-500">{curHint}</div>
             </div>
-            {isEvent && (
-              <label className="flex shrink-0 cursor-pointer items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" checked={(curEvent?.enable ?? "1") !== "0"} onChange={(e) => setEnable(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
-                مفعّل
-              </label>
-            )}
+            <div className="flex shrink-0 items-center gap-2">
+              {/* إزالة تخصيص المكتب — يعود القالب لقالب الوكيل العام */}
+              {isEvent && officeSel && curEvent?.officeCustom && (
+                <button onClick={() => resetToAgent(selType)} className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">
+                  استخدام القالب العام
+                </button>
+              )}
+              {isEvent && (
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={(curEvent?.enable ?? "1") !== "0"} onChange={(e) => setEnable(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
+                  مفعّل
+                </label>
+              )}
+            </div>
           </div>
 
           <textarea

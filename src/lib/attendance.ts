@@ -59,8 +59,9 @@ export function computeAttendance(tech: TechShift, checkIn: Date, checkOut: Date
   let co = baghdadMinutesOfDay(checkOut);
   if (co < ci) co += 1440; // خروج في يوم لاحق
 
-  // تأخير الدخول: فوق (البداية + سماحية الدخول)
-  const lateMinutes = Math.max(0, ci - (startMin + ge));
+  // تأخير الدخول: تجاوُز السماحية يُلغيها — يُحاسَب من موعد بدء الدوام نفسه
+  // (مثل الخروج المبكّر: سماحية 15 ودخول 12:16 على دوام 12:00 ⇒ خصم 16 دقيقة لا دقيقة واحدة)
+  const lateMinutes = ci > startMin + ge ? ci - startMin : 0;
   const lateDeduction = lateMinutes * lr;
 
   // الخروج: نافذة السماحية [E−xg, E+xg]

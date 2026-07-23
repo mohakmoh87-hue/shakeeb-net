@@ -20,10 +20,14 @@ export async function GET(request: Request) {
   let towerId = Number(url.searchParams.get("towerId")) || null;
 
   // مسار subscriberId للمستخدمين فقط (الفني يستعمل نصّ البطاقة/اليوزر — عزل بيانات وكيله)
+  // عزل المستأجر: المشترك يجب أن يتبع مكتباً يملكه المستخدم (كان يُقرأ بالمعرّف لأي وكيل)
   if (!netUser && subscriberId && !tech) {
     const s = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { netUser: true, towerId: true } });
-    netUser = s?.netUser ?? null;
-    if (s?.towerId && !towerId) towerId = s.towerId;
+    const { ownsTower } = await import("@/lib/guard");
+    if (s && (await ownsTower(session, s.towerId))) {
+      netUser = s.netUser ?? null;
+      if (s.towerId && !towerId) towerId = s.towerId;
+    }
   }
   if (!netUser && text) netUser = extractNetUser(text);
   if (!netUser) return NextResponse.json({ error: "لا يوجد يوزر لتحديد الموقع" }, { status: 404 });
@@ -33,8 +37,10 @@ export async function GET(request: Request) {
   // الفني: المكتب مقصور على وكيله (وإلا نتجاهل التلميح).
   let areaHint: string | null = null;
   if (towerId) {
+    // تلميح المنطقة مقصور على مكاتب وكيل الفاعل (فنياً كان أو مستخدماً)
+    const agentId = tech ? tech.agentId : session?.agentId ?? -1;
     const t = await prisma.tower.findFirst({
-      where: tech ? { id: towerId, agentId: tech.agentId } : { id: towerId },
+      where: { id: towerId, agentId: agentId ?? -1 },
       select: { name: true, mapArea: true },
     });
     areaHint = (t?.mapArea && t.mapArea.trim()) ? t.mapArea.trim() : areaFromTowerName(t?.name);

@@ -20,13 +20,32 @@ export async function POST(
     return NextResponse.json({ error: "الفاتورة غير موجودة أو محذوفة مسبقاً" }, { status: 404 });
   }
 
+  // فاتورة «بيع صيانة» (من إنجاز بطاقة): بيعُها كان من ذمّة الفني — الحذف العكسي يعيد
+  // المواد لذمّته وللمخزن معاً (عكس البيع تماماً). نستخرج رقم التكت من ملاحظة الفاتورة.
+  const maintCardId = invoice.type === "بيع صيانة"
+    ? Number(invoice.note?.match(/تكت\s*#(\d+)/)?.[1]) || null
+    : null;
+  const maintTech = maintCardId
+    ? (await prisma.taskCard.findUnique({ where: { id: maintCardId }, select: { technicianId: true } }))?.technicianId ?? null
+    : null;
+
   try {
     await prisma.$transaction(async (tx) => {
-      // 1) إرجاع المواد للمخزون
+      // 1) إرجاع المواد للمخزون (+ لذمّة الفني في فواتير الصيانة)
       const lines = await tx.invoiceItem.findMany({ where: { invoiceId, isDeleted: false } });
       for (const l of lines) {
         if (l.itemId) {
           await tx.item.update({ where: { id: l.itemId }, data: { count: { increment: l.count ?? 0 } } });
+          // إعادة الكمية لذمّة الفني الذي بِيعت من ذمّته (فواتير الصيانة فقط)
+          if (maintTech != null && (l.count ?? 0) > 0) {
+            const custody = await tx.custody.findFirst({ where: { technicianId: maintTech, itemId: l.itemId, isDeleted: false } });
+            if (custody) {
+              await tx.custody.update({ where: { id: custody.id }, data: { qty: custody.qty + (l.count ?? 0) } });
+            } else {
+              const item = await tx.item.findUnique({ where: { id: l.itemId }, select: { towerId: true } });
+              await tx.custody.create({ data: { technicianId: maintTech, itemId: l.itemId, qty: l.count ?? 0, towerId: item?.towerId ?? null } });
+            }
+          }
         }
         await tx.invoiceItem.update({ where: { id: l.id }, data: { isDeleted: true } });
       }

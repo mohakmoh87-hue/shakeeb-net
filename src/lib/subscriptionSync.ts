@@ -5,7 +5,7 @@ import {
 } from "@/lib/sas4";
 import { sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
-import { iraqYesterdayRange } from "@/lib/dailyReport";
+import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 
 // ============================================================================
 // المزامنة اليومية مع SAS — نسخة مطوّرة على مرحلتين متتاليتين لكل مكتب:
@@ -28,7 +28,7 @@ export interface SyncResult {
     activations: number; internal: number; external: number;
     phantom: number; markedUsed: number; duplicates: number; imported: number;
   };
-  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean };
+  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean; skippedPkg: number };
   events: SyncEvent[];
   reportSent: boolean | null; // true=أُرسل، false=مؤجّل (واتساب مقطوع)، null=لا تقرير
   error?: string;
@@ -41,12 +41,14 @@ function withinRange(d: Date | null | undefined, start: Date, end: Date): boolea
   return t >= start.getTime() && t <= end.getTime();
 }
 
-// هل يختلف التاريخان في اليوم التقويمي؟ (نتجاهل فروق الساعات)
-function calendarDiffers(a: Date | null | undefined, b: Date): boolean {
-  if (!a) return true;
-  const da = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
-  const db = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
-  return da !== db;
+// هل تاريخ انتهاء الساس أحدث (أبعد) من تاريخ البرنامج؟ (مقارنة بمستوى اليوم التقويمي).
+// المزامنة تُمدّد التاريخ للأمام فقط: برنامج بلا تاريخ ⇒ يُضبط من الساس؛ الساس أبعد ⇒ يُضبط؛
+// البرنامج أبعد أو مساوٍ ⇒ لا تغيير إطلاقاً (لا نُقصّر تاريخ انتهاء أي مشترك).
+function sasDateIsLater(programDate: Date | null | undefined, sasDate: Date): boolean {
+  if (!programDate) return true;
+  const dp = new Date(programDate.getFullYear(), programDate.getMonth(), programDate.getDate()).getTime();
+  const ds = new Date(sasDate.getFullYear(), sasDate.getMonth(), sasDate.getDate()).getTime();
+  return ds > dp;
 }
 
 // تفعيل بكارت (voucher)؟ الكارت في حقل pin؛ نستبعد التفعيل برصيد المستخدم
@@ -72,9 +74,34 @@ async function sendOrQueueReport(officeId: number, phone: string, text: string):
   return res.ok;
 }
 
+// قفل تزامن: يمنع تشغيل مزامنتين لنفس المكتب في آن واحد. كان الضغط المتكرّر على
+// «مزامنة الآن» يُشغّل نسخاً متوازية تقرأ الحالة نفسها فتُكرّر المعالجة والإرجاع.
+const syncRunning = new Set<number>();
+
 // تشغيل المزامنة لمكتب واحد (مرحلتان). forDay اختياري لأغراض الاختبار؛ الافتراضي "الأمس".
 // notify: يُرسل تقرير المدير فقط في المزامنة التلقائية (المجدول). المزامنة اليدوية (زر «مزامنة الآن») لا تُرسل شيئاً.
 export async function runOfficeSync(
+  officeId: number,
+  opts: { forDay?: Date; notify?: boolean } = {},
+): Promise<SyncResult> {
+  if (syncRunning.has(officeId)) {
+    return {
+      office: "المكتب",
+      phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0 },
+      phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0 },
+      events: [], reportSent: null,
+      error: "مزامنة هذا المكتب قيد التنفيذ بالفعل — تم تجاهل الطلب المكرّر",
+    };
+  }
+  syncRunning.add(officeId);
+  try {
+    return await runOfficeSyncInner(officeId, opts);
+  } finally {
+    syncRunning.delete(officeId);
+  }
+}
+
+async function runOfficeSyncInner(
   officeId: number,
   { forDay, notify = true }: { forDay?: Date; notify?: boolean } = {},
 ): Promise<SyncResult> {
@@ -86,7 +113,7 @@ export async function runOfficeSync(
   const empty: SyncResult = {
     office: officeName,
     phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0 },
-    phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false },
+    phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0 },
     events: [], reportSent: null,
   };
 
@@ -108,14 +135,23 @@ export async function runOfficeSync(
     return { ...empty, error: (e as Error).message || "فشل الاتصال بـ SAS" };
   }
 
-  // جلب تفعيلات الأمس — عند فشل SAS: إشعار وعدم الانهيار
-  let acts: SasActivation[];
+  // جلب التفعيلات بنافذة موسّعة: **الأمس + اليوم** — عند فشل SAS: إشعار وعدم الانهيار.
+  // سبب التوسيع: وقت التفعيل في البرنامج ووقته في الساس قد يقعان على جانبَي منتصف الليل
+  // (أو يختلفان بفارق توقيت)، فيبدو كارتٌ مستخدمٌ فعلاً بلا تفعيل مقابل ⇒ إنذار «وهمي» كاذب.
+  const todayEnd = iraqTodayRange(forDay ?? new Date()).end;
+  let actsWide: SasActivation[];
   try {
-    acts = await sasFetchActivationsForDay(base, token, start, end);
+    actsWide = await sasFetchActivationsForDay(base, token, start, todayEnd);
   } catch (e) {
     if (notify) await notifySasDown(office.id, office.managerPhone, officeName);
     return { ...empty, error: (e as Error).message || "فشل جلب تقرير التفعيلات" };
   }
+  // السيناريوهات المُبلَّغة (تكرار/كارت خارجي/استيراد/تحديث حالة) تبقى على تفعيلات **الأمس**
+  // حصراً — كي لا تتكرّر التقارير ولا تظهر «تفعيلات مكرّرة» كاذبة لمن فعّل أمس واليوم.
+  const acts = actsWide.filter((a) => {
+    const d = a.createdAt ? new Date(a.createdAt) : null;
+    return d != null && !isNaN(d.getTime()) && d >= start && d <= end;
+  });
 
   // ===================== المرحلة 1: كروت وتفعيلات الأمس =====================
   const events: SyncEvent[] = [];
@@ -135,13 +171,17 @@ export async function runOfficeSync(
   const subBySasId = new Map(officeSubs.filter((s) => s.sasId).map((s) => [s.sasId as number, s]));
   const subById = new Map(officeSubs.map((s) => [s.id, s]));
 
-  // مجموعة (مشترك SAS | بِن) لكل تفعيلات الأمس (لكشف التفعيل الوهمي)
+  // مجموعة (مشترك SAS | بِن) من **النافذة الموسّعة** (الأمس + اليوم) — تُستخدم للتحقّق من
+  // «التفعيل الوهمي» فقط. توسيعها يمنع اعتبار كارتٍ حقيقيٍّ وهمياً لمجرّد وقوع تفعيله
+  // بعد منتصف الليل بتوقيت الساس (أو اختلاف التوقيت بين البرنامج والساس).
   const sasUserPinSet = new Set<string>();
-  // تجميع التفعيلات حسب مشترك SAS (لكشف التكرار — السيناريو 2)
-  const actsByUser = new Map<number, SasActivation[]>();
-  for (const a of acts) {
+  for (const a of actsWide) {
     const pin = (a.pin ?? "").trim();
     if (pin) sasUserPinSet.add(`${a.sasUserId}|${pin}`);
+  }
+  // تجميع تفعيلات **الأمس** حسب مشترك SAS (لكشف التكرار — السيناريو 2)
+  const actsByUser = new Map<number, SasActivation[]>();
+  for (const a of acts) {
     const list = actsByUser.get(a.sasUserId) ?? [];
     list.push(a);
     actsByUser.set(a.sasUserId, list);
@@ -215,29 +255,25 @@ export async function runOfficeSync(
   const usedYesterday = cards.filter(
     (c) => c.useDate && c.subscriberId != null && withinRange(c.useDate, start, end) && subById.has(c.subscriberId),
   );
-  for (const c of usedYesterday) {
+  // المشتبه بهم: كارت مستخدم أمس بلا تفعيل مقابل في النافذة الموسّعة (الأمس + اليوم)
+  const suspects = usedYesterday.filter((c) => {
     const sub = subById.get(c.subscriberId!);
-    if (!sub?.sasId) continue;
-    const key = `${sub.sasId}|${(c.serial ?? "").trim()}`;
-    if (sasUserPinSet.has(key)) continue; // للكارت تفعيل فعلي في SAS → سليم
+    if (!sub?.sasId) return false;
+    return !sasUserPinSet.has(`${sub.sasId}|${(c.serial ?? "").trim()}`);
+  });
 
-    await prisma.$transaction([
-      // إرجاع الكارت للمخزون كغير مستخدم — يبقى سعره (دين الكارت) كما هو دون زيادة أو نقصان
-      prisma.rechargeCard.update({
-        where: { id: c.id },
-        data: { useDate: null, subscriberId: null, userName: null, reservedBy: null, reservedAt: null },
-      }),
-      prisma.auditLog.create({
-        data: {
-          action: "SYNC_PHANTOM_CARD", entity: "rechargeCard", entityId: String(c.id),
-          details: `تفعيل وهمي (${officeName}) — إرجاع كارت ${c.serial} للمخزن دون تغيير ديون الكارتات`,
-        },
-      }),
-    ]);
+  // 🛡️ وضع آمن — إبلاغ فقط بلا أي تغيير على الكارت (قرار جلسة الطوارئ، يبقى سارياً):
+  // ثبت ميدانياً أن كشف «الوهمي» يعطي إيجابيات كاذبة، والأرجح أن sasFetchActivationsForDay
+  // يفترض ترقيم صفحات تصاعدياً فيرجع قائمة ناقصة/فارغة عند العكس. النافذة الموسّعة أعلاه
+  // (الأمس + اليوم) تُقلّل الإنذار الكاذب، لكن لا يُعاد أي تصرّف تلقائي على الكروت قبل
+  // تدقيق الجلب على بيانات SAS الفعلية.
+  // ⚠️ وفي كل الأحوال: لا يُحذف أي وصل، ولا يُنقَص دين مشترك (carry) ولا دين كارت (price).
+  for (const c of suspects) {
+    const sub = subById.get(c.subscriberId!);
     phantom++;
     events.push({
-      scenario: 1, subscriber: sub.name ?? sub.netUser, pin: c.serial,
-      detail: `إرجاع الكارت للمخزن دون تغيير ديون الكارتات`,
+      scenario: 1, subscriber: sub?.name ?? sub?.netUser ?? null, pin: c.serial,
+      detail: `يبدو بلا تفعيل مقابل في SAS — لم يُغيَّر شيء (وضع آمن: يُدقَّق يدوياً)`,
     });
   }
 
@@ -245,7 +281,7 @@ export async function runOfficeSync(
   // تجلب كل مشتركي الساس (500/صفحة مع تأخير)، فتقوم بأمرين:
   //  (أ) استيراد كل مشترك موجود في الساس وغير موجود في البرنامج (استيراد شامل — السيناريو 7 لكامل القاعدة).
   //  (ب) تصحيح تاريخ الانتهاء بصمت للمشتركين الموجودين عند اختلافه (السيناريوهان 4 و5).
-  let checked = 0, dateFixed = 0, phase2Imported = 0, phase2Failed = false;
+  let checked = 0, dateFixed = 0, phase2Imported = 0, phase2Failed = false, skippedPkg = 0;
   try {
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
@@ -253,6 +289,12 @@ export async function runOfficeSync(
       select: { id: true, sasId: true, dateTo: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
+
+    // فئات الاشتراك التي أضافها المدير في البرنامج (للمطابقة بالاسم، بلا حساسية حالة/فراغات):
+    // مشتركٌ فئته في الساس غير موجودة ضمنها ⇒ لا يُمَسّ إطلاقاً — لا تصحيح تاريخ انتهائه
+    // ولا أيامه المتبقية (بطلب صريح: فئة مجهولة = اتركه كما هو)
+    const progPackages = await prisma.package.findMany({ select: { name: true } });
+    const knownPkg = new Set(progPackages.map((p) => (p.name ?? "").trim().toLowerCase()).filter(Boolean));
 
     const toImport: {
       name: string | null; netUser: string | null; phone: string | null;
@@ -272,9 +314,15 @@ export async function runOfficeSync(
         });
         continue;
       }
-      // موجود → تصحيح التاريخ بصمت عند الاختلاف
+      // موجود → لكن إن كانت فئته في الساس غير موجودة ضمن فئات البرنامج ⇒ لا أي تعديل
+      // عليه (لا تاريخ انتهاء ولا أيام متبقية) — يُحصى فقط للتقرير.
+      const sasPkg = (u.packageName ?? "").trim().toLowerCase();
+      if (sasPkg && !knownPkg.has(sasPkg)) { skippedPkg++; continue; }
+
+      // فئته معروفة → تمديد التاريخ للأمام فقط: إن كان تاريخ الساس أبعد من تاريخ
+      // البرنامج نضبطه مثل الساس؛ وإن كان تاريخ البرنامج أبعد (أو مساوياً) لا نغيّر شيئاً.
       checked++;
-      if (validDate && calendarDiffers(p.dateTo, validDate)) {
+      if (validDate && sasDateIsLater(p.dateTo, validDate)) {
         await prisma.subscriber.update({ where: { id: p.id }, data: { dateTo: validDate } });
         dateFixed++;
       }
@@ -293,7 +341,7 @@ export async function runOfficeSync(
   const result: SyncResult = {
     office: officeName,
     phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported },
-    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed },
+    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg },
     events, reportSent: null,
   };
 
@@ -319,13 +367,15 @@ function buildReportText(r: SyncResult, day: Date): string {
   let text = `📋 تقرير المزامنة اليومي — ${r.office}\n`;
   text += `تفعيلات ${formatDate(day)}: ${p1.activations} | كروت البرنامج: ${p1.internal} | خارجي: ${p1.external}\n`;
   text += `تصحيح تواريخ: ${r.phase2.dateFixed} من ${r.phase2.checked} مشترك\n`;
+  if (r.phase2.skippedPkg > 0) text += `⏭️ تُركوا بلا تعديل (فئتهم غير مضافة بالبرنامج): ${r.phase2.skippedPkg} مشترك\n`;
   if (r.phase2.imported > 0) text += `🆕 استيراد شامل من الساس: ${r.phase2.imported} مشترك\n`;
 
   const byScenario = (s: SyncEvent["scenario"]) => r.events.filter((e) => e.scenario === s);
   const s1 = byScenario(1), s3 = byScenario(3), s6 = byScenario(6), s2 = byScenario(2), s7 = byScenario(7);
 
+  // وضع آمن: هذه كروت مشتبه بها لم يتغيّر فيها شيء — تحتاج نظرة منك فقط
   if (s1.length) {
-    text += `\n🔴 تفعيلات وهمية أُرجعت كروتها (${s1.length}):\n`;
+    text += `\n🛡️ كروت مشتبهة (لم يُغيَّر فيها شيء — راجعها يدوياً) (${s1.length}):\n`;
     text += s1.map((e) => `• ${e.subscriber ?? "—"} — بِن ${e.pin ?? "؟"} — ${e.detail ?? ""}`).join("\n");
   }
   if (s3.length) {

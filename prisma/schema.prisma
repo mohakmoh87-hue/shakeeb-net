@@ -127,6 +127,7 @@ model Tower {
   waEnabled   String? @default("1") // 1 = تفعيل واتساب لهذا المكتب
   syncEnabled String? @default("0") // 1 = تفعيل المزامنة اليومية التلقائية
   syncTime    String? // وقت مزامنة الاشتراكات اليومية مع SAS (HH:MM)
+  reminderTime String? // وقت تذكير الانتهاء اليومي لهذا المكتب (HH:MM) — مرتبط بوقت تشغيل حاسبته؛ فارغ = وقت الوكيل العام
   lastReminderDate String? // آخر يوم (YYYY-MM-DD) أُرسل/عولج فيه تذكير الانتهاء (لمنطق الموافقة عند الدخول)
   lastReportDate String? // آخر يوم (YYYY-MM-DD) أُرسل فيه التقرير اليومي للمدير (لمنع تكراره)
   // موقع المكتب للبصمة الجغرافية (الفني لا يبصم إلا داخل النطاق)
@@ -210,6 +211,7 @@ model Subscriber {
   transferredTo String? // اليوزر الجديد بعد التحويل (للتنبيه)
   rewardCode   String? // كود المكافأة الحالي (8 خانات) — نظام أكواد المكافآت
   rewardBalance Int?  @default(0) // رصيد المكافأة المتراكم (يُخصم عند الاستخدام)
+  rewardGrantCount Int @default(0) // عدد منح المكافأة المتراكمة منذ آخر سحب — عند 10 يتوقف المنح حتى سحبٍ (كلي/جزئي) يصفّره
   sasId        Int? // معرّف المشترك في SAS4 (للربط والتفعيل)
   cardCode     String? // cardID
   // حقول شاشة المشترك التفصيلية
@@ -558,6 +560,7 @@ model SystemSetting {
 model SmsTemplate {
   id     Int     @id @default(autoincrement())
   agentId Int? // الوكيل (المستأجر) مالك هذا الإعداد
+  towerId Int? // المكتب (اختياري): قالب مخصّص لمكتب واحد يغلب قالب الوكيل العام (null = عام للوكيل)
   type   String?
   text   String?
   enable String?
@@ -762,7 +765,8 @@ model TaskCard {
   // بيانات الإنجاز
   serviceDetails String? // تفاصيل الصيانة
   techNote      String? // ملاحظة يكتبها الفني على البطاقة (تُعرض على وجهها)
-  amount        Float? // المبلغ المستلم من الزبون
+  amount        Float? // «المبيع» الصافي (المالي عبر فاتورة الصيانة) — وللتوصيل: مبلغه المعلوماتي
+  subAmount     Float? // «اشتراك»: استلمه الفني للاشتراك — معلوماتي بلا أثر مالي (يُسجَّل عند التفعيل)
   materialsInfo String? // JSON بالمواد المباعة من الذمم (للعرض)
   completedAt   DateTime?
   settled       Boolean   @default(false) // تمّ التحصيل (اكمال)
@@ -777,6 +781,21 @@ model TaskCard {
   @@index([archivedAt])
   @@index([subscriberId])
   @@map("task_cards")
+}
+
+// سجل إنجازات البطاقات الدائم: البطاقة تُحذف من الأرشيف بعد أسبوع، وهذا السجل يبقى —
+// لعدّ بطاقات كل فني حسب الفئة ضمن فترة راتبه (صفوف صغيرة، إدراج فقط)
+model CardCompletion {
+  id           Int      @id @default(autoincrement())
+  cardId       Int
+  technicianId Int
+  agentId      Int?
+  towerId      Int?
+  kind         String?
+  completedAt  DateTime @default(now())
+
+  @@index([technicianId, completedAt])
+  @@map("card_completions")
 }
 
 // صورة إنجاز البطاقة (base64) — مفصولة لتفادي تضخّم استعلام اللوحة، وتُحذف فعلياً مع البطاقة/التحصيل

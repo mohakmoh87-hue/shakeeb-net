@@ -69,14 +69,16 @@ export async function PUT(
   if (!existing || !(await ownsTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
-  // عزل المستأجر: مستخدم المكتب يُفرض مكتبه؛ والمدير لا يُسمح له بنقل المشترك إلا
-  // لمكتب يتبع وكيله (يمنع نقله لمكتب وكيل آخر عبر towerId من الطلب).
-  let data = parsed.data;
-  if (g.session && !g.session.isAdmin && g.session.towerId != null) {
-    data = { ...parsed.data, towerId: g.session.towerId };
-  } else if (parsed.data.towerId != null) {
-    const agentTowers = await agentTowerIds(g.session ?? null);
-    if (!agentTowers.includes(parsed.data.towerId)) {
+  // مستخدم المكتب يُفرض مكتبه دائماً؛ المدير يمرّر towerId من الطلب
+  const data =
+    g.session && !g.session.isAdmin && g.session.towerId != null
+      ? { ...parsed.data, towerId: g.session.towerId }
+      : parsed.data;
+  // عزل المستأجر: نقل المشترك لمكتب آخر مقصور على مكاتب وكيل المستخدم
+  // (كان الأدمن يستطيع تعيين towerId لمكتب وكيل آخر). agentTowerIds مستورد أعلى الملف.
+  if (data.towerId != null && data.towerId !== existing.towerId) {
+    const towers = await agentTowerIds(g.session);
+    if (!towers.includes(data.towerId)) {
       return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
     }
   }
