@@ -223,19 +223,18 @@ export async function runOfficeSync(
     const key = `${sub.sasId}|${(c.serial ?? "").trim()}`;
     if (sasUserPinSet.has(key)) continue; // للكارت تفعيل فعلي في SAS → سليم
 
-    await prisma.$transaction([
+    await prisma.$transaction(async (tx) => {
       // إرجاع الكارت للمخزون كغير مستخدم — يبقى سعره (دين الكارت) كما هو دون زيادة أو نقصان
-      prisma.rechargeCard.update({
+      await tx.rechargeCard.update({
         where: { id: c.id },
         data: { useDate: null, subscriberId: null, userName: null, reservedBy: null, reservedAt: null },
-      }),
-      prisma.auditLog.create({
-        data: {
-          action: "SYNC_PHANTOM_CARD", entity: "rechargeCard", entityId: String(c.id),
-          details: `تفعيل وهمي (${officeName}) — إرجاع كارت ${c.serial} للمخزن دون تغيير ديون الكارتات`,
-        },
-      }),
-    ]);
+      });
+      // توثيق بإدراج خام بلا RETURNING: العامل المحلي يتصل بدور الوكيل الذي له على
+      // audit_logs «إدراج فقط» بلا قراءة، بينما create في Prisma يضيف RETURNING
+      // (يتطلب صلاحية قراءة) فترفضه القاعدة وتفشل المعاملة كلها.
+      await tx.$executeRaw`INSERT INTO audit_logs (action, entity, "entityId", details)
+        VALUES ('SYNC_PHANTOM_CARD', 'rechargeCard', ${String(c.id)}, ${`تفعيل وهمي (${officeName}) — إرجاع كارت ${c.serial} للمخزن دون تغيير ديون الكارتات`})`;
+    });
     phantom++;
     events.push({
       scenario: 1, subscriber: sub.name ?? sub.netUser, pin: c.serial,

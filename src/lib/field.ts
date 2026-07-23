@@ -238,12 +238,11 @@ export async function endSupport(technicianId: number) {
           } else {
             await tx.custody.update({ where: { id: c.id }, data: { itemId: home.id, towerId: homeOffice } });
           }
-          await tx.auditLog.create({
-            data: {
-              action: "SUPPORT_CUSTODY_TRANSFER", entity: "custody", entityId: String(c.id),
-              details: `انتهاء دعم ${tech?.name ?? technicianId}: ترحيل «${item.name}»×${c.qty} من مكتب الدعم (${supportOffice}) إلى مخزن مكتبه (${homeOffice}) — بقيت بذمّته`,
-            },
-          }).catch(() => {});
+          // توثيق بإدراج خام بلا RETURNING — إنهاء الدعم يعمل أيضاً من العامل المحلي
+          // (الخروج التلقائي) بدور الوكيل الذي له على audit_logs «إدراج فقط» بلا قراءة،
+          // وcreate يضيف RETURNING فيفشل ويُسقط معاملة ترحيل الذمّة كلها.
+          await tx.$executeRaw`INSERT INTO audit_logs (action, entity, "entityId", details)
+            VALUES ('SUPPORT_CUSTODY_TRANSFER', 'custody', ${String(c.id)}, ${`انتهاء دعم ${tech?.name ?? technicianId}: ترحيل «${item.name}»×${c.qty} من مكتب الدعم (${supportOffice}) إلى مخزن مكتبه (${homeOffice}) — بقيت بذمّته`})`;
         });
       }
     } catch { /* أفضل جهد — لا يُعطَّل إنهاء الدعم بترحيل الذمم */ }
