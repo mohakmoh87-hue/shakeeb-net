@@ -247,7 +247,9 @@ async function ensureOfficeWhatsApp() {
         OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }],
       },
       select: { id: true },
-    })).filter((o) => hostsOfficeLocally(o.id));
+      // الحاسبة المربوطة تبدأ مكتبها دائماً (تُظهر QR للربط إن لم تكن له ملفات بعد)؛
+      // غير المربوطة تبدأ ما تملك جلسته على قرصها فقط (توافق قديم).
+    })).filter((o) => boundTower != null || hostsOfficeLocally(o.id));
     if (offices.length) console.log(`[scheduler] بدء واتساب ${offices.length} مكتب (جلساتها على هذه الحاسبة)`);
     // إقلاع متتابع بفاصل زمني — تشغيل عدّة متصفّحات واتساب دفعةً واحدة يُزاحم موارد
     // الحاسبة فيعلق بعضها على "authenticated/starting". الفاصل يمنح كل مكتب فرصة الاستقرار.

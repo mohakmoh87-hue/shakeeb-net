@@ -198,12 +198,12 @@ async function abandonStrayOffice(officeId: number, mid: string | null) {
   if (st.client) { try { await Promise.resolve(st.client.destroy()).catch(() => {}); } catch { /* تجاهل */ } st.client = null; }
   st.state = "disconnected"; st.qr = null; st.lastError = null; st.startedAt = null;
   deleteSessionDir(officeId);
-  if (mid) {
-    await prisma.waSession.updateMany({
-      where: { towerId: officeId, hostMachineId: mid },
-      data: { state: "disconnected", hostMachineId: null },
-    }).catch(() => {});
-  }
+  // انشر «غير متصل» وحرّر الملكية — فقط إن كانت مسجّلة لهذه الحاسبة أو بلا مالك
+  // (لا نلمس مكتباً تستضيفه حاسبة أخرى حيّة)
+  await prisma.waSession.updateMany({
+    where: { towerId: officeId, OR: [{ hostMachineId: mid }, { hostMachineId: null }] },
+    data: { state: "disconnected", hostMachineId: null, qr: null },
+  }).catch(() => {});
 }
 
 // مستطلِع الاتصال: كل حاسبة تُبقي جلسة مكتبها متصلة — بمهلة 60ث بين المحاولات.
@@ -222,18 +222,22 @@ export function startWaRequestPoller() {
       const { getWorkerTowerId } = await import("@/lib/hybridAgent");
       const boundTower = getWorkerTowerId();
       if (boundTower != null) {
-        for (const id of ids) {
-          if (id === boundTower) continue;
-          await abandonStrayOffice(id, mid);
-          console.log(`[whatsapp] 🧹 عزل صارم: حُذفت جلسة مكتب ${id} — هذه الحاسبة مربوطة بمكتب ${boundTower} فقط`);
+        // تخلَّ عن أي مكتب آخر — سواء له ملفات على القرص أو عميل حيّ في الذاكرة (حالة QR)
+        const strays = new Set<number>([...ids, ...offices().keys()]);
+        strays.delete(boundTower);
+        for (const id of strays) {
+          const st = store(id);
+          if (hostsOfficeLocally(id) || st.client) {
+            await abandonStrayOffice(id, mid);
+            console.log(`[whatsapp] 🧹 عزل صارم: تُرك مكتب ${id} — هذه الحاسبة مربوطة بمكتب ${boundTower} فقط`);
+          }
         }
-        if (hostsOfficeLocally(boundTower)) {
-          const st = store(boundTower);
-          const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
-          const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
-          // مكتبي: أستضيفه دائماً وأتجاهل أي ملكية قديمة عالقة لحاسبة أخرى — أثبّتها لي عند ready
-          if (!alive && !recentlyTried) void startWhatsApp(boundTower);
-        }
+        // استضِف مكتبي دائماً: يستأنف من ملفاته إن وُجدت، وإلا يُظهر QR للربط الأول
+        // (مكتب بلا جلسة). وأتجاهل أي ملكية قديمة عالقة لحاسبة أخرى — أثبّتها لي عند ready.
+        const st = store(boundTower);
+        const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
+        const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
+        if (!alive && !recentlyTried) void startWhatsApp(boundTower);
         return;
       }
 
