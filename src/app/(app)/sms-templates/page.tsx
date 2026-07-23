@@ -95,8 +95,9 @@ const SAMPLE: Record<string, string> = {
 };
 
 // استبدال متغيّرات المعاينة (نفس نمط الخادم: إنكليزي + عربي)
-function renderSample(text: string): string {
-  return text.replace(/\{([\w؀-ۿ]+)\}/g, (_, key) => SAMPLE[key] ?? "");
+// اسم المكتب الحقيقي يُمرَّر ليحل محل القيمة التجريبية — فتطابق المعاينة ما يصل فعلاً
+function renderSample(text: string, officeName?: string | null): string {
+  return text.replace(/\{([\w؀-ۿ]+)\}/g, (_, key) => (key === "office" && officeName ? officeName : SAMPLE[key] ?? ""));
 }
 
 // عرض النص بين نجمتين *هكذا* بخط عريض (تنسيق واتساب)
@@ -267,7 +268,10 @@ export default function SmsTemplatesPage() {
     return <div className="p-6"><PageHeader title="قوالب الرسائل" /><div className="rounded-lg bg-red-50 px-4 py-3 text-red-600">ليس لديك صلاحية إدارة قوالب الرسائل.</div></div>;
   }
 
-  const preview = renderSample(curText);
+  // اسم المكتب الحقيقي للمعاينة: المكتب المختار بالمبدّل، وإلا أول مكاتب الوكيل، وإلا اسم الوكيل
+  const previewOffice = (officeSel ? offices.find((o) => String(o.id) === officeSel)?.name : null)
+    ?? offices[0]?.name ?? me?.agentName ?? null;
+  const preview = renderSample(curText, previewOffice);
 
   return (
     <div className="p-6" dir="rtl">

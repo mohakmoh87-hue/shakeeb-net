@@ -148,7 +148,8 @@ export default function ReceiptTemplatePage() {
                   ? <img src={t.logo} alt="شعار" className="mx-auto mb-2 h-14 object-contain" />
                   : <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-xl text-xl font-bold text-white" style={{ backgroundColor: t.headerColor }}>نت</div>
               )}
-              <h1 className="text-xl font-bold" style={{ color: t.headerColor }}>{t.headerText || "SHAKEEB"}</h1>
+              {/* بلا نص ترويسة: الوصل الحقيقي يطبع اسم الوكيل — فالمعاينة تعرضه أيضاً */}
+              <h1 className="text-xl font-bold" style={{ color: t.headerColor }}>{t.headerText || me?.agentName || "اسم المكتب"}</h1>
               <p className="text-sm text-slate-500">وصل تفعيل / تجديد اشتراك</p>
             </div>
             <div className="space-y-1.5">
