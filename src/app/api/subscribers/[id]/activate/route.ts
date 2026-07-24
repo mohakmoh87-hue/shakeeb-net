@@ -20,6 +20,7 @@ const schema = z.object({
   delivery: z.coerce.number().min(0).default(0), // مبلغ التوصيل (يُضاف على مبلغ الاشتراك)
   dateToOverride: z.string().nullable().optional(), // تعديل يدوي لتاريخ الانتهاء (ISO)
   master: z.boolean().default(false), // تفعيل ماستر: واصل كامل بلا دين، ويُسجَّل بحساب الماستر المستقل
+  activationAccountId: z.coerce.number().nullable().optional(), // «مكتب تفعيل»: واصل كامل + مصروف مبلغ الاشتراك على هذا الحساب (يتعادل التقرير)
   note: z.string().nullable().optional(), // ملاحظة الوصل → notes
   dueDate: z.string().nullable().optional(), // موعد التسديد → nextDate
   paymentMethod: z.string().nullable().optional(), // طريقة الدفع → operation
@@ -44,14 +45,32 @@ export async function POST(
       { status: 400 },
     );
   }
-  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride, master, note, dueDate, paymentMethod } = parsed.data;
+  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride, master, activationAccountId, note, dueDate, paymentMethod } = parsed.data;
   // موعد التسديد (اختياري) — يُخزَّن في nextDate
   const dueDateParsed = dueDate ? new Date(dueDate) : null;
   const nextDate = dueDateParsed && !isNaN(dueDateParsed.getTime()) ? dueDateParsed : null;
 
+  // حصرية: «ماستر» و«مكتب تفعيل» لا يجتمعان
+  if (master && activationAccountId != null) {
+    return NextResponse.json({ error: "لا يمكن الجمع بين «ماستر» و«مكتب تفعيل» في نفس التفعيل" }, { status: 400 });
+  }
+
   const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
   if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
+  }
+
+  // «مكتب تفعيل»: تحقّق أن الحساب مكتب تفعيل ويتبع مكتب/وكيل المستخدم (عزل)
+  let activationAccount: { id: number; name: string | null } | null = null;
+  if (activationAccountId != null) {
+    const acc = await prisma.account.findFirst({
+      where: { id: activationAccountId, isDeleted: false, isActivationOffice: true },
+      select: { id: true, name: true, towerId: true },
+    });
+    if (!acc || !(await ownsTower(g.session, acc.towerId))) {
+      return NextResponse.json({ error: "حساب «مكتب التفعيل» غير موجود أو لا يتبع حسابك" }, { status: 400 });
+    }
+    activationAccount = { id: acc.id, name: acc.name };
   }
   const pkg = await prisma.package.findUnique({ where: { id: packageId } });
   if (!pkg || pkg.isDeleted) {
@@ -117,9 +136,13 @@ export async function POST(
   const total = totalOverride != null ? totalOverride : price * months;
   // الإجمالي المستحق = الاشتراك + التوصيل؛ الواصل يُخصم منه والباقي دين
   const grandTotal = total + delivery;
-  // ماستر: واصل كامل بلا دين جديد (يبقى دين المشترك السابق كما هو)
-  const effPaid = master ? grandTotal : paid;
-  const newCarry = master ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + grandTotal - paid;
+  // ماستر أو «مكتب تفعيل»: واصل كامل بلا دين جديد (يبقى دين المشترك السابق كما هو).
+  // الفرق: الماستر يُسجَّل بحساب مستقل؛ ومكتب التفعيل يُسجَّل تفعيلاً عادياً + مصروف مبلغ
+  // الاشتراك على الحساب فيتعادل التقرير (لأن المبلغ حصّله مكتب التفعيل لا صندوق المكتب).
+  const viaActivationOffice = activationAccount != null;
+  const fullPaid = master || viaActivationOffice;
+  const effPaid = fullPaid ? grandTotal : paid;
+  const newCarry = fullPaid ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + grandTotal - paid;
 
   let rewardGrant: { code: string; balance: number; granted: number } | null = null;
   // كود/رصيد الخصم للرسالة — يُلتقط داخل المعاملة (الكود الجديد الممنوح إن وُجد، وإلا الحالي)
@@ -170,6 +193,19 @@ export async function POST(
             date: now, serverDate: now, userId: session?.userId,
             // ماستر: حساب مستقل (sourceType=master) لا يُجمع مع التقرير اليومي
             sourceType: master ? "master" : "activation", sourceId: entry.id, towerId: subscriber.towerId,
+          },
+        });
+      }
+      // «مكتب تفعيل»: مصروف بمبلغ الاشتراك فقط (بلا التوصيل) على الحساب — يتعادل التقرير
+      // (لأن هذا المبلغ حصّله مكتب التفعيل لا صندوق المكتب). مربوط بالوصل (sourceId) ليُعكَس عند حذفه.
+      if (viaActivationOffice && activationAccount && total > 0) {
+        await tx.moneyTx.create({
+          data: {
+            moneyIn: 0, moneyOut: total,
+            accountId: activationAccount.id,
+            notes: `مكتب تفعيل «${activationAccount.name ?? ""}» - ${pkg.name} - ${subscriber.name ?? subscriberId}`,
+            date: now, serverDate: now, userId: session?.userId,
+            sourceType: "manual", sourceId: entry.id, towerId: subscriber.towerId,
           },
         });
       }

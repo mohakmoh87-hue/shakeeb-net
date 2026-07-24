@@ -11,6 +11,7 @@ type Account = {
   typeName: string | null;
   notes: string | null;
   isEmployee: boolean;
+  isActivationOffice: boolean;
   towerId: number | null;
 };
 type Tower = { id: number; name: string | null };
@@ -34,6 +35,7 @@ export default function AccountsPage() {
     // قائمة حسابات مستقلة لكل مكتب — المدير يختار المكتب
     { name: "towerId", label: "المكتب", type: "select", required: true, options: towers.map((t) => ({ value: t.id, label: t.name ?? `#${t.id}` })) },
     { name: "isEmployee", label: "حساب موظف", type: "checkbox", placeholder: "نعم (يظهر سحبه في حسابات المدير)" },
+    { name: "isActivationOffice", label: "مكتب تفعيل", type: "checkbox", placeholder: "نعم (يمكن حسم مبلغ الاشتراك عليه عند التفعيل)" },
     { name: "notes", label: "ملاحظات", type: "textarea" },
   ];
 
@@ -50,6 +52,7 @@ export default function AccountsPage() {
         { header: "المكتب", render: (r) => towerName(r.towerId), sortValue: (r) => towerName(r.towerId) },
         { header: "النوع", render: (r) => r.typeName ?? "—", sortValue: (r) => r.typeName ?? "" },
         { header: "موظف", render: (r) => (r.isEmployee ? "✓" : "—"), sortValue: (r) => (r.isEmployee ? 1 : 0) },
+        { header: "مكتب تفعيل", render: (r) => (r.isActivationOffice ? "✓" : "—"), sortValue: (r) => (r.isActivationOffice ? 1 : 0) },
         { header: "ملاحظات", render: (r) => r.notes ?? "—", sortValue: (r) => r.notes ?? "" },
       ]}
     />

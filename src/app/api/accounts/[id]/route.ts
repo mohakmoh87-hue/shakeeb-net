@@ -8,6 +8,7 @@ const schema = z.object({
   typeName: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   isEmployee: z.union([z.boolean(), z.string()]).optional().transform((v) => v === true || v === "1"),
+  isActivationOffice: z.union([z.boolean(), z.string()]).optional().transform((v) => v === true || v === "1"), // «مكتب تفعيل»
 });
 
 export async function PUT(

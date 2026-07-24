@@ -248,6 +248,7 @@ model Account {
   typeName  String?
   userId    Int?
   isEmployee Boolean @default(false) // حساب موظف (تنظيمي) — يبقى يؤثر على التقرير اليومي
+  isActivationOffice Boolean @default(false) // «مكتب تفعيل»: عند تفعيل اشتراك يمكن حسم مبلغه عليه (واصل كامل + مصروف على الحساب، يتعادل التقرير)
   towerId   Int? // المكتب المالك للحساب (قائمة حسابات مستقلة لكل مكتب؛ المدير يرى الكل)
   isDeleted Boolean @default(false)
 

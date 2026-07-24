@@ -50,9 +50,10 @@ export async function POST(
         });
       }
 
-      // 3) إلغاء المبلغ من الصندوق (الحركة المالية المرتبطة بهذا الوصل)
+      // 3) إلغاء المبلغ من الصندوق (الحركة المالية المرتبطة بهذا الوصل) — يشمل تفعيل عادي
+      //    ومصروف «مكتب التفعيل» المقابل (sourceType=manual مربوط بنفس الوصل) فيتعادل عكسياً.
       await tx.moneyTx.updateMany({
-        where: { sourceType: "activation", sourceId: entryId, isDeleted: false },
+        where: { sourceId: entryId, sourceType: { in: ["activation", "manual"] }, isDeleted: false },
         data: { isDeleted: true },
       });
 

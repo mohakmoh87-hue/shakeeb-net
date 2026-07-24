@@ -75,6 +75,18 @@ export default function ActivationModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [transferSeen, setTransferSeen] = useState(false); // إشعار التحويل يظهر عند كل فتح للتفعيل
+  const [actOffice, setActOffice] = useState(false); // «مكتب تفعيل»: واصل كامل + مصروف على الحساب
+  const [actAccountId, setActAccountId] = useState<number | "">(""); // الحساب المختار
+  const [actAccounts, setActAccounts] = useState<{ id: number; name: string | null }[]>([]); // حسابات «مكتب تفعيل»
+
+  // جلب حسابات «مكتب التفعيل» (المُعلَّمة isActivationOffice) لعرضها في القائمة المنسدلة
+  useEffect(() => {
+    fetch("/api/accounts").then((r) => (r.ok ? r.json() : [])).then((list) => {
+      const offs = (Array.isArray(list) ? list : []).filter((a: { isActivationOffice?: boolean }) => a.isActivationOffice)
+        .map((a: { id: number; name: string | null }) => ({ id: a.id, name: a.name }));
+      setActAccounts(offs);
+    }).catch(() => {});
+  }, []);
 
   const pkg = packages.find((p) => p.id === packageId);
   const packagePrice = pkg?.priceDinar ?? 0;
@@ -82,9 +94,10 @@ export default function ActivationModal({
   const price = amount !== "" ? Number(amount) || 0 : packageTotal; // كلفة الاشتراك الفعلية
   const deliveryAmount = Number(delivery) || 0; // اجور صيانة
   const grandTotal = price + deliveryAmount; // المجموع المستحق
-  // ماستر: واصل كامل بلا دين جديد (يبقى دين المشترك السابق كما هو)
-  const remaining = master ? 0 : grandTotal - (Number(paid) || 0); // المبلغ المتبقي
-  const totalDebt = master ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + remaining; // مجموع الديون بعد هذا التفعيل
+  // ماستر أو «مكتب تفعيل»: واصل كامل بلا دين جديد (يبقى دين المشترك السابق كما هو)
+  const fullPaid = master || actOffice;
+  const remaining = fullPaid ? 0 : grandTotal - (Number(paid) || 0); // المبلغ المتبقي
+  const totalDebt = fullPaid ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + remaining; // مجموع الديون بعد هذا التفعيل
 
   // إعادة حساب تاريخ الانتهاء الطبيعي عند تغيير عدد الأشهر (ما لم يكن التعديل يدوياً)
   useEffect(() => {
@@ -169,6 +182,7 @@ export default function ActivationModal({
   async function confirm(print = false) {
     setError("");
     if (!packageId) { setError("اختر الفئة"); return; }
+    if (actOffice && !actAccountId) { setError("اختر «مكتب التفعيل» من القائمة"); return; }
     setSaving(true);
     try {
       const res = await fetch(`/api/subscribers/${subscriber.id}/activate`, {
@@ -183,6 +197,7 @@ export default function ActivationModal({
           delivery: deliveryAmount,
           dateToOverride: expiry || null,
           master,
+          activationAccountId: actOffice && actAccountId ? actAccountId : null,
           note: note || null,
         }),
       });
@@ -292,8 +307,8 @@ export default function ActivationModal({
               </Cell>
               <Cell label="المبلغ الواصل">
                 <div className="flex gap-1">
-                  <input type="number" value={master ? String(grandTotal) : paid} disabled={master} onChange={(e) => setPaid(e.target.value)} className="w-full rounded border border-slate-300 bg-sky-50 px-2 py-1.5 text-sm font-semibold disabled:bg-slate-100" />
-                  <button onClick={() => setPaid(String(grandTotal))} disabled={!grandTotal || master} title="إدخال المجموع" className="shrink-0 rounded bg-emerald-600 px-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">➕</button>
+                  <input type="number" value={fullPaid ? String(grandTotal) : paid} disabled={fullPaid} onChange={(e) => setPaid(e.target.value)} className="w-full rounded border border-slate-300 bg-sky-50 px-2 py-1.5 text-sm font-semibold disabled:bg-slate-100" />
+                  <button onClick={() => setPaid(String(grandTotal))} disabled={!grandTotal || fullPaid} title="إدخال المجموع" className="shrink-0 rounded bg-emerald-600 px-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">➕</button>
                 </div>
               </Cell>
               <Cell label="المبلغ المتبقي">
@@ -305,11 +320,28 @@ export default function ActivationModal({
               <div className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm font-bold text-slate-700">{fmt(totalDebt)}</div>
             </Field>
 
-            {/* ماستر (كلمة فقط) */}
+            {/* ماستر (كلمة فقط) — حصري مع «مكتب تفعيل» */}
             <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold transition ${master ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-600"}`}>
-              <input type="checkbox" checked={master} onChange={(e) => setMaster(e.target.checked)} className="h-4 w-4 accent-indigo-600" />
+              <input type="checkbox" checked={master} onChange={(e) => { setMaster(e.target.checked); if (e.target.checked) { setActOffice(false); setActAccountId(""); } }} className="h-4 w-4 accent-indigo-600" />
               🅜 ماستر
             </label>
+
+            {/* مكتب تفعيل — حصري مع الماستر؛ عند الصح تظهر قائمة الحسابات المسجّلة «مكتب تفعيل» */}
+            {actAccounts.length > 0 && (
+              <div className={`rounded-lg border px-3 py-2 transition ${actOffice ? "border-teal-400 bg-teal-50" : "border-slate-300"}`}>
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-teal-700">
+                  <input type="checkbox" checked={actOffice} onChange={(e) => { setActOffice(e.target.checked); if (e.target.checked) setMaster(false); else setActAccountId(""); }} className="h-4 w-4 accent-teal-600" />
+                  🏢 مكتب تفعيل
+                </label>
+                {actOffice && (
+                  <select value={actAccountId} onChange={(e) => setActAccountId(Number(e.target.value) || "")} className="mt-2 w-full rounded border border-teal-300 bg-white px-2 py-1.5 text-sm">
+                    <option value="">— اختر الحساب —</option>
+                    {actAccounts.map((a) => <option key={a.id} value={a.id}>{a.name ?? `#${a.id}`}</option>)}
+                  </select>
+                )}
+                {actOffice && <div className="mt-1 text-[11px] text-teal-700">واصل كامل بلا دين + يُسجَّل مبلغ الاشتراك مصروفاً على هذا الحساب (يتعادل التقرير).</div>}
+              </div>
+            )}
 
             <Field label="ملاحظة">
               <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
