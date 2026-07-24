@@ -150,7 +150,8 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     const res = await bioConfirm(techName);
     setBioBusy(false);
     if (res === "failed") { setBioErr("لم تُؤكَّد البصمة — أعد المحاولة"); return; }
-    // ok أو unsupported (جهاز بلا مستشعر) → نُكمل التسجيل
+    if (res === "setup") { setBioErr("فعّل بصمة إصبع أو وجه في إعدادات هاتفك ثم أعد المحاولة"); return; }
+    // ok أو unsupported (نسخة قديمة جداً/متصفح بلا مستشعر) → نُكمل التسجيل
     setBioOpen(false);
     await stamp();
   }
@@ -160,7 +161,8 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     setBioBusy(true); setBioErr("");
     const res = await bioReRegister(techName);
     setBioBusy(false);
-    if (res === "ok") setBioErr("تم تسجيل بصمة هذا الجهاز ✓ — المس المستشعر للتأكيد");
+    if (res === "ok") setBioErr("تم تأكيد البصمة ✓");
+    else if (res === "setup") setBioErr("فعّل بصمة إصبع أو وجه في إعدادات هاتفك أولاً");
     else if (res === "unsupported") setBioErr("هذا الجهاز لا يدعم البصمة");
     else setBioErr("تعذّر تسجيل البصمة — أعد المحاولة");
   }

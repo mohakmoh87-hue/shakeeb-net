@@ -78,6 +78,8 @@ export async function POST(request: Request) {
 
   // ===== WebAuthn (المتصفح): تسجيل ثم مصادقة =====
   if (action === "reg-options") {
+    // قفل: لا تسجيل جديد إن وُجد مفتاح (أصلي أو WebAuthn) — يمنع الكتابة فوقه أو انتحال حساب زميل
+    if (t.bioPublicKey) return NextResponse.json({ error: "البصمة مُسجَّلة مسبقاً — اطلب من المدير مسحها لإعادة التسجيل" }, { status: 409 });
     const options = await regOptions(request, t.name);
     await prisma.technician.update({ where: { id: t.id }, data: { bioChallenge: options.challenge, bioChallengeAt: new Date() } });
     return NextResponse.json({ options });
