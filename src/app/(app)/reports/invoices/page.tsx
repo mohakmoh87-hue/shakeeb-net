@@ -65,7 +65,7 @@ export default function SoldItemsReport() {
 
   // حذف الوصل كاملاً عكسياً: يُرجع المواد للمخزن (ولذمة الفني في بيع الصيانة) ويلغي مبلغه
   async function voidInvoice(r: Row) {
-    const choice = askVoidEffect(`الوصل #${r.number}`);
+    const choice = await askVoidEffect(`الوصل #${r.number}`);
     if (!choice) return;
     const res = await fetch(`/api/invoices/${r.invoiceId}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) load(from, to, q);

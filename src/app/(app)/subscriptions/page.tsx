@@ -91,7 +91,7 @@ function SubscriptionsInner() {
 
   // حذف وصل تفعيل عكسياً (إرجاع الأيام والمبلغ والكارت)
   async function voidEntry(id: number) {
-    const choice = askVoidEffect("وصل التفعيل");
+    const choice = await askVoidEffect("وصل التفعيل");
     if (!choice) return;
     const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) loadEntries();

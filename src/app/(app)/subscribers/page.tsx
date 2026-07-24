@@ -188,7 +188,7 @@ export default function SubscribersPage() {
 
   // حذف وصل تفعيل عكسياً من سجل وصولات المشترك
   async function voidReceipt(id: number) {
-    const choice = askVoidEffect("هذا الوصل");
+    const choice = await askVoidEffect("هذا الوصل");
     if (!choice) return;
     const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) { loadReceipts(); load(query, showAllTowers); }

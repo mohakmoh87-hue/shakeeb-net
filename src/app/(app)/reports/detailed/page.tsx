@@ -59,7 +59,7 @@ export default function DetailedReport() {
 
   // حذف وصل تفعيل عكسياً (لتنظيف أي وصل متبقٍّ من هنا)
   async function voidEntry(id: number) {
-    const choice = askVoidEffect("وصل التفعيل");
+    const choice = await askVoidEffect("وصل التفعيل");
     if (!choice) return;
     const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) load();
@@ -68,7 +68,7 @@ export default function DetailedReport() {
 
   // حذف حركة مالية (تسديد دين/حركة يدوية). حركات التفعيل/الفواتير تُحذف من صفحاتها.
   async function voidMoney(id: number) {
-    const choice = askVoidEffect("الحركة المالية");
+    const choice = await askVoidEffect("الحركة المالية");
     if (!choice) return;
     const res = await fetch(`/api/money/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) load();

@@ -131,7 +131,7 @@ export default function CashboxPage() {
   // حذف حركة مالية — يسأل: هل يؤثر على المبالغ والتقرير (إرجاع عكسي) أم حذف فقط؟
   async function voidTx(t: Tx) {
     const label = t.sourceType === "debt" ? "تسديد الدين" : "الحركة المالية";
-    const choice = askVoidEffect(label);
+    const choice = await askVoidEffect(label);
     if (!choice) return;
     const res = await fetch(`/api/money/${t.id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) load(from, to, q);

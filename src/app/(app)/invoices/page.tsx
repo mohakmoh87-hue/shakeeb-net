@@ -126,7 +126,7 @@ export default function NewInvoicePage() {
     setLogRows(rows); setLogBusy(false);
   }
   async function deleteInvoice(row: InvRow) {
-    const choice = askVoidEffect(`وصل الفاتورة #${row.number ?? row.id}`);
+    const choice = await askVoidEffect(`وصل الفاتورة #${row.number ?? row.id}`);
     if (!choice) return;
     const r = await fetch(`/api/invoices/${row.id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (r.ok) setLogRows((xs) => xs.filter((x) => x.id !== row.id));
