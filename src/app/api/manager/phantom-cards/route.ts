@@ -7,9 +7,11 @@ import { getSession } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 // لوحة «الكروت الوهمية» في حسابات المدير: كروت عُلِّمت مستخدمة في البرنامج بلا تفعيل مقابل في
-// SAS (سجّلتها المزامنة بـ action=SYNC_PHANTOM_CARD بعد تحقّق مباشر بالبحث). «المعلَّق» = الكارت
-// ما زال مستخدماً وموجوداً ويتبع وكيل المستخدم — فيسقط تلقائياً بعد الإرجاع (useDate=null) أو
-// الحذف (اختفاء الصف). الإجراءات لا تمسّ الوصل ولا المال إطلاقاً (قرار المستخدم).
+// SAS (سجّلتها المزامنة بـ action=SYNC_PHANTOM_VERIFIED بعد تحقّق مباشر بالبحث — لا نقرأ
+// SYNC_PHANTOM_CARD القديم الذي كتبه منطق سابق بلا تحقّق فقد يحوي إيجابيات كاذبة). «المعلَّق» =
+// الكارت ما زال مستخدماً وموجوداً ويتبع وكيل المستخدم — فيسقط تلقائياً بعد الإرجاع (useDate=null)
+// أو الحذف (اختفاء الصف). الإجراءات لا تمسّ الوصل ولا المال إطلاقاً (قرار المستخدم).
+const PHANTOM_ACTION = "SYNC_PHANTOM_VERIFIED";
 
 // GET — قائمة الكروت الوهمية المعلَّقة لوكيل المستخدم (مع اسم المشترك والمكتب ومبلغ الوصل للاطلاع)
 export async function GET() {
@@ -20,7 +22,7 @@ export async function GET() {
   // آخر 120 يوماً من تنبيهات الوهمي — أحدث تاريخ اكتشاف لكل كارت
   const since = new Date(Date.now() - 120 * 86400 * 1000);
   const audits = await prisma.auditLog.findMany({
-    where: { action: "SYNC_PHANTOM_CARD", createdAt: { gte: since } },
+    where: { action: PHANTOM_ACTION, createdAt: { gte: since } },
     orderBy: { createdAt: "desc" },
     select: { entityId: true, createdAt: true },
   });
