@@ -153,6 +153,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     if (res === "failed") { setBioErr("لم تُؤكَّد البصمة — أعد المحاولة"); return; }
     if (res === "setup") { setBioErr("فعّل بصمة إصبع أو وجه في إعدادات هاتفك ثم أعد المحاولة"); return; }
     if (res === "update") { setBioErr("نسخة التطبيق قديمة — حدّثها للمتابعة"); setBioUpdate(true); return; }
+    if (res === "locked") { setBioErr("بصمتك مُسجَّلة على جهاز آخر — اطلب من المدير «مسح البصمة» لتسجيلها على هذا الهاتف"); return; }
     // ok أو unsupported (متصفح بلا مستشعر) → نُكمل التسجيل
     setBioOpen(false);
     await stamp();
@@ -166,6 +167,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     if (res === "ok") setBioErr("تم تأكيد البصمة ✓");
     else if (res === "setup") setBioErr("فعّل بصمة إصبع أو وجه في إعدادات هاتفك أولاً");
     else if (res === "update") setBioErr("نسخة التطبيق قديمة — أزِلها وأعِد تحميل الأحدث من shakeebnet.com");
+    else if (res === "locked") setBioErr("بصمتك مُسجَّلة على جهاز آخر — اطلب من المدير مسحها");
     else if (res === "unsupported") setBioErr("هذا الجهاز لا يدعم البصمة");
     else setBioErr("تعذّر تسجيل البصمة — أعد المحاولة");
   }

@@ -79,6 +79,15 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
     setBusy(false);
     setMsg(r.ok ? "مُسحت بصمة الفني ✓ — سيسجّل واحدة جديدة" : "تعذّر مسح البصمة");
   }
+  // مسح بصمات جميع الفنيين دفعةً واحدة — يعيد كلٌّ تسجيل بصمته على هاتفه عند أول حضور
+  async function clearAllBio() {
+    if (!confirm("مسح بصمات جميع الفنيين؟ سيُطلب من كل فني تسجيل بصمته من جديد على هاتفه عند أول تثبيت حضور. (لا يمسّ سجلّ الحضور اليومي.)")) return;
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/field/biometric?all=1", { method: "DELETE" });
+    const d = await r.json().catch(() => ({}));
+    setBusy(false);
+    setMsg(r.ok ? `مُسحت بصمات ${d.cleared ?? 0} فني ✓ — سيسجّلون من جديد` : (d.error ?? "تعذّر المسح"));
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={onClose}>
@@ -91,6 +100,9 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
 
         {!openForm && isManager && (
           <button onClick={startAdd} className="mb-3 w-full rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 py-3.5 text-base font-extrabold text-white shadow-md active:scale-[0.99]">➕ إضافة فني جديد</button>
+        )}
+        {!openForm && isManager && techs.length > 0 && (
+          <button onClick={clearAllBio} disabled={busy} className="mb-3 w-full rounded-2xl border border-rose-200 bg-rose-50 py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-60">🧬 مسح بصمات جميع الفنيين (تسجيل جديد)</button>
         )}
         {!openForm && techs.length > 0 && (
           <button onClick={() => setTrackIds(techs.map((t) => t.id))} className="mb-4 w-full rounded-2xl bg-gradient-to-br from-sky-500 to-sky-700 py-3 text-base font-extrabold text-white shadow-md active:scale-[0.99]">📍 تتبع موقع الجميع</button>

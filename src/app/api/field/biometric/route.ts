@@ -113,7 +113,18 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const g = await guard("field.manage");
   if (g.error) return g.error;
-  const id = Number(new URL(request.url).searchParams.get("technicianId"));
+  const sp = new URL(request.url).searchParams;
+  // مسح بصمات جميع فنيّي الوكيل دفعةً واحدة (بداية دوام/إعادة تسجيل شاملة)
+  if (sp.get("all") === "1") {
+    const agentId = g.session?.agentId ?? null;
+    if (agentId == null) return NextResponse.json({ error: "غير مصرّح" }, { status: 403 });
+    const r = await prisma.technician.updateMany({
+      where: { agentId, isDeleted: false },
+      data: { bioCredId: null, bioPublicKey: null, bioCounter: null, bioChallenge: null, bioChallengeAt: null },
+    });
+    return NextResponse.json({ ok: true, cleared: r.count });
+  }
+  const id = Number(sp.get("technicianId"));
   if (!id) return NextResponse.json({ error: "technicianId مطلوب" }, { status: 400 });
   const tech = await prisma.technician.findUnique({ where: { id }, select: { towerId: true } });
   if (!tech || !(await ownsTower(g.session, tech.towerId))) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });

@@ -9,7 +9,8 @@ import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequest
 
 // "setup" = التطبيق يدعم البصمة لكن لا بصمة مُفعّلة على الجهاز → يجب تفعيلها (يُمنع الحضور)
 // "update" = نسخة تطبيق قديمة بلا مكوّن البصمة الأصلي → يجب إزالتها وتثبيت الأحدث من الموقع
-export type BioResult = "ok" | "unsupported" | "failed" | "setup" | "update";
+// "locked" = بصمة الفني مُسجَّلة على الخادم لكن هذا الجهاز لا يملك مفتاحها (هاتف جديد/إعادة تنصيب) → يمسحها المدير
+export type BioResult = "ok" | "unsupported" | "failed" | "setup" | "update" | "locked";
 
 // جسر البصمة الأصلية (يُنفّذه android/.../BiometricNativePlugin.java داخل التطبيق فقط)
 const BiometricNative = registerPlugin<{
@@ -39,7 +40,7 @@ async function nativeBio(): Promise<BioResult> {
       try { publicKey = (await BiometricNative.enroll()).publicKey; } catch { return "failed"; }
       if (!publicKey) return "failed";
       const reg = await post("native-enroll", { publicKey });
-      if (!reg.ok) return "failed"; // 409 = مُسجَّل على الخادم وجهاز جديد → يلزم مسح المدير
+      if (!reg.ok) return reg.status === 409 ? "locked" : "failed"; // 409 = مُسجَّل على جهاز آخر → مسح المدير
     }
     // مصادقة: تحدٍّ من الخادم → توقيع بالبصمة → تحقق خادمي بالمفتاح العام
     const ch = await post("native-challenge");
@@ -54,13 +55,13 @@ async function nativeBio(): Promise<BioResult> {
   }
 }
 
-async function post(action: string, extra?: Record<string, unknown>): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+async function post(action: string, extra?: Record<string, unknown>): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   try {
     const r = await fetch("/api/field/biometric", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...extra }),
     });
-    return { ok: r.ok, data: await r.json().catch(() => ({})) };
-  } catch { return { ok: false, data: {} }; }
+    return { ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) };
+  } catch { return { ok: false, status: 0, data: {} }; }
 }
 
 // تسجيل بصمة جديدة على هذا الجهاز: خيارات من الخادم ← لمس المستشعر ← تحقق خادمي يخزّن المفتاح العام
