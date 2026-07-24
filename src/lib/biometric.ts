@@ -12,21 +12,41 @@ export type BioResult = "ok" | "unsupported" | "failed";
 // جسر البصمة الأصلية (يُنفّذه android/.../BiometricNativePlugin.java داخل التطبيق فقط)
 const BiometricNative = registerPlugin<{
   isAvailable(): Promise<{ available: boolean; code: number }>;
-  authenticate(opts: { title?: string; subtitle?: string; cancel?: string }): Promise<{ verified: boolean; errorCode?: number; error?: string }>;
+  isEnrolled(): Promise<{ enrolled: boolean }>;
+  enroll(): Promise<{ publicKey: string }>;
+  sign(opts: { challenge: string }): Promise<{ signature?: string; error?: string; errorCode?: number }>;
+  clear(): Promise<void>;
 }>("BiometricNative");
 
 function isNativeApp(): boolean {
   try { return typeof Capacitor !== "undefined" && Capacitor.isNativePlatform(); } catch { return false; }
 }
 
-// البصمة الأصلية داخل التطبيق. آمنة مع نسخ APK قديمة بلا المكوّن: أي فشل استدعاء → "unsupported"
-// (تجاوز، لا قفل) — فيبقى الحضور يعمل حتى قبل تحديث التطبيق.
+// البصمة الأصلية المربوطة بالحساب: تسجيل مفتاح جهاز (أول مرة) ثم توقيع تحدّي الخادم بالبصمة.
+// آمنة مع نسخ APK قديمة بلا المكوّن: فشل الاستدعاء الأساسي → "unsupported" (تجاوز، لا قفل).
 async function nativeBio(): Promise<BioResult> {
   try {
     const avail = await BiometricNative.isAvailable().catch(() => null);
-    if (!avail || !avail.available) return "unsupported";
-    const res = await BiometricNative.authenticate({ title: "تأكيد الحضور", subtitle: "المس بصمتك للتأكيد", cancel: "إلغاء" });
-    return res?.verified === true ? "ok" : "failed";
+    if (!avail) return "unsupported";          // مكوّن غير موجود (APK قديم) → تجاوز آمن
+    if (!avail.available) return "unsupported"; // لا مستشعر أو لا بصمة مُسجَّلة على الجهاز
+    const status = await fetch("/api/field/biometric").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const enrolledLocal = await BiometricNative.isEnrolled().then((x) => x.enrolled).catch(() => false);
+    // بحاجة لتسجيل مفتاح؟ (لا مفتاح على الخادم أو على الجهاز)
+    if (!status?.native || !enrolledLocal) {
+      let publicKey = "";
+      try { publicKey = (await BiometricNative.enroll()).publicKey; } catch { return "failed"; }
+      if (!publicKey) return "failed";
+      const reg = await post("native-enroll", { publicKey });
+      if (!reg.ok) return "failed"; // 409 = مُسجَّل على الخادم وجهاز جديد → يلزم مسح المدير
+    }
+    // مصادقة: تحدٍّ من الخادم → توقيع بالبصمة → تحقق خادمي بالمفتاح العام
+    const ch = await post("native-challenge");
+    const challenge = typeof ch.data?.challenge === "string" ? ch.data.challenge : "";
+    if (!ch.ok || !challenge) return "failed";
+    const signed = await BiometricNative.sign({ challenge }).catch(() => null);
+    if (!signed?.signature) return "failed"; // إلغاء أو خطأ بصمة
+    const ver = await post("native-verify", { signature: signed.signature });
+    return ver.ok && ver.data?.verified === true ? "ok" : "failed";
   } catch {
     return "unsupported";
   }

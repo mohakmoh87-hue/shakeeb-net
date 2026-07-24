@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createPublicKey, createVerify, randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { getTechSession } from "@/lib/auth";
 import { guard, ownsTower } from "@/lib/guard";
@@ -7,23 +8,38 @@ import { regOptions, regVerify, authOptions, authVerify, CHALLENGE_TTL_MS } from
 
 export const dynamic = "force-dynamic";
 
-// GET (فني): هل بصمته مُسجَّلة خادمياً؟ (وجود مفتاح عام — المعرّف القديم بلا مفتاح لا يُعدّ مُسجَّلاً)
+// تحقّق توقيع ECDSA-SHA256 من مفتاح الجهاز الأصلي (SPKI base64) على تحدّي الخادم.
+function verifyNativeSignature(spkiB64: string, challenge: string, sigB64: string): boolean {
+  try {
+    const pub = createPublicKey({ key: Buffer.from(spkiB64, "base64"), format: "der", type: "spki" });
+    const v = createVerify("SHA256");
+    v.update(Buffer.from(challenge, "utf8"));
+    v.end();
+    return v.verify(pub, Buffer.from(sigB64, "base64"));
+  } catch {
+    return false;
+  }
+}
+
+// GET (فني): حالة تسجيله. native = مفتاح جهاز أصلي مربوط بالحساب؛ registered = تسجيل WebAuthn (المتصفح).
 export async function GET() {
   const tech = await getTechSession();
   if (!tech) return NextResponse.json({ error: "دخول الفني مطلوب" }, { status: 401 });
   const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { bioCredId: true, bioPublicKey: true } });
-  return NextResponse.json({ registered: !!(t?.bioCredId && t?.bioPublicKey) });
+  const native = !!(t?.bioPublicKey && !t?.bioCredId); // مفتاح جهاز أصلي = مفتاح عام بلا credId
+  const registered = !!(t?.bioCredId && t?.bioPublicKey); // WebAuthn = credId + مفتاح عام (المتصفح)
+  return NextResponse.json({ registered, native });
 }
 
 async function clearChallenge(id: number) {
   await prisma.technician.update({ where: { id }, data: { bioChallenge: null, bioChallengeAt: null } }).catch(() => {});
 }
 
-// POST (فني): تدفّق WebAuthn الخادمي — reg-options / reg-verify / auth-options / auth-verify
+// POST (فني): تدفّق البصمة الأصلية (native-*) للتطبيق، وWebAuthn (reg-*/auth-*) للمتصفح.
 export async function POST(request: Request) {
   const tech = await getTechSession();
   if (!tech) return NextResponse.json({ error: "دخول الفني مطلوب" }, { status: 401 });
-  const body = (await request.json().catch(() => null)) as { action?: string; response?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { action?: string; response?: unknown; publicKey?: unknown; signature?: unknown } | null;
   const action = body?.action;
   const t = await prisma.technician.findUnique({
     where: { id: tech.technicianId },
@@ -34,7 +50,33 @@ export async function POST(request: Request) {
   const challengeFresh = !!(t.bioChallenge && t.bioChallengeAt && Date.now() - t.bioChallengeAt.getTime() < CHALLENGE_TTL_MS);
   const hasResponse = !!body?.response && typeof body.response === "object";
 
-  // تسجيل: طلب الخيارات ثم التحقق
+  // ===== البصمة الأصلية (التطبيق): مفتاح جهاز مربوط بالحساب تشفيرياً =====
+  // تسجيل مفتاح الجهاز — مقفول: لا يُقبل مفتاح جديد إن وُجد مفتاح (يمنع فنياً من انتحال حساب
+  // زميل بتسجيل جهازه) — إعادة التسجيل تتطلّب مسح المدير.
+  if (action === "native-enroll") {
+    const publicKey = typeof body?.publicKey === "string" ? body.publicKey : "";
+    if (!publicKey || publicKey.length < 40 || publicKey.length > 4000) return NextResponse.json({ error: "مفتاح غير صالح" }, { status: 400 });
+    if (t.bioPublicKey) return NextResponse.json({ error: "البصمة مُسجَّلة مسبقاً — اطلب من المدير مسحها لإعادة التسجيل" }, { status: 409 });
+    await prisma.technician.update({ where: { id: t.id }, data: { bioPublicKey: publicKey, bioCredId: null, bioCounter: null, bioChallenge: null, bioChallengeAt: null } });
+    return NextResponse.json({ ok: true });
+  }
+  if (action === "native-challenge") {
+    if (!t.bioPublicKey || t.bioCredId) return NextResponse.json({ error: "لا بصمة مُسجَّلة" }, { status: 400 });
+    const challenge = randomBytes(32).toString("base64url");
+    await prisma.technician.update({ where: { id: t.id }, data: { bioChallenge: challenge, bioChallengeAt: new Date() } });
+    return NextResponse.json({ challenge });
+  }
+  if (action === "native-verify") {
+    const signature = typeof body?.signature === "string" ? body.signature : "";
+    if (!challengeFresh || !signature) return NextResponse.json({ verified: false, error: "انتهت صلاحية الطلب — أعد المحاولة" }, { status: 400 });
+    if (!t.bioPublicKey || t.bioCredId) return NextResponse.json({ verified: false, error: "لا بصمة مُسجَّلة" }, { status: 400 });
+    const ok = verifyNativeSignature(t.bioPublicKey, t.bioChallenge!, signature);
+    await clearChallenge(t.id); // التحدّي يُستهلك مرة واحدة (نجاحاً أو فشلاً) — منع إعادة التشغيل
+    if (!ok) return NextResponse.json({ verified: false, error: "لم تُطابق البصمة" }, { status: 400 });
+    return NextResponse.json({ verified: true });
+  }
+
+  // ===== WebAuthn (المتصفح): تسجيل ثم مصادقة =====
   if (action === "reg-options") {
     const options = await regOptions(request, t.name);
     await prisma.technician.update({ where: { id: t.id }, data: { bioChallenge: options.challenge, bioChallengeAt: new Date() } });
@@ -47,8 +89,6 @@ export async function POST(request: Request) {
     await prisma.technician.update({ where: { id: t.id }, data: { bioCredId: res.credId, bioPublicKey: res.publicKey, bioCounter: res.counter, bioChallenge: null, bioChallengeAt: null } });
     return NextResponse.json({ ok: true });
   }
-
-  // مصادقة: طلب الخيارات ثم التحقق بالمفتاح العام المخزَّن
   if (action === "auth-options") {
     if (!t.bioCredId || !t.bioPublicKey) return NextResponse.json({ error: "لا بصمة مُسجَّلة" }, { status: 400 });
     const options = await authOptions(request, t.bioCredId);
