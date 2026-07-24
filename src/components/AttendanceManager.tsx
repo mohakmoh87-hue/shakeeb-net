@@ -6,7 +6,7 @@ const todayKey = () => new Date(new Date().getTime() + 3 * 3600 * 1000).toISOStr
 const fmtTime = (d: string | null) =>
   d ? new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Baghdad" }) : "—";
 
-type Rec = { id: number; dayKey: string | null; checkIn: string | null; checkOut: string | null; checkoutBy: string | null; lateExcuse: string | null };
+type Rec = { id: number; dayKey: string | null; checkIn: string | null; checkInActual: string | null; checkOut: string | null; checkOutActual: string | null; checkoutBy: string | null; lateExcuse: string | null };
 
 // إدارة حضور الفني للمدير: سجل البصمات (تاريخ + دخول + خروج) مع حذف كل بصمة، خروج يدوي، وإضافة يوم كامل.
 export default function AttendanceManager({ technicianId, technicianName, onClose, onChange }: { technicianId: number; technicianName: string; onClose: () => void; onChange: () => void }) {
@@ -62,10 +62,18 @@ export default function AttendanceManager({ technicianId, technicianName, onClos
               {log.map((r) => (
                 <li key={r.id} className="grid grid-cols-[1.4fr_1fr_1fr_auto] items-center gap-1 px-3 py-2 text-sm">
                   <span className="font-semibold text-slate-700" dir="ltr">{r.dayKey}</span>
-                  <span className="text-center font-bold text-emerald-700" dir="ltr">{fmtTime(r.checkIn)}</span>
-                  <span className="text-center font-bold text-rose-600" dir="ltr">
+                  <span className="text-center font-bold leading-tight text-emerald-700" dir="ltr">
+                    {fmtTime(r.checkIn)}
+                    {r.checkInActual && fmtTime(r.checkInActual) !== fmtTime(r.checkIn) && (
+                      <span className="block text-[9px] font-normal text-slate-400" title="وقت البصمة الحقيقي">فعلي {fmtTime(r.checkInActual)}</span>
+                    )}
+                  </span>
+                  <span className="text-center font-bold leading-tight text-rose-600" dir="ltr">
                     {fmtTime(r.checkOut)}
                     {r.checkOut && r.checkoutBy === "auto" && <span className="mr-1 text-[9px] text-amber-500">تلقائي</span>}
+                    {r.checkOutActual && fmtTime(r.checkOutActual) !== fmtTime(r.checkOut) && (
+                      <span className="block text-[9px] font-normal text-slate-400" title="وقت البصمة الحقيقي">فعلي {fmtTime(r.checkOutActual)}</span>
+                    )}
                   </span>
                   <button
                     onClick={() => { if (r.dayKey && confirm(`حذف بصمة ${r.dayKey}؟`)) req("DELETE", undefined, `?technicianId=${technicianId}&dayKey=${r.dayKey}`); }}

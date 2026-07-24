@@ -53,7 +53,7 @@ export async function GET(request: Request) {
     const recs = await prisma.attendance.findMany({
       where: { technicianId: logTechId },
       orderBy: { dayKey: "desc" },
-      select: { id: true, dayKey: true, checkIn: true, checkOut: true, checkoutBy: true, lateExcuse: true },
+      select: { id: true, dayKey: true, checkIn: true, checkInActual: true, checkOut: true, checkOutActual: true, checkoutBy: true, lateExcuse: true },
       take: 120,
     });
     return NextResponse.json({ role: "manager", log: recs });
@@ -117,12 +117,15 @@ export async function POST(request: Request) {
 
   if (parsed.data.action === "in") {
     if (rec?.checkIn) return NextResponse.json({ error: "سجّلت دخولك اليوم مسبقاً" }, { status: 400 });
-    const created = await prisma.attendance.create({
-      data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: stampOffice, dayKey: key, checkIn: now, checkoutBy: null },
-    });
-    // كشف التأخّر: دخول بعد (بدء الدوام + سماحية الدخول) ⇒ نُتيح للفني زر «هل نسيت البصمة؟»
+    // معالجة الدخول المبكر: إن بصم قبل بدء الدوام، يُسجَّل الدخول المُحتسَب في موعد الدوام
+    // (لا في وقته المبكر) فلا فائدة من التبكير؛ والوقت الحقيقي يُحفظ في checkInActual للسجل.
     const startMin = parseHHMM(t?.shiftStart);
-    const isLate = startMin != null && baghdadMinutesOfDay(now) > startMin + Math.max(0, t?.entryGraceMin ?? 0);
+    const effectiveIn = (startMin != null && baghdadMinutesOfDay(now) < startMin) ? bgTimeUtc(key, startMin) : now;
+    const created = await prisma.attendance.create({
+      data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: stampOffice, dayKey: key, checkIn: effectiveIn, checkInActual: now, checkoutBy: null },
+    });
+    // كشف التأخّر (على الوقت المُحتسَب): دخول بعد (بدء الدوام + سماحية الدخول) ⇒ زر «هل نسيت البصمة؟»
+    const isLate = startMin != null && baghdadMinutesOfDay(effectiveIn) > startMin + Math.max(0, t?.entryGraceMin ?? 0);
     await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkin", title: "بصمة دخول", body: `${tech.name} سجّل الدخول${onSupport ? " (دعم)" : ""}${isLate ? " (متأخّر)" : ""}`, refType: "technician", refId: tech.technicianId });
     return NextResponse.json({ ok: true, state: "in", checkIn: created.checkIn, late: isLate, canExcuse: isLate });
   }
@@ -135,7 +138,7 @@ export async function POST(request: Request) {
   const outTower = stampOffice !== rec.towerId ? stampOffice : null;
   const updated = await prisma.attendance.update({
     where: { id: rec.id },
-    data: { checkOut: now, checkoutBy: "tech", checkOutTowerId: outTower, ...(calc ?? {}) },
+    data: { checkOut: now, checkOutActual: now, checkoutBy: "tech", checkOutTowerId: outTower, ...(calc ?? {}) },
   });
   const late = calc?.lateDeduction ?? 0, early = calc?.earlyDeduction ?? 0, ot = calc?.overtimeAddition ?? 0;
   const extra = late || early ? ` (خصم ${(late + early).toLocaleString("en-US")})` : ot ? ` (إضافي ${ot.toLocaleString("en-US")})` : "";

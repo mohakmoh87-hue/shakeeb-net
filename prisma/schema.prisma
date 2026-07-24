@@ -678,8 +678,10 @@ model Attendance {
   agentId      Int? // عزل الوكيل
   towerId      Int?
   dayKey       String? // YYYY-MM-DD (توقيت بغداد) — يوم واحد لكل فني
-  checkIn      DateTime? // بصمة الدخول (وقت الخادم)
-  checkOut     DateTime? // بصمة الخروج
+  checkIn      DateTime? // بصمة الدخول المُحتسَبة (تُطبَّع لموعد الدوام عند التبكير)
+  checkInActual  DateTime? // وقت بصمة الدخول الحقيقي الذي بصم فيه الفني فعلاً
+  checkOut     DateTime? // بصمة الخروج المُحتسَبة
+  checkOutActual DateTime? // وقت بصمة الخروج الحقيقي
   checkoutBy   String? // tech | manager (بصمة خروج يدوية من المدير)
   checkOutTowerId Int? // مكتب بصمة الخروج إن اختلف عن مكتب الدخول (دعم يوم طُلب بعد بصمة الدخول بالمكتب الأصلي)
   lateExcuse   String? // طلب «نسيت البصمة» عند الدخول المتأخّر: null | pending | approved | rejected — pending يُعلّق خصم التأخير حتى قرار المدير
@@ -693,6 +695,7 @@ model Attendance {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @default(now()) @updatedAt
 
+  @@unique([technicianId, dayKey]) // بصمة واحدة (دخول+خروج) لكل فني في اليوم — تمنع الازدواج
   @@index([technicianId])
   @@index([agentId])
   @@map("attendances")
