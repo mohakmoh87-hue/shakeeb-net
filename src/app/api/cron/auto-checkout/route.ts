@@ -33,13 +33,13 @@ export async function GET(request: Request) {
     select: { id: true },
   }).catch(() => [] as { id: number }[]);
   let synced = 0;
-  const syncDetails: { office: string; checked: number; activations: number; error: string | null }[] = [];
+  const syncDetails: { office: string; checked: number; activations: number; phantom: number; error: string | null }[] = [];
   for (const o of syncOffices) {
     try {
       const sr = await runOfficeSync(o.id, { notify: false });
       synced++;
-      syncDetails.push({ office: sr.office, checked: sr.phase2?.checked ?? 0, activations: sr.phase1?.activations ?? 0, error: sr.error ?? null });
-    } catch (e) { syncDetails.push({ office: String(o.id), checked: 0, activations: 0, error: (e as Error).message }); }
+      syncDetails.push({ office: sr.office, checked: sr.phase2?.checked ?? 0, activations: sr.phase1?.activations ?? 0, phantom: sr.phase1?.phantom ?? 0, error: sr.error ?? null });
+    } catch (e) { syncDetails.push({ office: String(o.id), checked: 0, activations: 0, phantom: 0, error: (e as Error).message }); }
   }
 
   return NextResponse.json({ ok: true, closed: r.closed, purgedArchive: purged, backups, syncedOffices: synced, syncDetails });
