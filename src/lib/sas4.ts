@@ -217,7 +217,9 @@ async function fetchAnyPage(base: string, token: string, route: string, page: nu
   throw lastErr;
 }
 
-// جلب تفعيلات يوم محدّد من تقرير التفعيلات (index/activations، مرتّب تصاعدياً فنبدأ من آخر صفحة)
+// جلب تفعيلات يوم محدّد من تقرير التفعيلات (index/activations).
+// يكتشف اتجاه ترتيب SAS تلقائياً (تصاعدي/تنازلي) ويمسح من الطرف الأحدث حتى يتجاوز بداية
+// اليوم — فلا يُفوّت تفعيلات حقيقية مهما كان الترتيب (سبب سابق لإنذارات «الوهمي» الكاذبة).
 export async function sasFetchActivationsForDay(
   base: string,
   token: string,
@@ -226,24 +228,50 @@ export async function sasFetchActivationsForDay(
 ): Promise<SasActivation[]> {
   const COUNT = 500; // 500 لكل صفحة لتقليل عدد الطلبات على SAS
   const GAP_MS = 2000; // تأخير بين طلب وآخر لتفادي الحظر
+  const MAX_PAGES = 40; // حماية أوسع (كان 15) — يكفي 20 ألف تفعيل حديث
+
   const meta = await fetchAnyPage(base, token, "index/activations", 1, 1);
   const total: number = meta.total ?? 0;
   if (!total) return [];
-  let page = Math.max(1, Math.ceil(total / COUNT));
+  const lastPage = Math.max(1, Math.ceil(total / COUNT));
 
   const rows: SasActivation[] = [];
-  for (let guardN = 0; guardN < 15 && page >= 1; guardN++, page--) {
-    if (guardN > 0) await sleep(GAP_MS); // مهلة بين الصفحات
-    const j = await fetchAnyPage(base, token, "index/activations", page, COUNT);
-    const data: Record<string, unknown>[] = j.data ?? [];
-    if (data.length === 0) break;
-    let oldestOnPage: Date | null = null;
+  // يجمع صفوف النطاق من صفحة، ويُبلّغ هل ظهرت صفوف أقدم من بداية اليوم (إشارة توقّف)
+  const collect = (data: Record<string, unknown>[]): boolean => {
+    let sawOlder = false;
     for (const r of data) {
-      const created = r.created_at ? new Date(r.created_at as string) : null;
-      if (created && (!oldestOnPage || created < oldestOnPage)) oldestOnPage = created;
-      if (created && created >= dayStart && created <= dayEnd) rows.push(normalizeActivation(r));
+      const c = r.created_at ? new Date(r.created_at as string) : null;
+      if (!c || isNaN(c.getTime())) continue;
+      if (c >= dayStart && c <= dayEnd) rows.push(normalizeActivation(r));
+      if (c < dayStart) sawOlder = true;
     }
-    if (oldestOnPage && oldestOnPage < dayStart) break; // تجاوزنا بداية اليوم
+    return sawOlder;
+  };
+
+  // اكتشاف الاتجاه من الصفحة الأولى: إن حوت تفعيلاً ضمن/بعد بداية اليوم ⇒ تنازلي (الأحدث أولاً)
+  const first = await fetchAnyPage(base, token, "index/activations", 1, COUNT);
+  const firstData: Record<string, unknown>[] = first.data ?? [];
+  const descending = firstData.some((r) => {
+    const c = r.created_at ? new Date(r.created_at as string) : null;
+    return c && !isNaN(c.getTime()) && c >= dayStart;
+  });
+
+  if (descending || lastPage === 1) {
+    // الأحدث في الصفحة 1 ⇒ نتقدّم للأمام حتى نتجاوز بداية اليوم
+    if (!collect(firstData)) {
+      for (let page = 2, n = 0; page <= lastPage && n < MAX_PAGES; page++, n++) {
+        await sleep(GAP_MS);
+        const d: Record<string, unknown>[] = (await fetchAnyPage(base, token, "index/activations", page, COUNT)).data ?? [];
+        if (d.length === 0 || collect(d)) break;
+      }
+    }
+  } else {
+    // تصاعدي: الأحدث في الصفحة الأخيرة ⇒ نتراجع للخلف حتى نتجاوز بداية اليوم
+    for (let page = lastPage, n = 0; page >= 1 && n < MAX_PAGES; page--, n++) {
+      if (n > 0) await sleep(GAP_MS);
+      const d: Record<string, unknown>[] = page === 1 ? firstData : ((await fetchAnyPage(base, token, "index/activations", page, COUNT)).data ?? []);
+      if (d.length === 0 || collect(d)) break;
+    }
   }
   return rows;
 }
