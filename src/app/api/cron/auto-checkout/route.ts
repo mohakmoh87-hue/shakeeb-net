@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   }
-  const r = await runAutoCheckout();
+  const r = await runAutoCheckout({ resetSupport: true }); // المهمة الليلية: أنهِ كل دعم نشط لليوم الجديد
   // تنظيف الأرشيف: حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (لا يعتمد على حواسيب المكاتب)
   const { purgeOldArchivedCards } = await import("@/lib/field");
   const purged = await purgeOldArchivedCards().catch(() => 0);

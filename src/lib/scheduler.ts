@@ -328,7 +328,7 @@ export function startScheduler() {
 
     // بصمة خروج تلقائية (00:15 بغداد): إغلاق حضور من نسي الخروج بوقت الخروج المثبّت + غرامة
     if (nowHM === "00:15") {
-      import("@/lib/autoCheckout").then((m) => m.runAutoCheckout()).then((r) => { if (r.closed) console.log(`[scheduler] خروج تلقائي: أُغلق ${r.closed} حضور`); }).catch((e) => console.error("[scheduler] autoCheckout:", e));
+      import("@/lib/autoCheckout").then((m) => m.runAutoCheckout({ resetSupport: true })).then((r) => { if (r.closed || r.supportEnded) console.log(`[scheduler] خروج تلقائي: أُغلق ${r.closed} حضور، أُنهي ${r.supportEnded} دعم`); }).catch((e) => console.error("[scheduler] autoCheckout:", e));
     }
 
     // تنظيف يومي (03:00 بغداد): حذف أرشيف الرسائل >3 أيام، والمشتركين المحوّلين >30 يوماً دون تفعيل

@@ -14,13 +14,14 @@ function scheduledCheckout(checkIn: Date, shiftEnd: string | null): Date {
 
 // بصمة خروج تلقائية لمن نسي الخروج: بعد منتصف الليل، كل حضور بلا خروج ليومٍ سابق
 // يُغلَق بوقت الخروج المثبّت (بلا إضافي) + خصم غرامة النسيان + إنهاء الدعم إن وُجد.
-export async function runAutoCheckout(): Promise<{ closed: number }> {
+// resetSupport (المهمة الليلية 00:15 فقط): يُنهي أيضاً **كل** دعم نشط (يوم كامل أو بطاقات)
+// عند بدء اليوم الجديد — لا يُمرَّر من تدارك الإقلاع/التشغيل اليدوي كي لا يُنهي دعم اليوم نفسه.
+export async function runAutoCheckout(opts?: { resetSupport?: boolean }): Promise<{ closed: number; supportEnded: number }> {
   const todayKey = baghdadDayKey(new Date());
   const stale = await prisma.attendance.findMany({
     where: { checkIn: { not: null }, checkOut: null, dayKey: { not: null, lt: todayKey } },
     take: 500,
   });
-  if (stale.length === 0) return { closed: 0 };
 
   let closed = 0;
   for (const rec of stale) {
@@ -50,5 +51,17 @@ export async function runAutoCheckout(): Promise<{ closed: number }> {
     void notify({ agentId: t.agentId, towerId: t.towerId, type: "checkout", title: "خروج تلقائي", body: `${t.name}: خروج تلقائي (نسيان البصمة)${penalty > 0 ? ` — غرامة ${penalty.toLocaleString("en-US")}` : ""}`, refType: "technician", refId: rec.technicianId });
     closed++;
   }
-  return { closed };
+
+  // إنهاء كل دعم نشط (يوم كامل أو بطاقات) عند بدء اليوم الجديد — يعود كل فنيّ لمكتبه بصرف النظر
+  // عن حضوره أو إكمال بطاقاته (endSupport يرحّل ذممه لمكتبه). يُشغَّل من مهمة 00:15 الليلية فقط.
+  let supportEnded = 0;
+  if (opts?.resetSupport) {
+    const supported = await prisma.technician.findMany({
+      where: { supportTowerId: { not: null }, isDeleted: false },
+      select: { id: true },
+      take: 1000,
+    });
+    for (const s of supported) { await endSupport(s.id).catch(() => {}); supportEnded++; }
+  }
+  return { closed, supportEnded };
 }
