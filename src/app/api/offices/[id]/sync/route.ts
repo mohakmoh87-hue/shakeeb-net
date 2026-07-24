@@ -20,14 +20,16 @@ export async function POST(
   const mine = await agentTowerIds(g.session ?? null);
   if (!mine.includes(towerId)) return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
 
-  // على العامل نفسه: نفّذ مباشرةً. على الموقع (Vercel): مرّرها لحاسبة المكتب لتُنفَّذ محلياً (SAS قريب وسريع).
+  // على العامل نفسه: نفّذ مباشرةً.
   if (process.env.RUN_WORKER === "1") {
     return NextResponse.json(await runOfficeSync(towerId, { notify: false }));
   }
+  // على الموقع: نُفضّل حاسبة المكتب (قرب SAS، أسرع). relayRequest يفحص نبضة الحاسبة
+  // أولاً فيفشل فوراً إن كانت مطفأة (بلا انتظار المهلة).
   const r = await relayRequest(towerId, "sas", { op: "sync" }, 250_000);
-  if (r.ok) return NextResponse.json(r.result);
-  return NextResponse.json(
-    { error: r.error ?? "تعذّرت المزامنة — تأكّد أن حاسبة المكتب مشغّلة" },
-    { status: 503 },
-  );
+  if (r.ok) return NextResponse.json({ ...(r.result as object), via: "office" });
+  // تراجع تلقائي: الحاسبة مطفأة/تعذّرت — نُزامن مباشرةً من السحابة (لوحة SAS على الإنترنت).
+  // فيعمل الزر دائماً بغضّ النظر عن حالة الحاسبة (قفل التزامن يمنع أي تعارض).
+  const cloud = await runOfficeSync(towerId, { notify: false });
+  return NextResponse.json({ ...cloud, via: "cloud" });
 }
