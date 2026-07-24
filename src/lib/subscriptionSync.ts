@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import {
-  sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers,
+  sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers, sasSearchActivation,
   type SasActivation,
 } from "@/lib/sas4";
 import { sendViaProvider } from "@/lib/messaging";
@@ -27,6 +27,7 @@ export interface SyncResult {
   phase1: {
     activations: number; internal: number; external: number;
     phantom: number; markedUsed: number; duplicates: number; imported: number;
+    verifiedReal: number; // كروت مُستخدمة أمس أُكّد تفعيلها في SAS ببحث مباشر (ليست وهمية)
   };
   phase2: { checked: number; dateFixed: number; imported: number; failed: boolean; skippedPkg: number };
   events: SyncEvent[];
@@ -87,7 +88,7 @@ export async function runOfficeSync(
   if (syncRunning.has(officeId)) {
     return {
       office: "المكتب",
-      phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0 },
+      phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0 },
       phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0 },
       events: [], reportSent: null,
       error: "مزامنة هذا المكتب قيد التنفيذ بالفعل — تم تجاهل الطلب المكرّر",
@@ -112,7 +113,7 @@ async function runOfficeSyncInner(
   const officeName = office?.name ?? "المكتب";
   const empty: SyncResult = {
     office: officeName,
-    phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0 },
+    phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0 },
     phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0 },
     events: [], reportSent: null,
   };
@@ -255,25 +256,54 @@ async function runOfficeSyncInner(
   const usedYesterday = cards.filter(
     (c) => c.useDate && c.subscriberId != null && withinRange(c.useDate, start, end) && subById.has(c.subscriberId),
   );
-  // المشتبه بهم: كارت مستخدم أمس بلا تفعيل مقابل في النافذة الموسّعة (الأمس + اليوم)
-  const suspects = usedYesterday.filter((c) => {
+  // المشتبه بهم مبدئياً: كارت مستخدم أمس بلا تفعيل مقابل في النافذة الموسّعة (الأمس + اليوم)
+  const preSuspects = usedYesterday.filter((c) => {
     const sub = subById.get(c.subscriberId!);
     if (!sub?.sasId) return false;
     return !sasUserPinSet.has(`${sub.sasId}|${(c.serial ?? "").trim()}`);
   });
 
-  // 🛡️ وضع آمن — إبلاغ فقط بلا أي تغيير على الكارت (قرار جلسة الطوارئ، يبقى سارياً):
-  // ثبت ميدانياً أن كشف «الوهمي» يعطي إيجابيات كاذبة، والأرجح أن sasFetchActivationsForDay
-  // يفترض ترقيم صفحات تصاعدياً فيرجع قائمة ناقصة/فارغة عند العكس. النافذة الموسّعة أعلاه
-  // (الأمس + اليوم) تُقلّل الإنذار الكاذب، لكن لا يُعاد أي تصرّف تلقائي على الكروت قبل
-  // تدقيق الجلب على بيانات SAS الفعلية.
+  // 🔎 تحقّق نهائي مباشر قبل أي إنذار: قد يكون الكارت مُفعّلاً فعلاً في SAS لكن لا يظهر في
+  // القائمة المُرقّمة الافتراضية — إمّا لأن تاريخه خارج نافذة المزامنة، أو (كنمط ريسيلر
+  // «المواصلات») لأن التفعيل تمّ تحت حساب فرعي، والقائمة الافتراضية تعرض تفعيلات المدير المباشرة
+  // فقط بينما بحث SAS (search) يغطّي الشجرة الفرعية كاملة. فنبحث عن كل مشتبهٍ به بالسيريال؛ إن
+  // وُجد فليس وهمياً. هذا يزيل الإيجابيات الكاذبة نهائياً (السبب الجذري لإنذارات المواصلات الـ57).
+  // تنفيذ متوازٍ محدود (POOL) لتقليص الزمن الكلي (زمن شبكة SAS ~1.5ث/بحث)، مع حدٍّ أعلى؛ وعند
+  // تجاوز الحد يُترك الباقي على تقدير النافذة (وضع آمن أصلاً لا يُغيّر شيئاً).
+  const MAX_VERIFY = 500; // سقف حماية من حلقات ضخمة
+  const POOL = 4;         // عدد الطلبات المتزامنة على SAS (خفيف: صف واحد لكل بحث)
+  const toVerify = preSuspects.slice(0, MAX_VERIFY);
+  const overflow = preSuspects.slice(MAX_VERIFY); // غير مُتحقَّق منه ⇒ يبقى مشتبهاً (نادر)
+  const realFlags = new Array<boolean>(toVerify.length).fill(false);
+  let vNext = 0;
+  const worker = async () => {
+    while (true) {
+      const i = vNext++;
+      if (i >= toVerify.length) break;
+      const found = await sasSearchActivation(base, token, (toVerify[i].serial ?? "").trim());
+      if (found) realFlags[i] = true;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(POOL, toVerify.length) }, worker));
+  let verifiedReal = 0;
+  const suspects: typeof preSuspects = [...overflow];
+  for (let i = 0; i < toVerify.length; i++) {
+    if (realFlags[i]) verifiedReal++;      // تفعيل حقيقي (بتاريخ/حساب فرعي مختلف) — ليس وهمياً
+    else suspects.push(toVerify[i]);
+  }
+
+  // 🛡️ وضع آمن — إبلاغ فقط بلا أي تغيير على الكارت (يبقى سارياً حتى قرار صريح بإعادة التفعيل التلقائي):
+  // السبب الجذري للإيجابيات الكاذبة اتّضح وعولِج: كانت المزامنة تعتمد نافذة «الأمس + اليوم» فقط،
+  // فتُفوّت الكارت المُفعَّل في SAS بتاريخٍ مختلف عن يوم تعليمه مستخدماً في البرنامج (نمط ريسيلر
+  // «المواصلات»). أضيف أعلاه تحقّق مباشر بالبحث بالسيريال (sasSearchActivation) يجد التفعيل مهما
+  // كان تاريخه، فلم يبقَ «وهمياً» إلا كارتٌ لا وجود لتفعيله في SAS إطلاقاً — إنذار موثوق الآن.
   // ⚠️ وفي كل الأحوال: لا يُحذف أي وصل، ولا يُنقَص دين مشترك (carry) ولا دين كارت (price).
   for (const c of suspects) {
     const sub = subById.get(c.subscriberId!);
     phantom++;
     events.push({
       scenario: 1, subscriber: sub?.name ?? sub?.netUser ?? null, pin: c.serial,
-      detail: `يبدو بلا تفعيل مقابل في SAS — لم يُغيَّر شيء (وضع آمن: يُدقَّق يدوياً)`,
+      detail: `لا يوجد تفعيل مقابل في SAS (تحقّق مباشر) — لم يُغيَّر شيء (وضع آمن: يُدقَّق يدوياً)`,
     });
   }
 
@@ -340,7 +370,7 @@ async function runOfficeSyncInner(
   // ===================== التقرير =====================
   const result: SyncResult = {
     office: officeName,
-    phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported },
+    phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported, verifiedReal },
     phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg },
     events, reportSent: null,
   };

@@ -205,16 +205,39 @@ function normalizeActivation(a: Record<string, unknown>): SasActivation {
   };
 }
 
-// مساعد عام لجلب صفحة من أي مسار مُرقَّم (index/*) مع إعادة محاولة
-async function fetchAnyPage(base: string, token: string, route: string, page: number, count: number) {
+// مساعد عام لجلب صفحة من أي مسار مُرقَّم (index/*) مع إعادة محاولة.
+// extra: بارامترات إضافية تُدمج في الجسم (مثل search للبحث بالبِن).
+async function fetchAnyPage(
+  base: string, token: string, route: string, page: number, count: number,
+  extra?: Record<string, unknown>,
+) {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const raw = await sasPost(base, route, { page, count }, token);
+      const raw = await sasPost(base, route, { page, count, ...(extra ?? {}) }, token);
       return JSON.parse(raw.text);
     } catch (e) { lastErr = e; await sleep(1200 * (attempt + 1)); }
   }
   throw lastErr;
+}
+
+// تحقّق مباشر: هل رقم كارت (السيريال = pin) مُفعّل في تقرير SAS بصرف النظر عن تاريخ تفعيله؟
+// يستخدم بحث SAS بالبِن (search) الذي يجد التفعيل ولو وقع خارج نافذة المزامنة (يُفعَّل الكارت
+// في يومٍ ويُعلَّم مستخدماً في البرنامج في يومٍ آخر — نمط مكاتب الريسيلر الكبيرة). يُعيد صف
+// التفعيل عند الوجود وإلا null. لا يرمي استثناءً كي لا يُسقِط المزامنة عند تعثّر استعلام واحد.
+export async function sasSearchActivation(
+  base: string, token: string, serial: string,
+): Promise<SasActivation | null> {
+  const s = (serial ?? "").trim();
+  if (!s) return null;
+  try {
+    const j = await fetchAnyPage(base, token, "index/activations", 1, 20, { search: s });
+    const rows: Record<string, unknown>[] = j?.data ?? [];
+    const hit = rows.find((r) => String((r as { pin?: unknown }).pin ?? "").trim() === s);
+    return hit ? normalizeActivation(hit) : null;
+  } catch {
+    return null;
+  }
 }
 
 // جلب تفعيلات يوم محدّد من تقرير التفعيلات (index/activations).
