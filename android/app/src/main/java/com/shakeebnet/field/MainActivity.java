@@ -22,6 +22,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeTrackPlugin.class); // جسر التتبّع الأصلي (رمز FCM + تشغيل/إيقاف)
+        registerPlugin(BiometricNativePlugin.class); // جسر البصمة الأصلية (BiometricPrompt)
         super.onCreate(savedInstanceState);
         ensureForegroundPermissions();
     }
