@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { runAutoCheckout } from "@/lib/autoCheckout";
 
 export const dynamic = "force-dynamic";
@@ -22,5 +23,19 @@ export async function GET(request: Request) {
   // النسخ الاحتياطية اليومية لإيميلات الوكلاء — من السحابة حتى مع إغلاق كل الحاسبات
   const { runDailyBackups } = await import("@/lib/backupJob");
   const backups = await runDailyBackups().catch(() => ({ total: 0, sent: 0, failed: 0 }));
-  return NextResponse.json({ ok: true, closed: r.closed, purgedArchive: purged, backups });
+
+  // مزامنة SAS ليلية (backstop سحابي): تعمل ولو كانت حواسيب المكاتب مغلقة — لوحات SAS
+  // على الإنترنت فتُنفَّذ خادمياً. notify=false: بيانات فقط بلا تقرير (يتفادى ازدواج تقرير
+  // المكتب الذي يُرسله المجدول المحلي عند وقت المزامنة). قفل التزامن يمنع أي تعارض.
+  const { runOfficeSync } = await import("@/lib/subscriptionSync");
+  const syncOffices = await prisma.tower.findMany({
+    where: { isDeleted: false, syncEnabled: "1" },
+    select: { id: true },
+  }).catch(() => [] as { id: number }[]);
+  let synced = 0;
+  for (const o of syncOffices) {
+    try { await runOfficeSync(o.id, { notify: false }); synced++; } catch { /* لا يُفشل الكرون */ }
+  }
+
+  return NextResponse.json({ ok: true, closed: r.closed, purgedArchive: purged, backups, syncedOffices: synced });
 }
