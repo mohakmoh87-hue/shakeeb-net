@@ -34,6 +34,8 @@ type Data = {
   salaryPeriod: { fromDay: number | null; toDay: number | null; from: string | null; to: string | null } | null;
 };
 type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number; offices?: { towerId: number; name: string; net: number }[] }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string }[] };
+// كارت وهمي: عُلِّم مستخدماً في البرنامج بلا تفعيل مقابل في SAS (بعد تحقّق مباشر)
+type PhantomCard = { cardId: number; serial: string | null; subscriber: string | null; office: string | null; useDate: string | null; amount: number | null; detectedAt: string | null };
 
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
 const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -63,6 +65,13 @@ export default function ManagerAccountsPage() {
   const [pToDay, setPToDay] = useState("");
   const [savingPeriod, setSavingPeriod] = useState(false);
   const [periodMsg, setPeriodMsg] = useState("");
+  // لوحة الكروت الوهمية
+  const [phantomCards, setPhantomCards] = useState<PhantomCard[]>([]);
+  const [phantomSel, setPhantomSel] = useState<Set<number>>(new Set());
+  const [phantomLoaded, setPhantomLoaded] = useState(false);
+  const [phantomDenied, setPhantomDenied] = useState(false);
+  const [phantomBusy, setPhantomBusy] = useState(false);
+  const [phantomMsg, setPhantomMsg] = useState("");
 
   function openMaster() {
     setShowMaster(true); setMasterDetail(null);
@@ -124,6 +133,35 @@ export default function ManagerAccountsPage() {
     const res = await fetch("/api/card-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ packageId, price: Number(priceInputs[packageId]) || 0 }) });
     if (res.ok) { setPriceMsg("✓ تم حفظ السعر (يُطبَّق على الكروت الجديدة فقط)"); loadPrice(); }
     else { const d = await res.json().catch(() => ({})); setPriceMsg(d.error ?? "فشل"); }
+  }
+
+  // لوحة الكروت الوهمية: جلب المعلَّقة + إجراء (إرجاع/حذف) على المحدَّدة
+  const loadPhantom = useCallback(() => {
+    fetch("/api/manager/phantom-cards").then((r) => {
+      if (r.status === 403) { setPhantomDenied(true); setPhantomLoaded(true); return; }
+      if (r.ok) r.json().then((d) => { setPhantomCards(d.cards ?? []); setPhantomSel(new Set()); setPhantomLoaded(true); });
+      else setPhantomLoaded(true);
+    });
+  }, []);
+  useEffect(() => { loadPhantom(); }, [loadPhantom]);
+
+  async function phantomAction(action: "return" | "delete") {
+    setPhantomMsg("");
+    const cardIds = [...phantomSel];
+    if (cardIds.length === 0) { setPhantomMsg("علّم كارتاً واحداً على الأقل"); return; }
+    const verb = action === "return" ? "إرجاع للمخزن" : "حذف نهائي";
+    if (!window.confirm(`${verb} لـ ${cardIds.length} كارت وهمي؟\n${action === "delete" ? "سيُحذف الكارت نهائياً من المخزن." : "سيعود الكارت متاحاً في المخزن."}\n(لا يُمَسّ الوصل ولا المال.)`)) return;
+    setPhantomBusy(true);
+    const res = await fetch("/api/manager/phantom-cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, cardIds }) });
+    setPhantomBusy(false);
+    if (res.ok) {
+      const d = await res.json();
+      setPhantomMsg(`✓ ${action === "return" ? "أُرجع" : "حُذف"} ${d.affected ?? 0} كارت`);
+      loadPhantom();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setPhantomMsg(d.error ?? "تعذّر تنفيذ الإجراء (تحقّق من صلاحية حذف الكروت)");
+    }
   }
 
   async function submit(type: "expense" | "receipt" | "card-payment" | "master-receipt" | "master-expense" | "card-debt-add" | "card-debt-sub") {
@@ -204,6 +242,55 @@ export default function ManagerAccountsPage() {
 
       {/* مبلغ مكافأة التفعيل لكل باقة (للمدير) */}
       <RewardConfig />
+
+      {/* 🔴 لوحة الكروت الوهمية: مراجعة يدوية + إرجاع للمخزن أو حذف (بلا مساس بالوصل/المال) */}
+      {phantomLoaded && !phantomDenied && (
+        <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <h3 className="font-bold text-slate-800">🔴 الكروت الوهمية {phantomCards.length > 0 && <span className="text-rose-700">({phantomCards.length})</span>}</h3>
+            <button onClick={loadPhantom} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">↻ تحديث</button>
+          </div>
+          <p className="mb-3 text-xs text-slate-500">كروت عُلِّمت «مستخدمة» في البرنامج بلا تفعيل مقابل في SAS (بعد تحقّق مباشر بالبحث). راجعها، علّم ما تشاء، ثم اختر إجراءً. لا يُمَسّ الوصل ولا المال.</p>
+          {phantomCards.length === 0 ? (
+            <div className="rounded-lg bg-white px-3 py-2 text-sm text-emerald-700">لا توجد كروت وهمية بحاجة لمراجعة ✓</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto rounded-lg border border-rose-200 bg-white">
+                <table className="w-full text-right text-sm">
+                  <thead className="bg-rose-100/60 text-xs text-slate-600">
+                    <tr>
+                      <th className="p-2"><input type="checkbox" aria-label="تحديد الكل" checked={phantomSel.size === phantomCards.length && phantomCards.length > 0} onChange={(e) => setPhantomSel(e.target.checked ? new Set(phantomCards.map((c) => c.cardId)) : new Set())} /></th>
+                      <th className="p-2">السيريال</th>
+                      <th className="p-2">المشترك</th>
+                      <th className="p-2">المكتب</th>
+                      <th className="p-2">تاريخ الاستخدام</th>
+                      <th className="p-2">مبلغ الوصل</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {phantomCards.map((c) => (
+                      <tr key={c.cardId} className="border-t border-rose-100">
+                        <td className="p-2"><input type="checkbox" aria-label={`تحديد ${c.serial ?? c.cardId}`} checked={phantomSel.has(c.cardId)} onChange={(e) => setPhantomSel((s) => { const n = new Set(s); if (e.target.checked) n.add(c.cardId); else n.delete(c.cardId); return n; })} /></td>
+                        <td className="p-2 font-mono text-xs">{c.serial ?? "؟"}</td>
+                        <td className="p-2">{c.subscriber ?? "—"}</td>
+                        <td className="p-2">{c.office ?? "—"}</td>
+                        <td className="p-2 text-xs text-slate-500">{c.useDate ? fmtDate(c.useDate) : "—"}</td>
+                        <td className="p-2">{c.amount != null ? fmt(c.amount) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500">محدَّد: {phantomSel.size}</span>
+                <button onClick={() => phantomAction("return")} disabled={phantomBusy || phantomSel.size === 0} className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">↩ إرجاع للمخزن</button>
+                <button onClick={() => phantomAction("delete")} disabled={phantomBusy || phantomSel.size === 0} className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50">🗑 حذف نهائي</button>
+              </div>
+            </>
+          )}
+          {phantomMsg && <div className="mt-2 text-sm text-slate-700">{phantomMsg}</div>}
+        </div>
+      )}
 
       {/* لا صلاحية مالية → اكتفِ بقسم الواتساب */}
       {denied || !data ? null : (

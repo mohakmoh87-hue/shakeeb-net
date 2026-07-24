@@ -298,7 +298,7 @@ function OfficeWhatsApp({ officeId }: { officeId: number }) {
 type SyncEvent = { scenario: 1 | 2 | 3 | 6 | 7; subscriber: string | null; pin?: string | null; detail?: string };
 type SyncRes = {
   office: string;
-  phase1: { activations: number; internal: number; external: number; phantom: number; markedUsed: number; duplicates: number; imported: number };
+  phase1: { activations: number; internal: number; external: number; phantom: number; markedUsed: number; duplicates: number; imported: number; verifiedReal?: number };
   phase2: { checked: number; dateFixed: number; imported: number; failed: boolean };
   events: SyncEvent[];
   reportSent: boolean | null;
@@ -306,7 +306,7 @@ type SyncRes = {
 };
 
 const SCENARIO_LABEL: Record<number, string> = {
-  1: "🔴 تفعيل وهمي (أُرجع الكارت)",
+  1: "🔴 تفعيل وهمي (راجعه في حسابات المدير)",
   2: "🔁 تفعيل متكرّر في SAS",
   3: "🟡 تحديث كارت إلى مستخدم",
   6: "⚠️ كارت خارجي",

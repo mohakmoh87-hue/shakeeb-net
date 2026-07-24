@@ -307,6 +307,27 @@ async function runOfficeSyncInner(
     });
   }
 
+  // تسجيل الكروت الوهمية في سجل التدقيق لتظهر في لوحة «الكروت الوهمية» بحسابات المدير
+  // (ليقرّر المدير: إرجاع للمخزن أو حذف). ليس تغييراً على الكارت — الوضع الآمن باقٍ.
+  // منع التكرار: لا يُعاد تسجيل كارت له تنبيه SYNC_PHANTOM_CARD خلال آخر 45 يوماً.
+  if (suspects.length > 0) {
+    const since45 = new Date(Date.now() - 45 * 86400 * 1000);
+    for (const c of suspects) {
+      const sub = subById.get(c.subscriberId!);
+      const exists = await prisma.auditLog.findFirst({
+        where: { action: "SYNC_PHANTOM_CARD", entityId: String(c.id), createdAt: { gte: since45 } },
+        select: { id: true },
+      });
+      if (exists) continue;
+      await prisma.auditLog.create({
+        data: {
+          action: "SYNC_PHANTOM_CARD", entity: "rechargeCard", entityId: String(c.id),
+          details: `كارت وهمي: سيريال ${c.serial ?? "؟"} — مشترك ${sub?.name ?? sub?.netUser ?? c.subscriberId} — مكتب ${officeName} — استُخدم ${c.useDate ? new Date(c.useDate).toISOString() : "؟"}`,
+        },
+      });
+    }
+  }
+
   // ===================== المرحلة 2: كل مشتركي المكتب في الساس =====================
   // تجلب كل مشتركي الساس (500/صفحة مع تأخير)، فتقوم بأمرين:
   //  (أ) استيراد كل مشترك موجود في الساس وغير موجود في البرنامج (استيراد شامل — السيناريو 7 لكامل القاعدة).
