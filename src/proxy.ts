@@ -34,20 +34,21 @@ export default async function proxy(req: NextRequest) {
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
   const { authed, isTech } = await readSession(req);
 
+  // الصفحات العامة (دخول/استرجاع/تعريف) متاحة دائماً — حتى لو حمل الطلب توكناً صالحاً شكلياً.
+  // حسّاس: بدون هذا الاستثناء المبكر، جلسةٌ مُبطَلة في القاعدة (جلسة واحدة/تعطيل/حذف حساب)
+  // لكن توكنها لم ينتهِ زمنياً بعد، تسبّب حلقة توجيه لا نهائية (ERR_TOO_MANY_REDIRECTS):
+  // الوسيط يوثّق بالتوكن (edge بلا قاعدة) فيعيد الفني إلى /field-management،
+  // بينما حارس الصفحة (getTechSession) يوثّق بالقاعدة فيعيده إلى /login — فيتقاذفانه للأبد.
+  // إتاحة /login دائماً تكسر الحلقة: الجهاز المُخرَج يصل لصفحة الدخول ويُعيد المصادقة.
+  if (isPublic) return NextResponse.next();
+
   // غير مسجّل ويحاول دخول صفحة محمية → إلى تسجيل الدخول
-  if (!authed && !isPublic) {
+  if (!authed) {
     return NextResponse.redirect(new URL("/login", req.nextUrl));
   }
   // الفني: مقصور على صفحة إدارة الفنيين فقط
-  if (isTech) {
-    if (!pathname.startsWith("/field-management")) {
-      return NextResponse.redirect(new URL("/field-management", req.nextUrl));
-    }
-    return NextResponse.next();
-  }
-  // مستخدم مسجّل يحاول فتح صفحة الدخول → إلى لوحة التحكم
-  if (authed && isPublic) {
-    return NextResponse.redirect(new URL("/dashboard", req.nextUrl));
+  if (isTech && !pathname.startsWith("/field-management")) {
+    return NextResponse.redirect(new URL("/field-management", req.nextUrl));
   }
   return NextResponse.next();
 }
