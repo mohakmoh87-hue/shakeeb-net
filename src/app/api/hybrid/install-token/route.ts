@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
+import { publicOrigin } from "@/lib/publicOrigin";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
     data: { token, agentId: g.session?.agentId ?? null, createdBy: g.session?.userId ?? null, expiresAt },
   });
 
-  const origin = `${new URL(request.url).protocol}//${new URL(request.url).host}`;
+  const origin = publicOrigin(request);
   // أمر PowerShell واحد يُلصَق مباشرةً في نافذة PowerShell (كما في التعليمات): يضبط الرمز ثم
   // يشغّل المُنصِّب. لا نغلّفه بـ `powershell -Command "..."` لأن ذلك يجعل PowerShell الخارجي
   // يوسّع $env:INSTALL_TOKEN (الفارغ) قبل التنفيذ فيكسر الأمر عند لصقه دفعة واحدة.

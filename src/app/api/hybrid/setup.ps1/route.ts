@@ -1,3 +1,5 @@
+import { publicOrigin } from "@/lib/publicOrigin";
+
 export const dynamic = "force-dynamic";
 
 // سكربت PowerShell لإعداد وكيل SHAKEEB على حاسبة المكتب (النظام الهجين).
@@ -127,7 +129,7 @@ Read-Host "اضغط Enter للانهاء"
 `;
 
 export async function GET(request: Request) {
-  const origin = `${new URL(request.url).protocol}//${new URL(request.url).host}`;
+  const origin = publicOrigin(request);
   const script = SCRIPT.replace(/__ORIGIN__/g, origin);
   return new Response(script, {
     status: 200,
