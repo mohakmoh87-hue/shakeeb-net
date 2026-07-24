@@ -21,6 +21,9 @@ export async function POST(request: Request) {
   // اختياريان: رقم هاتف إضافي + ملاحظة يكتبهما المستخدم في مربع الحوار (يُضافان للبطاقة)
   const extraPhone = String(body?.extraPhone ?? "").trim().slice(0, 40);
   const note = String(body?.note ?? "").trim().slice(0, 1000);
+  // مبلغ الاشتراك (لبطاقة «التوصيل» فقط) — يُخزَّن في subAmount ويظهر على وجه البطاقة قبل فتحها
+  // ليعرف الفني كم يأخذ من الزبون. معلوماتي فقط (لا أثر مالي؛ يُسجَّل فعلياً عند التفعيل).
+  const subAmount = operation === "توصيل" ? Math.max(0, Math.round(Number(body?.subAmount) || 0)) : 0;
   if (!subscriberId) return NextResponse.json({ error: "معرّف المشترك مطلوب" }, { status: 400 });
   if (!OPERATIONS.includes(operation as (typeof OPERATIONS)[number])) {
     return NextResponse.json({ error: "عملية غير معروفة" }, { status: 400 });
@@ -77,7 +80,7 @@ export async function POST(request: Request) {
   const position = await prisma.taskCard.count({ where: { listId: list.id, isDeleted: false } });
   const card = await prisma.taskCard.create({
     // نوع البطاقة يُؤخذ تلقائياً من العملية (توصيل/تحويل/صيانة/اعادة) + ربط المشترك (لمنع التكرار)
-    data: { listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id },
+    data: { listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id, subAmount: subAmount > 0 ? subAmount : null },
   });
   // أول حدث في سجل التغييرات: إنشاء البطاقة (تاريخه ووقته وفاعله)
   await appendCardHistory(card.id, g.session.fullName ?? g.session.username, "إنشاء البطاقة");

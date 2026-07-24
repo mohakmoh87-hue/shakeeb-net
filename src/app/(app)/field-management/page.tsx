@@ -423,6 +423,10 @@ export default function FieldManagementPage() {
                     {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
                     {faceNoteOf(c.description) && <div className="mt-0.5 text-xs text-slate-500">📝 {faceNoteOf(c.description)}</div>}
                     {c.techNote && <div className="mt-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">🗒️ {c.techNote}</div>}
+                    {/* بطاقة التوصيل فقط: مبلغ الاشتراك ظاهر على الوجه قبل فتح البطاقة (كم يأخذ الفني من الزبون) */}
+                    {!c.done && isDeliveryKind(c.kind) && (c.subAmount ?? 0) > 0 && (
+                      <div className="mt-1 rounded bg-indigo-50 px-1.5 py-1 text-xs font-bold text-indigo-700">💵 مبلغ الاشتراك: {Number(c.subAmount).toLocaleString("en-US")} د.ع</div>
+                    )}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
                       <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}

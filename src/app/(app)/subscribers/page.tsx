@@ -91,8 +91,9 @@ export default function SubscribersPage() {
   const [opsChosen, setOpsChosen] = useState<string | null>(null); // العملية المختارة (تُفتح نافذة الهاتف/الملاحظة)
   const [opsPhone, setOpsPhone] = useState(""); // رقم هاتف إضافي (اختياري)
   const [opsNote, setOpsNote] = useState(""); // ملاحظة (اختيارية)
+  const [opsAmount, setOpsAmount] = useState(""); // مبلغ الاشتراك (لبطاقة التوصيل — يظهر على وجهها)
 
-  function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); }
+  function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); }
 
   // إرسال المشترك كبطاقة إلى عمود العملية — مع الهاتف الإضافي والملاحظة (إن كُتبا)
   async function sendToField(operation: string) {
@@ -100,7 +101,7 @@ export default function SubscribersPage() {
     setOpsBusy(true); setOpsMsg("");
     const res = await fetch("/api/field/from-subscriber", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriberId: opsSub.id, operation, extraPhone: opsPhone.trim() || undefined, note: opsNote.trim() || undefined }),
+      body: JSON.stringify({ subscriberId: opsSub.id, operation, extraPhone: opsPhone.trim() || undefined, note: opsNote.trim() || undefined, subAmount: operation === "توصيل" ? (Number(opsAmount) || 0) : undefined }),
     });
     setOpsBusy(false);
     if (res.ok) { setOpsMsg(`✓ تمت إضافة «${opsSub.name ?? ""}» إلى عمود «${operation}» في إدارة الفنيين`); closeOps(); }
@@ -625,7 +626,7 @@ export default function SubscribersPage() {
                     <button
                       key={op.key}
                       disabled={opsBusy}
-                      onClick={() => { setOpsChosen(op.key); setOpsPhone(""); setOpsNote(""); }}
+                      onClick={() => { setOpsChosen(op.key); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); }}
                       className="flex flex-col items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 py-4 font-semibold text-slate-700 hover:border-mynet-blue hover:bg-blue-50 disabled:opacity-50"
                     >
                       <span className="text-2xl">{op.icon}</span>
@@ -641,6 +642,12 @@ export default function SubscribersPage() {
                 <div className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-center text-sm font-semibold text-mynet-blue">
                   {FIELD_OPS.find((o) => o.key === opsChosen)?.icon} {opsChosen}
                 </div>
+                {opsChosen === "توصيل" && (
+                  <>
+                    <label className="mb-1 block text-xs font-semibold text-indigo-600">💵 مبلغ الاشتراك (يظهر على وجه البطاقة ليعرف الفني كم يأخذ من الزبون)</label>
+                    <input type="number" value={opsAmount} onChange={(e) => setOpsAmount(e.target.value)} dir="ltr" placeholder="مثال: 25000" className="mb-3 w-full rounded-lg border border-indigo-300 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+                  </>
+                )}
                 <label className="mb-1 block text-xs font-semibold text-slate-500">رقم هاتف إضافي (اختياري)</label>
                 <input value={opsPhone} onChange={(e) => setOpsPhone(e.target.value)} dir="ltr" placeholder={opsSub.phone ? `الأصلي: ${opsSub.phone}` : "07..."} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
                 <label className="mb-1 block text-xs font-semibold text-slate-500">ملاحظة (اختيارية)</label>
