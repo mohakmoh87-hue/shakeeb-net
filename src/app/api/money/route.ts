@@ -10,6 +10,7 @@ const schema = z.object({
   accountId: z.coerce.number().nullable().optional(),
   notes: z.string().nullable().optional(),
   date: z.string().optional(),
+  master: z.boolean().optional(), // حركة على حساب الماستر (مستقل عن الصندوق اليومي)
 });
 
 export async function GET(request: Request) {
@@ -93,7 +94,28 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { type, amount, accountId, notes, date } = parsed.data;
+  const { type, amount, accountId, notes, date, master } = parsed.data;
+
+  // حساب الماستر: حركة مستقلة (sourceType="master") لا تدخل الصندوق اليومي، تُنسب لمكتب المستخدم
+  // فتظهر في سطر «حساب الماستر» بالتقرير اليومي ولكل مكتب على حدة. يتطلّب مكتباً للمستخدم
+  // (المدير بلا مكتب يستعمل «حساب الماستر» في صفحة حسابات المدير باختيار المكتب).
+  if (master) {
+    const towerId = session?.towerId ?? null;
+    if (towerId == null) {
+      return NextResponse.json({ error: "حركة الماستر تتطلّب أن يكون لحسابك مكتب — استخدم «حساب الماستر» في صفحة حسابات المدير لاختيار المكتب" }, { status: 400 });
+    }
+    const createdMaster = await prisma.moneyTx.create({
+      data: {
+        moneyIn: type === "in" ? amount : 0, moneyOut: type === "out" ? amount : 0,
+        accountId: null,
+        notes: notes ?? (type === "in" ? "قبض ماستر" : "صرف ماستر"),
+        date: date ? new Date(date) : new Date(),
+        userId: session?.userId, serverDate: new Date(),
+        sourceType: "master", towerId,
+      },
+    });
+    return NextResponse.json({ ...createdMaster, master: true }, { status: 201 });
+  }
 
   const created = await prisma.moneyTx.create({
     data: {

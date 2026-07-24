@@ -33,9 +33,11 @@ export default function CashboxPage() {
 
   const [type, setType] = useState<"in" | "out">("in");
   const [amount, setAmount] = useState("");
-  const [accountId, setAccountId] = useState<number | "">("");
+  // "master" = حساب الماستر المستقل (لا يدخل الصندوق اليومي، يؤثّر على حساب الماستر لمكتب المستخدم)
+  const [accountId, setAccountId] = useState<number | "" | "master">("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+  const [okMsg, setOkMsg] = useState("");
   const [saving, setSaving] = useState(false);
   const { can } = usePermission();
 
@@ -96,14 +98,16 @@ export default function CashboxPage() {
     }
     setSaving(true);
     try {
+      const isMaster = accountId === "master";
       const res = await fetch("/api/money", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type,
           amount: Number(amount),
-          accountId: accountId || null,
+          accountId: isMaster ? null : (accountId || null),
           notes,
+          ...(isMaster ? { master: true } : {}),
         }),
       });
       const data = await res.json();
@@ -111,6 +115,8 @@ export default function CashboxPage() {
         setError(data.error ?? "فشل الحفظ");
         return;
       }
+      setOkMsg(isMaster ? "✓ سُجّلت حركة الماستر — تظهر في سطر الماستر بتقرير اليوم" : "✓ سُجّلت الحركة");
+      setTimeout(() => setOkMsg(""), 3500);
       setAmount("");
       setNotes("");
       load(from, to, q);
@@ -202,10 +208,11 @@ export default function CashboxPage() {
           <label className="mb-1 block text-sm font-medium text-slate-700">الحساب</label>
           <select
             value={accountId}
-            onChange={(e) => setAccountId(Number(e.target.value) || "")}
+            onChange={(e) => { const v = e.target.value; setAccountId(v === "master" ? "master" : (Number(v) || "")); }}
             className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
           >
             <option value="">— بدون حساب —</option>
+            <option value="master">🅜 ماستر (حساب مستقل — لا يدخل الصندوق اليومي)</option>
             {accounts.map((a) => {
               const office = towerName(a.towerId);
               return (
@@ -213,6 +220,9 @@ export default function CashboxPage() {
               );
             })}
           </select>
+          {accountId === "master" && (
+            <div className="mb-3 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">🅜 حركة على <b>حساب الماستر</b> لمكتبك — تظهر في سطر الماستر بالتقرير اليومي، ولا تدخل إجمالي الصندوق اليومي.</div>
+          )}
 
           <label className="mb-1 block text-sm font-medium text-slate-700">ملاحظات</label>
           <input
@@ -222,6 +232,7 @@ export default function CashboxPage() {
           />
 
           {error && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
+          {okMsg && <div className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div>}
 
           <button
             type="submit"
