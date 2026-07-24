@@ -1,0 +1,29 @@
+# كرون ليلي بديل لـ Vercel cron (الذي لا يعمل على Azure): بصمة خروج تلقائية للفنيين
+# المنسيّين + تنظيف الأرشيف + النسخ الاحتياطية اليومية بالبريد — من السحابة حتى لو كانت
+# كل حواسيب المكاتب مغلقة. يستدعي /api/cron/auto-checkout المحميّة بـ CRON_SECRET.
+# الأسرار المطلوبة (موجودة): CRON_SECRET + APP_BASE_URL.
+name: auto-checkout-cron
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 21 * * *" # 21:15 UTC = 00:15 بغداد (نفس توقيت Vercel cron السابق)
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: استدعاء كرون الخروج التلقائي + النسخ الاحتياطي
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/resp -w "%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/auto-checkout")
+          echo "الاستجابة: $code $(cat /tmp/resp)"
+          test "$code" = "200"
