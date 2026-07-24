@@ -119,6 +119,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
   }
 
+  // فرض حدّ الوكيل: أقصى عدد مشتركين ضمن مكاتبه (الإضافة اليدوية؛ استيراد المزامنة لا يُحجب)
+  const agentId = session?.agentId ?? null;
+  if (agentId != null) {
+    const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { maxSubscribers: true } });
+    if (agent) {
+      const current = await prisma.subscriber.count({ where: { isDeleted: false, towerId: { in: agentTowers.length ? agentTowers : [-1] } } });
+      if (current >= agent.maxSubscribers) {
+        return NextResponse.json({ error: `بلغت الحد الأقصى للمشتركين (${agent.maxSubscribers})` }, { status: 403 });
+      }
+    }
+  }
+
   const created = await prisma.subscriber.create({
     data: {
       ...parsed.data,

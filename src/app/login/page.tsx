@@ -189,7 +189,10 @@ export default function LoginPage() {
             ) : (
             <>
             <h2 className="mb-1 text-center text-xl font-bold text-slate-800">🎁 تجربة أسبوع مجاناً</h2>
-            <p className="mb-4 text-center text-xs text-slate-500">حساب مدير بمكتب واحد، صالح ٧ أيام بعد الموافقة. أنشئ اسم مستخدم وكلمة سر خاصّين بك.</p>
+            <p className="mb-2 text-center text-xs text-slate-500">صالح ٧ أيام بعد الموافقة. أنشئ اسم مستخدم وكلمة سر خاصّين بك.</p>
+            <div className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-center text-xs font-semibold text-emerald-700">
+              يمنحك الحساب التجريبي: <span className="text-emerald-800">مكتب واحد · مدير واحد · مستخدم واحد · ٣ فنيين · ٣٠٠٠ مشترك</span> فقط.
+            </div>
             {tErr && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-center text-sm text-red-600">{tErr}</div>}
             <form onSubmit={startTrial} className="space-y-3">
               <input placeholder="اسمك / اسم المحل" value={tf.fullName} onChange={(e) => setTf({ ...tf, fullName: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-emerald-500" />

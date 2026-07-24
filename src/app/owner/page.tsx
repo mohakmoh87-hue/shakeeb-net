@@ -9,7 +9,9 @@ type Metric = { used: number; limit: number; freePct: number; remaining?: number
 type HostUsage = { hasData: boolean; month: string; updatedAt: string | null; requests: Metric; vcpuSeconds: Metric | null; gibSeconds: Metric | null };
 type Agent = {
   id: number; name: string; officeCap: number; planExpiry: string | null;
-  isTrial: boolean; approved: boolean; officeCount: number; userCount: number; subscriberCount: number;
+  maxManagers: number; maxUsers: number; maxTechnicians: number; maxSubscribers: number;
+  isTrial: boolean; approved: boolean; officeCount: number; userCount: number;
+  managerCount: number; techCount: number; subscriberCount: number;
   manager: Manager | null; expired: boolean;
 };
 
@@ -22,7 +24,7 @@ export default function OwnerPage() {
   const [msg, setMsg] = useState("");
   const [adding, setAdding] = useState(false);
   // نموذج إضافة وكيل
-  const [f, setF] = useState({ name: "", officeCap: 1, planMonths: 0, managerFullName: "", managerUsername: "", managerPassword: "" });
+  const [f, setF] = useState({ name: "", officeCap: 1, maxManagers: 1, maxUsers: 1, maxTechnicians: 3, maxSubscribers: 3000, planMonths: 0, managerFullName: "", managerUsername: "", managerPassword: "" });
   const [credAgent, setCredAgent] = useState<Agent | null>(null); // تعديل بيانات دخول مدير وكيل
   const [showAccount, setShowAccount] = useState(false); // إعدادات حساب المالك
   const [dbSize, setDbSize] = useState<DbSize | null>(null); // مؤشّر حجم قاعدة البيانات
@@ -55,7 +57,7 @@ export default function OwnerPage() {
     setMsg("");
     const r = await fetch("/api/owner/agents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
     const d = await r.json().catch(() => ({}));
-    if (r.ok) { setAdding(false); setF({ name: "", officeCap: 1, planMonths: 0, managerFullName: "", managerUsername: "", managerPassword: "" }); load(); }
+    if (r.ok) { setAdding(false); setF({ name: "", officeCap: 1, maxManagers: 1, maxUsers: 1, maxTechnicians: 3, maxSubscribers: 3000, planMonths: 0, managerFullName: "", managerUsername: "", managerPassword: "" }); load(); }
     else setMsg(d.error ?? "تعذّرت الإضافة");
   }
   async function patch(id: number, body: Record<string, unknown>) {
@@ -237,15 +239,17 @@ export default function OwnerPage() {
                     {a.isTrial && <span className="mr-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">تجريبي</span>}
                     {!a.approved && <span className="mr-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">بانتظار الموافقة</span>}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">🏢 {a.officeCount}/{a.officeCap} مكتب · 👤 {a.userCount} مستخدم · 👥 {a.subscriberCount} مشترك · 📅 ينتهي: <span className={a.expired ? "font-bold text-red-600" : "text-slate-600"}>{fmtDate(a.planExpiry)}{a.expired ? " (منتهٍ)" : ""}</span></div>
+                  <div className="mt-1 text-xs text-slate-500">🏢 {a.officeCount}/{a.officeCap} مكتب · 👔 {a.managerCount}/{a.maxManagers} مدير · 👤 {a.userCount}/{a.maxUsers} مستخدم · 🔧 {a.techCount}/{a.maxTechnicians} فني · 👥 {a.subscriberCount}/{a.maxSubscribers} مشترك · 📅 ينتهي: <span className={a.expired ? "font-bold text-red-600" : "text-slate-600"}>{fmtDate(a.planExpiry)}{a.expired ? " (منتهٍ)" : ""}</span></div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {!a.approved && <button onClick={() => patch(a.id, { approve: true })} className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-700">✓ موافقة وتفعيل</button>}
                   <button onClick={() => setCredAgent(a)} className="rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">🔑 بيانات الدخول</button>
                   <button onClick={() => regenKey(a)} className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100" title="إعادة توليد مفتاح قاعدة بيانات الوكيل (عند الشك بتسريب)">🔐 مفتاح القاعدة</button>
-                  <label className="flex items-center gap-1 text-xs text-slate-600">سقف المكاتب
-                    <input type="number" min={0} defaultValue={a.officeCap} onBlur={(e) => { const v = Number(e.target.value); if (v !== a.officeCap) patch(a.id, { officeCap: v }); }} className="w-16 rounded border border-slate-300 px-2 py-1 text-center" />
-                  </label>
+                  <LimitInput label="مكاتب" value={a.officeCap} onSave={(v) => { if (v !== a.officeCap) patch(a.id, { officeCap: v }); }} />
+                  <LimitInput label="مدراء" value={a.maxManagers} onSave={(v) => { if (v !== a.maxManagers) patch(a.id, { maxManagers: v }); }} />
+                  <LimitInput label="مستخدمين" value={a.maxUsers} onSave={(v) => { if (v !== a.maxUsers) patch(a.id, { maxUsers: v }); }} />
+                  <LimitInput label="فنيين" value={a.maxTechnicians} onSave={(v) => { if (v !== a.maxTechnicians) patch(a.id, { maxTechnicians: v }); }} />
+                  <LimitInput label="مشتركين" value={a.maxSubscribers} onSave={(v) => { if (v !== a.maxSubscribers) patch(a.id, { maxSubscribers: v }); }} />
                   <button onClick={() => patch(a.id, { addMonths: 1 })} className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">+شهر</button>
                   <button onClick={() => patch(a.id, { addMonths: 12 })} className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">+سنة</button>
                   <button onClick={() => { const m = prompt("تمديد بعدد أشهر:"); if (m) patch(a.id, { addMonths: Number(m) }); }} className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">تمديد…</button>
@@ -268,6 +272,13 @@ export default function OwnerPage() {
               <div className="flex gap-2">
                 <Field label="سقف المكاتب"><input type="number" min={0} value={f.officeCap} onChange={(e) => setF({ ...f, officeCap: Number(e.target.value) })} className="inp" /></Field>
                 <Field label="مدة الاشتراك (أشهر، 0=دائم)"><input type="number" min={0} value={f.planMonths} onChange={(e) => setF({ ...f, planMonths: Number(e.target.value) })} className="inp" /></Field>
+              </div>
+              <div className="text-xs font-semibold text-slate-500">الحدود القصوى</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="أقصى مدراء"><input type="number" min={1} value={f.maxManagers} onChange={(e) => setF({ ...f, maxManagers: Number(e.target.value) })} className="inp" /></Field>
+                <Field label="أقصى مستخدمين"><input type="number" min={0} value={f.maxUsers} onChange={(e) => setF({ ...f, maxUsers: Number(e.target.value) })} className="inp" /></Field>
+                <Field label="أقصى فنيين"><input type="number" min={0} value={f.maxTechnicians} onChange={(e) => setF({ ...f, maxTechnicians: Number(e.target.value) })} className="inp" /></Field>
+                <Field label="أقصى مشتركين"><input type="number" min={0} value={f.maxSubscribers} onChange={(e) => setF({ ...f, maxSubscribers: Number(e.target.value) })} className="inp" /></Field>
               </div>
               <hr className="my-2" />
               <div className="text-xs font-semibold text-slate-500">حساب مدير الوكيل الأول</div>
@@ -292,6 +303,15 @@ export default function OwnerPage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="mb-0.5 block text-xs font-semibold text-slate-500">{label}</span>{children}</label>;
+}
+
+// حقل تعديل حدٍّ للوكيل (يُحفظ عند مغادرة الحقل) — key={value} يعيد ضبط القيمة بعد الحفظ
+function LimitInput({ label, value, onSave }: { label: string; value: number; onSave: (v: number) => void }) {
+  return (
+    <label className="flex items-center gap-1 text-xs text-slate-600">{label}
+      <input type="number" min={0} defaultValue={value} key={value} onBlur={(e) => onSave(Number(e.target.value))} className="w-16 rounded border border-slate-300 px-2 py-1 text-center" />
+    </label>
+  );
 }
 
 // تعديل بيانات دخول مدير وكيل (عرض النسخة القابلة للعرض + تعديل)

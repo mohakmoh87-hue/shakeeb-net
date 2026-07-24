@@ -33,6 +33,7 @@ export interface SessionPayload {
   agentId: number | null; // الوكيل (المستأجر) الذي ينتمي إليه المستخدم
   permissions: Permission[];
   towerId: number | null; // مكتب المستخدم (المكتب)
+  sessionToken?: string; // جلسة واحدة: يُطابَق مع users.sessionToken؛ أي دخول جديد يُبطل القديم
 }
 
 // تشفير كلمة السر والتحقق منها
@@ -125,6 +126,10 @@ export async function getSession(): Promise<SessionPayload | null> {
   // حتى يُطبَّق أي تغيير فوراً بلا حاجة لإعادة تسجيل الدخول
   const user = await prisma.user.findUnique({ where: { id: payload.userId } });
   if (!user || user.isDeleted || !user.isActive) return null;
+  // جلسة واحدة: إن كان للمستخدم رمز جلسة مخزّن ولم يطابق رمز التوكن ⇒ أُبطلت هذه الجلسة
+  // (سجّل دخوله من جهاز آخر فحلّ محلّه). يبقى القدماء (بلا رمز) صالحين حتى دخولهم القادم.
+  const ptok = (payload as unknown as { sessionToken?: string }).sessionToken;
+  if (user.sessionToken && ptok !== user.sessionToken) return null;
   return {
     userId: user.id,
     username: user.username,
@@ -134,6 +139,7 @@ export async function getSession(): Promise<SessionPayload | null> {
     agentId: user.agentId,
     permissions: (user.permissions ?? "").split(",").filter(Boolean) as Permission[],
     towerId: user.towerId,
+    sessionToken: user.sessionToken ?? undefined,
   };
 }
 

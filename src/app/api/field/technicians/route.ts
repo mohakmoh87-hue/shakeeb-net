@@ -96,6 +96,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   }
 
+  // فرض حدّ الوكيل: أقصى عدد فنيين
+  const agentId = g.session?.agentId ?? null;
+  if (agentId != null) {
+    const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { maxTechnicians: true } });
+    const current = await prisma.technician.count({ where: { agentId, isDeleted: false } });
+    if (agent && current >= agent.maxTechnicians) {
+      return NextResponse.json({ error: `بلغت الحد الأقصى للفنيين (${agent.maxTechnicians})` }, { status: 403 });
+    }
+  }
+
   const account = await prisma.account.create({
     data: { name, typeName: "فني", isEmployee: true, towerId: officeId ?? null },
   });

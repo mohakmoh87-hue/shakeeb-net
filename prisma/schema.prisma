@@ -25,6 +25,10 @@ model Agent {
   id         Int       @id @default(autoincrement())
   name       String // اسم/علامة الوكيل — يظهر بكامل البرنامج له
   officeCap  Int       @default(1) // أقصى عدد مكاتب يسمح له بإنشائها
+  maxManagers    Int   @default(1) // أقصى عدد مدراء (مستخدم isAdmin)
+  maxUsers       Int   @default(1) // أقصى عدد مستخدمين عاديين
+  maxTechnicians Int   @default(3) // أقصى عدد فنيين
+  maxSubscribers Int   @default(3000) // أقصى عدد مشتركين ضمن مكاتب الوكيل
   planExpiry DateTime? // تاريخ انتهاء الاشتراك (null = بلا انتهاء)
   isTrial    Boolean   @default(false) // حساب تجريبي (أسبوع)
   approved   Boolean   @default(true) // موافقة المالك — التجريبي يبدأ false حتى يوافق المالك
@@ -63,6 +67,7 @@ model User {
   isDeleted Boolean  @default(false)
   failedAttempts Int   @default(0) // محاولات دخول فاشلة متتالية (لمنع التخمين)
   lockedUntil DateTime? // قفل الحساب مؤقتاً بعد محاولات كثيرة
+  sessionToken String? // جلسة واحدة: أي دخول جديد يولّد رمزاً ويُبطل الأجهزة الأخرى
   legacyId  Int? // معرّف المستخدم في البرنامج القديم
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

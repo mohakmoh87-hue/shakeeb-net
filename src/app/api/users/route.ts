@@ -56,6 +56,16 @@ export async function POST(request: Request) {
     const t = await prisma.tower.findFirst({ where: { id: rest.towerId, agentId, isDeleted: false }, select: { id: true } });
     if (!t) return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
   }
+  // فرض حدود الوكيل: أقصى عدد مدراء (isAdmin) أو مستخدمين عاديين
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { maxManagers: true, maxUsers: true } });
+  if (agent) {
+    const isManager = rest.isAdmin === true;
+    const current = await prisma.user.count({ where: { agentId, isDeleted: false, isOwner: false, isAdmin: isManager } });
+    const cap = isManager ? agent.maxManagers : agent.maxUsers;
+    if (current >= cap) {
+      return NextResponse.json({ error: `بلغت الحد الأقصى ${isManager ? "للمدراء" : "للمستخدمين"} (${cap})` }, { status: 403 });
+    }
+  }
   const created = await prisma.user.create({
     data: {
       ...rest,

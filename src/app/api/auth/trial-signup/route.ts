@@ -27,10 +27,17 @@ export async function POST(request: Request) {
 
   const planExpiry = new Date(Date.now() + 7 * 24 * 3600 * 1000); // أسبوع
 
+  // حدود الحساب التجريبي (ثابتة) — تُعرض للمشترك عند التسجيل
+  const TRIAL = { maxManagers: 1, maxUsers: 1, maxTechnicians: 3, maxSubscribers: 3000, officeCap: 1 };
+
   // يُنشأ بانتظار الموافقة (approved=false، بلا دخول تلقائي) — يفعّله المالك من لوحته
   await prisma.$transaction(async (tx) => {
     const agent = await tx.agent.create({
-      data: { name: fullName, officeCap: 1, isTrial: true, approved: false, planExpiry },
+      data: {
+        name: fullName, isTrial: true, approved: false, planExpiry,
+        officeCap: TRIAL.officeCap, maxManagers: TRIAL.maxManagers, maxUsers: TRIAL.maxUsers,
+        maxTechnicians: TRIAL.maxTechnicians, maxSubscribers: TRIAL.maxSubscribers,
+      },
     });
     await tx.user.create({
       data: {
@@ -40,5 +47,5 @@ export async function POST(request: Request) {
     });
   });
 
-  return NextResponse.json({ ok: true, pending: true }, { status: 201 });
+  return NextResponse.json({ ok: true, pending: true, limits: TRIAL }, { status: 201 });
 }

@@ -9,6 +9,10 @@ export const dynamic = "force-dynamic";
 const patchSchema = z.object({
   name: z.string().min(1).optional(),
   officeCap: z.coerce.number().int().min(0).optional(),
+  maxManagers: z.coerce.number().int().min(1).optional(),
+  maxUsers: z.coerce.number().int().min(0).optional(),
+  maxTechnicians: z.coerce.number().int().min(0).optional(),
+  maxSubscribers: z.coerce.number().int().min(0).optional(),
   addMonths: z.coerce.number().int().optional(), // تمديد الاشتراك بعدد أشهر (يُضاف للانتهاء الحالي أو من الآن)
   clearExpiry: z.boolean().optional(), // إزالة تاريخ الانتهاء (بلا انتهاء)
   approve: z.boolean().optional(), // موافقة المالك على تفعيل الوكيل (التجريبي)
@@ -32,6 +36,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const data: Record<string, unknown> = {};
   if (d.name != null) data.name = d.name;
   if (d.officeCap != null) data.officeCap = d.officeCap;
+  if (d.maxManagers != null) data.maxManagers = d.maxManagers;
+  if (d.maxUsers != null) data.maxUsers = d.maxUsers;
+  if (d.maxTechnicians != null) data.maxTechnicians = d.maxTechnicians;
+  if (d.maxSubscribers != null) data.maxSubscribers = d.maxSubscribers;
   if (d.approve) data.approved = true; // تفعيل الوكيل التجريبي
   if (d.clearExpiry) { data.planExpiry = null; data.isTrial = false; }
   else if (d.addMonths != null && d.addMonths !== 0) {

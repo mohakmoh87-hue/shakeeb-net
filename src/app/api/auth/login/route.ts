@@ -90,16 +90,15 @@ export async function POST(request: Request) {
     );
   }
 
-  // نجاح: تصفير عدّاد الفشل
-  if (user.failedAttempts || user.lockedUntil) {
-    await prisma.user.update({ where: { id: user.id }, data: { failedAttempts: 0, lockedUntil: null } });
-  }
-
   // منع دخول وكيل منتهي الاشتراك (يبقى المالك ومستخدمو النظام بلا وكيل غير متأثّرين)
   if (!user.isOwner) {
     const blocked = await agentBlockReason(user.agentId);
     if (blocked) return NextResponse.json({ error: blocked }, { status: 403 });
   }
+
+  // جهاز واحد فقط: رمز جلسة جديد بكل دخول — يُبطل جلسة أي جهاز سابق فوراً (+ تصفير عدّاد الفشل)
+  const sessionToken = crypto.randomUUID();
+  await prisma.user.update({ where: { id: user.id }, data: { sessionToken, failedAttempts: 0, lockedUntil: null } });
 
   await setSession({
     userId: user.id,
@@ -110,6 +109,7 @@ export async function POST(request: Request) {
     agentId: user.agentId ?? null,
     permissions: (user.permissions ?? "").split(",").filter(Boolean) as Permission[],
     towerId: user.towerId ?? null,
+    sessionToken,
   });
 
   // سجل تدقيق الدخول
