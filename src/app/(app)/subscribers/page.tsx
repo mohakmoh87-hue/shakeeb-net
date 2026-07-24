@@ -8,6 +8,7 @@ import MapButton from "@/components/MapButton";
 import PrintNowButton from "@/components/PrintNowButton";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
+import { askVoidEffect } from "@/lib/voidPrompt";
 
 type Subscriber = {
   id: number;
@@ -187,8 +188,9 @@ export default function SubscribersPage() {
 
   // حذف وصل تفعيل عكسياً من سجل وصولات المشترك
   async function voidReceipt(id: number) {
-    if (!window.confirm("حذف هذا الوصل عكسياً؟\nسيرجع المشترك لحالته قبل الوصل (تُلغى الأيام والمبلغ ويُرجَع الكارت).")) return;
-    const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST" });
+    const choice = askVoidEffect("هذا الوصل");
+    if (!choice) return;
+    const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) { loadReceipts(); load(query, showAllTowers); }
     else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
   }

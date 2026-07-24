@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import PrintButton from "@/components/PrintButton";
 import PrintNowButton from "@/components/PrintNowButton";
 import MoneyTxModal from "@/components/MoneyTxModal";
+import { askVoidEffect } from "@/lib/voidPrompt";
 import { formatDate } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 
@@ -58,16 +59,18 @@ export default function DetailedReport() {
 
   // حذف وصل تفعيل عكسياً (لتنظيف أي وصل متبقٍّ من هنا)
   async function voidEntry(id: number) {
-    if (!window.confirm("حذف وصل التفعيل نهائياً؟ سيُزال من كل التقارير.")) return;
-    const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST" });
+    const choice = askVoidEffect("وصل التفعيل");
+    if (!choice) return;
+    const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) load();
     else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
   }
 
-  // حذف حركة مالية عكسياً (تسديد دين/حركة يدوية). حركات التفعيل/الفواتير تُحذف من صفحاتها.
+  // حذف حركة مالية (تسديد دين/حركة يدوية). حركات التفعيل/الفواتير تُحذف من صفحاتها.
   async function voidMoney(id: number) {
-    if (!window.confirm("حذف هذه الحركة المالية نهائياً؟ سيُزال مبلغها من الصندوق.")) return;
-    const res = await fetch(`/api/money/${id}/void`, { method: "POST" });
+    const choice = askVoidEffect("الحركة المالية");
+    if (!choice) return;
+    const res = await fetch(`/api/money/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) load();
     else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
   }

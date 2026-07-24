@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import { formatDate } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
+import { askVoidEffect } from "@/lib/voidPrompt";
 
 type Subscriber = {
   id: number;
@@ -90,8 +91,9 @@ function SubscriptionsInner() {
 
   // حذف وصل تفعيل عكسياً (إرجاع الأيام والمبلغ والكارت)
   async function voidEntry(id: number) {
-    if (!window.confirm("حذف وصل التفعيل عكسياً؟\nسيرجع المشترك لحالته قبل هذا الوصل (تُلغى الأيام والمبلغ ويُرجَع الكارت للمخزون).")) return;
-    const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST" });
+    const choice = askVoidEffect("وصل التفعيل");
+    if (!choice) return;
+    const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) loadEntries();
     else {
       const d = await res.json().catch(() => ({}));

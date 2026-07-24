@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import PrintNowButton from "@/components/PrintNowButton";
+import { askVoidEffect } from "@/lib/voidPrompt";
 
 type Item = {
   id: number;
@@ -125,8 +126,9 @@ export default function NewInvoicePage() {
     setLogRows(rows); setLogBusy(false);
   }
   async function deleteInvoice(row: InvRow) {
-    if (!confirm(`حذف وصل الفاتورة #${row.number ?? row.id} عكسياً؟\nسيُلغى مبلغها من الصندوق وتُرجَع المواد للمخزون.`)) return;
-    const r = await fetch(`/api/invoices/${row.id}/void`, { method: "POST" });
+    const choice = askVoidEffect(`وصل الفاتورة #${row.number ?? row.id}`);
+    if (!choice) return;
+    const r = await fetch(`/api/invoices/${row.id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (r.ok) setLogRows((xs) => xs.filter((x) => x.id !== row.id));
     else alert((await r.json().catch(() => ({})))?.error ?? "تعذّر الحذف");
   }

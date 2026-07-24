@@ -5,12 +5,13 @@ import { getSession } from "@/lib/auth";
 
 // حذف فاتورة مبيع عكسياً: إلغاء المبلغ من الصندوق + إرجاع المواد للمخزون + حذف الفاتورة
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const g = await guard("receipts.void");
   if (g.error) return g.error;
   const session = await getSession();
+  const reverse = (await request.json().catch(() => ({})))?.reverse !== false; // افتراضي true
 
   const { id } = await params;
   const invoiceId = Number(id);
@@ -31,6 +32,7 @@ export async function POST(
 
   try {
     await prisma.$transaction(async (tx) => {
+     if (reverse) {
       // 1) إرجاع المواد للمخزون (+ لذمّة الفني في فواتير الصيانة)
       const lines = await tx.invoiceItem.findMany({ where: { invoiceId, isDeleted: false } });
       for (const l of lines) {
@@ -67,14 +69,15 @@ export async function POST(
           });
         }
       }
+     } // نهاية كتلة الإرجاع العكسي (reverse)
 
-      // 4) حذف الفاتورة
+      // حذف الفاتورة نفسها — يتم دائماً (مع الإرجاع أو بدونه)
       await tx.invoice.update({ where: { id: invoiceId }, data: { isDeleted: true } });
 
       await tx.auditLog.create({
         data: {
           userId: session?.userId, action: "VOID_RECEIPT", entity: "invoice", entityId: String(invoiceId),
-          details: `حذف فاتورة مبيع عكسياً #${invoice.number} - إجمالي ${invoice.totalMy} - واصل ${invoice.waselHim}`,
+          details: `حذف فاتورة مبيع ${reverse ? "عكسياً (إرجاع)" : "بلا تأثير مالي"} #${invoice.number} - إجمالي ${invoice.totalMy} - واصل ${invoice.waselHim}`,
         },
       });
     });

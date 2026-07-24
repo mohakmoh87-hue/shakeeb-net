@@ -7,12 +7,13 @@ import { getSession } from "@/lib/auth";
 // تسديد دين → يُرجَع الدين للمشترك. حركة يدوية → تُحذف فقط.
 // حركة تفعيل/فاتورة → تُحذف من صفحة الوصولات/الفواتير (لإرجاع الأيام/المخزون كاملاً).
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const g = await guard("receipts.void");
   if (g.error) return g.error;
   const session = await getSession();
+  const reverse = (await request.json().catch(() => ({})))?.reverse !== false; // افتراضي true
 
   const { id } = await params;
   const txId = Number(id);
@@ -24,6 +25,7 @@ export async function POST(
 
   try {
     await prisma.$transaction(async (t) => {
+     if (reverse) {
       // ===== حركة تفعيل: إرجاع كامل (أيام + كارت + دين) ثم حذف الوصل =====
       if (tx.sourceType === "activation" && tx.sourceId) {
         const entry = await t.subscriptionEntry.findUnique({ where: { id: tx.sourceId } });
@@ -62,13 +64,14 @@ export async function POST(
           await t.subscriber.update({ where: { id: sub.id }, data: { carry: (sub.carry ?? 0) + (tx.moneyIn ?? 0) } });
         }
       }
+     } // نهاية كتلة الإرجاع العكسي (reverse): بلا إرجاع لا نمسّ التفعيل/الفاتورة/الدين
 
-      // ===== حذف الحركة نفسها (يشمل: بيع، ماستر، نثرية، يدوية) =====
+      // ===== حذف الحركة نفسها (يشمل: بيع، ماستر، نثرية، يدوية) — يتم دائماً =====
       await t.moneyTx.update({ where: { id: txId }, data: { isDeleted: true } });
       await t.auditLog.create({
         data: {
           userId: session?.userId, action: "VOID_MONEY", entity: "moneyTx", entityId: String(txId),
-          details: `حذف حركة (${tx.sourceType ?? "يدوية"}) - قبض ${tx.moneyIn ?? 0} - صرف ${tx.moneyOut ?? 0}`,
+          details: `حذف حركة (${tx.sourceType ?? "يدوية"}) ${reverse ? "عكسياً" : "بلا تأثير"} - قبض ${tx.moneyIn ?? 0} - صرف ${tx.moneyOut ?? 0}`,
         },
       });
     });

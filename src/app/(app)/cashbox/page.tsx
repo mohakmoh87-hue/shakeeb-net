@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import MoneyTxModal from "@/components/MoneyTxModal";
 import { formatDate } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
+import { askVoidEffect } from "@/lib/voidPrompt";
 
 // مفاتيح الترتيب المتاحة في جدول الحركات
 type SortKey = "id" | "date" | "moneyIn" | "moneyOut" | "accountName" | "notes";
@@ -127,11 +128,12 @@ export default function CashboxPage() {
     }
   }
 
-  // حذف حركة مالية عكسياً
+  // حذف حركة مالية — يسأل: هل يؤثر على المبالغ والتقرير (إرجاع عكسي) أم حذف فقط؟
   async function voidTx(t: Tx) {
-    const label = t.sourceType === "debt" ? "تسديد الدين (سيرجع ديناً على المشترك)" : "الحركة المالية";
-    if (!window.confirm(`حذف ${label}؟ سيُلغى مبلغها من الصندوق.`)) return;
-    const res = await fetch(`/api/money/${t.id}/void`, { method: "POST" });
+    const label = t.sourceType === "debt" ? "تسديد الدين" : "الحركة المالية";
+    const choice = askVoidEffect(label);
+    if (!choice) return;
+    const res = await fetch(`/api/money/${t.id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) load(from, to, q);
     else {
       const d = await res.json().catch(() => ({}));

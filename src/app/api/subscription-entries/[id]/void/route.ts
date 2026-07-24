@@ -4,15 +4,17 @@ import { guard, ownsTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { reverseRewardGrant } from "@/lib/rewards";
 
-// حذف وصل تفعيل عكسياً: إرجاع المشترك لحالته قبل الوصل
-// (إلغاء المبلغ من الصندoق + إرجاع أيام الاشتراك + إرجاع الكارت للمخزون + تصحيح الدين)
+// حذف وصل تفعيل: reverse=true (افتراضي) يُرجع المشترك لحالته قبل الوصل (إلغاء المبلغ + إرجاع
+// الأيام + إرجاع الكارت + تصحيح الدين + عكس المكافأة). reverse=false: حذف الوصل فقط بلا أي أثر
+// عكسي على المال/الأيام/الكارت/الدين (يبقى كل شيء كما هو، ويُرفع الوصل من السجل فقط).
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const g = await guard("receipts.void");
   if (g.error) return g.error;
   const session = await getSession();
+  const reverse = (await request.json().catch(() => ({})))?.reverse !== false; // افتراضي true
 
   const { id } = await params;
   const entryId = Number(id);
@@ -24,6 +26,7 @@ export async function POST(
 
   try {
     await prisma.$transaction(async (tx) => {
+     if (reverse) {
       // 1) إرجاع المشترك: تاريخ الانتهاء لما قبل الوصل + خصم الدين الذي أضافه هذا الوصل
       if (entry.subscriberId) {
         const sub = await tx.subscriber.findUnique({ where: { id: entry.subscriberId } });
@@ -64,14 +67,15 @@ export async function POST(
           agentId: g.session?.agentId ?? null, createdByUser: session?.username, createdByName: session?.fullName,
         });
       }
+     } // نهاية كتلة الإرجاع العكسي (reverse)
 
-      // 5) حذف الوصل نفسه
+      // حذف الوصل نفسه — يتم دائماً (مع الإرجاع أو بدونه)
       await tx.subscriptionEntry.update({ where: { id: entryId }, data: { isDeleted: true } });
 
       await tx.auditLog.create({
         data: {
           userId: session?.userId, action: "VOID_RECEIPT", entity: "subscriptionEntry", entityId: String(entryId),
-          details: `حذف وصل تفعيل عكسياً - مشترك ${entry.subscriberId} - مبلغ ${entry.money} - واصل ${entry.moneyIn}`,
+          details: `حذف وصل تفعيل ${reverse ? "عكسياً (إرجاع)" : "بلا تأثير مالي"} - مشترك ${entry.subscriberId} - مبلغ ${entry.money} - واصل ${entry.moneyIn}`,
         },
       });
     });

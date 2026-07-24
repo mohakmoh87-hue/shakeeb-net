@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import PrintNowButton from "@/components/PrintNowButton";
 import { usePermission } from "@/lib/usePermission";
+import { askVoidEffect } from "@/lib/voidPrompt";
 
 // «تقرير الفواتير» = سجل المواد المباعة حصراً (المكان الوحيد لعرضه):
 // كل سطر مادة بيعت — من فاتورة المبيع (بيع/بيع مباشر) أو من ذمة فني (بيع صيانة).
@@ -64,9 +65,9 @@ export default function SoldItemsReport() {
 
   // حذف الوصل كاملاً عكسياً: يُرجع المواد للمخزن (ولذمة الفني في بيع الصيانة) ويلغي مبلغه
   async function voidInvoice(r: Row) {
-    const extra = r.type === "بيع صيانة" ? "وتعود المواد لذمة الفني وللمخزن" : "وتعود المواد للمخزن";
-    if (!confirm(`حذف الوصل #${r.number} كاملاً (كل موادّه) عكسياً؟\nسيُلغى مبلغه من الصندوق ${extra}.`)) return;
-    const res = await fetch(`/api/invoices/${r.invoiceId}/void`, { method: "POST" });
+    const choice = askVoidEffect(`الوصل #${r.number}`);
+    if (!choice) return;
+    const res = await fetch(`/api/invoices/${r.invoiceId}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) load(from, to, q);
     else alert(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "تعذّر الحذف");
   }
