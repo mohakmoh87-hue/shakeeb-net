@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { guard, agentTowerIds } from "@/lib/guard";
+import { guardAny, agentTowerIds } from "@/lib/guard";
 import { runOfficeSync } from "@/lib/subscriptionSync";
 import { relayRequest } from "@/lib/whatsapp";
 
@@ -11,7 +11,8 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const g = await guard("offices.manage");
+  // المزامنة صلاحية مستقلة عن تعديل/حذف المكتب: يكفي offices.sync (أو offices.manage للمدير الكامل)
+  const g = await guardAny("offices.sync", "offices.manage");
   if (g.error) return g.error;
   const { id } = await params;
   const towerId = Number(id);

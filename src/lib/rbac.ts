@@ -13,7 +13,8 @@ export type Permission =
   | "rewards.clear" // مسح كود ورصيد مكافأة المشترك
   | "manager.accounts" // الاطلاع على حسابات الإدارة
   | "whatsapp.chat" // الرد على رسائل واتساب المشتركين
-  | "offices.manage" // إدارة المكاتب (بيانات المكتب و SAS والمزامنة)
+  | "offices.manage" // إدارة بيانات المكتب و SAS وحذفه (لا تشمل المزامنة — مفصولة)
+  | "offices.sync" // مزامنة اشتراكات المكاتب واستيراد المشتركين من SAS (بلا تعديل/حذف)
   | "accounts.manage" // إنشاء حسابات المصروفات والمقبوضات
   | "packages.manage" // إدارة الباقات
   | "cardprice.manage" // تحديد سعر الكارت
@@ -39,7 +40,8 @@ export const PERMISSION_LIST: { key: Permission; label: string }[] = [
   { key: "rewards.clear", label: "🎁 مسح كود ورصيد مكافأة المشترك" },
   { key: "manager.accounts", label: "الاطلاع على حسابات الإدارة" },
   { key: "whatsapp.chat", label: "الرد على رسائل واتساب المشتركين" },
-  { key: "offices.manage", label: "إدارة المكاتب (البيانات و SAS والمزامنة)" },
+  { key: "offices.manage", label: "إدارة المكاتب (بياناتها و SAS وحذفها) — بلا مزامنة" },
+  { key: "offices.sync", label: "مزامنة اشتراكات المكاتب واستيراد المشتركين (SAS)" },
   { key: "accounts.manage", label: "إنشاء حسابات المصروفات والمقبوضات" },
   { key: "packages.manage", label: "إدارة الباقات" },
   { key: "cardprice.manage", label: "تحديد سعر الكارت" },

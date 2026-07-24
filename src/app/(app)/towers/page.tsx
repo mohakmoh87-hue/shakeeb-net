@@ -34,6 +34,7 @@ const empty: Partial<Office> = { activationMode: "month", silent: "1", waEnabled
 export default function OfficesPage() {
   const { can, me } = usePermission();
   const isManager = can("offices.manage");
+  const canSync = can("offices.sync"); // مزامنة فقط (بلا تعديل/حذف المكتب)
   // مكاتب المستخدم لوضع "ربط الواتساب فقط" (لمن لا يملك صلاحية إدارة المكاتب)
   const [waOnly, setWaOnly] = useState<{ id: number; name: string | null }[]>([]);
 
@@ -47,21 +48,42 @@ export default function OfficesPage() {
   const load = useCallback(() => {
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setOffices)));
   }, []);
-  useEffect(() => { if (isManager) load(); }, [load, isManager]);
+  useEffect(() => { if (isManager || canSync) load(); }, [load, isManager, canSync]);
   useEffect(() => {
     if (isManager) fetch("/api/map/areas").then((r) => r.ok ? r.json() : null).then((d) => d && setAreas(d.areas ?? []));
   }, [isManager]);
 
-  // وضع QR فقط: جلب مكتب المستخدم دائماً للربط (متاح بلا صلاحية إدارة)
+  // وضع QR فقط: جلب مكتب المستخدم دائماً للربط (متاح بلا صلاحية إدارة/مزامنة)
   useEffect(() => {
-    if (me && !isManager) {
+    if (me && !isManager && !canSync) {
       fetch("/api/whatsapp/my-offices").then((r) => void (r.ok && r.json().then((d) => setWaOnly(d.offices ?? []))));
     }
-  }, [me, isManager]);
+  }, [me, isManager, canSync]);
 
   if (!me) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
 
-  // وضع "ربط الواتساب فقط" لغير المخوّلين بإدارة المكاتب
+  // وضع "المزامنة فقط": من يملك offices.sync دون offices.manage — قائمة مكاتب مع زر مزامنة، بلا تعديل/حذف/أسرار
+  if (!isManager && canSync) {
+    return (
+      <div className="p-6">
+        <PageHeader title="مزامنة اشتراكات المكاتب" subtitle="زامن اشتراكات مكاتبك من SAS (استيراد وتحديث) — بلا تعديل بيانات المكتب" />
+        {offices.length === 0 ? (
+          <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">لا توجد مكاتب مرتبطة بحسابك.</div>
+        ) : (
+          <div className="grid max-w-2xl gap-4">
+            {offices.map((o) => (
+              <div key={o.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <h3 className="mb-2 font-bold text-slate-800">🏢 {o.name ?? `مكتب ${o.id}`}</h3>
+                <OfficeSync officeId={o.id} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // وضع "ربط الواتساب فقط" لغير المخوّلين بإدارة المكاتب أو المزامنة
   if (!isManager) {
     return (
       <div className="p-6">
