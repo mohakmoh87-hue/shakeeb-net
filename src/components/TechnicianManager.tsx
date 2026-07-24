@@ -70,6 +70,15 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
     const r = await fetch(`/api/field/technicians?id=${t.id}`, { method: "DELETE" });
     if (r.ok) { load(); onChange(); } else alert("تعذّر الحذف");
   }
+  // مسح بصمة الفني: يزيل تسجيله ليُطلب منه تسجيل بصمة جديدة على جهازه عند أول استخدام
+  async function clearBio() {
+    if (editId == null) return;
+    if (!confirm("مسح بصمة هذا الفني؟ سيُطلب منه تسجيل بصمة جديدة على جهازه عند أول تثبيت حضور.")) return;
+    setBusy(true); setMsg("");
+    const r = await fetch(`/api/field/biometric?technicianId=${editId}`, { method: "DELETE" });
+    setBusy(false);
+    setMsg(r.ok ? "مُسحت بصمة الفني ✓ — سيسجّل واحدة جديدة" : "تعذّر مسح البصمة");
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={onClose}>
@@ -138,6 +147,11 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                 </div>
                 </>)}
               </div>
+            )}
+
+            {/* مسح البصمة: يُجبر الفني على تسجيل بصمة جديدة على جهازه (تبديل هاتف/إعادة ضبط) */}
+            {editId != null && (
+              <button onClick={clearBio} disabled={busy} className="mt-3 w-full rounded-lg border border-rose-200 bg-rose-50 py-2 text-sm font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-60">🧬 مسح بصمة الفني (يُعيد تسجيلها)</button>
             )}
 
             <div className="mt-3 flex gap-2">
