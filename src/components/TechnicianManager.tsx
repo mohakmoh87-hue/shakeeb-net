@@ -58,7 +58,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   async function save() {
     setBusy(true); setMsg("");
     const body: Record<string, unknown> = { ...f, officeId };
-    if (editId) { body.id = editId; body.extraTowerIds = [...extraSel]; }
+    if (editId) { body.id = editId; body.extraTowerIds = [...extraSel]; if (editHome != null) body.towerId = editHome; }
     const r = await fetch("/api/field/technicians", { method: editId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
@@ -107,13 +107,19 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
               <L label="غرامة نسيان الخروج"><I v={f.missedCheckoutPenalty} on={(v) => set("missedCheckoutPenalty", v)} num /></L>
             </div>
 
-            {/* المكاتب الإضافية الدائمة (تعديل فقط، للمدير): يرى وينفذ بطاقاتها ويأخذ ذممها
-                كأنه فني أصلي فيها — مكتبه الأصلي مستبعد تلقائياً، وكل بطاقة تُحسب لمكتبها */}
-            {editId != null && allOffices.filter((o) => o.id !== editHome).length > 0 && (
+            {/* المكتب الأصلي (قابل للتغيير) + المكاتب الإضافية الدائمة — للمدير عند التعديل.
+                تغيير الأصلي يُنقّيه من الإضافية تلقائياً، وكل بطاقة تُحسب لمكتبها */}
+            {editId != null && allOffices.length > 0 && (
               <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-2.5">
-                <div className="mb-1 text-xs font-bold text-indigo-800">
-                  🏢 مكتبه الأصلي: {allOffices.find((o) => o.id === editHome)?.name ?? "—"}
-                </div>
+                <label className="mb-1 block text-xs font-bold text-indigo-800">🏢 المكتب الأصلي (يمكن تغييره)</label>
+                <select
+                  value={editHome ?? ""}
+                  onChange={(e) => { const v = Number(e.target.value) || null; setEditHome(v); setExtraSel((s) => { const n = new Set(s); if (v != null) n.delete(v); return n; }); }}
+                  className="mb-2 w-full rounded-lg border border-indigo-300 bg-white px-2 py-1.5 text-sm"
+                >
+                  {allOffices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `مكتب ${o.id}`}</option>)}
+                </select>
+                {allOffices.filter((o) => o.id !== editHome).length > 0 && (<>
                 <div className="mb-1.5 text-[11px] text-slate-600">مكاتب إضافية — يشوف تكتاتها وينفذها ويأخذ ذمماً منها كأنه فني أصلي فيها (كل بطاقة تُحسب لمكتبها):</div>
                 <div className="flex flex-wrap gap-1.5">
                   {allOffices.filter((o) => o.id !== editHome).map((o) => {
@@ -130,6 +136,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                     );
                   })}
                 </div>
+                </>)}
               </div>
             )}
 

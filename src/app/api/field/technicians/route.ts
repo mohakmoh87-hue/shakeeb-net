@@ -142,14 +142,31 @@ export async function PATCH(request: Request) {
     if (b.code.trim().length < 4) return NextResponse.json({ error: "رمز الدخول 4 خانات على الأقل" }, { status: 400 });
     data.code = await hashPassword(b.code.trim()); data.plainCode = b.code.trim();
   }
-  // المكاتب الإضافية الدائمة — المدير فقط (الحارس أعلاه field.manage)، ضمن مكاتب
-  // وكيله حصراً، ويُستبعد مكتب الفني الأصلي تلقائياً (عزل المستأجر)
+  const towers = await agentTowerIds(g.session);
+  // تغيير المكتب الأصلي للفني — المدير فقط، وضمن مكاتب وكيله حصراً (عزل المستأجر)
+  let newTowerId = tech.towerId;
+  if (b.towerId != null && b.towerId !== "") {
+    const t = Number(b.towerId);
+    if (!Number.isFinite(t) || !towers.includes(t)) {
+      return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
+    }
+    newTowerId = t;
+    data.towerId = t;
+  }
+  // المكاتب الإضافية الدائمة: ضمن مكاتب الوكيل، ويُستبعد المكتب الأصلي (الجديد) دائماً
   if (Array.isArray(b.extraTowerIds)) {
-    const towers = await agentTowerIds(g.session);
-    const clean = [...new Set((b.extraTowerIds as unknown[]).map(Number).filter((x) => Number.isFinite(x) && towers.includes(x) && x !== tech.towerId))];
+    const clean = [...new Set((b.extraTowerIds as unknown[]).map(Number).filter((x) => Number.isFinite(x) && towers.includes(x) && x !== newTowerId))];
     data.extraTowerIds = JSON.stringify(clean);
+  } else if (data.towerId != null) {
+    // تغيّر المكتب الأصلي دون إرسال قائمة إضافية: نُنقّي الإضافية الحالية من المكتب الأصلي الجديد
+    const cur = parseExtraTowers(tech.extraTowerIds).filter((x) => x !== newTowerId);
+    data.extraTowerIds = JSON.stringify(cur);
   }
   await prisma.technician.update({ where: { id }, data });
+  // مواءمة حساب الموظف مع المكتب الجديد (ليظهر الفني وذمّته/راتبه في مكتبه الحالي)
+  if (data.towerId != null && tech.accountId) {
+    await prisma.account.update({ where: { id: tech.accountId }, data: { towerId: newTowerId } }).catch(() => {});
+  }
   return NextResponse.json({ ok: true });
 }
 
