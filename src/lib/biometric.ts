@@ -7,8 +7,9 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 
-// "setup" = التطبيق يدعم البصمة لكن لا بصمة مُفعّلة على الجهاز → يجب تفعيلها (يُمنع الحضور، لا يُتجاوز)
-export type BioResult = "ok" | "unsupported" | "failed" | "setup";
+// "setup" = التطبيق يدعم البصمة لكن لا بصمة مُفعّلة على الجهاز → يجب تفعيلها (يُمنع الحضور)
+// "update" = نسخة تطبيق قديمة بلا مكوّن البصمة الأصلي → يجب إزالتها وتثبيت الأحدث من الموقع
+export type BioResult = "ok" | "unsupported" | "failed" | "setup" | "update";
 
 // جسر البصمة الأصلية (يُنفّذه android/.../BiometricNativePlugin.java داخل التطبيق فقط)
 const BiometricNative = registerPlugin<{
@@ -28,7 +29,7 @@ function isNativeApp(): boolean {
 async function nativeBio(): Promise<BioResult> {
   try {
     const avail = await BiometricNative.isAvailable().catch(() => null);
-    if (!avail) return "unsupported";     // مكوّن غير موجود (APK قديم جداً) → تجاوز مؤقت حتى التحديث
+    if (!avail) return "update";          // نسخة تطبيق قديمة بلا مكوّن البصمة → تُرفَض ويُطلب التحديث
     if (!avail.available) return "setup"; // التطبيق يدعمها لكن لا بصمة مُفعّلة على الجهاز → إلزام التفعيل
     const status = await fetch("/api/field/biometric").then((r) => (r.ok ? r.json() : null)).catch(() => null);
     const enrolledLocal = await BiometricNative.isEnrolled().then((x) => x.enrolled).catch(() => false);

@@ -25,6 +25,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [bioOpen, setBioOpen] = useState(false); // نافذة تأكيد البصمة
   const [bioBusy, setBioBusy] = useState(false);
   const [bioErr, setBioErr] = useState("");
+  const [bioUpdate, setBioUpdate] = useState(false); // نسخة قديمة: إظهار زر تحديث التطبيق
   const [trackReq, setTrackReq] = useState(false); // المكتب يطلب موقعي الآن
   const [geoBlocked, setGeoBlocked] = useState(false); // إذن الموقع مرفوض/متعذّر أثناء الطلب
   const [excusePrompt, setExcusePrompt] = useState(false); // دخول متأخّر: عرض «هل نسيت البصمة؟»
@@ -141,7 +142,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   // فتح نافذة تأكيد البصمة قبل التسجيل
   function openBio() {
     if (busy || state === "done") return;
-    setBioErr(""); setBioOpen(true);
+    setBioErr(""); setBioUpdate(false); setBioOpen(true);
   }
 
   // لمس المستشعر: يُطلق بصمة الهاتف الحقيقية ثم يُكمل التسجيل
@@ -151,7 +152,8 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     setBioBusy(false);
     if (res === "failed") { setBioErr("لم تُؤكَّد البصمة — أعد المحاولة"); return; }
     if (res === "setup") { setBioErr("فعّل بصمة إصبع أو وجه في إعدادات هاتفك ثم أعد المحاولة"); return; }
-    // ok أو unsupported (نسخة قديمة جداً/متصفح بلا مستشعر) → نُكمل التسجيل
+    if (res === "update") { setBioErr("نسخة التطبيق قديمة — حدّثها للمتابعة"); setBioUpdate(true); return; }
+    // ok أو unsupported (متصفح بلا مستشعر) → نُكمل التسجيل
     setBioOpen(false);
     await stamp();
   }
@@ -163,6 +165,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     setBioBusy(false);
     if (res === "ok") setBioErr("تم تأكيد البصمة ✓");
     else if (res === "setup") setBioErr("فعّل بصمة إصبع أو وجه في إعدادات هاتفك أولاً");
+    else if (res === "update") setBioErr("نسخة التطبيق قديمة — أزِلها وأعِد تحميل الأحدث من shakeebnet.com");
     else if (res === "unsupported") setBioErr("هذا الجهاز لا يدعم البصمة");
     else setBioErr("تعذّر تسجيل البصمة — أعد المحاولة");
   }
@@ -231,6 +234,12 @@ export default function TechOpsBar({ techName }: { techName: string }) {
             </button>
             <div className="mt-4 text-sm font-bold text-slate-600">{bioBusy ? "بانتظار البصمة…" : "اضغط للمس المستشعر"}</div>
             {bioErr && <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">{bioErr}</div>}
+            {bioUpdate && (
+              <a href="https://shakeebnet.com/shakeeb-net.apk" target="_blank" rel="noreferrer"
+                className="mt-3 block w-full rounded-xl bg-mynet-blue py-3 text-sm font-extrabold text-white shadow active:scale-95">
+                ⬇️ تحديث التطبيق الآن
+              </a>
+            )}
             <div className="mt-5 flex items-center justify-center gap-4 text-xs">
               <button onClick={() => !bioBusy && setBioOpen(false)} className="font-semibold text-slate-400 hover:text-slate-600">إلغاء</button>
               <span className="text-slate-200">|</span>
