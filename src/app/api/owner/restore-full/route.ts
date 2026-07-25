@@ -3,7 +3,7 @@ import { guardOwner, confirmOwnerPassword } from "@/lib/guard";
 import { restoreFullSystemBackup } from "@/lib/backup";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 // ⚠️ استعادة نسخة النظام الكاملة (للمالك فقط، بتأكيد كلمة السر). تستبدل **كل** بيانات النظام
 // بمحتوى الملف — يعود كل الوكلاء وحساباتهم وكروتهم تماماً كما وقت النسخ. عملية لا رجعة فيها.
