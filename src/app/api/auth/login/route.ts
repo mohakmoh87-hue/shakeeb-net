@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword, setSession, setTechSession } from "@/lib/auth";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { planState } from "@/lib/agentPlan";
 import type { Permission } from "@/lib/rbac";
 
 const schema = z.object({
@@ -11,12 +12,14 @@ const schema = z.object({
 });
 
 // يتحقّق من فعالية الوكيل (غير محذوف/معتمد/غير منتهٍ) — يُشارَك بين دخول المستخدم والفني.
+// الاشتراك المنتهي: يُسمح بالدخول خلال **مهلة السماح** (تحذير أحمر بالواجهة)، ويُمنع بعدها.
 async function agentBlockReason(agentId: number | null): Promise<string | null> {
   if (agentId == null) return null;
   const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { planExpiry: true, isDeleted: true, approved: true } });
   if (!agent || agent.isDeleted) return "الحساب غير مفعّل — تواصل مع الإدارة";
   if (!agent.approved) return "حسابك قيد المراجعة — بانتظار موافقة الإدارة على تفعيله";
-  if (agent.planExpiry && agent.planExpiry.getTime() < Date.now()) return "انتهت فترة اشتراكك — تواصل مع الإدارة للتجديد";
+  const st = planState(agent.planExpiry);
+  if (st.status === "blocked") return st.message;
   return null;
 }
 

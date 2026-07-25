@@ -24,6 +24,10 @@ export async function GET(request: Request) {
   const { runDailyBackups } = await import("@/lib/backupJob");
   const backups = await runDailyBackups().catch(() => ({ total: 0, sent: 0, failed: 0 }));
 
+  // تنبيهات اقتراب/انتهاء اشتراك الوكلاء (7 و3 ويوم، ثم مهلة السماح، ثم الإيقاف)
+  const { runPlanWarnings } = await import("@/lib/planWarnings");
+  const planWarnings = await runPlanWarnings().catch(() => ({ checked: 0, notified: 0 }));
+
   // مزامنة SAS ليلية (backstop سحابي): تعمل ولو كانت حواسيب المكاتب مغلقة — لوحات SAS
   // على الإنترنت فتُنفَّذ خادمياً. notify=false: بيانات فقط بلا تقرير (يتفادى ازدواج تقرير
   // المكتب الذي يُرسله المجدول المحلي عند وقت المزامنة). قفل التزامن يمنع أي تعارض.
@@ -42,5 +46,5 @@ export async function GET(request: Request) {
     } catch (e) { syncDetails.push({ office: String(o.id), checked: 0, activations: 0, phantom: 0, verifiedReal: 0, error: (e as Error).message }); }
   }
 
-  return NextResponse.json({ ok: true, closed: r.closed, purgedArchive: purged, backups, syncedOffices: synced, syncDetails });
+  return NextResponse.json({ ok: true, closed: r.closed, purgedArchive: purged, backups, planWarnings, syncedOffices: synced, syncDetails });
 }

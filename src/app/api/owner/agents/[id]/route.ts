@@ -51,6 +51,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (Object.keys(data).length > 0) await prisma.agent.update({ where: { id: agentId }, data });
 
+  // التجديد/التمديد يصفّر علامة التنبيه — لتعمل تنبيهات الدورة القادمة من جديد
+  if (d.clearExpiry || (d.addMonths != null && d.addMonths !== 0)) {
+    await prisma.systemSetting.deleteMany({ where: { type: `planWarn:${agentId}` } }).catch(() => {});
+  }
+
   // تعديل بيانات دخول مدير الوكيل (أول أدمن للوكيل)
   if (d.managerUsername != null || d.managerPassword != null) {
     const manager = await prisma.user.findFirst({ where: { agentId, isAdmin: true, isOwner: false, isDeleted: false }, orderBy: { id: "asc" } });
