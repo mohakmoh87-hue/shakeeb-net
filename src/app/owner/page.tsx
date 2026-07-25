@@ -194,7 +194,7 @@ export default function OwnerPage() {
         <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="font-bold text-slate-800">☁️ استخدام الاستضافة (Azure)
-              <span className="mr-2 text-[11px] font-normal text-slate-400">هذا الشهر · المنحة المجانية تتجدّد شهرياً</span>
+              <span className="mr-2 text-[11px] font-normal text-slate-400">آخر 24 ساعة · من المنحة الشهرية المجانية</span>
             </div>
             <div className="text-sm font-extrabold text-emerald-600" dir="ltr">
               {host.requests.used.toLocaleString("en-US")} / {(host.requests.limit / 1_000_000)}M طلب
@@ -202,7 +202,7 @@ export default function OwnerPage() {
             </div>
           </div>
           {!host.hasData && (
-            <div className="mt-1 text-[11px] text-amber-600">لم يصل قياس هذا الشهر بعد — يُحدَّث تلقائياً يومياً من Azure.</div>
+            <div className="mt-1 text-[11px] text-amber-600">لم يصل قياس بعد — يُحدَّث تلقائياً يومياً من Azure.</div>
           )}
           {/* شريط الطلبات */}
           <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-200" dir="ltr">

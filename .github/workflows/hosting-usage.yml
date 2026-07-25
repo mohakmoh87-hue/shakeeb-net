@@ -26,25 +26,25 @@ jobs:
         run: |
           set -euo pipefail
           RID="/subscriptions/5d135ad6-bd0a-4e2e-91f0-52aede7b201b/resourceGroups/rg-shakeeb-test/providers/Microsoft.App/containerapps/app-shakeeb-test"
-          MONTH_START="$(date -u +%Y-%m-01T00:00:00Z)"
+          # نافذة «آخر 24 ساعة» بفاصل ساعي — موثوقة مع تطبيق يتوقّف عند الخمول (استعلام الشهر
+          # الطويل يُرجع صفراً لأن المقاييس متفرّقة). المنحة شهرية لكن نعرض استهلاك آخر يوم.
+          SINCE="$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
           MONTH="$(date -u +%Y-%m)"
 
-          # إجمالي الطلبات منذ بداية الشهر (تجميع يومي ثم جمعها)
+          # طلبات آخر 24 ساعة (تجميع ساعي ثم جمعها)
           REQ=$(az monitor metrics list --resource "$RID" --metric Requests \
-                --aggregation Total --start-time "$MONTH_START" --interval P1D \
+                --aggregation Total --start-time "$SINCE" --interval PT1H \
                 --query "value[0].timeseries[0].data[].total" -o tsv \
                 | awk '{s+=$1} END {printf "%d", s+0}')
 
-          # ثواني-المعالج التقريبية: متوسط النانو-كور × ثواني الشهر ÷ 1e9 (أفضل تقدير متاح)
+          # متوسط النانو-كور آخر 24 ساعة → ثواني-معالج تقريبية على مدار يوم (86400ث)
           NANO=$(az monitor metrics list --resource "$RID" --metric UsageNanoCores \
-                 --aggregation Average --start-time "$MONTH_START" --interval P1D \
+                 --aggregation Average --start-time "$SINCE" --interval PT1H \
                  --query "value[0].timeseries[0].data[].average" -o tsv \
                  | awk '{if($1!=""){s+=$1;n++}} END {if(n>0) printf "%d", s/n; else print 0}')
-          NOW_EPOCH=$(date -u +%s); START_EPOCH=$(date -u -d "$MONTH_START" +%s)
-          ELAPSED=$(( NOW_EPOCH - START_EPOCH ))
-          VCPU_SEC=$(awk -v n="$NANO" -v e="$ELAPSED" 'BEGIN{printf "%d", (n/1000000000.0)*e}')
+          VCPU_SEC=$(awk -v n="$NANO" 'BEGIN{printf "%d", (n/1000000000.0)*86400}')
 
-          echo "شهر=$MONTH طلبات=$REQ ثواني-معالج≈$VCPU_SEC"
+          echo "شهر=$MONTH طلبات-آخر-24س=$REQ ثواني-معالج≈$VCPU_SEC"
           BODY=$(printf '{"month":"%s","requests":%s,"vcpuSeconds":%s,"source":"github-actions"}' "$MONTH" "$REQ" "$VCPU_SEC")
           code=$(curl -s -o /tmp/resp -w "%{http_code}" -X POST "$APP_BASE_URL/api/owner/hosting-usage" \
                  -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" -d "$BODY")
