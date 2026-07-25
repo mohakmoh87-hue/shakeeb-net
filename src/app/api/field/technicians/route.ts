@@ -4,6 +4,7 @@ import { getSession, hashPassword } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { can } from "@/lib/rbac";
 import { resolveFieldOffice, parseExtraTowers } from "@/lib/field";
+import { encryptSecret, decryptSecret } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
     if (!isManager) return base;
     // بيانات المدير الكاملة (بلا هاش الرمز)
     return {
-      ...base, plainCode: t.plainCode, salary: t.salary, extraTowerIds: parseExtraTowers(t.extraTowerIds),
+      ...base, plainCode: decryptSecret(t.plainCode), salary: t.salary, extraTowerIds: parseExtraTowers(t.extraTowerIds),
       shiftStart: t.shiftStart, shiftEnd: t.shiftEnd, entryGraceMin: t.entryGraceMin, exitGraceMin: t.exitGraceMin,
       lateRatePerMin: t.lateRatePerMin, overtimeRatePerMin: t.overtimeRatePerMin, paidLeavesPerMonth: t.paidLeavesPerMonth,
       missedCheckoutPenalty: t.missedCheckoutPenalty,
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
   });
   const created = await prisma.technician.create({
     data: {
-      name, username, code: await hashPassword(code), plainCode: code,
+      name, username, code: await hashPassword(code), plainCode: encryptSecret(code),
       agentId: g.session?.agentId ?? null, towerId: officeId ?? null, accountId: account.id,
       ...readFields(b ?? {}),
     },
@@ -140,7 +141,7 @@ export async function PATCH(request: Request) {
   }
   if (typeof b.code === "string" && b.code.trim()) {
     if (b.code.trim().length < 4) return NextResponse.json({ error: "رمز الدخول 4 خانات على الأقل" }, { status: 400 });
-    data.code = await hashPassword(b.code.trim()); data.plainCode = b.code.trim();
+    data.code = await hashPassword(b.code.trim()); data.plainCode = encryptSecret(b.code.trim());
   }
   const towers = await agentTowerIds(g.session);
   // تغيير المكتب الأصلي للفني — المدير فقط، وضمن مكاتب وكيله حصراً (عزل المستأجر)

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
+import { encryptSecret } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
   await prisma.user.update({
     where: { id: user.id },
     data: {
-      password: await hashPassword(parsed.data.password), plainPassword: parsed.data.password,
+      password: await hashPassword(parsed.data.password), plainPassword: encryptSecret(parsed.data.password),
       resetToken: null, resetExpiry: null, failedAttempts: 0, lockedUntil: null,
     },
   });

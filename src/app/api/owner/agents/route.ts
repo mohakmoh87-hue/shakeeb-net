@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guardOwner } from "@/lib/guard";
 import { hashPassword } from "@/lib/auth";
+import { encryptSecret, decryptSecret } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export async function GET() {
   const thc = new Map(techCounts.map((t) => [t.agentId, t._count]));
   const sc = new Map(subCounts.map((s) => [Number(s.aid), Number(s.c)]));
   const mgr = new Map<number, { id: number; username: string; plainPassword: string | null }>();
-  for (const m of managers) if (m.agentId != null && !mgr.has(m.agentId)) mgr.set(m.agentId, { id: m.id, username: m.username, plainPassword: m.plainPassword });
+  for (const m of managers) if (m.agentId != null && !mgr.has(m.agentId)) mgr.set(m.agentId, { id: m.id, username: m.username, plainPassword: decryptSecret(m.plainPassword) });
 
   return NextResponse.json({
     agents: agents.map((a) => ({
@@ -90,7 +91,7 @@ export async function POST(request: Request) {
     const manager = await tx.user.create({
       data: {
         fullName: d.managerFullName, username: d.managerUsername,
-        password: await hashPassword(d.managerPassword), plainPassword: d.managerPassword,
+        password: await hashPassword(d.managerPassword), plainPassword: encryptSecret(d.managerPassword),
         role: "ADMIN", isAdmin: true, isOwner: false, agentId: agent.id, isActive: true,
       },
     });

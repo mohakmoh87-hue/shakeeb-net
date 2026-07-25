@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { encryptSecret } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
     });
     await tx.user.create({
       data: {
-        fullName, username, password: await hashPassword(password), plainPassword: password,
+        fullName, username, password: await hashPassword(password), plainPassword: encryptSecret(password),
         role: "ADMIN", isAdmin: true, isOwner: false, agentId: agent.id, isActive: true,
       },
     });

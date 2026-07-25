@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guardOwner } from "@/lib/guard";
 import { hashPassword } from "@/lib/auth";
+import { encryptSecret, decryptSecret } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function GET() {
   const g = await guardOwner();
   if (g.error) return g.error;
   const user = await prisma.user.findUnique({ where: { id: g.session!.userId }, select: { username: true, plainPassword: true, recoveryEmail: true } });
-  return NextResponse.json({ ...user, ownerPhone: await getOwnerPhone() });
+  return NextResponse.json({ ...user, plainPassword: decryptSecret(user?.plainPassword), ownerPhone: await getOwnerPhone() });
 }
 
 const schema = z.object({
@@ -40,7 +41,7 @@ export async function PATCH(request: Request) {
     if (taken && taken.id !== uid) return NextResponse.json({ error: "اسم المستخدم موجود مسبقاً" }, { status: 400 });
     data.username = d.username;
   }
-  if (d.password != null) { data.password = await hashPassword(d.password); data.plainPassword = d.password; }
+  if (d.password != null) { data.password = await hashPassword(d.password); data.plainPassword = encryptSecret(d.password); }
   if (d.recoveryEmail !== undefined) data.recoveryEmail = d.recoveryEmail?.trim() || null;
   if (Object.keys(data).length > 0) await prisma.user.update({ where: { id: uid }, data });
 

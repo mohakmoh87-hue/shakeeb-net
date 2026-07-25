@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guardOwner, confirmOwnerPassword } from "@/lib/guard";
 import { hashPassword } from "@/lib/auth";
+import { encryptSecret } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       if (taken && taken.id !== manager.id) return NextResponse.json({ error: "اسم المستخدم موجود مسبقاً" }, { status: 400 });
       mdata.username = d.managerUsername;
     }
-    if (d.managerPassword != null) { mdata.password = await hashPassword(d.managerPassword); mdata.plainPassword = d.managerPassword; }
+    if (d.managerPassword != null) { mdata.password = await hashPassword(d.managerPassword); mdata.plainPassword = encryptSecret(d.managerPassword); }
     if (Object.keys(mdata).length > 0) await prisma.user.update({ where: { id: manager.id }, data: mdata });
   }
 
