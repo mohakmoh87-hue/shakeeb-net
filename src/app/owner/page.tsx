@@ -366,13 +366,15 @@ function AccountModal({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [recoveryEmail, setRecoveryEmail] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");
+  const [ownerBackupEmail, setOwnerBackupEmail] = useState("");
+  const [ownerBackupTime, setOwnerBackupTime] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     fetch("/api/owner/account").then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (!d) return;
-      setUsername(d.username ?? ""); setPassword(d.plainPassword ?? ""); setRecoveryEmail(d.recoveryEmail ?? ""); setOwnerPhone(d.ownerPhone ?? "");
+      setUsername(d.username ?? ""); setPassword(d.plainPassword ?? ""); setRecoveryEmail(d.recoveryEmail ?? ""); setOwnerPhone(d.ownerPhone ?? ""); setOwnerBackupEmail(d.ownerBackupEmail ?? ""); setOwnerBackupTime(d.ownerBackupTime ?? "");
     });
   }, []);
 
@@ -380,11 +382,25 @@ function AccountModal({ onClose }: { onClose: () => void }) {
     setBusy(true); setMsg("");
     const r = await fetch("/api/owner/account", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: username.trim() || undefined, password: password.trim() || undefined, recoveryEmail: recoveryEmail.trim() || null, ownerPhone: ownerPhone.trim() }),
+      body: JSON.stringify({ username: username.trim() || undefined, password: password.trim() || undefined, recoveryEmail: recoveryEmail.trim() || null, ownerPhone: ownerPhone.trim(), ownerBackupEmail: ownerBackupEmail.trim(), ownerBackupTime: ownerBackupTime.trim() }),
     });
     setBusy(false);
     const d = await r.json().catch(() => ({}));
     if (r.ok) setMsg("✓ تم الحفظ"); else setMsg(d.error ?? "تعذّر الحفظ");
+  }
+
+  // استعادة نسخة النظام الكاملة (تستبدل كل شيء) — تأكيد مزدوج + كلمة سر المالك
+  async function restoreFull(file: File) {
+    if (!confirm("⚠️ تحذير: ستُستبدل كل بيانات النظام الحالية بمحتوى هذا الملف (كل الوكلاء وحساباتهم). العملية لا رجعة فيها. هل تريد المتابعة؟")) return;
+    const pw = prompt("اكتب كلمة سر المالك للتأكيد:");
+    if (!pw) return;
+    setBusy(true); setMsg("جارٍ الاستعادة… لا تغلق الصفحة");
+    const fd = new FormData();
+    fd.append("file", file); fd.append("password", pw);
+    const r = await fetch("/api/owner/restore-full", { method: "POST", body: fd });
+    const d = await r.json().catch(() => ({}));
+    setBusy(false);
+    setMsg(r.ok ? `✓ اكتملت الاستعادة (${d.tables} جدول، ${d.rows} صف)` : (d.error ?? "فشلت الاستعادة"));
   }
 
   return (
@@ -397,10 +413,17 @@ function AccountModal({ onClose }: { onClose: () => void }) {
           <Field label="كلمة السر"><input dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} className="inp" /></Field>
           <Field label="إيميل استرجاع كلمة السر"><input dir="ltr" type="email" value={recoveryEmail} onChange={(e) => setRecoveryEmail(e.target.value)} placeholder="you@gmail.com" className="inp" /></Field>
           <Field label="رقم التواصل (يظهر بصفحة الدخول)"><input dir="ltr" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="07XXXXXXXXX" className="inp" /></Field>
+          <Field label="📦 إيميل النسخة الكاملة (نسخة كل الوكلاء يومياً)"><input dir="ltr" type="email" value={ownerBackupEmail} onChange={(e) => setOwnerBackupEmail(e.target.value)} placeholder="backup@gmail.com" className="inp" /></Field>
+          <Field label="🕘 وقت إرسال النسخة الكاملة يومياً (بغداد)"><input dir="ltr" type="time" value={ownerBackupTime} onChange={(e) => setOwnerBackupTime(e.target.value)} className="inp" /></Field>
         </div>
         <div className="mt-4 flex gap-2">
           <button onClick={save} disabled={busy} className="flex-1 rounded-xl bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-60">{busy ? "جارٍ…" : "حفظ"}</button>
           <button onClick={onClose} className="rounded-xl bg-slate-100 px-5 py-2.5 font-semibold text-slate-600">إغلاق</button>
+        </div>
+        <div className="mt-4 border-t border-slate-200 pt-3">
+          <div className="mb-1 text-xs font-bold text-rose-600">⚠️ استعادة نسخة كاملة (تستبدل كل بيانات النظام)</div>
+          <div className="mb-2 text-[11px] text-slate-500">ارفع ملف نسخة النظام الكاملة (shakeeb-full-*.json.gz). يعود كل الوكلاء تماماً كما وقت النسخ.</div>
+          <input type="file" accept=".gz,.json" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) restoreFull(f); e.target.value = ""; }} className="w-full text-xs" />
         </div>
       </div>
     </div>

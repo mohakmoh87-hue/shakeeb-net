@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { exportAgentBackup } from "@/lib/backup";
+import { exportAgentBackup, exportFullSystemBackup } from "@/lib/backup";
 import { sendMail, mailerConfigured } from "@/lib/mailer";
 import { baghdadDayKey } from "@/lib/attendance";
 
@@ -50,4 +50,41 @@ export async function runDailyBackups(agentId?: number | null): Promise<{ total:
   }
   console.log(`[backup] النسخ اليومي: ${sent} ناجحة، ${failed} فاشلة من ${agents.length}`);
   return { total: agents.length, sent, failed };
+}
+
+// نسخة النظام الكاملة (ملف واحد يضمّ كل الوكلاء وحساباتهم وكروتهم وكل تفصيل) إلى إيميل المالك.
+// عند الاستعادة يعود النظام بأكمله تماماً كما وقت النسخ — «لا يضيع شيء لأي أحد».
+// الإيميل يُضبط من: حساب المالك ← «إيميل النسخة الكاملة» (system_settings type=ownerBackupEmail).
+// دمج مانع للازدواج بعلامة lastOwnerBackupDate (يوم بغداد). skipDedup للإرسال الفوري/الاختبار.
+export async function sendOwnerFullBackup(opts?: { skipDedup?: boolean }): Promise<{ ok: boolean; tables?: number; rows?: number; error?: string }> {
+  if (!mailerConfigured()) return { ok: false, error: "SMTP غير مضبوط" };
+  const emailRow = await prisma.systemSetting.findFirst({ where: { type: "ownerBackupEmail" } });
+  const to = emailRow?.value?.trim();
+  if (!to) return { ok: false, error: "لا يوجد إيميل نسخة المالك" };
+
+  const todayKey = baghdadDayKey(new Date());
+  if (!opts?.skipDedup) {
+    const last = await prisma.systemSetting.findFirst({ where: { type: "lastOwnerBackupDate" } });
+    if (last?.value === todayKey) return { ok: true, error: "أُرسلت اليوم مسبقاً" };
+  }
+
+  const { gz, filename, tableCount, rowCount } = await exportFullSystemBackup();
+  const today = new Date().toISOString().slice(0, 10);
+  const r = await sendMail({
+    to,
+    subject: `نسخة النظام الكاملة — كل الوكلاء — ${today}`,
+    text:
+      `مرفق ملف نسخة كاملة للنظام بأكمله بتاريخ ${today} (${tableCount} جدولاً، ${rowCount} صفّاً).\n` +
+      `يضمّ كل الوكلاء وحساباتهم وكروتهم وكل تفاصيلهم.\n\n` +
+      `احتفظ بهذا الملف جيّداً. لاستعادة كل شيء على نظام/دومين جديد: راجع docs/RECOVERY.md في حقيبة النجاة، ` +
+      `أو من حساب المالك ← «استعادة نسخة كاملة» وارفع هذا الملف (يستبدل كل البيانات الحالية).`,
+    attachments: [{ filename, content: gz, contentType: "application/gzip" }],
+  });
+
+  if (r.ok) {
+    const existing = await prisma.systemSetting.findFirst({ where: { type: "lastOwnerBackupDate" } });
+    if (existing) await prisma.systemSetting.update({ where: { id: existing.id }, data: { value: todayKey } }).catch(() => {});
+    else await prisma.systemSetting.create({ data: { type: "lastOwnerBackupDate", value: todayKey } }).catch(() => {});
+  }
+  return { ok: r.ok, tables: tableCount, rows: rowCount, error: r.error };
 }

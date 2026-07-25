@@ -7,17 +7,29 @@ import { encryptSecret, decryptSecret } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
-async function getOwnerPhone(): Promise<string> {
-  const s = await prisma.systemSetting.findFirst({ where: { type: "ownerPhone" } });
+async function getSetting(type: string): Promise<string> {
+  const s = await prisma.systemSetting.findFirst({ where: { type } });
   return s?.value ?? "";
 }
 
-// بيانات حساب المالك (السوبر أدمن): يوزر/باسورد/إيميل استرجاع + رقم التواصل العام
+async function setSetting(type: string, val: string) {
+  const existing = await prisma.systemSetting.findFirst({ where: { type } });
+  if (existing) await prisma.systemSetting.update({ where: { id: existing.id }, data: { value: val } });
+  else await prisma.systemSetting.create({ data: { type, value: val } });
+}
+
+// بيانات حساب المالك (السوبر أدمن): يوزر/باسورد/إيميل استرجاع + رقم التواصل + إيميل النسخة الكاملة
 export async function GET() {
   const g = await guardOwner();
   if (g.error) return g.error;
   const user = await prisma.user.findUnique({ where: { id: g.session!.userId }, select: { username: true, plainPassword: true, recoveryEmail: true } });
-  return NextResponse.json({ ...user, plainPassword: decryptSecret(user?.plainPassword), ownerPhone: await getOwnerPhone() });
+  return NextResponse.json({
+    ...user,
+    plainPassword: decryptSecret(user?.plainPassword),
+    ownerPhone: await getSetting("ownerPhone"),
+    ownerBackupEmail: await getSetting("ownerBackupEmail"),
+    ownerBackupTime: await getSetting("ownerBackupTime"),
+  });
 }
 
 const schema = z.object({
@@ -25,6 +37,8 @@ const schema = z.object({
   password: z.string().min(4, "كلمة السر 4 أحرف على الأقل").optional(),
   recoveryEmail: z.string().email("إيميل غير صالح").nullable().optional(),
   ownerPhone: z.string().nullable().optional(),
+  ownerBackupEmail: z.string().email("إيميل غير صالح").or(z.literal("")).nullable().optional(),
+  ownerBackupTime: z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "الوقت بصيغة HH:MM").or(z.literal("")).nullable().optional(),
 });
 
 export async function PATCH(request: Request) {
@@ -46,12 +60,11 @@ export async function PATCH(request: Request) {
   if (Object.keys(data).length > 0) await prisma.user.update({ where: { id: uid }, data });
 
   // رقم التواصل العام (يظهر بصفحة الدخول)
-  if (d.ownerPhone !== undefined) {
-    const val = d.ownerPhone?.trim() ?? "";
-    const existing = await prisma.systemSetting.findFirst({ where: { type: "ownerPhone" } });
-    if (existing) await prisma.systemSetting.update({ where: { id: existing.id }, data: { value: val } });
-    else await prisma.systemSetting.create({ data: { type: "ownerPhone", value: val } });
-  }
+  if (d.ownerPhone !== undefined) await setSetting("ownerPhone", d.ownerPhone?.trim() ?? "");
+  // إيميل تصل إليه نسخة كاملة يومية لكل الوكلاء (النسخ الاحتياطي الشامل للمالك)
+  if (d.ownerBackupEmail !== undefined) await setSetting("ownerBackupEmail", d.ownerBackupEmail?.trim() ?? "");
+  // وقت الإرسال اليومي للنسخة الكاملة (HH:MM بتوقيت بغداد — تُرسل عند مطابقة الساعة)
+  if (d.ownerBackupTime !== undefined) await setSetting("ownerBackupTime", d.ownerBackupTime?.trim() ?? "");
 
   return NextResponse.json({ ok: true });
 }

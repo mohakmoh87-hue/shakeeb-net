@@ -18,6 +18,10 @@ const EXCLUDE = new Set([
   "map_points",      // مرجع عام مشترك (ليس بيانات وكيل)
 ]);
 
+// نسخة النظام الكاملة (للمالك): كل شيء عدا سجل الهجرات (الهيكل يُدار بالهجرات لا البيانات).
+// تختلف عن نسخة الوكيل: تشمل users/agents/كل الجداول ليعود النظام بأكمله تماماً كما وقت النسخ.
+const FULL_EXCLUDE = new Set(["_prisma_migrations"]);
+
 type Row = Record<string, unknown>;
 
 // JSON.stringify مع تحويل BigInt (يظهر من بعض الأعمدة العددية) لتفادي الخطأ
@@ -88,6 +92,80 @@ export async function exportAgentBackup(agentId: number): Promise<{ backup: Agen
   const stamp = new Date().toISOString().slice(0, 10);
   const safeName = (agent?.name ?? `agent-${agentId}`).replace(/[^\w؀-ۿ-]+/g, "_").slice(0, 40);
   return { backup, gz, filename: `backup-${safeName}-${stamp}.json.gz` };
+}
+
+// ===== نسخة النظام الكاملة (كل الوكلاء + حساباتهم + كروتهم + كل تفصيل) =====
+export type FullBackup = { version: number; full: true; exportedAt: string; tables: Record<string, Row[]> };
+
+// تصدير النظام بأكمله ككائن + gzip: كل جدول حقيقي بكل صفوفه. ملف واحد يعيد كل شيء تماماً.
+export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: string; tableCount: number; rowCount: number }> {
+  const realTables = await allRealTables();
+  const tables: Record<string, Row[]> = {};
+  let rowCount = 0;
+  for (const t of realTables) {
+    if (FULL_EXCLUDE.has(t) || !SAFE_IDENT.test(t)) continue;
+    const rows = await prisma.$queryRawUnsafe<Row[]>(`SELECT * FROM "${t}"`);
+    tables[t] = rows;
+    rowCount += rows.length;
+  }
+  const backup: FullBackup = { version: BACKUP_VERSION, full: true, exportedAt: new Date().toISOString(), tables };
+  const gz = gzipSync(Buffer.from(JSON.stringify(backup, jsonReplacer)));
+  const stamp = new Date().toISOString().slice(0, 10);
+  return { gz, filename: `shakeeb-full-${stamp}.json.gz`, tableCount: Object.keys(tables).length, rowCount };
+}
+
+// فكّ ملف نسخة النظام الكاملة (gzip أو JSON خام) والتحقّق من صحّته
+export function parseFullBackup(buf: Buffer): FullBackup {
+  const isGzip = buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b;
+  const text = (isGzip ? gunzipSync(buf) : buf).toString("utf8");
+  const obj = JSON.parse(text) as FullBackup;
+  if (!obj || typeof obj !== "object" || !obj.tables || obj.full !== true) {
+    throw new Error("ملف نسخة النظام الكاملة غير صالح");
+  }
+  return obj;
+}
+
+// إدراج صفوف خام (كل الأعمدة كما هي، المعرّفات محفوظة) — بلا فرض agentId (للنظام الكامل)
+async function insertRowsRaw(tx: typeof prisma, table: string, rows: Row[]) {
+  for (const row of rows) {
+    const cols = Object.keys(row).filter((c) => SAFE_IDENT.test(c));
+    if (cols.length === 0) continue;
+    const values = cols.map((c) => {
+      const v = row[c];
+      return v !== null && typeof v === "object" ? JSON.stringify(v) : v;
+    });
+    const colList = cols.map((c) => `"${c}"`).join(",");
+    const params = cols.map((_, i) => `$${i + 1}`).join(",");
+    await tx.$executeRawUnsafe(`INSERT INTO "${table}" (${colList}) VALUES (${params})`, ...values);
+  }
+}
+
+// ⚠️ استعادة كاملة للنظام (شديدة الحساسية — تمسح كل البيانات وتستبدلها بالملف).
+// للمالك فقط بتأكيد كلمة السر. تُعطّل قيود FK داخل المعاملة (avnadmin سوبر) فيصحّ الترتيب،
+// ثم تمسح كل الجداول وتُدرج صفوف الملف كما هي، وتُعيد ضبط تسلسلات المعرّفات. النتيجة: النظام
+// يعود بأكمله (كل الوكلاء وحساباتهم وكروتهم) تماماً كما وقت أخذ النسخة.
+export async function restoreFullSystemBackup(buf: Buffer): Promise<{ tables: number; rows: number }> {
+  const parsed = parseFullBackup(buf);
+  const realTables = await allRealTables();
+  let tableCount = 0, rowCount = 0;
+  await prisma.$transaction(async (tx) => {
+    // تعطيل مشغّلات قيود المفاتيح الأجنبية أثناء التحميل — محصور بالمعاملة (LOCAL) فيعود تلقائياً
+    await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = replica`);
+    // امسح كل الجداول الحقيقية (عدا سجل الهجرات)
+    for (const t of realTables) {
+      if (FULL_EXCLUDE.has(t) || !SAFE_IDENT.test(t)) continue;
+      await tx.$executeRawUnsafe(`DELETE FROM "${t}"`);
+    }
+    // أدرج كل صفوف الملف كما هي (المعرّفات محفوظة)
+    for (const [t, rowsRaw] of Object.entries(parsed.tables)) {
+      if (!realTables.has(t) || FULL_EXCLUDE.has(t) || !SAFE_IDENT.test(t) || !Array.isArray(rowsRaw)) continue;
+      if (rowsRaw.length > 0) { await insertRowsRaw(tx as typeof prisma, t, rowsRaw); rowCount += rowsRaw.length; }
+      tableCount++;
+    }
+  }, { timeout: 600000, maxWait: 15000 });
+  // أعِد ضبط تسلسلات المعرّفات بعد الإدراج بمعرّفات صريحة
+  for (const t of realTables) { if (!FULL_EXCLUDE.has(t) && SAFE_IDENT.test(t)) await resyncSequence(prisma, t); }
+  return { tables: tableCount, rows: rowCount };
 }
 
 // فكّ ملف نسخة (يقبل gzip أو JSON خام) إلى كائن

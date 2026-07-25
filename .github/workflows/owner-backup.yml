@@ -1,0 +1,29 @@
+# نسخة النظام الكاملة إلى إيميل المالك عند الوقت الذي يحدّده (حساب المالك ← وقت الإرسال).
+# تعمل كل ساعة وتستدعي نقطة محميّة بـCRON_SECRET؛ النقطة نفسها تُرسل فقط حين تطابق ساعة
+# بغداد الساعة المضبوطة (ومرّة واحدة يومياً). مستقلّة تماماً عن حواسيب المكاتب (سحابية).
+# ملاحظة: المهام المجدولة تعمل من الفرع الافتراضي (main) — تُفعَّل عند دمج هذا الملف في main.
+# الأسرار المطلوبة (موجودة): CRON_SECRET + APP_BASE_URL.
+name: owner-backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "5 * * * *" # كل ساعة عند الدقيقة 5
+
+permissions:
+  contents: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: تشغيل نسخة المالك الكاملة عند وقتها
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/resp -w "%{http_code}" -X POST "$APP_BASE_URL/api/cron/owner-backup" \
+                 -H "Authorization: Bearer $CRON_SECRET")
+          echo "الاستجابة: $code $(cat /tmp/resp)"
+          test "$code" = "200"
