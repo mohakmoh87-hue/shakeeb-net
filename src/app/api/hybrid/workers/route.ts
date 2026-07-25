@@ -25,6 +25,8 @@ export async function GET() {
 
   return NextResponse.json({
     leaderMachineId: leader,
+    // مكاتب الوكيل — لقائمة اختيار «المكتب» لكل حاسبة (الربط شرطُ عمل الواتساب)
+    offices: towers.map((t) => ({ id: t.id, name: t.name })),
     workers: workers.map((w) => ({
       id: w.id, machineId: w.machineId, name: shown(w), towerId: w.towerId,
       officeName: w.towerId != null ? tn.get(w.towerId) ?? null : null,
@@ -38,7 +40,7 @@ export async function GET() {
   });
 }
 
-// تعديل حاسبة: الأولوية، الاسم، أو الموافقة/الإيقاف
+// تعديل حاسبة: الأولوية، الاسم، المكتب المربوطة به، أو الموافقة/الإيقاف
 export async function PATCH(request: Request) {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
@@ -59,6 +61,20 @@ export async function PATCH(request: Request) {
     data.approved = b.approved;
     // الاعتماد يُطالِب الحاسبة لوكيل هذا المدير (عزل جلسات الواتساب)
     if (b.approved && agentId != null) data.agentId = agentId;
+  }
+  // ربط الحاسبة بمكتبها — شرطُ عمل الواتساب: العامل يستضيف جلسة مكتبه المربوط حصراً،
+  // وبلا ربط لا يشغّل شيئاً (فلا يتجدّد QR). null = فكّ الربط.
+  // عزل المستأجر: لا يُقبل إلا مكتب يتبع وكيل هذا المدير.
+  if (b?.towerId !== undefined) {
+    if (b.towerId === null || b.towerId === "") {
+      data.towerId = null;
+    } else {
+      const tid = Number(b.towerId);
+      if (!Number.isInteger(tid)) return NextResponse.json({ error: "مكتب غير صحيح" }, { status: 400 });
+      const owned = agentId != null && (await prisma.tower.findFirst({ where: { id: tid, agentId, isDeleted: false }, select: { id: true } }));
+      if (!owned) return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+      data.towerId = tid;
+    }
   }
   // رفع الحظر عن حاسبة محظورة (تعود للظهور كحاسبة بانتظار الاعتماد)
   if (b?.blocked === false) data.blocked = false;

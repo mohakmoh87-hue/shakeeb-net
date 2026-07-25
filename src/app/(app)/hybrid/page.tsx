@@ -8,12 +8,14 @@ type Worker = {
   officeName: string | null; priority: number; approved: boolean; lastSeen: string; online: boolean; isLeader: boolean;
 };
 type Blocked = { id: number; machineId: string; name: string | null; lastSeen: string; online: boolean };
+type Office = { id: number; name: string | null };
 
 const fmtTime = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 export default function HybridWorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [blocked, setBlocked] = useState<Blocked[]>([]);
+  const [offices, setOffices] = useState<Office[]>([]);
   const [denied, setDenied] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [edits, setEdits] = useState<Record<number, string>>({});
@@ -22,7 +24,7 @@ export default function HybridWorkersPage() {
   const load = useCallback(() => {
     fetch("/api/hybrid/workers").then((r) => {
       if (r.status === 403) { setDenied(true); setLoaded(true); return; }
-      if (r.ok) r.json().then((d) => { setWorkers(d.workers ?? []); setBlocked(d.blocked ?? []); setLoaded(true); });
+      if (r.ok) r.json().then((d) => { setWorkers(d.workers ?? []); setBlocked(d.blocked ?? []); setOffices(d.offices ?? []); setLoaded(true); });
       else setLoaded(true);
     });
   }, []);
@@ -38,6 +40,13 @@ export default function HybridWorkersPage() {
     const val = (nameEdits[w.id] ?? w.name ?? "").trim();
     const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: w.id, name: val }) });
     if (r.ok) { setNameEdits((e) => { const n = { ...e }; delete n[w.id]; return n; }); load(); }
+  }
+  // ربط الحاسبة بمكتبها — شرطُ عمل الواتساب: العامل يستضيف جلسة مكتبه المربوط حصراً،
+  // وبلا ربط لا يشغّل شيئاً فلا يتجدّد رمز QR.
+  async function setOffice(w: Worker, towerId: number | null) {
+    const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: w.id, towerId }) });
+    if (r.ok) load();
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر ربط المكتب"); }
   }
   async function setApproved(w: Worker, approved: boolean) {
     const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: w.id, approved }) });
@@ -96,7 +105,21 @@ export default function HybridWorkersPage() {
                     </div>
                     <div className="mt-0.5 text-[10px] text-slate-300" dir="ltr">{w.machineId.slice(0, 13)}…</div>
                   </td>
-                  <td className="p-3 text-slate-500">{w.officeName ?? "—"}</td>
+                  <td className="p-3">
+                    <select
+                      value={w.towerId ?? ""}
+                      onChange={(e) => setOffice(w, e.target.value === "" ? null : Number(e.target.value))}
+                      className={`w-44 rounded border px-2 py-1 text-sm ${w.towerId == null ? "border-red-300 bg-red-50 text-red-700" : "border-slate-300"}`}
+                    >
+                      <option value="">— غير مربوطة —</option>
+                      {offices.map((o) => (
+                        <option key={o.id} value={o.id}>{o.name ?? `مكتب ${o.id}`}</option>
+                      ))}
+                    </select>
+                    {w.towerId == null && (
+                      <div className="mt-0.5 text-[10px] font-bold text-red-600">🔴 اربطها بمكتب — الواتساب لن يعمل بدونه</div>
+                    )}
+                  </td>
                   <td className="p-3">
                     <div className="flex items-center gap-1">
                       <input type="number" value={edits[w.id] ?? String(w.priority)} onChange={(e) => setEdits((x) => ({ ...x, [w.id]: e.target.value }))} className="w-16 rounded border border-slate-300 px-2 py-1 text-center" />
