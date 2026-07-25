@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Manager = { id: number; username: string; plainPassword: string | null };
-type DbSize = { dbHost?: string; dbName?: string; usedMB: number; freeMB?: number; limitMB: number; percent: number; totalRows?: number; tableCount?: number; level: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
+type DbSize = { dbHost?: string; dbName?: string; usedMB: number; freeMB?: number; limitMB: number; percent: number; totalRows?: number; tableCount?: number; level: "ok" | "warn" | "danger"; connUsed?: number; connApp?: number; connMax?: number; connLevel?: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
 type Metric = { used: number; limit: number; freePct: number; remaining?: number };
 type HostUsage = { hasData: boolean; month: string; updatedAt: string | null; requests: Metric; vcpuSeconds: Metric | null; gibSeconds: Metric | null };
 type Agent = {
@@ -166,6 +166,15 @@ export default function OwnerPage() {
               <div className="text-sm font-extrabold text-slate-700" dir="ltr">{dbSize.tableCount ?? "—"}</div>
             </div>
           </div>
+          {/* اتصالات القاعدة (client backends المحسوبة على الحدّ) — عمليات نظام Aiven الخلفية لا تُحسب */}
+          {dbSize.connMax != null && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/70 px-2.5 py-1.5 text-[11px] ring-1 ring-slate-200">
+              <span className="text-slate-400">اتصالات القاعدة</span>
+              <span className={`font-extrabold ${dbSize.connLevel === "danger" ? "text-red-600" : dbSize.connLevel === "warn" ? "text-amber-600" : "text-emerald-600"}`} dir="ltr">{dbSize.connUsed}/{dbSize.connMax}</span>
+              <span className="text-slate-400">تطبيقك والمكاتب: <b className="text-slate-600">{dbSize.connApp ?? 0}</b></span>
+              <span className="text-[10px] text-slate-300">(الباقي مراقبة/نظام Aiven)</span>
+            </div>
+          )}
           <div className="mt-1 text-[11px] text-slate-400">اضغط لعرض أكبر الجداول {showDbDetail ? "▲" : "▼"}</div>
           {showDbDetail && (
             <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4" onClick={(e) => e.stopPropagation()}>

@@ -23,7 +23,7 @@ export async function GET() {
   const g = await guardOwner();
   if (g.error) return g.error;
 
-  const [[db], tables, [totals]] = await Promise.all([
+  const [[db], tables, [totals], [conns]] = await Promise.all([
     prisma.$queryRawUnsafe<{ bytes: bigint }[]>(
       `SELECT pg_database_size(current_database()) AS bytes`,
     ),
@@ -35,6 +35,14 @@ export async function GET() {
     // إجمالي الصفوف الحيّة والجداول — لعرض «الحجم الكلي» بلمحة
     prisma.$queryRawUnsafe<{ rows: bigint; tables: bigint }[]>(
       `SELECT COALESCE(sum(n_live_tup), 0) AS rows, count(*) AS tables FROM pg_stat_user_tables`,
+    ),
+    // اتصالات القاعدة: client backends هي المحسوبة على الحدّ (عمليات النظام الخلفية لا تُحسب)؛
+    // «external» = التطبيق/حواسيب المكاتب (بعنوان عميل) — يستثني مراقبة Aiven المحلية.
+    prisma.$queryRawUnsafe<{ clients: bigint; external: bigint; maxc: string }[]>(
+      `SELECT count(*) FILTER (WHERE backend_type='client backend') AS clients,
+              count(*) FILTER (WHERE backend_type='client backend' AND client_addr IS NOT NULL) AS external,
+              current_setting('max_connections') AS maxc
+       FROM pg_stat_activity`,
     ),
   ]);
 
@@ -52,6 +60,11 @@ export async function GET() {
     totalRows: Number(totals?.rows ?? 0), // إجمالي الصفوف الحيّة في القاعدة
     tableCount: Number(totals?.tables ?? 0), // عدد الجداول
     level: percent >= 80 ? "danger" : percent >= 60 ? "warn" : "ok",
+    // اتصالات القاعدة (المحسوبة على الحدّ = client backends)
+    connUsed: Number(conns?.clients ?? 0),      // كل اتصالات العملاء (تطبيق + مكاتب + مراقبة Aiven)
+    connApp: Number(conns?.external ?? 0),        // تطبيقك + حواسيب المكاتب فقط
+    connMax: Number(conns?.maxc ?? 20),           // الحدّ الأقصى للخطة
+    connLevel: (() => { const m = Number(conns?.maxc ?? 20); const u = Number(conns?.clients ?? 0); return u >= m * 0.8 ? "danger" : u >= m * 0.6 ? "warn" : "ok"; })(),
     topTables: tables.map((t) => ({ table: t.tbl, mb: Math.round((Number(t.total) / 1024 / 1024) * 100) / 100, rows: Number(t.rows) })),
   });
 }
