@@ -141,7 +141,8 @@ export default function InventoryPage() {
           { header: "#", render: (r) => r.id },
           { header: "الاسم", render: (r) => r.name },
           ...(isAdmin ? [{ header: "المكتب", render: (r: Item) => towerName(r.towerId) }] : []),
-          { header: "الكلفة", render: (r) => fmt(r.priceDinar) },
+          // الكلفة للمدير فقط (الخادم يحجبها أيضاً عن غير المدير)
+          ...(isAdmin ? [{ header: "الكلفة", render: (r: Item) => fmt(r.priceDinar) }] : []),
           { header: "سعر البيع", render: (r) => fmt(r.priceSale) },
           {
             header: "المتبقّي (الكلي)",

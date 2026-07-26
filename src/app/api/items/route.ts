@@ -27,6 +27,11 @@ export async function GET(request: Request) {
     where: { isDeleted: false, ...scope, ...officeFilter },
     orderBy: { id: "asc" },
   });
+  // كلفة الشراء سرّ إداري: تُحجب عن غير المدير من الردّ نفسه (لا إخفاءً بالواجهة فقط).
+  // سعر البيع يبقى — يحتاجه الموظّف في البيع.
+  if (!g.session?.isAdmin) {
+    return NextResponse.json(items.map((it) => ({ ...it, priceDinar: null })));
+  }
   return NextResponse.json(items);
 }
 
