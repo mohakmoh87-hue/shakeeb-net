@@ -38,6 +38,7 @@ export default function CrudManager<T extends Row>({
   onDeleteAll,
   canAdd = true,
   canDelete = true,
+  summary,
 }: {
   title: string;
   subtitle?: string;
@@ -56,6 +57,8 @@ export default function CrudManager<T extends Row>({
   // إخفاء زرّ الإضافة/الحذف حين لا يملك المستخدم الصلاحية (الخادم يفرضها أيضاً)
   canAdd?: boolean;
   canDelete?: boolean;
+  // شريط ملخّص فوق الجدول — يستقبل الصفوف المعروضة (بعد البحث/الفلترة) فيطابق ما على الشاشة
+  summary?: (rows: T[]) => React.ReactNode;
 }) {
   const [rows, setRows] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -265,6 +268,8 @@ export default function CrudManager<T extends Row>({
           )}
         </div>
       )}
+
+      {summary?.(visibleRows)}
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-right text-sm">

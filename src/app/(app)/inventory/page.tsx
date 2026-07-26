@@ -75,6 +75,29 @@ export default function InventoryPage() {
         fields={fields}
         canAdd={isAdmin}
         canDelete={isAdmin}
+        summary={(rows) => {
+          // قيمة المخزون = الكمية × السعر (تعكس البحث/فلتر المكتب المعروض)
+          const cost = rows.reduce((s, r) => s + (r.count ?? 0) * (r.priceDinar ?? 0), 0);
+          const sale = rows.reduce((s, r) => s + (r.count ?? 0) * (r.priceSale ?? 0), 0);
+          const qty = rows.reduce((s, r) => s + (r.count ?? 0), 0);
+          const box = (label: string, value: number, cls: string) => (
+            <div className={`rounded-xl border px-4 py-3 ${cls}`}>
+              <div className="text-xs font-semibold opacity-80">{label}</div>
+              <div className="text-lg font-extrabold tabular-nums">{fmt(value)}</div>
+            </div>
+          );
+          return (
+            <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <div className="text-xs font-semibold text-slate-500">عدد المواد / القطع</div>
+                <div className="text-lg font-extrabold tabular-nums text-slate-700">{fmt(rows.length)} / {fmt(qty)}</div>
+              </div>
+              {box("مجموع الكلفة", cost, "border-amber-200 bg-amber-50 text-amber-800")}
+              {box("مجموع المبيع", sale, "border-emerald-200 bg-emerald-50 text-emerald-800")}
+              {box("الربح المتوقّع", sale - cost, "border-sky-200 bg-sky-50 text-sky-800")}
+            </div>
+          );
+        }}
         clientSearch={{ placeholder: "🔍 ابحث باسم المادة...", get: (r) => `${r.name ?? ""} ${r.category ?? ""} ${r.barcode ?? ""}` }}
         headerExtra={
           <>
