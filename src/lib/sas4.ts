@@ -240,20 +240,6 @@ export async function sasSearchActivation(
   }
 }
 
-// كالبحث أعلاه لكنه يرمي الاستثناء عند تعذّر الاتصال بدل إعادة null — فحص الكروت الشامل
-// يعتمد عليه: عدُّ كارتٍ «وهمياً» يتطلّب بحثاً ناجحاً لم يجده، لا بحثاً فاشلاً (وإلا صار كل
-// انقطاع شبكة إيجاباً كاذباً يُرجع كروتاً حقيقية للمخزون فتُباع مرتين).
-export async function sasSearchActivationStrict(
-  base: string, token: string, serial: string,
-): Promise<SasActivation | null> {
-  const s = (serial ?? "").trim();
-  if (!s) return null;
-  const j = await fetchAnyPage(base, token, "index/activations", 1, 20, { search: s });
-  const rows: Record<string, unknown>[] = j?.data ?? [];
-  const hit = rows.find((r) => String((r as { pin?: unknown }).pin ?? "").trim() === s);
-  return hit ? normalizeActivation(hit) : null;
-}
-
 // جلب تفعيلات يوم محدّد من تقرير التفعيلات (index/activations).
 // يكتشف اتجاه ترتيب SAS تلقائياً (تصاعدي/تنازلي) ويمسح من الطرف الأحدث حتى يتجاوز بداية
 // اليوم — فلا يُفوّت تفعيلات حقيقية مهما كان الترتيب (سبب سابق لإنذارات «الوهمي» الكاذبة).
@@ -311,6 +297,74 @@ export async function sasFetchActivationsForDay(
     }
   }
   return rows;
+}
+
+// جلب كل تفعيلات SAS منذ تاريخ محدّد — صفحة واحدة كل 500 صفّ بدل استعلام لكل كارت.
+// الفحص الشامل كان يبحث سيريال كل كارت على حدة (423 استعلاماً × ~5 ثوانٍ ≈ 45 دقيقة)؛
+// هذه الدالّة تجلب الكل في ~10 طلبات فتنتهي المطابقة في أقل من دقيقة.
+// onPage: يُستدعى بعد كل صفحة لتحديث مؤشّر التقدّم؛ يُرجع false لإلغاء الجلب.
+export async function sasFetchActivationsSince(
+  base: string,
+  token: string,
+  since: Date,
+  onPage?: (fetched: number, total: number) => Promise<boolean> | boolean,
+): Promise<{ rows: SasActivation[]; complete: boolean }> {
+  const COUNT = 500;
+  const GAP_MS = 1200;
+  const MAX_PAGES = 60; // حتى 30 ألف تفعيل — أوسع من أي نافذة نستعملها
+
+  const meta = await fetchAnyPage(base, token, "index/activations", 1, 1);
+  const total: number = meta.total ?? 0;
+  if (!total) return { rows: [], complete: true };
+  const lastPage = Math.max(1, Math.ceil(total / COUNT));
+
+  const rows: SasActivation[] = [];
+  let reachedOlder = false; // بلغنا صفوفاً أقدم من النافذة ⇒ لا حاجة للمتابعة
+  const collect = (data: Record<string, unknown>[]) => {
+    for (const r of data) {
+      const c = r.created_at ? new Date(r.created_at as string) : null;
+      if (c && !isNaN(c.getTime()) && c < since) { reachedOlder = true; continue; }
+      rows.push(normalizeActivation(r));
+    }
+  };
+
+  // اتجاه الترتيب: إن حوت الصفحة الأولى صفوفاً داخل النافذة ⇒ تنازلي (الأحدث أولاً)
+  const first = await fetchAnyPage(base, token, "index/activations", 1, COUNT);
+  const firstData: Record<string, unknown>[] = first.data ?? [];
+  const descending = firstData.some((r) => {
+    const c = r.created_at ? new Date(r.created_at as string) : null;
+    return c && !isNaN(c.getTime()) && c >= since;
+  });
+
+  let pages = 0;
+  const pageDone = async (): Promise<boolean> => {
+    pages++;
+    if (!onPage) return true;
+    return (await onPage(Math.min(pages * COUNT, total), total)) !== false;
+  };
+
+  if (descending || lastPage === 1) {
+    collect(firstData);
+    if (!(await pageDone())) return { rows, complete: false };
+    for (let page = 2; page <= lastPage && pages < MAX_PAGES && !reachedOlder; page++) {
+      await sleep(GAP_MS);
+      const d: Record<string, unknown>[] = (await fetchAnyPage(base, token, "index/activations", page, COUNT)).data ?? [];
+      if (d.length === 0) break;
+      collect(d);
+      if (!(await pageDone())) return { rows, complete: false };
+    }
+  } else {
+    // تصاعدي: الأحدث في الصفحة الأخيرة ⇒ نتراجع للخلف حتى نتجاوز بداية النافذة
+    for (let page = lastPage; page >= 1 && pages < MAX_PAGES && !reachedOlder; page--) {
+      if (pages > 0) await sleep(GAP_MS);
+      const d: Record<string, unknown>[] = page === 1 ? firstData : ((await fetchAnyPage(base, token, "index/activations", page, COUNT)).data ?? []);
+      if (d.length === 0) break;
+      collect(d);
+      if (!(await pageDone())) return { rows, complete: false };
+    }
+  }
+  // complete = بلغنا نهاية النافذة فعلاً (لا قطعنا الحلقة بحدّ الصفحات)
+  return { rows, complete: reachedOlder || pages < MAX_PAGES };
 }
 
 // جلب كل مشتركي المكتب من SAS بصفحات 500 مع تأخير بين الطلبات (المرحلة 2 من المزامنة).

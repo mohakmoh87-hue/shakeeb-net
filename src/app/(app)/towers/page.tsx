@@ -329,11 +329,13 @@ type SyncRes = {
 type CardsRes = {
   checkedAvailable: number; markedUsed: number; checkedUsed: number;
   verifiedReal: number; phantom: number; errors: number; aborted: boolean;
+  skippedOld: number; windowDays: number;
   events: SyncEvent[]; error?: string;
 };
 type SyncStatus = {
   state: "idle" | "running" | "done" | "error";
   step?: "sync" | "cards" | "report";
+  progress?: { label: string; done: number; total: number };
   sync?: SyncRes; cards?: CardsRes | null; error?: string;
 };
 
@@ -354,6 +356,7 @@ const STEP_LABEL: Record<string, string> = {
 function OfficeSync({ officeId }: { officeId: number }) {
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<string>("sync");
+  const [prog, setProg] = useState<{ label: string; done: number; total: number } | null>(null);
   const [res, setRes] = useState<SyncRes | null>(null);
   const [cards, setCards] = useState<CardsRes | null>(null);
   const alive = useRef(true); // يوقف المتابعة عند مغادرة الصفحة
@@ -374,11 +377,13 @@ function OfficeSync({ officeId }: { officeId: number }) {
       if (st?.state === "running") {
         setBusy(true);
         if (st.step) setStep(st.step);
+        setProg(st.progress ?? null);
         await new Promise((r) => setTimeout(r, 4000));
         continue;
       }
       if (st?.state === "done") { setRes(st.sync ?? null); setCards(st.cards ?? null); }
       else if (st?.state === "error") { setRes({ error: st.error ?? "فشلت المزامنة" } as SyncRes); setCards(null); }
+      setProg(null);
       setBusy(false);
       return;
     }
@@ -395,7 +400,7 @@ function OfficeSync({ officeId }: { officeId: number }) {
   }, [fetchStatus, follow]);
 
   async function sync() {
-    setBusy(true); setStep("sync"); setRes(null); setCards(null);
+    setBusy(true); setStep("sync"); setProg(null); setRes(null); setCards(null);
     const d = await fetch(`/api/offices/${officeId}/sync`, { method: "POST" })
       .then((r) => r.json()).catch(() => null);
     if (!d?.started) {
@@ -404,6 +409,10 @@ function OfficeSync({ officeId }: { officeId: number }) {
       return;
     }
     void follow();
+  }
+
+  async function cancelSync() {
+    await fetch(`/api/offices/${officeId}/sync`, { method: "DELETE" }).catch(() => null);
   }
 
   return (
@@ -417,9 +426,21 @@ function OfficeSync({ officeId }: { officeId: number }) {
       <p className="mb-3 text-xs text-slate-500">المرحلة 1: فحص كروت وتفعيلات الأمس. المرحلة 2: تصحيح تواريخ الانتهاء لكل المشتركين. المرحلة 3: فحص كل مخزون الكروت في SAS — المتاح المستخدم فعلاً يُعلَّم مستخدماً، والمستخدم بلا تفعيل يُدرج بالكروت الوهمية. ثم تقرير كامل للمدير واتساب.</p>
 
       {busy && (
-        <div className="mb-3 flex items-center gap-2 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-700">
-          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
-          {STEP_LABEL[step] ?? "جاري المزامنة..."} — تعمل بالخلفية وستظهر النتائج هنا فور الانتهاء.
+        <div className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-700">
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+            <span className="flex-1">
+              {STEP_LABEL[step] ?? "جاري المزامنة..."}
+              {prog && <span className="mr-1 font-semibold">— {prog.label}: {prog.done} من {prog.total}</span>}
+            </span>
+            <button onClick={cancelSync} className="rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100">⏹ إيقاف</button>
+          </div>
+          {prog && prog.total > 0 && (
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-sky-100">
+              <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${Math.min(100, Math.round((prog.done / prog.total) * 100))}%` }} />
+            </div>
+          )}
+          <div className="mt-1 text-xs text-sky-600">تعمل بالخلفية — تستمر ولو أغلقت الصفحة، وستظهر النتائج هنا فور الانتهاء.</div>
         </div>
       )}
 
@@ -452,7 +473,9 @@ function OfficeSync({ officeId }: { officeId: number }) {
                   <span className="rounded bg-slate-100 px-2 py-1">مستخدم فُحص: <b>{cards.checkedUsed}</b></span>
                   <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">سليم: <b>{cards.verifiedReal}</b></span>
                   <span className="rounded bg-rose-50 px-2 py-1 text-rose-700">وهمي جديد: <b>{cards.phantom}</b></span>
-                  {cards.errors > 0 && <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">تعذّر فحص: <b>{cards.errors}</b>{cards.aborted ? " (أُوقف مبكراً)" : ""}</span>}
+                  {cards.skippedOld > 0 && <span className="rounded bg-slate-100 px-2 py-1 text-slate-500">أقدم من {cards.windowDays} يوماً (بلا حكم): <b>{cards.skippedOld}</b></span>}
+                  {cards.errors > 0 && <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">تعذّر الحكم: <b>{cards.errors}</b></span>}
+                  {cards.aborted && <span className="rounded bg-slate-200 px-2 py-1 text-slate-600">⏹ أُوقف بطلبك</span>}
                 </div>
               )}
               {cards.phantom > 0 && <div className="mt-1 rounded bg-rose-50 px-2 py-1 text-xs text-rose-700">🛡️ الكروت الوهمية الجديدة تظهر في «الكروت الوهمية» بحسابات المدير لاتخاذ الإجراء.</div>}

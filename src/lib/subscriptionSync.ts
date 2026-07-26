@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers, sasSearchActivation,
-  sasSearchActivationStrict,
+  sasFetchActivationsSince,
   type SasActivation,
 } from "@/lib/sas4";
 import { sendViaProvider } from "@/lib/messaging";
@@ -472,7 +472,9 @@ export interface FullCardsResult {
   verifiedReal: number;     // منها مؤكّدة في SAS (سليمة)
   phantom: number;          // منها لم توجد في SAS ⇒ وهمية جديدة
   errors: number;           // كروت تعذّر فحصها (تعثّر SAS) — لم يُحكم عليها
-  aborted: boolean;         // أوقف الفحص مبكراً لتكرار تعثّر SAS
+  aborted: boolean;         // أوقف الفحص مبكراً (إلغاء أو تعثّر SAS)
+  skippedOld: number;       // كروت استُخدمت قبل نافذة الفحص — لا يُحكم عليها
+  windowDays: number;       // عمق النافذة المفحوصة بالأيام
   events: SyncEvent[];
   error?: string;
 }
@@ -481,6 +483,8 @@ export interface FullCardsResult {
 export type ManualSyncStatus = {
   state: "running" | "done" | "error";
   step?: "sync" | "cards" | "report";
+  progress?: { label: string; done: number; total: number }; // مؤشّر تقدّم مرئي للمستخدم
+  cancel?: boolean; // طلب إلغاء — تفحصه الحلقات وتتوقّف بنظافة
   startedAt: string;
   finishedAt?: string;
   sync?: SyncResult;
@@ -504,11 +508,19 @@ export async function getManualSyncStatus(officeId: number): Promise<ManualSyncS
   try { return JSON.parse(row.text) as ManualSyncStatus; } catch { return null; }
 }
 
-// فحص كل مخزون كروت الوكيل مقابل SAS المكتب — بلا نافذة زمنية
-export async function runFullCardAudit(officeId: number): Promise<FullCardsResult> {
+// فحص كل مخزون كروت الوكيل مقابل SAS — بجلب جماعي لتفعيلات SAS ثم مطابقة محلّية.
+// (كان استعلاماً منفصلاً لكل كارت: 423 استعلاماً × ~5 ثوانٍ ≈ 45 دقيقة. الآن ~10 طلبات.)
+// نافذة الفحص: آخر CARD_AUDIT_DAYS يوماً — الكارت المستخدم قبلها لا يُحكم عليه بالوهمية
+// لأن تفعيله خارج ما جلبناه، والحكم عليه يكون إيجاباً كاذباً يُرجع كارتاً حقيقياً للمخزون.
+const CARD_AUDIT_DAYS = 120;
+
+export async function runFullCardAudit(
+  officeId: number,
+  onProgress?: (label: string, done: number, total: number) => Promise<boolean>,
+): Promise<FullCardsResult> {
   const empty: FullCardsResult = {
     checkedAvailable: 0, markedUsed: 0, checkedUsed: 0, verifiedReal: 0,
-    phantom: 0, errors: 0, aborted: false, events: [],
+    phantom: 0, errors: 0, aborted: false, skippedOld: 0, windowDays: CARD_AUDIT_DAYS, events: [],
   };
   const office = await prisma.tower.findUnique({
     where: { id: officeId },
@@ -523,6 +535,26 @@ export async function runFullCardAudit(officeId: number): Promise<FullCardsResul
     token = await sasLogin(base, office.username, office.password);
   } catch (e) {
     return { ...empty, error: (e as Error).message || "فشل الاتصال بـ SAS" };
+  }
+
+  const since = new Date(Date.now() - CARD_AUDIT_DAYS * 86400 * 1000);
+
+  // 1) جلب تفعيلات SAS دفعةً واحدة (صفحات 500) مع تقدّم مرئي وإمكان الإلغاء
+  let acts: SasActivation[], complete: boolean;
+  try {
+    const r = await sasFetchActivationsSince(base, token, since, async (fetched, total) =>
+      onProgress ? onProgress("جلب تفعيلات SAS", fetched, total) : true,
+    );
+    acts = r.rows; complete = r.complete;
+  } catch (e) {
+    return { ...empty, error: (e as Error).message || "تعذّر جلب تفعيلات SAS" };
+  }
+
+  // خريطة السيريال (pin) → تفعيله في SAS
+  const actByPin = new Map<string, SasActivation>();
+  for (const a of acts) {
+    const pin = (a.pin ?? "").trim();
+    if (pin && !actByPin.has(pin)) actByPin.set(pin, a);
   }
 
   const agentId = office.agentId ?? -1;
@@ -541,80 +573,95 @@ export async function runFullCardAudit(officeId: number): Promise<FullCardsResul
   const officeSubById = new Map(officeSubs.map((s) => [s.id, s]));
 
   // الوهمية المُعلَّمة سابقاً (ما زالت معلّقة) — لا تُعلَّم مرتين
-  const since = new Date(Date.now() - 120 * 86400 * 1000);
+  const flaggedSince = new Date(Date.now() - 120 * 86400 * 1000);
   const flagged = new Set(
     (await prisma.auditLog.findMany({
-      where: { action: "SYNC_PHANTOM_VERIFIED", createdAt: { gte: since } },
+      where: { action: "SYNC_PHANTOM_VERIFIED", createdAt: { gte: flaggedSince } },
       select: { entityId: true },
     })).map((a) => Number(a.entityId)).filter((n) => Number.isFinite(n)),
   );
 
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // مشتركو SAS المذكورون في التفعيلات (لربط الكارت بصاحبه عند تعليمه مستخدماً)
+  const sasIds = [...new Set(acts.map((a) => a.sasUserId).filter((x): x is number => x != null))];
+  const subsBySasId = new Map(
+    (sasIds.length
+      ? await prisma.subscriber.findMany({
+          where: { sasId: { in: sasIds }, isDeleted: false },
+          select: { id: true, sasId: true, name: true, netUser: true },
+        })
+      : []
+    ).map((s) => [s.sasId as number, s]),
+  );
+
   const res: FullCardsResult = { ...empty };
 
-  // بحث صارم مع محاولة ثانية — فشل البحث لا يُحسب حكماً (لا «وهمي» بسبب انقطاع)
-  async function search(serial: string): Promise<SasActivation | null | "err"> {
-    try { return await sasSearchActivationStrict(base, token, serial); }
-    catch { /* محاولة ثانية بعد مهلة */ }
-    await sleep(1800);
-    try { return await sasSearchActivationStrict(base, token, serial); }
-    catch { return "err"; }
-  }
-
+  // 2) المطابقة المحلّية — بلا أي استعلام SAS إضافي
+  let i = 0;
   for (const c of cards) {
+    // تقدّم كل 50 كارتاً + فحص طلب الإلغاء
+    if (++i % 50 === 0 && onProgress) {
+      const go = await onProgress("مطابقة الكروت", i, cards.length);
+      if (!go) { res.aborted = true; break; }
+    }
     const serial = (c.serial ?? "").trim();
     if (!serial) continue;
+    const hit = actByPin.get(serial);
 
     if (c.useDate == null) {
-      // متاح بالبرنامج: هل استُخدم في SAS؟
+      // متاح بالبرنامج: هل استُخدم في SAS؟ (وجوده في التفعيلات كافٍ — لا حكم سلبي هنا)
       res.checkedAvailable++;
-      const a = await search(serial);
-      if (a === "err") { res.errors++; }
-      else if (a) {
-        const when = a.createdAt ? new Date(a.createdAt) : new Date();
-        // ربط المشترك إن عُرف من تفعيل SAS
-        const sub = a.sasUserId
-          ? await prisma.subscriber.findFirst({ where: { sasId: a.sasUserId, isDeleted: false }, select: { id: true, name: true, netUser: true } })
-          : null;
-        await prisma.rechargeCard.update({
-          where: { id: c.id },
-          data: { useDate: isNaN(when.getTime()) ? new Date() : when, subscriberId: sub?.id ?? null, userName: "sync", reservedBy: null, reservedAt: null },
-        });
-        res.markedUsed++;
-        res.events.push({ scenario: 3, subscriber: sub?.name ?? sub?.netUser ?? null, pin: serial, detail: "فحص شامل: الكارت مستخدم في SAS — حُدّث إلى مستخدم" });
-      }
-    } else {
-      // مستخدم بالبرنامج: يُحكم عليه فقط إن كان لمشترك هذا المكتب ولم يُعلَّم وهمياً سابقاً
-      if (c.subscriberId == null) continue;
-      const sub = officeSubById.get(c.subscriberId);
-      if (!sub || flagged.has(c.id)) continue;
-      res.checkedUsed++;
-      const a = await search(serial);
-      if (a === "err") { res.errors++; }
-      else if (a) { res.verifiedReal++; }
-      else {
-        await prisma.auditLog.create({
-          data: {
-            action: "SYNC_PHANTOM_VERIFIED", entity: "rechargeCard", entityId: String(c.id),
-            details: `كارت وهمي (فحص شامل ببحث SAS): سيريال ${serial} — مشترك ${sub.name ?? sub.netUser ?? c.subscriberId} — مكتب ${office.name ?? officeId} — استُخدم ${c.useDate ? new Date(c.useDate).toISOString() : "؟"}`,
-          },
-        });
-        flagged.add(c.id);
-        res.phantom++;
-        res.events.push({ scenario: 1, subscriber: sub.name ?? sub.netUser ?? null, pin: serial, detail: "فحص شامل: مستخدم بالبرنامج بلا تفعيل في SAS — أُدرج بالكروت الوهمية" });
-      }
+      if (!hit) continue;
+      const when = hit.createdAt ? new Date(hit.createdAt) : new Date();
+      const sub = hit.sasUserId != null ? subsBySasId.get(hit.sasUserId) : null;
+      await prisma.rechargeCard.update({
+        where: { id: c.id },
+        data: {
+          useDate: isNaN(when.getTime()) ? new Date() : when,
+          subscriberId: sub?.id ?? null, userName: "sync",
+          reservedBy: null, reservedAt: null,
+        },
+      });
+      res.markedUsed++;
+      res.events.push({
+        scenario: 3, subscriber: sub?.name ?? sub?.netUser ?? null, pin: serial,
+        detail: "فحص شامل: الكارت مستخدم في SAS — حُدّث إلى مستخدم",
+      });
+      continue;
     }
 
-    // تعثّر متكرّر ⇒ SAS متوقف: نوقف الفحص كي لا نطيل بلا جدوى (يُعاد لاحقاً)
-    if (res.errors >= 10) { res.aborted = true; break; }
-    await sleep(350); // فاصل بين استعلامات SAS لتفادي الحظر
+    // مستخدم بالبرنامج: يُحكم عليه فقط إن كان لمشترك هذا المكتب ولم يُعلَّم وهمياً سابقاً
+    if (c.subscriberId == null) continue;
+    const sub = officeSubById.get(c.subscriberId);
+    if (!sub || flagged.has(c.id)) continue;
+
+    // الحكم بالوهمية يتطلّب جلباً مكتملاً واستخداماً داخل النافذة — وإلا فالغياب لا يعني شيئاً
+    if (!complete) { res.errors++; continue; }
+    if (c.useDate < since) { res.skippedOld++; continue; }
+
+    res.checkedUsed++;
+    if (hit) { res.verifiedReal++; continue; }
+
+    await prisma.auditLog.create({
+      data: {
+        action: "SYNC_PHANTOM_VERIFIED", entity: "rechargeCard", entityId: String(c.id),
+        details: `كارت وهمي (فحص شامل بجلب تفعيلات SAS): سيريال ${serial} — مشترك ${sub.name ?? sub.netUser ?? c.subscriberId} — مكتب ${office.name ?? officeId} — استُخدم ${c.useDate ? new Date(c.useDate).toISOString() : "؟"}`,
+      },
+    });
+    flagged.add(c.id);
+    res.phantom++;
+    res.events.push({
+      scenario: 1, subscriber: sub.name ?? sub.netUser ?? null, pin: serial,
+      detail: "فحص شامل: مستخدم بالبرنامج بلا تفعيل في SAS — أُدرج بالكروت الوهمية",
+    });
   }
 
   await prisma.auditLog.create({
     data: {
       action: "SYNC_FULL_CARDS", entity: "tower", entityId: String(officeId),
-      details: `فحص شامل للكروت — ${office.name ?? officeId}: متاح ${res.checkedAvailable} (حُدّث ${res.markedUsed}) · مستخدم ${res.checkedUsed} (سليم ${res.verifiedReal} · وهمي ${res.phantom})` +
-        (res.errors ? ` · تعذّر فحص ${res.errors}` : "") + (res.aborted ? " · أُوقف مبكراً لتعثّر SAS" : ""),
+      details: `فحص شامل للكروت — ${office.name ?? officeId}: تفعيلات SAS ${acts.length} (نافذة ${CARD_AUDIT_DAYS} يوماً) · متاح ${res.checkedAvailable} (حُدّث ${res.markedUsed}) · مستخدم ${res.checkedUsed} (سليم ${res.verifiedReal} · وهمي ${res.phantom})` +
+        (res.skippedOld ? ` · تُرك ${res.skippedOld} أقدم من النافذة` : "") +
+        (res.errors ? ` · تعذّر الحكم على ${res.errors}` : "") +
+        (res.aborted ? " · أُوقف بطلب الإلغاء" : ""),
     },
   });
   return res;
@@ -632,7 +679,9 @@ function buildManualReportText(sync: SyncResult, cards: FullCardsResult | null):
       text += `متاح فُحص: ${cards.checkedAvailable} — حُدّث إلى مستخدم: ${cards.markedUsed}\n`;
       text += `مستخدم فُحص: ${cards.checkedUsed} — سليم: ${cards.verifiedReal} — وهمي جديد: ${cards.phantom}`;
       if (cards.phantom > 0) text += `\n🛡️ الوهمية تظهر في «الكروت الوهمية» بحسابات المدير لاتخاذ الإجراء.`;
-      if (cards.errors > 0) text += `\n⚠️ تعذّر فحص ${cards.errors} كارت (تعثّر SAS)${cards.aborted ? " — أُوقف الفحص مبكراً" : ""}.`;
+      if (cards.skippedOld > 0) text += `\nℹ️ ${cards.skippedOld} كارت استُخدم قبل نافذة الفحص (${cards.windowDays} يوماً) — لم يُحكم عليه.`;
+      if (cards.errors > 0) text += `\n⚠️ تعذّر الحكم على ${cards.errors} كارت.`;
+      if (cards.aborted) text += `\n⏹️ أُوقف الفحص بطلب الإلغاء.`;
       const list = cards.events.slice(0, 20);
       if (list.length) {
         text += `\n` + list.map((e) => `• ${e.scenario === 3 ? "🟡" : "🔴"} بِن ${e.pin ?? "؟"} — ${e.subscriber ?? "—"}`).join("\n");
@@ -663,11 +712,21 @@ export async function runManualSync(officeId: number): Promise<void> {
 
     await setManualSyncStatus(officeId, { state: "running", step: "cards", startedAt, sync });
     let cards: FullCardsResult;
-    try { cards = await runFullCardAudit(officeId); }
-    catch (e) {
+    try {
+      // تقدّم مرئي + احترام طلب الإلغاء (يُرجع false فتتوقّف الحلقة بنظافة)
+      cards = await runFullCardAudit(officeId, async (label, done, total) => {
+        const cur = await getManualSyncStatus(officeId);
+        if (cur?.cancel) return false;
+        await setManualSyncStatus(officeId, {
+          state: "running", step: "cards", startedAt, sync,
+          progress: { label, done, total },
+        });
+        return true;
+      });
+    } catch (e) {
       cards = {
         checkedAvailable: 0, markedUsed: 0, checkedUsed: 0, verifiedReal: 0,
-        phantom: 0, errors: 0, aborted: false, events: [],
+        phantom: 0, errors: 0, aborted: false, skippedOld: 0, windowDays: 0, events: [],
         error: (e as Error).message || "فشل فحص الكروت",
       };
     }

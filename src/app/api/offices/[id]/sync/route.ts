@@ -51,3 +51,17 @@ export async function GET(
   const st = await getManualSyncStatus(g.towerId);
   return NextResponse.json(st ?? { state: "idle" });
 }
+
+// إلغاء مزامنة جارية — ترفع راية تفحصها الحلقة فتتوقّف بنظافة عند أقرب نقطة
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const g = await guardOffice(id);
+  if ("error" in g) return g.error;
+  const st = await getManualSyncStatus(g.towerId);
+  if (!st || st.state !== "running") return NextResponse.json({ ok: true, wasRunning: false });
+  await setManualSyncStatus(g.towerId, { ...st, cancel: true });
+  return NextResponse.json({ ok: true, wasRunning: true });
+}
