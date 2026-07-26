@@ -37,6 +37,14 @@ export default function RootLayout({
             __html: "window.__bipEvent=null;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__bipEvent=e;window.dispatchEvent(new Event('bip-ready'));});window.addEventListener('appinstalled',function(){window.__bipEvent=null;});",
           }}
         />
+        {/* حارس إطار SAS: لوحة SAS تُعرض على نطاقنا تحت /sas/{المكتب}/، فانتقالها بعنوان مطلق
+            كان يُحمّل شاشة البرنامج الرئيسية داخل الإطار فيخرج المستخدم من نافذة التفعيل قبل الحفظ
+            (فيبقى الكارت محروقاً على SAS وغير مستهلك عندنا). هنا نُعيد الإطار إلى لوحة SAS فوراً. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "try{if(window.top!==window.self){var p=sessionStorage.getItem('sasFramePrefix');if(p&&location.pathname.indexOf(p)!==0){location.replace(p);}}}catch(e){}",
+          }}
+        />
         {/* وضع التطبيق مبكّراً (بلا وميض): PWA مثبّت أو التطبيق الأصلي (Capacitor) → ثيم وحصر إدارة الفنيين */}
         <script
           dangerouslySetInnerHTML={{

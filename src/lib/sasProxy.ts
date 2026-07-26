@@ -46,6 +46,36 @@ export async function sasHostBlocked(loginUrl: string | null | undefined): Promi
   return isBlockedHost(host);
 }
 
+// حارس الإطار: لوحة SAS تُعرض على نطاق البرنامج تحت بادئة (/sas/6/)، فأي انتقال بعنوان
+// مطلق داخلها («/» بعد ضغط تفعيل مثلاً) كان يُحمّل جذر البرنامج داخل الإطار فيخرج المستخدم
+// من نافذة التفعيل قبل أن يحفظ — فيبقى الكارت محروقاً على SAS وغير مستهلك في البرنامج.
+// <base href> لا يعالج ذلك لأنه لا يؤثّر على العناوين المطلقة. هذا السكربت يُبقيها داخل البادئة.
+function frameGuardScript(prefix: string): string {
+  const p = JSON.stringify(prefix);
+  return `<script>(function(){try{
+var P=${p},B=P.replace(/\\/$/,"");
+try{sessionStorage.setItem("sasFramePrefix",P);}catch(e){}
+function fix(u){if(typeof u!=="string")return u;if(u.charAt(0)!=="/")return u;if(u.indexOf(P)===0||u===B)return u;return B+u;}
+var ps=history.pushState,rs=history.replaceState;
+history.pushState=function(a,b,u){return ps.call(history,a,b,fix(u));};
+history.replaceState=function(a,b,u){return rs.call(history,a,b,fix(u));};
+document.addEventListener("click",function(e){var t=e.target;var a=t&&t.closest?t.closest("a[href]"):null;if(!a)return;var h=a.getAttribute("href")||"";if(h.charAt(0)==="/"&&h.indexOf(P)!==0){e.preventDefault();location.href=fix(h);}},true);
+}catch(e){}})();</script>`;
+}
+
+// إعادة كتابة ترويسة location لردود إعادة التوجيه إلى بادئة البروكسي.
+// كانت تُحذف تماماً (لا تُعاد إلا content-type و cache-control) فتصل للمتصفّح إعادة توجيه بلا وجهة.
+function rewriteLocation(loc: string, host: string, basePrefix?: string): string {
+  if (!basePrefix) return loc;
+  const base = basePrefix.replace(/\/$/, "");
+  if (loc.startsWith("/")) return loc.startsWith(basePrefix) ? loc : base + loc;
+  try {
+    const u = new URL(loc);
+    if (u.host === host) return base + u.pathname + u.search + u.hash;
+  } catch { /* ليس عنواناً مطلقاً — يُترك كما هو */ }
+  return loc;
+}
+
 // معالج بروكسي مشترك للوحة SAS4
 export async function proxyToSas(
   request: Request,
@@ -90,6 +120,11 @@ export async function proxyToSas(
   if (basePrefix && upCT.includes("text/html")) {
     let html = await upstream.text();
     html = html.replace(/<base href="\/">/i, `<base href="${basePrefix}">`);
+    // حارس الإطار يُحقن أوّل ما في <head> ليعمل قبل سكربتات اللوحة
+    const guard = frameGuardScript(basePrefix);
+    html = /<head[^>]*>/i.test(html)
+      ? html.replace(/<head[^>]*>/i, (m) => m + guard)
+      : guard + html;
     return new Response(html, {
       status: upstream.status,
       headers: { "content-type": upCT },
@@ -103,5 +138,8 @@ export async function proxyToSas(
   const respHeaders: Record<string, string> = { "content-type": upCT };
   const cc = upstream.headers.get("cache-control");
   if (cc) respHeaders["cache-control"] = cc;
+  // إعادة التوجيه: نُبقي الوجهة (كانت تُحذف) بعد ردّها إلى بادئة البروكسي
+  const loc = upstream.headers.get("location");
+  if (loc) respHeaders["location"] = rewriteLocation(loc, host, basePrefix);
   return new Response(buf, { status: upstream.status, headers: respHeaders });
 }
