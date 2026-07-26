@@ -240,6 +240,20 @@ export async function sasSearchActivation(
   }
 }
 
+// كالبحث أعلاه لكنه يرمي الاستثناء عند تعذّر الاتصال بدل إعادة null — فحص الكروت الشامل
+// يعتمد عليه: عدُّ كارتٍ «وهمياً» يتطلّب بحثاً ناجحاً لم يجده، لا بحثاً فاشلاً (وإلا صار كل
+// انقطاع شبكة إيجاباً كاذباً يُرجع كروتاً حقيقية للمخزون فتُباع مرتين).
+export async function sasSearchActivationStrict(
+  base: string, token: string, serial: string,
+): Promise<SasActivation | null> {
+  const s = (serial ?? "").trim();
+  if (!s) return null;
+  const j = await fetchAnyPage(base, token, "index/activations", 1, 20, { search: s });
+  const rows: Record<string, unknown>[] = j?.data ?? [];
+  const hit = rows.find((r) => String((r as { pin?: unknown }).pin ?? "").trim() === s);
+  return hit ? normalizeActivation(hit) : null;
+}
+
 // جلب تفعيلات يوم محدّد من تقرير التفعيلات (index/activations).
 // يكتشف اتجاه ترتيب SAS تلقائياً (تصاعدي/تنازلي) ويمسح من الطرف الأحدث حتى يتجاوز بداية
 // اليوم — فلا يُفوّت تفعيلات حقيقية مهما كان الترتيب (سبب سابق لإنذارات «الوهمي» الكاذبة).

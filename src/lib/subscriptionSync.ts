@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers, sasSearchActivation,
+  sasSearchActivationStrict,
   type SasActivation,
 } from "@/lib/sas4";
 import { sendViaProvider } from "@/lib/messaging";
@@ -414,10 +415,10 @@ async function notifySasDown(officeId: number, managerPhone: string | null, offi
   await sendOrQueueReport(officeId, managerPhone.trim(), text);
 }
 
-// نص تقرير المزامنة اليومي (يتضمّن الأحداث المستحقّة للإبلاغ فقط)
-function buildReportText(r: SyncResult, day: Date): string {
+// نص تقرير المزامنة (يتضمّن الأحداث المستحقّة للإبلاغ فقط) — العنوان يختلف بين اليومي واليدوي
+function buildReportText(r: SyncResult, day: Date, title = "تقرير المزامنة اليومي"): string {
   const p1 = r.phase1;
-  let text = `📋 تقرير المزامنة اليومي — ${r.office}\n`;
+  let text = `📋 ${title} — ${r.office}\n`;
   text += `تفعيلات ${formatDate(day)}: ${p1.activations} | كروت البرنامج: ${p1.internal} | خارجي: ${p1.external}\n`;
   text += `تصحيح تواريخ: ${r.phase2.dateFixed} من ${r.phase2.checked} مشترك\n`;
   if (r.phase2.skippedPkg > 0) text += `⏭️ تُركوا بلا تعديل (فئتهم غير مضافة بالبرنامج): ${r.phase2.skippedPkg} مشترك\n`;
@@ -450,4 +451,239 @@ function buildReportText(r: SyncResult, day: Date): string {
   if (!r.events.length) text += `\n✅ لا توجد ملاحظات تستحق الإبلاغ.`;
   if (r.phase2.failed) text += `\n\n(⚠️ تعذّر إكمال تصحيح التواريخ — تعثّر SAS في المرحلة 2)`;
   return text;
+}
+
+// ============================================================================
+// المزامنة اليدوية الشاملة (زر «مزامنة الآن»):
+//   1) المزامنة المعتادة (مرحلتا الأمس + تصحيح التواريخ).
+//   2) فحص كل مخزون الكروت مقابل SAS — بلا تقيّد بيوم:
+//      • كارت متاح بالبرنامج ومستخدم في SAS ⇒ يُعلَّم مستخدماً.
+//      • كارت مستخدم بالبرنامج (لمشترك هذا المكتب) وغير موجود في SAS ⇒ وهمي
+//        (يظهر في «الكروت الوهمية» بحسابات المدير لاتخاذ الإجراء).
+//   3) تقرير واتساب كامل للمدير (تقرير المزامنة + نتائج فحص الكروت).
+// تعمل بالخلفية وتكتب حالتها أولاً بأول في قاعدة البيانات، والواجهة تستطلعها حتى
+// النهاية — فلا «طلب مكرّر» بعد اليوم: الضغطة أثناء التنفيذ تنضمّ للمتابعة نفسها.
+// ============================================================================
+
+export interface FullCardsResult {
+  checkedAvailable: number; // كروت متاحة فُحصت
+  markedUsed: number;       // منها وُجدت مستخدمة في SAS فعُلِّمت
+  checkedUsed: number;      // كروت مستخدمة (لمشتركي المكتب) فُحصت
+  verifiedReal: number;     // منها مؤكّدة في SAS (سليمة)
+  phantom: number;          // منها لم توجد في SAS ⇒ وهمية جديدة
+  errors: number;           // كروت تعذّر فحصها (تعثّر SAS) — لم يُحكم عليها
+  aborted: boolean;         // أوقف الفحص مبكراً لتكرار تعثّر SAS
+  events: SyncEvent[];
+  error?: string;
+}
+
+// حالة المزامنة اليدوية — في قاعدة البيانات لتصمد عبر النسخ المتعددة وإعادة التشغيل
+export type ManualSyncStatus = {
+  state: "running" | "done" | "error";
+  step?: "sync" | "cards" | "report";
+  startedAt: string;
+  finishedAt?: string;
+  sync?: SyncResult;
+  cards?: FullCardsResult | null;
+  error?: string;
+};
+
+const manualStatusKey = (officeId: number) => `manualSync:${officeId}`;
+
+export async function setManualSyncStatus(officeId: number, st: ManualSyncStatus): Promise<void> {
+  const type = manualStatusKey(officeId);
+  const text = JSON.stringify(st);
+  const row = await prisma.systemSetting.findFirst({ where: { type }, select: { id: true } });
+  if (row) await prisma.systemSetting.update({ where: { id: row.id }, data: { text } });
+  else await prisma.systemSetting.create({ data: { type, text } });
+}
+
+export async function getManualSyncStatus(officeId: number): Promise<ManualSyncStatus | null> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: manualStatusKey(officeId) }, select: { text: true } });
+  if (!row?.text) return null;
+  try { return JSON.parse(row.text) as ManualSyncStatus; } catch { return null; }
+}
+
+// فحص كل مخزون كروت الوكيل مقابل SAS المكتب — بلا نافذة زمنية
+export async function runFullCardAudit(officeId: number): Promise<FullCardsResult> {
+  const empty: FullCardsResult = {
+    checkedAvailable: 0, markedUsed: 0, checkedUsed: 0, verifiedReal: 0,
+    phantom: 0, errors: 0, aborted: false, events: [],
+  };
+  const office = await prisma.tower.findUnique({
+    where: { id: officeId },
+    select: { id: true, name: true, agentId: true, loginUrl: true, username: true, password: true },
+  });
+  if (!office?.loginUrl || !office.username || !office.password) {
+    return { ...empty, error: "المكتب لا يحتوي بيانات SAS كاملة" };
+  }
+  let base: string, token: string;
+  try {
+    base = sasBaseUrl(office.loginUrl);
+    token = await sasLogin(base, office.username, office.password);
+  } catch (e) {
+    return { ...empty, error: (e as Error).message || "فشل الاتصال بـ SAS" };
+  }
+
+  const agentId = office.agentId ?? -1;
+  const cards = await prisma.rechargeCard.findMany({
+    where: { agentId },
+    select: { id: true, serial: true, useDate: true, subscriberId: true },
+    orderBy: { id: "asc" },
+  });
+
+  // مشتركو هذا المكتب (نطاق حكم «الوهمي»): كارت مكتبٍ آخر يُفحص عند مزامنة مكتبه —
+  // حساب SAS لكل مكتب قد لا يرى تفعيلات غيره، فالحكم عبر حسابٍ آخر إيجابٌ كاذب
+  const officeSubs = await prisma.subscriber.findMany({
+    where: { isDeleted: false, towerId: officeId },
+    select: { id: true, name: true, netUser: true },
+  });
+  const officeSubById = new Map(officeSubs.map((s) => [s.id, s]));
+
+  // الوهمية المُعلَّمة سابقاً (ما زالت معلّقة) — لا تُعلَّم مرتين
+  const since = new Date(Date.now() - 120 * 86400 * 1000);
+  const flagged = new Set(
+    (await prisma.auditLog.findMany({
+      where: { action: "SYNC_PHANTOM_VERIFIED", createdAt: { gte: since } },
+      select: { entityId: true },
+    })).map((a) => Number(a.entityId)).filter((n) => Number.isFinite(n)),
+  );
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const res: FullCardsResult = { ...empty };
+
+  // بحث صارم مع محاولة ثانية — فشل البحث لا يُحسب حكماً (لا «وهمي» بسبب انقطاع)
+  async function search(serial: string): Promise<SasActivation | null | "err"> {
+    try { return await sasSearchActivationStrict(base, token, serial); }
+    catch { /* محاولة ثانية بعد مهلة */ }
+    await sleep(1800);
+    try { return await sasSearchActivationStrict(base, token, serial); }
+    catch { return "err"; }
+  }
+
+  for (const c of cards) {
+    const serial = (c.serial ?? "").trim();
+    if (!serial) continue;
+
+    if (c.useDate == null) {
+      // متاح بالبرنامج: هل استُخدم في SAS؟
+      res.checkedAvailable++;
+      const a = await search(serial);
+      if (a === "err") { res.errors++; }
+      else if (a) {
+        const when = a.createdAt ? new Date(a.createdAt) : new Date();
+        // ربط المشترك إن عُرف من تفعيل SAS
+        const sub = a.sasUserId
+          ? await prisma.subscriber.findFirst({ where: { sasId: a.sasUserId, isDeleted: false }, select: { id: true, name: true, netUser: true } })
+          : null;
+        await prisma.rechargeCard.update({
+          where: { id: c.id },
+          data: { useDate: isNaN(when.getTime()) ? new Date() : when, subscriberId: sub?.id ?? null, userName: "sync", reservedBy: null, reservedAt: null },
+        });
+        res.markedUsed++;
+        res.events.push({ scenario: 3, subscriber: sub?.name ?? sub?.netUser ?? null, pin: serial, detail: "فحص شامل: الكارت مستخدم في SAS — حُدّث إلى مستخدم" });
+      }
+    } else {
+      // مستخدم بالبرنامج: يُحكم عليه فقط إن كان لمشترك هذا المكتب ولم يُعلَّم وهمياً سابقاً
+      if (c.subscriberId == null) continue;
+      const sub = officeSubById.get(c.subscriberId);
+      if (!sub || flagged.has(c.id)) continue;
+      res.checkedUsed++;
+      const a = await search(serial);
+      if (a === "err") { res.errors++; }
+      else if (a) { res.verifiedReal++; }
+      else {
+        await prisma.auditLog.create({
+          data: {
+            action: "SYNC_PHANTOM_VERIFIED", entity: "rechargeCard", entityId: String(c.id),
+            details: `كارت وهمي (فحص شامل ببحث SAS): سيريال ${serial} — مشترك ${sub.name ?? sub.netUser ?? c.subscriberId} — مكتب ${office.name ?? officeId} — استُخدم ${c.useDate ? new Date(c.useDate).toISOString() : "؟"}`,
+          },
+        });
+        flagged.add(c.id);
+        res.phantom++;
+        res.events.push({ scenario: 1, subscriber: sub.name ?? sub.netUser ?? null, pin: serial, detail: "فحص شامل: مستخدم بالبرنامج بلا تفعيل في SAS — أُدرج بالكروت الوهمية" });
+      }
+    }
+
+    // تعثّر متكرّر ⇒ SAS متوقف: نوقف الفحص كي لا نطيل بلا جدوى (يُعاد لاحقاً)
+    if (res.errors >= 10) { res.aborted = true; break; }
+    await sleep(350); // فاصل بين استعلامات SAS لتفادي الحظر
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      action: "SYNC_FULL_CARDS", entity: "tower", entityId: String(officeId),
+      details: `فحص شامل للكروت — ${office.name ?? officeId}: متاح ${res.checkedAvailable} (حُدّث ${res.markedUsed}) · مستخدم ${res.checkedUsed} (سليم ${res.verifiedReal} · وهمي ${res.phantom})` +
+        (res.errors ? ` · تعذّر فحص ${res.errors}` : "") + (res.aborted ? " · أُوقف مبكراً لتعثّر SAS" : ""),
+    },
+  });
+  return res;
+}
+
+// نصّ تقرير المزامنة اليدوية الكامل: تقرير المزامنة + قسم فحص الكروت
+function buildManualReportText(sync: SyncResult, cards: FullCardsResult | null): string {
+  const day = iraqYesterdayRange(new Date()).start;
+  let text = buildReportText(sync, day, "تقرير المزامنة اليدوية");
+  if (cards) {
+    text += `\n\n📇 فحص الكروت الشامل (كل المخزون):\n`;
+    if (cards.error) {
+      text += `⚠️ تعذّر الفحص: ${cards.error}`;
+    } else {
+      text += `متاح فُحص: ${cards.checkedAvailable} — حُدّث إلى مستخدم: ${cards.markedUsed}\n`;
+      text += `مستخدم فُحص: ${cards.checkedUsed} — سليم: ${cards.verifiedReal} — وهمي جديد: ${cards.phantom}`;
+      if (cards.phantom > 0) text += `\n🛡️ الوهمية تظهر في «الكروت الوهمية» بحسابات المدير لاتخاذ الإجراء.`;
+      if (cards.errors > 0) text += `\n⚠️ تعذّر فحص ${cards.errors} كارت (تعثّر SAS)${cards.aborted ? " — أُوقف الفحص مبكراً" : ""}.`;
+      const list = cards.events.slice(0, 20);
+      if (list.length) {
+        text += `\n` + list.map((e) => `• ${e.scenario === 3 ? "🟡" : "🔴"} بِن ${e.pin ?? "؟"} — ${e.subscriber ?? "—"}`).join("\n");
+        if (cards.events.length > list.length) text += `\n… و${cards.events.length - list.length} أخرى`;
+      }
+    }
+  }
+  return text;
+}
+
+// المنسّق الخلفي للمزامنة اليدوية — يُستدعى بلا انتظار من مسار الزر، والواجهة تستطلع الحالة
+export async function runManualSync(officeId: number): Promise<void> {
+  const startedAt = new Date().toISOString();
+  try {
+    await setManualSyncStatus(officeId, { state: "running", step: "sync", startedAt });
+
+    // إن صادفت مزامنةً مجدولةً جارية (قفل داخلي): ننتظر وندخل بعدها بدل رسالة «الطلب المكرّر»
+    let sync = await runOfficeSync(officeId, { notify: false });
+    for (let i = 0; i < 5 && sync.error?.includes("قيد التنفيذ"); i++) {
+      await new Promise((r) => setTimeout(r, 25_000));
+      sync = await runOfficeSync(officeId, { notify: false });
+    }
+
+    if (sync.error) {
+      await setManualSyncStatus(officeId, { state: "done", startedAt, finishedAt: new Date().toISOString(), sync, cards: null });
+      return;
+    }
+
+    await setManualSyncStatus(officeId, { state: "running", step: "cards", startedAt, sync });
+    let cards: FullCardsResult;
+    try { cards = await runFullCardAudit(officeId); }
+    catch (e) {
+      cards = {
+        checkedAvailable: 0, markedUsed: 0, checkedUsed: 0, verifiedReal: 0,
+        phantom: 0, errors: 0, aborted: false, events: [],
+        error: (e as Error).message || "فشل فحص الكروت",
+      };
+    }
+
+    // تقرير واتساب كامل للمدير — يُؤجَّل تلقائياً إن كان واتساب المكتب مقطوعاً
+    await setManualSyncStatus(officeId, { state: "running", step: "report", startedAt, sync, cards });
+    const office = await prisma.tower.findUnique({ where: { id: officeId }, select: { managerPhone: true } });
+    if (office?.managerPhone?.trim()) {
+      sync.reportSent = await sendOrQueueReport(officeId, office.managerPhone.trim(), buildManualReportText(sync, cards));
+    }
+
+    await setManualSyncStatus(officeId, { state: "done", startedAt, finishedAt: new Date().toISOString(), sync, cards });
+  } catch (e) {
+    await setManualSyncStatus(officeId, {
+      state: "error", startedAt, finishedAt: new Date().toISOString(),
+      error: (e as Error).message || "فشل غير متوقّع في المزامنة",
+    }).catch(() => { /* حتى كتابة الحالة تعذّرت — لا شيء يُفعل */ });
+  }
 }

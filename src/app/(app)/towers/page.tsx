@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { usePermission } from "@/lib/usePermission";
-import { localSasBase } from "@/lib/localSas";
 
 type Office = {
   id: number;
@@ -326,6 +325,17 @@ type SyncRes = {
   reportSent: boolean | null;
   error?: string;
 };
+// نتيجة فحص الكروت الشامل (كل المخزون مقابل SAS)
+type CardsRes = {
+  checkedAvailable: number; markedUsed: number; checkedUsed: number;
+  verifiedReal: number; phantom: number; errors: number; aborted: boolean;
+  events: SyncEvent[]; error?: string;
+};
+type SyncStatus = {
+  state: "idle" | "running" | "done" | "error";
+  step?: "sync" | "cards" | "report";
+  sync?: SyncRes; cards?: CardsRes | null; error?: string;
+};
 
 const SCENARIO_LABEL: Record<number, string> = {
   1: "🔴 تفعيل وهمي (راجعه في حسابات المدير)",
@@ -335,31 +345,83 @@ const SCENARIO_LABEL: Record<number, string> = {
   7: "🆕 مشترك جديد مستورد",
 };
 
+const STEP_LABEL: Record<string, string> = {
+  sync: "جاري المزامنة...",
+  cards: "جاري فحص كل الكروت في SAS...",
+  report: "جاري إرسال التقرير للمدير...",
+};
+
 function OfficeSync({ officeId }: { officeId: number }) {
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<string>("sync");
   const [res, setRes] = useState<SyncRes | null>(null);
+  const [cards, setCards] = useState<CardsRes | null>(null);
+  const alive = useRef(true); // يوقف المتابعة عند مغادرة الصفحة
+
+  const fetchStatus = useCallback(
+    (): Promise<SyncStatus | null> =>
+      fetch(`/api/offices/${officeId}/sync`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    [officeId],
+  );
+
+  // متابعة الحالة كل 4 ثوانٍ حتى الانتهاء — المزامنة تعمل بالخلفية على الخادم،
+  // فتستمر ولو أُغلقت الصفحة، وتُستأنف المتابعة عند فتحها من جديد
+  const follow = useCallback(async () => {
+    for (;;) {
+      if (!alive.current) return;
+      const st = await fetchStatus();
+      if (!alive.current) return;
+      if (st?.state === "running") {
+        setBusy(true);
+        if (st.step) setStep(st.step);
+        await new Promise((r) => setTimeout(r, 4000));
+        continue;
+      }
+      if (st?.state === "done") { setRes(st.sync ?? null); setCards(st.cards ?? null); }
+      else if (st?.state === "error") { setRes({ error: st.error ?? "فشلت المزامنة" } as SyncRes); setCards(null); }
+      setBusy(false);
+      return;
+    }
+  }, [fetchStatus]);
+
+  // عند فتح الصفحة: إن كانت مزامنة جارية لهذا المكتب نلتحق بمتابعتها تلقائياً
+  useEffect(() => {
+    alive.current = true;
+    void (async () => {
+      const st = await fetchStatus();
+      if (st?.state === "running" && alive.current) await follow();
+    })();
+    return () => { alive.current = false; };
+  }, [fetchStatus, follow]);
 
   async function sync() {
-    setBusy(true); setRes(null);
-    // العامل المحلي (حاسبة المكتب، قرب SAS) أسرع؛ وإلا Vercel
-    const base = await localSasBase();
-    const r = base
-      ? await fetch(`${base}/sas4/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ towerId: officeId }) })
-      : await fetch(`/api/offices/${officeId}/sync`, { method: "POST" });
-    setBusy(false);
-    const d = await r.json().catch(() => ({ error: "تعذّر الاتصال" }));
-    setRes(d);
+    setBusy(true); setStep("sync"); setRes(null); setCards(null);
+    const d = await fetch(`/api/offices/${officeId}/sync`, { method: "POST" })
+      .then((r) => r.json()).catch(() => null);
+    if (!d?.started) {
+      setRes({ error: d?.error ?? "تعذّر بدء المزامنة" } as SyncRes);
+      setBusy(false);
+      return;
+    }
+    void follow();
   }
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-1 flex items-center justify-between">
-        <h3 className="font-bold text-slate-800">مزامنة الاشتراكات (مرحلتان: كروت الأمس + تصحيح التواريخ)</h3>
+        <h3 className="font-bold text-slate-800">مزامنة الاشتراكات (شاملة: كروت الأمس + تصحيح التواريخ + فحص كل الكروت)</h3>
         <button onClick={sync} disabled={busy} className="rounded-lg bg-mynet-blue px-4 py-1.5 text-sm font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
-          {busy ? "جاري المزامنة..." : "🔄 مزامنة الآن"}
+          {busy ? STEP_LABEL[step] ?? "جاري المزامنة..." : "🔄 مزامنة الآن"}
         </button>
       </div>
-      <p className="mb-3 text-xs text-slate-500">المرحلة 1: فحص كروت وتفعيلات الأمس ومعالجة الحالات الاستثنائية. المرحلة 2: تصحيح تواريخ الانتهاء لكل المشتركين بصمت. ثم تقرير صامت للمدير.</p>
+      <p className="mb-3 text-xs text-slate-500">المرحلة 1: فحص كروت وتفعيلات الأمس. المرحلة 2: تصحيح تواريخ الانتهاء لكل المشتركين. المرحلة 3: فحص كل مخزون الكروت في SAS — المتاح المستخدم فعلاً يُعلَّم مستخدماً، والمستخدم بلا تفعيل يُدرج بالكروت الوهمية. ثم تقرير كامل للمدير واتساب.</p>
+
+      {busy && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-700">
+          <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+          {STEP_LABEL[step] ?? "جاري المزامنة..."} — تعمل بالخلفية وستظهر النتائج هنا فور الانتهاء.
+        </div>
+      )}
 
       {res?.error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{res.error}</div>}
       {res && !res.error && (
@@ -374,17 +436,36 @@ function OfficeSync({ officeId }: { officeId: number }) {
             <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">مستورد: <b>{res.phase1.imported}</b></span>
             <span className="rounded bg-blue-50 px-2 py-1 text-blue-700">تصحيح تواريخ: <b>{res.phase2.dateFixed}</b>/{res.phase2.checked}</span>
             <span className="rounded bg-green-50 px-2 py-1 text-green-700">استيراد شامل: <b>{res.phase2.imported}</b></span>
-            {res.reportSent === false && <span className="rounded bg-orange-100 px-2 py-1 text-orange-700">التقرير مؤجّل (واتساب مقطوع)</span>}
+            {res.reportSent === true && <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">📨 أُرسل التقرير للمدير</span>}
+            {res.reportSent === false && <span className="rounded bg-orange-100 px-2 py-1 text-orange-700">التقرير لم يُرسل (واتساب مقطوع)</span>}
           </div>
           {res.phase2.failed && <div className="mb-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">⚠️ تعذّر إكمال تصحيح التواريخ (تعثّر SAS في المرحلة 2)</div>}
-          {res.events.length > 0 ? (
+          {cards && (
+            <div className="mb-2">
+              <div className="mb-1 text-xs font-bold text-slate-600">📇 فحص الكروت الشامل (كل المخزون مقابل SAS)</div>
+              {cards.error ? (
+                <div className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">⚠️ تعذّر الفحص: {cards.error}</div>
+              ) : (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="rounded bg-slate-100 px-2 py-1">متاح فُحص: <b>{cards.checkedAvailable}</b></span>
+                  <span className="rounded bg-yellow-50 px-2 py-1 text-yellow-700">حُدّث إلى مستخدم: <b>{cards.markedUsed}</b></span>
+                  <span className="rounded bg-slate-100 px-2 py-1">مستخدم فُحص: <b>{cards.checkedUsed}</b></span>
+                  <span className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">سليم: <b>{cards.verifiedReal}</b></span>
+                  <span className="rounded bg-rose-50 px-2 py-1 text-rose-700">وهمي جديد: <b>{cards.phantom}</b></span>
+                  {cards.errors > 0 && <span className="rounded bg-amber-50 px-2 py-1 text-amber-700">تعذّر فحص: <b>{cards.errors}</b>{cards.aborted ? " (أُوقف مبكراً)" : ""}</span>}
+                </div>
+              )}
+              {cards.phantom > 0 && <div className="mt-1 rounded bg-rose-50 px-2 py-1 text-xs text-rose-700">🛡️ الكروت الوهمية الجديدة تظهر في «الكروت الوهمية» بحسابات المدير لاتخاذ الإجراء.</div>}
+            </div>
+          )}
+          {(res.events.length > 0 || (cards?.events.length ?? 0) > 0) ? (
             <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
               <table className="w-full text-right text-xs">
                 <thead className="sticky top-0 bg-slate-50 text-slate-600">
                   <tr><th className="p-2">الحالة</th><th className="p-2">المشترك</th><th className="p-2">البِن</th><th className="p-2">التفاصيل</th></tr>
                 </thead>
                 <tbody>
-                  {res.events.map((e, i) => (
+                  {[...res.events, ...(cards?.events ?? [])].map((e, i) => (
                     <tr key={i} className="border-t border-slate-100">
                       <td className="p-2 font-medium whitespace-nowrap">{SCENARIO_LABEL[e.scenario] ?? e.scenario}</td>
                       <td className="p-2">{e.subscriber ?? "—"}</td>
