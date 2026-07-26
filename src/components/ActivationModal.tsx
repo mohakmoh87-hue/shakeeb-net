@@ -217,7 +217,9 @@ export default function ActivationModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-3" onClick={releaseAndClose}>
+    // لا إغلاق بالنقر على الخلفية: النافذة تُغلق حصراً بأزرارها (حفظ وطباعة / حفظ و اغلاق / اغلاق / ✕)
+    // — نقرة سهو خارجها كانت تُغلقها أثناء التفعيل على SAS فيضيع الكارت المسحوب
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-3">
       {/* إشعار كبير وسط الشاشة: هذا المشترك محوّل إلى يوزر جديد */}
       {subscriber.transferredTo && !transferSeen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.stopPropagation()}>
