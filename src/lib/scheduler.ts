@@ -154,48 +154,17 @@ export async function catchUpManagerReport(): Promise<{ sent: number; failed: nu
   return runManagerDailyReport(undefined, { oncePerDay: true, day: baghdadYesterday(), skipIfEmpty: true });
 }
 
-// ===== إفراغ كل رسائل الواتساب المؤجّلة (المعلّقة أو التي فشلت لانقطاع الاتصال) =====
-// يُستدعى عند التشغيل ودورياً؛ يُعيد إرسالها من واتساب مكتب كلٍّ منها.
-export async function flushPendingMessages(): Promise<{ resent: number }> {
-  const msgs = await prisma.message.findMany({
-    where: {
-      channel: "WHATSAPP",
-      OR: [{ status: "PENDING" }, { status: "FAILED", error: { contains: "متصل" } }],
-    },
-    orderBy: { id: "asc" },
-    take: 200,
+// ===== إلغاء الرسائل التي لم تُرسل — محاولة واحدة فقط، بلا إعادة إرسال إطلاقاً =====
+// لماذا: «انتهت المهلة» لا تعني أنّ الرسالة لم تصل — واتساب قد يسلّمها ثم يتأخّر ردّ
+// التأكيد. الإعادة كل دقيقة كانت تُوصل الرسالة نفسها للمشترك خمس مرّات وأكثر بينما
+// السجلّ يظنّها لم تصل ولا مرّة. لذلك: كل رسالة تُحاوَل مرّة واحدة، وما لم يُرسَل يُلغى.
+export async function cancelUnsentMessages(): Promise<{ cancelled: number }> {
+  const res = await prisma.message.updateMany({
+    where: { channel: "WHATSAPP", status: "PENDING" },
+    data: { status: "FAILED", error: "أُلغيت — محاولة واحدة فقط بلا إعادة إرسال" },
   });
-  if (!msgs.length) return { resent: 0 };
-
-  // تحديد مكتب كل رسالة: عبر المشترك (towerId) أو عبر رقم المدير للتقارير
-  const subIds = [...new Set(msgs.map((m) => m.subscriberId).filter(Boolean))] as number[];
-  const subs = subIds.length
-    ? await prisma.subscriber.findMany({ where: { id: { in: subIds } }, select: { id: true, towerId: true } })
-    : [];
-  const subTower = new Map(subs.map((s) => [s.id, s.towerId]));
-  const offices = await prisma.tower.findMany({
-    where: { isDeleted: false, managerPhone: { not: null } },
-    select: { id: true, managerPhone: true },
-  });
-  const officeByPhone = new Map(offices.map((o) => [(o.managerPhone ?? "").trim(), o.id]));
-
-  let resent = 0;
-  for (const m of msgs) {
-    if (!m.phone) continue;
-    let officeId: number | null = m.subscriberId ? subTower.get(m.subscriberId) ?? null : null;
-    if (officeId == null) officeId = officeByPhone.get((m.phone ?? "").trim()) ?? null;
-    if (officeId == null) continue;
-    // تقارير المزامنة المؤجّلة: نُنبّه بتأخّر الإرسال
-    const prefix = m.createdByUser === "sync-report"
-      ? "⏳ تأخر إرسال التقرير بسبب انقطاع اتصال الواتساب وقت المزامنة.\n\n"
-      : "";
-    const res = await sendViaProvider("WHATSAPP", m.phone, prefix + m.text, officeId);
-    if (res.ok) {
-      await prisma.message.update({ where: { id: m.id }, data: { status: "SENT", error: null } });
-      resent++;
-    }
-  }
-  return { resent };
+  if (res.count) console.log(`[scheduler] أُلغيت ${res.count} رسالة لم تُرسل (بلا إعادة محاولة)`);
+  return { cancelled: res.count };
 }
 
 // حذف نهائي لأرشيف الرسائل بعد ٣ أيام من إرسالها (تُحفظ ٣ أيام فقط لضمان وصولها)
@@ -321,10 +290,10 @@ export function startScheduler() {
       }
     } catch (e) { console.error("[scheduler] sync tick:", e); }
 
-    // إفراغ كل الرسائل المؤجّلة (من أي نوع) عند عودة اتصال الواتساب
+    // إلغاء ما لم يُرسل (لا إعادة إرسال — محاولة واحدة فقط لكل رسالة)
     try {
-      await flushPendingMessages();
-    } catch (e) { console.error("[scheduler] flush pending:", e); }
+      await cancelUnsentMessages();
+    } catch (e) { console.error("[scheduler] cancel unsent:", e); }
 
     // بصمة خروج تلقائية (00:15 بغداد): إغلاق حضور من نسي الخروج بوقت الخروج المثبّت + غرامة
     if (nowHM === "00:15") {
@@ -350,10 +319,10 @@ export function startScheduler() {
     // تدارك بصمة الخروج المنسيّة لأيامٍ سابقة عند إقلاع الحاسبة صباحاً (تُغلَق ولو كانت الحاسبات
     // مغلقة ساعة الجدولة 00:15). لا يحتاج واتساب — يُنفَّذ فوراً.
     import("@/lib/autoCheckout").then((m) => m.runAutoCheckout()).then((r) => { if (r.closed) console.log(`[scheduler] تدارك خروج تلقائي عند الإقلاع: أُغلق ${r.closed}`); }).catch((e) => console.error("[scheduler] startup autoCheckout:", e));
-    // بعد إتاحة وقت لاتصال الواتساب: تدارك تقرير الأمس + إفراغ الرسائل المؤجّلة
+    // بعد إتاحة وقت لاتصال الواتساب: تدارك تقرير الأمس + إلغاء ما لم يُرسل
     setTimeout(() => {
       catchUpManagerReport().catch((e) => console.error("[scheduler] catchup report:", e));
-      flushPendingMessages().catch((e) => console.error("[scheduler] startup flush:", e));
+      cancelUnsentMessages().catch((e) => console.error("[scheduler] startup cancel:", e));
     }, 30000);
   }, 5000);
 }

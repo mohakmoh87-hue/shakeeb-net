@@ -60,14 +60,14 @@ function isCardActivation(a: SasActivation): boolean {
   return !/credit/.test(m); // voucher أو غير محدّد = كارت
 }
 
-// إرسال تقرير المدير أو حفظه للإرسال لاحقاً عند انقطاع الواتساب.
-// يُخزَّن كرسالة PENDING بعلامة sync-report ليعيد المجدول محاولتها.
+// إرسال تقرير المدير — محاولة واحدة فقط. إن لم يُرسل يُسجَّل فاشلاً ولا يُعاد إرساله
+// إطلاقاً (الإعادة كانت تُوصل الرسالة نفسها مرّات عدّة حين تنتهي المهلة دون أن تفشل فعلاً).
 async function sendOrQueueReport(officeId: number, phone: string, text: string): Promise<boolean> {
   const res = await sendViaProvider("WHATSAPP", phone, text, officeId);
   await prisma.message.create({
     data: {
       channel: "WHATSAPP", phone, text,
-      status: res.ok ? "SENT" : "PENDING",
+      status: res.ok ? "SENT" : "FAILED",
       error: res.ok ? null : (res.error ?? "واتساب غير متصل"),
       createdByUser: "sync-report",
     },
