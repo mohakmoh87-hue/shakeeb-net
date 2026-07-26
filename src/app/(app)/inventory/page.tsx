@@ -86,15 +86,16 @@ export default function InventoryPage() {
               <div className="text-lg font-extrabold tabular-nums">{fmt(value)}</div>
             </div>
           );
+          // مجاميع المبالغ (الكلفة/المبيع/الربح) للمدير فقط — الموظّف يرى العدد لا القيمة
           return (
-            <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className={`mb-3 grid gap-3 ${isAdmin ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-1 sm:max-w-xs"}`}>
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
                 <div className="text-xs font-semibold text-slate-500">عدد المواد / القطع</div>
                 <div className="text-lg font-extrabold tabular-nums text-slate-700">{fmt(rows.length)} / {fmt(qty)}</div>
               </div>
-              {box("مجموع الكلفة", cost, "border-amber-200 bg-amber-50 text-amber-800")}
-              {box("مجموع المبيع", sale, "border-emerald-200 bg-emerald-50 text-emerald-800")}
-              {box("الربح المتوقّع", sale - cost, "border-sky-200 bg-sky-50 text-sky-800")}
+              {isAdmin && box("مجموع الكلفة", cost, "border-amber-200 bg-amber-50 text-amber-800")}
+              {isAdmin && box("مجموع المبيع", sale, "border-emerald-200 bg-emerald-50 text-emerald-800")}
+              {isAdmin && box("الربح المتوقّع", sale - cost, "border-sky-200 bg-sky-50 text-sky-800")}
             </div>
           );
         }}
