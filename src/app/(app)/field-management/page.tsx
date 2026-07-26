@@ -289,10 +289,25 @@ export default function FieldManagementPage() {
   }
   async function saveCard(patch: Partial<Card>) {
     if (!sel || !canOperate) return;
+    const prev = sel; // للتراجع إن رفض الخادم
     const merged = { ...sel, ...patch };
     setSel(merged);
     setCards((x) => x.map((c) => (c.id === sel.id ? merged : c)));
-    await fetch("/api/field/cards", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: sel.id, ...patch }) });
+    const r = await fetch("/api/field/cards", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: sel.id, ...patch }) }).catch(() => null);
+    if (!r || !r.ok) {
+      // تراجُع: لا نُبقي على الشاشة تغييراً لم يُحفَظ (كان يحدث بصمت فيظنّه المستخدم منفَّذاً)
+      setSel(prev);
+      setCards((x) => x.map((c) => (c.id === prev.id ? prev : c)));
+      const d = r ? await r.json().catch(() => ({})) : {};
+      alert((d as { error?: string }).error ?? "تعذّر حفظ التعديل");
+      return;
+    }
+    // اعكس ما حفظه الخادم فعلاً (قد ينقل البطاقة لعمود فئتها الجديدة تلقائياً)
+    const saved = (await r.json().catch(() => null)) as Card | null;
+    if (saved?.id) {
+      setSel(saved);
+      setCards((x) => x.map((c) => (c.id === saved.id ? saved : c)));
+    }
   }
   async function startCard() {
     if (!sel || !canOperate) return;
@@ -605,25 +620,33 @@ export default function FieldManagementPage() {
               {lists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
 
-            {/* التصنيف: كل نوع مستطيل ملوّن يُضغَط لاختياره (بدل القائمة المنسدلة) */}
+            {/* التصنيف: الفني يراه فقط (تغييره يبدّل خصائص البطاقة وعمودها ⇒ للمستخدم/المدير) */}
             <label className="mb-1 block text-xs font-semibold text-slate-500">التصنيف</label>
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {cardTypes.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => saveCard({ kind: t.name })}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white transition ${kindColor(t.name)} ${sel.kind === t.name ? "ring-2 ring-slate-800 ring-offset-1" : "opacity-55 hover:opacity-100"}`}
-                >
-                  {t.deliveryOnly ? "🚚" : "🔧"} {t.name}
-                </button>
-              ))}
-              {!cardTypes.some((t) => t.name === sel.kind) && (
-                <button className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white ring-2 ring-slate-800 ring-offset-1 ${kindColor(sel.kind)}`}>{sel.kind}</button>
-              )}
-              {canManage && (
-                <button onClick={createType} className="rounded-lg border border-dashed border-slate-400 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50">➕ نوع</button>
-              )}
-            </div>
+            {isTech ? (
+              <div className="mb-3">
+                <span className={`inline-block rounded-lg px-3 py-1.5 text-xs font-bold text-white ${kindColor(sel.kind)}`}>
+                  {isDeliveryKind(sel.kind) ? "🚚" : "🔧"} {sel.kind}
+                </span>
+              </div>
+            ) : (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {cardTypes.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => saveCard({ kind: t.name })}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white transition ${kindColor(t.name)} ${sel.kind === t.name ? "ring-2 ring-slate-800 ring-offset-1" : "opacity-55 hover:opacity-100"}`}
+                  >
+                    {t.deliveryOnly ? "🚚" : "🔧"} {t.name}
+                  </button>
+                ))}
+                {!cardTypes.some((t) => t.name === sel.kind) && (
+                  <button className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white ring-2 ring-slate-800 ring-offset-1 ${kindColor(sel.kind)}`}>{sel.kind}</button>
+                )}
+                {canManage && (
+                  <button onClick={createType} className="rounded-lg border border-dashed border-slate-400 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50">➕ نوع</button>
+                )}
+              </div>
+            )}
 
             <label className="mb-1 block text-xs font-semibold text-slate-500">الفني المسؤول</label>
             {isTech ? (

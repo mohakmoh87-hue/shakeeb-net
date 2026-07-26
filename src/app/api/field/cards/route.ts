@@ -70,6 +70,27 @@ export async function PATCH(request: Request) {
     where: { id: Number(b.id) },
     select: { technicianId: true, assignee: true, listId: true, dueDate: true, kind: true, done: true },
   });
+
+  // تغيير الفئة ينقل البطاقة تلقائياً إلى عمود الفئة الجديدة (إن وُجد بنفس اللوحة)
+  // كي لا تبقى في عمود فئتها القديمة. مطابقة الاسم بعد تطبيع المسافات، ثم بادئة (تنصيب/تنصيبات).
+  if (typeof data.kind === "string" && typeof b.listId !== "number" && before && data.kind !== before.kind) {
+    const curList = await prisma.taskList.findUnique({ where: { id: before.listId }, select: { boardId: true } });
+    if (curList) {
+      const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+      const wanted = norm(data.kind);
+      const lists = await prisma.taskList.findMany({
+        where: { boardId: curList.boardId, isDeleted: false },
+        select: { id: true, name: true },
+      });
+      const target =
+        lists.find((l) => norm(l.name) === wanted) ??
+        lists.find((l) => norm(l.name).startsWith(wanted) || wanted.startsWith(norm(l.name)));
+      if (target && target.id !== before.listId) {
+        data.listId = target.id;
+        data.position = await prisma.taskCard.count({ where: { listId: target.id, isDeleted: false } });
+      }
+    }
+  }
   const updated = await prisma.taskCard.update({ where: { id: Number(b.id) }, data });
 
   // سجل التغييرات داخل البطاقة (تغيير الفني / نقل عمود / الموعد / النوع / إلغاء الإنجاز)
