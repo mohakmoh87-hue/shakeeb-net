@@ -30,9 +30,13 @@ export async function GET(request: Request) {
   return NextResponse.json(items);
 }
 
+// إضافة مادة جديدة — للمدير فقط. المستخدم العادي لا يُنشئ مواد، يزيد كمياتها فقط (PUT).
 export async function POST(request: Request) {
   const g = await guard("inventory.manage");
   if (g.error) return g.error;
+  if (!g.session?.isAdmin) {
+    return NextResponse.json({ error: "إضافة مادة جديدة من صلاحية المدير فقط" }, { status: 403 });
+  }
 
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);

@@ -50,17 +50,19 @@ export default function InventoryPage() {
     loadCustodies();
   }
 
-  const fields: Field[] = [
-    { name: "name", label: "اسم المادة", required: true },
-    { name: "priceDinar", label: "سعر المادة (الكلفة)", type: "number" },
-    { name: "count", label: "الكمية", type: "number" },
-    { name: "priceSale", label: "سعر البيع", type: "number" },
-    { name: "priceSale2", label: "سعر بيع خاص", type: "number" },
-    { name: "category", label: "التصنيف" },
-    ...(isAdmin
-      ? ([{ name: "towerId", label: "المكتب", type: "select", required: true, options: towers.map((t) => ({ value: t.id, label: t.name ?? `#${t.id}` })) }] as Field[])
-      : []),
-  ];
+  // المدير: كل الحقول. المستخدم العادي: الكمية فقط (زيادة المخزون عند استلام بضاعة) —
+  // إضافة/حذف المواد وتعديل الأسعار من صلاحية المدير، والخادم يفرض ذلك أيضاً.
+  const fields: Field[] = isAdmin
+    ? [
+        { name: "name", label: "اسم المادة", required: true },
+        { name: "priceDinar", label: "سعر المادة (الكلفة)", type: "number" },
+        { name: "count", label: "الكمية", type: "number" },
+        { name: "priceSale", label: "سعر البيع", type: "number" },
+        { name: "priceSale2", label: "سعر بيع خاص", type: "number" },
+        { name: "category", label: "التصنيف" },
+        { name: "towerId", label: "المكتب", type: "select", required: true, options: towers.map((t) => ({ value: t.id, label: t.name ?? `#${t.id}` })) },
+      ]
+    : [{ name: "count", label: "الكمية (الزيادة فقط — لا يمكن الإنقاص)", type: "number", required: true }];
 
   return (
     <>
@@ -71,6 +73,8 @@ export default function InventoryPage() {
         apiBase={filterTower ? `/api/items?officeId=${filterTower}` : "/api/items"}
         addLabel="إضافة مادة"
         fields={fields}
+        canAdd={isAdmin}
+        canDelete={isAdmin}
         clientSearch={{ placeholder: "🔍 ابحث باسم المادة...", get: (r) => `${r.name ?? ""} ${r.category ?? ""} ${r.barcode ?? ""}` }}
         headerExtra={
           <>
