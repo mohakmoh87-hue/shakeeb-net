@@ -198,17 +198,27 @@ async function runOfficeSyncInner(
     let sub = subBySasId.get(a.sasUserId);
     if (!sub) {
       const newDate = a.newExpiration ? new Date(a.newExpiration) : null;
-      const created = await prisma.subscriber.create({
-        data: {
-          name: a.name, netUser: a.username, sasId: a.sasUserId, towerId: officeId,
-          dateTo: newDate && !isNaN(newDate.getTime()) ? newDate : null, createdByUser: "sync",
-        },
-      });
-      sub = { id: created.id, sasId: a.sasUserId, name: a.name, netUser: a.username };
+      try {
+        const created = await prisma.subscriber.create({
+          data: {
+            name: a.name, netUser: a.username, sasId: a.sasUserId, towerId: officeId,
+            dateTo: newDate && !isNaN(newDate.getTime()) ? newDate : null, createdByUser: "sync",
+          },
+        });
+        sub = { id: created.id, sasId: a.sasUserId, name: a.name, netUser: a.username };
+        imported++;
+        events.push({ scenario: 7, subscriber: a.name ?? a.username, detail: "استيراد مشترك جديد من SAS" });
+      } catch {
+        // القيد الفريد (towerId, sasId): مزامنة متزامنة أنشأته للتو — نجلبه بدل إنشاء نسخة مكرّرة
+        const existing = await prisma.subscriber.findFirst({
+          where: { towerId: officeId, sasId: a.sasUserId, isDeleted: false },
+          select: { id: true, sasId: true, name: true, netUser: true },
+        });
+        if (!existing) continue; // فشل إنشاء حقيقي — نتخطّى هذا التفعيل بلا إسقاط المزامنة
+        sub = existing;
+      }
       subBySasId.set(a.sasUserId, sub);
-      subById.set(created.id, sub);
-      imported++;
-      events.push({ scenario: 7, subscriber: a.name ?? a.username, detail: "استيراد مشترك جديد من SAS" });
+      subById.set(sub.id, sub);
     }
 
     if (card) {
@@ -382,9 +392,11 @@ async function runOfficeSyncInner(
       }
     }
 
-    // استيراد جماعي دفعة واحدة (خفيف على قاعدة البيانات)
+    // استيراد جماعي دفعة واحدة (خفيف على قاعدة البيانات).
+    // skipDuplicates: القيد الفريد (towerId, sasId) يمنع تكرار مشترك بنفس المكتب —
+    // مزامنتان متزامنتان كانتا تُنشئان نسخاً مكرّرة (سبب 2,675 مجموعة مكرّرة تاريخياً)
     if (toImport.length) {
-      const res = await prisma.subscriber.createMany({ data: toImport });
+      const res = await prisma.subscriber.createMany({ data: toImport, skipDuplicates: true });
       phase2Imported = res.count;
     }
   } catch {

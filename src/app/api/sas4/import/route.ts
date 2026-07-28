@@ -87,10 +87,11 @@ export async function POST(request: Request) {
     });
   skipped = users.length - toCreate.length;
 
-  // إدراج بدفعات
+  // إدراج بدفعات — skipDuplicates: القيد الفريد (towerId, sasId) يمنع نسخاً مكرّرة
+  // إن تسابق استيرادان أو استيراد مع مزامنة على نفس المشترك
   for (let i = 0; i < toCreate.length; i += 500) {
     const chunk = toCreate.slice(i, i + 500);
-    const res = await prisma.subscriber.createMany({ data: chunk });
+    const res = await prisma.subscriber.createMany({ data: chunk, skipDuplicates: true });
     created += res.count;
   }
 
