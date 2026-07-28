@@ -59,6 +59,7 @@ export default function ActivationModal({
   const [available, setAvailable] = useState<number>(0);
   const [paid, setPaid] = useState("");
   const [master, setMaster] = useState(false); // تفعيل ماستر: واصل كامل بلا دين، بحساب مستقل
+  const [masterAmount, setMasterAmount] = useState(""); // دفع مختلط: مبلغ الماستر (فارغ = كامل المبلغ ماستر)
   const [months, setMonths] = useState(1); // عدد الأشهر (افتراضي 1)
   const [amount, setAmount] = useState(""); // كلفة الاشتراك يدوياً (فارغ = سعر الباقة × الأشهر)
   const [delivery, setDelivery] = useState(""); // اجور صيانة/توصيل (تُضاف على مبلغ الاشتراك)
@@ -96,6 +97,10 @@ export default function ActivationModal({
   const grandTotal = price + deliveryAmount; // المجموع المستحق
   // ماستر أو «مكتب تفعيل»: واصل كامل بلا دين جديد (يبقى دين المشترك السابق كما هو)
   const fullPaid = master || actOffice;
+  // دفع مختلط: مبلغ ماستر جزئي والباقي نقدي — يُحسب النقدي تلقائياً ليبقى الوصل كاملاً بلا دين
+  const mixed = master && (Number(masterAmount) || 0) > 0;
+  const masterPart = master ? (mixed ? Number(masterAmount) || 0 : grandTotal) : 0;
+  const cashPart = mixed ? Math.max(0, grandTotal - masterPart) : 0;
   const remaining = fullPaid ? 0 : grandTotal - (Number(paid) || 0); // المبلغ المتبقي
   const totalDebt = fullPaid ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + remaining; // مجموع الديون بعد هذا التفعيل
 
@@ -183,6 +188,7 @@ export default function ActivationModal({
     setError("");
     if (!packageId) { setError("اختر الفئة"); return; }
     if (actOffice && !actAccountId) { setError("اختر «مكتب التفعيل» من القائمة"); return; }
+    if (mixed && masterPart > grandTotal) { setError("مبلغ الماستر أكبر من المجموع"); return; }
     setSaving(true);
     try {
       const res = await fetch(`/api/subscribers/${subscriber.id}/activate`, {
@@ -191,7 +197,8 @@ export default function ActivationModal({
         body: JSON.stringify({
           packageId,
           cardId: card?.id ?? null,
-          paid: Number(paid) || 0,
+          paid: master ? cashPart : Number(paid) || 0,
+          masterAmount: mixed ? masterPart : 0,
           months: months || 1,
           totalOverride: amount !== "" ? Number(amount) || 0 : null,
           delivery: deliveryAmount,
@@ -309,7 +316,7 @@ export default function ActivationModal({
               </Cell>
               <Cell label="المبلغ الواصل">
                 <div className="flex gap-1">
-                  <input type="number" value={fullPaid ? String(grandTotal) : paid} disabled={fullPaid} onChange={(e) => setPaid(e.target.value)} className="w-full rounded border border-slate-300 bg-sky-50 px-2 py-1.5 text-sm font-semibold disabled:bg-slate-100" />
+                  <input type="number" value={fullPaid ? String(mixed ? cashPart : grandTotal) : paid} disabled={fullPaid} onChange={(e) => setPaid(e.target.value)} className="w-full rounded border border-slate-300 bg-sky-50 px-2 py-1.5 text-sm font-semibold disabled:bg-slate-100" />
                   <button onClick={() => setPaid(String(grandTotal))} disabled={!grandTotal || fullPaid} title="إدخال المجموع" className="shrink-0 rounded bg-emerald-600 px-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">➕</button>
                 </div>
               </Cell>
@@ -322,11 +329,26 @@ export default function ActivationModal({
               <div className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm font-bold text-slate-700">{fmt(totalDebt)}</div>
             </Field>
 
-            {/* ماستر (كلمة فقط) — حصري مع «مكتب تفعيل» */}
-            <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold transition ${master ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 text-slate-600"}`}>
-              <input type="checkbox" checked={master} onChange={(e) => { setMaster(e.target.checked); if (e.target.checked) { setActOffice(false); setActAccountId(""); } }} className="h-4 w-4 accent-indigo-600" />
-              🅜 ماستر
-            </label>
+            {/* ماستر — حصري مع «مكتب تفعيل»؛ يدعم الدفع المختلط: مبلغ ماستر جزئي والباقي نقدي */}
+            <div className={`rounded-lg border px-3 py-2 transition ${master ? "border-indigo-400 bg-indigo-50" : "border-slate-300"}`}>
+              <label className={`flex cursor-pointer items-center gap-2 text-sm font-bold ${master ? "text-indigo-700" : "text-slate-600"}`}>
+                <input type="checkbox" checked={master} onChange={(e) => { setMaster(e.target.checked); setMasterAmount(""); if (e.target.checked) { setActOffice(false); setActAccountId(""); } }} className="h-4 w-4 accent-indigo-600" />
+                🅜 ماستر
+              </label>
+              {master && (
+                <div className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 text-[11px] font-bold text-indigo-700">مبلغ الماستر</span>
+                    <input type="number" value={masterAmount} onChange={(e) => setMasterAmount(e.target.value)} placeholder={String(grandTotal)} className="w-full rounded border border-indigo-300 bg-white px-2 py-1.5 text-sm font-semibold" />
+                  </div>
+                  <div className="mt-1 text-[11px] text-indigo-700">
+                    {mixed
+                      ? `مختلط: ماستر ${fmt(masterPart)} + نقدي ${fmt(cashPart)} — واصل كامل بلا دين`
+                      : "فارغ = كامل المبلغ ماستر. اكتب مبلغاً جزئياً والباقي يُحسب نقدياً تلقائياً"}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* مكتب تفعيل — حصري مع الماستر؛ عند الصح تظهر قائمة الحسابات المسجّلة «مكتب تفعيل» */}
             {actAccounts.length > 0 && (

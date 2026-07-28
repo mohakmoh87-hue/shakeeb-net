@@ -34,11 +34,13 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
     }),
     // حركات الصندوق العادية — باستثناء الماستر (حساب مستقل لا يُجمع مع التقرير)
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, ...dateWhere, ...towerWhere, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
+      where: { isDeleted: false, ...dateWhere, ...towerWhere, OR: [{ sourceType: null }, { sourceType: { notIn: ["master", "master-invoice"] } }] },
       _sum: { moneyIn: true, moneyOut: true },
     }),
     prisma.invoice.aggregate({
-      where: { isDeleted: false, ...dateWhere, ...towerWhere },
+      // فواتير الماستر (type="ماستر") مستبعدة — مالها بحساب الماستر المستقل لا بالتقرير.
+      // الجزء النقدي من فاتورة ماستر مختلطة يدخل المجموع عبر الصندوق ويظهر ضمن «أخرى».
+      where: { isDeleted: false, NOT: { type: "ماستر" }, ...dateWhere, ...towerWhere },
       _count: true,
       _sum: { waselHim: true },
     }),
@@ -49,7 +51,7 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
     }),
     // حساب الماستر — مستقل تماماً، يظهر بسطر منفصل ولا يدخل بالمجموع
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, sourceType: "master", ...dateWhere, ...towerWhere },
+      where: { isDeleted: false, sourceType: { in: ["master", "master-invoice"] }, ...dateWhere, ...towerWhere },
       _sum: { moneyIn: true, moneyOut: true },
     }),
   ]);

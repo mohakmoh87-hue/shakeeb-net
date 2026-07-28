@@ -23,7 +23,7 @@ export async function GET() {
 
   const [dailyAgg, cardsAgg, mgr, employeeAccounts, mgrTxs, masterAgg] = await Promise.all([
     // مجموع المبالغ اليومية = صافي كل حركات التقرير اليومي عبر كل أيام مكاتب الوكيل (باستثناء الماستر)
-    prisma.moneyTx.aggregate({ where: { isDeleted: false, ...towerWhere, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] }, _sum: { moneyIn: true, moneyOut: true } }),
+    prisma.moneyTx.aggregate({ where: { isDeleted: false, ...towerWhere, OR: [{ sourceType: null }, { sourceType: { notIn: ["master", "master-invoice"] } }] }, _sum: { moneyIn: true, moneyOut: true } }),
     // مجموع مبالغ الكروت المضافة (كلفة الشراء) = ديون الكارتات قبل التسديد — كروت الوكيل فقط
     prisma.rechargeCard.aggregate({ where: { agentId }, _sum: { price: true } }),
     // حركات المدير مجمّعة حسب النوع — للوكيل فقط
@@ -33,7 +33,7 @@ export async function GET() {
     // سجل حركات المدير — للوكيل فقط
     prisma.managerTx.findMany({ where: { isDeleted: false, agentId }, orderBy: { id: "desc" }, take: 200 }),
     // حساب الماستر — مستقل تماماً (تفعيلات ماستر + قبض/صرف ماستر) — ضمن مكاتب الوكيل
-    prisma.moneyTx.aggregate({ where: { isDeleted: false, sourceType: "master", ...towerWhere }, _sum: { moneyIn: true, moneyOut: true } }),
+    prisma.moneyTx.aggregate({ where: { isDeleted: false, sourceType: { in: ["master", "master-invoice"] }, ...towerWhere }, _sum: { moneyIn: true, moneyOut: true } }),
   ]);
   const masterBalance = (masterAgg._sum.moneyIn ?? 0) - (masterAgg._sum.moneyOut ?? 0);
 

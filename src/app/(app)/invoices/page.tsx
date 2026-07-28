@@ -36,6 +36,9 @@ export default function NewInvoicePage() {
   // بيع مباشر: بلا مشترك (نقدي) + اسم زبون اختياري
   const [direct, setDirect] = useState(false);
   const [customerName, setCustomerName] = useState("");
+  // بيع ماستر: على حساب الماستر المستقل — بلا دين؛ يدعم الدفع المختلط (ماستر جزئي + نقدي)
+  const [masterMode, setMasterMode] = useState(false);
+  const [masterAmount, setMasterAmount] = useState(""); // فارغ = كامل المبلغ ماستر
   // سجل وصولات فواتير المبيع (المكان الوحيد لعرضها)
   const [logOpen, setLogOpen] = useState(false);
   const [logRows, setLogRows] = useState<InvRow[]>([]);
@@ -116,8 +119,12 @@ export default function NewInvoicePage() {
   }
 
   const total = lines.reduce((s, l) => s + l.count * l.price, 0);
-  const discount = !direct && rewardPulled && reward ? Math.min(reward.balance, total) : 0;
+  const discount = !direct && !masterMode && rewardPulled && reward ? Math.min(reward.balance, total) : 0;
   const netTotal = Math.max(0, total - discount);
+  // دفع مختلط للماستر: مبلغ ماستر جزئي والباقي نقدي — يُحسب النقدي تلقائياً ليبقى الوصل بلا دين
+  const mixed = masterMode && (Number(masterAmount) || 0) > 0;
+  const masterPart = masterMode ? (mixed ? Number(masterAmount) || 0 : netTotal) : 0;
+  const cashPart = mixed ? Math.max(0, netTotal - masterPart) : 0;
 
   // سجل الوصولات: جلب/حذف
   async function loadLog() {
@@ -137,7 +144,8 @@ export default function NewInvoicePage() {
   // على طابعة المكتب — بلا فتح أي صفحة أو تاب.
   async function save(mode: "silent" | "print") {
     setError(""); setOkMsg("");
-    if (!direct && !sub) { setError("اختر المشترك أو فعّل «بيع مباشر»"); return; }
+    if (!direct && !masterMode && !sub) { setError("اختر المشترك أو فعّل «بيع مباشر» أو «بيع ماستر»"); return; }
+    if (mixed && masterPart > netTotal) { setError("مبلغ الماستر أكبر من المجموع"); return; }
     if (lines.length === 0) { setError("أضف مادة واحدة على الأقل"); return; }
     setSaving(true);
     try {
@@ -145,14 +153,16 @@ export default function NewInvoicePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          subscriberId: direct ? null : sub!.id,
+          subscriberId: direct || masterMode ? null : sub!.id,
           direct,
-          customerName: direct ? customerName.trim() || null : null,
+          master: masterMode,
+          masterAmount: mixed ? masterPart : 0,
+          customerName: direct || masterMode ? customerName.trim() || null : null,
           items: lines.map((l) => ({ itemId: l.itemId, count: l.count, price: l.price })),
           note,
-          // البيع المباشر نقدي: الفارغ = دفع المبلغ كاملاً
-          paid: direct && paid === "" ? netTotal : Number(paid) || 0,
-          useReward: !direct && rewardPulled,
+          // البيع المباشر نقدي: الفارغ = دفع المبلغ كاملاً؛ الماستر: النقدي محسوب تلقائياً
+          paid: masterMode ? cashPart : direct && paid === "" ? netTotal : Number(paid) || 0,
+          useReward: !direct && !masterMode && rewardPulled,
         }),
       });
       const data = await res.json();
@@ -284,12 +294,17 @@ export default function NewInvoicePage() {
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="mb-4 font-bold text-slate-800">ملخّص الفاتورة</h3>
 
-          {/* بيع مباشر: نقدي بلا مشترك — اسم الزبون اختياري */}
-          <label className="mb-3 flex cursor-pointer items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
-            <input type="checkbox" checked={direct} onChange={(e) => setDirect(e.target.checked)} className="h-4 w-4 accent-amber-600" />
+          {/* بيع مباشر: نقدي بلا مشترك — اسم الزبون اختياري؛ حصري مع «بيع ماستر» */}
+          <label className="mb-2 flex cursor-pointer items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+            <input type="checkbox" checked={direct} onChange={(e) => { setDirect(e.target.checked); if (e.target.checked) { setMasterMode(false); setMasterAmount(""); } }} className="h-4 w-4 accent-amber-600" />
             ⚡ بيع مباشر (بلا مشترك — نقدي)
           </label>
-          {direct && (
+          {/* بيع ماستر: على حساب الماستر المستقل — بلا دين؛ حصري مع «بيع مباشر» */}
+          <label className="mb-3 flex cursor-pointer items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800">
+            <input type="checkbox" checked={masterMode} onChange={(e) => { setMasterMode(e.target.checked); setMasterAmount(""); if (e.target.checked) setDirect(false); }} className="h-4 w-4 accent-indigo-600" />
+            🅜 بيع ماستر (على حساب الماستر — بلا دين)
+          </label>
+          {(direct || masterMode) && (
             <input
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
@@ -298,8 +313,8 @@ export default function NewInvoicePage() {
             />
           )}
 
-          {/* المشترك (إلزامي إلا مع البيع المباشر) */}
-          {!direct && (<>
+          {/* المشترك (إلزامي إلا مع البيع المباشر أو بيع الماستر) */}
+          {!direct && !masterMode && (<>
           <label className="mb-1 block text-sm font-medium text-slate-700">المشترك (إلزامي)</label>
           {sub ? (
             <div className="mb-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
@@ -355,6 +370,23 @@ export default function NewInvoicePage() {
               <span className="font-extrabold text-mynet-blue">{fmt(netTotal)} د.ع</span>
             </div>
           )}
+          {masterMode ? (
+            <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+              <label className="mb-1 block text-sm font-bold text-indigo-800">مبلغ الماستر</label>
+              <input
+                type="number"
+                value={masterAmount}
+                onChange={(e) => setMasterAmount(e.target.value)}
+                placeholder={String(netTotal)}
+                className="w-full rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-indigo-500"
+              />
+              <div className="mt-1 text-[11px] text-indigo-700">
+                {mixed
+                  ? `مختلط: ماستر ${fmt(masterPart)} + نقدي ${fmt(cashPart)} — واصل كامل بلا دين`
+                  : "فارغ = كامل المبلغ ماستر. اكتب مبلغاً جزئياً والباقي يُحسب نقدياً تلقائياً"}
+              </div>
+            </div>
+          ) : (<>
           <label className="mb-1 block text-sm font-medium text-slate-700">المبلغ المدفوع</label>
           <input
             type="number"
@@ -363,6 +395,7 @@ export default function NewInvoicePage() {
             placeholder={String(netTotal)}
             className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
           />
+          </>)}
           <label className="mb-1 block text-sm font-medium text-slate-700">ملاحظات</label>
           <input
             value={note}

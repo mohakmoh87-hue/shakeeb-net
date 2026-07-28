@@ -20,6 +20,9 @@ const schema = z.object({
   delivery: z.coerce.number().min(0).default(0), // مبلغ التوصيل (يُضاف على مبلغ الاشتراك)
   dateToOverride: z.string().nullable().optional(), // تعديل يدوي لتاريخ الانتهاء (ISO)
   master: z.boolean().default(false), // تفعيل ماستر: واصل كامل بلا دين، ويُسجَّل بحساب الماستر المستقل
+  // دفع مختلط (محمد 2026-07-29): جزء ماستر + جزء نقدي. 0 = ماستر كامل (السلوك القديم).
+  // مثال: اشتراك 35 = نقدي 15 (paid) + ماستر 20 (masterAmount) — واصل كامل بلا دين.
+  masterAmount: z.coerce.number().min(0).default(0),
   activationAccountId: z.coerce.number().nullable().optional(), // «مكتب تفعيل»: واصل كامل + مصروف مبلغ الاشتراك على هذا الحساب (يتعادل التقرير)
   note: z.string().nullable().optional(), // ملاحظة الوصل → notes
   dueDate: z.string().nullable().optional(), // موعد التسديد → nextDate
@@ -45,7 +48,7 @@ export async function POST(
       { status: 400 },
     );
   }
-  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride, master, activationAccountId, note, dueDate, paymentMethod } = parsed.data;
+  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride, master, masterAmount, activationAccountId, note, dueDate, paymentMethod } = parsed.data;
   // موعد التسديد (اختياري) — يُخزَّن في nextDate
   const dueDateParsed = dueDate ? new Date(dueDate) : null;
   const nextDate = dueDateParsed && !isNaN(dueDateParsed.getTime()) ? dueDateParsed : null;
@@ -140,6 +143,19 @@ export async function POST(
   // الفرق: الماستر يُسجَّل بحساب مستقل؛ ومكتب التفعيل يُسجَّل تفعيلاً عادياً + مصروف مبلغ
   // الاشتراك على الحساب فيتعادل التقرير (لأن المبلغ حصّله مكتب التفعيل لا صندوق المكتب).
   const viaActivationOffice = activationAccount != null;
+  // الماستر: كامل (masterAmount=0 — السلوك القديم) أو مختلط «نقدي + ماستر» (محمد 2026-07-29).
+  // المختلط يجب أن يغطّي المجموع تماماً — المشترك واصل كامل بلا دين (قرار محمد الصريح).
+  const masterPart = master ? (masterAmount > 0 ? masterAmount : grandTotal) : 0;
+  const cashPart = master ? (masterAmount > 0 ? paid : 0) : 0;
+  if (master && masterAmount > 0 && cashPart + masterPart !== grandTotal) {
+    return NextResponse.json(
+      { error: `النقدي (${cashPart.toLocaleString("en-US")}) + الماستر (${masterPart.toLocaleString("en-US")}) يجب أن يساوي المجموع (${grandTotal.toLocaleString("en-US")}) — الماستر بلا دين` },
+      { status: 400 },
+    );
+  }
+  if (master && masterPart > grandTotal) {
+    return NextResponse.json({ error: "مبلغ الماستر أكبر من المجموع" }, { status: 400 });
+  }
   const fullPaid = master || viaActivationOffice;
   const effPaid = fullPaid ? grandTotal : paid;
   const newCarry = fullPaid ? (subscriber.carry ?? 0) : (subscriber.carry ?? 0) + grandTotal - paid;
@@ -186,15 +202,32 @@ export async function POST(
         if (rewardGrant) { msgRewardCode = rewardGrant.code; msgRewardBalance = rewardGrant.balance; }
       }
       if (effPaid > 0) {
-        await tx.moneyTx.create({
-          data: {
-            moneyIn: effPaid, moneyOut: 0,
-            notes: `${master ? "ماستر " : "تفعيل "}${pkg.name} - ${subscriber.name ?? subscriberId}${delivery > 0 ? ` (توصيل ${delivery})` : ""}`,
-            date: now, serverDate: now, userId: session?.userId,
-            // ماستر: حساب مستقل (sourceType=master) لا يُجمع مع التقرير اليومي
-            sourceType: master ? "master" : "activation", sourceId: entry.id, towerId: subscriber.towerId,
-          },
-        });
+        // الدفع المختلط: صفّان — الجزء الماستر لحسابه المستقل، والجزء النقدي للصندوق
+        // (يظهر بمجموع التقرير اليومي). الماستر الكامل والتفعيل العادي صفّ واحد كما كانا.
+        const who = `${pkg.name} - ${subscriber.name ?? subscriberId}${delivery > 0 ? ` (توصيل ${delivery})` : ""}`;
+        if (master && masterPart > 0) {
+          await tx.moneyTx.create({
+            data: {
+              moneyIn: masterPart, moneyOut: 0,
+              notes: `ماستر ${who}${cashPart > 0 ? ` (مختلط: نقدي ${cashPart.toLocaleString("en-US")})` : ""}`,
+              date: now, serverDate: now, userId: session?.userId,
+              sourceType: "master", sourceId: entry.id, towerId: subscriber.towerId,
+            },
+          });
+        }
+        if (master ? cashPart > 0 : true) {
+          const cashIn = master ? cashPart : effPaid;
+          if (cashIn > 0) {
+            await tx.moneyTx.create({
+              data: {
+                moneyIn: cashIn, moneyOut: 0,
+                notes: `${master ? "تفعيل (نقدي من مختلط ماستر) " : "تفعيل "}${who}`,
+                date: now, serverDate: now, userId: session?.userId,
+                sourceType: "activation", sourceId: entry.id, towerId: subscriber.towerId,
+              },
+            });
+          }
+        }
       }
       // «مكتب تفعيل»: مصروف بمبلغ الاشتراك فقط (بلا التوصيل) على الحساب — يتعادل التقرير
       // (لأن هذا المبلغ حصّله مكتب التفعيل لا صندوق المكتب). مربوط بالوصل (sourceId) ليُعكَس عند حذفه.

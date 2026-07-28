@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
 
 const schema = z.object({
   subscriberId: z.coerce.number().optional().nullable(), // إلزامي إلا مع البيع المباشر
   direct: z.boolean().optional().default(false), // بيع مباشر: بلا مشترك (نقدي)
+  // بيع ماستر (محمد 2026-07-29): يرتبط بحساب الماستر المستقل — لا يدخل التقرير اليومي.
+  // masterAmount للدفع المختلط: جزء ماستر + جزء نقدي (paid)؛ 0 = كل المبلغ ماستر.
+  master: z.boolean().optional().default(false),
+  masterAmount: z.coerce.number().min(0).default(0),
   customerName: z.string().max(120).optional().nullable(), // اسم الزبون (اختياري للبيع المباشر)
   items: z
     .array(
@@ -60,14 +64,15 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { subscriberId, direct, customerName, items, note, paid, useReward } = parsed.data;
+  const { subscriberId, direct, master, masterAmount, customerName, items, note, paid, useReward } = parsed.data;
 
-  // المشترك إلزامي إلا في البيع المباشر (نقدي بلا مشترك — لا دين ولا مكافأة)
+  if (direct && master) return NextResponse.json({ error: "اختر وضعاً واحداً: بيع مباشر أو بيع ماستر" }, { status: 400 });
+  // المشترك إلزامي إلا في البيع المباشر/الماستر (نقديان بلا مشترك — لا دين ولا مكافأة)
   let subscriber: Awaited<ReturnType<typeof prisma.subscriber.findUnique>> = null;
-  if (!direct) {
+  if (!direct && !master) {
     if (!subscriberId) return NextResponse.json({ error: "اختر المشترك أو فعّل «بيع مباشر»" }, { status: 400 });
     subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
-    if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
+    if (!subscriber || subscriber.isDeleted || !(await sameAgentTower(g.session, subscriber.towerId))) {
       return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
     }
   }
@@ -91,7 +96,9 @@ export async function POST(request: Request) {
   const number = (last?.number ?? 0) + 1;
 
   let rewardDiscount = 0;
-  const invoice = await prisma.$transaction(async (tx) => {
+  let invoice;
+  try {
+    invoice = await prisma.$transaction(async (tx) => {
     // خصم كود المكافأة أولاً (بحدّ الإجمالي، يبقى الباقي للمشترك)
     if (rewardEligible && subscriber) {
       const r = await redeemReward(tx, {
@@ -101,23 +108,30 @@ export async function POST(request: Request) {
       rewardDiscount = r?.discount ?? 0;
     }
     const netTotal = Math.max(0, total - rewardDiscount); // المستحقّ بعد المكافأة
-    const remainder = Math.max(0, netTotal - paid); // الدين على المشترك من هذه الفاتورة
+    // بيع ماستر: كامل (masterAmount=0) أو مختلط «نقدي + ماستر» — يغطّي المجموع تماماً بلا دين
+    const masterPart = master ? (masterAmount > 0 ? masterAmount : netTotal) : 0;
+    const cashPart = master ? (masterAmount > 0 ? paid : 0) : paid;
+    if (master && cashPart + masterPart !== netTotal) {
+      throw new Error(`MASTER_MISMATCH:${cashPart}:${masterPart}:${netTotal}`);
+    }
+    const remainder = master ? 0 : Math.max(0, netTotal - paid); // الدين على المشترك من هذه الفاتورة
 
-    const buyer = direct ? (customerName?.trim() || "بيع مباشر") : (subscriber?.name ?? subscriber?.id ?? "");
+    const buyer = master ? (customerName?.trim() || "بيع ماستر") : direct ? (customerName?.trim() || "بيع مباشر") : (subscriber?.name ?? subscriber?.id ?? "");
     const inv = await tx.invoice.create({
       data: {
         date: new Date(),
         number,
         itemsCount,
         totalMy: netTotal,
-        waselHim: paid,
+        // الماستر واصل بالكامل (نقدي + ماستر يغطيان المجموع — بلا دين)
+        waselHim: master ? netTotal : paid,
         note: [
-          direct && customerName?.trim() ? `الزبون: ${customerName.trim()}` : "",
+          (direct || master) && customerName?.trim() ? `الزبون: ${customerName.trim()}` : "",
           note ?? "",
           rewardDiscount > 0 ? `(مكافأة −${rewardDiscount.toLocaleString("en-US")} من إجمالي ${total.toLocaleString("en-US")})` : "",
         ].filter(Boolean).join(" — ") || null,
         user: session?.username,
-        type: direct ? "بيع مباشر" : "بيع",
+        type: master ? "ماستر" : direct ? "بيع مباشر" : "بيع",
         subscriberId: subscriber?.id ?? null,
         towerId,
       },
@@ -131,12 +145,22 @@ export async function POST(request: Request) {
       await tx.item.update({ where: { id: it.itemId }, data: { count: { decrement: it.count } } });
     }
 
-    // تسجيل المبلغ المدفوع كقبض في الصندوق
-    if (paid > 0) {
+    // تسجيل القبض: الماستر لحسابه المستقل (لا يدخل التقرير اليومي)، والنقدي للصندوق
+    if (masterPart > 0) {
       await tx.moneyTx.create({
         data: {
-          moneyIn: paid, moneyOut: 0,
-          notes: `فاتورة بيع #${number} - ${buyer}`,
+          moneyIn: masterPart, moneyOut: 0,
+          notes: `ماستر فاتورة #${number} - ${buyer}${cashPart > 0 ? ` (مختلط: نقدي ${cashPart.toLocaleString("en-US")})` : ""}`,
+          date: new Date(), serverDate: new Date(), userId: session?.userId,
+          sourceType: "master-invoice", sourceId: inv.id, towerId,
+        },
+      });
+    }
+    if (cashPart > 0) {
+      await tx.moneyTx.create({
+        data: {
+          moneyIn: cashPart, moneyOut: 0,
+          notes: `فاتورة بيع #${number} - ${buyer}${master ? " (نقدي من مختلط ماستر)" : ""}`,
           date: new Date(), serverDate: new Date(), userId: session?.userId,
           sourceType: "invoice", sourceId: inv.id, towerId,
         },
@@ -152,7 +176,17 @@ export async function POST(request: Request) {
     }
 
     return inv;
-  });
+    });
+  } catch (e) {
+    const m = /^MASTER_MISMATCH:(\d+):(\d+):(\d+)$/.exec((e as Error).message ?? "");
+    if (m) {
+      return NextResponse.json(
+        { error: `النقدي (${Number(m[1]).toLocaleString("en-US")}) + الماستر (${Number(m[2]).toLocaleString("en-US")}) يجب أن يساوي المجموع (${Number(m[3]).toLocaleString("en-US")}) — بيع الماستر بلا دين` },
+        { status: 400 },
+      );
+    }
+    throw e;
+  }
 
   // رسالة تأكيد استخدام المكافأة (أفضل جهد) — لا تحدث في البيع المباشر
   if (rewardDiscount > 0 && subscriber) {

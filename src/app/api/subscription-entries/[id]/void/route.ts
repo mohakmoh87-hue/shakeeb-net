@@ -55,8 +55,9 @@ export async function POST(
 
       // 3) إلغاء المبلغ من الصندوق (الحركة المالية المرتبطة بهذا الوصل) — يشمل تفعيل عادي
       //    ومصروف «مكتب التفعيل» المقابل (sourceType=manual مربوط بنفس الوصل) فيتعادل عكسياً.
+      // يشمل "master": الدفع المختلط (نقدي+ماستر) صفّان بنفس sourceId — يُعكسان معاً
       await tx.moneyTx.updateMany({
-        where: { sourceId: entryId, sourceType: { in: ["activation", "manual"] }, isDeleted: false },
+        where: { sourceId: entryId, sourceType: { in: ["activation", "manual", "master"] }, isDeleted: false },
         data: { isDeleted: true },
       });
 

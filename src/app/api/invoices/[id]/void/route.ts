@@ -53,8 +53,9 @@ export async function POST(
       }
 
       // 2) إلغاء المبلغ من الصندوق
+      // يشمل "master": فاتورة الماستر (والمختلطة) صفّاها يُعكسان معاً
       await tx.moneyTx.updateMany({
-        where: { sourceType: "invoice", sourceId: invoiceId, isDeleted: false },
+        where: { sourceType: { in: ["invoice", "master-invoice"] }, sourceId: invoiceId, isDeleted: false },
         data: { isDeleted: true },
       });
 

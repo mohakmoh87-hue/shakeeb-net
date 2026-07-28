@@ -12,7 +12,7 @@ export async function GET() {
   // عزل المستأجر: ماستر مكاتب وكيل المستخدم فقط
   const agentTowers = await agentTowerIds(g.session);
   const txs = await prisma.moneyTx.findMany({
-    where: { isDeleted: false, sourceType: "master", towerId: { in: agentTowers.length ? agentTowers : [-1] } },
+    where: { isDeleted: false, sourceType: { in: ["master", "master-invoice"] }, towerId: { in: agentTowers.length ? agentTowers : [-1] } },
     orderBy: { date: "desc" },
     take: 500,
     select: { id: true, moneyIn: true, moneyOut: true, notes: true, date: true, towerId: true },
