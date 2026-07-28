@@ -1,7 +1,7 @@
 import http from "node:http";
 import { prisma } from "@/lib/prisma";
 import { proxyToSas } from "@/lib/sasProxy";
-import { sasBaseUrl, sasLogin, sasFetchOnePage, parseUsersList, type SasUser } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasFetchOnePage, sasFetchAllUsers, parseUsersList, type SasUser } from "@/lib/sas4";
 import { getWorkerAgentId } from "@/lib/hybridAgent";
 
 // خادم محلي على حاسبة المكتب (المنفذ 47615): يخدم فحص الصحّة + لوحة SAS + عمليات SAS
@@ -52,6 +52,39 @@ async function towerToken(t: { id: number; loginUrl: string | null; username: st
   const token = await sasLogin(sasBaseUrl(t.loginUrl!), t.username!, t.password!);
   tokenCache.set(t.id, { token, at: Date.now() });
   return token;
+}
+
+// ===== عدّاد المشتركين (أ5): فعالين/كلي محلياً بالكامل — يقرأ من SAS المكتب فقط =====
+// شرط محمد: التحديث كل 5 ثوانٍ يجب ألا يمرّ على Azure/Aiven إطلاقاً لتقليل الاستهلاك.
+// لذا بيانات المكتب (الرابط/اليوزر/الباسورد) تُقرأ من القاعدة مرة واحدة لعمر العملية
+// وتُخزَّن بالذاكرة، والأرقام تأتي من مسح مخزون SAS المخزّن مؤقتاً (تجديد كل 45 ثانية).
+type TowerCreds = { id: number; loginUrl: string; username: string; password: string };
+const credsCache = new Map<number, { t: TowerCreds | null; at: number }>();
+const CREDS_NEG_TTL = 5 * 60 * 1000; // مكتب غير تابع/ناقص: أعد المحاولة بعد 5 دقائق
+async function agentTowerCached(towerId: number): Promise<TowerCreds | null> {
+  const c = credsCache.get(towerId);
+  if (c && (c.t || Date.now() - c.at < CREDS_NEG_TTL)) return c.t;
+  const t = await agentTower(towerId); // مرور وحيد على القاعدة، ثم ذاكرة لعمر العملية
+  const v = t ? { id: t.id, loginUrl: t.loginUrl!, username: t.username!, password: t.password! } : null;
+  credsCache.set(towerId, { t: v, at: Date.now() });
+  return v;
+}
+
+const statsCache = new Map<number, { active: number; total: number; at: number }>();
+const statsInflight = new Map<number, Promise<void>>();
+const STATS_TTL = 45_000; // مسح SAS كل 45 ثانية كحد أقصى (المتصفّح يستطلع كل 5 ثوانٍ من الكاش)
+
+async function refreshTowerStats(t: TowerCreds): Promise<void> {
+  const base = sasBaseUrl(t.loginUrl);
+  const token = await towerToken(t);
+  const users = await sasFetchAllUsers(base, token, 500, 700, 30);
+  const now = Date.now();
+  let active = 0;
+  // «فعال» = مُمكَّن في SAS وتاريخ انتهائه بالمستقبل (نفس مفهوم «حالة الخدمة: فعالة»)
+  for (const u of users) {
+    if (u.enabled && u.expiration && new Date(u.expiration).getTime() > now) active++;
+  }
+  statsCache.set(t.id, { active, total: users.length, at: now });
 }
 
 // تحويل طلب Node إلى Request ويب (لإعادة استخدام proxyToSas)
@@ -124,6 +157,34 @@ export function startLocalSasServer() {
         res.setHeader("Content-Type", ct);
         res.writeHead(webRes.status);
         res.end(Buffer.from(await webRes.arrayBuffer()));
+        return;
+      }
+
+      // عدّاد المشتركين (أ5): مجموع فعالين/كلي لمكاتب محدّدة — من كاش مسح SAS المحلي.
+      // ?towers=1,2,3 — يتجاهل أي مكتب لا يتبع وكيل هذه الحاسبة (عزل).
+      if (p === "/stats/subscribers" && req.method === "GET") {
+        const ids = (url.searchParams.get("towers") || "")
+          .split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+        if (!ids.length) { sendJson(res, 400, { error: "towers مطلوب" }); return; }
+        let active = 0, total = 0, oldest = Date.now(), any = false;
+        for (const id of ids) {
+          const t = await agentTowerCached(id);
+          if (!t) continue;
+          const cached = statsCache.get(id);
+          if (!cached || Date.now() - cached.at > STATS_TTL) {
+            if (!statsInflight.has(id)) {
+              statsInflight.set(id, refreshTowerStats(t)
+                .catch(() => { tokenCache.delete(id); credsCache.delete(id); }) // توكن/بيانات فاسدة: تُجدَّد بالمحاولة التالية
+                .finally(() => statsInflight.delete(id)));
+            }
+            // أول طلب للمكتب: ننتظر المسح؛ وبعدها نخدم من الكاش والتجديد بالخلفية
+            if (!cached) { try { await statsInflight.get(id); } catch { /* */ } }
+          }
+          const s = statsCache.get(id);
+          if (s) { active += s.active; total += s.total; oldest = Math.min(oldest, s.at); any = true; }
+        }
+        if (!any) { sendJson(res, 404, { error: "لا مكاتب صالحة" }); return; }
+        sendJson(res, 200, { active, total, at: oldest });
         return;
       }
 

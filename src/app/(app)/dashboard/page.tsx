@@ -1,6 +1,7 @@
 import ModuleTile from "@/components/ModuleTile";
 import DailyReportCard from "@/components/DailyReportCard";
 import FieldSettlementCard from "@/components/FieldSettlementCard";
+import SubscriberCounter from "@/components/SubscriberCounter";
 import { getSession } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
 import { computeDailyReport } from "@/lib/dailyReport";
@@ -41,7 +42,11 @@ export default async function DashboardPage() {
     <div className="mynet-canvas min-h-[calc(100vh-140px)] p-5">
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-5 lg:grid-cols-[340px_1fr]">
         {/* لوحة التقرير اليومي (يسار) — تبويبات للمدير: الإجمالي + كل مكتب */}
-        <DailyReportCard isAdmin={isAdmin} towers={towers} initial={initialReport} />
+        <div className="flex flex-col gap-3">
+          {/* عدّاد المشتركين (أ5): كل 5 ثوانٍ محلياً من حاسبة المكتب — بلا مرور على السحابة */}
+          <SubscriberCounter towerIds={isAdmin ? agentTowers : session?.towerId ? [session.towerId] : []} />
+          <DailyReportCard isAdmin={isAdmin} towers={towers} initial={initialReport} />
+        </div>
 
         {/* شبكة الوحدات (يمين) */}
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
