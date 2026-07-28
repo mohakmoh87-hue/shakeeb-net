@@ -283,6 +283,20 @@ export default function FieldManagementPage() {
     if (r.ok) { const c = await r.json(); if (wasVirtual) c.listId = -1; setSel(c); setCards((x) => x.map((y) => (y.id === c.id ? c : y))); }
     else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر البدء"); }
   }
+  // «الغاء»: ملاحظة إلزامية، والبطاقة تنتقل لعمود «الغاء» (خارج التحصيل ولا تحجب بطاقة جديدة)
+  async function cancelCard() {
+    if (!sel) return;
+    const raw = window.prompt("سبب الإلغاء (إلزامي — لا يتم الإلغاء بدونه):");
+    if (raw === null) return; // تراجع المستخدم
+    const note = raw.trim();
+    if (!note) { alert("لم يُلغَ شيء — الملاحظة إلزامية."); return; }
+    const r = await fetch("/api/field/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cardId: sel.id, note }) });
+    const d = await r.json().catch(() => null);
+    if (!r.ok) { alert(d?.error ?? "تعذّر الإلغاء"); return; }
+    setSel(null);
+    await load();
+  }
+
   // «ميجاوب»: اتصل الفني ولم يجب المشترك — البطاقة تبقى بمكانها، تُرسل رسالة
   // واتساب لطيفة للمشترك، ويتحرّر قفل «البدء» ليعمل الفني على بطاقة أخرى
   async function noAnswerCard() {
@@ -709,7 +723,7 @@ export default function FieldManagementPage() {
             ) : (
               <>
                 <div className="mb-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-center text-xs font-semibold text-emerald-700">⏱ بدأ العمل: {fmtDateTime(sel.startedAt)}</div>
-                <div className="mb-3 grid grid-cols-3 gap-2">
+                <div className="mb-3 grid grid-cols-2 gap-2">
                   <button
                     onClick={() => { setCompleting(sel); setSel(null); }}
                     disabled={sel.technicianId == null}
@@ -730,6 +744,13 @@ export default function FieldManagementPage() {
                     className="rounded-lg bg-slate-500 px-3 py-2.5 text-sm font-bold text-white hover:bg-slate-600"
                   >
                     📵 ميجاوب
+                  </button>
+                  <button
+                    onClick={() => void cancelCard()}
+                    title="إلغاء البطاقة بملاحظة إلزامية — تنتقل لعمود «الغاء»"
+                    className="rounded-lg bg-rose-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-rose-700"
+                  >
+                    🚫 الغاء
                   </button>
                 </div>
               </>
