@@ -46,11 +46,6 @@ export async function GET(request: Request) {
       amount: true, subAmount: true, serviceDetails: true, durationSec: true, completedAt: true, archivedAt: true, history: true, createdAt: true,
     },
   });
-  // أي بطاقة أرشيف لها صورة عمل محفوظة؟ (تبقى الصور حتى الحذف التلقائي بعد أسبوع)
-  const photoRows = cards.length
-    ? await prisma.cardPhoto.findMany({ where: { cardId: { in: cards.map((c) => c.id) } }, select: { cardId: true } })
-    : [];
-  const photoIds = new Set(photoRows.map((p) => p.cardId));
 
   const towersInfo = await prisma.tower.findMany({ where: { id: { in: towers.length ? towers : [-1] } }, select: { id: true, name: true } });
   const towerName = new Map(towersInfo.map((t) => [t.id, t.name]));
@@ -71,7 +66,6 @@ export async function GET(request: Request) {
     techOptions,
     cards: cards.map((c) => ({
       ...c,
-      hasPhoto: photoIds.has(c.id),
       office: (() => { const tid = listTower.get(c.listId); return tid != null ? towerName.get(tid) ?? null : null; })(),
     })),
   });

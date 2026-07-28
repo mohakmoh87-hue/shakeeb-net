@@ -21,7 +21,7 @@ type Card = {
   amount: number | null; subAmount: number | null; serviceDetails: string | null; completedAt: string | null;
   materialsInfo: string | null; techNote: string | null;
   startedAt: string | null; durationSec: number | null; postponedTo: string | null;
-  history: string | null; createdAt: string | null; hasPhoto?: boolean;
+  history: string | null; createdAt: string | null;
 };
 // أحداث سجل تغييرات البطاقة (JSON داخل حقل history)
 type CardEvent = { at: string; by: string; text: string };
@@ -29,40 +29,7 @@ const parseHistory = (h?: string | null): CardEvent[] => { try { return h ? (JSO
 // بطاقة أُعيدت من الأرشيف (من سجلها) — لعرض شارة «من الأرشيف» على وجهها
 const wasRestored = (h?: string | null): boolean => parseHistory(h).some((e) => e.text.includes("إعادة البطاقة من الأرشيف"));
 
-// عارض صورة عمل البطاقة: زر يجلب الصورة عند الطلب ويعرضها داخل البطاقة/الأرشيف
-function CardPhotoViewer({ cardId }: { cardId: number }) {
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [shown, setShown] = useState(false);
-  async function toggle() {
-    if (shown) { setShown(false); return; }
-    if (photo) { setShown(true); return; }
-    setBusy(true);
-    const d = await fetch(`/api/field/card-photo?cardId=${cardId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    setBusy(false);
-    if (!d?.photo) { alert("لا صورة لهذه البطاقة"); return; }
-    setPhoto(d.photo); setShown(true);
-  }
-  return (
-    <div className="mt-2">
-      <div className="flex gap-1.5">
-        <button onClick={toggle} className="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100">
-          {busy ? "..." : shown ? "🙈 إخفاء الصورة" : "📷 عرض صورة العمل"}
-        </button>
-        {photo && (
-          <button
-            onClick={() => { const a = document.createElement("a"); a.href = photo; a.download = `card-${cardId}-photo.jpg`; a.click(); }}
-            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200"
-          >
-            ⬇️ تحميل
-          </button>
-        )}
-      </div>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      {shown && photo && <img src={photo} alt="صورة العمل" className="mt-2 max-h-80 w-auto rounded-lg border border-slate-200" />}
-    </div>
-  );
-}
+// (أُلغي رفع صور العمل نهائياً بقرار محمد 2026-07-29)
 
 // تنسيق مدة بالثواني إلى نص عربي مقروء
 function fmtDuration(sec: number | null): string {
@@ -237,7 +204,7 @@ export default function FieldManagementPage() {
   async function createType() {
     const name = prompt("اسم نوع البطاقة الجديد:");
     if (!name?.trim()) return;
-    const deliveryOnly = confirm("هل هو من نوع «التوصيل» (مبلغ فقط بلا تفاصيل/صورة عند الإنجاز)؟\nموافق = توصيل، إلغاء = صيانة (حقول كاملة)");
+    const deliveryOnly = confirm("هل هو من نوع «التوصيل» (مبلغ فقط بلا تفاصيل عند الإنجاز)؟\nموافق = توصيل، إلغاء = صيانة (حقول كاملة)");
     const r = await fetch("/api/field/card-types", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: name.trim(), deliveryOnly }),
@@ -726,8 +693,6 @@ export default function FieldManagementPage() {
                 {sel.serviceDetails && <div className="text-slate-600">التفاصيل: {sel.serviceDetails}</div>}
                 {sel.durationSec != null && <div className="text-slate-600">⏱ مدة الإنجاز: <b>{fmtDuration(sel.durationSec)}</b></div>}
                 {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
-                {/* عرض/تحميل صورة العمل التي رفعها الفني — داخل البطاقة مباشرة */}
-                <CardPhotoViewer cardId={sel.id} />
               </div>
             ) : !(canOperate && (!isTech || sel.technicianId === myTechId)) ? (
               // الفني يرى بطاقة زميله بلا أزرار عمل (يحوّلها لنفسه أولاً)
@@ -769,8 +734,6 @@ export default function FieldManagementPage() {
                 </div>
               </>
             )}
-            {/* بطاقة غير منجزة لها صورة عمل محفوظة (مثل المُعادة من الأرشيف): عرضها متاح */}
-            {!sel.done && sel.hasPhoto && <div className="mb-3"><CardPhotoViewer cardId={sel.id} /></div>}
 
             {/* سجل تغييرات البطاقة — كل حدث بوقته وفاعله (تأجيل/تحويل/نقل/إنجاز…) + تاريخ الإنشاء */}
             {(parseHistory(sel.history).length > 0 || sel.createdAt) && (
@@ -823,7 +786,6 @@ export default function FieldManagementPage() {
         <CompletionModal
           card={completing}
           deliveryOnly={isDeliveryKind(completing.kind)}
-          photoRequired={isTech}
           onClose={() => setCompleting(null)}
           onDone={() => { setCompleting(null); load(officeId); }}
         />
@@ -1020,23 +982,19 @@ function PostponeModal({ card, onClose, onDone }: { card: Card; onClose: () => v
 
 /* ========== نافذة إنجاز البطاقة ========== */
 type CustodyMat = { itemId: number; name: string; priceSale: number; available: number };
-function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }: { card: Card; deliveryOnly: boolean; photoRequired: boolean; onClose: () => void; onDone: () => void }) {
+function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; deliveryOnly: boolean; onClose: () => void; onDone: () => void }) {
   const isTransfer = card.kind === "تحويل";
   const isDelivery = deliveryOnly && !isTransfer;
-  const fullFields = !isDelivery && !isTransfer; // صيانة/تنصيب/اعادة: تفاصيل + صورة
+  const fullFields = !isDelivery && !isTransfer; // صيانة/تنصيب/اعادة: تفاصيل كاملة
   // «التدفق الكامل» = كل الأنواع عدا التوصيل (يشمل التحويل بشروطه القديمة + الجديدة):
   // مواد متسلسلة + «المبيع» + «اشتراك»
   const fullFlow = !isDelivery;
-  // الصورة إلزامية على الفني فقط؛ اختيارية للمدير والمستخدم (وغير مطلوبة للتوصيل/التحويل)
-  const photoMandatory = fullFields && photoRequired;
   const [details, setDetails] = useState("");
   const [newUser, setNewUser] = useState("");
   const [amount, setAmount] = useState(""); // «التوصيل» فقط: مبلغه المعلوماتي
   const [saleStr, setSaleStr] = useState("0"); // «المبيع»: يتزامن مع مجموع المواد حتى أول تعديل يدوي
   const [saleDirty, setSaleDirty] = useState(false);
   const [subStr, setSubStr] = useState(""); // «اشتراك»: إلزامي كتابته يدوياً ولو 0
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [preparing, setPreparing] = useState(false); // جاري ضغط الصورة
   const [rewardsOn, setRewardsOn] = useState(false); // مكتب المشترك مفعّل للمكافآت
   const [reward, setReward] = useState<{ balance: number; name: string | null } | null>(null); // رصيد مكافأة المشترك (إن وُجد)
   const [rewardPulled, setRewardPulled] = useState(false); // سُحب الكود لهذا الإنجاز
@@ -1128,13 +1086,6 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
     });
   }
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]; if (!f) return;
-    setErr(""); setPreparing(true);
-    try { setPhoto(await compressImage(f)); } catch { setErr("تعذّر قراءة الصورة"); }
-    finally { setPreparing(false); }
-  }
-
   async function submit() {
     setErr("");
     if (isDelivery) {
@@ -1145,7 +1096,6 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
       if (isTransfer && !newUser.trim()) { setErr("اليوزر الجديد مطلوب لإنجاز التحويل"); return; }
       if (fullFields) {
         if (!details.trim()) { setErr("تفاصيل الصيانة مطلوبة"); return; }
-        if (photoMandatory && !photo) { setErr("رفع صورة مطلوب"); return; }
       }
       // القائمة الأولى إلزامية: مادة أو «بلا مبيع»
       if (pickedRows.length === 0 && !noSale) { setErr("اختر مادة من ذمّتك أو «بلا مبيع» (إلزامي)"); return; }
@@ -1160,7 +1110,7 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
     const r = await fetch("/api/field/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        cardId: card.id, serviceDetails: details, newUser, photo,
+        cardId: card.id, serviceDetails: details, newUser,
         amount: isDelivery ? nAmount : undefined,
         sale: isDelivery ? undefined : nSale,
         subscription: isDelivery ? undefined : nSub,
@@ -1282,26 +1232,6 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
           </div>
         )}
 
-        {fullFields && (
-          <>
-            <label className="mb-1 block text-xs font-semibold text-slate-500">صورة العمل {photoMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400">(اختياري)</span>}</label>
-            {/* مصدران للصورة: كاميرا الهاتف مباشرة، أو الاستوديو/ملفات الجهاز */}
-            <div className="mb-2 grid grid-cols-2 gap-2">
-              <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
-                📷 الكاميرا
-                <input type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" />
-              </label>
-              <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100">
-                🖼 الاستوديو
-                <input type="file" accept="image/*" onChange={onFile} className="hidden" />
-              </label>
-            </div>
-            <p className="mb-2 text-[11px] text-slate-400">أي حجم صورة مقبول — تُضغط تلقائياً (≤ 1.5MB) قبل الرفع.{!photoMandatory && " الصورة إلزامية على الفني فقط."}</p>
-            {preparing && <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">جاري ضغط الصورة…</div>}
-            {photo && <img src={photo} alt="preview" className="mb-3 max-h-40 rounded-lg border border-slate-200" />}
-          </>
-        )}
-
         {/* الملخّص: المبيع فاتورة حقيقية، والاشتراك رقم بذمّتك يُسجَّل عند التفعيل */}
         {fullFlow && (nSale > 0 || nSub > 0) && (
           <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
@@ -1312,7 +1242,7 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
         )}
 
         </div>
-        {/* تذييل ثابت: زر التأكيد دائماً ظاهر أسفل النافذة (لا يتداخل مع الصورة/الأزرار) */}
+        {/* تذييل ثابت: زر التأكيد دائماً ظاهر أسفل النافذة */}
         <div className="shrink-0 border-t border-slate-100 bg-white px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
           {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
           <button onClick={submit} disabled={busy} className="w-full rounded-lg bg-emerald-600 px-4 py-3 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
@@ -1324,62 +1254,6 @@ function CompletionModal({ card, deliveryOnly, photoRequired, onClose, onDone }:
   );
 }
 
-// ضغط الصورة تلقائياً قبل الرفع: يقبل أي حجم، ويصغّره حتى يصبح ≤ 1.5MB
-// بأعلى جودة ممكنة (بلا حاجة لأن يقلّص الفني الصورة يدوياً).
-const MAX_UPLOAD_BYTES = 1.5 * 1024 * 1024; // 1.5 ميغابايت
-// حجم الـ dataURL (base64) بالبايت تقريباً
-function dataUrlBytes(dataUrl: string): number {
-  const i = dataUrl.indexOf(",");
-  const b64 = i >= 0 ? dataUrl.slice(i + 1) : dataUrl;
-  return Math.floor((b64.length * 3) / 4);
-}
-function compressImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        // نبدأ بأبعاد كبيرة وجودة عالية، ثم نخفّض تدريجياً حتى ≤ 1.5MB
-        const render = (maxDim: number, quality: number): string => {
-          let { width, height } = img;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
-            else { width = Math.round((width * maxDim) / height); height = maxDim; }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = width; canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) throw new Error("no ctx");
-          ctx.drawImage(img, 0, 0, width, height);
-          return canvas.toDataURL("image/jpeg", quality);
-        };
-        try {
-          let dim = 1920; // بُعد أقصى مبدئي (جودة عالية)
-          let out = render(dim, 0.85);
-          // 1) خفّض الجودة أولاً (يحافظ على الأبعاد)
-          const qualities = [0.8, 0.72, 0.64, 0.55, 0.45];
-          let qi = 0;
-          while (dataUrlBytes(out) > MAX_UPLOAD_BYTES && qi < qualities.length) {
-            out = render(dim, qualities[qi++]);
-          }
-          // 2) إن بقيت أكبر: صغّر الأبعاد تدريجياً بجودة ثابتة
-          const dims = [1600, 1280, 1024, 800];
-          let di = 0;
-          while (dataUrlBytes(out) > MAX_UPLOAD_BYTES && di < dims.length) {
-            dim = dims[di++];
-            out = render(dim, 0.6);
-          }
-          resolve(out);
-        } catch (e) { reject(e as Error); }
-      };
-      img.onerror = reject;
-      img.src = reader.result as string;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 // نافذة أرشيف البطاقات المحصَّلة: تبقى أسبوعاً بعد التحصيل ثم تُحذف نهائياً.
 // فلاتر: المكتب + تاريخ الإنجاز + الفني + النوع (تُجمع معاً). حذف نهائي يدوي للمدير فقط.
 // قائمة «الفني» تُبنى من الأرشيف نفسه — فتشمل فنيي الدعم/المكاتب الأخرى الذين نفّذوا بطاقات.
@@ -1388,7 +1262,7 @@ function ArchiveModal({ cardTypes, offices, onClose, onChanged }: { cardTypes: C
     id: number; title: string; description: string | null; kind: string; assignee: string | null;
     technicianId: number | null; amount: number | null; subAmount: number | null; serviceDetails: string | null; durationSec: number | null;
     completedAt: string | null; archivedAt: string | null; history: string | null; office: string | null;
-    createdAt: string | null; hasPhoto?: boolean;
+    createdAt: string | null;
   };
   const [rows, setRows] = useState<ArchCard[]>([]);
   const [isMgr, setIsMgr] = useState(false);
@@ -1519,7 +1393,6 @@ function ArchiveModal({ cardTypes, offices, onClose, onChanged }: { cardTypes: C
                         </ul>
                       )}
                       {/* صورة العمل — محفوظة بالأرشيف وتُعرض هنا حتى الحذف التلقائي */}
-                      {c.hasPhoto && <CardPhotoViewer cardId={c.id} />}
                       <div className="mt-1.5 flex justify-end gap-1.5">
                         <button onClick={() => restore(c)} className="rounded bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-100">↩️ استرجاع للّوحة</button>
                         {isMgr && (

@@ -39,7 +39,6 @@ const schema = z.object({
   sale: z.coerce.number().min(0).optional(), // «المبيع»: مبلغ بيع المواد (قابل للتعديل، يوزَّع نسبياً على الفاتورة)
   subscription: z.coerce.number().min(0).nullish(), // «اشتراك»: إلزامي تمريره (0 جائز) — معلوماتي بلا أثر مالي
   newUser: z.string().nullish(), // اليوزر الجديد (إلزامي لبطاقة التحويل)
-  photo: z.string().max(2_000_000, "حجم الصورة كبير جداً").nullish(), // data URL — null عند عدم رفع صورة (اختيارية للمدير/المستخدم)
   materials: z
     .array(z.object({ itemId: z.coerce.number().int().positive(), qty: z.coerce.number().positive() }))
     .optional()
@@ -60,7 +59,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
-  const { cardId, serviceDetails, amount, sale, subscription, newUser, photo, materials: rawMaterials, useReward, noSale } = parsed.data;
+  const { cardId, serviceDetails, amount, sale, subscription, newUser, materials: rawMaterials, useReward, noSale } = parsed.data;
   // دمج تكرار نفس المادة في أكثر من قائمة منسدلة (تُجمع الكميات)
   const merged = new Map<number, number>();
   for (const m of rawMaterials) merged.set(m.itemId, (merged.get(m.itemId) ?? 0) + m.qty);
@@ -104,8 +103,6 @@ export async function POST(request: Request) {
     }
     if (!isTransfer) {
       if (!serviceDetails?.trim()) return NextResponse.json({ error: "تفاصيل الصيانة مطلوبة" }, { status: 400 });
-      // الصورة إلزامية على الفني فقط؛ اختيارية للمدير والمستخدم
-      if (actor.isTech && !photo?.trim()) return NextResponse.json({ error: "رفع صورة مطلوب" }, { status: 400 });
     }
     // القائمة الأولى إلزامية: مادة من ذمّته أو «بلا مبيع» صراحةً — ولا مواد مع «بلا مبيع»
     if (materials.length === 0 && !noSale) {
@@ -248,12 +245,6 @@ export async function POST(request: Request) {
           },
         });
       }
-    }
-    // حفظ الصورة (تُحذف مع البطاقة/التحصيل)
-    if (photo?.trim()) {
-      await tx.cardPhoto.upsert({
-        where: { cardId }, update: { data: photo }, create: { cardId, data: photo },
-      });
     }
     // إنجاز البطاقة — amount = «المبيع» الصافي (وللتوصيل مبلغه)، subAmount = «اشتراك»
     await tx.taskCard.update({
@@ -418,6 +409,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true, sale: netSale, subscription: subAmountVal, rewardDiscount,
-    invoiceId, invoiceNumber, hasPhoto: !!photo, matchedSubscriber, messaged, overrun: overrunResult,
+    invoiceId, invoiceNumber, matchedSubscriber, messaged, overrun: overrunResult,
   });
 }

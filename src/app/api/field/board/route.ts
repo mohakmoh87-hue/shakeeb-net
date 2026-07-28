@@ -14,11 +14,7 @@ async function buildBoard(officeId: number | null, agentId: number | null) {
   // المؤرشفة (بعد التحصيل) لا تظهر على اللوحة — تُعرض من نافذة الأرشيف
   const rawCards = await prisma.taskCard.findMany({ where: { listId: { in: lists.map((l) => l.id) }, isDeleted: false, archivedAt: null }, orderBy: { position: "asc" } });
   // أي بطاقة لها صورة عمل؟ (لعرض زر «عرض الصورة» دون جلب الصور الثقيلة مع اللوحة)
-  const photoRows = rawCards.length
-    ? await prisma.cardPhoto.findMany({ where: { cardId: { in: rawCards.map((c) => c.id) } }, select: { cardId: true } })
-    : [];
-  const photoIds = new Set(photoRows.map((p) => p.cardId));
-  const cards = rawCards.map((c) => ({ ...c, hasPhoto: photoIds.has(c.id) }));
+  const cards = rawCards;
   const techRows = await prisma.technician.findMany({
     where: officeId == null ? { towerId: null, isDeleted: false } : { isDeleted: false, OR: [{ towerId: officeId }, { supportTowerId: officeId }] },
     orderBy: { id: "asc" },
@@ -75,8 +71,7 @@ export async function GET(request: Request) {
         if (template) {
           const SUPPORT_LIST_ID = -1; // عمود افتراضي (عرضٌ فقط — البطاقات تبقى فعلياً بلوحة مكتب الدعم)
           data.lists.push({ ...template, id: SUPPORT_LIST_ID, name: `🤝 دعم مؤقت — ${sOffice?.name ?? "مكتب آخر"}`, position: 9999 });
-          const sPhotos = new Set((await prisma.cardPhoto.findMany({ where: { cardId: { in: sCards.map((c) => c.id) } }, select: { cardId: true } })).map((p) => p.cardId));
-          for (const c of sCards) data.cards.push({ ...c, listId: SUPPORT_LIST_ID, hasPhoto: sPhotos.has(c.id) });
+          for (const c of sCards) data.cards.push({ ...c, listId: SUPPORT_LIST_ID });
         }
       }
     }
