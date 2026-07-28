@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
 
   const sub = await prisma.subscriber.findUnique({ where: { id: parsed.data.subscriberId }, select: { id: true, name: true, towerId: true, rewardBalance: true, rewardCode: true } });
-  if (!sub || !(await ownsTower(g.session, sub.towerId))) return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
+  if (!sub || !(await sameAgentTower(g.session, sub.towerId))) return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
 
   if ((sub.rewardBalance ?? 0) === 0 && !sub.rewardCode) {
     return NextResponse.json({ ok: true, already: true });

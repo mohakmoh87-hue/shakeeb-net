@@ -48,6 +48,16 @@ export async function ownsTower(session: SessionPayload | null, recordTowerId: n
   return ids.includes(recordTowerId);
 }
 
+// ملكية على مستوى الوكيل (لا المكتب) — لعمليات تدفّق المشترك التي تُجرى من قائمة
+// «عرض جميع المشتركين من كل المكاتب»: مستخدم مكتبٍ يخدم مشترك مكتبٍ آخر لنفس الوكيل
+// (كان ownsTower يحصره بمكتبه فيفشل الحفظ بـ«المشترك غير موجود» بعد حرق الكارت في SAS).
+// قرار محمد 2026-07-29: الوصل يُسجَّل على مكتب المشترك — وهذا ما تفعله المسارات أصلاً.
+export async function sameAgentTower(session: SessionPayload | null, recordTowerId: number | null | undefined): Promise<boolean> {
+  if (!session || recordTowerId == null) return false;
+  const ids = await agentTowerIds(session);
+  return ids.includes(recordTowerId);
+}
+
 // حارس مسارات المالك (Super Admin): للمالك فقط
 export async function guardOwner() {
   const session = await getSession();

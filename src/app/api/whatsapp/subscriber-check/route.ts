@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, sameAgentTower } from "@/lib/guard";
 import { hasWhatsApp } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     where: { id, isDeleted: false },
     select: { id: true, phone: true, towerId: true },
   });
-  if (!sub || !(await ownsTower(g.session, sub.towerId))) {
+  if (!sub || !(await sameAgentTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
 

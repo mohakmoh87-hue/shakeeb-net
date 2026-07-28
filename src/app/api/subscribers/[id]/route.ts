@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
+import { guard, sameAgentTower, agentTowerIds } from "@/lib/guard";
 import { purgeSubscribers } from "@/lib/subscriberDelete";
 
 const schema = z.object({
@@ -38,7 +38,7 @@ export async function GET(
   const subscriber = await prisma.subscriber.findUnique({
     where: { id: Number(id) },
   });
-  if (!subscriber || !(await ownsTower(g.session, subscriber.towerId))) {
+  if (!subscriber || !(await sameAgentTower(g.session, subscriber.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
   return NextResponse.json(subscriber);
@@ -66,7 +66,7 @@ export async function PUT(
     where: { id: Number(id) },
     select: { towerId: true },
   });
-  if (!existing || !(await ownsTower(g.session, existing.towerId))) {
+  if (!existing || !(await sameAgentTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
   // مستخدم المكتب يُفرض مكتبه دائماً؛ المدير يمرّر towerId من الطلب
@@ -103,7 +103,7 @@ export async function DELETE(
     where: { id: Number(id) },
     select: { towerId: true },
   });
-  if (!existing || !(await ownsTower(g.session, existing.towerId))) {
+  if (!existing || !(await sameAgentTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
   // حذف نهائي مع كل السجلات المرتبطة (وصولات/فواتير/حركات/رسائل)

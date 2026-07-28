@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { amount, note } = parsed.data;
 
   const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
-  if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
+  if (!subscriber || subscriber.isDeleted || !(await sameAgentTower(g.session, subscriber.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 

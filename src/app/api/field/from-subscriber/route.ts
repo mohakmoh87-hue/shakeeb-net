@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, sameAgentTower } from "@/lib/guard";
 import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     where: { id: subscriberId, isDeleted: false },
     select: { id: true, name: true, phone: true, netUser: true, towerId: true },
   });
-  if (!sub || !(await ownsTower(g.session, sub.towerId))) {
+  if (!sub || !(await sameAgentTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 

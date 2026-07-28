@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { getEffectiveTemplate } from "@/lib/smsTemplates";
@@ -20,7 +20,7 @@ export async function POST(
 
   const { id } = await params;
   const subscriber = await prisma.subscriber.findUnique({ where: { id: Number(id) } });
-  if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
+  if (!subscriber || subscriber.isDeleted || !(await sameAgentTower(g.session, subscriber.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
   if (!subscriber.phone) return NextResponse.json({ error: "لا يوجد رقم هاتف للمشترك" }, { status: 400 });

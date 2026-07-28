@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 
 // مسح دين مشترك (إسقاط الدين) — يصفّر الرصيد المرحّل carry
@@ -16,7 +16,7 @@ export async function POST(
   const subscriberId = Number(id);
 
   const sub = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
-  if (!sub || sub.isDeleted || !(await ownsTower(g.session, sub.towerId))) {
+  if (!sub || sub.isDeleted || !(await sameAgentTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 

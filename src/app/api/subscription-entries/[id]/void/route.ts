@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { reverseRewardGrant } from "@/lib/rewards";
 
@@ -20,7 +20,7 @@ export async function POST(
   const entryId = Number(id);
 
   const entry = await prisma.subscriptionEntry.findUnique({ where: { id: entryId } });
-  if (!entry || entry.isDeleted || !(await ownsTower(g.session, entry.towerId))) {
+  if (!entry || entry.isDeleted || !(await sameAgentTower(g.session, entry.towerId))) {
     return NextResponse.json({ error: "الوصل غير موجود أو محذوف مسبقاً" }, { status: 404 });
   }
 

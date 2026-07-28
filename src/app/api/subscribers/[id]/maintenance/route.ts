@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, sameAgentTower } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export async function GET(
 
   // عزل بين المكاتب: لا يُقرأ سجل مشترك مكتب آخر
   const sub = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { towerId: true } });
-  if (!sub || !(await ownsTower(g.session, sub.towerId))) {
+  if (!sub || !(await sameAgentTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 
