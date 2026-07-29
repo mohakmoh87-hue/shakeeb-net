@@ -69,7 +69,7 @@ export async function GET(request: Request) {
       : {}),
   };
 
-  // وضع «آخر التفعيلات» (الشاشة الرئيسية بالطراز الجديد): آخر 100 مشترك مرتّبين
+  // وضع «آخر التفعيلات» (الشاشة الرئيسية بالطراز الجديد): آخر 50 مشتركاً مرتّبين
   // بآخر تفعيل من الأحدث للأقدم — بلا بحث؛ البحث يعود للمسار الأبجدي أدناه
   if (url.searchParams.get("recent") === "1" && !q) {
     const groups = await prisma.subscriptionEntry.groupBy({
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
       where: { isDeleted: false, subscriberId: { not: null }, ...towerFilter },
       _max: { date: true },
       orderBy: { _max: { date: "desc" } },
-      take: 100,
+      take: 50, // 50 فقط لتخفيف الحمل عند فتح الصفحة (قرار محمد) — البحث يغطي الباقي
     });
     const ids = groups.map((x) => x.subscriberId).filter((x): x is number => x != null);
     const [items, total] = await Promise.all([
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
     ]);
     const rank = new Map(ids.map((id, i) => [id, i]));
     items.sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
-    return NextResponse.json(items, { headers: { "X-Total-Count": String(total), "X-Limit": "100" } });
+    return NextResponse.json(items, { headers: { "X-Total-Count": String(total), "X-Limit": "50" } });
   }
 
   // حدّ التحميل: نجلب أول 300 فقط (القائمة كبيرة — 5000+)، والبحث يغطّي الباقي.
