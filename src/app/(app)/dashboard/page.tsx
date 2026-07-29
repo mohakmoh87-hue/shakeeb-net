@@ -35,11 +35,14 @@ export default async function DashboardPage() {
       {/* الجسم: جدول المشتركين (+ تحصيل الفنيين أسفله) | التقرير اليومي */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_330px]">
         <div className="flex min-h-0 flex-col gap-3">
-          <div className="min-h-[420px] flex-1 xl:min-h-0">
+          {/* حدّ أدنى لارتفاع الجدول حتى لا يسحقه تحصيل الفنيين الطويل */}
+          <div className="min-h-[420px] flex-1 xl:min-h-[360px]">
             <SubscribersBoard />
           </div>
-          {/* تحصيل الفنيين — شريط أفقي أسفل الجدول */}
-          <FieldSettlementCard />
+          {/* تحصيل الفنيين — شريط أسفل الجدول بارتفاع مضبوط يمرّر داخلياً */}
+          <div className="shrink-0 xl:max-h-[30vh] xl:overflow-y-auto">
+            <FieldSettlementCard />
+          </div>
         </div>
 
         <div className="flex min-h-0 flex-col gap-2 xl:overflow-y-auto">
