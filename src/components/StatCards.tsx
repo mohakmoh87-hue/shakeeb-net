@@ -28,28 +28,55 @@ export default function StatCards({ initialReport, towerIds, offices, isAdmin }:
 function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices: Office[]; isAdmin: boolean }) {
   const [stats, setStats] = useState<{ active: number; total: number; online: number | null } | null>(null);
   const [live, setLive] = useState(false);
+  const [cloudAt, setCloudAt] = useState<string | null>(null); // وقت آخر رفعة من حاسبات المكاتب
   // المدير يختار مكتباً أو الكل؛ المستخدم مكتبه فقط (towerIds تأتي بمكتبه وحده)
   const [officeSel, setOfficeSel] = useState<"all" | number>("all");
   const key = officeSel === "all" ? towerIds.join(",") : String(officeSel);
 
-  // شرط محمد الصارم: الفعالون والمتصلون من حاسبة المكتب حصراً — لا مرور على
-  // Azure/Aiven بأي شكل. بلا حاسبة مكتب تظهر «—» ويُعاد البحث عنها كل 15 ثانية.
+  // الأولوية للعامل المحلي (حي كل 5 ثوانٍ بلا سحابة — داخل المكتب)؛ وبدونه:
+  // أرقام الحاسبات المرفوعة للقاعدة تُقرأ كل 5 دقائق (قرار محمد 2026-07-29) —
+  // فيرى محمد الأرقام من أي مكان، ويُستأنف البحث عن عامل محلي كل 15 ثانية.
   useEffect(() => {
     if (!key) return;
     let stop = false;
     let poll: ReturnType<typeof setInterval> | null = null;
+    let cloudPoll: ReturnType<typeof setInterval> | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
+    const ids = key.split(",").map(Number);
+
+    const loadCloud = async () => {
+      try {
+        const r = await fetch("/api/subscribers/stats");
+        const d = await r.json().catch(() => null);
+        if (stop || !r.ok || !d?.offices) return;
+        let active = 0, total = 0, online = 0, onlineKnown = false, any = false;
+        for (const id of ids) {
+          const o = d.offices[String(id)];
+          if (!o) continue;
+          any = true; active += o.active; total += o.total;
+          if (o.online != null) { online += o.online; onlineKnown = true; }
+        }
+        if (any) { setStats({ active, total, online: onlineKnown ? online : null }); setCloudAt(d.at ?? null); }
+      } catch { /* */ }
+    };
+
     const start = async () => {
       const base = await localSasBase();
       if (stop) return;
-      if (!base) { retry = setTimeout(start, 15000); return; }
+      if (!base) {
+        // بلا عامل محلي: المخزون السحابي (مرة فوراً ثم كل 5 دقائق) + إعادة البحث عن العامل
+        if (!cloudPoll) { void loadCloud(); cloudPoll = setInterval(loadCloud, 5 * 60 * 1000); }
+        retry = setTimeout(start, 15000);
+        return;
+      }
+      if (cloudPoll) { clearInterval(cloudPoll); cloudPoll = null; }
       const load = async () => {
         try {
           const r = await fetch(`${base}/stats/subscribers?towers=${key}`);
           const d = await r.json().catch(() => null);
           if (!stop && r.ok && d && typeof d.total === "number") {
             setStats({ active: d.active, total: d.total, online: typeof d.online === "number" ? d.online : null });
-            setLive(true);
+            setLive(true); setCloudAt(null);
           }
         } catch { /* العامل توقّف مؤقتاً — نُبقي آخر أرقام */ }
       };
@@ -57,7 +84,12 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
       poll = setInterval(load, 5000);
     };
     void start();
-    return () => { stop = true; if (poll) clearInterval(poll); if (retry) clearTimeout(retry); };
+    return () => {
+      stop = true;
+      if (poll) clearInterval(poll);
+      if (cloudPoll) clearInterval(cloudPoll);
+      if (retry) clearTimeout(retry);
+    };
   }, [key]);
 
   // الضغط على البطاقة ينتقل لقائمة المشتركين أسفل الشاشة (البطاقات كلها قابلة للضغط — طلب محمد)
@@ -94,7 +126,9 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
         <span>الكلي: <b className="num">{stats ? fmt(stats.total) : "—"}</b></span>
         {live
           ? <span title="يتحدّث كل 5 ثوانٍ من حاسبة المكتب مباشرة — بلا مرور على السحابة">⚡ مباشر</span>
-          : <span title="الأرقام تأتي من حاسبة المكتب حصراً — شغّلها لتظهر">⏳ بانتظار حاسبة المكتب</span>}
+          : stats && cloudAt
+            ? <span title="أرقام مرفوعة من حاسبات المكاتب كل 5 دقائق — تُقرأ كل 5 دقائق">🕐 {new Date(cloudAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+            : <span title="تظهر الأرقام حين ترفعها حاسبات المكاتب (كل 5 دقائق) أو من عامل محلي">⏳ بانتظار حاسبات المكاتب</span>}
       </div>
     </div>
   );

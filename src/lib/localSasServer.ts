@@ -98,10 +98,48 @@ function toWebRequest(req: http.IncomingMessage, bodyBuf: Buffer | undefined): R
   return new Request(url, { method: req.method, headers, body: bodyBuf && bodyBuf.length ? new Uint8Array(bodyBuf) : undefined });
 }
 
+async function pushStatsToCloud(): Promise<void> {
+  const aid = getWorkerAgentId();
+  if (aid == null) return;
+  const towers = await prisma.tower.findMany({
+    where: { agentId: aid, isDeleted: false, loginUrl: { not: null }, username: { not: null }, password: { not: null } },
+    select: { id: true },
+  });
+  const offices: Record<string, { active: number; total: number; online: number | null }> = {};
+  for (const t of towers) {
+    const creds = await agentTowerCached(t.id);
+    if (!creds) continue;
+    let sc = statsCache.get(t.id);
+    if (!sc || Date.now() - sc.at > STATS_TTL) {
+      try { await refreshTowerStats(creds); sc = statsCache.get(t.id); } catch { /* SAS متعثر مؤقتاً */ }
+    }
+    let oc = onlineCache.get(t.id);
+    if (!oc || Date.now() - oc.at > 60_000) {
+      try {
+        const token = await towerToken(creds);
+        oc = { online: await sasFetchOnlineCount(sasBaseUrl(creds.loginUrl), token), at: Date.now() };
+        onlineCache.set(t.id, oc);
+      } catch { /* */ }
+    }
+    if (sc) offices[t.id] = { active: sc.active, total: sc.total, online: oc?.online ?? null };
+  }
+  if (Object.keys(offices).length === 0) return;
+  const type = `subStats:${aid}`;
+  const text = JSON.stringify({ at: new Date().toISOString(), offices });
+  const row = await prisma.systemSetting.findFirst({ where: { type }, select: { id: true } });
+  if (row) await prisma.systemSetting.update({ where: { id: row.id }, data: { text } });
+  else await prisma.systemSetting.create({ data: { type, text } });
+}
+
 export function startLocalSasServer() {
   const g = globalThis as unknown as { __localSasStarted?: boolean };
   if (g.__localSasStarted) return;
   g.__localSasStarted = true;
+
+  // رفع الخلاصة للقاعدة كل 5 دقائق (وأول رفعة بعد 45 ثانية من الإقلاع) —
+  // ليراها محمد من أي مكان (قراءة كل 5 دقائق)؛ حمل الخطة المجانية: سطر upsert لا غير
+  setTimeout(() => { void pushStatsToCloud().catch(() => {}); }, 45_000);
+  setInterval(() => { void pushStatsToCloud().catch(() => {}); }, 5 * 60 * 1000);
 
   const server = http.createServer(async (req, res) => {
     cors(res, req.headers.origin as string | undefined);
