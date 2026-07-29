@@ -355,9 +355,20 @@ export default function SubscribersBoard() {
                           <button className={`sb-act ${moreMenu ? "on" : ""}`} aria-haspopup="true"
                             onClick={(e) => {
                               e.stopPropagation();
+                              const scroller = (e.currentTarget as HTMLElement).closest(".subs-scroll") as HTMLElement | null;
                               setMoreMenu((v) => !v);
-                              // آخر مشترك بالقائمة: مرّر اللوحة المنفتحة إلى مرمى النظر
-                              if (!moreMenu) setTimeout(() => document.querySelector(".sb-panel")?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 30);
+                              // آخر مشترك بالقائمة: إظهار اللوحة المنفتحة كاملة — محاذاة نهايتها
+                              // بحافة القائمة، مع دفعة تمرير احتياطية إن بقيت مخفية
+                              if (!moreMenu) setTimeout(() => {
+                                const p = document.querySelector(".sb-panel") as HTMLElement | null;
+                                if (!p) return;
+                                p.scrollIntoView({ block: "end", behavior: "smooth" });
+                                if (scroller) {
+                                  const pr = p.getBoundingClientRect();
+                                  const sr = scroller.getBoundingClientRect();
+                                  if (pr.bottom > sr.bottom) scroller.scrollTop += pr.bottom - sr.bottom + 8;
+                                }
+                              }, 60);
                             }}>⋯ المزيد</button>
                           <button className="sb-x" style={{ marginInlineStart: "auto" }} onClick={() => { setSelectedId(null); setMoreMenu(false); }} aria-label="إلغاء التحديد">✕</button>
                         </div>
