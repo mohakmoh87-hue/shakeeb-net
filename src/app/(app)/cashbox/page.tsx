@@ -18,6 +18,7 @@ type Tx = {
   notes: string | null;
   date: string | null;
   sourceType: string | null;
+  towerId: number | null;
 };
 type Account = { id: number; name: string | null; towerId: number | null };
 type Tower = { id: number; name: string | null };
@@ -259,17 +260,18 @@ export default function CashboxPage() {
                 <SortTh label="قبض" k="moneyIn" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
                 <SortTh label="صرف" k="moneyOut" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
                 <SortTh label="الحساب" k="accountName" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+                <th className="p-3">المكتب</th>
                 <SortTh label="ملاحظات" k="notes" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
                 {can("receipts.void") && <th className="p-3"></th>}
               </tr>
             </thead>
             <tbody>
               {listState === "loading" ? (
-                <tr><td colSpan={7} className="p-8 text-center text-slate-400">جاري تحميل الحركات...</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center text-slate-400">جاري تحميل الحركات...</td></tr>
               ) : listState === "error" ? (
-                <tr><td colSpan={7} className="p-8 text-center font-semibold text-red-500">تعذّر جلب الحركات — حدّث الصفحة (البيانات محفوظة بالقاعدة)</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center font-semibold text-red-500">تعذّر جلب الحركات — حدّث الصفحة (البيانات محفوظة بالقاعدة)</td></tr>
               ) : sortedTxs.length === 0 ? (
-                <tr><td colSpan={can("receipts.void") ? 7 : 6} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
+                <tr><td colSpan={can("receipts.void") ? 8 : 7} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
               ) : (
                 sortedTxs.map((t) => (
                   <tr key={t.id} onClick={() => setDetailId(t.id)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" title="عرض التفاصيل">
@@ -278,6 +280,7 @@ export default function CashboxPage() {
                     <td className="p-3 font-semibold text-emerald-600">{t.moneyIn ? fmt(t.moneyIn) : "—"}</td>
                     <td className="p-3 font-semibold text-red-600">{t.moneyOut ? fmt(t.moneyOut) : "—"}</td>
                     <td className="p-3">{t.accountName ?? "—"}</td>
+                    <td className="p-3">{towerName(t.towerId) ?? "—"}</td>
                     <td className="p-3 text-slate-600">{t.notes ?? "—"}</td>
                     {can("receipts.void") && (
                       <td className="p-3">

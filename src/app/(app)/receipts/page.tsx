@@ -11,14 +11,14 @@ import { askVoidEffect } from "@/lib/voidPrompt";
 // إعادة طباعة وحذف (عكسي) للمحدّدين، ومجموع أسفلها.
 type SubRow = {
   id: number; date: string | null; money: number | null; moneyIn: number | null;
-  cardType: string | null; createdByUser: string | null; subscriberName: string | null;
+  cardType: string | null; createdByUser: string | null; subscriberName: string | null; towerId: number | null;
 };
 type InvRow = {
   id: number; number: number | null; date: string | null; totalMy: number | null;
   waselHim: number | null; type: string | null; user: string | null; subscriberName: string | null; note: string | null;
-  itemsText: string | null;
+  itemsText: string | null; towerId: number | null;
 };
-type Row = { id: number; ref: number; date: string | null; who: string; cat: string; amount: number; by: string; items: string | null };
+type Row = { id: number; ref: number; date: string | null; who: string; cat: string; amount: number; by: string; items: string | null; office: string };
 
 const fmt = (n: number) => Number(n).toLocaleString("en-US");
 
@@ -28,6 +28,7 @@ export default function ReceiptsPage() {
   const [kind, setKind] = useState<"sub" | "inv">("sub");
   const [subRows, setSubRows] = useState<SubRow[]>([]);
   const [invRows, setInvRows] = useState<InvRow[]>([]);
+  const [towers, setTowers] = useState<{ id: number; name: string | null }[]>([]);
   const [q, setQ] = useState("");
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [sort, setSort] = useState<{ key: "ref" | "date" | "who" | "amount"; dir: 1 | -1 }>({ key: "ref", dir: -1 });
@@ -37,7 +38,11 @@ export default function ReceiptsPage() {
   useEffect(() => {
     fetch("/api/subscriptions").then((r) => (r.ok ? r.json() : [])).then(setSubRows).catch(() => {});
     fetch("/api/invoices").then((r) => (r.ok ? r.json() : [])).then(setInvRows).catch(() => {});
+    fetch("/api/towers").then((r) => (r.ok ? r.json() : [])).then(setTowers).catch(() => {});
   }, []);
+
+  // اسم المكتب المسجّل للوصل — يظهر عموداً في السجلين (طلب محمد 2026-07-29)
+  const officeName = (id: number | null) => (id == null ? "—" : towers.find((t) => t.id === id)?.name ?? "—");
 
   // توحيد الصفوف للجدول (المصدر حسب النوع المختار)
   const rows: Row[] = useMemo(() => {
@@ -46,16 +51,19 @@ export default function ReceiptsPage() {
         ? subRows.map((e) => ({
             id: e.id, ref: e.id, date: e.date, who: e.subscriberName ?? "—",
             cat: e.cardType ?? "تفعيل", amount: e.moneyIn ?? 0, by: e.createdByUser ?? "—", items: null,
+            office: officeName(e.towerId),
           }))
         : invRows.map((v) => ({
             id: v.id, ref: v.number ?? v.id, date: v.date, who: v.subscriberName ?? (v.note?.match(/الزبون:\s*([^—]+)/)?.[1]?.trim() ?? "—"),
             cat: v.type ?? "بيع", amount: v.waselHim ?? 0, by: v.user ?? "—", items: v.itemsText ?? null,
+            office: officeName(v.towerId),
           }));
     const needle = q.trim().toLowerCase();
     const filtered = needle
       ? list.filter((r) =>
           String(r.ref).includes(needle) || r.who.toLowerCase().includes(needle) ||
-          String(r.amount).includes(needle.replace(/,/g, "")) || r.cat.toLowerCase().includes(needle))
+          String(r.amount).includes(needle.replace(/,/g, "")) || r.cat.toLowerCase().includes(needle) ||
+          r.office.toLowerCase().includes(needle))
       : list;
     const dir = sort.dir;
     return [...filtered].sort((a, b) => {
@@ -64,7 +72,8 @@ export default function ReceiptsPage() {
       if (sort.key === "who") return a.who.localeCompare(b.who, "ar") * dir;
       return ((a.date ?? "") < (b.date ?? "") ? -1 : 1) * dir;
     });
-  }, [kind, subRows, invRows, q, sort]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, subRows, invRows, towers, q, sort]);
 
   const sum = rows.reduce((s, r) => s + r.amount, 0);
 
@@ -151,10 +160,11 @@ export default function ReceiptsPage() {
               {kind === "inv" && <th>المواد</th>}
               <th className="srt" onClick={() => toggleSort("amount")}>المبلغ <i>{arrow("amount")}</i></th>
               <th>المستخدم</th>
+              <th>المكتب</th>
             </tr></thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={kind === "inv" ? 8 : 7} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>لا وصولات</td></tr>
+                <tr><td colSpan={kind === "inv" ? 9 : 8} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>لا وصولات</td></tr>
               ) : rows.map((r) => (
                 <tr key={r.id} className={checked.has(r.id) ? "picked" : ""}>
                   <td className="cbcol"><input type="checkbox" className="cb" checked={checked.has(r.id)} onChange={() => toggle(r.id)} /></td>
@@ -165,6 +175,7 @@ export default function ReceiptsPage() {
                   {kind === "inv" && <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }} title={r.items ?? undefined}>{r.items ?? "—"}</td>}
                   <td className="num">{fmt(r.amount)}</td>
                   <td>{r.by}</td>
+                  <td>{r.office}</td>
                 </tr>
               ))}
             </tbody>

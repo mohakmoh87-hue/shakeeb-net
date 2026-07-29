@@ -134,6 +134,9 @@ export async function POST(request: Request) {
               date: activationDate,
               serverDate: new Date(),
               userId: session?.userId,
+              // تصنيف تفعيل — كي لا تُحسب ضمن اليدوي في صفحة/بطاقة المصروفات والمقبوضات
+              sourceType: "activation",
+              towerId: subscriber.towerId,
             },
           }),
         ]

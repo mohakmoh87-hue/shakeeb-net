@@ -17,8 +17,8 @@ export default function StatCards({ initialReport, towerIds, offices, isAdmin }:
   return (
     <section className="stats max-[1050px]:!grid-cols-2">
       <SubsCard towerIds={towerIds} offices={offices} isAdmin={isAdmin} />
-      <MoneyCard r={initialReport} />
-      <InvoiceCard r={initialReport} />
+      <MoneyCard offices={offices} isAdmin={isAdmin} />
+      <InvoiceCard r={initialReport} offices={offices} isAdmin={isAdmin} />
       <FieldCard offices={offices} isAdmin={isAdmin} />
     </section>
   );
@@ -134,48 +134,91 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
   );
 }
 
-// ٢ · المصروفات والمقبوضات — سطران + شريط نسبة + الصافي
-function MoneyCard({ r }: { r: Report }) {
-  const received = r.total + r.expenses;
-  const sum = received + r.expenses;
-  const inPct = sum > 0 ? Math.round((received / sum) * 100) : 50;
+// ٢ · المصروفات والمقبوضات — سطران + شريط نسبة + الصافي.
+// أرقامها من صندوق اليدوي فقط (ما سُجّل في حساب المصروفات والمقبوضات وجميع وصولاته)
+// لا مبالغ الاشتراكات ولا الفواتير — مطابقة لصفحة /cashbox (طلب محمد 2026-07-29).
+function MoneyCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }) {
+  const [s, setS] = useState<{ totalIn: number; totalOut: number; balance: number } | null>(null);
+  const [officeSel, setOfficeSel] = useState<"all" | number>("all");
+  useEffect(() => {
+    let stop = false;
+    const qs = officeSel === "all" ? "" : `?officeId=${officeSel}`;
+    fetch(`/api/money/summary${qs}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (!stop && d) setS(d); }).catch(() => {});
+    return () => { stop = true; };
+  }, [officeSel]);
+  const totalIn = s?.totalIn ?? 0, totalOut = s?.totalOut ?? 0, net = totalIn - totalOut;
+  const sum = totalIn + totalOut;
+  const inPct = sum > 0 ? Math.round((totalIn / sum) * 100) : 50;
   return (
     <Link href="/cashbox" className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح المصروفات والمقبوضات">
-      <div className="st-top"><span className="st-lb">المصروفات والمقبوضات</span><span className="st-ic">💵</span></div>
+      <div className="st-top">
+        <span className="st-lb">المصروفات والمقبوضات</span>
+        {isAdmin && offices.length > 1 && (
+          <select
+            className="st-sel-l"
+            value={officeSel}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onChange={(e) => setOfficeSel(e.target.value === "all" ? "all" : Number(e.target.value))}
+          >
+            <option value="all">كل المكاتب</option>
+            {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `#${o.id}`}</option>)}
+          </select>
+        )}
+        <span className="st-ic">💵</span>
+      </div>
       <div className="flow">
         <div className="flow-line">
           <span className="fa in">↓</span>
           <span className="fa-lb">المقبوضات</span>
-          <span className="fa-vl">{fmt(received)}</span>
+          <span className="fa-vl">{s ? fmt(totalIn) : "—"}</span>
         </div>
         <div className="flow-line">
           <span className="fa out">↑</span>
           <span className="fa-lb">المصروفات</span>
-          <span className="fa-vl">{fmt(r.expenses)}</span>
+          <span className="fa-vl">{s ? fmt(totalOut) : "—"}</span>
         </div>
       </div>
       <div className="ratio" role="img" aria-label={`المقبوضات ${inPct} بالمئة والمصروفات ${100 - inPct} بالمئة`}>
         <span className="r-in" style={{ width: `${inPct}%` }} />
         <span className="r-out" style={{ width: `${100 - inPct}%` }} />
       </div>
-      <div className="net">الصافي <b style={{ color: r.total < 0 ? "var(--bad)" : "var(--ok)" }}>{fmt(r.total)}</b> <small>د.ع</small></div>
+      <div className="net">الصافي <b style={{ color: net < 0 ? "var(--bad)" : "var(--ok)" }}>{s ? fmt(net) : "—"}</b> <small>د.ع</small></div>
     </Link>
   );
 }
 
-// ٣ · فاتورة المبيع — عدد + وسام اتجاه + المبلغ + منحنى مساحي
-function InvoiceCard({ r }: { r: Report }) {
-  const [s, setS] = useState<{ thisDays: number[]; lastDays: number[]; thisTotal: number; lastTotal: number } | null>(null);
+// ٣ · فاتورة المبيع — عدد + وسام اتجاه + المبلغ + منحنى مساحي.
+// المدير يختار مكتباً أو الكل (طلب محمد 2026-07-29) — العدد والمبلغ والمنحنى كلها تتبع الاختيار
+function InvoiceCard({ r, offices, isAdmin }: { r: Report; offices: Office[]; isAdmin: boolean }) {
+  const [s, setS] = useState<{ thisDays: number[]; lastDays: number[]; thisTotal: number; lastTotal: number; todayCount?: number; todayIn?: number } | null>(null);
+  const [officeSel, setOfficeSel] = useState<"all" | number>("all");
   useEffect(() => {
-    fetch("/api/reports/invoices/summary").then((x) => (x.ok ? x.json() : null)).then((d) => d && setS(d)).catch(() => {});
-  }, []);
+    let stop = false;
+    const qs = officeSel === "all" ? "" : `?officeId=${officeSel}`;
+    fetch(`/api/reports/invoices/summary${qs}`).then((x) => (x.ok ? x.json() : null)).then((d) => { if (!stop && d) setS(d); }).catch(() => {});
+    return () => { stop = true; };
+  }, [officeSel]);
   const delta = s && s.lastTotal > 0 ? Math.round(((s.thisTotal - s.lastTotal) / s.lastTotal) * 100) : null;
   const days = s ? [...s.lastDays, ...s.thisDays].slice(-7) : [];
   return (
     <Link href="/invoices" className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح فاتورة المبيع">
-      <div className="st-top"><span className="st-lb">فاتورة المبيع</span><span className="st-ic">🛒</span></div>
+      <div className="st-top">
+        <span className="st-lb">فاتورة المبيع</span>
+        {isAdmin && offices.length > 1 && (
+          <select
+            className="st-sel-l"
+            value={officeSel}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onChange={(e) => setOfficeSel(e.target.value === "all" ? "all" : Number(e.target.value))}
+          >
+            <option value="all">كل المكاتب</option>
+            {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `#${o.id}`}</option>)}
+          </select>
+        )}
+        <span className="st-ic">🛒</span>
+      </div>
       <div className="inv-row">
-        <span className="st-vl">{r.invoiceCount}</span>
+        <span className="st-vl">{s?.todayCount ?? r.invoiceCount}</span>
         {delta != null ? (
           <span className="trend" style={delta < 0 ? { background: "rgba(229,56,79,.12)", color: "var(--bad)" } : undefined}>
             {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}%
@@ -184,7 +227,7 @@ function InvoiceCard({ r }: { r: Report }) {
           <span className="trend">جديد</span>
         )}
       </div>
-      <div className="inv-amt">{fmt(r.invoiceIn)} <small>د.ع</small></div>
+      <div className="inv-amt">{fmt(s?.todayIn ?? r.invoiceIn)} <small>د.ع</small></div>
       <Spark values={days} />
     </Link>
   );
