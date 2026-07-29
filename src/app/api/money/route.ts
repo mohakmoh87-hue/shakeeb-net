@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, towerScope } from "@/lib/guard";
+import { guard, towerScope, agentTowerIds } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 
 const schema = z.object({
@@ -117,6 +117,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ ...createdMaster, master: true }, { status: 201 });
   }
 
+  // نسب الحركة لمكتب دائماً — قيد بلا towerId لا يظهر في أي تقرير أو صندوق
+  // (حادثة وكيل سيف 2026-07-29: مصروفا 5000 من مدير بلا مكتب «اختفيا»):
+  // مكتب المستخدم، وإلا مكتب الحساب المختار، وإلا مكتب الوكيل الوحيد إن كان واحداً.
+  const agentTowers = await agentTowerIds(session);
+  let towerId: number | null = session?.towerId ?? null;
+  let account: { id: number; towerId: number | null } | null = null;
+  if (accountId) {
+    account = await prisma.account.findFirst({
+      where: { id: accountId, isDeleted: false },
+      select: { id: true, towerId: true },
+    });
+    // عزل: لا يُقيَّد على حساب مكتبٍ من خارج وكيل المستخدم
+    if (!account || (account.towerId != null && !agentTowers.includes(account.towerId))) {
+      return NextResponse.json({ error: "الحساب غير موجود" }, { status: 404 });
+    }
+  }
+  if (towerId == null) towerId = account?.towerId ?? null;
+  if (towerId == null && agentTowers.length === 1) towerId = agentTowers[0];
+  if (towerId == null) {
+    return NextResponse.json(
+      { error: "حسابك بلا مكتب — اختر حساباً مرتبطاً بمكتب حتى يُنسب القيد له ويظهر في التقرير اليومي" },
+      { status: 400 },
+    );
+  }
+
   const created = await prisma.moneyTx.create({
     data: {
       moneyIn: type === "in" ? amount : 0,
@@ -126,7 +151,7 @@ export async function POST(request: Request) {
       date: date ? new Date(date) : new Date(),
       userId: session?.userId,
       serverDate: new Date(),
-      sourceType: "manual", towerId: session?.towerId ?? null,
+      sourceType: "manual", towerId,
     },
   });
   return NextResponse.json(created, { status: 201 });

@@ -74,6 +74,15 @@ export default function AppShell({
 }) {
   const [drawer, setDrawer] = useState(false);
   const router = useRouter();
+
+  // حارس عزل: صفحة مسترجَعة من ذاكرة الرجوع (bfcache) قد تكون لقطة جلسة سابقة
+  // (حساب/وكيل آخر على نفس المتصفح) — نعيد تحميلها فوراً لتُبنى بجلسة اليوم
+  // (جزء من سدّ حادثة ظهور بيانات وكيلٍ لوكيل آخر لحظياً — 2026-07-29)
+  useEffect(() => {
+    const h = (e: PageTransitionEvent) => { if (e.persisted) window.location.reload(); };
+    window.addEventListener("pageshow", h);
+    return () => window.removeEventListener("pageshow", h);
+  }, []);
   // إدارة الفنيين تحتاج كامل عرض الشاشة — بلا شريط جانبي (طلب محمد)؛
   // العودة من زر «← الرئيسية» داخل الصفحة نفسها
   const pathname = usePathname();

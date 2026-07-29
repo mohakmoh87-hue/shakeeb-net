@@ -1,9 +1,10 @@
 // Service Worker — شكيب نت (تطبيق إدارة الفنيين)
 //  • إشعارات Web Push (تعمل والتطبيق مغلق على أندرويد).
-//  • تخزين مؤقت network-first: يجلب من الشبكة دائماً (فيظهر التحديث فوراً بلا
-//    إعادة تنصيب)، ويرجع من الكاش عند انقطاع الشبكة فقط.
+//  • التخزين المؤقت للملفات الثابتة فقط (سكربتات/أيقونات) — صفحات HTML لا تُخزَّن
+//    أبداً: كانت تُخزَّن بأرقام جلسة صاحبها فتظهر لحظياً لمن يدخل بحساب آخر على
+//    نفس المتصفح عند تعثّر الشبكة (حادثة عزل الوكلاء 2026-07-29) — سُدَّت نهائياً.
 
-const CACHE = "shakeeb-net-v1";
+const CACHE = "shakeeb-net-v2"; // رفع الإصدار يمسح كاش v1 القديم (وفيه صفحات مخزونة) عند التفعيل
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -17,13 +18,23 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// ===== التخزين المؤقت: network-first لطلبات GET من نفس الأصل (عدا API) =====
+// الملفات الآمنة للتخزين: ثابتة لا تحمل بيانات جلسة/وكيل
+function isStaticAsset(url) {
+  return (
+    url.pathname.startsWith("/_next/static/") ||
+    url.pathname.startsWith("/icons/") ||
+    url.pathname === "/manifest.webmanifest" ||
+    url.pathname === "/favicon.ico"
+  );
+}
+
+// ===== التخزين المؤقت: network-first للملفات الثابتة فقط (عدا API والصفحات) =====
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // موارد خارجية: كما هي
-  if (url.pathname.startsWith("/api/")) return; // API دائماً من الشبكة (بلا كاش)
+  if (!isStaticAsset(url)) return; // API والصفحات: دائماً من الشبكة (بلا كاش إطلاقاً)
 
   event.respondWith(
     (async () => {
@@ -37,10 +48,6 @@ self.addEventListener("fetch", (event) => {
       } catch (_) {
         const cached = await caches.match(req);
         if (cached) return cached;
-        if (req.mode === "navigate") {
-          const home = await caches.match("/field-management");
-          if (home) return home;
-        }
         throw _;
       }
     })()
