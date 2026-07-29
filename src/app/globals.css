@@ -575,16 +575,9 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
    التكيّف مع ارتفاع الشاشة (من النموذج): الصفحة لا تنزل أبداً على الحواسيب —
    قائمة المشتركين تتمدّد وتمرّر داخلياً، وشريط التحصيل يبقى ظاهراً أسفلها
    ============================================================ */
-@media (min-width: 1051px) {
-  /* ملء الشاشة بلا تمرير: للشاشة الرئيسية حصراً (.nst-fill) — تعميمها على .nst
-     كان يسحق محتوى كل صفحة فيها غلاف الطراز (الصندوق والمخزن ظهرتا فارغتين) */
-  .nst-fill { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: auto 1fr; }
-  .nst-fill .row2 { min-height: 0; height: 100%; }
-  .nst-fill .row2 > * { max-height: 100%; display: flex; flex-direction: column; min-height: 0; }
-  .nst-fill .subs-scroll { max-height: none; flex: 1; min-height: 60px; }
-  .nst-fill .settle-strip { flex: none; }
-  .nst-fill .rep-wrap { flex: 1; min-height: 0; overflow-y: auto; }
-}
+/* الرئيسية (قرار محمد 2026-07-29): تمرير الصفحة مسموح — قائمة المشتركين وحدها
+   بارتفاع مرن: 5 صفوف كحدّ أدنى على أصغر الشاشات وتزيد مع ارتفاع الشاشة */
+.nst-fill .subs-scroll { max-height: max(200px, calc(100dvh - 430px)); }
 
 /* كثافة متدرّجة حسب ارتفاع الشاشة (من النموذج) */
 @media (max-height: 880px) {
@@ -644,3 +637,6 @@ html:not([data-app-mode]) .field-site.field-canvas { background: var(--ground); 
 
 /* ب5: الحقول الرقمية تُعرض LTR دائماً (أرقام ومبالغ) */
 input[type="number"] { direction: ltr; }
+
+/* ارتفاع قائمة المشتركين بالرئيسية — متأخّر ليتقدّم على قاعدة الهاتف العامة */
+.nst-fill .subs-scroll { max-height: max(200px, calc(100dvh - 430px)); }

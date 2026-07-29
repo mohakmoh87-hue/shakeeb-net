@@ -356,8 +356,12 @@ export default function SubscribersBoard() {
                           onClick={(e) => {
                             e.stopPropagation();
                             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                            // أسفل الزر مباشرة: الحافة اليمنى للقائمة على الحافة اليمنى للزر (RTL)
-                            setMenuPos({ top: r.bottom + 6, left: Math.max(8, r.right - 192) });
+                            // منتصف القائمة يسار كلمة «المزيد» (طلب محمد)، وتنقلب للأعلى إن ضاق أسفل الشاشة
+                            const MENU_H = Math.min(330, Math.round(window.innerHeight * 0.6));
+                            const top = r.bottom + 6 + MENU_H > window.innerHeight
+                              ? Math.max(8, r.top - 6 - MENU_H)
+                              : r.bottom + 6;
+                            setMenuPos({ top, left: Math.max(8, Math.min(r.left - 96, window.innerWidth - 200)) });
                             setMoreMenu((v) => !v);
                           }}>⋯ المزيد</button>
                         <button className="sb-x" onClick={() => { setSelectedId(null); setMoreMenu(false); }} aria-label="إلغاء التحديد">✕</button>
