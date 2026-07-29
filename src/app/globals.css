@@ -729,3 +729,10 @@ input[type="number"] { direction: ltr; }
 .nst .ss-pop .sd-row { align-items: flex-start; }
 .nst .ss-pop .sd-row span { overflow: visible; text-overflow: clip; white-space: normal; }
 .nst .ss-pop .sd-tot span { overflow: visible; white-space: normal; }
+
+/* لوحة «المزيد» المضمّنة: تنفتح داخل شريط المشترك تحت أزراره — جزء من السطر لا ينفصل */
+.nst .sb-panel { display: flex; flex-wrap: wrap; gap: 4px; padding: 7px 2px 2px; margin-top: 6px;
+  border-top: 1px dashed var(--line); }
+.nst .sb-act.on { border-color: var(--navy); color: var(--navy); background: var(--surface-2); }
+.nst .sb-act.sb-danger { color: var(--bad); }
+.nst .sb-act.sb-danger:hover { border-color: var(--bad); background: rgba(229,56,79,.08); color: var(--bad); }

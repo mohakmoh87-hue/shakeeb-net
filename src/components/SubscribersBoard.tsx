@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ActivationModal, { type ActSubscriber } from "@/components/ActivationModal";
@@ -60,7 +59,6 @@ export default function SubscribersBoard() {
   const [msg, setMsg] = useState("");
   const [delMenu, setDelMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [activating, setActivating] = useState<Subscriber | null>(null);
   const [addingDebt, setAddingDebt] = useState<Subscriber | null>(null);
   // نوافذ السجلات
@@ -355,21 +353,23 @@ export default function SubscribersBoard() {
                             الديون <b>{fmt(s.carry)}</b>
                           </button>
                           <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>
-                          <button className="sb-act" aria-haspopup="true"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // القائمة على يسار الزر ومن منتصفه بالضبط (طلب محمد) — تُرسم عبر
-                              // Portal إلى جسم الصفحة فلا يحرفها أو يقصّها أي شيء
-                              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                              const H = Math.min(340, Math.round(window.innerHeight * 0.7));
-                              setMenuPos({
-                                left: Math.max(8, Math.round(r.left - 206)),
-                                top: Math.max(8, Math.min(Math.round(r.top + r.height / 2 - H / 2), window.innerHeight - H - 8)),
-                              });
-                              setMoreMenu((v) => !v);
-                            }}>⋯ المزيد</button>
+                          <button className={`sb-act ${moreMenu ? "on" : ""}`} aria-haspopup="true"
+                            onClick={(e) => { e.stopPropagation(); setMoreMenu((v) => !v); }}>⋯ المزيد</button>
                           <button className="sb-x" style={{ marginInlineStart: "auto" }} onClick={() => { setSelectedId(null); setMoreMenu(false); }} aria-label="إلغاء التحديد">✕</button>
                         </div>
+                        {moreMenu && (
+                          <div className="sb-panel" onClick={(e) => e.stopPropagation()}>
+                            <button className="sb-act" onClick={() => openLog("receipts")}>📄 سجل الوصولات</button>
+                            <button className="sb-act" onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
+                            <MapButton subscriberId={s.id} />
+                            <button className="sb-act" onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
+                            <button className="sb-act" onClick={() => { setMoreMenu(false); setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}>💵 تسديد اشتراك</button>
+                            <button className="sb-act" onClick={() => router.push("/debts")}>💲 تسديد فواتير</button>
+                            <button className="sb-act" onClick={() => router.push("/tickets")}>📝 اضافة مذكرة</button>
+                            <button className="sb-act sb-danger" onClick={() => { setMoreMenu(false); setAddingDebt(s); }}>🅰️ اضافة ديون سابقة</button>
+                            {can("rewards.clear") && <button className="sb-act sb-danger" onClick={() => { setMoreMenu(false); void clearReward(); }}>🎁 حذف كود المكافأة</button>}
+                          </div>
+                        )}
                       </div>
                     </td></tr>
                   );
@@ -388,40 +388,6 @@ export default function SubscribersBoard() {
       {/* تحصيل الفنيين — شريط أفقي أسفل المشتركين (كما في النموذج) */}
       <FieldSettlementCard />
 
-      {/* قائمة «المزيد» — Portal إلى جسم الصفحة: على يسار الزر ومن منتصفه بالضبط */}
-      {moreMenu && menuPos && selected && typeof document !== "undefined" && createPortal(
-        <div className="nst" dir="rtl">
-          <div className="sbmenu" onClick={(e) => e.stopPropagation()}
-            ref={(el) => {
-              // ضبط برمجي مباشر: يضمن الموضع مهما كانت أنماط الصنف أو اتجاه الصفحة
-              if (!el) return;
-              el.style.setProperty("position", "fixed", "important");
-              el.style.setProperty("top", menuPos.top + "px", "important");
-              el.style.setProperty("left", menuPos.left + "px", "important");
-              el.style.setProperty("right", "auto", "important");
-              el.style.setProperty("bottom", "auto", "important");
-              el.style.setProperty("inset-inline-end", "auto", "important");
-              el.style.setProperty("inset-inline-start", "auto", "important");
-              el.style.setProperty("width", "200px", "important");
-              el.style.setProperty("max-height", "70vh", "important");
-              el.style.setProperty("overflow-y", "auto", "important");
-              el.style.setProperty("z-index", "95", "important");
-              el.style.setProperty("margin", "0", "important");
-              el.style.setProperty("transform", "none", "important");
-            }}>
-            <button onClick={() => openLog("receipts")}>📄 سجل الوصولات</button>
-            <button onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
-            <div style={{ padding: "3px 6px" }}><MapButton subscriberId={selected.id} className="w-full justify-center" /></div>
-            <button onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
-            <button onClick={() => { setMoreMenu(false); setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}>💵 تسديد اشتراك</button>
-            <button onClick={() => router.push("/debts")}>💲 تسديد فواتير</button>
-            <button onClick={() => router.push("/tickets")}>📝 اضافة مذكرة</button>
-            <button className="dang" onClick={() => { setMoreMenu(false); setAddingDebt(selected); }}>🅰️ اضافة ديون سابقة</button>
-            {can("rewards.clear") && <button className="dang" onClick={() => { setMoreMenu(false); void clearReward(); }}>🎁 حذف كود المكافأة</button>}
-          </div>
-        </div>,
-        document.body,
-      )}
 
       {/* ===== النوافذ ===== */}
 
