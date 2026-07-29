@@ -135,8 +135,9 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
 }
 
 // ٢ · المصروفات والمقبوضات — سطران + شريط نسبة + الصافي.
-// أرقامها من صندوق اليدوي فقط (ما سُجّل في حساب المصروفات والمقبوضات وجميع وصولاته)
-// لا مبالغ الاشتراكات ولا الفواتير — مطابقة لصفحة /cashbox (طلب محمد 2026-07-29).
+// أرقامها من صندوق اليدوي فقط (ما سُجّل في حساب المصروفات والمقبوضات ووصولاته)
+// لا مبالغ الاشتراكات ولا الفواتير، ولِيَوم العراق الحالي فقط — تتحدّث يومياً
+// وتتصفّر بعد منتصف الليل كبقية أرقام الرئيسية (طلبا محمد 2026-07-29).
 function MoneyCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }) {
   const [s, setS] = useState<{ totalIn: number; totalOut: number; balance: number } | null>(null);
   const [officeSel, setOfficeSel] = useState<"all" | number>("all");

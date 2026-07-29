@@ -556,6 +556,9 @@ export default function FieldManagementPage() {
                   <div key={c.id} onClick={() => setSel(c)} className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md">
                     <div className="text-sm font-medium text-slate-800">{c.title}</div>
                     {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
+                    {/* ما كتبه الفني عند الإنجاز — على وجه البطاقة مباشرة (طلب محمد 2026-07-29؛ متصفح المدير فقط — لوحة الفني كما هي) */}
+                    {!isTech && c.serviceDetails && <div className="mt-0.5 whitespace-pre-wrap rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-slate-600">🔧 {c.serviceDetails}</div>}
+                    {!isTech && c.techNote && <div className="mt-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">🗒️ {c.techNote}</div>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
                       <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`} style={!isTech && typeColors[c.kind] ? { background: typeColors[c.kind] } : undefined}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}

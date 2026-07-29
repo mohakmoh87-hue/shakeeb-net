@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
+import { iraqTodayRange } from "@/lib/dailyReport";
 
 export const dynamic = "force-dynamic";
 
 // خلاصة صندوق المصروفات والمقبوضات لبطاقة الشاشة الرئيسية — اليدوي فقط
-// (نفس فلتر صفحة /cashbox: ما سُجّل في الحساب وجميع وصولاته)، لا التفعيلات
-// ولا الفواتير (طلب محمد 2026-07-29). المدير يمرّر officeId لمكتب محدّد أو
+// (نفس فلتر صفحة /cashbox: ما سُجّل في الحساب ووصولاته)، لا التفعيلات ولا
+// الفواتير، ولِيَوم العراق الحالي فقط — تتصفّر بعد منتصف الليل كبقية أرقام
+// الرئيسية (طلب محمد 2026-07-29). المدير يمرّر officeId لمكتب محدّد أو
 // يتركه للكل؛ مستخدم المكتب محصور بمكتبه دائماً.
 export async function GET(request: Request) {
   const session = await getSession();
@@ -24,8 +26,14 @@ export async function GET(request: Request) {
       : { towerId: { in: ids.length ? ids : [-1] } };
   }
 
+  const { start, end } = iraqTodayRange();
   const agg = await prisma.moneyTx.aggregate({
-    where: { isDeleted: false, OR: [{ sourceType: null }, { sourceType: "manual" }], ...towerWhere },
+    where: {
+      isDeleted: false,
+      OR: [{ sourceType: null }, { sourceType: "manual" }],
+      date: { gte: start, lte: end },
+      ...towerWhere,
+    },
     _sum: { moneyIn: true, moneyOut: true },
   });
   const totalIn = agg._sum.moneyIn ?? 0;
