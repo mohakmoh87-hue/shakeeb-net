@@ -29,36 +29,32 @@ function SubsCard({ towerIds }: { towerIds: number[] }) {
   const [live, setLive] = useState(false);
   const key = towerIds.join(",");
 
+  // شرط محمد الصارم: الفعالون والمتصلون من حاسبة المكتب حصراً — لا مرور على
+  // Azure/Aiven بأي شكل. بلا حاسبة مكتب تظهر «—» ويُعاد البحث عنها كل 15 ثانية.
   useEffect(() => {
     if (!key) return;
     let stop = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
-    (async () => {
+    let poll: ReturnType<typeof setInterval> | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const start = async () => {
       const base = await localSasBase();
       if (stop) return;
-      if (base) {
-        const load = async () => {
-          try {
-            const r = await fetch(`${base}/stats/subscribers?towers=${key}`);
-            const d = await r.json().catch(() => null);
-            if (!stop && r.ok && d && typeof d.total === "number") {
-              setStats({ active: d.active, total: d.total, online: typeof d.online === "number" ? d.online : null });
-              setLive(true);
-            }
-          } catch { /* العامل توقّف مؤقتاً — نُبقي آخر أرقام */ }
-        };
-        void load();
-        timer = setInterval(load, 5000);
-      } else {
-        // بلا حاسبة مكتب: قراءة سحابية واحدة عند الفتح (بلا استطلاع — شرط الاستهلاك)
+      if (!base) { retry = setTimeout(start, 15000); return; }
+      const load = async () => {
         try {
-          const r = await fetch("/api/subscribers/stats");
+          const r = await fetch(`${base}/stats/subscribers?towers=${key}`);
           const d = await r.json().catch(() => null);
-          if (!stop && r.ok && d && typeof d.total === "number") setStats({ active: d.active, total: d.total, online: null });
-        } catch { /* */ }
-      }
-    })();
-    return () => { stop = true; if (timer) clearInterval(timer); };
+          if (!stop && r.ok && d && typeof d.total === "number") {
+            setStats({ active: d.active, total: d.total, online: typeof d.online === "number" ? d.online : null });
+            setLive(true);
+          }
+        } catch { /* العامل توقّف مؤقتاً — نُبقي آخر أرقام */ }
+      };
+      void load();
+      poll = setInterval(load, 5000);
+    };
+    void start();
+    return () => { stop = true; if (poll) clearInterval(poll); if (retry) clearTimeout(retry); };
   }, [key]);
 
   // الضغط على البطاقة ينتقل لقائمة المشتركين أسفل الشاشة (البطاقات كلها قابلة للضغط — طلب محمد)
@@ -79,7 +75,9 @@ function SubsCard({ towerIds }: { towerIds: number[] }) {
       </div>
       <div className="st-sub" style={{ display: "flex", justifyContent: "space-between" }}>
         <span>الكلي: <b className="num">{stats ? fmt(stats.total) : "—"}</b></span>
-        {live && <span title="يتحدّث كل 5 ثوانٍ من حاسبة المكتب مباشرة">⚡ مباشر</span>}
+        {live
+          ? <span title="يتحدّث كل 5 ثوانٍ من حاسبة المكتب مباشرة — بلا مرور على السحابة">⚡ مباشر</span>
+          : <span title="الأرقام تأتي من حاسبة المكتب حصراً — شغّلها لتظهر">⏳ بانتظار حاسبة المكتب</span>}
       </div>
     </div>
   );
