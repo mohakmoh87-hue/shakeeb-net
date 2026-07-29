@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type Item = { title: string; kind: string; amount: number; subAmount?: number; netUser?: string | null };
 type Tech = { id: number; name: string; towerId: number | null; pendingTotal: number; saleTotal?: number; subTotal?: number; pendingCount: number; items?: Item[] };
@@ -17,6 +18,18 @@ export default function FieldSettlementCard() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [openId, setOpenId] = useState<number | null>(null); // فني مفتوح تفصيل مبلغه
+  const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(null); // موضع القائمة العائمة
+  const stripRef = useRef<HTMLDivElement>(null);
+  // النقر في أي مكان خارج القائمة العائمة يغلقها تلقائياً (طلب محمد)
+  useEffect(() => {
+    if (openId == null) return;
+    const h = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest || (!t.closest(".ss-pop") && !t.closest(".ss-plus"))) setOpenId(null);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [openId]);
 
   const load = useCallback(() => {
     fetch("/api/field/settlement")
@@ -41,13 +54,13 @@ export default function FieldSettlementCard() {
   const officeName = (id: number | null) => offices.find((o) => o.id === id)?.name ?? "بدون مكتب";
 
   return (
-    <div className="settle-strip">
+    <div className="settle-strip" ref={stripRef}>
       <div className="ss-title">تحصيل الفنيين</div>
       <div className="ss-row">
         {techs.map((t) => {
           const open = openId === t.id;
           return (
-            <div key={t.id} className={`ss-item ${open ? "expanded" : ""}`}>
+            <div key={t.id} className="ss-item">
               <div className="ss-nm">{t.name}</div>
               <div className="ss-of">{officeName(t.towerId)}</div>
               <div className="ss-amt">{fmt(t.pendingTotal)} <small>د.ع</small></div>
@@ -56,7 +69,16 @@ export default function FieldSettlementCard() {
                   className={`ss-plus ${open ? "on" : ""}`}
                   title="تفاصيل المبلغ"
                   disabled={t.pendingCount <= 0}
-                  onClick={() => setOpenId(open ? null : t.id)}
+                  onClick={(e) => {
+                    if (open) { setOpenId(null); return; }
+                    // قائمة منسدلة للأعلى فوق الزر (Portal — لا تمدد للبطاقة ولا قصّ)
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setPopPos({
+                      top: r.top - 8,
+                      left: Math.max(8, Math.min(r.left + r.width / 2 - 165, window.innerWidth - 340)),
+                    });
+                    setOpenId(t.id);
+                  }}
                 >
                   {open ? "−" : "+"}
                 </button>
@@ -64,36 +86,47 @@ export default function FieldSettlementCard() {
                   {busyId === t.id ? "…" : "اكمال"}
                 </button>
               </div>
-              {open && (
-                <div className="ss-det">
-                  {(t.items ?? []).length === 0 ? (
-                    <div className="sd-empty">لا تفاصيل</div>
-                  ) : (
-                    <>
-                      {(t.items ?? []).map((it, idx) => (
-                        <div key={idx} className="sd-row">
-                          <span>
-                            {KIND_ICON[it.kind] ?? "🔧"} {it.kind} — {it.title}
-                            {it.netUser && <i dir="ltr"> {it.netUser}</i>}
-                          </span>
-                          <b>
-                            {fmt(it.amount)}
-                            {(it.subAmount ?? 0) > 0 && <em> + اشتراك {fmt(it.subAmount ?? 0)}</em>}
-                          </b>
-                        </div>
-                      ))}
-                      <div className="sd-tot">
-                        <span>المجموع الكلي (مبيع {fmt(t.saleTotal ?? 0)} + اشتراك {fmt(t.subTotal ?? 0)})</span>
-                        <b>{fmt(t.pendingTotal)} د.ع</b>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
           );
         })}
       </div>
+
+      {/* قائمة التفاصيل المنسدلة للأعلى من زر «+» (طلب محمد) */}
+      {openId != null && popPos && typeof document !== "undefined" && (() => {
+        const t = techs.find((x) => x.id === openId);
+        if (!t) return null;
+        return createPortal(
+          <div className="nst">
+            <div className="ss-pop" onClick={(e) => e.stopPropagation()}
+              style={{ position: "fixed", top: popPos.top, left: popPos.left, transform: "translateY(-100%)", width: 330, maxHeight: "60vh", overflowY: "auto", zIndex: 95 }}>
+              <div className="ss-pop-h">{t.name} — تفاصيل المبلغ</div>
+              {(t.items ?? []).length === 0 ? (
+                <div className="sd-empty">لا تفاصيل</div>
+              ) : (
+                <div className="ss-det" style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}>
+                  {(t.items ?? []).map((it, idx) => (
+                    <div key={idx} className="sd-row">
+                      <span>
+                        {KIND_ICON[it.kind] ?? "🔧"} {it.kind} — {it.title}
+                        {it.netUser && <i dir="ltr"> {it.netUser}</i>}
+                      </span>
+                      <b>
+                        {fmt(it.amount)}
+                        {(it.subAmount ?? 0) > 0 && <em> + اشتراك {fmt(it.subAmount ?? 0)}</em>}
+                      </b>
+                    </div>
+                  ))}
+                  <div className="sd-tot">
+                    <span>المجموع الكلي (مبيع {fmt(t.saleTotal ?? 0)} + اشتراك {fmt(t.subTotal ?? 0)})</span>
+                    <b>{fmt(t.pendingTotal)} د.ع</b>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body,
+        );
+      })()}
     </div>
   );
 }

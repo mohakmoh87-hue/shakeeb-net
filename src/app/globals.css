@@ -706,3 +706,9 @@ input[type="number"] { direction: ltr; }
 .nst .ss-item.expanded .ss-acts { justify-content: center; }
 .nst .ss-item.expanded .ss-btn { flex: 0 0 auto !important; width: 110px; font-size: 11.5px; padding: 6px; }
 .nst .ss-item.expanded .ss-plus { width: 28px; }
+
+/* قائمة تفاصيل التحصيل المنسدلة للأعلى من زر «+» */
+.nst .ss-pop { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--sh-lg); padding: 10px 12px; }
+.nst .ss-pop-h { font-size: 11.5px; font-weight: 800; color: var(--ink); margin-bottom: 7px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line); text-align: center; }

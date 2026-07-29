@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ActivationModal, { type ActSubscriber } from "@/components/ActivationModal";
@@ -59,6 +60,7 @@ export default function SubscribersBoard() {
   const [msg, setMsg] = useState("");
   const [delMenu, setDelMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [activating, setActivating] = useState<Subscriber | null>(null);
   const [addingDebt, setAddingDebt] = useState<Subscriber | null>(null);
   // نوافذ السجلات
@@ -310,49 +312,6 @@ export default function SubscribersBoard() {
 
       {msg && <div style={{ margin: "0 16px 8px" }} className="rounded-lg bg-ok/10 px-3 py-1.5 text-center text-xs font-semibold text-ok">{msg}</div>}
 
-      {/* شريط خيارات المشترك — فوق الجدول (لا يقصّه تمرير القائمة)، والقائمة
-          مرسومة داخل غلاف زر «المزيد» نفسه فتلتصق به بالضبط دائماً */}
-      {selected && (() => {
-        const s = selected;
-        const d = daysLeft(s.dateTo);
-        return (
-          <div className="subbar" style={{ background: "rgba(27,58,92,.07)", boxShadow: "inset 3px 0 0 var(--orange)", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
-            <div className="sb-row" style={{ overflow: "visible" }}>
-              <button className="sb-act go" onClick={() => setActivating(s)}>⚡ تفعيل</button>
-              <button className="sb-act" onClick={() => void sendSummary()}>{summaryBusy ? "جارٍ الإرسال..." : "💬 ارسال ملخص"}</button>
-              <span className="sb-sep" />
-              <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}>الأيام المتبقية <b>{d}</b></span>
-              <button className={`sb-chip c-debt ${(s.carry ?? 0) <= 0 ? "zero" : ""}`} style={{ border: 0, cursor: "pointer", fontFamily: "inherit" }}
-                disabled={(s.carry ?? 0) <= 0}
-                onClick={() => { setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}
-                title="تسديد دين">
-                الديون <b>{fmt(s.carry)}</b>
-              </button>
-              <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>
-              <span style={{ position: "relative", flex: "none" }}>
-                <button className="sb-act" aria-haspopup="true" onClick={(e) => { e.stopPropagation(); setMoreMenu((v) => !v); }}>⋯ المزيد</button>
-                {moreMenu && (
-                  <div className="sbmenu" onClick={(e) => e.stopPropagation()}
-                    style={{ position: "absolute", top: "calc(100% + 6px)", insetInlineEnd: 0, insetInlineStart: "auto", width: 200, maxHeight: "60vh", overflowY: "auto", zIndex: 40 }}>
-                    <button onClick={() => openLog("receipts")}>📄 سجل الوصولات</button>
-                    <button onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
-                    <div style={{ padding: "3px 6px" }}><MapButton subscriberId={s.id} className="w-full justify-center" /></div>
-                    <button onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
-                    <button onClick={() => { setMoreMenu(false); setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}>💵 تسديد اشتراك</button>
-                    <button onClick={() => router.push("/debts")}>💲 تسديد فواتير</button>
-                    <button onClick={() => router.push("/tickets")}>📝 اضافة مذكرة</button>
-                    <button className="dang" onClick={() => { setMoreMenu(false); setAddingDebt(s); }}>🅰️ اضافة ديون سابقة</button>
-                    {can("rewards.clear") && <button className="dang" onClick={() => { setMoreMenu(false); void clearReward(); }}>🎁 حذف كود المكافأة</button>}
-                  </div>
-                )}
-              </span>
-              <span className="mr-auto" style={{ flex: "none", fontSize: 12, fontWeight: 800, color: "var(--ink)" }}>{s.name}</span>
-              <button className="sb-x" onClick={() => { setSelectedId(null); setMoreMenu(false); }} aria-label="إلغاء التحديد">✕</button>
-            </div>
-          </div>
-        );
-      })()}
-
       {/* الجدول — صفّ الخيارات (subrow) يلتحم بالصفّ المحدَّد كما في النموذج */}
       <div className="tscroll subs-scroll" onClick={() => setMoreMenu(false)} onScroll={() => setMoreMenu(false)}>
         <table className="tbl subs">
@@ -379,6 +338,42 @@ export default function SubscribersBoard() {
                   <td className="num" dir="ltr">{s.phone ?? "—"}</td>
                   <td>{towerName(s.towerId)}</td>
                 </tr>,
+                isActive && (() => {
+                  const d = daysLeft(s.dateTo);
+                  return (
+                    <tr key={`${s.id}-bar`} className="subrow"><td colSpan={6}>
+                      <div className="subbar">
+                        <div className="sb-row">
+                          <button className="sb-act go" onClick={() => setActivating(s)}>⚡ تفعيل</button>
+                          <button className="sb-act" onClick={() => void sendSummary()}>{summaryBusy ? "جارٍ الإرسال..." : "💬 ارسال ملخص"}</button>
+                          <span className="sb-sep" />
+                          <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}>الأيام المتبقية <b>{d}</b></span>
+                          <button className={`sb-chip c-debt ${(s.carry ?? 0) <= 0 ? "zero" : ""}`} style={{ border: 0, cursor: "pointer", fontFamily: "inherit" }}
+                            disabled={(s.carry ?? 0) <= 0}
+                            onClick={() => { setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}
+                            title="تسديد دين">
+                            الديون <b>{fmt(s.carry)}</b>
+                          </button>
+                          <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>
+                          <button className="sb-act" aria-haspopup="true"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // القائمة على يسار الزر ومن منتصفه بالضبط (طلب محمد) — تُرسم عبر
+                              // Portal إلى جسم الصفحة فلا يحرفها أو يقصّها أي شيء
+                              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                              const H = Math.min(340, Math.round(window.innerHeight * 0.7));
+                              setMenuPos({
+                                left: Math.max(8, r.left - 208),
+                                top: Math.max(8, Math.min(r.top + r.height / 2 - H / 2, window.innerHeight - H - 8)),
+                              });
+                              setMoreMenu((v) => !v);
+                            }}>⋯ المزيد</button>
+                          <button className="sb-x" style={{ marginInlineStart: "auto" }} onClick={() => { setSelectedId(null); setMoreMenu(false); }} aria-label="إلغاء التحديد">✕</button>
+                        </div>
+                      </div>
+                    </td></tr>
+                  );
+                })(),
               ];
             })}
             {subs.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>لا نتائج</td></tr>}
@@ -392,6 +387,25 @@ export default function SubscribersBoard() {
 
       {/* تحصيل الفنيين — شريط أفقي أسفل المشتركين (كما في النموذج) */}
       <FieldSettlementCard />
+
+      {/* قائمة «المزيد» — Portal إلى جسم الصفحة: على يسار الزر ومن منتصفه بالضبط */}
+      {moreMenu && menuPos && selected && typeof document !== "undefined" && createPortal(
+        <div className="nst">
+          <div className="sbmenu" onClick={(e) => e.stopPropagation()}
+            style={{ position: "fixed", top: menuPos.top, left: menuPos.left, width: 200, maxHeight: "70vh", overflowY: "auto", zIndex: 95, insetInlineEnd: "auto" }}>
+            <button onClick={() => openLog("receipts")}>📄 سجل الوصولات</button>
+            <button onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
+            <div style={{ padding: "3px 6px" }}><MapButton subscriberId={selected.id} className="w-full justify-center" /></div>
+            <button onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
+            <button onClick={() => { setMoreMenu(false); setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}>💵 تسديد اشتراك</button>
+            <button onClick={() => router.push("/debts")}>💲 تسديد فواتير</button>
+            <button onClick={() => router.push("/tickets")}>📝 اضافة مذكرة</button>
+            <button className="dang" onClick={() => { setMoreMenu(false); setAddingDebt(selected); }}>🅰️ اضافة ديون سابقة</button>
+            {can("rewards.clear") && <button className="dang" onClick={() => { setMoreMenu(false); void clearReward(); }}>🎁 حذف كود المكافأة</button>}
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* ===== النوافذ ===== */}
 
