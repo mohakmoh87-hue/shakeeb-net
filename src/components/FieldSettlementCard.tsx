@@ -71,11 +71,18 @@ export default function FieldSettlementCard() {
                   disabled={t.pendingCount <= 0}
                   onClick={(e) => {
                     if (open) { setOpenId(null); return; }
-                    // قائمة منسدلة للأعلى فوق الزر (Portal — لا تمدد للبطاقة ولا قصّ)
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    // تثبيت بحافة الزر اليمنى والنمو يساراً — العرض يتبع طول النص تلقائياً
-                    setPopPos({ top: r.top - 8, right: Math.max(8, window.innerWidth - r.right) });
-                    setOpenId(t.id);
+                    const btn = e.currentTarget as HTMLElement;
+                    // الهاتف: مرّر بطاقة الفني لأقصى اليمين أولاً — القائمة تنمو يساراً
+                    // فتظهر كاملة بدل خروجها عن الشاشة (طلب محمد — الهاتف فقط)
+                    if (window.innerWidth <= 767) {
+                      btn.closest(".ss-item")?.scrollIntoView({ inline: "start", block: "nearest" });
+                    }
+                    // القياس بعد استقرار التمرير: تثبيت بحافة الزر اليمنى والنمو يساراً
+                    requestAnimationFrame(() => {
+                      const r = btn.getBoundingClientRect();
+                      setPopPos({ top: r.top - 8, right: Math.max(8, window.innerWidth - r.right) });
+                      setOpenId(t.id);
+                    });
                   }}
                 >
                   {open ? "−" : "+"}

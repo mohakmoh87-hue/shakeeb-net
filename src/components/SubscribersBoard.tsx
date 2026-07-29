@@ -310,7 +310,7 @@ export default function SubscribersBoard() {
       {msg && <div style={{ margin: "0 16px 8px" }} className="rounded-lg bg-ok/10 px-3 py-1.5 text-center text-xs font-semibold text-ok">{msg}</div>}
 
       {/* الجدول — صفّ الخيارات (subrow) يلتحم بالصفّ المحدَّد كما في النموذج */}
-      <div className="tscroll subs-scroll" onClick={() => setMoreMenu(false)} onScroll={() => setMoreMenu(false)}>
+      <div className="tscroll subs-scroll" onClick={() => setMoreMenu(false)}>
         <table className="tbl subs">
           <thead>
             <tr>
