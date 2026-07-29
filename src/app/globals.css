@@ -656,3 +656,6 @@ html:not([data-app-mode]) .field-site.field-canvas { background: var(--ground); 
   .nst .subs-scroll { max-height: 55vh; }
   .nst .sumbar b { font-size: 15px; }
 }
+
+/* ب5: الحقول الرقمية تُعرض LTR دائماً (أرقام ومبالغ) */
+input[type="number"] { direction: ltr; }
