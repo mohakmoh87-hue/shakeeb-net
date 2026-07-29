@@ -736,3 +736,10 @@ input[type="number"] { direction: ltr; }
 .nst .sb-act.on { border-color: var(--navy); color: var(--navy); background: var(--surface-2); }
 .nst .sb-act.sb-danger { color: var(--bad); }
 .nst .sb-act.sb-danger:hover { border-color: var(--bad); background: rgba(229,56,79,.08); color: var(--bad); }
+
+/* الهاتف: قائمة اختيار المكتب في بطاقتي الإحصاء تنزل سطراً كاملاً تحت العنوان
+   (كانت تنزاح يساراً بشكل غير متناسق في العرض الضيق) */
+@media (max-width: 767px) {
+  .nst .st-top { flex-wrap: wrap; }
+  .nst .st-sel, .nst .st-sel-l { order: 3; width: 100%; max-width: 100%; margin-top: 4px; }
+}
