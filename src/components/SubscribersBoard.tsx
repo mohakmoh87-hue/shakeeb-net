@@ -553,45 +553,46 @@ export default function SubscribersBoard() {
       {/* نافذة عمليات 🛠️ (صيانة/اعادة/توصيل/تحويل بخطوتين) */}
       {opsSub && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" onClick={closeOps}>
-          <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl bg-surface p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-1 text-center text-lg font-bold text-ink">عمليات المشترك</div>
-            <div className="mb-4 text-center text-sm text-muted">{opsSub.name ?? opsSub.netUser ?? `مشترك #${opsSub.id}`}</div>
-            {!opsChosen ? (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  {FIELD_OPS.map((op) => (
-                    <button key={op.key} disabled={opsBusy}
-                      onClick={() => { setOpsChosen(op.key); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); }}
-                      className="flex flex-col items-center gap-1 rounded-xl border border-line bg-surface-2 py-4 font-semibold text-ink hover:border-navy-3 disabled:opacity-50">
-                      <span className="text-2xl">{op.icon}</span>
-                      <span>{op.key}</span>
-                    </button>
-                  ))}
-                </div>
-                <button onClick={closeOps} className="mt-4 w-full rounded-lg bg-surface-2 py-2 text-ink-2">إلغاء</button>
-              </>
-            ) : (
-              <>
-                <div className="mb-3 rounded-lg bg-navy/5 px-3 py-2 text-center text-sm font-semibold text-navy-3">
-                  {FIELD_OPS.find((o) => o.key === opsChosen)?.icon} {opsChosen}
-                </div>
-                {opsChosen === "توصيل" && (
-                  <>
-                    <label className="mb-1 block text-xs font-semibold text-indigo-600">💵 مبلغ الاشتراك (يظهر على وجه البطاقة ليعرف الفني كم يأخذ من الزبون)</label>
-                    <input type="number" value={opsAmount} onChange={(e) => setOpsAmount(e.target.value)} dir="ltr" placeholder="مثال: 25000" className="mb-3 w-full rounded-lg border border-indigo-300 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
-                  </>
-                )}
-                <label className="mb-1 block text-xs font-semibold text-muted">رقم هاتف إضافي (اختياري)</label>
-                <input value={opsPhone} onChange={(e) => setOpsPhone(e.target.value)} dir="ltr" placeholder={opsSub.phone ? `الأصلي: ${opsSub.phone}` : "07..."} className="mb-3 w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-navy-3" />
-                <label className="mb-1 block text-xs font-semibold text-muted">ملاحظة (اختيارية)</label>
-                <textarea value={opsNote} onChange={(e) => setOpsNote(e.target.value)} rows={3} placeholder="تفاصيل أو ملاحظة للفني..." className="mb-3 w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-navy-3" />
-                <p className="mb-3 text-[11px] text-muted">تُضاف مع رقم المشترك الأصلي إلى البطاقة. اتركها فارغة واضغط موافق لإنشاء البطاقة كالمعتاد.</p>
-                <div className="flex gap-2">
-                  <button onClick={() => sendToField(opsChosen)} disabled={opsBusy} className="flex-1 rounded-lg bg-navy py-2.5 font-bold text-white disabled:opacity-50">{opsBusy ? "..." : "موافق"}</button>
-                  <button onClick={() => setOpsChosen(null)} disabled={opsBusy} className="rounded-lg bg-surface-2 px-4 py-2.5 font-semibold text-ink-2">رجوع</button>
-                </div>
-              </>
-            )}
+          <div className="ops-sheet max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="ops-head">
+              <h3>عمليات المشترك</h3>
+              <div className="who">{opsSub.name ?? opsSub.netUser ?? `مشترك #${opsSub.id}`}</div>
+            </div>
+            <div className="ops-body">
+              {!opsChosen ? (
+                <>
+                  <div className="ops-grid">
+                    {FIELD_OPS.map((op) => (
+                      <button key={op.key} disabled={opsBusy} className="ops-btn"
+                        onClick={() => { setOpsChosen(op.key); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); }}>
+                        <span className="e">{op.icon}</span>
+                        <span>{op.key}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={closeOps} className="ops-cancel">إلغاء</button>
+                </>
+              ) : (
+                <>
+                  <div className="ops-chip">{FIELD_OPS.find((o) => o.key === opsChosen)?.icon} {opsChosen}</div>
+                  {opsChosen === "توصيل" && (
+                    <>
+                      <label className="ops-lb amt">💵 مبلغ الاشتراك (يظهر على وجه البطاقة ليعرف الفني كم يأخذ من الزبون)</label>
+                      <input type="number" className="ops-in" value={opsAmount} onChange={(e) => setOpsAmount(e.target.value)} dir="ltr" placeholder="مثال: 25000" />
+                    </>
+                  )}
+                  <label className="ops-lb">رقم هاتف إضافي (اختياري)</label>
+                  <input className="ops-in" value={opsPhone} onChange={(e) => setOpsPhone(e.target.value)} dir="ltr" placeholder={opsSub.phone ? `الأصلي: ${opsSub.phone}` : "07..."} />
+                  <label className="ops-lb">ملاحظة (اختيارية)</label>
+                  <textarea className="ops-in" value={opsNote} onChange={(e) => setOpsNote(e.target.value)} rows={3} placeholder="تفاصيل أو ملاحظة للفني..." />
+                  <p className="ops-hint">تُضاف مع رقم المشترك الأصلي إلى البطاقة. اتركها فارغة واضغط موافق لإنشاء البطاقة كالمعتاد.</p>
+                  <div className="ops-acts">
+                    <button className="ops-ok" onClick={() => sendToField(opsChosen)} disabled={opsBusy}>{opsBusy ? "..." : "موافق"}</button>
+                    <button className="ops-back" onClick={() => setOpsChosen(null)} disabled={opsBusy}>رجوع</button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

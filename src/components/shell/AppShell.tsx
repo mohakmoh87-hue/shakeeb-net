@@ -319,26 +319,26 @@ function LogoModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-full max-w-xs rounded-2xl bg-surface p-5 text-ink shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 text-center text-base font-extrabold">شعار الوكالة</div>
-        <div className="mb-3 flex justify-center">
+    <div className="nst fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="logo-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="logo-head">شعار الوكالة</div>
+        <div className="logo-body">
           {preview ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={preview} alt="الشعار" className="h-28 w-28 rounded-full border border-line object-cover" />
+            <img src={preview} alt="الشعار" className="logo-prev" />
           ) : (
-            <div className="flex h-28 w-28 items-center justify-center rounded-full border border-dashed border-line text-3xl text-muted">ش</div>
+            <div className="logo-prev">ش</div>
           )}
-        </div>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden"
-          onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
-        <button onClick={() => fileRef.current?.click()} className="mb-2 w-full rounded-xl bg-navy py-2.5 text-sm font-bold text-white">📷 اختيار صورة</button>
-        <p className="mb-3 text-center text-[11px] text-muted">يظهر الشعار بأعلى الشريط الجانبي وفي شريط الهاتف لكل مستخدمي وكالتك.</p>
-        {msg && <div className="mb-2 rounded-lg bg-red-50 px-3 py-1.5 text-center text-xs text-bad">{msg}</div>}
-        <div className="flex gap-2">
-          <button onClick={save} disabled={!preview || busy} className="flex-1 rounded-xl bg-ok py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? "..." : "حفظ"}</button>
-          <button onClick={remove} disabled={busy} className="rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-bad">إزالة</button>
-          <button onClick={onClose} className="rounded-xl bg-surface-2 px-3 py-2 text-sm text-ink-2">إغلاق</button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
+            onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
+          <button className="logo-pick" onClick={() => fileRef.current?.click()}>📷 اختيار صورة</button>
+          <div className="logo-hint">يظهر الشعار بأعلى الشريط الجانبي وفي شريط الهاتف لكل مستخدمي وكالتك.</div>
+          {msg && <div className="rounded-lg bg-red-50 px-3 py-1.5 text-center text-xs text-bad">{msg}</div>}
+          <div className="logo-acts">
+            <button className="lg-save" onClick={save} disabled={!preview || busy}>{busy ? "..." : "حفظ"}</button>
+            <button className="lg-cancel" onClick={remove} disabled={busy}>إزالة</button>
+            <button className="lg-cancel" onClick={onClose}>إغلاق</button>
+          </div>
         </div>
       </div>
     </div>
