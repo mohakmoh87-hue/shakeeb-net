@@ -342,6 +342,7 @@ export default function SubscribersBoard() {
                     <div className="subbar">
                       <div className="sb-row">
                         <button className="sb-act go" onClick={() => setActivating(s)}>⚡ تفعيل</button>
+                        <button className="sb-act" onClick={() => void sendSummary()}>{summaryBusy ? "جارٍ الإرسال..." : "💬 ارسال ملخص"}</button>
                         <span className="sb-sep" />
                         <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}>الأيام المتبقية <b>{d}</b></span>
                         <button className={`sb-chip c-debt ${(s.carry ?? 0) <= 0 ? "zero" : ""}`} style={{ border: 0, cursor: "pointer", fontFamily: "inherit" }}
@@ -355,19 +356,19 @@ export default function SubscribersBoard() {
                           onClick={(e) => {
                             e.stopPropagation();
                             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                            setMenuPos({ top: r.bottom + 6, left: Math.max(8, Math.min(r.left, window.innerWidth - 208)) });
+                            // أسفل الزر مباشرة: الحافة اليمنى للقائمة على الحافة اليمنى للزر (RTL)
+                            setMenuPos({ top: r.bottom + 6, left: Math.max(8, r.right - 192) });
                             setMoreMenu((v) => !v);
                           }}>⋯ المزيد</button>
                         <button className="sb-x" onClick={() => { setSelectedId(null); setMoreMenu(false); }} aria-label="إلغاء التحديد">✕</button>
                       </div>
                       {moreMenu && menuPos && (
                         <div className="sbmenu" onClick={(e) => e.stopPropagation()}
-                          style={{ position: "fixed", top: menuPos.top, left: menuPos.left, insetInlineEnd: "auto", maxHeight: "60vh", overflowY: "auto" }}>
+                          style={{ position: "fixed", top: menuPos.top, left: menuPos.left, width: 192, insetInlineEnd: "auto", maxHeight: "60vh", overflowY: "auto" }}>
                           <button onClick={() => openLog("receipts")}>📄 سجل الوصولات</button>
                           <button onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
                           <div style={{ padding: "3px 6px" }}><MapButton subscriberId={s.id} className="w-full justify-center" /></div>
                           <button onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
-                          <button onClick={() => void sendSummary()}>{summaryBusy ? "جارٍ الإرسال..." : "💬 ارسال ملخص"}</button>
                           <button onClick={() => { setMoreMenu(false); setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}>💵 تسديد اشتراك</button>
                           <button onClick={() => router.push("/debts")}>💲 تسديد فواتير</button>
                           <button onClick={() => router.push("/tickets")}>📝 اضافة مذكرة</button>
