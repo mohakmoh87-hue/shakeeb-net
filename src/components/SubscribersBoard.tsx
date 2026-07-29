@@ -342,7 +342,6 @@ export default function SubscribersBoard() {
                       <div className="subbar">
                         <div className="sb-row">
                           <button className="sb-act go" onClick={() => setActivating(s)}>⚡ تفعيل</button>
-                          <button className="sb-act" onClick={() => void sendSummary()}>{summaryBusy ? "جارٍ الإرسال..." : "💬 ارسال ملخص"}</button>
                           <span className="sb-sep" />
                           <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}>الأيام المتبقية <b>{d}</b></span>
                           <button className={`sb-chip c-debt ${(s.carry ?? 0) <= 0 ? "zero" : ""}`} style={{ border: 0, cursor: "pointer", fontFamily: "inherit" }}
@@ -380,6 +379,7 @@ export default function SubscribersBoard() {
                             <button className="sb-act" onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
                             <MapButton subscriberId={s.id} />
                             <button className="sb-act" onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
+                            <button className="sb-act" onClick={() => void sendSummary()}>{summaryBusy ? "جارٍ الإرسال..." : "💬 ارسال ملخص"}</button>
                             <button className="sb-act" onClick={() => { setMoreMenu(false); setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}>💵 تسديد اشتراك</button>
                             <button className="sb-act" onClick={() => router.push("/debts")}>💲 تسديد فواتير</button>
                             <button className="sb-act" onClick={() => router.push("/tickets")}>📝 اضافة مذكرة</button>
