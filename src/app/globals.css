@@ -319,6 +319,9 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
 
   /* قائمة المشتركين */
   .subs-scroll { max-height: 292px; overflow-y: auto; overflow-x: auto; }
+  .subs thead th { padding: 6px 9px; }
+  .subs tbody td { padding: 6px 9px; }
+  .subs tbody td:nth-child(2) { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
   .subs thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); }
   .subs-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
   .subs-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
@@ -336,7 +339,8 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
   /* شريط خيارات المشترك داخل سطره */
   .subrow > td { padding: 0 !important; border-top: 0 !important;
     background: rgba(27,58,92,.07); box-shadow: inset 3px 0 0 var(--orange); }
-  .subbar { position: relative; display: block; padding: 7px 12px 8px; background: transparent; border: 0; }
+  .subbar { position: relative; display: block; padding: 7px 12px 8px; background: transparent; border: 0;
+    width: 0; min-width: 100%; }
   .sb-row { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
     overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
   .sb-row > * { flex: none; }

@@ -87,6 +87,18 @@ export default function SubscribersBoard() {
   const [payErr, setPayErr] = useState("");
   const [summaryBusy, setSummaryBusy] = useState(false);
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  // النقر خارج البطاقة يغلق شريط خيارات المشترك وقائمة «المزيد» (طلب محمد)
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setSelectedId(null); setMoreMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
   const selected = subs.find((s) => s.id === selectedId) ?? null;
   const towerName = (id: number | null | undefined) => towers.find((t) => t.id === id)?.name ?? "—";
 
@@ -251,7 +263,7 @@ export default function SubscribersBoard() {
 
 
   return (
-    <div className="card">
+    <div className="card" ref={rootRef}>
       {/* ترويسة النموذج: العنوان + صفّ الأزرار الواحد + «مشترك جديد» وحالة واتساب */}
       <div className="ch">
         <h2>👥 المشتركين</h2>
