@@ -9,25 +9,28 @@ import { localSasBase } from "@/lib/localSas";
 // شريط نسبة + الصافي) · فاتورة المبيع (عدد + اتجاه + منحنى مساحي) · إدارة الفنيين (دونات).
 // «الفعالين/المتصلين» كل 5 ثوانٍ من حاسبة المكتب حصراً (أ5) — بلا مرور على السحابة.
 type Report = { invoiceCount: number; invoiceIn: number; expenses: number; total: number };
+type Office = { id: number; name: string | null };
 
 const fmt = (n: number | null | undefined) => Number(n ?? 0).toLocaleString("en-US");
 
-export default function StatCards({ initialReport, towerIds }: { initialReport: Report; towerIds: number[] }) {
+export default function StatCards({ initialReport, towerIds, offices, isAdmin }: { initialReport: Report; towerIds: number[]; offices: Office[]; isAdmin: boolean }) {
   return (
     <section className="stats max-[1050px]:!grid-cols-2">
-      <SubsCard towerIds={towerIds} />
+      <SubsCard towerIds={towerIds} offices={offices} isAdmin={isAdmin} />
       <MoneyCard r={initialReport} />
       <InvoiceCard r={initialReport} />
-      <FieldCard />
+      <FieldCard offices={offices} isAdmin={isAdmin} />
     </section>
   );
 }
 
 // ١ · المشتركين (داكنة) — الفعالين والمتصلين، والكلي سطراً صغيراً
-function SubsCard({ towerIds }: { towerIds: number[] }) {
+function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices: Office[]; isAdmin: boolean }) {
   const [stats, setStats] = useState<{ active: number; total: number; online: number | null } | null>(null);
   const [live, setLive] = useState(false);
-  const key = towerIds.join(",");
+  // المدير يختار مكتباً أو الكل؛ المستخدم مكتبه فقط (towerIds تأتي بمكتبه وحده)
+  const [officeSel, setOfficeSel] = useState<"all" | number>("all");
+  const key = officeSel === "all" ? towerIds.join(",") : String(officeSel);
 
   // شرط محمد الصارم: الفعالون والمتصلون من حاسبة المكتب حصراً — لا مرور على
   // Azure/Aiven بأي شكل. بلا حاسبة مكتب تظهر «—» ويُعاد البحث عنها كل 15 ثانية.
@@ -61,7 +64,21 @@ function SubsCard({ towerIds }: { towerIds: number[] }) {
   const scrollToBoard = () => document.getElementById("subs-board")?.scrollIntoView({ behavior: "smooth", block: "start" });
   return (
     <div className="stat dark" role="button" onClick={scrollToBoard} title="الانتقال لقائمة المشتركين">
-      <div className="st-top"><span className="st-lb">المشتركين</span><span className="st-ic">👥</span></div>
+      <div className="st-top">
+        <span className="st-lb">المشتركين</span>
+        {isAdmin && offices.length > 1 && (
+          <select
+            className="st-sel"
+            value={officeSel}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onChange={(e) => setOfficeSel(e.target.value === "all" ? "all" : Number(e.target.value))}
+          >
+            <option value="all">كل المكاتب</option>
+            {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `#${o.id}`}</option>)}
+          </select>
+        )}
+        <span className="st-ic">👥</span>
+      </div>
       <div className="twoup">
         <div className="tu">
           <div className="tu-lb"><i className="dot" style={{ background: "#3ad9a8" }} /> الفعالين</div>
@@ -163,22 +180,61 @@ function Spark({ values }: { values: number[] }) {
 }
 
 // ٤ · إدارة الفنيين — دونات بقوسين (لاجورد منجزة + برتقالي متبقّية)
-function FieldCard() {
+function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }) {
   const [v, setV] = useState<{ done: number; rest: number } | null>(null);
+  const [officeSel, setOfficeSel] = useState<"all" | number>("all");
   useEffect(() => {
-    fetch("/api/field/board").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (!d?.cards) return;
-      const done = d.cards.filter((c: { done?: boolean }) => c.done).length;
-      setV({ done, rest: d.cards.length - done });
-    }).catch(() => {});
-  }, []);
+    let stop = false;
+    const count = (cards: { done?: boolean }[]) => {
+      const done = cards.filter((c) => c.done).length;
+      return { done, rest: cards.length - done };
+    };
+    (async () => {
+      try {
+        if (isAdmin && officeSel === "all" && offices.length > 0) {
+          // كل المكاتب: جمع لوحات مكاتب الوكيل كلها
+          const boards = await Promise.all(
+            offices.map((o) => fetch(`/api/field/board?officeId=${o.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)),
+          );
+          if (stop) return;
+          let done = 0, rest = 0;
+          for (const b of boards) {
+            if (!b?.cards) continue;
+            const c = count(b.cards);
+            done += c.done; rest += c.rest;
+          }
+          setV({ done, rest });
+        } else {
+          // مكتب محدّد (مدير) أو مكتب المستخدم (يحدّده الخادم تلقائياً)
+          const qs = isAdmin && officeSel !== "all" ? `?officeId=${officeSel}` : "";
+          const d = await fetch(`/api/field/board${qs}`).then((r) => (r.ok ? r.json() : null));
+          if (!stop && d?.cards) setV(count(d.cards));
+        }
+      } catch { /* */ }
+    })();
+    return () => { stop = true; };
+  }, [isAdmin, officeSel, offices]);
   const total = (v?.done ?? 0) + (v?.rest ?? 0);
   const pct = total ? v!.done / total : 0;
   const R = 28, C = 2 * Math.PI * R, GAP = 4;
   const doneLen = Math.max(0, pct * C - GAP), restLen = Math.max(0, (1 - pct) * C - GAP);
   return (
     <Link href="/field-management" className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح إدارة الفنيين">
-      <div className="st-top"><span className="st-lb">🛠️ إدارة الفنيين</span><span className="st-ic">📋</span></div>
+      <div className="st-top">
+        <span className="st-lb">🛠️ إدارة الفنيين</span>
+        {isAdmin && offices.length > 1 && (
+          <select
+            className="st-sel-l"
+            value={officeSel}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onChange={(e) => setOfficeSel(e.target.value === "all" ? "all" : Number(e.target.value))}
+          >
+            <option value="all">كل المكاتب</option>
+            {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `#${o.id}`}</option>)}
+          </select>
+        )}
+        <span className="st-ic">📋</span>
+      </div>
       <div className="fieldrow">
         <div className="sm-donut">
           <svg width="74" height="74" viewBox="0 0 74 74" role="img" aria-label={`أُنجز ${Math.round(pct * 100)} بالمئة من البطاقات`}>
