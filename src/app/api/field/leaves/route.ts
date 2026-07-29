@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ role: "technician", quota, used, remaining: Math.max(0, quota - used), leaves });
   }
 
-  const g = await guard("field.manage");
+  const g = await guard("field.payroll");
   if (g.error) return g.error;
   const reqOffice = Number(new URL(request.url).searchParams.get("officeId")) || null;
   const agentTowers = await agentTowerIds(g.session);
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
 
 // PATCH (المدير فقط): قبول/رفض طلب — مع إعادة فحص الحصّة عند اعتماد إجازة مدفوعة
 export async function PATCH(request: Request) {
-  const g = await guard("field.manage");
+  const g = await guard("field.payroll");
   if (g.error) return g.error;
   const parsed = z.object({ id: z.coerce.number(), status: z.enum(["approved", "rejected"]) }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });

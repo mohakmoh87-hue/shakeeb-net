@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 // استرجاع كامل (استبدال): يرفع الوكيل ملف نسخته فتُستبدل بياناته الحالية بالكامل.
 // يُرسَل الملف كجسم خام (application/octet-stream) — يقبل gzip أو JSON.
 export async function POST(request: Request) {
-  const g = await guard("offices.manage");
+  const g = await guard("backup.manage");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? null;
   if (agentId == null) return NextResponse.json({ error: "لا وكيل مرتبط بحسابك" }, { status: 403 });

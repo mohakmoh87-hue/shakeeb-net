@@ -28,7 +28,7 @@ const schema = z.object({
 
 export async function GET() {
   // القراءة متاحة لإدارة المكاتب أو المشتركين أو المالية (لقائمة المكاتب في صفحاتهم — مثل الصندوق)
-  const g = await guardAny("offices.manage", "offices.sync", "subscribers.manage", "subscriptions.manage", "finance.view", "finance.manage");
+  const g = await guardAny("offices.edit", "offices.delete", "offices.sync", "subscribers.manage", "subscriptions.manage", "finance.view", "finance.manage");
   if (g.error) return g.error;
 
   // عزل المستأجر: مستخدم المكتب يرى مكتبه؛ مدير الوكيل يرى كل مكاتب وكيله فقط
@@ -46,7 +46,7 @@ export async function GET() {
   });
   // تحصين: لا تُكشف بيانات دخول SAS (اليوزر/الباسورد) إلا لمن يدير المكاتب.
   // بقية المستخدمين يحصلون على الحقول اللازمة للقوائم فقط (بلا كلمات سر).
-  const canManage = can(session, "offices.manage");
+  const canManage = can(session, "offices.edit");
   const safe = canManage
     ? towers
     : towers.map(({ username, password, passOnline, ...rest }) => { void username; void password; void passOnline; return rest; });
@@ -54,7 +54,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const g = await guard("offices.manage");
+  const g = await guard("offices.edit");
   if (g.error) return g.error;
 
   const body = await request.json().catch(() => null);

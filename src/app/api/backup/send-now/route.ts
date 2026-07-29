@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // إرسال النسخة الاحتياطية الآن إلى إيميل الوكيل (اختبار/طلب يدوي)
 export async function POST() {
-  const g = await guard("offices.manage");
+  const g = await guard("backup.manage");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? null;
   if (agentId == null) return NextResponse.json({ error: "لا وكيل مرتبط بحسابك" }, { status: 403 });

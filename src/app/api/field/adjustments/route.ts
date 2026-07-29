@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 // POST (المدير فقط): خصم/مكافأة يدوية على فني — تُعتمد فوراً (confirmed) وتظهر في تفاصيل الراتب.
 export async function POST(request: Request) {
-  const g = await guard("field.manage");
+  const g = await guard("field.payroll");
   if (g.error) return g.error;
   const parsed = z.object({
     technicianId: z.coerce.number(),
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
     });
   }
 
-  const g = await guard("field.manage");
+  const g = await guard("field.payroll");
   if (g.error) return g.error;
   const reqOffice = Number(new URL(request.url).searchParams.get("officeId")) || null;
   const agentTowers = await agentTowerIds(g.session);
@@ -89,7 +89,7 @@ export async function GET(request: Request) {
 
 // PATCH (المدير فقط): تأكيد/رفض خصم معلّق — عزل عبر ownsTower
 export async function PATCH(request: Request) {
-  const g = await guard("field.manage");
+  const g = await guard("field.payroll");
   if (g.error) return g.error;
   const parsed = z.object({ id: z.coerce.number(), status: z.enum(["confirmed", "rejected"]) }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
@@ -107,7 +107,7 @@ export async function PATCH(request: Request) {
 
 // DELETE (المدير فقط): حذف أي خصم/مكافأة (بأي حالة) — عزل عبر ownsTower
 export async function DELETE(request: Request) {
-  const g = await guard("field.manage");
+  const g = await guard("field.payroll");
   if (g.error) return g.error;
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });

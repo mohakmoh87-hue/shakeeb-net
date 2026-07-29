@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ role: "technician", name: t?.name, salary: t?.salary ?? 0, statement: result, history, period, cardCounts });
   }
 
-  const g = await guard("field.manage");
+  const g = await guard("field.payroll");
   if (g.error) return g.error;
   const url = new URL(request.url);
   const technicianId = Number(url.searchParams.get("technicianId")) || null;
@@ -74,7 +74,7 @@ export async function GET(request: Request) {
 // POST (المدير فقط): تسديد راتب الفني ضمن فترته المجمّدة — صرف الصافي + أرشفة + تصفير سجل الفترة فقط.
 // source: "daily" = صرفٌ في التقرير اليومي (يُنقص المبلغ الكلي مرّة). "total" = خصمٌ من المبلغ الكلي دون ظهور بالتقرير اليومي.
 export async function POST(request: Request) {
-  const g = await guard("field.manage");
+  const g = await guard("field.payroll");
   if (g.error) return g.error;
   const parsed = z
     .object({ technicianId: z.coerce.number(), source: z.enum(["daily", "total"]).default("daily") })

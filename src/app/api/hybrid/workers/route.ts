@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // قائمة حواسيب النظام الهجين مع حالتها وأولويتها (للمدير)
 // عزل المستأجر: يرى حواسيب وكيله + الحواسيب الجديدة غير المُطالَب بها (agentId=null) لاعتمادها.
 export async function GET() {
-  const g = await guard("manager.accounts");
+  const g = await guard("hybrid.manage");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? -1;
 
@@ -42,7 +42,7 @@ export async function GET() {
 
 // تعديل حاسبة: الأولوية، الاسم، المكتب المربوطة به، أو الموافقة/الإيقاف
 export async function PATCH(request: Request) {
-  const g = await guard("manager.accounts");
+  const g = await guard("hybrid.manage");
   if (g.error) return g.error;
   const b = await request.json().catch(() => null);
   const id = Number(b?.id);
@@ -86,7 +86,7 @@ export async function PATCH(request: Request) {
 // حذف حاسبة من القائمة: حظر ناعم (blocked=true) بدل الحذف الفعلي — كي لا تعيد نبضتها
 // إنشاء الصفّ فتظهر ثانيةً. تبقى مخفيّة، وعاملها يتوقّف تلقائياً عند تحديث كوده.
 export async function DELETE(request: Request) {
-  const g = await guard("manager.accounts");
+  const g = await guard("hybrid.manage");
   if (g.error) return g.error;
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });

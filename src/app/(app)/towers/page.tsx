@@ -32,7 +32,8 @@ const empty: Partial<Office> = { activationMode: "month", silent: "1", waEnabled
 
 export default function OfficesPage() {
   const { can, me } = usePermission();
-  const isManager = can("offices.manage");
+  const isManager = can("offices.edit"); // تعديل المكتب (الإنشاء والتعديل — بلا حذف)
+  const canDelete = can("offices.delete"); // حذف المكتب — صلاحية مستقلة تماماً
   const canSync = can("offices.sync"); // مزامنة فقط (بلا تعديل/حذف المكتب)
   // مكاتب المستخدم لوضع "ربط الواتساب فقط" (لمن لا يملك صلاحية إدارة المكاتب)
   const [waOnly, setWaOnly] = useState<{ id: number; name: string | null }[]>([]);
@@ -61,7 +62,7 @@ export default function OfficesPage() {
 
   if (!me) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
 
-  // وضع "المزامنة فقط": من يملك offices.sync دون offices.manage — قائمة مكاتب مع زر مزامنة، بلا تعديل/حذف/أسرار
+  // وضع "المزامنة فقط": من يملك offices.sync دون offices.edit — قائمة مكاتب مع زر مزامنة، بلا تعديل/حذف/أسرار
   if (!isManager && canSync) {
     return (
       <div className="p-6">
@@ -162,7 +163,7 @@ export default function OfficesPage() {
             {offices.map((o) => (
               <div key={o.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${sel?.id === o.id ? "bg-blue-50" : "hover:bg-slate-50"}`}>
                 <button onClick={() => pick(o)} className="flex-1 text-right font-medium text-slate-700">{o.name}</button>
-                <button onClick={() => remove(o)} className="text-xs text-red-400 hover:text-red-600">حذف</button>
+                {canDelete && <button onClick={() => remove(o)} className="text-xs text-red-400 hover:text-red-600">حذف</button>}
               </div>
             ))}
             {offices.length === 0 && <div className="p-4 text-center text-sm text-slate-400">لا توجد مكاتب</div>}
@@ -260,8 +261,8 @@ export default function OfficesPage() {
               {/* واتساب هذا المكتب */}
               {sel && !editing && <OfficeWhatsApp officeId={sel.id} />}
 
-              {/* مزامنة الاشتراكات */}
-              {sel && !editing && <OfficeSync officeId={sel.id} />}
+              {/* مزامنة الاشتراكات — بصلاحيتها المستقلة (offices.edit وحدها لا تكفي) */}
+              {sel && !editing && canSync && <OfficeSync officeId={sel.id} />}
             </>
           ) : (
             <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-300 text-sm text-slate-400">اختر مكتباً أو أضِف مكتباً جديداً</div>
@@ -275,6 +276,8 @@ export default function OfficesPage() {
 const WA_LABEL: Record<string, string> = { disconnected: "غير متصل", starting: "جاري البدء...", qr: "بانتظار مسح QR", authenticated: "تم التوثيق...", ready: "متصل ✓", error: "خطأ" };
 
 function OfficeWhatsApp({ officeId }: { officeId: number }) {
+  const { can } = usePermission();
+  const canConnect = can("whatsapp.connect"); // فصل الواتساب بصلاحية (سدّ ثغرة logout)
   const [st, setSt] = useState<{ state: string; qrImage: string | null; error: string | null }>({ state: "disconnected", qrImage: null, error: null });
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -311,7 +314,7 @@ function OfficeWhatsApp({ officeId }: { officeId: number }) {
         </div>
       )}
       {st.error && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{st.error}</div>}
-      {ready && <button onClick={logout} className="w-full rounded-lg bg-slate-100 py-2 text-sm text-slate-600 hover:bg-slate-200">فصل / ربط حساب آخر</button>}
+      {ready && canConnect && <button onClick={logout} className="w-full rounded-lg bg-slate-100 py-2 text-sm text-slate-600 hover:bg-slate-200">فصل / ربط حساب آخر</button>}
     </div>
   );
 }

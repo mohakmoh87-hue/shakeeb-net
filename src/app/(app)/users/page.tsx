@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import Modal from "@/components/Modal";
-import { PERMISSION_LIST } from "@/lib/rbac";
+import { PERMISSION_GROUPS, expandLegacyPermissions } from "@/lib/rbac";
 import { usePermission } from "@/lib/usePermission";
 
 type Tower = { id: number; name: string | null };
@@ -52,7 +52,8 @@ export default function UsersPage() {
     setEditId(u.id);
     setForm({
       fullName: u.fullName, username: u.username, password: "", isAdmin: u.isAdmin,
-      permissions: new Set((u.permissions ?? "").split(",").filter(Boolean)),
+      // توسيع المفاتيح القديمة (offices.manage...) إلى الجديدة — أول حفظ يكتبها نظيفة
+      permissions: new Set<string>(expandLegacyPermissions((u.permissions ?? "").split(",").filter(Boolean))),
       towerId: u.towerId ?? "", isActive: u.isActive,
     });
     setError(""); setModal(true);
@@ -142,12 +143,20 @@ export default function UsersPage() {
             {!form.isAdmin && (
               <div className="rounded-lg border border-slate-200 p-3">
                 <div className="mb-2 text-sm font-semibold text-slate-700">الصلاحيات</div>
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                  {PERMISSION_LIST.map((p) => (
-                    <label key={p.key} className="flex items-center gap-2 text-xs">
-                      <input type="checkbox" checked={form.permissions.has(p.key)} onChange={() => togglePerm(p.key)} />
-                      {p.label}
-                    </label>
+                {/* مقسّمة إلى الأصناف الثمانية (طلب محمد) — كل مجموعة تحت عنوانها */}
+                <div className="max-h-[45vh] space-y-3 overflow-y-auto pl-1">
+                  {PERMISSION_GROUPS.map((grp) => (
+                    <div key={grp.title}>
+                      <div className="mb-1 border-b border-slate-100 pb-0.5 text-[11px] font-bold text-mynet-blue">{grp.title}</div>
+                      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                        {grp.items.map((p) => (
+                          <label key={p.key} className="flex items-center gap-2 text-xs">
+                            <input type="checkbox" checked={form.permissions.has(p.key)} onChange={() => togglePerm(p.key)} />
+                            {p.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>

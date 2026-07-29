@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // اسم/علامة الوكيل الحالي (يظهر بكامل البرنامج)
 export async function GET() {
-  const g = await guard("offices.manage");
+  const g = await guard("agent.settings");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? null;
   if (agentId == null) return NextResponse.json({ name: null });
@@ -22,7 +22,7 @@ const schema = z.object({
 
 // تعديل علامة الوكيل وإيميل النسخ الاحتياطي (المدير يعدّل وكيله فقط)
 export async function PATCH(request: Request) {
-  const g = await guard("offices.manage");
+  const g = await guard("agent.settings");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? null;
   if (agentId == null) return NextResponse.json({ error: "لا وكيل مرتبط بحسابك" }, { status: 403 });

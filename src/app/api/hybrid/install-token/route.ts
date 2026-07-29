@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 // توليد رمز تنصيب لمرّة واحدة (صالح 30 دقيقة) — يُسلّم رابط القاعدة للمُنصِّب بأمان.
 export async function POST(request: Request) {
-  const g = await guard("offices.manage");
+  const g = await guard("agent.settings");
   if (g.error) return g.error;
 
   const token = crypto.randomBytes(24).toString("base64url");

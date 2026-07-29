@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 // سجلّ المكافآت للمدير: منح/استخدام + إجماليات + مجموع الأرصدة القائمة (عزل بـ agentId)
 export async function GET(request: Request) {
-  const g = await guard("offices.manage");
+  const g = await guard("rewards.config");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? null;
 

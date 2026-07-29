@@ -317,9 +317,11 @@ export default function SubscribersPage() {
           <ToolBtn icon="💲" label="تسديد فواتير" onClick={() => router.push("/debts")} />
           <ToolBtn icon="🔍" label="تقرير الفواتير" onClick={() => router.push("/reports/invoices")} />
         </ToolGroup>
-        <ToolGroup title="الاعدادات">
-          <ToolBtn icon="⬇️" label="استيراد من SAS4" onClick={() => router.push("/subscribers/sas4")} />
-        </ToolGroup>
+        {can("subscribers.import") && (
+          <ToolGroup title="الاعدادات">
+            <ToolBtn icon="⬇️" label="استيراد من SAS4" onClick={() => router.push("/subscribers/sas4")} />
+          </ToolGroup>
+        )}
         <label className="ml-auto flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm text-slate-700">
           <input type="checkbox" checked={showAllTowers} onChange={(e) => setShowAllTowers(e.target.checked)} />
           عرض جميع المشتركين من كل المكاتب

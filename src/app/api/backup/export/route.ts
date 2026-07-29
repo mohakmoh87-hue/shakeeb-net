@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 // تنزيل نسخة احتياطية كاملة لبيانات الوكيل الحالي (ملف gzip)
 export async function GET() {
-  const g = await guard("offices.manage");
+  const g = await guard("backup.manage");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? null;
   if (agentId == null) return NextResponse.json({ error: "لا وكيل مرتبط بحسابك" }, { status: 403 });

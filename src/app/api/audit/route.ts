@@ -5,7 +5,7 @@ import { guard } from "@/lib/guard";
 // سجل التدقيق (للمدير فقط)
 // عزل المستأجر: المدير يرى أحداث مستخدمي وكيله فقط (كان يعرض كل الوكلاء)؛ المالك يرى الكل
 export async function GET() {
-  const g = await guard("users.manage");
+  const g = await guard("audit.view");
   if (g.error) return g.error;
 
   const logs = await prisma.auditLog.findMany({

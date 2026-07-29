@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // مبلغ مكافأة التفعيل لكل باقة (يُضبط من صفحة حسابات المدير) — عزل المستأجر بـ agentId
 export async function GET() {
-  const g = await guard("offices.manage");
+  const g = await guard("rewards.config");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? null;
   const packages = await prisma.package.findMany({
@@ -19,7 +19,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const g = await guard("offices.manage");
+  const g = await guard("rewards.config");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? null;
   const parsed = z.object({ packageId: z.coerce.number(), amount: z.coerce.number().min(0) }).safeParse(await request.json().catch(() => null));

@@ -35,7 +35,7 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const g = await guard("offices.manage");
+  const g = await guard("offices.edit");
   if (g.error) return g.error;
 
   const { id } = await params;
@@ -63,7 +63,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const g = await guard("offices.manage");
+  const g = await guard("offices.delete");
   if (g.error) return g.error;
 
   const { id } = await params;

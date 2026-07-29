@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -15,14 +14,16 @@ export async function GET() {
     select: { id: true, name: true, priceDinar: true, cardCost: true },
     orderBy: { id: "asc" },
   });
-  const canEdit = session.isAdmin || (session.permissions ?? []).includes("cardprice.manage");
+  const canEdit = session.isAdmin; // سعر الكارت للمدير حصراً (قرار محمد: «يغيّر من مجموع ديون الكارتات»)
   return NextResponse.json({ packages, canEdit });
 }
 
-// تحديد سعر كارت فئة محدّدة (صلاحية cardprice.manage) — يشمل الكروت الجديدة فقط
+// تحديد سعر كارت فئة محدّدة (للمدير حصراً — بلا صلاحية) — يشمل الكروت الجديدة فقط
 export async function POST(request: Request) {
-  const g = await guard("cardprice.manage");
-  if (g.error) return g.error;
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  if (!s.isAdmin) return NextResponse.json({ error: "سعر الكارت للمدير حصراً" }, { status: 403 });
+  const g = { session: s };
   const body = await request.json().catch(() => null);
   const parsed = z.object({ packageId: z.coerce.number(), price: z.coerce.number().min(0) }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });

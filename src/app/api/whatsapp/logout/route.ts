@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { ownsTower } from "@/lib/guard";
+import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,10 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  // سدّ ثغرة: كان أي مستخدم محدود يفصل واتساب أي مكتب لوكيله — الآن بصلاحية
+  if (!can(session, "whatsapp.connect")) {
+    return NextResponse.json({ error: "ليس لديك صلاحية ربط/فصل واتساب المكتب" }, { status: 403 });
+  }
   const body = await request.json().catch(() => null);
   const officeId = Number(body?.officeId);
   if (!officeId) return NextResponse.json({ error: "حدّد المكتب" }, { status: 400 });

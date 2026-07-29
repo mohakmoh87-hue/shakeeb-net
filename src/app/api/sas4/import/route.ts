@@ -23,7 +23,7 @@ const schema = z.object({
 
 // استيراد المشتركين المختارين من SAS4 إلى قاعدة البيانات
 export async function POST(request: Request) {
-  const g = await guard("subscribers.manage");
+  const g = await guard("subscribers.import");
   if (g.error) return g.error;
   const session = await getSession();
 

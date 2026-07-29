@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { guardAny, agentTowerIds } from "@/lib/guard";
+import { guard, agentTowerIds } from "@/lib/guard";
 import { runManualSync, getManualSyncStatus, setManualSyncStatus } from "@/lib/subscriptionSync";
 
 export const dynamic = "force-dynamic";
@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 // (لوحة SAS على عنوان عام فيصلها الخادم مباشرة — لا حاجة للمرور بحاسبة المكتب.)
 
 async function guardOffice(id: string): Promise<{ towerId: number } | { error: NextResponse }> {
-  // المزامنة صلاحية مستقلة عن تعديل/حذف المكتب: يكفي offices.sync (أو offices.manage للمدير الكامل)
-  const g = await guardAny("offices.sync", "offices.manage");
+  // المزامنة صلاحية مستقلة تماماً عن تعديل/حذف المكتب (المدير يمرّ عبر isAdmin)
+  const g = await guard("offices.sync");
   if (g.error) return { error: g.error };
   const towerId = Number(id);
   // عزل: المكتب يجب أن يتبع وكيل المستخدم

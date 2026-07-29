@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { can as rbacCan, type Permission } from "@/lib/rbac";
 
 type Me = { isAdmin: boolean; permissions: string[]; officeCap?: number | null; officeCount?: number; agentName?: string | null };
 
@@ -29,6 +30,8 @@ export function usePermission() {
     return () => { active = false; };
   }, []);
 
-  const can = (perm: string) => !!me && (me.isAdmin || me.permissions.includes(perm));
+  // نفس منطق الخادم (يشمل توافق المفاتيح القديمة حتى إعادة الدخول بعد الهجرة)
+  const can = (perm: string) =>
+    !!me && rbacCan({ isAdmin: me.isAdmin, permissions: me.permissions as Permission[] }, perm as Permission);
   return { me, can };
 }

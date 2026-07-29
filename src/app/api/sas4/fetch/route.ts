@@ -13,7 +13,7 @@ const schema = z.object({
 
 // تسجيل الدخول تلقائياً بحساب المكتب وجلب صفحة واحدة بالحجم المطلوب
 export async function POST(request: Request) {
-  const g = await guard("subscribers.manage");
+  const g = await guard("subscribers.import");
   if (g.error) return g.error;
 
   const body = await request.json().catch(() => null);

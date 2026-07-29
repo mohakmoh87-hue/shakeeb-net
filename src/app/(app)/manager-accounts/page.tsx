@@ -117,7 +117,7 @@ export default function ManagerAccountsPage() {
     fetch("/api/whatsapp/offices").then((r) => void (r.ok && r.json().then((d) => setWaOffices(d.offices ?? []))));
   }, []);
 
-  // أسعار الكارت لكل فئة (يظهر محرّرها لصاحب صلاحية cardprice.manage)
+  // أسعار الكارت لكل فئة (محرّرها للمدير حصراً — قرار محمد: بلا صلاحية)
   const loadPrice = useCallback(() => {
     fetch("/api/card-price").then((r) => void (r.ok && r.json().then((d) => {
       setCardData(d);
@@ -220,7 +220,7 @@ export default function ManagerAccountsPage() {
       {/* كشف راتب الموظف (الفني): تفاصيل + تسديد — نفس نافذة إدارة الفنيين */}
       {salaryTech && <SalaryModal technicianId={salaryTech.id} name={salaryTech.name} onClose={() => setSalaryTech(null)} onSettled={load} />}
 
-      {/* تحديد سعر الكارت لكل فئة (صلاحية cardprice.manage) — يُطبَّق على الكروت الجديدة فقط */}
+      {/* تحديد سعر الكارت لكل فئة (للمدير حصراً) — يُطبَّق على الكروت الجديدة فقط */}
       {cardData?.canEdit && (
         <div className="mb-6 max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="mb-1 font-bold text-slate-800">💳 سعر الكارت لكل فئة</h3>

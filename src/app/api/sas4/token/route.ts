@@ -9,7 +9,7 @@ const schema = z.object({ towerId: z.coerce.number() });
 
 // جلب توكن SAS4 للمكتب (لتسجيل الدخول التلقائي في الصفحة المضمّنة)
 export async function POST(request: Request) {
-  const g = await guard("subscribers.manage");
+  const g = await guard("subscribers.import");
   if (g.error) return g.error;
 
   const body = await request.json().catch(() => null);

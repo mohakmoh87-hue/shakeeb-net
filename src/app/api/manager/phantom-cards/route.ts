@@ -15,7 +15,7 @@ const PHANTOM_ACTION = "SYNC_PHANTOM_VERIFIED";
 
 // GET — قائمة الكروت الوهمية المعلَّقة لوكيل المستخدم (مع اسم المشترك والمكتب ومبلغ الوصل للاطلاع)
 export async function GET() {
-  const g = await guard("manager.accounts");
+  const g = await guard("cards.delete");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? -1;
 

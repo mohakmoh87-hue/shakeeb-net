@@ -5,7 +5,7 @@ import { getLastView } from "@/lib/sasViewCache";
 
 // إرجاع المشتركين المعروضين حالياً في لوحة SAS4 المضمّنة
 export async function GET() {
-  const g = await guard("subscribers.manage");
+  const g = await guard("subscribers.import");
   if (g.error) return g.error;
   const session = g.session!;
 
