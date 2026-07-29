@@ -700,3 +700,9 @@ input[type="number"] { direction: ltr; }
 .nst .lg-save { background: var(--navy); color: #fff; }
 .nst .lg-save:disabled { opacity: .5; cursor: not-allowed; }
 .nst .lg-cancel { background: var(--line); color: var(--ink-2); }
+
+/* تحصيل الفنيين — قفل صارم لمقاسات البطاقة الموسّعة (كان «اكمال» يتضخم) */
+.nst .ss-item.expanded { flex: 0 0 320px !important; width: 320px; min-width: 320px !important; max-width: 320px; }
+.nst .ss-item.expanded .ss-acts { justify-content: center; }
+.nst .ss-item.expanded .ss-btn { flex: 0 0 auto !important; width: 110px; font-size: 11.5px; padding: 6px; }
+.nst .ss-item.expanded .ss-plus { width: 28px; }

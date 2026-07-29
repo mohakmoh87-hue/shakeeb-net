@@ -340,6 +340,23 @@ export default function FieldManagementPage() {
 
   const isDeliveryKind = (name: string) => cardTypes.find((t) => t.name === name)?.deliveryOnly ?? name === "توصيل";
 
+  // ألوان الأنواع (يغيّرها المدير من «الأنواع والأوقات») — رؤوس الأعمدة وشارات النوع بالمتصفح
+  const [typeColors, setTypeColors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (isTech) return;
+    fetch("/api/field/type-colors").then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.colors) setTypeColors(d.colors); }).catch(() => {});
+  }, [isTech]);
+  async function setTypeColor(name: string, color: string) {
+    setTypeColors((m) => ({ ...m, [name]: color }));
+    await fetch("/api/field/type-colors", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, color }) }).catch(() => {});
+  }
+  // لون رأس العمود: لون النوع المخصّص إن وُجد (مطابقة بالاحتواء) وإلا الافتراضي
+  const catColorOf = (name: string): string => {
+    const hit = Object.keys(typeColors).find((k) => name === k || name.includes(k));
+    return hit ? typeColors[hit] : listCatColor(name);
+  };
+
   if (loading) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
 
   return (
@@ -439,7 +456,7 @@ export default function FieldManagementPage() {
             >
               {/* رأس العمود: بالمتصفح للمدير — خطّ أبيض على خلفية بلون فئة العمود */}
               <div className={`flex items-center justify-between px-3 py-2 ${isTech ? "" : "rounded-t-[11px]"}`}
-                style={!isTech ? { background: listCatColor(l.name ?? "") } : undefined}>
+                style={!isTech ? { background: catColorOf(l.name ?? "") } : undefined}>
                 <span className={`font-bold ${isTech ? "text-slate-700" : "text-white"}`}>
                   {l.name} <span className={`text-xs font-normal ${isTech ? "text-slate-400" : "text-white/75"}`}>({listCards.length})</span>
                   {l.timeTracked && <span className={`ml-1 rounded px-1 py-0.5 text-[10px] font-semibold ${isTech ? "bg-sky-100 text-sky-700" : "bg-white/25 text-white"}`} title="عمود محسوب بالوقت">⏱</span>}
@@ -472,7 +489,7 @@ export default function FieldManagementPage() {
                       <div className="mt-1 rounded bg-indigo-50 px-1.5 py-1 text-xs font-bold text-indigo-700">💵 مبلغ الاشتراك: {Number(c.subAmount).toLocaleString("en-US")} د.ع</div>
                     )}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
+                      <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`} style={!isTech && typeColors[c.kind] ? { background: typeColors[c.kind] } : undefined}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
                       {c.dueDate && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 {fmtDue(c.dueDate)}</span>}
                       {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة {c.amount != null ? `— ${Number(c.amount).toLocaleString("en-US")}` : ""}</span>}
@@ -540,7 +557,7 @@ export default function FieldManagementPage() {
                     <div className="text-sm font-medium text-slate-800">{c.title}</div>
                     {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
+                      <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`} style={!isTech && typeColors[c.kind] ? { background: typeColors[c.kind] } : undefined}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
                       <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-700">✓ {c.amount != null ? `${Number(c.amount).toLocaleString("en-US")} د.ع` : "منجزة"}</span>
                     </div>
@@ -762,16 +779,25 @@ export default function FieldManagementPage() {
               isTech && sel.technicianId != null && sel.technicianId !== myTechId
                 ? <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-center text-xs text-slate-400">هذه البطاقة على {sel.assignee ?? "فني آخر"} — حوّلها لك للعمل عليها.</div>
                 : null
-            ) : !sel.startedAt ? (
-              <button
-                onClick={startCard}
-                className="mb-3 w-full rounded-lg bg-mynet-blue px-4 py-3 text-base font-bold text-white hover:bg-mynet-blue-dark"
-              >
-                ▶ بدء العمل
-              </button>
+            ) : !sel.startedAt && !isDeliveryKind(sel.kind) ? (
+              // غير التوصيل: «بدء» شرط للإنجاز (يحسب الوقت) — والمدير يستطيع الإلغاء قبل البدء
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                <button
+                  onClick={startCard}
+                  className={`rounded-lg bg-mynet-blue px-4 py-3 text-base font-bold text-white hover:bg-mynet-blue-dark ${isTech ? "col-span-2" : ""}`}
+                >
+                  ▶ بدء العمل
+                </button>
+                {!isTech && (
+                  <button onClick={() => void cancelCard()} title="إلغاء البطاقة بملاحظة إلزامية — تنتقل لعمود «الغاء»" className="rounded-lg bg-rose-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-rose-700">
+                    🚫 الغاء
+                  </button>
+                )}
+              </div>
             ) : (
               <>
-                <div className="mb-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-center text-xs font-semibold text-emerald-700">⏱ بدأ العمل: {fmtDateTime(sel.startedAt)}</div>
+                {/* التوصيل يظهر أزراره مباشرة بلا «بدء» (قاعدة بطاقة التوصيل) */}
+                {sel.startedAt && <div className="mb-2 rounded-lg bg-emerald-50 px-3 py-1.5 text-center text-xs font-semibold text-emerald-700">⏱ بدأ العمل: {fmtDateTime(sel.startedAt)}</div>}
                 <div className="mb-3 grid grid-cols-2 gap-2">
                   <button
                     onClick={() => { setCompleting(sel); setSel(null); }}
@@ -892,6 +918,8 @@ export default function FieldManagementPage() {
       {typesModal && (
         <CardTypeManager
           types={cardTypes}
+          colors={typeColors}
+          onColor={(name, color) => void setTypeColor(name, color)}
           onClose={() => setTypesModal(false)}
           onChange={() => load(officeId)}
         />

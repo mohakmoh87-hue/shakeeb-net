@@ -6,7 +6,7 @@ type CardType = { id: number; name: string; deliveryOnly: boolean; execMinutes?:
 
 // إدارة أنواع البطاقات وأوقاتها المسموحة (للمدير): وقت الإنجاز + خصم دقيقة التجاوز.
 // التوصيل مُستثنى من الوقت (لا «بدء» ولا خصم).
-export default function CardTypeManager({ types, onClose, onChange }: { types: CardType[]; onClose: () => void; onChange: () => void }) {
+export default function CardTypeManager({ types, colors, onColor, onClose, onChange }: { types: CardType[]; colors: Record<string, string>; onColor: (name: string, color: string) => void; onClose: () => void; onChange: () => void }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
   const [newName, setNewName] = useState("");
@@ -51,6 +51,14 @@ export default function CardTypeManager({ types, onClose, onChange }: { types: C
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="font-bold text-slate-800">{t.deliveryOnly ? "🚚" : "🔧"} {t.name}</span>
                 <div className="flex items-center gap-2">
+                  {/* لون النوع: يلوّن رأس عموده وشارته على البطاقات (طلب محمد) */}
+                  <input
+                    type="color"
+                    value={colors[t.name] ?? "#2a5480"}
+                    onChange={(e) => onColor(t.name, e.target.value)}
+                    title="لون النوع — رأس العمود وشارة البطاقة"
+                    className="h-7 w-9 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
+                  />
                   <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-500">
                     <input type="checkbox" checked={t.deliveryOnly} onChange={(e) => patch(t.id, { deliveryOnly: e.target.checked })} /> توصيل
                   </label>

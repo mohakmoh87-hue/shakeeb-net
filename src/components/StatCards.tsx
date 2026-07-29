@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { localSasBase } from "@/lib/localSas";
 
 // بطاقات الإحصاء الأربع — مطابقة حرفياً للنموذج المعتمد (أصناف .nst في globals.css):
@@ -85,12 +85,11 @@ function SubsCard({ towerIds }: { towerIds: number[] }) {
 
 // ٢ · المصروفات والمقبوضات — سطران + شريط نسبة + الصافي
 function MoneyCard({ r }: { r: Report }) {
-  const router = useRouter();
   const received = r.total + r.expenses;
   const sum = received + r.expenses;
   const inPct = sum > 0 ? Math.round((received / sum) * 100) : 50;
   return (
-    <div className="stat" role="button" onClick={() => router.push("/cashbox")} title="فتح المصروفات والمقبوضات">
+    <Link href="/cashbox" className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح المصروفات والمقبوضات">
       <div className="st-top"><span className="st-lb">المصروفات والمقبوضات</span><span className="st-ic">💵</span></div>
       <div className="flow">
         <div className="flow-line">
@@ -109,13 +108,12 @@ function MoneyCard({ r }: { r: Report }) {
         <span className="r-out" style={{ width: `${100 - inPct}%` }} />
       </div>
       <div className="net">الصافي <b style={{ color: r.total < 0 ? "var(--bad)" : "var(--ok)" }}>{fmt(r.total)}</b> <small>د.ع</small></div>
-    </div>
+    </Link>
   );
 }
 
 // ٣ · فاتورة المبيع — عدد + وسام اتجاه + المبلغ + منحنى مساحي
 function InvoiceCard({ r }: { r: Report }) {
-  const router = useRouter();
   const [s, setS] = useState<{ thisDays: number[]; lastDays: number[]; thisTotal: number; lastTotal: number } | null>(null);
   useEffect(() => {
     fetch("/api/reports/invoices/summary").then((x) => (x.ok ? x.json() : null)).then((d) => d && setS(d)).catch(() => {});
@@ -123,7 +121,7 @@ function InvoiceCard({ r }: { r: Report }) {
   const delta = s && s.lastTotal > 0 ? Math.round(((s.thisTotal - s.lastTotal) / s.lastTotal) * 100) : null;
   const days = s ? [...s.lastDays, ...s.thisDays].slice(-7) : [];
   return (
-    <div className="stat" role="button" onClick={() => router.push("/invoices")} title="فتح فاتورة المبيع">
+    <Link href="/invoices" className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح فاتورة المبيع">
       <div className="st-top"><span className="st-lb">فاتورة المبيع</span><span className="st-ic">🛒</span></div>
       <div className="inv-row">
         <span className="st-vl">{r.invoiceCount}</span>
@@ -137,7 +135,7 @@ function InvoiceCard({ r }: { r: Report }) {
       </div>
       <div className="inv-amt">{fmt(r.invoiceIn)} <small>د.ع</small></div>
       <Spark values={days} />
-    </div>
+    </Link>
   );
 }
 
@@ -166,7 +164,6 @@ function Spark({ values }: { values: number[] }) {
 
 // ٤ · إدارة الفنيين — دونات بقوسين (لاجورد منجزة + برتقالي متبقّية)
 function FieldCard() {
-  const router = useRouter();
   const [v, setV] = useState<{ done: number; rest: number } | null>(null);
   useEffect(() => {
     fetch("/api/field/board").then((r) => (r.ok ? r.json() : null)).then((d) => {
@@ -180,7 +177,7 @@ function FieldCard() {
   const R = 28, C = 2 * Math.PI * R, GAP = 4;
   const doneLen = Math.max(0, pct * C - GAP), restLen = Math.max(0, (1 - pct) * C - GAP);
   return (
-    <div className="stat" role="button" onClick={() => router.push("/field-management")} title="فتح إدارة الفنيين">
+    <Link href="/field-management" className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح إدارة الفنيين">
       <div className="st-top"><span className="st-lb">🛠️ إدارة الفنيين</span><span className="st-ic">📋</span></div>
       <div className="fieldrow">
         <div className="sm-donut">
@@ -202,6 +199,6 @@ function FieldCard() {
           <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--orange)" }} /> متبقّية</span><b>{v?.rest ?? "—"}</b></div>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

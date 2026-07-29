@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { usePermission } from "@/lib/usePermission";
 import type { Permission } from "@/lib/rbac";
@@ -99,7 +100,7 @@ export default function AppShell({
           <div className="no-print sticky top-0 hidden h-screen w-12 shrink-0 flex-col items-center gap-2 pt-3 md:flex"
             style={{ background: "linear-gradient(170deg, var(--navy) 0%, var(--navy-2) 100%)" }}>
             <button onClick={() => setDrawer(true)} title="فتح القائمة" className="rounded-lg bg-white/10 px-2.5 py-2 text-lg leading-none text-white hover:bg-white/20">☰</button>
-            <button onClick={() => router.push("/dashboard")} title="الشاشة الرئيسية" className="rounded-lg bg-white/10 px-2.5 py-2 text-lg leading-none text-white hover:bg-white/20">🏠</button>
+            <Link href="/dashboard" title="الشاشة الرئيسية" className="rounded-lg bg-white/10 px-2.5 py-2 text-lg leading-none text-white hover:bg-white/20">🏠</Link>
           </div>
         </div>
       )}
@@ -149,14 +150,13 @@ export default function AppShell({
 
 // عنصر الشريط السفلي
 function BottomItem({ icon, label, href }: { icon: string; label: string; href: string }) {
-  const router = useRouter();
   const pathname = usePathname();
   const on = pathname === href;
   return (
-    <button onClick={() => router.push(href)}
+    <Link href={href}
       className={`flex min-w-[52px] flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] font-semibold ${on ? "text-orange-d" : "text-ink-2"}`}>
       <span className="text-lg leading-none">{icon}</span>{label}
-    </button>
+    </Link>
   );
 }
 
@@ -228,12 +228,12 @@ function SideNav({ brand, fullName, roleLabel, onNavigate }: {
             if (entry.perm && !can(entry.perm)) return null;
             const on = pathname === entry.href;
             return (
-              <button key={entry.label} onClick={() => go(entry.href)}
+              <Link key={entry.label} href={entry.href} onClick={onNavigate}
                 className={`flex w-full items-center gap-3 border-r-[3px] px-5 py-2.5 text-[13px] transition ${
                   on ? "border-orange bg-orange/15 font-extrabold text-white" : "border-transparent text-[#d5e2ef] hover:bg-white/5 hover:text-white"
                 }`}>
                 <span className="w-5 text-center">{entry.icon}</span> {entry.label}
-              </button>
+              </Link>
             );
           }
           const items = entry.items.filter(visible);
@@ -248,13 +248,13 @@ function SideNav({ brand, fullName, roleLabel, onNavigate }: {
               <div className="bg-black/15 py-1">
                 {items.map((it) => {
                   const on = pathname === it.href;
-                  return (
-                    <button key={it.label} onClick={() => go(it.href, it.external)}
-                      className={`flex w-full items-center border-r-[3px] py-2 pr-[52px] text-right text-xs transition ${
-                        on ? "border-orange font-extrabold text-white" : "border-transparent text-[#bccbdc] hover:text-white"
-                      }`}>
-                      {it.label}
-                    </button>
+                  const cls = `flex w-full items-center border-r-[3px] py-2 pr-[52px] text-right text-xs transition ${
+                    on ? "border-orange font-extrabold text-white" : "border-transparent text-[#bccbdc] hover:text-white"
+                  }`;
+                  return it.external ? (
+                    <a key={it.label} href={it.href} target="_blank" rel="noreferrer" onClick={onNavigate} className={cls}>{it.label}</a>
+                  ) : (
+                    <Link key={it.label} href={it.href} onClick={onNavigate} className={cls}>{it.label}</Link>
                   );
                 })}
               </div>

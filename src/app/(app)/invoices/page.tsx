@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PrintNowButton from "@/components/PrintNowButton";
 import { usePermission } from "@/lib/usePermission";
@@ -217,7 +218,7 @@ export default function NewInvoicePage() {
             {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `#${o.id}`}</option>)}
           </select>
           <button className="gbtn" onClick={() => { setLogOpen(true); void loadLog(); }}>🧾 سجل وصولات المبيع</button>
-          <button className="gbtn" onClick={() => router.push("/inventory")}>📦 إدارة المواد (المخزن)</button>
+          <Link className="gbtn" href="/inventory">📦 إدارة المواد (المخزن)</Link>
         </div>
       </div>
 

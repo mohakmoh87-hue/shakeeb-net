@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { formatDate } from "@/lib/format";
 
 export type DailyReport = {
@@ -30,7 +30,6 @@ export default function DailyReportCard({
   towers: Tower[];
   initial: DailyReport;
 }) {
-  const router = useRouter();
   const [sel, setSel] = useState<"all" | number>("all");
   const [data, setData] = useState<DailyReport>(initial);
   const [loading, setLoading] = useState(false);
@@ -59,7 +58,7 @@ export default function DailyReportCard({
     <div className="card">
       <div className="ch">
         <h2>التقرير اليومي</h2>
-        <button className="obtn" onClick={() => router.push("/receipts")}>سجل الوصولات</button>
+        <Link className="obtn" href="/receipts" style={{ textDecoration: "none" }}>سجل الوصولات</Link>
       </div>
       <div style={{ padding: "0 16px 6px", fontSize: 11, color: "var(--muted)" }}>{formatDate(new Date())}</div>
 
