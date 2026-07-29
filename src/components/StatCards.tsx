@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { localSasBase } from "@/lib/localSas";
 
 // بطاقات الإحصاء الأربع — مطابقة حرفياً للنموذج المعتمد (أصناف .nst في globals.css):
@@ -60,8 +61,10 @@ function SubsCard({ towerIds }: { towerIds: number[] }) {
     return () => { stop = true; if (timer) clearInterval(timer); };
   }, [key]);
 
+  // الضغط على البطاقة ينتقل لقائمة المشتركين أسفل الشاشة (البطاقات كلها قابلة للضغط — طلب محمد)
+  const scrollToBoard = () => document.getElementById("subs-board")?.scrollIntoView({ behavior: "smooth", block: "start" });
   return (
-    <div className="stat dark">
+    <div className="stat dark" role="button" onClick={scrollToBoard} title="الانتقال لقائمة المشتركين">
       <div className="st-top"><span className="st-lb">المشتركين</span><span className="st-ic">👥</span></div>
       <div className="twoup">
         <div className="tu">
@@ -84,11 +87,12 @@ function SubsCard({ towerIds }: { towerIds: number[] }) {
 
 // ٢ · المصروفات والمقبوضات — سطران + شريط نسبة + الصافي
 function MoneyCard({ r }: { r: Report }) {
+  const router = useRouter();
   const received = r.total + r.expenses;
   const sum = received + r.expenses;
   const inPct = sum > 0 ? Math.round((received / sum) * 100) : 50;
   return (
-    <div className="stat">
+    <div className="stat" role="button" onClick={() => router.push("/cashbox")} title="فتح المصروفات والمقبوضات">
       <div className="st-top"><span className="st-lb">المصروفات والمقبوضات</span><span className="st-ic">💵</span></div>
       <div className="flow">
         <div className="flow-line">
@@ -113,6 +117,7 @@ function MoneyCard({ r }: { r: Report }) {
 
 // ٣ · فاتورة المبيع — عدد + وسام اتجاه + المبلغ + منحنى مساحي
 function InvoiceCard({ r }: { r: Report }) {
+  const router = useRouter();
   const [s, setS] = useState<{ thisDays: number[]; lastDays: number[]; thisTotal: number; lastTotal: number } | null>(null);
   useEffect(() => {
     fetch("/api/reports/invoices/summary").then((x) => (x.ok ? x.json() : null)).then((d) => d && setS(d)).catch(() => {});
@@ -120,7 +125,7 @@ function InvoiceCard({ r }: { r: Report }) {
   const delta = s && s.lastTotal > 0 ? Math.round(((s.thisTotal - s.lastTotal) / s.lastTotal) * 100) : null;
   const days = s ? [...s.lastDays, ...s.thisDays].slice(-7) : [];
   return (
-    <div className="stat">
+    <div className="stat" role="button" onClick={() => router.push("/invoices")} title="فتح فاتورة المبيع">
       <div className="st-top"><span className="st-lb">فاتورة المبيع</span><span className="st-ic">🛒</span></div>
       <div className="inv-row">
         <span className="st-vl">{r.invoiceCount}</span>
@@ -163,6 +168,7 @@ function Spark({ values }: { values: number[] }) {
 
 // ٤ · إدارة الفنيين — دونات بقوسين (لاجورد منجزة + برتقالي متبقّية)
 function FieldCard() {
+  const router = useRouter();
   const [v, setV] = useState<{ done: number; rest: number } | null>(null);
   useEffect(() => {
     fetch("/api/field/board").then((r) => (r.ok ? r.json() : null)).then((d) => {

@@ -115,14 +115,10 @@ export default function AppShell({
           )}
 
           {/* شريط التنقّل السفلي (الهاتف) */}
+          {/* بلا تكرار (طلب محمد): المشتركون ضمن الرئيسية نفسها، والدرج يُفتح من ☰ الأعلى فقط */}
           <nav className="no-print fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-line bg-surface px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_rgba(0,0,0,.08)] md:hidden" aria-label="تنقّل سريع">
             <BottomItem icon="🏠" label="الرئيسية" href="/dashboard" />
-            <BottomItem icon="👥" label="المشتركين" href="/subscribers" />
-            <BottomFab />
             <BottomItem icon="📋" label="التقرير" href="/reports/overall" />
-            <button onClick={() => setDrawer(true)} className="flex min-w-[52px] flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] font-semibold text-ink-2">
-              <span className="text-lg leading-none">☰</span>المزيد
-            </button>
           </nav>
         </div>
       </div>
@@ -139,18 +135,6 @@ function BottomItem({ icon, label, href }: { icon: string; label: string; href: 
     <button onClick={() => router.push(href)}
       className={`flex min-w-[52px] flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] font-semibold ${on ? "text-orange-d" : "text-ink-2"}`}>
       <span className="text-lg leading-none">{icon}</span>{label}
-    </button>
-  );
-}
-
-// زر التفعيل السريع الأوسط (⚡)
-function BottomFab() {
-  const router = useRouter();
-  return (
-    <button onClick={() => router.push("/subscribers")} title="تفعيل سريع"
-      className="relative -top-3 flex h-12 w-12 shrink-0 items-center justify-center self-center rounded-full text-xl text-white shadow-lg"
-      style={{ background: "linear-gradient(160deg, var(--orange) 0%, var(--orange-d) 100%)" }}>
-      ⚡
     </button>
   );
 }
