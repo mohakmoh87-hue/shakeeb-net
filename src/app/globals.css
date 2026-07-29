@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light; /* الموقع نهاري موحّد — الليلي يُبنى كاملاً لاحقاً */
   /* لوحة ألوان MyNet - الأزرق السماوي المستوحى من البرنامج الأصلي */
   --mynet-blue: #1c8fe6;
   --mynet-blue-dark: #0f6fbf;
@@ -22,14 +23,7 @@
 }
 
 /* الوضع الليلي للطراز الجديد: تفضيل النظام، وسمة data-theme تتغلّب بالاتجاهين */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ground: #0f1721; --surface: #18222f; --surface-2: #1f2b3a;
-    --ink: #e6ecf4; --ink-2: #a9b6c7; --muted: #7b8798; --line: #28374a;
-    --navy: #132639; --navy-2: #0d1c2b; --navy-3: #1e405f;
-    --sh: 0 2px 8px rgba(0, 0, 0, .4); --sh-lg: 0 16px 50px rgba(0, 0, 0, .65);
-  }
-}
+
 :root[data-theme="dark"] {
   --ground: #0f1721; --surface: #18222f; --surface-2: #1f2b3a;
   --ink: #e6ecf4; --ink-2: #a9b6c7; --muted: #7b8798; --line: #28374a;
@@ -194,6 +188,7 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
 @keyframes waPulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 
 .nst {
+  color: var(--ink);
   /* بطاقات الإحصاء */
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
   .stat { background: var(--surface); border-radius: 10px; padding: 15px 17px; box-shadow: var(--sh);
@@ -558,15 +553,7 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
 }
 
 /* الوضع الليلي — تخصيصات النموذج */
-@media (prefers-color-scheme: dark) {
-  .nst .wa.down { color: #ff8296; }
-  .nst .wa.up { color: #4fd6a5; }
-  .nst .subs tbody tr.active, .nst .subrow > td { background: rgba(122,170,220,.12); }
-  .nst .ss-amt { color: #7fb6e8; }
-  .nst .rep .wsl { color: #7fb6e8; }
-  .nst .sd-row b, .nst .sd-tot b { color: #4fd6a5; }
-  .nst .sd-row em { color: #a5b4fc; }
-}
+
 :root[data-theme="dark"] .nst .wa.down { color: #ff8296; }
 :root[data-theme="dark"] .nst .wa.up { color: #4fd6a5; }
 :root[data-theme="dark"] .nst .subs tbody tr.active, :root[data-theme="dark"] .nst .subrow > td { background: rgba(122,170,220,.12); }
@@ -631,12 +618,7 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
   .nst .settle-strip { padding: 7px 11px 9px; }
 }
 
-@media (prefers-color-scheme: dark) {
-  .nst .cbox { background: #3a2f14; border-color: #5c4a1e; }
-  .nst .fld select.pkg { background: #3a3417; }
-  .nst .m-paid { color: #4fd6a5; }
-  .nst .m-debt { color: var(--ink); }
-}
+
 :root[data-theme="dark"] .nst .cbox { background: #3a2f14; border-color: #5c4a1e; }
 :root[data-theme="dark"] .nst .fld select.pkg { background: #3a3417; }
 :root[data-theme="dark"] .nst .m-paid { color: #4fd6a5; }
