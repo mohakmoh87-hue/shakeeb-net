@@ -353,7 +353,12 @@ export default function SubscribersBoard() {
                           </button>
                           <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>
                           <button className={`sb-act ${moreMenu ? "on" : ""}`} aria-haspopup="true"
-                            onClick={(e) => { e.stopPropagation(); setMoreMenu((v) => !v); }}>⋯ المزيد</button>
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMoreMenu((v) => !v);
+                              // آخر مشترك بالقائمة: مرّر اللوحة المنفتحة إلى مرمى النظر
+                              if (!moreMenu) setTimeout(() => document.querySelector(".sb-panel")?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 30);
+                            }}>⋯ المزيد</button>
                           <button className="sb-x" style={{ marginInlineStart: "auto" }} onClick={() => { setSelectedId(null); setMoreMenu(false); }} aria-label="إلغاء التحديد">✕</button>
                         </div>
                         {moreMenu && (

@@ -56,6 +56,13 @@ export async function GET() {
     arr.push({ title: c.title, kind: c.kind, amount: c.amount ?? 0, subAmount: c.subAmount ?? 0, netUser: netUser && netUser !== "—" ? netUser : null });
     byTech.set(c.technicianId, arr);
   }
+  // بطاقات التوصيل: مبلغها (المخزَّن في amount عند الإنجاز) اشتراكٌ محاسبياً —
+  // يُنقل لخانة الاشتراك فيصحّ العرض والمجاميع (كان يظهر «مبيع 36 واشتراك 0» معكوساً)
+  for (const [k, arr] of byTech) {
+    byTech.set(k, arr.map((x) => (isDeliveryKind(x.kind)
+      ? { ...x, amount: 0, subAmount: x.subAmount + x.amount }
+      : x)));
+  }
 
   return NextResponse.json({
     isManager: manager,

@@ -109,8 +109,9 @@ export default function FieldSettlementCard() {
                         {it.netUser && <i dir="ltr"> {it.netUser}</i>}
                       </span>
                       <b>
-                        {fmt(it.amount)}
-                        {(it.subAmount ?? 0) > 0 && <em> + اشتراك {fmt(it.subAmount ?? 0)}</em>}
+                        {it.amount > 0 && fmt(it.amount)}
+                        {(it.subAmount ?? 0) > 0 && <em>{it.amount > 0 ? " + " : ""}اشتراك {fmt(it.subAmount ?? 0)}</em>}
+                        {it.amount <= 0 && (it.subAmount ?? 0) <= 0 && "0"}
                       </b>
                     </div>
                   ))}
