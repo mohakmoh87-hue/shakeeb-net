@@ -59,7 +59,7 @@ export default function DailyReportCard({
     <div className="card">
       <div className="ch">
         <h2>التقرير اليومي</h2>
-        <button className="obtn" onClick={() => router.push("/subscriptions")}>سجل الوصولات</button>
+        <button className="obtn" onClick={() => router.push("/receipts")}>سجل الوصولات</button>
       </div>
       <div style={{ padding: "0 16px 6px", fontSize: 11, color: "var(--muted)" }}>{formatDate(new Date())}</div>
 

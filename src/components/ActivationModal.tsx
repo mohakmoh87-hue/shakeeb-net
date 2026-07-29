@@ -226,7 +226,7 @@ export default function ActivationModal({
   return (
     // لا إغلاق بالنقر على الخلفية: النافذة تُغلق حصراً بأزرارها (حفظ وطباعة / حفظ و اغلاق / اغلاق / ✕)
     // — نقرة سهو خارجها كانت تُغلقها أثناء التفعيل على SAS فيضيع الكارت المسحوب
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-3">
+    <div className="nst ov">
       {/* إشعار كبير وسط الشاشة: هذا المشترك محوّل إلى يوزر جديد */}
       {subscriber.transferredTo && !transferSeen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.stopPropagation()}>
@@ -240,160 +240,146 @@ export default function ActivationModal({
         </div>
       )}
 
-      <div className="flex h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        {/* الترويسة */}
-        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2">
-          <h3 className="text-base font-bold text-slate-800">تفعيل الاشتراك</h3>
-          <button onClick={releaseAndClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sh-head">
+          <div className="shh-l">
+            <h3>تفعيل الاشتراك</h3>
+            <span className="shh-sep" />
+            <span className="shh-nm">{subscriber.name ?? "—"}</span>
+            {subscriber.netUser && <span className="shh-us" dir="ltr">{subscriber.netUser}</span>}
+          </div>
+          <button className="xbtn" onClick={releaseAndClose} aria-label="إغلاق">✕</button>
         </div>
 
-        {/* على الهاتف: تمرير عمودي للوصول لصفحة SAS بالأسفل؛ على الكمبيوتر: جنباً لجنب */}
-        <div className="flex flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
-          {/* نموذج التفعيل — يمين على الكمبيوتر / أعلى على الهاتف */}
-          <div className="w-full shrink-0 space-y-2 bg-slate-50 p-3 md:w-[460px] md:overflow-y-auto">
-            {/* المشترك + اليوزر */}
-            <div className="flex items-stretch gap-2">
-              <div className="flex-1 rounded-lg bg-white px-3 py-1.5 text-center text-sm font-bold text-red-600 shadow-sm">{subscriber.name ?? "—"}</div>
-              <div className="flex-1 truncate rounded-lg border border-slate-200 bg-slate-100 px-2 py-1.5 text-center text-sm font-semibold text-slate-700" dir="ltr">{subscriber.netUser ?? "—"}</div>
-            </div>
-
-            {/* سحب البطاقة بالأعلى: البطاقة + السيريال + المتبقي من الفئة */}
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
-              <button onClick={pullCard} disabled={loadingCard || !packageId} className="w-full rounded-lg bg-amber-500 py-2 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50">
-                {loadingCard ? "..." : "🎴 سحب بطاقة"}
-              </button>
-              {card?.serial ? (
-                <>
-                  <div className="mt-2 flex items-center gap-2">
-                    <code className="flex-1 rounded bg-white px-2 py-1.5 text-center text-base font-bold tracking-wider text-slate-800" dir="ltr">{card.serial}</code>
-                    <button onClick={() => copy(card.serial)} className="rounded bg-slate-200 px-2 py-1.5 text-sm hover:bg-slate-300" title="نسخ">📋{copied ? "✓" : ""}</button>
-                  </div>
-                  <div className="mt-1 text-center text-[11px] text-slate-500">المتبقي من هذه الفئة: <b className="text-slate-700">{available}</b></div>
-                </>
-              ) : (
-                packageId ? <div className="mt-1.5 text-center text-[11px] text-slate-500">المتبقي من هذه الفئة: <b className="text-slate-700">{available}</b></div> : null
-              )}
-            </div>
-
-            <Field label="فئة الاشتراك">
-              <select value={packageId} onChange={(e) => setPackageId(Number(e.target.value) || "")} className="w-full rounded border border-slate-300 bg-yellow-50 px-2 py-1.5 text-sm font-bold">
-                <option value="">— اختر الفئة —</option>
-                {packages.map((p) => <option key={p.id} value={p.id}>{p.name} ({fmt(p.priceDinar)})</option>)}
-              </select>
-            </Field>
-
-            {/* تاريخ الانتهاء (مع تعديل يدوي) */}
-            <Field label="تاريخ الانتهاء">
-              <div className="flex items-center gap-1">
-                <input type="date" value={expiry} disabled={!manualDate} onChange={(e) => setExpiry(e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-500" dir="ltr" />
-                <label className="flex shrink-0 items-center gap-1 text-[11px] text-slate-500" title="تعديل يدوي للتاريخ">
-                  <input type="checkbox" checked={manualDate} onChange={(e) => setManualDate(e.target.checked)} className="h-4 w-4 accent-mynet-blue" />
-                  يدوي
-                </label>
+        <div className="sh-body">
+          <div className="fpane">
+            {/* 1) البطاقة والسيريال */}
+            <div className="cbox">
+              <div className="cbox-row">
+                <button className="pull" onClick={pullCard} disabled={loadingCard || !packageId}>{loadingCard ? "..." : "🎴 سحب بطاقة"}</button>
+                <div className="ser">{card?.serial ?? "— — — —"}</div>
+                <button className="cpy" onClick={() => copy(card?.serial ?? null)} title="نسخ السيريال">{copied ? "✓" : "📋"}</button>
+                <div className="rem">المتبقي<br /><b>{available}</b></div>
               </div>
-            </Field>
-
-            {/* شبكة مرتّبة: حقلان بكل صف */}
-            <div className="grid grid-cols-2 gap-2">
-              <Cell label="عدد الأشهر">
-                <div className="flex items-center gap-1">
-                  <button onClick={() => setMonths((m) => Math.max(1, m - 1))} className="h-8 w-7 shrink-0 rounded bg-slate-200 font-bold hover:bg-slate-300">−</button>
-                  <input type="number" min={1} value={months} onChange={(e) => setMonths(Math.max(1, Number(e.target.value) || 1))} className="w-full rounded border border-slate-300 px-1 py-1.5 text-center text-sm" />
-                  <button onClick={() => setMonths((m) => m + 1)} className="h-8 w-7 shrink-0 rounded bg-slate-200 font-bold hover:bg-slate-300">+</button>
-                </div>
-              </Cell>
-              <Cell label="كلفة الاشتراك">
-                <div className="flex gap-1">
-                  <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={String(packageTotal)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
-                  {amount !== "" && <button onClick={() => setAmount("")} title="رجوع لسعر الباقة" className="shrink-0 rounded bg-slate-200 px-1.5 text-sm hover:bg-slate-300">↺</button>}
-                </div>
-              </Cell>
-              <Cell label="اجور توصيل">
-                <input type="number" value={delivery} onChange={(e) => setDelivery(e.target.value)} placeholder="0" className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
-              </Cell>
-              <Cell label="المجموع">
-                <div className="rounded border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm font-bold text-slate-800">{fmt(grandTotal)}</div>
-              </Cell>
-              <Cell label="المبلغ الواصل">
-                <div className="flex gap-1">
-                  <input type="number" value={fullPaid ? String(mixed ? cashPart : grandTotal) : paid} disabled={fullPaid} onChange={(e) => setPaid(e.target.value)} className="w-full rounded border border-slate-300 bg-sky-50 px-2 py-1.5 text-sm font-semibold disabled:bg-slate-100" />
-                  <button onClick={() => setPaid(String(grandTotal))} disabled={!grandTotal || fullPaid} title="إدخال المجموع" className="shrink-0 rounded bg-emerald-600 px-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">➕</button>
-                </div>
-              </Cell>
-              <Cell label="المبلغ المتبقي">
-                <div className={`rounded border px-2 py-1.5 text-sm font-bold ${remaining > 0 ? "border-red-200 bg-red-50 text-red-600" : "border-emerald-200 bg-emerald-50 text-emerald-600"}`}>{fmt(remaining)}</div>
-              </Cell>
             </div>
 
-            <Field label="مجموع الديون">
-              <div className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm font-bold text-slate-700">{fmt(totalDebt)}</div>
-            </Field>
+            {/* 2) الفئة والتاريخ */}
+            <div className="g2">
+              <div className="fld"><label>فئة الاشتراك</label>
+                <select className="pkg" value={packageId} onChange={(e) => setPackageId(Number(e.target.value) || "")}>
+                  <option value="">— اختر الفئة —</option>
+                  {packages.map((p) => <option key={p.id} value={p.id}>{p.name} ({fmt(p.priceDinar)})</option>)}
+                </select>
+              </div>
+              <div className="fld"><label>تاريخ الانتهاء</label>
+                <div className="dw">
+                  <input type="date" value={expiry} disabled={!manualDate} onChange={(e) => setExpiry(e.target.value)} dir="ltr" />
+                  <span className="chk"><input type="checkbox" checked={manualDate} onChange={(e) => setManualDate(e.target.checked)} /> يدوي</span>
+                </div>
+              </div>
+            </div>
 
-            {/* ماستر — حصري مع «مكتب تفعيل»؛ يدعم الدفع المختلط: مبلغ ماستر جزئي والباقي نقدي */}
-            <div className={`rounded-lg border px-3 py-2 transition ${master ? "border-indigo-400 bg-indigo-50" : "border-slate-300"}`}>
-              <label className={`flex cursor-pointer items-center gap-2 text-sm font-bold ${master ? "text-indigo-700" : "text-slate-600"}`}>
-                <input type="checkbox" checked={master} onChange={(e) => { setMaster(e.target.checked); setMasterAmount(""); if (e.target.checked) { setActOffice(false); setActAccountId(""); } }} className="h-4 w-4 accent-indigo-600" />
-                🅜 ماستر
+            {/* 3) الأشهر والكلفة والتوصيل */}
+            <div className="g3">
+              <div className="fld"><label>عدد الأشهر</label>
+                <div className="stp">
+                  <button onClick={() => setMonths((m) => Math.max(1, m - 1))}>−</button>
+                  <input type="number" min={1} value={months} onChange={(e) => setMonths(Math.max(1, Number(e.target.value) || 1))} dir="ltr" style={{ textAlign: "center" }} />
+                  <button onClick={() => setMonths((m) => m + 1)}>+</button>
+                </div>
+              </div>
+              <div className="fld"><label>كلفة الاشتراك</label>
+                <div className="inl">
+                  <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={String(packageTotal)} dir="ltr" />
+                  <button className="mb" title="رجوع لسعر الباقة" onClick={() => setAmount("")} disabled={amount === ""}>↺</button>
+                </div>
+              </div>
+              <div className="fld"><label>اجور توصيل</label>
+                <input type="number" value={delivery} onChange={(e) => setDelivery(e.target.value)} placeholder="0" dir="ltr" />
+              </div>
+            </div>
+
+            {/* 4) المجاميع كبطاقات ملوّنة */}
+            <div className="money">
+              <div className="mcard m-tot"><small>المجموع</small><b>{fmt(grandTotal)}</b></div>
+              <div className="mcard m-paid">
+                <small>المبلغ الواصل</small>
+                <div className="mp-in">
+                  <input type="number" value={fullPaid ? String(mixed ? cashPart : grandTotal) : paid} disabled={fullPaid} onChange={(e) => setPaid(e.target.value)} dir="ltr" />
+                  <button className="mb go" title="إدخال المجموع" onClick={() => setPaid(String(grandTotal))} disabled={!grandTotal || fullPaid}>➕</button>
+                </div>
+              </div>
+              <div className="mcard m-rem"><small>المبلغ المتبقي</small><b>{fmt(remaining)}</b></div>
+              <div className="mcard m-debt"><small>مجموع الديون</small><b>{fmt(totalDebt)}</b></div>
+            </div>
+
+            {/* 5) الماستر ومكتب التفعيل — حصريان */}
+            <div className="opts">
+              <label className={`tog ${master ? "on" : ""}`}>
+                <input type="checkbox" checked={master} onChange={(e) => { setMaster(e.target.checked); setMasterAmount(""); if (e.target.checked) { setActOffice(false); setActAccountId(""); } }} />
+                <span>🅜 ماستر</span>
               </label>
-              {master && (
-                <div className="mt-2">
-                  <div className="flex items-center gap-2">
-                    <span className="shrink-0 text-[11px] font-bold text-indigo-700">مبلغ الماستر</span>
-                    <input type="number" value={masterAmount} onChange={(e) => setMasterAmount(e.target.value)} placeholder={String(grandTotal)} className="w-full rounded border border-indigo-300 bg-white px-2 py-1.5 text-sm font-semibold" />
-                  </div>
-                  <div className="mt-1 text-[11px] text-indigo-700">
-                    {mixed
-                      ? `مختلط: ماستر ${fmt(masterPart)} + نقدي ${fmt(cashPart)} — واصل كامل بلا دين`
-                      : "فارغ = كامل المبلغ ماستر. اكتب مبلغاً جزئياً والباقي يُحسب نقدياً تلقائياً"}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* مكتب تفعيل — حصري مع الماستر؛ عند الصح تظهر قائمة الحسابات المسجّلة «مكتب تفعيل» */}
-            {actAccounts.length > 0 && (
-              <div className={`rounded-lg border px-3 py-2 transition ${actOffice ? "border-teal-400 bg-teal-50" : "border-slate-300"}`}>
-                <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-teal-700">
-                  <input type="checkbox" checked={actOffice} onChange={(e) => { setActOffice(e.target.checked); if (e.target.checked) setMaster(false); else setActAccountId(""); }} className="h-4 w-4 accent-teal-600" />
-                  🏢 مكتب تفعيل
-                </label>
-                {actOffice && (
-                  <select value={actAccountId} onChange={(e) => setActAccountId(Number(e.target.value) || "")} className="mt-2 w-full rounded border border-teal-300 bg-white px-2 py-1.5 text-sm">
+              {actAccounts.length > 0 && (
+                <>
+                  <label className={`tog ${actOffice ? "on" : ""}`}>
+                    <input type="checkbox" checked={actOffice} onChange={(e) => { setActOffice(e.target.checked); if (e.target.checked) setMaster(false); else setActAccountId(""); }} />
+                    <span>🏢 مكتب تفعيل</span>
+                  </label>
+                  <select className="acct" disabled={!actOffice} value={actAccountId} onChange={(e) => setActAccountId(Number(e.target.value) || "")}>
                     <option value="">— اختر الحساب —</option>
                     {actAccounts.map((a) => <option key={a.id} value={a.id}>{a.name ?? `#${a.id}`}</option>)}
                   </select>
-                )}
-                {actOffice && <div className="mt-1 text-[11px] text-teal-700">واصل كامل بلا دين + يُسجَّل مبلغ الاشتراك مصروفاً على هذا الحساب (يتعادل التقرير).</div>}
+                </>
+              )}
+            </div>
+            {/* الدفع المختلط: مبلغ ماستر جزئي والباقي نقدي يُحسب تلقائياً (أ4) */}
+            {master && (
+              <div className="fld">
+                <label>مبلغ الماستر (فارغ = كامل المبلغ ماستر)</label>
+                <input type="number" value={masterAmount} onChange={(e) => setMasterAmount(e.target.value)} placeholder={String(grandTotal)} dir="ltr" />
               </div>
             )}
+            {master && (
+              <div className="hint">
+                {mixed
+                  ? `🅜 مختلط: ماستر ${fmt(masterPart)} + نقدي ${fmt(cashPart)} — واصل كامل بلا دين`
+                  : "🅜 ماستر: واصل كامل بحساب الماستر المستقل. اكتب مبلغاً جزئياً والباقي يُحسب نقدياً تلقائياً"}
+              </div>
+            )}
+            {actOffice && (
+              <div className="hint">🏢 مكتب تفعيل: واصل كامل بلا دين + يُسجَّل مبلغ الاشتراك مصروفاً على هذا الحساب (يتعادل التقرير).</div>
+            )}
 
-            <Field label="ملاحظة">
-              <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
-            </Field>
+            {/* 6) ملاحظة */}
+            <div className="fld"><label>ملاحظة</label>
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="تظهر على الوصل المطبوع…" />
+            </div>
 
-            {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
+            {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">{error}</div>}
 
-            {/* أزرار الإجراءات */}
-            <div className="grid grid-cols-2 gap-1.5 border-t border-slate-200 pt-2">
-              <button onClick={() => confirm(true)} disabled={saving} className="rounded-lg bg-mynet-blue py-2.5 text-sm font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-60">💾 حفظ وطباعة</button>
-              <button onClick={() => confirm(false)} disabled={saving} className="rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">{saving ? "جاري..." : "✅ حفظ و اغلاق"}</button>
-              <button onClick={releaseAndClose} className="col-span-2 rounded-lg bg-slate-100 py-2 text-sm text-slate-600 hover:bg-slate-200">اغلاق</button>
+            {/* 7) الأزرار */}
+            <div className="acts">
+              <button className="bs b1" onClick={() => confirm(true)} disabled={saving}>💾 حفظ وطباعة</button>
+              <button className="bs b2" onClick={() => confirm(false)} disabled={saving}>{saving ? "جاري..." : "✅ حفظ و اغلاق"}</button>
+              <button className="bs b3 wide" onClick={releaseAndClose}>اغلاق</button>
             </div>
           </div>
 
           {/* صفحة SAS4 مضمّنة — يسار على الكمبيوتر / أسفل على الهاتف */}
-          <div className="flex h-[75vh] shrink-0 flex-col border-t border-slate-200 md:h-auto md:flex-1 md:border-r md:border-t-0">
-            <div className="flex items-center justify-between bg-slate-100 px-3 py-1.5 text-xs">
-              <span className="font-semibold text-slate-600">صفحة تفعيل المشترك في SAS4 (دخول تلقائي)</span>
-              {directLink && <a href={directLink} target="_blank" rel="noopener noreferrer" className="text-mynet-blue hover:underline">فتح بنافذة جديدة ↗</a>}
+          <div className="spane">
+            <div className="sbar">
+              <b>صفحة تفعيل المشترك في SAS4 (دخول تلقائي)</b>
+              {directLink && <a href={directLink} target="_blank" rel="noopener noreferrer">فتح بنافذة جديدة ↗</a>}
             </div>
-            {frameSrc ? (
-              <ScaledSasFrame src={frameSrc} title="SAS4 activation" />
-            ) : (
-              <div className="flex flex-1 items-center justify-center text-sm text-slate-400">
-                {subscriber.sasId ? "جاري تسجيل الدخول التلقائي..." : "هذا المشترك غير مربوط بـ SAS4"}
-              </div>
-            )}
+            <div className="sbody">
+              {frameSrc ? (
+                <ScaledSasFrame src={frameSrc} title="SAS4 activation" />
+              ) : (
+                <div className="flex flex-1 items-center justify-center text-sm" style={{ color: "var(--muted)" }}>
+                  {subscriber.sasId ? "جاري تسجيل الدخول التلقائي..." : "هذا المشترك غير مربوط بـ SAS4"}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -457,21 +443,3 @@ function ScaledSasFrame({ src, title }: { src: string; title: string }) {
 }
 
 // صف حقل: التسمية يميناً والقيمة/الإدخال يساراً (تخطيط كلاسيكي)
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <label className="w-24 shrink-0 text-right text-xs font-semibold text-slate-600">{label}</label>
-      <div className="flex-1">{children}</div>
-    </div>
-  );
-}
-
-// خلية شبكة مدمجة: التسمية أعلى الحقل (لصفّي حقلين متراصفين)
-function Cell({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="mb-0.5 block text-[11px] font-semibold text-slate-500">{label}</label>
-      {children}
-    </div>
-  );
-}
