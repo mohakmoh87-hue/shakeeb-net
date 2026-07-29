@@ -199,6 +199,7 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
   .stat { background: var(--surface); border-radius: 10px; padding: 15px 17px; box-shadow: var(--sh);
     display: flex; flex-direction: column; gap: 9px; transition: transform .15s, box-shadow .15s; }
   .stat:hover { transform: translateY(-3px); box-shadow: 0 8px 22px rgba(27,58,92,.14); }
+  .stat[role="button"] { cursor: pointer; }
   .stat.dark { background: linear-gradient(165deg, var(--navy-3), var(--navy)); color: #fff; }
   .st-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .st-lb { font-size: 12.5px; font-weight: 700; color: var(--ink-2); }

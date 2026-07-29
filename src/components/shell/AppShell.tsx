@@ -72,16 +72,22 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const [drawer, setDrawer] = useState(false);
+  // إدارة الفنيين تحتاج كامل عرض الشاشة — بلا شريط جانبي (طلب محمد)؛
+  // العودة من زر «← الرئيسية» داخل الصفحة نفسها
+  const pathname = usePathname();
+  const hideSide = pathname === "/field-management";
 
   return (
     <div className="md:flex">
       {/* الشريط الجانبي (حاسبة) — لاصق بارتفاع الشاشة */}
+      {!hideSide && (
       <div data-site-chrome>
         <aside className="no-print sticky top-0 hidden h-screen w-[232px] shrink-0 flex-col overflow-y-auto text-white md:flex"
           style={{ background: "linear-gradient(170deg, var(--navy) 0%, var(--navy-2) 100%)" }}>
           <SideNav brand={brand} fullName={fullName} roleLabel={roleLabel} onNavigate={() => {}} />
         </aside>
       </div>
+      )}
 
       <div className="min-w-0 flex-1">
         {/* الشريط العلوي (الهاتف) */}
