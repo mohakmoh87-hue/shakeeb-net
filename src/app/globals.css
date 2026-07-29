@@ -524,6 +524,15 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
   .held { color: var(--orange-d); font-size: 9.5px; font-weight: 700; }
   .gbtn.amber { border-color: rgba(245,166,35,.5); color: var(--orange-d); background: rgba(245,166,35,.08); }
 
+  /* شريط أدوات إدارة الفنيين العلوي (المدير بالمتصفح) — أزرار محايدة بلا ألوان */
+  .ftb { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer;
+    font-family: inherit; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700;
+    white-space: nowrap; transition: border-color .15s, color .15s, background .15s; }
+  .ftb:hover { border-color: var(--orange); color: var(--orange-d); background: rgba(245,166,35,.08); }
+  .fbadge { position: absolute; top: -6px; inset-inline-end: -6px; display: flex; height: 18px; min-width: 18px;
+    align-items: center; justify-content: center; border-radius: 999px; background: var(--bad); padding: 0 4px;
+    font-size: 10px; font-weight: 800; font-style: normal; color: #fff; }
+
   /* بطاقة التقرير اليومي */
   .rtabs { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 16px 10px; }
   .rtab { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer;
@@ -630,3 +639,6 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
 :root[data-theme="dark"] .nst .m-paid { color: #4fd6a5; }
 :root[data-theme="light"] .nst .cbox { background: #fff7e8; border-color: #f6d9a4; }
 :root[data-theme="light"] .nst .fld select.pkg { background: #fffbea; }
+
+/* لوحة الفنيين بعرض المدير (المتصفح فقط): خلفية الطراز الجديد — التطبيق ولوحة الفني بلا مساس */
+html:not([data-app-mode]) .field-site.field-canvas { background: var(--ground); }

@@ -28,6 +28,16 @@ type CardEvent = { at: string; by: string; text: string };
 const parseHistory = (h?: string | null): CardEvent[] => { try { return h ? (JSON.parse(h) as CardEvent[]) : []; } catch { return []; } };
 // بطاقة أُعيدت من الأرشيف (من سجلها) — لعرض شارة «من الأرشيف» على وجهها
 const wasRestored = (h?: string | null): boolean => parseHistory(h).some((e) => e.text.includes("إعادة البطاقة من الأرشيف"));
+// لون فئة العمود (طراز المدير الجديد بالمتصفح): اسم أبيض على خلفية لون فئته —
+// توصيل برتقالي · صيانة لاجورد · تنصيب أخضر · بالشوب رمادي · المنجزة أخضر داكن
+const listCatColor = (name: string): string => {
+  if (name.includes("توصيل")) return "var(--cat-delivery)";
+  if (name.includes("صيان")) return "var(--cat-maint)";
+  if (name.includes("تنصيب") || name.includes("نصب")) return "var(--cat-install)";
+  if (name.includes("شوب")) return "var(--cat-shop)";
+  if (name.includes("منجز")) return "var(--cat-done)";
+  return "var(--navy-3)";
+};
 
 // (أُلغي رفع صور العمل نهائياً بقرار محمد 2026-07-29)
 
@@ -334,10 +344,10 @@ export default function FieldManagementPage() {
 
   return (
     <FieldTrackerProvider enabled={canTrack}>
-    <div data-app-fullheight className="field-canvas flex h-[calc(100dvh-52px)] flex-col md:h-screen">
+    <div data-app-fullheight className={`field-canvas ${isTech ? "" : "nst field-site"} flex h-[calc(100dvh-52px)] flex-col md:h-screen`}>
       {/* ترويسة اللوحة */}
       <div data-app-safetop className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <div className="flex items-center gap-2 text-white">
+        <div className={`flex items-center gap-2 ${isTech ? "text-white" : "text-ink"}`}>
           <span className="text-xl">🛠️</span>
           <div className="leading-tight">
             <h1 className="text-lg font-bold">إدارة الفنيين</h1>
@@ -353,12 +363,48 @@ export default function FieldManagementPage() {
           ) : (
             <>
               {/* المتصفح: زر الرئيسية · التطبيق: زر خروج (تبديل عبر CSS بلا وميض) */}
-              <button data-site-only onClick={() => router.push("/dashboard")} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">← الرئيسية</button>
+              <button data-site-only onClick={() => router.push("/dashboard")} className="back">← الرئيسية</button>
               <button data-app-only onClick={userLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
             </>
           )}
         </div>
       </div>
+
+      {/* شريط الأدوات العلوي (طراز المدير بالمتصفح): كان أسفل وسط الشاشة — رُفع للأعلى
+          بكل خياراته، بلون خلفية الصفحة وبلا أزرار ملوّنة (تصميم النموذج).
+          لوحة الفني بالمتصفح تُبقي شريطها السفلي القديم كما هو حرفياً. */}
+      {!isTech && offices.length > 0 && (
+        <div data-site-only className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
+          {offices.map((o) => (
+            <button
+              key={o.id}
+              onClick={() => switchOffice(o.id)}
+              className={officeId === o.id
+                ? "rounded-lg bg-navy px-3.5 py-1.5 text-sm font-bold text-white shadow"
+                : "rounded-lg border border-line bg-surface px-3.5 py-1.5 text-sm font-semibold text-ink-2 transition hover:border-orange hover:text-orange-d"}
+            >
+              {o.name ?? `مكتب ${o.id}`}
+            </button>
+          ))}
+          <span className="mx-1 h-5 w-px bg-line" />
+          {(canManage || canOperate) && (
+            <button onClick={() => setTechModal(true)} className="ftb">👷 الفنيون ({technicians.length})</button>
+          )}
+          {canManage && (
+            <button onClick={() => setLeaveModal(true)} className="ftb relative">📅 الإجازات
+              {leavePending > 0 && <i className="fbadge">{leavePending}</i>}
+            </button>
+          )}
+          {canManage && (
+            <button onClick={() => setDedModal(true)} className="ftb relative">💠 الخصومات
+              {dedPending > 0 && <i className="fbadge">{dedPending}</i>}
+            </button>
+          )}
+          {canManage && <button onClick={() => setTypesModal(true)} className="ftb">⏱ الأنواع والأوقات</button>}
+          <button onClick={() => setArchiveModal(true)} className="ftb">🗂️ الأرشيف</button>
+          {officeId != null && <button onClick={() => setSupportModal(true)} className="ftb">🤝 دعم مؤقت</button>}
+        </div>
+      )}
 
       {/* شريط دعم اليوم الكامل: لوحة الفني مقلوبة لمكتب الدعم حتى إنهائه */}
       {supportInfo && (
@@ -389,18 +435,20 @@ export default function FieldManagementPage() {
               key={l.id}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => { if (!canOperate || isTech) return; const c = cards.find((x) => x.id === dragId); if (c) moveCard(c, l.id); setDragId(null); }}
-              className="flex max-h-full w-[280px] shrink-0 flex-col rounded-xl bg-slate-100 shadow-lg"
+              className={`flex max-h-full w-[280px] shrink-0 flex-col rounded-xl shadow-lg ${isTech ? "bg-slate-100" : "border border-line bg-surface-2"}`}
             >
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="font-bold text-slate-700">
-                  {l.name} <span className="text-xs font-normal text-slate-400">({listCards.length})</span>
-                  {l.timeTracked && <span className="ml-1 rounded bg-sky-100 px-1 py-0.5 text-[10px] font-semibold text-sky-700" title="عمود محسوب بالوقت">⏱</span>}
+              {/* رأس العمود: بالمتصفح للمدير — خطّ أبيض على خلفية بلون فئة العمود */}
+              <div className={`flex items-center justify-between px-3 py-2 ${isTech ? "" : "rounded-t-[11px]"}`}
+                style={!isTech ? { background: listCatColor(l.name ?? "") } : undefined}>
+                <span className={`font-bold ${isTech ? "text-slate-700" : "text-white"}`}>
+                  {l.name} <span className={`text-xs font-normal ${isTech ? "text-slate-400" : "text-white/75"}`}>({listCards.length})</span>
+                  {l.timeTracked && <span className={`ml-1 rounded px-1 py-0.5 text-[10px] font-semibold ${isTech ? "bg-sky-100 text-sky-700" : "bg-white/25 text-white"}`} title="عمود محسوب بالوقت">⏱</span>}
                 </span>
                 {canManage && (
-                  <div className="flex gap-1 text-slate-400">
-                    <button onClick={() => toggleTimeTracked(l)} className={`rounded px-1 ${l.timeTracked ? "text-sky-600" : "hover:bg-slate-200"}`} title={l.timeTracked ? "إلغاء الاحتساب بالوقت" : "تفعيل الاحتساب بالوقت"}>⏱</button>
-                    <button onClick={() => renameList(l)} className="rounded px-1 hover:bg-slate-200" title="إعادة تسمية">✏️</button>
-                    <button onClick={() => deleteList(l)} className="rounded px-1 hover:bg-red-100" title="حذف">🗑️</button>
+                  <div className={`flex gap-1 ${isTech ? "text-slate-400" : "text-white/85"}`}>
+                    <button onClick={() => toggleTimeTracked(l)} className={`rounded px-1 ${l.timeTracked ? (isTech ? "text-sky-600" : "bg-white/25 text-white") : (isTech ? "hover:bg-slate-200" : "hover:bg-white/20")}`} title={l.timeTracked ? "إلغاء الاحتساب بالوقت" : "تفعيل الاحتساب بالوقت"}>⏱</button>
+                    <button onClick={() => renameList(l)} className={`rounded px-1 ${isTech ? "hover:bg-slate-200" : "hover:bg-white/20"}`} title="إعادة تسمية">✏️</button>
+                    <button onClick={() => deleteList(l)} className={`rounded px-1 ${isTech ? "hover:bg-red-100" : "hover:bg-white/20"}`} title="حذف">🗑️</button>
                   </div>
                 )}
               </div>
@@ -479,9 +527,10 @@ export default function FieldManagementPage() {
         {lists.length > 0 && (() => {
           const doneCards = cards.filter((c) => c.done).sort((a, b) => String(b.completedAt ?? "").localeCompare(String(a.completedAt ?? "")));
           return (
-            <div className="flex max-h-full w-[280px] shrink-0 flex-col rounded-xl bg-emerald-50 shadow-lg ring-1 ring-emerald-200">
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="font-bold text-emerald-800">✅ المنجزة <span className="text-xs font-normal text-emerald-500">({doneCards.length})</span></span>
+            <div className={`flex max-h-full w-[280px] shrink-0 flex-col rounded-xl shadow-lg ${isTech ? "bg-emerald-50 ring-1 ring-emerald-200" : "border border-line bg-surface-2"}`}>
+              <div className={`flex items-center justify-between px-3 py-2 ${isTech ? "" : "rounded-t-[11px]"}`}
+                style={!isTech ? { background: "var(--cat-done)" } : undefined}>
+                <span className={`font-bold ${isTech ? "text-emerald-800" : "text-white"}`}>✅ المنجزة <span className={`text-xs font-normal ${isTech ? "text-emerald-500" : "text-white/75"}`}>({doneCards.length})</span></span>
               </div>
               <div className="flex-1 space-y-2 overflow-y-auto px-2 pb-2">
                 {doneCards.length === 0 ? (
@@ -504,8 +553,8 @@ export default function FieldManagementPage() {
 
         {/* إضافة عمود — للمدير فقط */}
         {canManage && (
-          <div className="w-[280px] shrink-0 rounded-xl bg-white/20 p-2">
-            <input value={newList} onChange={(e) => setNewList(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addList()} placeholder="+ إضافة عمود جديد" className="w-full rounded-lg bg-white/90 px-3 py-2 text-sm outline-none" />
+          <div className={`w-[280px] shrink-0 rounded-xl p-2 ${isTech ? "bg-white/20" : "border border-dashed border-line bg-surface"}`}>
+            <input value={newList} onChange={(e) => setNewList(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addList()} placeholder="+ إضافة عمود جديد" className={`w-full rounded-lg px-3 py-2 text-sm outline-none ${isTech ? "bg-white/90" : "border border-line bg-surface"}`} />
             {newList.trim() && <button onClick={addList} className="mt-1 w-full rounded-lg bg-white py-1.5 text-sm font-semibold text-mynet-blue">إضافة العمود</button>}
           </div>
         )}
@@ -513,8 +562,8 @@ export default function FieldManagementPage() {
         {/* خريطة التتبّع: دبوس عائم أسفل اليسار (سطح المكتب) يفتح لوحة الخريطة، ويُغلَق بالنقر خارجها */}
       </div>
 
-      {/* شريط سفلي (صفحة النت فقط، يُخفى داخل التطبيق عبر CSS): المكاتب + الأدوات — تصميم الموقع كما هو */}
-      {offices.length > 0 && (
+      {/* شريط سفلي (لوحة الفني بالمتصفح فقط — تبقى كما هي حرفياً؛ المدير صار شريطه أعلى) */}
+      {isTech && offices.length > 0 && (
         <div data-site-only className="flex flex-wrap items-center justify-center gap-1.5 border-t border-white/20 bg-black/25 px-4 pt-2.5 pb-[max(10px,env(safe-area-inset-bottom))]">
           {offices.map((o) => (
             <button
