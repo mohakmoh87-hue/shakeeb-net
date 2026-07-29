@@ -363,8 +363,8 @@ export default function SubscribersBoard() {
                               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                               const H = Math.min(340, Math.round(window.innerHeight * 0.7));
                               setMenuPos({
-                                left: Math.max(8, r.left - 208),
-                                top: Math.max(8, Math.min(r.top + r.height / 2 - H / 2, window.innerHeight - H - 8)),
+                                left: Math.max(8, Math.round(r.left - 206)),
+                                top: Math.max(8, Math.min(Math.round(r.top + r.height / 2 - H / 2), window.innerHeight - H - 8)),
                               });
                               setMoreMenu((v) => !v);
                             }}>⋯ المزيد</button>
@@ -390,9 +390,25 @@ export default function SubscribersBoard() {
 
       {/* قائمة «المزيد» — Portal إلى جسم الصفحة: على يسار الزر ومن منتصفه بالضبط */}
       {moreMenu && menuPos && selected && typeof document !== "undefined" && createPortal(
-        <div className="nst">
+        <div className="nst" dir="rtl">
           <div className="sbmenu" onClick={(e) => e.stopPropagation()}
-            style={{ position: "fixed", top: menuPos.top, left: menuPos.left, width: 200, maxHeight: "70vh", overflowY: "auto", zIndex: 95, insetInlineEnd: "auto" }}>
+            ref={(el) => {
+              // ضبط برمجي مباشر: يضمن الموضع مهما كانت أنماط الصنف أو اتجاه الصفحة
+              if (!el) return;
+              el.style.setProperty("position", "fixed", "important");
+              el.style.setProperty("top", menuPos.top + "px", "important");
+              el.style.setProperty("left", menuPos.left + "px", "important");
+              el.style.setProperty("right", "auto", "important");
+              el.style.setProperty("bottom", "auto", "important");
+              el.style.setProperty("inset-inline-end", "auto", "important");
+              el.style.setProperty("inset-inline-start", "auto", "important");
+              el.style.setProperty("width", "200px", "important");
+              el.style.setProperty("max-height", "70vh", "important");
+              el.style.setProperty("overflow-y", "auto", "important");
+              el.style.setProperty("z-index", "95", "important");
+              el.style.setProperty("margin", "0", "important");
+              el.style.setProperty("transform", "none", "important");
+            }}>
             <button onClick={() => openLog("receipts")}>📄 سجل الوصولات</button>
             <button onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
             <div style={{ padding: "3px 6px" }}><MapButton subscriberId={selected.id} className="w-full justify-center" /></div>
