@@ -113,7 +113,7 @@ export default function Sas4ImportPage() {
         title="استيراد من SAS4"
         subtitle="تصفّح صفحة المشتركين في اللوحة، ثم اضغط «عرض المعروض» لسحب ما هو أمامك"
         action={
-          <button onClick={() => router.push("/subscribers")} className="rounded-lg bg-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-300">← رجوع</button>
+          <button onClick={() => router.push("/dashboard")} className="rounded-lg bg-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-300">← رجوع</button>
         }
       />
 

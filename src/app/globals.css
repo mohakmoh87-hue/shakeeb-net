@@ -7,6 +7,40 @@
   --mynet-blue-deep: #0a4f8a;
   --mynet-gold: #f4b93e;
   --mynet-gold-dark: #e09a1f;
+
+  /* ===== رموز الطراز الجديد (النموذج المعتمد 2026-07-26) — لاجورد + برتقالي =====
+     لا تُستعمل بعد في أي صفحة (ب0: تحضير بلا أثر مرئي) — تعتمدها مراحل ب1..ب5 */
+  --navy: #1b3a5c; --navy-2: #14293f; --navy-3: #2a5480; --navy-ink: #17365d;
+  --orange: #f5a623; --orange-2: #ffb84d; --orange-d: #e0940f;
+  --ground: #f4f6f9; --surface: #fff; --surface-2: #f8fafc;
+  --ink: #1f3550; --ink-2: #5a6b80; --muted: #9aa6b5; --line: #e8edf3;
+  --ok: #0fa678; --bad: #e5384f;
+  --sh: 0 2px 8px rgba(27, 58, 92, .07); --sh-lg: 0 16px 50px rgba(16, 28, 45, .3);
+  /* ألوان فئات بطاقات الفنيين — يغيّرها المستخدم من «الأنواع والأوقات» */
+  --cat-delivery: #e0940f; --cat-maint: #2a5480; --cat-install: #0fa678;
+  --cat-shop: #5a6b80; --cat-done: #0b7a58;
+}
+
+/* الوضع الليلي للطراز الجديد: تفضيل النظام، وسمة data-theme تتغلّب بالاتجاهين */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0f1721; --surface: #18222f; --surface-2: #1f2b3a;
+    --ink: #e6ecf4; --ink-2: #a9b6c7; --muted: #7b8798; --line: #28374a;
+    --navy: #132639; --navy-2: #0d1c2b; --navy-3: #1e405f;
+    --sh: 0 2px 8px rgba(0, 0, 0, .4); --sh-lg: 0 16px 50px rgba(0, 0, 0, .65);
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0f1721; --surface: #18222f; --surface-2: #1f2b3a;
+  --ink: #e6ecf4; --ink-2: #a9b6c7; --muted: #7b8798; --line: #28374a;
+  --navy: #132639; --navy-2: #0d1c2b; --navy-3: #1e405f;
+  --sh: 0 2px 8px rgba(0, 0, 0, .4); --sh-lg: 0 16px 50px rgba(0, 0, 0, .65);
+}
+:root[data-theme="light"] {
+  --ground: #f4f6f9; --surface: #fff; --surface-2: #f8fafc;
+  --ink: #1f3550; --ink-2: #5a6b80; --muted: #9aa6b5; --line: #e8edf3;
+  --navy: #1b3a5c; --navy-2: #14293f; --navy-3: #2a5480;
+  --sh: 0 2px 8px rgba(27, 58, 92, .07); --sh-lg: 0 16px 50px rgba(16, 28, 45, .3);
 }
 
 @theme inline {
@@ -15,6 +49,23 @@
   --color-mynet-blue-deep: var(--mynet-blue-deep);
   --color-mynet-gold: var(--mynet-gold);
   --font-sans: var(--font-cairo);
+  /* رموز الطراز الجديد كأصناف Tailwind: bg-navy · text-ink · border-line · bg-surface ... */
+  --color-navy: var(--navy);
+  --color-navy-2: var(--navy-2);
+  --color-navy-3: var(--navy-3);
+  --color-navy-ink: var(--navy-ink);
+  --color-orange: var(--orange);
+  --color-orange-2: var(--orange-2);
+  --color-orange-d: var(--orange-d);
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-ok: var(--ok);
+  --color-bad: var(--bad);
 }
 
 body {
