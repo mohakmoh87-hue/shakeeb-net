@@ -11,6 +11,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 import FieldSettlementCard from "@/components/FieldSettlementCard";
 import { askVoidEffect } from "@/lib/voidPrompt";
+import { announceMoneyChanged } from "@/lib/moneyRefresh";
 
 // جدول المشتركين في الشاشة الرئيسية (ب2) — يحلّ محلّ صفحة /subscribers:
 // آخر 100 تفعيل من الأحدث للأقدم، بحث فوقه، ترويسة أزرار بصفّ واحد،
@@ -173,7 +174,7 @@ export default function SubscribersBoard() {
     const choice = await askVoidEffect("هذا الوصل");
     if (!choice) return;
     const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
-    if (res.ok) { loadReceipts(); load(query, showAllTowers); }
+    if (res.ok) { announceMoneyChanged(); loadReceipts(); load(query, showAllTowers); }
     else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
   }
 
@@ -206,6 +207,7 @@ export default function SubscribersBoard() {
     if (!r.ok) { setPayErr(d.error ?? "تعذّر التسديد"); return; }
     setPayDebtOpen(false); setPayAmount("");
     setMsg(`✓ سُدِّد ${n.toLocaleString("en-US")} د.ع — المتبقّي ${Number(d.newCarry ?? 0).toLocaleString("en-US")} د.ع`);
+    announceMoneyChanged();
     load(query, showAllTowers);
   }
 
@@ -217,12 +219,14 @@ export default function SubscribersBoard() {
     if (ids.length === 0) return;
     if (!confirm(`حذف ${ids.length} مشترك من القائمة الحالية؟`)) return;
     await fetch("/api/subscribers/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+    announceMoneyChanged(); // حذف المشترك قد يعكس حركات مالية لليوم
     setChecked(new Set()); setDelMenu(false); setSelectedId(null); load(query, showAllTowers);
   }
   async function deleteAllSubs() {
     if (!confirm("⚠️ حذف جميع المشتركين نهائياً؟")) return;
     if (!confirm("تأكيد أخير: حذف الكل؟")) return;
     await fetch("/api/subscribers/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
+    announceMoneyChanged();
     setChecked(new Set()); setDelMenu(false); setSelectedId(null); load(query, showAllTowers);
   }
 

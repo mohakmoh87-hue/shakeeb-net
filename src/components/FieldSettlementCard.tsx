@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { announceMoneyChanged } from "@/lib/moneyRefresh";
 
 type Item = { title: string; kind: string; amount: number; subAmount?: number; netUser?: string | null };
 type Tech = { id: number; name: string; towerId: number | null; pendingTotal: number; saleTotal?: number; subTotal?: number; pendingCount: number; items?: Item[] };
@@ -47,7 +48,7 @@ export default function FieldSettlementCard() {
       body: JSON.stringify({ technicianId: t.id }),
     });
     setBusyId(null);
-    if (r.ok) load(); else alert("تعذّر التحصيل");
+    if (r.ok) { announceMoneyChanged(); load(); } else alert("تعذّر التحصيل");
   }
 
   if (loading || techs.length === 0) return null;

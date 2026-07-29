@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { formatDate } from "@/lib/format";
+import { onMoneyRefresh } from "@/lib/moneyRefresh";
 
 export type DailyReport = {
   activationCount: number;
@@ -44,6 +45,18 @@ export default function DailyReportCard({
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setData(d); })
       .finally(() => setLoading(false));
+  }, [sel, isAdmin]);
+
+  // تحديث صامت عند أي تغيّر مالي (تفعيل/تسديد/تحصيل/حذف) وعند العودة للصفحة —
+  // بلا مؤقّت دوري (قرار محمد 2026-07-29 بعد حادثة «فرق الـ35 ألفاً» بحساب المواصلات:
+  // بطاقة المستخدم كانت تُحسب لحظة فتح الصفحة فقط فلا ترى عملياته اللاحقة)
+  useEffect(() => {
+    return onMoneyRefresh(() => {
+      fetch(`/api/reports/daily?towerId=${isAdmin ? sel : "all"}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d) setData(d); })
+        .catch(() => {});
+    });
   }, [sel, isAdmin]);
 
   const rows = [

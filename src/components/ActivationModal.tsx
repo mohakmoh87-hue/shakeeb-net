@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { prepareSasEmbed } from "@/lib/sasEmbed";
 import { localSasBase } from "@/lib/localSas";
 import { computeDateTo } from "@/lib/subscription";
+import { announceMoneyChanged } from "@/lib/moneyRefresh";
 
 // صيغة قيمة حقل التاريخ yyyy-MM-dd (توقيت محلي)
 function toInputDate(d: Date): string {
@@ -210,6 +211,7 @@ export default function ActivationModal({
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "فشل التفعيل"); return; }
+      announceMoneyChanged(); // بطاقات الرئيسية (التقرير/المصروفات/المبيع) تتحدّث فوراً
       // طباعة مباشرة بلا فتح أي تاب: أمر طباعة صامتة تلتقطه حاسبة مكتب المشترك فوراً
       if (print && data.entryId) {
         void fetch("/api/print", {

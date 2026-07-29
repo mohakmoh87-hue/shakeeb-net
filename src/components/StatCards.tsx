@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { localSasBase } from "@/lib/localSas";
+import { onMoneyRefresh } from "@/lib/moneyRefresh";
 
 // بطاقات الإحصاء الأربع — مطابقة حرفياً للنموذج المعتمد (أصناف .nst في globals.css):
 // المشتركين (داكنة: الفعالين والمتصلين + الكلي) · المصروفات والمقبوضات (سطران +
@@ -141,12 +142,15 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
 function MoneyCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }) {
   const [s, setS] = useState<{ totalIn: number; totalOut: number; balance: number } | null>(null);
   const [officeSel, setOfficeSel] = useState<"all" | number>("all");
+  // tick: يعاد الجلب عند أي تغيّر مالي وعند العودة للصفحة (بلا مؤقّت — قرار محمد)
+  const [tick, setTick] = useState(0);
+  useEffect(() => onMoneyRefresh(() => setTick((t) => t + 1)), []);
   useEffect(() => {
     let stop = false;
     const qs = officeSel === "all" ? "" : `?officeId=${officeSel}`;
     fetch(`/api/money/summary${qs}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (!stop && d) setS(d); }).catch(() => {});
     return () => { stop = true; };
-  }, [officeSel]);
+  }, [officeSel, tick]);
   const totalIn = s?.totalIn ?? 0, totalOut = s?.totalOut ?? 0, net = totalIn - totalOut;
   const sum = totalIn + totalOut;
   const inPct = sum > 0 ? Math.round((totalIn / sum) * 100) : 50;
@@ -193,12 +197,15 @@ function MoneyCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
 function InvoiceCard({ r, offices, isAdmin }: { r: Report; offices: Office[]; isAdmin: boolean }) {
   const [s, setS] = useState<{ thisDays: number[]; lastDays: number[]; thisTotal: number; lastTotal: number; todayCount?: number; todayIn?: number } | null>(null);
   const [officeSel, setOfficeSel] = useState<"all" | number>("all");
+  // tick: يعاد الجلب عند أي تغيّر مالي وعند العودة للصفحة (بلا مؤقّت — قرار محمد)
+  const [tick, setTick] = useState(0);
+  useEffect(() => onMoneyRefresh(() => setTick((t) => t + 1)), []);
   useEffect(() => {
     let stop = false;
     const qs = officeSel === "all" ? "" : `?officeId=${officeSel}`;
     fetch(`/api/reports/invoices/summary${qs}`).then((x) => (x.ok ? x.json() : null)).then((d) => { if (!stop && d) setS(d); }).catch(() => {});
     return () => { stop = true; };
-  }, [officeSel]);
+  }, [officeSel, tick]);
   const delta = s && s.lastTotal > 0 ? Math.round(((s.thisTotal - s.lastTotal) / s.lastTotal) * 100) : null;
   const days = s ? [...s.lastDays, ...s.thisDays].slice(-7) : [];
   return (
