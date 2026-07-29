@@ -642,3 +642,17 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
 
 /* لوحة الفنيين بعرض المدير (المتصفح فقط): خلفية الطراز الجديد — التطبيق ولوحة الفني بلا مساس */
 html:not([data-app-mode]) .field-site.field-canvas { background: var(--ground); }
+
+/* ===== ب5 (أساس): معالجة الهاتف لمكوّنات الطراز الجديد ===== */
+@media (max-width: 767px) {
+  .nst .pg-h { flex-wrap: wrap; }
+  .nst .pg-acts { width: 100%; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+  .nst .mini-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nst .g3 { grid-template-columns: 1fr 1fr; }
+  .nst .stats { grid-template-columns: repeat(2, 1fr) !important; gap: 8px; }
+  .nst .ch { flex-wrap: wrap; }
+  .nst .searchbar { flex-wrap: wrap; }
+  .nst .searchbar .allofc { width: 100%; justify-content: flex-end; }
+  .nst .subs-scroll { max-height: 55vh; }
+  .nst .sumbar b { font-size: 15px; }
+}

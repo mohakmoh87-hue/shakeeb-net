@@ -1,7 +1,10 @@
-import Link from "next/link";
+"use client";
 
-// ترويسة صفحة الوحدة: شريط أنيق بستايل قريب من شريط الصفحة الرئيسية
-// (تدرّج + شعار «نت» أزرق للرجوع + العنوان + الإجراء الرئيسي)
+import { useRouter } from "next/navigation";
+
+// ترويسة الصفحات الداخلية بالطراز الجديد (ب4 — تصميم النموذج): زر رجوع محايد +
+// العنوان + وصف صغير + الإجراءات يساراً. تستعملها ~22 صفحة، فتغييرها هنا
+// يُحدّث ترويساتها كلها دفعة واحدة.
 export default function PageHeader({
   title,
   subtitle,
@@ -11,18 +14,17 @@ export default function PageHeader({
   subtitle?: string;
   action?: React.ReactNode;
 }) {
+  const router = useRouter();
   return (
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-100 px-4 py-3 shadow-sm">
-      <div className="flex items-center gap-3">
-        <Link href="/dashboard" title="الصفحة الرئيسية" className="shrink-0 transition hover:brightness-110">
-          <img src="/icons/logo.png" alt="SHAKEEB" className="h-11 w-11 rounded-xl shadow-md" />
-        </Link>
+    <div className="nst">
+      <div className="pg-h flex-wrap">
+        <button className="back" onClick={() => router.push("/dashboard")}>→ رجوع</button>
         <div className="leading-tight">
-          <h1 className="text-xl font-bold text-slate-800 sm:text-2xl">{title}</h1>
-          {subtitle && <p className="text-xs font-medium text-slate-500 sm:text-sm">{subtitle}</p>}
+          <h1>{title}</h1>
+          {subtitle && <p style={{ margin: 0, fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>{subtitle}</p>}
         </div>
+        {action && <div className="pg-acts flex-wrap">{action}</div>}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }

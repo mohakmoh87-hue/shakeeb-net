@@ -199,7 +199,7 @@ export default function CrudManager<T extends Row>({
   }
 
   return (
-    <div className="p-6">
+    <div className="nst min-h-screen bg-ground p-4 md:p-[20px_22px_28px]">
       <PageHeader
         title={title}
         subtitle={subtitle}
@@ -207,36 +207,33 @@ export default function CrudManager<T extends Row>({
           <div className="flex gap-2">
             {headerExtra}
             {canAdd && (
-              <button
-                onClick={openAdd}
-                className="rounded-lg bg-mynet-blue px-4 py-2 font-semibold text-white shadow transition hover:bg-mynet-blue-dark"
-              >
-                + {addLabel}
-              </button>
+              <button onClick={openAdd} className="obtn">+ {addLabel}</button>
             )}
           </div>
         }
       />
 
       {searchable && (
-        <div className="mb-4">
+        <div className="searchbar" style={{ margin: "0 0 14px", maxWidth: 430 }}>
+          <span className="sicon">🔍</span>
           <input
+            className="sq"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && load(query)}
             placeholder="ابحث بالاسم أو الهاتف أو العنوان... ثم Enter"
-            className="w-full max-w-md rounded-lg border border-slate-300 px-4 py-2 outline-none focus:border-mynet-blue focus:ring-2 focus:ring-blue-100"
           />
         </div>
       )}
 
       {clientSearch && (
-        <div className="mb-4">
+        <div className="searchbar" style={{ margin: "0 0 14px", maxWidth: 430 }}>
+          <span className="sicon">🔍</span>
           <input
+            className="sq"
             value={cQuery}
             onChange={(e) => setCQuery(e.target.value)}
             placeholder={clientSearch.placeholder ?? "ابحث..."}
-            className="w-full max-w-md rounded-lg border border-slate-300 px-4 py-2 outline-none focus:border-mynet-blue focus:ring-2 focus:ring-blue-100"
           />
         </div>
       )}
@@ -271,9 +268,9 @@ export default function CrudManager<T extends Row>({
 
       {summary?.(visibleRows)}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full text-right text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+      <div className="card tscroll">
+        <table className="tbl">
+          <thead>
             <tr>
               {selectable && (
                 <th className="p-3">
@@ -327,10 +324,7 @@ export default function CrudManager<T extends Row>({
               </tr>
             ) : (
               visibleRows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={`border-t border-slate-100 hover:bg-slate-50 ${selected.has(row.id) ? "bg-blue-50" : ""}`}
-                >
+                <tr key={row.id} className={selected.has(row.id) ? "picked" : ""}>
                   {selectable && (
                     <td className="p-3">
                       <input

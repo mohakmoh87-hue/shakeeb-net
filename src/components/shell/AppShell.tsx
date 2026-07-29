@@ -100,7 +100,7 @@ export default function AppShell({
         </div>
 
         {/* المحتوى — مساحة سفلية على الهاتف حتى لا يغطي الشريط السفلي آخر عنصر */}
-        <main className="min-h-screen pb-16 md:pb-0">{children}</main>
+        <main className="min-h-screen bg-ground pb-16 md:pb-0">{children}</main>
 
         {/* الدرج المنزلق (الهاتف) */}
         <div data-site-chrome>
