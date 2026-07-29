@@ -1,70 +1,57 @@
-import ModuleTile from "@/components/ModuleTile";
+import Link from "next/link";
 import DailyReportCard from "@/components/DailyReportCard";
 import FieldSettlementCard from "@/components/FieldSettlementCard";
-import SubscriberCounter from "@/components/SubscriberCounter";
+import StatCards from "@/components/StatCards";
+import SubscribersBoard from "@/components/SubscribersBoard";
 import { getSession } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
 import { computeDailyReport } from "@/lib/dailyReport";
 import { prisma } from "@/lib/prisma";
 
+// الشاشة الرئيسية بالطراز الجديد (ب2): بطاقات الإحصاء الأربع + جدول المشتركين
+// (يحلّ محلّ صفحة /subscribers) + التقرير اليومي + شريط تحصيل الفنيين.
 // إعادة الحساب في كل زيارة (لا تخزين مؤقت) — حتى تتصفّر أرقام اليوم فوراً بعد منتصف الليل
 export const dynamic = "force-dynamic";
 
-// نفس أزرار الشاشة الرئيسية في البرنامج الأصلي تماماً (9 أزرار)
-const TILES = [
-  { label: "المشتركين", icon: "👤", color: "#e11d48", href: "/subscribers", enabled: true },
-  { label: "تقرير الفواتير", icon: "📋", color: "#0891b2", href: "/reports/invoices", enabled: true },
-  { label: "ارسال رسالة للكل", icon: "💬", color: "#22c55e", href: "/messages/compose", enabled: true },
-  { label: "ديون المشتركين", icon: "📑", color: "#f59e0b", href: "/debts", enabled: true },
-  { label: "فاتورة مبيع", icon: "🛒", color: "#ef4444", href: "/invoices", enabled: true },
-  { label: "حسابات المدير", icon: "🧾", color: "#3b82f6", href: "/manager-accounts", enabled: true },
-  { label: "تقرير تفصيلي", icon: "🧾", color: "#8b5cf6", href: "/reports/detailed", enabled: true },
-  { label: "التقرير الاجمالي", icon: "📊", color: "#10b981", href: "/reports/overall", enabled: true },
-  { label: "إدارة الفنيين", icon: "🛠️", color: "#0ea5e9", href: "/field-management", enabled: true },
-];
-
 export default async function DashboardPage() {
-  // التقرير اليومي: مستخدم المكتب يرى مكتبه؛ المدير يرى الإجمالي مبدئياً ويختار مكتباً عبر التبويبات
   const session = await getSession();
   const isAdmin = !!session?.isAdmin;
   // عزل المستأجر: المدير يرى إجمالي مكاتب وكيله فقط؛ مستخدم المكتب يرى مكتبه
   const agentTowers = await agentTowerIds(session ?? null);
   const scope: number | number[] | null = isAdmin ? agentTowers : session?.towerId ?? null;
-  // جلب متوازٍ لتقليل ذهاب/إياب الشبكة (أسرع فتحاً)
   const [initialReport, towers] = await Promise.all([
     computeDailyReport(scope),
     isAdmin
       ? prisma.tower.findMany({ where: { isDeleted: false, id: { in: agentTowers.length ? agentTowers : [-1] } }, select: { id: true, name: true }, orderBy: { id: "asc" } })
       : Promise.resolve([] as { id: number; name: string | null }[]),
   ]);
+  const counterTowers = isAdmin ? agentTowers : session?.towerId ? [session.towerId] : [];
 
   return (
-    <div className="mynet-canvas min-h-[calc(100vh-140px)] p-5">
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-5 lg:grid-cols-[340px_1fr]">
-        {/* لوحة التقرير اليومي (يسار) — تبويبات للمدير: الإجمالي + كل مكتب */}
-        <div className="flex flex-col gap-3">
-          {/* عدّاد المشتركين (أ5): كل 5 ثوانٍ محلياً من حاسبة المكتب — بلا مرور على السحابة */}
-          <SubscriberCounter towerIds={isAdmin ? agentTowers : session?.towerId ? [session.towerId] : []} />
-          <DailyReportCard isAdmin={isAdmin} towers={towers} initial={initialReport} />
+    <div className="flex min-h-screen flex-col gap-3 bg-ground p-3 xl:h-screen xl:min-h-0 xl:overflow-hidden">
+      {/* بطاقات الإحصاء الأربع */}
+      <StatCards initialReport={initialReport} towerIds={counterTowers} />
+
+      {/* الجسم: جدول المشتركين (+ تحصيل الفنيين أسفله) | التقرير اليومي */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_330px]">
+        <div className="flex min-h-0 flex-col gap-3">
+          <div className="min-h-[420px] flex-1 xl:min-h-0">
+            <SubscribersBoard />
+          </div>
+          {/* تحصيل الفنيين — شريط أفقي أسفل الجدول */}
+          <FieldSettlementCard />
         </div>
 
-        {/* شبكة الوحدات (يمين) */}
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-          {TILES.map((t) => (
-            <ModuleTile
-              key={t.label}
-              label={t.label}
-              icon={t.icon}
-              color={t.color}
-              href={t.href}
-              enabled={t.enabled ?? false}
-            />
-          ))}
-        </section>
+        <div className="flex min-h-0 flex-col gap-2 xl:overflow-y-auto">
+          {/* زرّ سجل الوصولات البرتقالي أعلى بطاقة التقرير */}
+          <Link href="/subscriptions"
+            className="block rounded-xl py-2.5 text-center text-sm font-extrabold text-white shadow-sm transition hover:brightness-105"
+            style={{ background: "linear-gradient(160deg, var(--orange) 0%, var(--orange-d) 100%)" }}>
+            🧾 سجل الوصولات
+          </Link>
+          <DailyReportCard isAdmin={isAdmin} towers={towers} initial={initialReport} />
+        </div>
       </div>
-
-      {/* تحصيل الفنيين — اسم كل فني ومجموع تكتاته المنجزة وزر اكمال (لكل مكتب) */}
-      <FieldSettlementCard />
     </div>
   );
 }

@@ -69,6 +69,34 @@ export async function GET(request: Request) {
       : {}),
   };
 
+  // وضع «آخر التفعيلات» (الشاشة الرئيسية بالطراز الجديد): آخر 100 مشترك مرتّبين
+  // بآخر تفعيل من الأحدث للأقدم — بلا بحث؛ البحث يعود للمسار الأبجدي أدناه
+  if (url.searchParams.get("recent") === "1" && !q) {
+    const groups = await prisma.subscriptionEntry.groupBy({
+      by: ["subscriberId"],
+      where: { isDeleted: false, subscriberId: { not: null }, ...towerFilter },
+      _max: { date: true },
+      orderBy: { _max: { date: "desc" } },
+      take: 100,
+    });
+    const ids = groups.map((x) => x.subscriberId).filter((x): x is number => x != null);
+    const [items, total] = await Promise.all([
+      prisma.subscriber.findMany({
+        where: { id: { in: ids }, isDeleted: false },
+        select: {
+          id: true, name: true, phone: true, address: true, packageId: true,
+          towerId: true, carry: true, dateTo: true, netUser: true, sasId: true,
+          note: true, smsEnabled: true, waEnabled: true, transferredTo: true,
+          rewardBalance: true, rewardCode: true,
+        },
+      }),
+      prisma.subscriber.count({ where: { isDeleted: false, ...towerFilter } }),
+    ]);
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    items.sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
+    return NextResponse.json(items, { headers: { "X-Total-Count": String(total), "X-Limit": "100" } });
+  }
+
   // حدّ التحميل: نجلب أول 300 فقط (القائمة كبيرة — 5000+)، والبحث يغطّي الباقي.
   // هذا يقلّل النقل من فرانكفورت ورسم آلاف الصفوف، فتُفتح الصفحة فوراً.
   const LIMIT = 300;
