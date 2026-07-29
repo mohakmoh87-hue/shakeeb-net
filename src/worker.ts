@@ -68,12 +68,32 @@ function ensureSingleInstance(): Promise<void> {
     startWaRelayPoller();
     startPrintAgent(); // الطباعة الصامتة لوصولات المكتب على الطابعة الافتراضية
     startSelfUpdateWatcher(); // تحديث ذاتي: يلتقط تحديثات الكود ويعيد التشغيل عبر الغلاف
+    reportWorkerVersion(); // بصمة إصدار الكود في القاعدة — تكشف عن بُعد أي كود تشغّله كل حاسبة
     console.log("[worker] ✅ العامل يعمل. اتركه مفتوحاً.");
   } catch (e) {
     console.error("[worker] ❌ فشل بدء العامل:", e);
     process.exit(1);
   }
 })();
+
+// بصمة الإصدار: تُكتب مرة عند الإقلاع في system_settings بمفتاح workerVer:{machineId} —
+// كشفت حادثة عدّاد المشتركين (2026-07-29) أن تعذّر معرفة كود الحاسبة عن بُعد يعمي التشخيص
+function reportWorkerVersion() {
+  void (async () => {
+    try {
+      let sha = "unknown";
+      try { sha = execSync("git rev-parse --short HEAD", { timeout: 15_000 }).toString().trim(); } catch { /* بلا git */ }
+      const { getMachineId } = await import("@/lib/hybridAgent");
+      const { prisma } = await import("@/lib/prisma");
+      const type = `workerVer:${getMachineId()}`;
+      const text = JSON.stringify({ sha, at: new Date().toISOString() });
+      const row = await prisma.systemSetting.findFirst({ where: { type }, select: { id: true } });
+      if (row) await prisma.systemSetting.update({ where: { id: row.id }, data: { text } });
+      else await prisma.systemSetting.create({ data: { type, text } });
+      console.log(`[worker] إصدار الكود: ${sha}`);
+    } catch { /* لا يُفشل الإقلاع */ }
+  })();
+}
 
 // ===== التحديث الذاتي =====
 // كل 10 دقائق: git fetch ومقارنة HEAD مع origin/main. عند وجود تحديث نُغلق بنظافة

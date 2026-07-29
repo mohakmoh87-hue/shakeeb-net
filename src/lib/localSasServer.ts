@@ -100,35 +100,54 @@ function toWebRequest(req: http.IncomingMessage, bodyBuf: Buffer | undefined): R
 
 async function pushStatsToCloud(): Promise<void> {
   const aid = getWorkerAgentId();
-  if (aid == null) return;
+  if (aid == null) { console.log("[stats-push] بلا وكيل بعد — تأجيل الرفعة"); return; }
   const towers = await prisma.tower.findMany({
     where: { agentId: aid, isDeleted: false, loginUrl: { not: null }, username: { not: null }, password: { not: null } },
     select: { id: true },
   });
   const offices: Record<string, { active: number; total: number; online: number | null }> = {};
+  // تشخيص لكل مكتب فشل — يُكتب مع الرفعة كي يُعرف السبب من القاعدة عن بُعد
+  const diag: Record<string, string> = {};
   for (const t of towers) {
-    const creds = await agentTowerCached(t.id);
-    if (!creds) continue;
-    let sc = statsCache.get(t.id);
-    if (!sc || Date.now() - sc.at > STATS_TTL) {
-      try { await refreshTowerStats(creds); sc = statsCache.get(t.id); } catch { /* SAS متعثر مؤقتاً */ }
-    }
-    let oc = onlineCache.get(t.id);
-    if (!oc || Date.now() - oc.at > 60_000) {
-      try {
-        const token = await towerToken(creds);
-        oc = { online: await sasFetchOnlineCount(sasBaseUrl(creds.loginUrl), token), at: Date.now() };
-        onlineCache.set(t.id, oc);
-      } catch { /* */ }
-    }
-    if (sc) offices[t.id] = { active: sc.active, total: sc.total, online: oc?.online ?? null };
+    try {
+      const creds = await agentTowerCached(t.id);
+      if (!creds) { diag[t.id] = "بيانات SAS ناقصة أو المكتب غير تابع"; continue; }
+      let sc = statsCache.get(t.id);
+      if (!sc || Date.now() - sc.at > STATS_TTL) {
+        try { await refreshTowerStats(creds); sc = statsCache.get(t.id); }
+        catch (e) { diag[t.id] = `تعذّر مسح SAS: ${e instanceof Error ? e.message : String(e)}`; }
+      }
+      let oc = onlineCache.get(t.id);
+      if (!oc || Date.now() - oc.at > 60_000) {
+        try {
+          const token = await towerToken(creds);
+          oc = { online: await sasFetchOnlineCount(sasBaseUrl(creds.loginUrl), token), at: Date.now() };
+          onlineCache.set(t.id, oc);
+        } catch { /* «المتصلين» اختياري — لا يُفشل الرفعة */ }
+      }
+      if (sc) offices[t.id] = { active: sc.active, total: sc.total, online: oc?.online ?? null };
+      else if (!diag[t.id]) diag[t.id] = "لا مخزون إحصاء بعد";
+    } catch (e) { diag[t.id] = e instanceof Error ? e.message : String(e); }
   }
-  if (Object.keys(offices).length === 0) return;
+  // الرفعة تُكتب دائماً (حتى بلا مكاتب) — وجود السطر بحد ذاته يثبت أن كود الرفع
+  // يعمل على الحاسبة، وdiag يشرح أي فشل. وتُدمج مع مكاتب الحاسبات الأخرى: كل حاسبة
+  // مكتبٍ ترى SAS مكتبها فقط، فالكتابة الساحقة كانت ستمحو أرقام المكتب الآخر بالتناوب.
   const type = `subStats:${aid}`;
-  const text = JSON.stringify({ at: new Date().toISOString(), offices });
-  const row = await prisma.systemSetting.findFirst({ where: { type }, select: { id: true } });
+  const row = await prisma.systemSetting.findFirst({ where: { type }, select: { id: true, text: true } });
+  let prev: { offices?: Record<string, unknown>; diag?: Record<string, string> } = {};
+  try { prev = row?.text ? JSON.parse(row.text) : {}; } catch { /* نص فاسد — نبدأ نظيفاً */ }
+  const mergedOffices = { ...(prev.offices ?? {}), ...offices };
+  const mergedDiag: Record<string, string> = { ...(prev.diag ?? {}), ...diag };
+  for (const id of Object.keys(mergedOffices)) delete mergedDiag[id]; // مكتب له أرقام لا يحتاج تشخيصاً
+  const text = JSON.stringify({
+    at: new Date().toISOString(),
+    offices: mergedOffices,
+    ...(Object.keys(mergedDiag).length ? { diag: mergedDiag } : {}),
+  });
   if (row) await prisma.systemSetting.update({ where: { id: row.id }, data: { text } });
   else await prisma.systemSetting.create({ data: { type, text } });
+  console.log(`[stats-push] ✓ رُفعت أرقام ${Object.keys(offices).length} مكتب` +
+    (Object.keys(diag).length ? ` — إخفاقات: ${JSON.stringify(diag)}` : ""));
 }
 
 export function startLocalSasServer() {
@@ -137,9 +156,11 @@ export function startLocalSasServer() {
   g.__localSasStarted = true;
 
   // رفع الخلاصة للقاعدة كل 5 دقائق (وأول رفعة بعد 45 ثانية من الإقلاع) —
+  // فشل الرفعة يُطبع في نافذة العامل (كان يُبلع صامتاً فتعذّر التشخيص) —
   // ليراها محمد من أي مكان (قراءة كل 5 دقائق)؛ حمل الخطة المجانية: سطر upsert لا غير
-  setTimeout(() => { void pushStatsToCloud().catch(() => {}); }, 45_000);
-  setInterval(() => { void pushStatsToCloud().catch(() => {}); }, 5 * 60 * 1000);
+  const pushLogged = () => pushStatsToCloud().catch((e) => console.error("[stats-push] ✗ فشلت الرفعة:", e instanceof Error ? e.message : e));
+  setTimeout(() => { void pushLogged(); }, 45_000);
+  setInterval(() => { void pushLogged(); }, 5 * 60 * 1000);
 
   const server = http.createServer(async (req, res) => {
     cors(res, req.headers.origin as string | undefined);
