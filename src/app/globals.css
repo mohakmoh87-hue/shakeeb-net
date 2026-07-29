@@ -640,3 +640,8 @@ input[type="number"] { direction: ltr; }
 
 /* ارتفاع قائمة المشتركين بالرئيسية — متأخّر ليتقدّم على قاعدة الهاتف العامة */
 .nst-fill .subs-scroll { max-height: max(200px, calc(100dvh - 430px)); }
+
+/* تحصيل الفنيين: عند فتح التفاصيل (+) تبقى أزرار «اكمال» و«+» بمقاسها المرتب */
+.nst .ss-item.expanded .ss-acts { justify-content: center; }
+.nst .ss-item.expanded .ss-btn { flex: 0 0 auto; min-width: 110px; }
+.nst .ss-item.expanded .ss-plus { width: 30px; }

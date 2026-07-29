@@ -20,6 +20,7 @@ type Sub = { id: number; name: string | null; netUser: string | null };
 type InvRow = {
   id: number; number: number | null; date: string | null; totalMy: number | null;
   waselHim: number | null; type: string | null; note: string | null; subscriberName: string | null;
+  itemsText: string | null; // المواد المباعة (من الخادم)
 };
 
 const fmt = (n: number) => Number(n).toLocaleString("en-US");
@@ -468,6 +469,7 @@ export default function NewInvoicePage() {
                   <thead className="sticky top-0 bg-slate-50 text-slate-600">
                     <tr>
                       <th className="p-2">#</th><th className="p-2">التاريخ</th><th className="p-2">المشتري</th>
+                      <th className="p-2">المواد</th>
                       <th className="p-2">الإجمالي</th><th className="p-2">المدفوع</th><th className="p-2">إجراءات</th>
                     </tr>
                   </thead>
@@ -477,6 +479,7 @@ export default function NewInvoicePage() {
                         <td className="p-2 font-bold">#{r.number ?? r.id}</td>
                         <td className="p-2 whitespace-nowrap" dir="ltr">{r.date ? new Date(r.date).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                         <td className="p-2">{r.subscriberName ?? (r.type === "بيع مباشر" ? (r.note?.match(/الزبون:\s*([^—]+)/)?.[1]?.trim() ?? "بيع مباشر") : "—")}</td>
+                        <td className="p-2 max-w-[220px] truncate text-slate-600" title={r.itemsText ?? undefined}>{r.itemsText ?? "—"}</td>
                         <td className="p-2 font-semibold">{fmt(r.totalMy ?? 0)}</td>
                         <td className="p-2 text-emerald-700">{fmt(r.waselHim ?? 0)}</td>
                         <td className="p-2">

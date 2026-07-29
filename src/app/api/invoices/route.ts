@@ -45,9 +45,29 @@ export async function GET() {
     ? await prisma.subscriber.findMany({ where: { id: { in: subIds } }, select: { id: true, name: true, netUser: true } })
     : [];
   const nameMap = new Map(subs.map((s) => [s.id, s.name ?? s.netUser ?? `#${s.id}`]));
+  // المواد المباعة لكل فاتورة — تظهر في كل سطر من سجل الوصولات (طلب محمد)
+  const lines = await prisma.invoiceItem.findMany({
+    where: { invoiceId: { in: invoices.map((i) => i.id) }, isDeleted: false },
+    select: { invoiceId: true, itemId: true, count: true },
+  });
+  const itemIds = [...new Set(lines.map((l) => l.itemId).filter((x): x is number => x != null))];
+  const itemName = new Map(
+    (itemIds.length
+      ? await prisma.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, name: true } })
+      : []
+    ).map((x) => [x.id, x.name ?? `مادة #${x.id}`]),
+  );
+  const itemsText = new Map<number, string>();
+  for (const l of lines) {
+    if (l.invoiceId == null) continue;
+    const nm = l.itemId != null ? itemName.get(l.itemId) ?? "مادة" : "مادة";
+    const part = (l.count ?? 1) > 1 ? `${nm} ×${l.count}` : nm;
+    itemsText.set(l.invoiceId, itemsText.has(l.invoiceId) ? `${itemsText.get(l.invoiceId)}، ${part}` : part);
+  }
   return NextResponse.json(invoices.map((i) => ({
     ...i,
     subscriberName: i.subscriberId != null ? nameMap.get(i.subscriberId) ?? null : null,
+    itemsText: itemsText.get(i.id) ?? null,
   })));
 }
 

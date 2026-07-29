@@ -72,21 +72,36 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const [drawer, setDrawer] = useState(false);
+  const router = useRouter();
   // إدارة الفنيين تحتاج كامل عرض الشاشة — بلا شريط جانبي (طلب محمد)؛
   // العودة من زر «← الرئيسية» داخل الصفحة نفسها
   const pathname = usePathname();
   const hideSide = pathname === "/field-management";
+  // الشريط الجانبي ثابت في الرئيسية فقط؛ بقية الصفحات: شريط رفيع مطوي
+  // فيه ☰ (يفتح القائمة) و🏠 (رجوع للرئيسية بلا فتح القائمة) — طلب محمد
+  const isHome = pathname === "/dashboard";
 
   return (
     <div className="md:flex">
-      {/* الشريط الجانبي (حاسبة) — لاصق بارتفاع الشاشة */}
-      {!hideSide && (
+      {/* الشريط الجانبي (حاسبة) — ثابت في الرئيسية فقط */}
+      {!hideSide && isHome && (
       <div data-site-chrome>
         <aside className="no-print sticky top-0 hidden h-screen w-[232px] shrink-0 flex-col overflow-y-auto text-white md:flex"
           style={{ background: "linear-gradient(170deg, var(--navy) 0%, var(--navy-2) 100%)" }}>
           <SideNav brand={brand} fullName={fullName} roleLabel={roleLabel} onNavigate={() => {}} />
         </aside>
       </div>
+      )}
+
+      {/* الشريط الرفيع المطوي (بقية الصفحات — حاسبة): ☰ يفتح القائمة، 🏠 يرجع للرئيسية */}
+      {!hideSide && !isHome && (
+        <div data-site-chrome>
+          <div className="no-print sticky top-0 hidden h-screen w-12 shrink-0 flex-col items-center gap-2 pt-3 md:flex"
+            style={{ background: "linear-gradient(170deg, var(--navy) 0%, var(--navy-2) 100%)" }}>
+            <button onClick={() => setDrawer(true)} title="فتح القائمة" className="rounded-lg bg-white/10 px-2.5 py-2 text-lg leading-none text-white hover:bg-white/20">☰</button>
+            <button onClick={() => router.push("/dashboard")} title="الشاشة الرئيسية" className="rounded-lg bg-white/10 px-2.5 py-2 text-lg leading-none text-white hover:bg-white/20">🏠</button>
+          </div>
+        </div>
       )}
 
       <div className="min-w-0 flex-1">
@@ -111,7 +126,7 @@ export default function AppShell({
         {/* الدرج المنزلق (الهاتف) */}
         <div data-site-chrome>
           {drawer && (
-            <div className="no-print fixed inset-0 z-[80] md:hidden">
+            <div className="no-print fixed inset-0 z-[80]">
               <div className="absolute inset-0 bg-black/55" onClick={() => setDrawer(false)} />
               <aside className="absolute inset-y-0 right-0 flex w-[272px] max-w-[86vw] flex-col overflow-y-auto text-white shadow-2xl"
                 style={{ background: "linear-gradient(170deg, var(--navy) 0%, var(--navy-2) 100%)" }}>

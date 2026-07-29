@@ -16,8 +16,9 @@ type SubRow = {
 type InvRow = {
   id: number; number: number | null; date: string | null; totalMy: number | null;
   waselHim: number | null; type: string | null; user: string | null; subscriberName: string | null; note: string | null;
+  itemsText: string | null;
 };
-type Row = { id: number; ref: number; date: string | null; who: string; cat: string; amount: number; by: string };
+type Row = { id: number; ref: number; date: string | null; who: string; cat: string; amount: number; by: string; items: string | null };
 
 const fmt = (n: number) => Number(n).toLocaleString("en-US");
 
@@ -44,11 +45,11 @@ export default function ReceiptsPage() {
       kind === "sub"
         ? subRows.map((e) => ({
             id: e.id, ref: e.id, date: e.date, who: e.subscriberName ?? "—",
-            cat: e.cardType ?? "تفعيل", amount: e.moneyIn ?? 0, by: e.createdByUser ?? "—",
+            cat: e.cardType ?? "تفعيل", amount: e.moneyIn ?? 0, by: e.createdByUser ?? "—", items: null,
           }))
         : invRows.map((v) => ({
             id: v.id, ref: v.number ?? v.id, date: v.date, who: v.subscriberName ?? (v.note?.match(/الزبون:\s*([^—]+)/)?.[1]?.trim() ?? "—"),
-            cat: v.type ?? "بيع", amount: v.waselHim ?? 0, by: v.user ?? "—",
+            cat: v.type ?? "بيع", amount: v.waselHim ?? 0, by: v.user ?? "—", items: v.itemsText ?? null,
           }));
     const needle = q.trim().toLowerCase();
     const filtered = needle
@@ -147,12 +148,13 @@ export default function ReceiptsPage() {
               <th className="srt" onClick={() => toggleSort("date")}>التاريخ <i>{arrow("date")}</i></th>
               <th className="srt" onClick={() => toggleSort("who")}>المشترك <i>{arrow("who")}</i></th>
               <th>الفئة</th>
+              {kind === "inv" && <th>المواد</th>}
               <th className="srt" onClick={() => toggleSort("amount")}>المبلغ <i>{arrow("amount")}</i></th>
               <th>المستخدم</th>
             </tr></thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>لا وصولات</td></tr>
+                <tr><td colSpan={kind === "inv" ? 8 : 7} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>لا وصولات</td></tr>
               ) : rows.map((r) => (
                 <tr key={r.id} className={checked.has(r.id) ? "picked" : ""}>
                   <td className="cbcol"><input type="checkbox" className="cb" checked={checked.has(r.id)} onChange={() => toggle(r.id)} /></td>
@@ -160,6 +162,7 @@ export default function ReceiptsPage() {
                   <td className="num" dir="ltr">{formatDateTime(r.date)}</td>
                   <td>{r.who}</td>
                   <td>{r.cat}</td>
+                  {kind === "inv" && <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }} title={r.items ?? undefined}>{r.items ?? "—"}</td>}
                   <td className="num">{fmt(r.amount)}</td>
                   <td>{r.by}</td>
                 </tr>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import MoneyTxModal from "@/components/MoneyTxModal";
-import { formatDate } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 import { askVoidEffect } from "@/lib/voidPrompt";
 
@@ -24,7 +24,7 @@ type Tower = { id: number; name: string | null };
 
 const fmt = (n: number | null | undefined) =>
   n == null ? "0" : Number(n).toLocaleString("en-US");
-const fmtDate = (d: string | null) => formatDate(d);
+const fmtDate = (d: string | null) => formatDateTime(d); // بالتاريخ والساعة والدقيقة (طلب محمد)
 
 export default function CashboxPage() {
   const [txs, setTxs] = useState<Tx[]>([]);
