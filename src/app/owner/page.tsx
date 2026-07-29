@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Manager = { id: number; username: string; plainPassword: string | null };
@@ -370,13 +370,45 @@ function AccountModal({ onClose }: { onClose: () => void }) {
   const [ownerBackupTime, setOwnerBackupTime] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  // شعار صفحة الدخول (يبدّله السوبر أدمن حصراً — يظهر لكل من يفتح /login)
+  const [loginLogo, setLoginLogo] = useState<string | null>(null);
+  const logoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/owner/account").then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (!d) return;
       setUsername(d.username ?? ""); setPassword(d.plainPassword ?? ""); setRecoveryEmail(d.recoveryEmail ?? ""); setOwnerPhone(d.ownerPhone ?? ""); setOwnerBackupEmail(d.ownerBackupEmail ?? ""); setOwnerBackupTime(d.ownerBackupTime ?? "");
     });
+    fetch("/api/public/login-logo").then((r) => (r.ok ? r.json() : null)).then((d) => setLoginLogo(d?.logo ?? null)).catch(() => {});
   }, []);
+
+  // تصغير الصورة إلى 256px (كانفس) ثم حفظها فوراً — نفس أسلوب شعار الوكالة
+  function pickLoginLogo(file: File) {
+    const img = new Image();
+    img.onload = async () => {
+      const c = document.createElement("canvas");
+      const s = Math.min(1, 256 / Math.max(img.width, img.height));
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+      const dataUrl = c.toDataURL("image/png");
+      setBusy(true); setMsg("");
+      const r = await fetch("/api/public/login-logo", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }),
+      }).catch(() => null);
+      setBusy(false);
+      if (r?.ok) { setLoginLogo(dataUrl); setMsg("✓ حُفظ شعار صفحة الدخول"); }
+      else setMsg((await r?.json().catch(() => null))?.error ?? "فشل حفظ الشعار");
+    };
+    img.onerror = () => setMsg("تعذّرت قراءة الصورة");
+    img.src = URL.createObjectURL(file);
+  }
+
+  async function removeLoginLogo() {
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/public/login-logo", { method: "DELETE" }).catch(() => null);
+    setBusy(false);
+    if (r?.ok) { setLoginLogo(null); setMsg("✓ أُزيل — تعود صفحة الدخول للشعار الافتراضي"); }
+  }
 
   async function save() {
     setBusy(true); setMsg("");
@@ -415,6 +447,23 @@ function AccountModal({ onClose }: { onClose: () => void }) {
           <Field label="رقم التواصل (يظهر بصفحة الدخول)"><input dir="ltr" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="07XXXXXXXXX" className="inp" /></Field>
           <Field label="📦 إيميل النسخة الكاملة (نسخة كل الوكلاء يومياً)"><input dir="ltr" type="email" value={ownerBackupEmail} onChange={(e) => setOwnerBackupEmail(e.target.value)} placeholder="backup@gmail.com" className="inp" /></Field>
           <Field label="🕘 وقت إرسال النسخة الكاملة يومياً (بغداد)"><input dir="ltr" type="time" value={ownerBackupTime} onChange={(e) => setOwnerBackupTime(e.target.value)} className="inp" /></Field>
+        </div>
+
+        {/* شعار صفحة الدخول — يظهر لكل من يفتح /login؛ تبديله للسوبر أدمن حصراً (طلب محمد) */}
+        <div className="mt-4 border-t border-slate-200 pt-3">
+          <div className="mb-2 text-xs font-bold text-slate-600">🖼️ شعار صفحة تسجيل الدخول</div>
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={loginLogo ?? "/icons/logo.png"} alt="شعار الدخول" className="h-14 w-14 rounded-xl object-cover shadow ring-1 ring-slate-200" />
+            <div className="flex flex-col gap-1.5">
+              <button onClick={() => logoRef.current?.click()} disabled={busy} className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60">📷 اختيار صورة</button>
+              {loginLogo && (
+                <button onClick={removeLoginLogo} disabled={busy} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-60">إزالة (العودة للافتراضي)</button>
+              )}
+            </div>
+          </div>
+          <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) pickLoginLogo(f); e.target.value = ""; }} />
+          <div className="mt-1.5 text-[11px] text-slate-500">يظهر أعلى نافذة تسجيل الدخول لكل من يفتح الموقع — يُحفظ فور اختيار الصورة.</div>
         </div>
         <div className="mt-4 flex gap-2">
           <button onClick={save} disabled={busy} className="flex-1 rounded-xl bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-60">{busy ? "جارٍ…" : "حفظ"}</button>
