@@ -32,6 +32,16 @@ export async function GET() {
   const viewTowers = manager ? agentTowers : [session.towerId ?? -1];
   const viewBoards = await prisma.taskBoard.findMany({ where: { towerId: { in: viewTowers }, isDeleted: false }, select: { id: true } });
   const viewLists = await prisma.taskList.findMany({ where: { boardId: { in: viewBoards.map((b) => b.id) } }, select: { id: true } });
+  // أنواع التوصيل لدى الوكيل: مبلغها المقبوض يُخزَّن في amount عند الإنجاز لكنه
+  // «اشتراك» بالمعنى المحاسبي — يُعاد تصنيفه أدناه (كان يظهر معكوساً: مبيع 36 واشتراك 0)
+  const deliveryKinds = new Set(
+    (await prisma.cardType.findMany({
+      where: { isDeleted: false, deliveryOnly: true, agentId: session.agentId ?? -1 },
+      select: { name: true },
+    })).map((x) => x.name),
+  );
+  const isDeliveryKind = (k: string) => deliveryKinds.has(k) || k === "توصيل";
+
   const cards = await prisma.taskCard.findMany({
     where: { done: true, settled: false, isDeleted: false, technicianId: { in: technicians.map((t) => t.id) }, listId: { in: viewLists.map((l) => l.id) } },
     select: { id: true, title: true, kind: true, amount: true, subAmount: true, technicianId: true, description: true },
@@ -52,7 +62,7 @@ export async function GET() {
     offices,
     technicians: technicians.map((t) => {
       const items = byTech.get(t.id) ?? [];
-      // المجموع الكلي المستلم من الفني = «المبيع» + «اشتراك» (وللتوصيل مبلغه في amount)
+      // المجموع الكلي المستلم من الفني = «المبيع» + «اشتراك» (مبلغ التوصيل صُنّف اشتراكاً أعلاه)
       const saleTotal = items.reduce((s, x) => s + x.amount, 0);
       const subTotal = items.reduce((s, x) => s + x.subAmount, 0);
       return {
