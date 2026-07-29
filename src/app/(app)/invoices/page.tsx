@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import PageHeader from "@/components/PageHeader";
 import PrintNowButton from "@/components/PrintNowButton";
+import { usePermission } from "@/lib/usePermission";
 import { askVoidEffect } from "@/lib/voidPrompt";
 
 type Item = {
@@ -12,7 +12,9 @@ type Item = {
   priceSale: number | null;
   priceSale2: number | null;
   count: number | null;
+  priceDinar: number | null; // الكلفة (يحجبها الخادم عن غير المدير)
 };
+type Office = { id: number; name: string | null };
 type Line = { itemId: number; name: string; count: number; price: number };
 type Sub = { id: number; name: string | null; netUser: string | null };
 type InvRow = {
@@ -24,7 +26,12 @@ const fmt = (n: number) => Number(n).toLocaleString("en-US");
 
 export default function NewInvoicePage() {
   const router = useRouter();
+  const { me } = usePermission();
+  const isAdmin = !!me?.isAdmin;
   const [items, setItems] = useState<Item[]>([]);
+  // اختيار المكتب لعرض مواد مخزنه فقط (تصميم النموذج) — فارغ = كل المكاتب
+  const [offices, setOffices] = useState<Office[]>([]);
+  const [officeSel, setOfficeSel] = useState<number | "">("");
   const [lines, setLines] = useState<Line[]>([]);
   const [pick, setPick] = useState<number | "">("");
   const [itemQuery, setItemQuery] = useState(""); // بحث عن مادة
@@ -56,8 +63,18 @@ export default function NewInvoicePage() {
   const rewardLookup = useRef<Promise<{ balance: number } | null> | null>(null); // استعلام الرصيد الجاري
 
   useEffect(() => {
-    fetch("/api/items").then((r) => void (r.ok && r.json().then(setItems)));
+    fetch(`/api/items${officeSel ? `?officeId=${officeSel}` : ""}`).then((r) => void (r.ok && r.json().then(setItems)));
+  }, [officeSel]);
+  useEffect(() => {
+    fetch("/api/towers").then((r) => (r.ok ? r.json() : [])).then((ts: Office[]) => setOffices(ts)).catch(() => {});
   }, []);
+  // شريط مجاميع مخزن المكتب المختار (للمدير فقط)
+  const invStats = {
+    kinds: items.length,
+    pieces: items.reduce((a, i) => a + (i.count ?? 0), 0),
+    cost: items.reduce((a, i) => a + (i.priceDinar ?? 0) * (i.count ?? 0), 0),
+    sale: items.reduce((a, i) => a + (i.priceSale ?? 0) * (i.count ?? 0), 0),
+  };
 
   // جلب رصيد مكافأة المشترك المختار — مع الاحتفاظ بوعد الاستعلام: ضغطة «سحب» قبل
   // اكتماله تنتظره فيأتي الجواب صحيحاً فوراً (لا «ليس لديه كود» خاطئة على شبكة بطيئة)
@@ -189,21 +206,29 @@ export default function NewInvoicePage() {
   }
 
   return (
-    <div className="p-6">
-      <PageHeader
-        title="فاتورة مبيع"
-        subtitle="إنشاء فاتورة بيع جديدة"
-        action={
-          <div className="flex gap-2">
-            <button onClick={() => { setLogOpen(true); void loadLog(); }} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">
-              🧾 سجل وصولات المبيع
-            </button>
-            <button onClick={() => router.push("/inventory")} className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300">
-              📦 إدارة المواد (المخزن)
-            </button>
-          </div>
-        }
-      />
+    <div className="nst min-h-screen bg-ground p-4 md:p-[20px_22px_34px]">
+      <div className="pg-h">
+        <button className="back" onClick={() => router.push("/dashboard")}>→ رجوع</button>
+        <h1>فاتورة مبيع</h1>
+        <div className="pg-acts">
+          <select className="pgsel" title="اختر مكتباً لعرض مواد مخزنه فقط" value={officeSel} onChange={(e) => setOfficeSel(Number(e.target.value) || "")}>
+            <option value="">كل المكاتب</option>
+            {offices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `#${o.id}`}</option>)}
+          </select>
+          <button className="gbtn" onClick={() => { setLogOpen(true); void loadLog(); }}>🧾 سجل وصولات المبيع</button>
+          <button className="gbtn" onClick={() => router.push("/inventory")}>📦 إدارة المواد (المخزن)</button>
+        </div>
+      </div>
+
+      {/* مجاميع مخزن المكتب المختار — للمدير فقط */}
+      {isAdmin && (
+        <div className="mini-stats">
+          <div className="ms"><small>عدد المواد / القطع</small><b>{invStats.kinds} / {fmt(invStats.pieces)}</b></div>
+          <div className="ms amber"><small>مجموع الكلفة</small><b>{fmt(invStats.cost)}</b></div>
+          <div className="ms green"><small>مجموع المبيع</small><b>{fmt(invStats.sale)}</b></div>
+          <div className="ms navy"><small>الربح المتوقّع</small><b>{fmt(invStats.sale - invStats.cost)}</b></div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         {/* الأصناف */}
@@ -294,16 +319,19 @@ export default function NewInvoicePage() {
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="mb-4 font-bold text-slate-800">ملخّص الفاتورة</h3>
 
-          {/* بيع مباشر: نقدي بلا مشترك — اسم الزبون اختياري؛ حصري مع «بيع ماستر» */}
-          <label className="mb-2 flex cursor-pointer items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
-            <input type="checkbox" checked={direct} onChange={(e) => { setDirect(e.target.checked); if (e.target.checked) { setMasterMode(false); setMasterAmount(""); } }} className="h-4 w-4 accent-amber-600" />
-            ⚡ بيع مباشر (بلا مشترك — نقدي)
-          </label>
-          {/* بيع ماستر: على حساب الماستر المستقل — بلا دين؛ حصري مع «بيع مباشر» */}
-          <label className="mb-3 flex cursor-pointer items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800">
-            <input type="checkbox" checked={masterMode} onChange={(e) => { setMasterMode(e.target.checked); setMasterAmount(""); if (e.target.checked) setDirect(false); }} className="h-4 w-4 accent-indigo-600" />
-            🅜 بيع ماستر (على حساب الماستر — بلا دين)
-          </label>
+          {/* وضعا البيع (حصريان): بيع مباشر نقدي / بيع ماستر على حسابه المستقل */}
+          <div className="opts" style={{ marginBottom: 10 }}>
+            <label className={`tog ${direct ? "on" : ""}`}>
+              <input type="checkbox" checked={direct} onChange={(e) => { setDirect(e.target.checked); if (e.target.checked) { setMasterMode(false); setMasterAmount(""); } }} />
+              <span>⚡ بيع مباشر</span>
+            </label>
+            <label className={`tog ${masterMode ? "on" : ""}`}>
+              <input type="checkbox" checked={masterMode} onChange={(e) => { setMasterMode(e.target.checked); setMasterAmount(""); if (e.target.checked) setDirect(false); }} />
+              <span>🅜 بيع ماستر</span>
+            </label>
+          </div>
+          {direct && <div className="hint" style={{ marginBottom: 8 }}>⚡ بيع مباشر: نقدي بلا مشترك — اسم الزبون اختياري.</div>}
+          {masterMode && <div className="hint" style={{ marginBottom: 8 }}>🅜 بيع ماستر: على حساب الماستر المستقل — بلا دين، ويدعم الدفع المختلط.</div>}
           {(direct || masterMode) && (
             <input
               value={customerName}
