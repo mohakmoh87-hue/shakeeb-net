@@ -743,3 +743,6 @@ input[type="number"] { direction: ltr; }
   .nst .st-top { flex-wrap: wrap; }
   .nst .st-sel, .nst .st-sel-l { order: 3; width: 100%; max-width: 100%; margin-top: 4px; }
 }
+
+/* شريحة «مبلغ الاشتراك» في شريط خيارات المشترك — لاجوردية */
+.nst .sb-chip.c-sub { background: linear-gradient(120deg, #5b87b8, #2a5480); }

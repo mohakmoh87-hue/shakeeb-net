@@ -352,6 +352,8 @@ export default function SubscribersBoard() {
                             الديون <b>{fmt(s.carry)}</b>
                           </button>
                           <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>
+                          {/* مبلغ الاشتراك = سعر فئة المشترك (طلب محمد) */}
+                          <span className="sb-chip c-sub">مبلغ الاشتراك <b>{fmt(packages.find((p) => p.id === s.packageId)?.priceDinar ?? 0)}</b></span>
                           <button className={`sb-act ${moreMenu ? "on" : ""}`} aria-haspopup="true"
                             onClick={(e) => {
                               e.stopPropagation();
