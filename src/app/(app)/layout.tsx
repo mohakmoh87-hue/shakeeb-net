@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession, getTechSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import TopBar from "@/components/TopBar";
-import MobileNav from "@/components/MobileNav";
+import AppShell from "@/components/shell/AppShell";
 import WhatsAppMonitor from "@/components/WhatsAppMonitor";
 import ReminderPrompt from "@/components/ReminderPrompt";
 import CompletionNotifier from "@/components/CompletionNotifier";
@@ -40,21 +39,9 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      {/* واجهة الموقع الكاملة — تُخفى في التطبيق المثبّت (standalone) ليبقى مركّزاً على إدارة الفنيين */}
+    <div className="min-h-screen bg-ground">
+      {/* مراقبات الموقع — تُخفى في التطبيق المثبّت (standalone) */}
       <div data-site-chrome>
-        <TopBar
-          brand={brand}
-          fullName={session.fullName}
-          roleLabel={session.isAdmin ? "مدير النظام" : "مستخدم"}
-        />
-        {/* تنقّل الهاتف (يظهر على الشاشات الصغيرة فقط) */}
-        <MobileNav
-          brand={brand}
-          fullName={session.fullName}
-          roleLabel={session.isAdmin ? "مدير النظام" : "مستخدم"}
-        />
-
         <WhatsAppMonitor />
         <ReminderPrompt />
         <CompletionNotifier />
@@ -66,7 +53,15 @@ export default async function AppLayout({
       {/* تنبيه انتهاء الاشتراك — خارج غلاف الموقع ليظهر في التطبيق المثبّت أيضاً */}
       <PlanBanner agentId={session.agentId ?? null} />
 
-      <main className="flex-1">{children}</main>
+      {/* غلاف الطراز الجديد: شريط جانبي (حاسبة) + شريط علوي ودرج وشريط سفلي (هاتف).
+          عناصر الغلاف داخله موسومة data-site-chrome فتختفي في التطبيق المثبّت. */}
+      <AppShell
+        brand={brand}
+        fullName={session.fullName}
+        roleLabel={session.isAdmin ? "مدير النظام" : "مستخدم"}
+      >
+        {children}
+      </AppShell>
     </div>
   );
 }
