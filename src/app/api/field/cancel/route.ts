@@ -22,7 +22,13 @@ export async function POST(request: Request) {
   if (card.done) return NextResponse.json({ error: "البطاقة منجزة — لا تُلغى" }, { status: 400 });
   const auth = await resolveCardActor(cardId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!card.startedAt) return NextResponse.json({ error: "ابدأ البطاقة أولاً قبل الإلغاء" }, { status: 400 });
+  // شرط «بدء» قبل الإلغاء يخص الفني على غير التوصيل فقط:
+  // التوصيل بلا «بدء» أصلاً (قاعدته الثابتة — طلب محمد)، والمكتب/المدير يُلغي قبل البدء
+  const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false, agentId: auth.actor.agentId ?? -1 } });
+  const isDelivery = type?.deliveryOnly ?? card.kind === "توصيل";
+  if (!card.startedAt && !isDelivery && auth.actor.isTech) {
+    return NextResponse.json({ error: "ابدأ البطاقة أولاً قبل الإلغاء" }, { status: 400 });
+  }
 
   // عمود «الغاء» على نفس لوحة البطاقة — يُنشأ عند أول إلغاء
   const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } });
