@@ -13,7 +13,7 @@ const fmt = (n: number | null | undefined) => Number(n ?? 0).toLocaleString("en-
 
 export default function StatCards({ initialReport, towerIds }: { initialReport: Report; towerIds: number[] }) {
   return (
-    <section className="stats max-xl:!grid-cols-2">
+    <section className="stats max-[1050px]:!grid-cols-2">
       <SubsCard towerIds={towerIds} />
       <MoneyCard r={initialReport} />
       <InvoiceCard r={initialReport} />

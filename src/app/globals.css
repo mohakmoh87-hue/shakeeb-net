@@ -257,6 +257,7 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
 
   /* البطاقة والترويسة والأزرار */
   .row2 { display: grid; grid-template-columns: 1.85fr 1fr; gap: 15px; align-items: start; }
+  .row2 > *, .stats > * { min-width: 0; }
   .card { background: var(--surface); border-radius: 10px; box-shadow: var(--sh); }
   .ch { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 13px 16px 6px; }
   .ch:has(.hbtns) { padding: 12px 11px 6px; }
@@ -449,3 +450,48 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
 :root[data-theme="light"] .nst .subs tbody tr.active, :root[data-theme="light"] .nst .subrow > td { background: rgba(27,58,92,.07); }
 :root[data-theme="light"] .nst .ss-amt, :root[data-theme="light"] .nst .rep .wsl { color: var(--navy); }
 @media (prefers-reduced-motion: reduce) { .nst .wa.down .wa-d { animation: none; } }
+
+/* ============================================================
+   التكيّف مع ارتفاع الشاشة (من النموذج): الصفحة لا تنزل أبداً على الحواسيب —
+   قائمة المشتركين تتمدّد وتمرّر داخلياً، وشريط التحصيل يبقى ظاهراً أسفلها
+   ============================================================ */
+@media (min-width: 1051px) {
+  .nst { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: auto 1fr; }
+  .nst .row2 { min-height: 0; height: 100%; }
+  .nst .row2 > * { max-height: 100%; display: flex; flex-direction: column; min-height: 0; }
+  .nst .subs-scroll { max-height: none; flex: 1; min-height: 60px; }
+  .nst .settle-strip { flex: none; }
+  .nst .rep-wrap { flex: 1; min-height: 0; overflow-y: auto; }
+}
+
+/* كثافة متدرّجة حسب ارتفاع الشاشة (من النموذج) */
+@media (max-height: 880px) {
+  .nst { gap: 12px !important; padding: 14px 16px 12px !important; }
+  .nst .stats, .nst .row2 { gap: 11px; }
+  .nst .stat { padding: 11px 13px; gap: 6px; }
+  .nst .st-vl { font-size: 22px; } .nst .tu-vl { font-size: 18px; }
+  .nst .ch { padding: 10px 13px; }
+  .nst .settle-strip { padding: 9px 13px 11px; }
+  .nst .ss-item { padding: 7px 9px; }
+}
+@media (max-height: 760px) {
+  .nst { gap: 9px !important; padding: 11px 13px 10px !important; }
+  .nst .stats, .nst .row2 { gap: 9px; }
+  .nst .stat { padding: 9px 11px; gap: 5px; }
+  .nst .st-vl { font-size: 19px; } .nst .tu-vl { font-size: 16px; }
+  .nst .st-ic { width: 24px; height: 24px; font-size: 11px; }
+  .nst .spark { height: 24px; }
+  .nst .sm-donut { width: 60px; height: 60px; } .nst .sm-donut .dc b { font-size: 13px; }
+  .nst .rep tbody td { padding: 5px 13px; }
+  .nst .sumbar, .nst .masterbar { padding: 7px 11px; } .nst .sumbar b { font-size: 15px; }
+  .nst .ss-item { padding: 6px 8px; } .nst .ss-amt { font-size: 12.5px; margin: 1px 0 4px; }
+}
+@media (max-height: 660px) {
+  .nst { gap: 7px !important; padding: 9px 11px 8px !important; }
+  .nst .stats, .nst .row2 { gap: 7px; }
+  .nst .stat { padding: 7px 10px; }
+  .nst .st-vl { font-size: 17px; } .nst .tu-vl { font-size: 14px; } .nst .st-lb { font-size: 11px; }
+  .nst .spark { height: 18px; }
+  .nst .rep thead th, .nst .rep tbody td { padding: 4px 12px; }
+  .nst .settle-strip { padding: 7px 11px 9px; }
+}

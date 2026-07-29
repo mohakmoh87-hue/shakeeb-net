@@ -74,7 +74,8 @@ export default function DailyReportCard({
         </div>
       )}
 
-      <div style={loading ? { opacity: .5, transition: "opacity .15s" } : undefined}>
+      {/* rep-wrap: الجدول وحده يمرّر داخلياً عند ضيق الارتفاع؛ المجموع والماستر ثابتان أسفله */}
+      <div className="rep-wrap" style={loading ? { opacity: .5, transition: "opacity .15s" } : undefined}>
         <table className="rep">
           <thead><tr><th>الفئة</th><th>العدد</th><th>الواصل</th></tr></thead>
           <tbody>
@@ -87,19 +88,19 @@ export default function DailyReportCard({
             ))}
           </tbody>
         </table>
+      </div>
 
-        <div className="sumbar">
-          <b>{fmt(data.total)} د.ع</b>
-          <span>
-            المجموع{isAdmin && sel !== "all" ? ` — ${towers.find((t) => t.id === sel)?.name ?? ""}` : isAdmin ? " (كل المكاتب)" : ""}
-          </span>
-        </div>
+      <div className="sumbar" style={loading ? { opacity: .5 } : undefined}>
+        <b>{fmt(data.total)} د.ع</b>
+        <span>
+          المجموع{isAdmin && sel !== "all" ? ` — ${towers.find((t) => t.id === sel)?.name ?? ""}` : isAdmin ? " (كل المكاتب)" : ""}
+        </span>
+      </div>
 
-        {/* حساب الماستر — مستقل تماماً، لا يدخل ضمن المجموع أعلاه */}
-        <div className="masterbar">
-          <b>{fmt(data.masterIn)} د.ع</b>
-          <span>🅜 حساب الماستر (مستقل)</span>
-        </div>
+      {/* حساب الماستر — مستقل تماماً، لا يدخل ضمن المجموع أعلاه */}
+      <div className="masterbar" style={loading ? { opacity: .5 } : undefined}>
+        <b>{fmt(data.masterIn)} د.ع</b>
+        <span>🅜 حساب الماستر (مستقل)</span>
       </div>
     </div>
   );

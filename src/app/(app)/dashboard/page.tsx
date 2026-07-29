@@ -28,9 +28,10 @@ export default async function DashboardPage() {
   return (
     // .nst: نطاق CSS النموذج المعتمد (الصفحة التجريبية) — بنيته حرفياً:
     // بطاقات الإحصاء ثم row2: [المشتركين + تحصيل الفنيين | التقرير اليومي]
-    <div className="nst min-h-screen bg-ground p-4 xl:p-[20px_22px_34px]" style={{ display: "grid", gap: 17, alignContent: "start" }}>
+    <div className="nst min-h-screen bg-ground p-4 min-[1051px]:p-[20px_22px_16px]" style={{ display: "grid", gap: 17, alignContent: "start" }}>
       <StatCards initialReport={initialReport} towerIds={counterTowers} />
-      <div className="row2 max-xl:!grid-cols-1">
+      {/* نقطة الكسر 1051px نفسها المستعملة في طبقة التكيّف مع الارتفاع */}
+      <div className="row2 max-[1050px]:!grid-cols-1">
         <SubscribersBoard />
         <DailyReportCard isAdmin={isAdmin} towers={towers} initial={initialReport} />
       </div>
