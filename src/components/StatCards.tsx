@@ -69,7 +69,8 @@ function SubsCard({ towerIds }: { towerIds: number[] }) {
           <div className="tu-vl">{stats ? fmt(stats.active) : "—"}</div>
         </div>
         <div className="tu">
-          <div className="tu-lb"><i className="dot" style={{ background: "var(--orange)" }} /> المتصلين</div>
+          {/* أزرق سماوي ساطع #4db5ff — واضح جداً على خلفية البطاقة اللاجوردية (طلب محمد) */}
+          <div className="tu-lb"><i className="dot" style={{ background: "#4db5ff" }} /> المتصلين</div>
           <div className="tu-vl">{stats?.online != null ? fmt(stats.online) : "—"}</div>
         </div>
       </div>
