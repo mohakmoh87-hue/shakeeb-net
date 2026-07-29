@@ -588,17 +588,19 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
    قائمة المشتركين تتمدّد وتمرّر داخلياً، وشريط التحصيل يبقى ظاهراً أسفلها
    ============================================================ */
 @media (min-width: 1051px) {
-  .nst { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: auto 1fr; }
-  .nst .row2 { min-height: 0; height: 100%; }
-  .nst .row2 > * { max-height: 100%; display: flex; flex-direction: column; min-height: 0; }
-  .nst .subs-scroll { max-height: none; flex: 1; min-height: 60px; }
-  .nst .settle-strip { flex: none; }
-  .nst .rep-wrap { flex: 1; min-height: 0; overflow-y: auto; }
+  /* ملء الشاشة بلا تمرير: للشاشة الرئيسية حصراً (.nst-fill) — تعميمها على .nst
+     كان يسحق محتوى كل صفحة فيها غلاف الطراز (الصندوق والمخزن ظهرتا فارغتين) */
+  .nst-fill { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: auto 1fr; }
+  .nst-fill .row2 { min-height: 0; height: 100%; }
+  .nst-fill .row2 > * { max-height: 100%; display: flex; flex-direction: column; min-height: 0; }
+  .nst-fill .subs-scroll { max-height: none; flex: 1; min-height: 60px; }
+  .nst-fill .settle-strip { flex: none; }
+  .nst-fill .rep-wrap { flex: 1; min-height: 0; overflow-y: auto; }
 }
 
 /* كثافة متدرّجة حسب ارتفاع الشاشة (من النموذج) */
 @media (max-height: 880px) {
-  .nst { gap: 12px !important; padding: 14px 16px 12px !important; }
+  .nst-fill { gap: 12px !important; padding: 14px 16px 12px !important; }
   .nst .stats, .nst .row2 { gap: 11px; }
   .nst .stat { padding: 11px 13px; gap: 6px; }
   .nst .st-vl { font-size: 22px; } .nst .tu-vl { font-size: 18px; }
@@ -607,7 +609,7 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
   .nst .ss-item { padding: 7px 9px; }
 }
 @media (max-height: 760px) {
-  .nst { gap: 9px !important; padding: 11px 13px 10px !important; }
+  .nst-fill { gap: 9px !important; padding: 11px 13px 10px !important; }
   .nst .stats, .nst .row2 { gap: 9px; }
   .nst .stat { padding: 9px 11px; gap: 5px; }
   .nst .st-vl { font-size: 19px; } .nst .tu-vl { font-size: 16px; }
@@ -619,7 +621,7 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
   .nst .ss-item { padding: 6px 8px; } .nst .ss-amt { font-size: 12.5px; margin: 1px 0 4px; }
 }
 @media (max-height: 660px) {
-  .nst { gap: 7px !important; padding: 9px 11px 8px !important; }
+  .nst-fill { gap: 7px !important; padding: 9px 11px 8px !important; }
   .nst .stats, .nst .row2 { gap: 7px; }
   .nst .stat { padding: 7px 10px; }
   .nst .st-vl { font-size: 17px; } .nst .tu-vl { font-size: 14px; } .nst .st-lb { font-size: 11px; }
