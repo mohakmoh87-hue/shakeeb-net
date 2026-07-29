@@ -28,6 +28,7 @@ const fmtDate = (d: string | null) => formatDate(d);
 
 export default function CashboxPage() {
   const [txs, setTxs] = useState<Tx[]>([]);
+  const [listState, setListState] = useState<"loading" | "ok" | "error">("loading");
   const [summary, setSummary] = useState({ totalIn: 0, totalOut: 0, balance: 0 });
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [towers, setTowers] = useState<Tower[]>([]);
@@ -55,13 +56,16 @@ export default function CashboxPage() {
     if (f) qs.set("from", f);
     if (t) qs.set("to", t);
     if (search.trim()) qs.set("q", search.trim());
+    setListState("loading");
     fetch(`/api/money${qs.toString() ? `?${qs}` : ""}`).then((r) => {
       if (r.ok)
         r.json().then((d) => {
           setTxs(d.transactions);
           setSummary(d.summary);
+          setListState("ok");
         });
-    });
+      else setListState("error"); // فشل الجلب لا يُعرض قائمة فارغة موهِمة بالمسح
+    }).catch(() => setListState("error"));
   }, []);
 
   useEffect(() => {
@@ -260,7 +264,11 @@ export default function CashboxPage() {
               </tr>
             </thead>
             <tbody>
-              {sortedTxs.length === 0 ? (
+              {listState === "loading" ? (
+                <tr><td colSpan={7} className="p-8 text-center text-slate-400">جاري تحميل الحركات...</td></tr>
+              ) : listState === "error" ? (
+                <tr><td colSpan={7} className="p-8 text-center font-semibold text-red-500">تعذّر جلب الحركات — حدّث الصفحة (البيانات محفوظة بالقاعدة)</td></tr>
+              ) : sortedTxs.length === 0 ? (
                 <tr><td colSpan={can("receipts.void") ? 7 : 6} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
               ) : (
                 sortedTxs.map((t) => (

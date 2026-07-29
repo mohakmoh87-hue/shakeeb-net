@@ -182,7 +182,7 @@ function FieldCard() {
   const R = 28, C = 2 * Math.PI * R, GAP = 4;
   const doneLen = Math.max(0, pct * C - GAP), restLen = Math.max(0, (1 - pct) * C - GAP);
   return (
-    <div className="stat">
+    <div className="stat" role="button" onClick={() => router.push("/field-management")} title="فتح إدارة الفنيين">
       <div className="st-top"><span className="st-lb">🛠️ إدارة الفنيين</span><span className="st-ic">📋</span></div>
       <div className="fieldrow">
         <div className="sm-donut">
