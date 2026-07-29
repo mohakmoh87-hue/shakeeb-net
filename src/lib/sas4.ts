@@ -146,6 +146,26 @@ export async function sasFetchOnePage(
   return { users, total, lastPage: j.last_page ?? Math.max(1, Math.ceil(total / count)) };
 }
 
+// عدد المتصلين الآن (الجلسات النشطة) — لعدّاد الشاشة الرئيسية.
+// مسار SAS4 لقائمة المتصلين على نمط index/*: نجرّب الاسمين المعروفين ونتذكّر الناجح لكل خادم.
+const onlineRouteCache = new Map<string, string>();
+export async function sasFetchOnlineCount(base: string, token: string): Promise<number | null> {
+  const candidates = onlineRouteCache.has(base)
+    ? [onlineRouteCache.get(base)!]
+    : ["index/online", "index/online_user"];
+  for (const route of candidates) {
+    try {
+      const raw = await sasPost(base, route, { page: 1, count: 1 }, token);
+      const j = JSON.parse(raw.text);
+      if (typeof j?.total === "number") {
+        onlineRouteCache.set(base, route);
+        return j.total;
+      }
+    } catch { /* جرّب المسار التالي */ }
+  }
+  return null;
+}
+
 // جلب مشترك واحد بمعرّفه في SAS4 (GET user/{id}) — يُرجِع تاريخ الانتهاء الفعلي ورصيد القرض
 export async function sasFetchUser(
   base: string,

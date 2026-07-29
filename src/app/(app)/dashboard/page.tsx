@@ -1,6 +1,4 @@
-import Link from "next/link";
 import DailyReportCard from "@/components/DailyReportCard";
-import FieldSettlementCard from "@/components/FieldSettlementCard";
 import StatCards from "@/components/StatCards";
 import SubscribersBoard from "@/components/SubscribersBoard";
 import { getSession } from "@/lib/auth";
@@ -28,32 +26,13 @@ export default async function DashboardPage() {
   const counterTowers = isAdmin ? agentTowers : session?.towerId ? [session.towerId] : [];
 
   return (
-    <div className="flex min-h-screen flex-col gap-3 bg-ground p-3 xl:h-screen xl:min-h-0 xl:overflow-hidden">
-      {/* بطاقات الإحصاء الأربع */}
+    // .nst: نطاق CSS النموذج المعتمد (الصفحة التجريبية) — بنيته حرفياً:
+    // بطاقات الإحصاء ثم row2: [المشتركين + تحصيل الفنيين | التقرير اليومي]
+    <div className="nst min-h-screen bg-ground p-4 xl:p-[20px_22px_34px]" style={{ display: "grid", gap: 17, alignContent: "start" }}>
       <StatCards initialReport={initialReport} towerIds={counterTowers} />
-
-      {/* الجسم: جدول المشتركين (+ تحصيل الفنيين أسفله) | التقرير اليومي */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_330px]">
-        <div className="flex min-h-0 flex-col gap-3">
-          {/* حدّ أدنى لارتفاع الجدول حتى لا يسحقه تحصيل الفنيين الطويل */}
-          <div className="min-h-[420px] flex-1 xl:min-h-[360px]">
-            <SubscribersBoard />
-          </div>
-          {/* تحصيل الفنيين — شريط أسفل الجدول بارتفاع مضبوط يمرّر داخلياً */}
-          <div className="shrink-0 xl:max-h-[30vh] xl:overflow-y-auto">
-            <FieldSettlementCard />
-          </div>
-        </div>
-
-        <div className="flex min-h-0 flex-col gap-2 xl:overflow-y-auto">
-          {/* زرّ سجل الوصولات البرتقالي أعلى بطاقة التقرير */}
-          <Link href="/subscriptions"
-            className="block rounded-xl py-2.5 text-center text-sm font-extrabold text-white shadow-sm transition hover:brightness-105"
-            style={{ background: "linear-gradient(160deg, var(--orange) 0%, var(--orange-d) 100%)" }}>
-            🧾 سجل الوصولات
-          </Link>
-          <DailyReportCard isAdmin={isAdmin} towers={towers} initial={initialReport} />
-        </div>
+      <div className="row2 max-xl:!grid-cols-1">
+        <SubscribersBoard />
+        <DailyReportCard isAdmin={isAdmin} towers={towers} initial={initialReport} />
       </div>
     </div>
   );

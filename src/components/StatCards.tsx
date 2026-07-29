@@ -3,16 +3,17 @@
 import { useEffect, useState } from "react";
 import { localSasBase } from "@/lib/localSas";
 
-// بطاقات الإحصاء الأربع بأعلى الشاشة الرئيسية (الطراز الجديد — ب2):
-// المشتركين (فعال/الكلي، محلياً كل 5 ثوانٍ — أ5) · المصروفات والمقبوضات ·
-// فاتورة المبيع (+منحنى مقارنة بالشهر السابق) · إدارة الفنيين (دائرة منجز/متبقٍّ)
+// بطاقات الإحصاء الأربع — مطابقة حرفياً للنموذج المعتمد (أصناف .nst في globals.css):
+// المشتركين (داكنة: الفعالين والمتصلين + الكلي) · المصروفات والمقبوضات (سطران +
+// شريط نسبة + الصافي) · فاتورة المبيع (عدد + اتجاه + منحنى مساحي) · إدارة الفنيين (دونات).
+// «الفعالين/المتصلين» كل 5 ثوانٍ من حاسبة المكتب حصراً (أ5) — بلا مرور على السحابة.
 type Report = { invoiceCount: number; invoiceIn: number; expenses: number; total: number };
 
 const fmt = (n: number | null | undefined) => Number(n ?? 0).toLocaleString("en-US");
 
 export default function StatCards({ initialReport, towerIds }: { initialReport: Report; towerIds: number[] }) {
   return (
-    <section className="grid grid-cols-2 gap-2 xl:grid-cols-4 xl:gap-3">
+    <section className="stats max-xl:!grid-cols-2">
       <SubsCard towerIds={towerIds} />
       <MoneyCard r={initialReport} />
       <InvoiceCard r={initialReport} />
@@ -21,24 +22,9 @@ export default function StatCards({ initialReport, towerIds }: { initialReport: 
   );
 }
 
-function Card({ title, icon, dark, children }: { title: string; icon: string; dark?: boolean; children: React.ReactNode }) {
-  return (
-    <div
-      className={`rounded-xl border p-3 shadow-sm ${dark ? "border-transparent text-white" : "border-line bg-surface text-ink"}`}
-      style={dark ? { background: "linear-gradient(160deg, var(--navy-3) 0%, var(--navy) 100%)" } : undefined}
-    >
-      <div className="mb-2 flex items-center justify-between">
-        <span className={`text-xs font-bold ${dark ? "text-white/85" : "text-ink-2"}`}>{title}</span>
-        <span className="text-base">{icon}</span>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-// ١ · المشتركين — نفس آلية أ5: كل 5 ثوانٍ من حاسبة المكتب حصراً؛ وبدونها قراءة سحابية واحدة
+// ١ · المشتركين (داكنة) — الفعالين والمتصلين، والكلي سطراً صغيراً
 function SubsCard({ towerIds }: { towerIds: number[] }) {
-  const [stats, setStats] = useState<{ active: number; total: number } | null>(null);
+  const [stats, setStats] = useState<{ active: number; total: number; online: number | null } | null>(null);
   const [live, setLive] = useState(false);
   const key = towerIds.join(",");
 
@@ -54,16 +40,20 @@ function SubsCard({ towerIds }: { towerIds: number[] }) {
           try {
             const r = await fetch(`${base}/stats/subscribers?towers=${key}`);
             const d = await r.json().catch(() => null);
-            if (!stop && r.ok && d && typeof d.total === "number") { setStats({ active: d.active, total: d.total }); setLive(true); }
+            if (!stop && r.ok && d && typeof d.total === "number") {
+              setStats({ active: d.active, total: d.total, online: typeof d.online === "number" ? d.online : null });
+              setLive(true);
+            }
           } catch { /* العامل توقّف مؤقتاً — نُبقي آخر أرقام */ }
         };
         void load();
         timer = setInterval(load, 5000);
       } else {
+        // بلا حاسبة مكتب: قراءة سحابية واحدة عند الفتح (بلا استطلاع — شرط الاستهلاك)
         try {
           const r = await fetch("/api/subscribers/stats");
           const d = await r.json().catch(() => null);
-          if (!stop && r.ok && d && typeof d.total === "number") setStats(d);
+          if (!stop && r.ok && d && typeof d.total === "number") setStats({ active: d.active, total: d.total, online: null });
         } catch { /* */ }
       }
     })();
@@ -71,92 +61,106 @@ function SubsCard({ towerIds }: { towerIds: number[] }) {
   }, [key]);
 
   return (
-    <Card title="المشتركين" icon="👥" dark>
-      <div className="flex items-end justify-around gap-2">
-        <div className="text-center">
-          <div className="mb-0.5 flex items-center justify-center gap-1 text-[10px] text-white/70">
-            <i className="h-1.5 w-1.5 rounded-full" style={{ background: "#3ad9a8" }} /> الفعالين
-          </div>
-          <div className="text-xl font-extrabold tabular-nums">{stats ? fmt(stats.active) : "—"}</div>
+    <div className="stat dark">
+      <div className="st-top"><span className="st-lb">المشتركين</span><span className="st-ic">👥</span></div>
+      <div className="twoup">
+        <div className="tu">
+          <div className="tu-lb"><i className="dot" style={{ background: "#3ad9a8" }} /> الفعالين</div>
+          <div className="tu-vl">{stats ? fmt(stats.active) : "—"}</div>
         </div>
-        <div className="text-center">
-          <div className="mb-0.5 flex items-center justify-center gap-1 text-[10px] text-white/70">
-            <i className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--orange)" }} /> الكلي
-          </div>
-          <div className="text-xl font-extrabold tabular-nums">{stats ? fmt(stats.total) : "—"}</div>
+        <div className="tu">
+          <div className="tu-lb"><i className="dot" style={{ background: "var(--orange)" }} /> المتصلين</div>
+          <div className="tu-vl">{stats?.online != null ? fmt(stats.online) : "—"}</div>
         </div>
       </div>
-      {live && <div className="mt-1 text-center text-[9px] text-white/50">⚡ مباشر من حاسبة المكتب</div>}
-    </Card>
+      <div className="st-sub" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>الكلي: <b className="num">{stats ? fmt(stats.total) : "—"}</b></span>
+        {live && <span title="يتحدّث كل 5 ثوانٍ من حاسبة المكتب مباشرة">⚡ مباشر</span>}
+      </div>
+    </div>
   );
 }
 
-// ٢ · المصروفات والمقبوضات (اليوم)
+// ٢ · المصروفات والمقبوضات — سطران + شريط نسبة + الصافي
 function MoneyCard({ r }: { r: Report }) {
   const received = r.total + r.expenses;
+  const sum = received + r.expenses;
+  const inPct = sum > 0 ? Math.round((received / sum) * 100) : 50;
   return (
-    <Card title="المصروفات والمقبوضات" icon="💵">
-      <div className="space-y-1 text-xs">
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1 text-ink-2"><b className="text-ok">↓</b> المقبوضات</span>
-          <b className="tabular-nums text-ok">{fmt(received)}</b>
+    <div className="stat">
+      <div className="st-top"><span className="st-lb">المصروفات والمقبوضات</span><span className="st-ic">💵</span></div>
+      <div className="flow">
+        <div className="flow-line">
+          <span className="fa in">↓</span>
+          <span className="fa-lb">المقبوضات</span>
+          <span className="fa-vl">{fmt(received)}</span>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1 text-ink-2"><b className="text-bad">↑</b> المصروفات</span>
-          <b className="tabular-nums text-bad">{fmt(r.expenses)}</b>
-        </div>
-        <div className="flex items-center justify-between border-t border-line pt-1">
-          <span className="font-bold">الصافي</span>
-          <b className="tabular-nums text-sm">{fmt(r.total)}</b>
+        <div className="flow-line">
+          <span className="fa out">↑</span>
+          <span className="fa-lb">المصروفات</span>
+          <span className="fa-vl">{fmt(r.expenses)}</span>
         </div>
       </div>
-    </Card>
+      <div className="ratio" role="img" aria-label={`المقبوضات ${inPct} بالمئة والمصروفات ${100 - inPct} بالمئة`}>
+        <span className="r-in" style={{ width: `${inPct}%` }} />
+        <span className="r-out" style={{ width: `${100 - inPct}%` }} />
+      </div>
+      <div className="net">الصافي <b style={{ color: r.total < 0 ? "var(--bad)" : "var(--ok)" }}>{fmt(r.total)}</b> <small>د.ع</small></div>
+    </div>
   );
 }
 
-// ٣ · فاتورة المبيع — عدد ومبلغ اليوم + منحنى الشهر الحالي مقابل نفس المدة من السابق
+// ٣ · فاتورة المبيع — عدد + وسام اتجاه + المبلغ + منحنى مساحي
 function InvoiceCard({ r }: { r: Report }) {
   const [s, setS] = useState<{ thisDays: number[]; lastDays: number[]; thisTotal: number; lastTotal: number } | null>(null);
   useEffect(() => {
     fetch("/api/reports/invoices/summary").then((x) => (x.ok ? x.json() : null)).then((d) => d && setS(d)).catch(() => {});
   }, []);
   const delta = s && s.lastTotal > 0 ? Math.round(((s.thisTotal - s.lastTotal) / s.lastTotal) * 100) : null;
+  const days = s ? [...s.lastDays, ...s.thisDays].slice(-7) : [];
   return (
-    <Card title="فاتورة المبيع" icon="🛒">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <div className="text-lg font-extrabold tabular-nums">{fmt(r.invoiceIn)}</div>
-          <div className="text-[10px] text-muted">{r.invoiceCount} فاتورة اليوم</div>
-        </div>
-        <div className="text-left">
-          {s && <Spark thisDays={s.thisDays} lastDays={s.lastDays} />}
-          {delta != null ? (
-            <div className={`text-[10px] font-bold ${delta >= 0 ? "text-ok" : "text-bad"}`}>{delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}% عن الشهر الماضي</div>
-          ) : (
-            <span className="rounded-full bg-orange/15 px-2 py-0.5 text-[10px] font-bold text-orange-d">جديد</span>
-          )}
-        </div>
+    <div className="stat">
+      <div className="st-top"><span className="st-lb">فاتورة المبيع</span><span className="st-ic">🛒</span></div>
+      <div className="inv-row">
+        <span className="st-vl">{r.invoiceCount}</span>
+        {delta != null ? (
+          <span className="trend" style={delta < 0 ? { background: "rgba(229,56,79,.12)", color: "var(--bad)" } : undefined}>
+            {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}%
+          </span>
+        ) : (
+          <span className="trend">جديد</span>
+        )}
       </div>
-    </Card>
+      <div className="inv-amt">{fmt(r.invoiceIn)} <small>د.ع</small></div>
+      <Spark values={days} />
+    </div>
   );
 }
 
-// منحنى صغير: تراكمي الشهر الحالي (برتقالي) فوق السابق (رمادي)
-function Spark({ thisDays, lastDays }: { thisDays: number[]; lastDays: number[] }) {
-  const cum = (a: number[]) => a.reduce<number[]>((acc, v) => (acc.push((acc[acc.length - 1] ?? 0) + v), acc), []);
-  const A = cum(thisDays), B = cum(lastDays);
-  const max = Math.max(1, ...A, ...B);
-  const W = 84, H = 26;
-  const path = (a: number[]) => a.map((v, i) => `${i === 0 ? "M" : "L"}${(i / Math.max(1, a.length - 1)) * W},${H - (v / max) * (H - 2)}`).join(" ");
+// المنحنى المساحي (تعبئة متدرّجة + خط + نقطة نهاية) — كما في النموذج
+function Spark({ values }: { values: number[] }) {
+  const W = 150, H = 34;
+  if (values.length < 2) return <div style={{ height: H }} />;
+  const max = Math.max(1, ...values);
+  const pts = values.map((v, i) => [(i / (values.length - 1)) * W, H - 6 - (v / max) * (H - 12)] as const);
+  const line = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const [ex, ey] = pts[pts.length - 1];
   return (
-    <svg width={W} height={H} className="mb-0.5 block" aria-hidden>
-      <path d={path(B)} fill="none" stroke="var(--muted)" strokeWidth="1.5" opacity=".55" />
-      <path d={path(A)} fill="none" stroke="var(--orange)" strokeWidth="2" />
+    <svg className="spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="فواتير آخر سبعة أيام">
+      <defs>
+        <linearGradient id="spg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#f5a623" stopOpacity=".55" />
+          <stop offset="100%" stopColor="#f5a623" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${line} L${W},${H} L0,${H} Z`} fill="url(#spg)" />
+      <path d={line} fill="none" stroke="#f5a623" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={ex} cy={ey} r="3" fill="#f5a623" />
     </svg>
   );
 }
 
-// ٤ · إدارة الفنيين — دائرة منجز/متبقٍّ من لوحة البطاقات (٨-ج: تُحسب في المتصفح)
+// ٤ · إدارة الفنيين — دونات بقوسين (لاجورد منجزة + برتقالي متبقّية)
 function FieldCard() {
   const [v, setV] = useState<{ done: number; rest: number } | null>(null);
   useEffect(() => {
@@ -167,24 +171,32 @@ function FieldCard() {
     }).catch(() => {});
   }, []);
   const total = (v?.done ?? 0) + (v?.rest ?? 0);
-  const pct = total ? (v!.done / total) : 0;
-  const R = 16, C = 2 * Math.PI * R;
+  const pct = total ? v!.done / total : 0;
+  const R = 28, C = 2 * Math.PI * R, GAP = 4;
+  const doneLen = Math.max(0, pct * C - GAP), restLen = Math.max(0, (1 - pct) * C - GAP);
   return (
-    <Card title="إدارة الفنيين" icon="🛠️">
-      <div className="flex items-center justify-between gap-2">
-        <div className="space-y-0.5 text-[11px]">
-          <div className="flex items-center gap-1"><i className="h-1.5 w-1.5 rounded-full bg-ok" /> منجز <b className="tabular-nums">{v?.done ?? "—"}</b></div>
-          <div className="flex items-center gap-1"><i className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--orange)" }} /> متبقٍّ <b className="tabular-nums">{v?.rest ?? "—"}</b></div>
+    <div className="stat">
+      <div className="st-top"><span className="st-lb">🛠️ إدارة الفنيين</span><span className="st-ic">📋</span></div>
+      <div className="fieldrow">
+        <div className="sm-donut">
+          <svg width="74" height="74" viewBox="0 0 74 74" role="img" aria-label={`أُنجز ${Math.round(pct * 100)} بالمئة من البطاقات`}>
+            <circle cx="37" cy="37" r={R} fill="none" stroke="var(--line)" strokeWidth="11" />
+            {total > 0 && (
+              <>
+                <circle cx="37" cy="37" r={R} fill="none" stroke="var(--navy)" strokeWidth="11" strokeLinecap="round"
+                  strokeDasharray={`${doneLen} ${C - doneLen}`} />
+                <circle cx="37" cy="37" r={R} fill="none" stroke="var(--orange)" strokeWidth="11" strokeLinecap="round"
+                  strokeDasharray={`${restLen} ${C - restLen}`} strokeDashoffset={-(doneLen + GAP)} />
+              </>
+            )}
+          </svg>
+          <div className="dc"><b>{total ? `${Math.round(pct * 100)}%` : "—"}</b></div>
         </div>
-        <svg width="44" height="44" viewBox="0 0 40 40" className="shrink-0 -rotate-90">
-          <circle cx="20" cy="20" r={R} fill="none" stroke="var(--line)" strokeWidth="5" />
-          <circle cx="20" cy="20" r={R} fill="none" stroke="var(--ok)" strokeWidth="5"
-            strokeDasharray={`${pct * C} ${C}`} strokeLinecap="round" />
-          <text x="20" y="21" textAnchor="middle" dominantBaseline="middle" className="rotate-90 fill-current text-[9px] font-bold" style={{ transformOrigin: "20px 20px" }}>
-            {total ? `${Math.round(pct * 100)}%` : "—"}
-          </text>
-        </svg>
+        <div className="fnums">
+          <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--navy)" }} /> منجزة</span><b>{v?.done ?? "—"}</b></div>
+          <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--orange)" }} /> متبقّية</span><b>{v?.rest ?? "—"}</b></div>
+        </div>
       </div>
-    </Card>
+    </div>
   );
 }

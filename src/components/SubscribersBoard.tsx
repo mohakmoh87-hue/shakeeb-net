@@ -8,6 +8,7 @@ import MapButton from "@/components/MapButton";
 import PrintNowButton from "@/components/PrintNowButton";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
+import FieldSettlementCard from "@/components/FieldSettlementCard";
 import { askVoidEffect } from "@/lib/voidPrompt";
 
 // جدول المشتركين في الشاشة الرئيسية (ب2) — يحلّ محلّ صفحة /subscribers:
@@ -70,7 +71,7 @@ export default function SubscribersBoard() {
   // تنبيه واتساب + حالة واتساب المكاتب
   const [waNotice, setWaNotice] = useState<"no-phone" | "bad-phone" | "no-whatsapp" | null>(null);
   const waCheckId = useRef<number | null>(null);
-  const [waOffices, setWaOffices] = useState<{ ready: number; total: number } | null>(null);
+  const [waOffices, setWaOffices] = useState<{ ready: number; total: number; downNames: string[] } | null>(null);
   // نافذة عمليات 🛠️
   const [opsSub, setOpsSub] = useState<Subscriber | null>(null);
   const [opsBusy, setOpsBusy] = useState(false);
@@ -105,7 +106,14 @@ export default function SubscribersBoard() {
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setTowers)));
     // حالة واتساب المكاتب (يسار الترويسة)
     fetch("/api/whatsapp/offices-status").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d?.offices) setWaOffices({ ready: d.offices.filter((o: { state: string }) => o.state === "ready").length, total: d.offices.length });
+      if (d?.offices) {
+        const down = (d.disconnected ?? []) as { name: string | null }[];
+        setWaOffices({
+          ready: d.offices.filter((o: { state: string }) => o.state === "ready").length,
+          total: d.offices.length,
+          downNames: down.map((o) => o.name ?? "؟"),
+        });
+      }
     }).catch(() => {});
   }, []);
 
@@ -241,123 +249,128 @@ export default function SubscribersBoard() {
     else { const d = await res.json().catch(() => ({})); setOpsMsg(d.error ?? "تعذّرت الإضافة"); }
   }
 
-  const remaining = selected ? daysLeft(selected.dateTo) : 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
-      {/* ترويسة الأزرار — صفّ واحد لا ينكسر، يمرّر أفقياً */}
-      <div className="flex items-center gap-1.5 overflow-x-auto border-b border-line px-2 py-1.5 [scrollbar-width:thin]">
-        <HBtn primary label="+ مشترك جديد" onClick={() => openEdit(null)} />
-        <HBtn label="✏️ تعديل" onClick={() => selected && openEdit(selected)} disabled={!selected} />
-        {can("subscribers.delete") && <HBtn label="🗑️ حذف" onClick={() => setDelMenu(true)} />}
-        <HBtn label="📑 ديون المشتركين" onClick={() => router.push("/debts")} />
-        <HBtn label="💬 ارسال رسالة للكل" onClick={() => router.push("/messages/compose")} />
-        {can("subscribers.import") && <HBtn label="⬇️ استيراد من SAS4" onClick={() => router.push("/subscribers/sas4")} />}
-        <label className="mr-auto flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-[11px] font-semibold text-ink-2">
-          <input type="checkbox" checked={showAllTowers} onChange={(e) => setShowAllTowers(e.target.checked)} />
-          عرض جميع المشتركين من كل المكاتب
-        </label>
-        {waOffices && (
-          <span title="حالة واتساب المكاتب" className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${waOffices.ready === waOffices.total ? "bg-ok/10 text-ok" : "bg-bad/10 text-bad"}`}>
-            {waOffices.ready === waOffices.total ? "🟢" : "🔴"} واتساب {waOffices.ready}/{waOffices.total}
+    <div className="card">
+      {/* ترويسة النموذج: العنوان + صفّ الأزرار الواحد + «مشترك جديد» وحالة واتساب */}
+      <div className="ch">
+        <h2>👥 المشتركين</h2>
+        <div className="hbtns">
+          {can("subscribers.import") && <button className="gbtn" onClick={() => router.push("/subscribers/sas4")}>🔄 استيراد من SAS4</button>}
+          <button className="gbtn" onClick={() => router.push("/debts")}>📑 ديون المشتركين</button>
+          <button className="gbtn" onClick={() => router.push("/messages/compose")}>💬 ارسال رسالة للكل</button>
+          <button className="gbtn" onClick={() => selected && openEdit(selected)} disabled={!selected}>✏️ تعديل</button>
+          {can("subscribers.delete") && <button className="gbtn danger" onClick={() => setDelMenu(true)}>🗑️ حذف</button>}
+          <span className="newgrp">
+            <button className="obtn" onClick={() => openEdit(null)}>+ مشترك جديد</button>
+            {waOffices && (
+              <button
+                className={`wa ${waOffices.ready === waOffices.total ? "up" : "down"}`}
+                onClick={() => router.push("/towers")}
+                title={waOffices.ready === waOffices.total ? "كل مكاتب الواتساب متصلة" : `اضغط لفتح صفحة ربط QR — غير متصل: ${waOffices.downNames.join("، ")}`}
+              >
+                <span className="wa-d" />
+                {waOffices.ready === waOffices.total
+                  ? "واتساب متصل"
+                  : `واتساب غير متصل ${waOffices.total - waOffices.ready} مكتب`}
+              </button>
+            )}
           </span>
-        )}
+        </div>
       </div>
 
-      {/* البحث */}
-      <div className="flex items-center gap-1 border-b border-line p-2">
+      {/* البحث + «جميع مشتركين المكاتب» */}
+      <div className="searchbar">
+        <span className="sicon">🔍</span>
         <input
+          className="sq"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && load(query, showAllTowers)}
           placeholder="بحث بالاسم أو رقم الهاتف أو اليوزر أو اسم المكتب"
-          className="flex-1 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none focus:border-navy-3"
         />
-        <button onClick={() => load(query, showAllTowers)} className="rounded-lg bg-navy px-3 py-1.5 text-white">🔍</button>
+        <label className="allofc">
+          <input type="checkbox" className="cb" checked={showAllTowers} onChange={(e) => setShowAllTowers(e.target.checked)} />
+          جميع مشتركين المكاتب
+        </label>
       </div>
 
-      {msg && <div className="border-b border-line bg-ok/10 px-3 py-1.5 text-center text-xs font-semibold text-ok">{msg}</div>}
+      {msg && <div style={{ margin: "0 16px 8px" }} className="rounded-lg bg-ok/10 px-3 py-1.5 text-center text-xs font-semibold text-ok">{msg}</div>}
 
-      {/* شريط خيارات المشترك — يظهر عند اختيار صفّ */}
-      {selected && (
-        <div className="relative flex items-center gap-1.5 overflow-x-auto border-b border-line bg-surface-2 px-2 py-1.5 [scrollbar-width:thin]">
-          <button onClick={() => setActivating(selected)} className="shrink-0 rounded-lg bg-ok px-4 py-1.5 text-sm font-extrabold text-white shadow hover:brightness-110">⚡ تفعيل</button>
-          <HBtn label="🧾 سجل الوصولات" onClick={() => openLog("receipts")} />
-          <HBtn label="🛠️ سجل الصيانات" onClick={() => openLog("maintenance")} />
-          <span className="mx-1 h-5 w-px shrink-0 bg-line" />
-          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${remaining > 0 ? "bg-ok/10 text-ok" : "bg-bad/10 text-bad"}`}>{remaining} يوم</span>
-          <button onClick={() => { setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }} disabled={(selected.carry ?? 0) <= 0}
-            className="shrink-0 rounded-full bg-bad/10 px-2.5 py-1 text-[11px] font-bold text-bad disabled:opacity-50" title="تسديد دين">
-            الديون {fmt(selected.carry)}
-          </button>
-          <span className="shrink-0 rounded-full bg-fuchsia-50 px-2.5 py-1 text-[11px] font-bold text-fuchsia-700">🎁 {fmt(selected.rewardBalance)}</span>
-          <MapButton subscriberId={selected.id} />
-          <div className="relative shrink-0">
-            <button onClick={() => setMoreMenu((v) => !v)} className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm font-bold text-ink-2 hover:bg-surface-2">⋯ المزيد</button>
-            {moreMenu && (
-              <div className="absolute left-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-xl border border-line bg-surface py-1 shadow-xl">
-                <MoreItem label="🧾 وصولات الفواتير" onClick={() => openLog("invoices")} />
-                <MoreItem label={summaryBusy ? "جارٍ الإرسال..." : "💬 ارسال ملخص"} onClick={() => void sendSummary()} />
-                <MoreItem label="💵 تسديد اشتراك" onClick={() => { setMoreMenu(false); setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }} />
-                <MoreItem label="💲 تسديد فواتير" onClick={() => router.push("/debts")} />
-                <MoreItem label="📝 اضافة مذكرة" onClick={() => router.push("/tickets")} />
-                <MoreItem label="🅰️ اضافة ديون سابقة" onClick={() => { setMoreMenu(false); setAddingDebt(selected); }} />
-                {can("rewards.clear") && <MoreItem label="🎁 حذف كود المكافأة" danger onClick={() => { setMoreMenu(false); void clearReward(); }} />}
-              </div>
-            )}
-          </div>
-          <span className="mr-auto shrink-0 text-xs font-bold text-ink">{selected.name}</span>
-          <button onClick={() => { setSelectedId(null); setMoreMenu(false); }} className="shrink-0 rounded-full px-2 text-base leading-none text-muted hover:bg-black/5" title="إغلاق">✕</button>
-        </div>
-      )}
-
-      {/* الجدول */}
-      <div className="min-h-0 flex-1 overflow-auto" onClick={() => setMoreMenu(false)}>
-        <table className="w-full text-right text-xs [&_td]:tabular-nums">
-          <thead className="sticky top-0 z-10 bg-surface-2 text-ink-2">
+      {/* الجدول — صفّ الخيارات (subrow) يلتحم بالصفّ المحدَّد كما في النموذج */}
+      <div className="tscroll subs-scroll" onClick={() => setMoreMenu(false)}>
+        <table className="tbl subs">
+          <thead>
             <tr>
-              <th className="p-2"><input type="checkbox" checked={subs.length > 0 && checked.size === subs.length} onChange={toggleCheckAll} /></th>
-              <th className="hidden p-2 sm:table-cell">ت</th>
-              <th className="p-2">اسم المشترك</th>
-              <th className="p-2">عمليات</th>
-              <th className="hidden p-2 sm:table-cell">اليوزر</th>
-              <th className="p-2">رقم الهاتف</th>
-              <th className="hidden p-2 sm:table-cell">المكتب</th>
-              <th className="hidden p-2 sm:table-cell">الأيام</th>
+              <th className="cbcol"><input type="checkbox" className="cb" title="تحديد الكل" checked={subs.length > 0 && checked.size === subs.length} onChange={toggleCheckAll} /></th>
+              <th>اسم المشترك</th><th>عمليات</th><th>اليوزر</th><th>رقم الهاتف</th><th>المكتب</th>
             </tr>
           </thead>
           <tbody>
-            {subs.map((s, i) => {
+            {subs.map((s) => {
               const d = daysLeft(s.dateTo);
-              return (
+              const isActive = selectedId === s.id;
+              return [
                 <tr key={s.id} onClick={() => selectRow(s)}
-                  className={`cursor-pointer border-t border-line hover:bg-surface-2 ${selectedId === s.id ? "bg-navy/5" : ""}`}>
-                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={checked.has(s.id)} onChange={() => toggleCheck(s.id)} />
+                  className={`clickable ${checked.has(s.id) ? "picked" : ""} ${isActive ? "active" : ""}`}>
+                  <td className="cbcol" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" className="cb" checked={checked.has(s.id)} onChange={() => toggleCheck(s.id)} />
                   </td>
-                  <td className="hidden p-2 text-muted sm:table-cell">{i + 1}</td>
-                  <td className="p-2 font-medium text-ink">{s.name}</td>
-                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => { setOpsSub(s); setOpsMsg(""); }}
-                      className="whitespace-nowrap rounded-lg border border-navy/25 bg-navy/5 px-2 py-1 text-[11px] font-semibold text-navy-3 hover:bg-navy/10" title="صيانة / اعادة / توصيل / تحويل">
-                      🛠️
-                    </button>
+                  <td>{s.name}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <button className="op" title="عمليات المشترك" onClick={() => { setOpsSub(s); setOpsMsg(""); }}>🛠️</button>
                   </td>
-                  <td className="hidden p-2 sm:table-cell" dir="ltr">{s.netUser ?? "—"}</td>
-                  <td className="p-2" dir="ltr">{s.phone ?? "—"}</td>
-                  <td className="hidden p-2 sm:table-cell">{towerName(s.towerId)}</td>
-                  <td className={`hidden p-2 font-bold sm:table-cell ${d > 0 ? "text-ok" : "text-bad"}`}>{d}</td>
-                </tr>
-              );
+                  <td dir="ltr">{s.netUser ?? "—"}</td>
+                  <td className="num" dir="ltr">{s.phone ?? "—"}</td>
+                  <td>{towerName(s.towerId)}</td>
+                </tr>,
+                isActive && (
+                  <tr key={`${s.id}-bar`} className="subrow"><td colSpan={6}>
+                    <div className="subbar">
+                      <div className="sb-row">
+                        <button className="sb-act go" onClick={() => setActivating(s)}>⚡ تفعيل</button>
+                        <button className="sb-act" onClick={() => openLog("receipts")}>📄 سجل الوصولات</button>
+                        <button className="sb-act" onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
+                        <span className="sb-sep" />
+                        <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}>الأيام المتبقية <b>{d}</b></span>
+                        <button className={`sb-chip c-debt ${(s.carry ?? 0) <= 0 ? "zero" : ""}`} style={{ border: 0, cursor: "pointer", fontFamily: "inherit" }}
+                          disabled={(s.carry ?? 0) <= 0}
+                          onClick={() => { setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}
+                          title="تسديد دين">
+                          الديون <b>{fmt(s.carry)}</b>
+                        </button>
+                        <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>
+                        <MapButton subscriberId={s.id} />
+                        <button className="sb-act" onClick={(e) => { e.stopPropagation(); setMoreMenu((v) => !v); }} aria-haspopup="true">⋯ المزيد</button>
+                        <button className="sb-x" onClick={() => { setSelectedId(null); setMoreMenu(false); }} aria-label="إلغاء التحديد">✕</button>
+                      </div>
+                      {moreMenu && (
+                        <div className="sbmenu" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
+                          <button onClick={() => void sendSummary()}>{summaryBusy ? "جارٍ الإرسال..." : "💬 ارسال ملخص"}</button>
+                          <button onClick={() => { setMoreMenu(false); setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}>💵 تسديد اشتراك</button>
+                          <button onClick={() => router.push("/debts")}>💲 تسديد فواتير</button>
+                          <button onClick={() => router.push("/tickets")}>📝 اضافة مذكرة</button>
+                          <button className="dang" onClick={() => { setMoreMenu(false); setAddingDebt(s); }}>🅰️ اضافة ديون سابقة</button>
+                          {can("rewards.clear") && <button className="dang" onClick={() => { setMoreMenu(false); void clearReward(); }}>🎁 حذف كود المكافأة</button>}
+                        </div>
+                      )}
+                    </div>
+                  </td></tr>
+                ),
+              ];
             })}
-            {subs.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-muted">لا نتائج</td></tr>}
+            {subs.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>لا نتائج</td></tr>}
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between border-t border-line bg-surface-2 px-3 py-1.5 text-xs font-bold text-ink-2">
+      <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 16px", fontSize: 11, fontWeight: 700, color: "var(--ink-2)", borderTop: "1px solid var(--line)" }}>
         <span>{total > subs.length ? `عرض ${subs.length} من ${total}` : subs.length}</span>
-        {total > subs.length && <span className="font-normal text-orange-d">🔍 اكتب في البحث لإيجاد الباقي</span>}
+        {total > subs.length && <span style={{ color: "var(--orange-d)", fontWeight: 400 }}>🔍 اكتب في البحث لإيجاد الباقي</span>}
       </div>
+
+      {/* تحصيل الفنيين — شريط أفقي أسفل المشتركين (كما في النموذج) */}
+      <FieldSettlementCard />
 
       {/* ===== النوافذ ===== */}
 
@@ -616,24 +629,6 @@ export default function SubscribersBoard() {
 }
 
 /* ===== عناصر مساعدة ===== */
-function HBtn({ label, onClick, disabled, primary }: { label: string; onClick?: () => void; disabled?: boolean; primary?: boolean }) {
-  return (
-    <button onClick={onClick} disabled={disabled}
-      className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition ${
-        primary ? "bg-orange text-white shadow hover:brightness-105"
-          : "border border-line bg-surface text-ink-2 hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
-      }`}>
-      {label}
-    </button>
-  );
-}
-function MoreItem({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
-  return (
-    <button onClick={onClick} className={`block w-full px-3 py-2 text-right text-xs font-semibold hover:bg-surface-2 ${danger ? "text-bad" : "text-ink"}`}>
-      {label}
-    </button>
-  );
-}
 function Modal({ children, onClose, wide }: { children: React.ReactNode; onClose: () => void; wide?: boolean }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>

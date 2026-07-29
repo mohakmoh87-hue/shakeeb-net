@@ -1,7 +1,7 @@
 import http from "node:http";
 import { prisma } from "@/lib/prisma";
 import { proxyToSas } from "@/lib/sasProxy";
-import { sasBaseUrl, sasLogin, sasFetchOnePage, sasFetchAllUsers, parseUsersList, type SasUser } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasFetchOnePage, sasFetchAllUsers, sasFetchOnlineCount, parseUsersList, type SasUser } from "@/lib/sas4";
 import { getWorkerAgentId } from "@/lib/hybridAgent";
 
 // خادم محلي على حاسبة المكتب (المنفذ 47615): يخدم فحص الصحّة + لوحة SAS + عمليات SAS
@@ -73,6 +73,9 @@ async function agentTowerCached(towerId: number): Promise<TowerCreds | null> {
 const statsCache = new Map<number, { active: number; total: number; at: number }>();
 const statsInflight = new Map<number, Promise<void>>();
 const STATS_TTL = 45_000; // مسح SAS كل 45 ثانية كحد أقصى (المتصفّح يستطلع كل 5 ثوانٍ من الكاش)
+// «المتصلين الآن»: طلب واحد خفيف (count=1) يتجدّد مع كل استطلاع (كل 5 ثوانٍ) — شبكة المكتب المحلية
+const onlineCache = new Map<number, { online: number | null; at: number }>();
+const ONLINE_TTL = 4_500;
 
 async function refreshTowerStats(t: TowerCreds): Promise<void> {
   const base = sasBaseUrl(t.loginUrl);
@@ -167,6 +170,7 @@ export function startLocalSasServer() {
           .split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
         if (!ids.length) { sendJson(res, 400, { error: "towers مطلوب" }); return; }
         let active = 0, total = 0, oldest = Date.now(), any = false;
+        let online = 0, onlineKnown = false;
         for (const id of ids) {
           const t = await agentTowerCached(id);
           if (!t) continue;
@@ -182,9 +186,19 @@ export function startLocalSasServer() {
           }
           const s = statsCache.get(id);
           if (s) { active += s.active; total += s.total; oldest = Math.min(oldest, s.at); any = true; }
+          // المتصلون الآن — طلب خفيف يتجدّد كل استطلاع تقريباً
+          let oc = onlineCache.get(id);
+          if (!oc || Date.now() - oc.at > ONLINE_TTL) {
+            try {
+              const token = await towerToken(t);
+              oc = { online: await sasFetchOnlineCount(sasBaseUrl(t.loginUrl), token), at: Date.now() };
+            } catch { oc = { online: oc?.online ?? null, at: Date.now() }; }
+            onlineCache.set(id, oc);
+          }
+          if (oc.online != null) { online += oc.online; onlineKnown = true; }
         }
         if (!any) { sendJson(res, 404, { error: "لا مكاتب صالحة" }); return; }
-        sendJson(res, 200, { active, total, at: oldest });
+        sendJson(res, 200, { active, total, online: onlineKnown ? online : null, at: oldest });
         return;
       }
 

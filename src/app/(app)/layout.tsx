@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { getSession, getTechSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/components/shell/AppShell";
-import WhatsAppMonitor from "@/components/WhatsAppMonitor";
 import ReminderPrompt from "@/components/ReminderPrompt";
 import CompletionNotifier from "@/components/CompletionNotifier";
 import StandaloneLock from "@/components/StandaloneLock";
@@ -40,9 +39,10 @@ export default async function AppLayout({
 
   return (
     <div className="min-h-screen bg-ground">
-      {/* مراقبات الموقع — تُخفى في التطبيق المثبّت (standalone) */}
+      {/* مراقبات الموقع — تُخفى في التطبيق المثبّت (standalone).
+          مراقب واتساب المنبثق القديم أُزيل (قرار محمد): حالة الواتساب صارت شريحة
+          بترويسة جدول المشتركين، والضغط عليها يفتح صفحة ربط QR */}
       <div data-site-chrome>
-        <WhatsAppMonitor />
         <ReminderPrompt />
         <CompletionNotifier />
       </div>

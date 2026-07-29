@@ -7,12 +7,13 @@ type Tech = { id: number; name: string; towerId: number | null; pendingTotal: nu
 type Office = { id: number; name: string | null };
 
 const fmt = (n: number) => Number(n).toLocaleString("en-US");
+const KIND_ICON: Record<string, string> = { "توصيل": "🚚", "صيانة": "🔧", "تنصيب": "🔧", "اعادة": "🔁", "تحويل": "↪️" };
 
-// تحصيل الفنيين على الواجهة الرئيسية: لكل فني اسمه ومجموع تكتاته المنجزة وزر «اكمال».
+// تحصيل الفنيين — شريط أفقي أسفل جدول المشتركين (بنية النموذج المعتمد):
+// لكل فني بطاقة: الاسم، المكتب، المجموع، زرّ «+» يفتح تفاصيل المبلغ، وزرّ «اكمال».
 export default function FieldSettlementCard() {
   const [techs, setTechs] = useState<Tech[]>([]);
   const [offices, setOffices] = useState<Office[]>([]);
-  const [isManager, setIsManager] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [openId, setOpenId] = useState<number | null>(null); // فني مفتوح تفصيل مبلغه
@@ -20,7 +21,7 @@ export default function FieldSettlementCard() {
   const load = useCallback(() => {
     fetch("/api/field/settlement")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) { setTechs(d.technicians ?? []); setOffices(d.offices ?? []); setIsManager(!!d.isManager); } })
+      .then((d) => { if (d) { setTechs(d.technicians ?? []); setOffices(d.offices ?? []); } })
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -36,92 +37,63 @@ export default function FieldSettlementCard() {
     if (r.ok) load(); else alert("تعذّر التحصيل");
   }
 
-  if (loading) return null;
-  if (techs.length === 0) return null;
-
+  if (loading || techs.length === 0) return null;
   const officeName = (id: number | null) => offices.find((o) => o.id === id)?.name ?? "بدون مكتب";
-  // تجميع حسب المكتب للمدير
-  const groups = isManager
-    ? offices.map((o) => ({ office: o.name ?? `مكتب ${o.id}`, list: techs.filter((t) => t.towerId === o.id) })).filter((g) => g.list.length > 0)
-    : [{ office: null as string | null, list: techs }];
-
-  const Row = (t: Tech) => {
-    const open = openId === t.id;
-    return (
-    <div key={t.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-slate-700">👷 {t.name}</div>
-          <div className="text-xs text-slate-400">{t.pendingCount} تكت منجز</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-sm font-bold ${t.pendingTotal > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmt(t.pendingTotal)} د.ع</span>
-          {/* زر + لعرض تفاصيل المبلغ قبل الإكمال */}
-          <button
-            onClick={() => setOpenId(open ? null : t.id)}
-            disabled={t.pendingCount <= 0}
-            title="تفاصيل المبلغ"
-            className={`flex h-7 w-7 items-center justify-center rounded-lg border text-sm font-bold disabled:opacity-30 ${open ? "border-mynet-blue bg-blue-50 text-mynet-blue" : "border-slate-300 text-slate-500 hover:bg-slate-50"}`}
-          >
-            {open ? "−" : "+"}
-          </button>
-          <button
-            onClick={() => settle(t)}
-            disabled={t.pendingCount <= 0 || busyId === t.id}
-            className="rounded-lg bg-mynet-blue px-3 py-1.5 text-xs font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-40"
-          >
-            {busyId === t.id ? "…" : "اكمال"}
-          </button>
-        </div>
-      </div>
-      {/* تفصيل التكتات المكوّنة للمبلغ */}
-      {open && (
-        <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-          {(t.items ?? []).length === 0 ? (
-            <div className="text-center text-xs text-slate-400">لا تفاصيل</div>
-          ) : (
-            (t.items ?? []).map((it, idx) => (
-              <div key={idx} className="flex items-center justify-between gap-2 text-xs">
-                <span className="min-w-0 truncate text-slate-600">
-                  {it.kind ? `${it.kind} — ` : ""}{it.title}
-                  {it.netUser && <span className="text-slate-400" dir="ltr"> · 👤 {it.netUser}</span>}
-                </span>
-                <span className="shrink-0 font-semibold">
-                  <span className="text-emerald-700">{fmt(it.amount)}</span>
-                  {(it.subAmount ?? 0) > 0 && <span className="text-indigo-700"> + اشتراك {fmt(it.subAmount ?? 0)}</span>}
-                  <span className="text-slate-500"> د.ع</span>
-                </span>
-              </div>
-            ))
-          )}
-          {/* المجموع الكلي المستلم من الفني = المبيع + الاشتراك */}
-          <div className="mt-1 flex items-center justify-between border-t border-slate-100 pt-1 text-xs font-bold">
-            <span className="text-slate-700">المجموع الكلي (مبيع {fmt(t.saleTotal ?? 0)} + اشتراك {fmt(t.subTotal ?? 0)})</span>
-            <span className="text-emerald-700">{fmt(t.pendingTotal)} د.ع</span>
-          </div>
-        </div>
-      )}
-    </div>
-    );
-  };
 
   return (
-    <section className="mx-auto mt-5 max-w-7xl rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-lg">🛠️</span>
-        <h2 className="text-base font-bold text-slate-800">تحصيل الفنيين</h2>
-        <span className="text-xs text-slate-400">— مجموع تكتات كل فني المنجزة، اضغط «اكمال» عند استلام المبلغ منه</span>
-      </div>
-      <div className="space-y-4">
-        {groups.map((g, i) => (
-          <div key={i}>
-            {g.office && <div className="mb-1.5 text-sm font-semibold text-mynet-blue">🏢 {g.office}</div>}
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {g.list.map(Row)}
+    <div className="settle-strip">
+      <div className="ss-title">تحصيل الفنيين</div>
+      <div className="ss-row">
+        {techs.map((t) => {
+          const open = openId === t.id;
+          return (
+            <div key={t.id} className={`ss-item ${open ? "expanded" : ""}`}>
+              <div className="ss-nm">{t.name}</div>
+              <div className="ss-of">{officeName(t.towerId)}</div>
+              <div className="ss-amt">{fmt(t.pendingTotal)} <small>د.ع</small></div>
+              <div className="ss-acts">
+                <button
+                  className={`ss-plus ${open ? "on" : ""}`}
+                  title="تفاصيل المبلغ"
+                  disabled={t.pendingCount <= 0}
+                  onClick={() => setOpenId(open ? null : t.id)}
+                >
+                  {open ? "−" : "+"}
+                </button>
+                <button className="ss-btn" disabled={t.pendingCount <= 0 || busyId === t.id} onClick={() => settle(t)}>
+                  {busyId === t.id ? "…" : "اكمال"}
+                </button>
+              </div>
+              {open && (
+                <div className="ss-det">
+                  {(t.items ?? []).length === 0 ? (
+                    <div className="sd-empty">لا تفاصيل</div>
+                  ) : (
+                    <>
+                      {(t.items ?? []).map((it, idx) => (
+                        <div key={idx} className="sd-row">
+                          <span>
+                            {KIND_ICON[it.kind] ?? "🔧"} {it.kind} — {it.title}
+                            {it.netUser && <i dir="ltr"> {it.netUser}</i>}
+                          </span>
+                          <b>
+                            {fmt(it.amount)}
+                            {(it.subAmount ?? 0) > 0 && <em> + اشتراك {fmt(it.subAmount ?? 0)}</em>}
+                          </b>
+                        </div>
+                      ))}
+                      <div className="sd-tot">
+                        <span>المجموع الكلي (مبيع {fmt(t.saleTotal ?? 0)} + اشتراك {fmt(t.subTotal ?? 0)})</span>
+                        <b>{fmt(t.pendingTotal)} د.ع</b>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-    </section>
+    </div>
   );
 }
