@@ -18,7 +18,7 @@ export default function FieldSettlementCard() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [openId, setOpenId] = useState<number | null>(null); // فني مفتوح تفصيل مبلغه
-  const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(null); // موضع القائمة العائمة
+  const [popPos, setPopPos] = useState<{ top: number; right: number } | null>(null); // موضع القائمة العائمة (تنمو يساراً)
   const stripRef = useRef<HTMLDivElement>(null);
   // النقر في أي مكان خارج القائمة العائمة يغلقها تلقائياً (طلب محمد)
   useEffect(() => {
@@ -73,10 +73,8 @@ export default function FieldSettlementCard() {
                     if (open) { setOpenId(null); return; }
                     // قائمة منسدلة للأعلى فوق الزر (Portal — لا تمدد للبطاقة ولا قصّ)
                     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setPopPos({
-                      top: r.top - 8,
-                      left: Math.max(8, Math.min(r.left + r.width / 2 - 165, window.innerWidth - 340)),
-                    });
+                    // تثبيت بحافة الزر اليمنى والنمو يساراً — العرض يتبع طول النص تلقائياً
+                    setPopPos({ top: r.top - 8, right: Math.max(8, window.innerWidth - r.right) });
                     setOpenId(t.id);
                   }}
                 >
@@ -98,7 +96,7 @@ export default function FieldSettlementCard() {
         return createPortal(
           <div className="nst">
             <div className="ss-pop" onClick={(e) => e.stopPropagation()}
-              style={{ position: "fixed", top: popPos.top, left: popPos.left, transform: "translateY(-100%)", width: 330, maxHeight: "60vh", overflowY: "auto", zIndex: 95 }}>
+              style={{ position: "fixed", top: popPos.top, right: popPos.right, left: "auto", transform: "translateY(-100%)", width: "fit-content", minWidth: 280, maxWidth: "min(92vw, 620px)", maxHeight: "60vh", overflowY: "auto", zIndex: 95 }}>
               <div className="ss-pop-h">{t.name} — تفاصيل المبلغ</div>
               {(t.items ?? []).length === 0 ? (
                 <div className="sd-empty">لا تفاصيل</div>

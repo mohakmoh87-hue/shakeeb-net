@@ -724,3 +724,8 @@ input[type="number"] { direction: ltr; }
 @media (max-width: 1500px) {
   .nst .hbtns { flex-wrap: wrap; overflow-x: visible; overflow-y: visible; }
 }
+
+/* داخل نافذة التفاصيل العائمة: النص كامل بلا قصّ — يلتف عند الطول الشديد فقط */
+.nst .ss-pop .sd-row { align-items: flex-start; }
+.nst .ss-pop .sd-row span { overflow: visible; text-overflow: clip; white-space: normal; }
+.nst .ss-pop .sd-tot span { overflow: visible; white-space: normal; }
