@@ -35,10 +35,13 @@ export async function GET() {
     // حساب الماستر — مستقل تماماً (تفعيلات ماستر + قبض/صرف ماستر) — ضمن مكاتب الوكيل
     prisma.moneyTx.aggregate({ where: { isDeleted: false, sourceType: { in: ["master", "master-invoice"] }, ...towerWhere }, _sum: { moneyIn: true, moneyOut: true } }),
   ]);
-  const masterBalance = (masterAgg._sum.moneyIn ?? 0) - (masterAgg._sum.moneyOut ?? 0);
-
   const cumulativeDaily = (dailyAgg._sum.moneyIn ?? 0) - (dailyAgg._sum.moneyOut ?? 0);
   const sumBy = (t: string) => mgr.find((m) => m.type === t)?._sum.amount ?? 0;
+  // رصيد الماستر = ماستر المكاتب (تفعيلات/فواتير/صندوق) + حركات ماستر المدير
+  // (طبقة الوكيل بلا مكاتب — قرار محمد 2026-07-30: تؤثر هنا فقط لا في تقارير المكاتب)
+  const masterBalance =
+    (masterAgg._sum.moneyIn ?? 0) - (masterAgg._sum.moneyOut ?? 0) +
+    sumBy("master-receipt") - sumBy("master-expense");
   // ديون الكارتات = كلفة الكروت المضافة + الإضافات اليدوية − الإنقاصات اليدوية
   const cardDebtAdded = (cardsAgg._sum.price ?? 0) + sumBy("card-debt-add") - sumBy("card-debt-sub");
   const cardPayments = sumBy("card-payment");

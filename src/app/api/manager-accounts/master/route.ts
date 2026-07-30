@@ -11,12 +11,30 @@ export async function GET() {
 
   // عزل المستأجر: ماستر مكاتب وكيل المستخدم فقط
   const agentTowers = await agentTowerIds(g.session);
-  const txs = await prisma.moneyTx.findMany({
+  const officeTxs = await prisma.moneyTx.findMany({
     where: { isDeleted: false, sourceType: { in: ["master", "master-invoice"] }, towerId: { in: agentTowers.length ? agentTowers : [-1] } },
     orderBy: { date: "desc" },
     take: 500,
     select: { id: true, moneyIn: true, moneyOut: true, notes: true, date: true, towerId: true },
   });
+  // حركات ماستر المدير (طبقة الوكيل بلا مكاتب — قرار محمد 2026-07-30): تُدمج في
+  // الرصيد والسجل اليومي بلا مكتب، فلا تمس ماستر المكاتب ولا تقاريرها
+  const mgrTxs = await prisma.managerTx.findMany({
+    where: { isDeleted: false, agentId: g.session.agentId ?? -1, type: { in: ["master-receipt", "master-expense"] } },
+    orderBy: { date: "desc" },
+    take: 200,
+    select: { id: true, type: true, amount: true, notes: true, date: true },
+  });
+  const txs = [
+    ...officeTxs,
+    ...mgrTxs.map((m) => ({
+      id: -m.id, // معرّف سالب: تمييزها عن حركات المكاتب في القائمة
+      moneyIn: m.type === "master-receipt" ? m.amount : 0,
+      moneyOut: m.type === "master-expense" ? m.amount : 0,
+      notes: `🧾 حساب المدير — ${m.notes ?? (m.type === "master-receipt" ? "قبض ماستر" : "صرف ماستر")}`,
+      date: m.date, towerId: null as number | null,
+    })),
+  ].sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
   const offices = await prisma.tower.findMany({ where: { id: { in: agentTowers.length ? agentTowers : [-1] } }, select: { id: true, name: true } });
   const officeName = new Map(offices.map((o) => [o.id, o.name ?? `مكتب ${o.id}`]));
 

@@ -39,7 +39,7 @@ type PhantomCard = { cardId: number; serial: string | null; subscriber: string |
 
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
 const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات", salary: "راتب فني (من الكلي)", "card-debt-add": "إضافة يدوية لديون الكارتات", "card-debt-sub": "إنقاص يدوي من ديون الكارتات" };
+const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات", salary: "راتب فني (من الكلي)", "card-debt-add": "إضافة يدوية لديون الكارتات", "card-debt-sub": "إنقاص يدوي من ديون الكارتات", "master-expense": "🅜 صرف ماستر", "master-receipt": "🅜 قبض ماستر" };
 
 export default function ManagerAccountsPage() {
   const [data, setData] = useState<Data | null>(null);
@@ -392,7 +392,7 @@ export default function ManagerAccountsPage() {
                   <td className="p-3 text-slate-400">{t.id}</td>
                   <td className="p-3" dir="ltr">{fmtDate(t.date)}</td>
                   <td className="p-3">{TYPE_LABEL[t.type] ?? t.type}</td>
-                  <td className={`p-3 font-bold ${t.type === "receipt" ? "text-emerald-600" : "text-red-600"}`}>{fmt(t.amount)}</td>
+                  <td className={`p-3 font-bold ${t.type === "receipt" || t.type === "master-receipt" ? "text-emerald-600" : "text-red-600"}`}>{fmt(t.amount)}</td>
                   <td className="p-3 font-medium text-slate-700">{t.byUser ?? "—"}</td>
                   <td className="p-3 text-slate-600">{t.notes ?? "—"}</td>
                   <td className="p-3"><button onClick={() => del(t.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-100">حذف</button></td>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, agentTowerIds } from "@/lib/guard";
+import { guard } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 
 const schema = z.object({
@@ -9,7 +9,6 @@ const schema = z.object({
   type: z.enum(["expense", "receipt", "card-payment", "master-receipt", "master-expense", "card-debt-add", "card-debt-sub"]),
   amount: z.coerce.number().positive("المبلغ يجب أن يكون أكبر من صفر"),
   notes: z.string().nullable().optional(),
-  officeId: z.coerce.number().optional().nullable(), // مكتب حركة الماستر (اختياري)
 });
 
 // تسجيل حركة في حساب المدير (مصروف/مقبوض/تسديد كارتات) — لا تؤثر على التقرير اليومي
@@ -24,23 +23,18 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
-  const { type, amount, notes, officeId } = parsed.data;
+  const { type, amount, notes } = parsed.data;
 
-  // حساب الماستر: مستقل تماماً — يُسجَّل كحركة MoneyTx بنوع "master" (لا يدخل بالمجموع).
-  // المكتب إلزامي الحسم: المختار (ضمن مكاتب الوكيل) ثم مكتب المستخدم ثم أول مكاتب الوكيل —
-  // بلا مكتب كانت الحركة تختفي من تقرير اليوم وتفاصيل الماستر (كلها معزولة بالمكاتب).
+  // حساب الماستر من صفحة المدير: طبقة وكيل كاملة بلا مكاتب (قرار محمد 2026-07-30) —
+  // تُسجَّل في سجل حركات المدير (managerTx) فتؤثّر على رصيد ماستر صفحة المدير فقط،
+  // ولا تدخل التقارير اليومية ولا ماستر أي مكتب إطلاقاً (كانت تُنسب قسراً لأول
+  // مكتب فظهر صرف عمر على ماستر الرسالة بلا اختيار أحد).
   if (type === "master-receipt" || type === "master-expense") {
-    const towers = await agentTowerIds(g.session);
-    let towerId = officeId != null && towers.includes(officeId) ? officeId : session?.towerId ?? null;
-    if (towerId == null || !towers.includes(towerId)) towerId = towers[0] ?? null;
-    if (towerId == null) return NextResponse.json({ error: "لا مكتب لتسجيل حركة الماستر عليه" }, { status: 400 });
-    const isIn = type === "master-receipt";
-    const created = await prisma.moneyTx.create({
+    const created = await prisma.managerTx.create({
       data: {
-        moneyIn: isIn ? amount : 0, moneyOut: isIn ? 0 : amount,
-        notes: notes ?? (isIn ? "قبض ماستر" : "صرف ماستر"),
-        date: new Date(), serverDate: new Date(), userId: session?.userId,
-        sourceType: "master", towerId,
+        type, amount,
+        notes: notes ?? (type === "master-receipt" ? "قبض ماستر" : "صرف ماستر"),
+        userId: session?.userId, agentId, byUser: g.session.fullName ?? g.session.username,
       },
     });
     return NextResponse.json({ ok: true, id: created.id, master: true }, { status: 201 });
