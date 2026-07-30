@@ -84,6 +84,15 @@ export default function SubscribersBoard() {
   const [opsAmount, setOpsAmount] = useState("");
   // تسديد دين
   const [payDebtOpen, setPayDebtOpen] = useState(false);
+  // استبدال المشترك (نفس اليوزر لساكن جديد) — بياناته تُسحب من SAS تلقائياً بلا ملء يدوي
+  const [replacing, setReplacing] = useState<Subscriber | null>(null);
+  const [repPrev, setRepPrev] = useState<{
+    old: { id: number; name: string | null; netUser: string | null; carry: number };
+    sas: { name: string | null; phone: string | null; packageName: string | null; expiration: string | null; enabled: boolean };
+    matchedPackage: { id: number; name: string | null } | null;
+  } | null>(null);
+  const [repErr, setRepErr] = useState("");
+  const [repBusy, setRepBusy] = useState(false);
   const [payAmount, setPayAmount] = useState("");
   const [payBusy, setPayBusy] = useState(false);
   const [payErr, setPayErr] = useState("");
@@ -208,6 +217,29 @@ export default function SubscribersBoard() {
     setPayDebtOpen(false); setPayAmount("");
     setMsg(`✓ سُدِّد ${n.toLocaleString("en-US")} د.ع — المتبقّي ${Number(d.newCarry ?? 0).toLocaleString("en-US")} د.ع`);
     announceMoneyChanged();
+    load(query, showAllTowers);
+  }
+
+  // ===== استبدال المشترك: القديم يبقى أرشيفاً حياً (ويوزره يوسم «سابق») والجديد يأخذ اليوزر =====
+  async function openReplace(s: Subscriber) {
+    setMoreMenu(false); setReplacing(s); setRepPrev(null); setRepErr("");
+    try {
+      const r = await fetch(`/api/subscribers/${s.id}/replace`);
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setRepErr(d.error ?? "تعذّر جلب بيانات SAS"); return; }
+      setRepPrev(d);
+    } catch { setRepErr("تعذّر الاتصال بالخادم"); }
+  }
+  async function doReplace() {
+    if (!replacing || repBusy) return;
+    setRepBusy(true); setRepErr("");
+    const r = await fetch(`/api/subscribers/${replacing.id}/replace`, { method: "POST" });
+    const d = await r.json().catch(() => ({}));
+    setRepBusy(false);
+    if (!r.ok) { setRepErr(d.error ?? "فشل الاستبدال"); return; }
+    setReplacing(null);
+    setMsg(`✓ تم الاستبدال — اليوزر انتقل إلى «${d.sas?.name ?? "المشترك الجديد"}» والسجل القديم محفوظ بوسم «سابق»`);
+    if (d.newId) setSelectedId(d.newId);
     load(query, showAllTowers);
   }
 
@@ -387,6 +419,7 @@ export default function SubscribersBoard() {
                             <button className="sb-act" onClick={() => { setMoreMenu(false); setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}>💵 تسديد اشتراك</button>
                             <button className="sb-act" onClick={() => router.push("/debts")}>💲 تسديد فواتير</button>
                             <button className="sb-act" onClick={() => router.push("/tickets")}>📝 اضافة مذكرة</button>
+                            <button className="sb-act" onClick={() => void openReplace(s)}>↔️ استبدال المشترك</button>
                             <button className="sb-act sb-danger" onClick={() => { setMoreMenu(false); setAddingDebt(s); }}>🅰️ اضافة ديون سابقة</button>
                             {can("rewards.clear") && <button className="sb-act sb-danger" onClick={() => { setMoreMenu(false); void clearReward(); }}>🎁 حذف كود المكافأة</button>}
                           </div>
@@ -643,6 +676,56 @@ export default function SubscribersBoard() {
             <button onClick={() => void payDebt()} disabled={payBusy} className="flex-1 rounded-lg bg-ok py-2.5 font-bold text-white disabled:opacity-50">{payBusy ? "جارٍ التسديد..." : "✓ تسديد"}</button>
             <button onClick={() => setPayDebtOpen(false)} className="rounded-lg bg-surface-2 px-4 py-2.5 font-semibold text-ink-2">إلغاء</button>
           </div>
+        </Modal>
+      )}
+
+      {/* نافذة استبدال المشترك — البيانات من SAS تلقائياً (حدّثها هناك أولاً) */}
+      {replacing && (
+        <Modal onClose={() => setReplacing(null)}>
+          <h3 className="mb-1 text-lg font-bold text-ink">↔️ استبدال المشترك — نفس اليوزر لساكن جديد</h3>
+          <p className="mb-3 text-[11px] leading-relaxed text-muted">
+            حدّث معلومات الساكن الجديد في لوحة SAS أولاً (الاسم/الهاتف/الباقة/الانتهاء) — البيانات أدناه مسحوبة من SAS الآن.
+            السجل القديم يبقى بكل تاريخه ودينه ويوزره يوسم «سابق»، ويبقى ضمن «رسالة للكل» لاستهداف تاركي الخدمة.
+          </p>
+          {repErr ? (
+            <>
+              <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-bad">{repErr}</div>
+              <div className="flex gap-2">
+                <button onClick={() => void openReplace(replacing)} className="flex-1 rounded-lg bg-navy-3 py-2.5 font-bold text-white">🔄 إعادة المحاولة</button>
+                <button onClick={() => setReplacing(null)} className="rounded-lg bg-surface-2 px-4 py-2.5 font-semibold text-ink-2">إغلاق</button>
+              </div>
+            </>
+          ) : !repPrev ? (
+            <div className="rounded-lg bg-surface-2 px-3 py-6 text-center text-sm text-muted">⏳ جارٍ القراءة من SAS...</div>
+          ) : (
+            <>
+              <div className="mb-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm">
+                <div className="mb-1 text-[11px] font-bold text-muted">السجل القديم (يبقى محفوظاً)</div>
+                <div className="font-semibold text-ink">{repPrev.old.name ?? "—"}</div>
+                <div className="text-xs text-ink-2" dir="ltr">{repPrev.old.netUser}</div>
+                {repPrev.old.carry > 0 && <div className="mt-1 text-xs font-semibold text-bad">دين بذمته: {fmt(repPrev.old.carry)} د.ع (يبقى عليه)</div>}
+              </div>
+              <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+                <div className="mb-1 text-[11px] font-bold text-emerald-700">الساكن الجديد — كما في SAS الآن</div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-ink">
+                  <span>الاسم: <b>{repPrev.sas.name ?? "—"}</b></span>
+                  <span dir="ltr">📞 {repPrev.sas.phone ?? "—"}</span>
+                  <span>الباقة: <b>{repPrev.sas.packageName ?? "—"}</b></span>
+                  <span>الانتهاء: <b dir="ltr">{repPrev.sas.expiration ? repPrev.sas.expiration.slice(0, 10) : "—"}</b></span>
+                  <span>الحالة: {repPrev.sas.enabled ? "✅ مفعّل" : "⛔ موقوف"}</span>
+                  <span>{repPrev.matchedPackage ? `تطابق باقاتنا: ${repPrev.matchedPackage.name}` : "⚠️ الباقة لا تطابق باقاتنا — سيبقى على باقة السجل"}</span>
+                </div>
+              </div>
+              {repErr && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-bad">{repErr}</div>}
+              <div className="flex gap-2">
+                <button onClick={() => void doReplace()} disabled={repBusy} className="flex-1 rounded-lg bg-ok py-2.5 font-bold text-white disabled:opacity-50">
+                  {repBusy ? "جارٍ الاستبدال..." : "↔️ تنفيذ الاستبدال"}
+                </button>
+                <button onClick={() => void openReplace(replacing)} title="إعادة السحب من SAS" className="rounded-lg bg-navy-3 px-3 py-2.5 font-bold text-white">🔄</button>
+                <button onClick={() => setReplacing(null)} className="rounded-lg bg-surface-2 px-4 py-2.5 font-semibold text-ink-2">إلغاء</button>
+              </div>
+            </>
+          )}
         </Modal>
       )}
 

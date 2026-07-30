@@ -166,6 +166,17 @@ export async function sasFetchOnlineCount(base: string, token: string): Promise<
   return null;
 }
 
+// إيجاد مشترك واحد بيوزره عبر بحث قائمة SAS (index/user + search) — يعيد بياناته
+// الكاملة كما تعرضها اللوحة (الاسم/الهاتف/الباقة/الانتهاء/الحالة). للاستبدال (2026-07-30):
+// محمد يحدّث معلومات الساكن الجديد في SAS أولاً ثم يسحبها الموقع تلقائياً بلا ملء يدوي.
+export async function sasFindUserByUsername(base: string, token: string, username: string): Promise<SasUser | null> {
+  const q = username.trim();
+  if (!q) return null;
+  const j = await fetchAnyPage(base, token, "index/user", 1, 50, { search: q });
+  const users: SasUser[] = (j.data ?? []).map((u: Record<string, unknown>) => normalize(u));
+  return users.find((u) => u.username.toLowerCase() === q.toLowerCase()) ?? null;
+}
+
 // جلب مشترك واحد بمعرّفه في SAS4 (GET user/{id}) — يُرجِع تاريخ الانتهاء الفعلي ورصيد القرض
 export async function sasFetchUser(
   base: string,
