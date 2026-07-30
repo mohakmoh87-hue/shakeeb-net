@@ -27,8 +27,9 @@ const schema = z.object({
 });
 
 export async function GET() {
-  // القراءة متاحة لإدارة المكاتب أو المشتركين أو المالية (لقائمة المكاتب في صفحاتهم — مثل الصندوق)
-  const g = await guardAny("offices.edit", "offices.delete", "offices.sync", "subscribers.manage", "subscriptions.manage", "finance.view", "finance.manage");
+  // القراءة متاحة لإدارة المكاتب أو المشتركين أو المالية أو الاستيراد (لقائمة المكاتب في
+  // صفحاتهم — مثل الصندوق وصفحة الاستيراد التي تختار المكتب لفتح SAS)
+  const g = await guardAny("offices.edit", "offices.delete", "offices.sync", "subscribers.manage", "subscribers.import", "subscriptions.manage", "finance.view", "finance.manage");
   if (g.error) return g.error;
 
   // عزل المستأجر: مستخدم المكتب يرى مكتبه؛ مدير الوكيل يرى كل مكاتب وكيله فقط
@@ -45,11 +46,13 @@ export async function GET() {
     orderBy: { id: "asc" },
   });
   // تحصين: لا تُكشف بيانات دخول SAS (اليوزر/الباسورد) إلا لمن يدير المكاتب.
-  // بقية المستخدمين يحصلون على الحقول اللازمة للقوائم فقط (بلا كلمات سر).
+  // بقية المستخدمين يحصلون على الحقول اللازمة للقوائم فقط (بلا كلمات سر) —
+  // مع علامة hasSas الآمنة: «مربوط بـSAS» بلا كشف البيانات (تحتاجها صفحة الاستيراد)
   const canManage = can(session, "offices.edit");
+  const withFlag = towers.map((t) => ({ ...t, hasSas: !!(t.loginUrl && t.username && t.password) }));
   const safe = canManage
-    ? towers
-    : towers.map(({ username, password, passOnline, ...rest }) => { void username; void password; void passOnline; return rest; });
+    ? withFlag
+    : withFlag.map(({ username, password, passOnline, ...rest }) => { void username; void password; void passOnline; return rest; });
   return NextResponse.json(safe);
 }
 

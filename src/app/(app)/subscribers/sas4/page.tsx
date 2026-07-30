@@ -6,7 +6,8 @@ import PageHeader from "@/components/PageHeader";
 import { prepareSasEmbed } from "@/lib/sasEmbed";
 import { localSasBase } from "@/lib/localSas";
 
-type Tower = { id: number; name: string | null; loginUrl: string | null; username: string | null };
+// hasSas: علامة آمنة من الخادم «المكتب مربوط بـSAS» — اليوزر لا يصل لغير مديري المكاتب
+type Tower = { id: number; name: string | null; loginUrl: string | null; username: string | null; hasSas?: boolean };
 type SasUser = {
   sasId: number;
   username: string;
@@ -122,7 +123,7 @@ export default function Sas4ImportPage() {
           <label className="mb-1 block text-sm font-medium text-slate-700">المكتب (حساب SAS4)</label>
           <select value={towerId} onChange={(e) => setTowerId(Number(e.target.value) || "")} className="w-full rounded-lg border border-slate-300 px-3 py-2">
             <option value="">— اختر المكتب —</option>
-            {towers.filter((t) => t.loginUrl && t.username).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {towers.filter((t) => t.hasSas ?? (t.loginUrl && t.username)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </div>
         <button onClick={showCurrent} disabled={loading || !towerId} className="rounded-lg bg-mynet-blue px-5 py-2 font-semibold text-white shadow hover:bg-mynet-blue-dark disabled:opacity-60">
