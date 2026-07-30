@@ -24,6 +24,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON print_jobs TO agent_worker; -- الطب�
 GRANT SELECT, INSERT, UPDATE ON subscribers    TO agent_worker; -- المزامنة تنشئ وتحدّث
 GRANT SELECT, INSERT, UPDATE ON wa_sessions    TO agent_worker; -- upsert حالة الجلسة
 GRANT SELECT, INSERT, UPDATE ON hybrid_workers TO agent_worker; -- تسجيل الحاسبة ونبضتها
+GRANT SELECT, INSERT, UPDATE ON system_settings TO agent_worker; -- رفعات عدّاد المشتركين subStats + بصمة workerVer (سياسة RLS تحصرها بهذين المفتاحين)
 
 -- ---------- قراءة + إنشاء ----------
 GRANT SELECT, INSERT ON adjustments   TO agent_worker; -- غرامة نسيان الخروج
@@ -46,7 +47,7 @@ GRANT SELECT ON packages, tower_info, accounts, subscription_entries, money_tx,
                 invoices, invoice_items, items, custodies, tickets, card_types,
                 sms_templates, reward_logs, salary_statements, leaves,
                 task_boards, task_lists, task_cards, card_photos,
-                maintenance_logs, system_settings
+                maintenance_logs
   TO agent_worker;
 
 -- ---------- مراجع عامة مشتركة (قراءة فقط) ----------

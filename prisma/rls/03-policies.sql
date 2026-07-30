@@ -280,6 +280,16 @@ DROP POLICY IF EXISTS rls_system_settings_read ON system_settings;
 CREATE POLICY rls_system_settings_read ON system_settings FOR SELECT TO agent_worker
   USING (true);
 
+-- كتابة العامل محصورة بمفتاحيه فقط (2026-07-30): رفعات عدّاد المشتركين subStats:{وكيله}
+-- وبصمة إصدار الكود workerVer:{معرّف حاسبته} — لا يكتب أي إعداد آخر (شعارات/قوالب/أسرار)
+DROP POLICY IF EXISTS rls_system_settings_worker_insert ON system_settings;
+CREATE POLICY rls_system_settings_worker_insert ON system_settings FOR INSERT TO agent_worker
+  WITH CHECK (type = 'subStats:' || current_agent_id()::text OR type LIKE 'workerVer:%');
+DROP POLICY IF EXISTS rls_system_settings_worker_update ON system_settings;
+CREATE POLICY rls_system_settings_worker_update ON system_settings FOR UPDATE TO agent_worker
+  USING (type = 'subStats:' || current_agent_id()::text OR type LIKE 'workerVer:%')
+  WITH CHECK (type = 'subStats:' || current_agent_id()::text OR type LIKE 'workerVer:%');
+
 ALTER TABLE map_points ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS rls_map_points_read ON map_points;
 CREATE POLICY rls_map_points_read ON map_points FOR SELECT TO agent_worker
