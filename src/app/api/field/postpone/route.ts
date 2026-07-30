@@ -23,7 +23,13 @@ export async function POST(request: Request) {
   if (card.done) return NextResponse.json({ error: "البطاقة منجزة" }, { status: 400 });
   const auth = await resolveCardActor(cardId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  if (!card.startedAt) return NextResponse.json({ error: "ابدأ البطاقة أولاً قبل التأجيل" }, { status: 400 });
+  // شرط «بدء» قبل التأجيل يخص الفني على غير التوصيل فقط — بطاقة التوصيل بلا «بدء»
+  // أصلاً (قاعدتها الثابتة — نفس قاعدة الإنجاز والإلغاء)، والمكتب/المدير بلا قيد
+  const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false, agentId: auth.actor.agentId ?? -1 } });
+  const isDelivery = type?.deliveryOnly ?? card.kind === "توصيل";
+  if (!card.startedAt && !isDelivery && auth.actor.isTech) {
+    return NextResponse.json({ error: "ابدأ البطاقة أولاً قبل التأجيل" }, { status: 400 });
+  }
 
   // يُلغى وقت البدء (المدة لا تُحتسب على التأجيل) ويُسجَّل الموعد الجديد
   const updated = await prisma.taskCard.update({
