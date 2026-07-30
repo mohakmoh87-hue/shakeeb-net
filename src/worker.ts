@@ -106,7 +106,15 @@ function startSelfUpdateWatcher() {
       const local = execSync("git rev-parse HEAD", { timeout: 15_000 }).toString().trim();
       const remote = execSync("git rev-parse origin/main", { timeout: 15_000 }).toString().trim();
       if (local && remote && local !== remote) {
-        console.log(`[worker] 🔄 تحديث جديد (${remote.slice(0, 7)}) — إعادة تشغيل للتحديث...`);
+        console.log(`[worker] 🔄 تحديث جديد (${remote.slice(0, 7)}) — سحب وتثبيت ثم إعادة تشغيل...`);
+        // التحديث الكامل هنا (لا في الغلاف وحده): بعض مشغّلات الإقلاع تعيد تشغيل
+        // العامل بلا سحب فتدور حلقة عقيمة على الكود القديم (حاسبة المواصلات 2026-07-30).
+        // السحب + التثبيت + توليد Prisma كلها قبل الإغلاق — فيقلع الجديد جاهزاً مهما كان المشغّل.
+        try {
+          execSync("git pull --ff-only --quiet", { stdio: "ignore", timeout: 120_000 });
+          execSync("npm install --no-audit --no-fund --loglevel=error", { stdio: "ignore", timeout: 600_000 });
+          execSync("npx prisma generate", { stdio: "ignore", timeout: 300_000 });
+        } catch { /* تعذّر خطوة — الغلاف قد يكملها، وإلا فالدورة القادمة */ }
         void gracefulShutdown("UPDATE");
       }
     } catch { /* لا شبكة/لا git — دورة قادمة */ }
