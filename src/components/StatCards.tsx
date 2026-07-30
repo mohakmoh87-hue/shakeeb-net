@@ -35,7 +35,8 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
   const key = officeSel === "all" ? towerIds.join(",") : String(officeSel);
 
   // الأولوية للعامل المحلي (حي كل 5 ثوانٍ بلا سحابة — داخل المكتب)؛ وبدونه:
-  // أرقام الحاسبات المرفوعة للقاعدة تُقرأ كل 5 دقائق (قرار محمد 2026-07-29) —
+  // أرقام الحاسبات المرفوعة للقاعدة تُقرأ كل 10 دقائق (قرار محمد 2026-07-30 —
+  // كانت 5 وخُفّفت لإطالة نوم التطبيق بعد نفاد منحة تموز المجانية)،
   // فيرى محمد الأرقام من أي مكان، ويُستأنف البحث عن عامل محلي كل 15 ثانية.
   useEffect(() => {
     if (!key) return;
@@ -65,8 +66,8 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
       const base = await localSasBase();
       if (stop) return;
       if (!base) {
-        // بلا عامل محلي: المخزون السحابي (مرة فوراً ثم كل 5 دقائق) + إعادة البحث عن العامل
-        if (!cloudPoll) { void loadCloud(); cloudPoll = setInterval(loadCloud, 5 * 60 * 1000); }
+        // بلا عامل محلي: المخزون السحابي (مرة فوراً ثم كل 10 دقائق) + إعادة البحث عن العامل
+        if (!cloudPoll) { void loadCloud(); cloudPoll = setInterval(loadCloud, 10 * 60 * 1000); }
         retry = setTimeout(start, 15000);
         return;
       }
@@ -128,7 +129,7 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
         {live
           ? <span title="يتحدّث كل 5 ثوانٍ من حاسبة المكتب مباشرة — بلا مرور على السحابة">⚡ مباشر</span>
           : stats && cloudAt
-            ? <span title="أرقام مرفوعة من حاسبات المكاتب كل 5 دقائق — تُقرأ كل 5 دقائق">🕐 {new Date(cloudAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+            ? <span title="أرقام مرفوعة من حاسبات المكاتب كل 5 دقائق — تُقرأ كل 10 دقائق">🕐 {new Date(cloudAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
             : <span title="تظهر الأرقام حين ترفعها حاسبات المكاتب (كل 5 دقائق) أو من عامل محلي">⏳ بانتظار حاسبات المكاتب</span>}
       </div>
     </div>
