@@ -27,9 +27,13 @@ export default function CompletionNotifier() {
         }
       } catch { /* تجاهل */ }
     }
-    const iv = setInterval(poll, 25000);
+    // حمية اليقظة (2026-07-30): التبويب المخفي يصمت (لا طلبات تُبقي خادم Azure صاحياً
+    // بلا مشاهد)، وعند العودة للتبويب يسأل فوراً فلا يفوت شيء. والفاصل 60ث بدل 25.
+    const iv = setInterval(() => { if (!document.hidden) void poll(); }, 60000);
+    const onVis = () => { if (!document.hidden) void poll(); };
+    document.addEventListener("visibilitychange", onVis);
     poll();
-    return () => { alive = false; clearInterval(iv); };
+    return () => { alive = false; clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
   }, []);
 
   if (queue.length === 0) return null;

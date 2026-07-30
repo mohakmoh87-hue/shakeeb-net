@@ -67,7 +67,8 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
       if (stop) return;
       if (!base) {
         // بلا عامل محلي: المخزون السحابي (مرة فوراً ثم كل 10 دقائق) + إعادة البحث عن العامل
-        if (!cloudPoll) { void loadCloud(); cloudPoll = setInterval(loadCloud, 10 * 60 * 1000); }
+        // — والتبويب المخفي يصمت (حمية يقظة Azure)، وعند العودة تُجلب القراءة فوراً
+        if (!cloudPoll) { void loadCloud(); cloudPoll = setInterval(() => { if (!document.hidden) void loadCloud(); }, 10 * 60 * 1000); }
         retry = setTimeout(start, 15000);
         return;
       }
@@ -85,12 +86,16 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
       void load();
       poll = setInterval(load, 5000);
     };
+    // العودة للتبويب أثناء وضع القراءة السحابية = قراءة فورية (لا انتظار الدورة)
+    const onVis = () => { if (!document.hidden && cloudPoll) void loadCloud(); };
+    document.addEventListener("visibilitychange", onVis);
     void start();
     return () => {
       stop = true;
       if (poll) clearInterval(poll);
       if (cloudPoll) clearInterval(cloudPoll);
       if (retry) clearTimeout(retry);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [key]);
 

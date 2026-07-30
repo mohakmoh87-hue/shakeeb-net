@@ -31,8 +31,15 @@ export default function NotificationsBell() {
       if (!d) return; setItems(d.notifications ?? []); setUnread(d.unread ?? 0);
     });
   }, []);
-  // تحديث الجرس كل 60ث (كان 20ث) — حمية بولنغ؛ الأحداث العاجلة تصل Push فوراً على أي حال
-  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, [load]);
+  // تحديث الجرس كل 60ث — والتبويب المخفي يصمت (حمية يقظة Azure 2026-07-30)،
+  // وعند العودة للتبويب يُحدَّث فوراً؛ الأحداث العاجلة تصل Push فوراً على أي حال
+  useEffect(() => {
+    load();
+    const t = setInterval(() => { if (!document.hidden) load(); }, 60000);
+    const onVis = () => { if (!document.hidden) load(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [load]);
 
   // حالة اشتراك Push الحالية
   useEffect(() => {

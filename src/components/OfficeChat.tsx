@@ -45,12 +45,21 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
     if (r.ok) { const d = await r.json(); setMsgs(d.messages ?? []); }
   }, [officeId]);
 
-  useEffect(() => { loadChats(); const i = setInterval(loadChats, 6000); return () => clearInterval(i); }, [loadChats]);
+  // التبويب المخفي يصمت (حمية يقظة Azure 2026-07-30) — وعند العودة يُحدَّث فوراً
+  useEffect(() => {
+    loadChats();
+    const i = setInterval(() => { if (!document.hidden) void loadChats(); }, 6000);
+    const onVis = () => { if (!document.hidden) void loadChats(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(i); document.removeEventListener("visibilitychange", onVis); };
+  }, [loadChats]);
   useEffect(() => {
     if (!sel) return;
     loadMsgs(sel.id);
-    const i = setInterval(() => loadMsgs(sel.id), 3500);
-    return () => clearInterval(i);
+    const i = setInterval(() => { if (!document.hidden) void loadMsgs(sel.id); }, 3500);
+    const onVis = () => { if (!document.hidden) void loadMsgs(sel.id); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(i); document.removeEventListener("visibilitychange", onVis); };
   }, [sel, loadMsgs]);
   // تمرير تلقائي للأسفل فقط عند: فتح محادثة جديدة، أو وصول رسالة جديدة والمستخدم قريب من الأسفل.
   // (يمنع القفز للأسفل أثناء تصفّح الرسائل القديمة مع كل تحديث دوري)
