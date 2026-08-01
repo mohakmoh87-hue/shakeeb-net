@@ -39,11 +39,24 @@ model Agent {
   salaryFromDay    Int? // يوم بداية الفترة (1-31) — متكرّرة كل شهر بلا شهر/سنة
   salaryToDay      Int? // يوم نهاية الفترة في الشهر التالي (1-31)
   lastBackupDate   String? // آخر يومٍ (بغداد) أُرسلت فيه النسخة اليومية — يمنع الازدواج بين السحابة والحاسبة
+  // رابط دور قاعدة العامل لهذا الوكيل — يُدار بـSQL خام في agentDbRole.ts؛ أُدخل
+  // للمخطط بعد اختبار الاستعادة (2026-08-02): كان خارجه فيفشل التعافي المبني على المخطط
+  workerDbUrl      String?
   isDeleted  Boolean   @default(false)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @default(now()) @updatedAt
 
   @@map("agents")
+}
+
+// خرائط أدوار قاعدة العامل (دور PG ← وكيله) — تُدار بـSQL خام في agentDbRole.ts.
+// أُدخلت للمخطط بعد اختبار الاستعادة (2026-08-02): كانت خارجه فتضيع بياناتها
+// بصمت في أي تعافٍ يبني الهيكل من المخطط ثم يستعيد النسخة الكاملة.
+model DbAgentRole {
+  roleName String @id @map("role_name")
+  agentId  Int    @map("agent_id")
+
+  @@map("db_agent_roles")
 }
 
 model User {
