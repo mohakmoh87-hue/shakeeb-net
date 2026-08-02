@@ -5,6 +5,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { getMachineId } from "@/lib/hybridAgent";
+import { prisma } from "@/lib/prisma";
 
 // ===== الربط الذاتي: الحاسبة تجلب رابط قاعدتها من الموقع (2026-08-02) =====
 // الغاية: تبديل القاعدة (نقل لمزوّد آخر، أو تدوير مفتاح) بلا زيارة أي مكتب.
@@ -12,7 +13,9 @@ import { getMachineId } from "@/lib/hybridAgent";
 // الرابط القديم كما هو وتُعاد المحاولة لاحقاً؛ فلا تنقطع الحاسبة بسبب هذه الميزة أبداً.
 
 const SITE_ORIGIN = process.env.SITE_ORIGIN || "https://shakeebnet.com";
-const CHECK_EVERY = 30 * 60 * 1000; // فحص دوري كل نصف ساعة — يلتقط التبديل المخطَّط ولو بقي القديم يعمل
+// نبضة الصحّة كل 5 دقائق **على القاعدة نفسها** — والموقع لا يُسأل إطلاقاً ما دامت
+// القاعدة تستجيب. (استطلاع الموقع دورياً كان سيُبقي خادم أزور مستيقظاً ويضرب حمية الأجور.)
+const HEALTH_EVERY = 5 * 60 * 1000;
 
 function clientFor(url: string, caB64: string | null): PrismaClient {
   if (/\.neon\.tech/i.test(url)) return new PrismaClient({ adapter: new PrismaNeon({ connectionString: url }) });
@@ -102,19 +105,27 @@ export async function syncWorkerConfig(): Promise<"unchanged" | "updated" | "fai
   return "updated";
 }
 
-// فحص الإقلاع: إن كان الرابط الحالي يعمل نكمل؛ وإلا نطلب الجديد ونعيد التشغيل عند نجاحه
+// هل اتصال العامل الفعلي بالقاعدة يعمل؟ (نفس العميل الذي تستعمله كل الخدمات)
+async function dbAlive(): Promise<boolean> {
+  try { await prisma.$queryRawUnsafe("SELECT 1"); return true; } catch { return false; }
+}
+
+// فحص الإقلاع: إن كانت القاعدة تستجيب نكمل؛ وإلا نطلب الرابط الجديد ونعيد التشغيل عند نجاحه
 export async function bootConfigCheck(): Promise<"ok" | "restart"> {
-  const current = (process.env.DATABASE_URL ?? "").trim();
-  const ca = process.env.DB_SSL_CA_B64 ?? null;
-  if (current && (await testDbUrl(current, ca))) return "ok";
-  console.log("[self-config] رابط القاعدة الحالي لا يعمل — سؤال الموقع عن الجديد...");
+  if (await dbAlive()) return "ok";
+  console.log("[self-config] القاعدة لا تستجيب عند الإقلاع — سؤال الموقع عن الرابط الجديد...");
   return (await syncWorkerConfig()) === "updated" ? "restart" : "ok";
 }
 
-// مراقب دوري: يلتقط التبديل المخطَّط حتى لو بقي الرابط القديم صالحاً (حالة النقل مع
-// إبقاء القاعدة القديمة حيّة أسبوعاً) — طلب واحد خفيف كل نصف ساعة
+// مراقب الصحّة: يجسّ القاعدة كل 5 دقائق. سليمة ⇒ لا شيء (صفر طلبات على الموقع).
+// متعثّرة ⇒ يسأل الموقع مرة؛ فإن تبدّل الرابط اعتمده وأعاد التشغيل، وإلا أبقى القديم.
+// وهذا يغطي النقل أيضاً: يكفي إغلاق دخول الدور القديم لحظة التبديل فتلتقط الحاسبات خلال 5 دقائق.
 export function startConfigWatcher(onUpdated: () => void): void {
   setInterval(() => {
-    void syncWorkerConfig().then((r) => { if (r === "updated") onUpdated(); });
-  }, CHECK_EVERY);
+    void (async () => {
+      if (await dbAlive()) return;
+      console.log("[self-config] القاعدة لا تستجيب — سؤال الموقع...");
+      if ((await syncWorkerConfig()) === "updated") onUpdated();
+    })();
+  }, HEALTH_EVERY);
 }
