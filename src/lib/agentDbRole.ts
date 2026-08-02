@@ -33,6 +33,25 @@ async function readStoredUrl(agentId: number): Promise<string | null> {
   return rows[0]?.url ?? null;
 }
 
+// بصمة رابط — بها تُثبت الحاسبة أنها تحمل رابطاً صالحاً (حالياً أو سابقاً) بلا كشفه
+export function hashUrl(url: string): string {
+  return crypto.createHash("sha256").update(url.trim()).digest("hex");
+}
+
+// بصمات الروابط المقبولة للوكيل: الحالي + آخر خمسة سابقة (الربط الذاتي 2026-08-02)
+export async function acceptedUrlHashes(agentId: number): Promise<string[]> {
+  const rows = await prisma.$queryRawUnsafe<{ url: string | null; prev: string | null }[]>(
+    `SELECT "workerDbUrl" AS url, "prevUrlHashes" AS prev FROM agents WHERE id = $1`, agentId,
+  );
+  const out: string[] = [];
+  if (rows[0]?.url) out.push(hashUrl(rows[0].url));
+  try {
+    const prev = rows[0]?.prev ? (JSON.parse(rows[0].prev) as unknown) : [];
+    if (Array.isArray(prev)) for (const h of prev) if (typeof h === "string") out.push(h);
+  } catch { /* نص فاسد — نتجاهله */ }
+  return out;
+}
+
 // ينشئ/يبدّل كلمة سر دور الوكيل على القاعدة ثم يخزّن الرابط ويُعيده.
 // اتصال الموقع (neondb_owner) يملك CREATEROLE، فتُنفَّذ عبارات DDL مباشرةً بلا حاجة
 // لدالة SECURITY DEFINER — مع تحقّق صارم يمنع أي حقن (المعرّف عدد، وكلمة السر alnum فقط).
@@ -57,7 +76,20 @@ async function upsertRole(agentId: number): Promise<string> {
      ON CONFLICT (role_name) DO UPDATE SET agent_id = EXCLUDED.agent_id`, roleName, agentId,
   );
 
+  // بصمة الرابط القديم تُحفظ قبل استبداله (آخر خمسة) — بها تُثبت الحاسبة التي لم تُحدَّث
+  // بعدُ هويتها فتستلم الرابط الجديد وحدها بلا زيارة مكتب (الربط الذاتي 2026-08-02)
+  const old = await readStoredUrl(agentId);
   const url = buildRoleUrl(roleName, password);
+  if (old && old !== url) {
+    const rows = await prisma.$queryRawUnsafe<{ prev: string | null }[]>(
+      `SELECT "prevUrlHashes" AS prev FROM agents WHERE id = $1`, agentId,
+    );
+    let list: string[] = [];
+    try { const p = rows[0]?.prev ? JSON.parse(rows[0].prev) : []; if (Array.isArray(p)) list = p.filter((x) => typeof x === "string"); }
+    catch { list = []; }
+    list = [hashUrl(old), ...list.filter((h) => h !== hashUrl(old))].slice(0, 5);
+    await prisma.$executeRawUnsafe(`UPDATE agents SET "prevUrlHashes" = $1 WHERE id = $2`, JSON.stringify(list), agentId);
+  }
   await prisma.$executeRawUnsafe(`UPDATE agents SET "workerDbUrl" = $1 WHERE id = $2`, url, agentId);
   return url;
 }

@@ -55,6 +55,17 @@ function ensureSingleInstance(): Promise<void> {
   await ensureSingleInstance();
   killOrphanBrowsers(); // نظّف متصفّحات يتيمة من تشغيل سابق قبل بدء الواتساب
   console.log("[worker] بدء عامل SHAKEEB المستقل...");
+  // الربط الذاتي (2026-08-02): قبل تشغيل أي خدمة — هل رابط القاعدة يعمل؟ إن لا، نطلب
+  // الجديد من الموقع ونعيد التشغيل. بهذا يتبدّل مزوّد القاعدة بلا زيارة أي مكتب.
+  try {
+    const { bootConfigCheck } = await import("@/lib/workerSelfConfig");
+    if ((await bootConfigCheck()) === "restart") {
+      console.log("[worker] 🔄 حُدّثت إعدادات القاعدة — إعادة تشغيل بالرابط الجديد...");
+      process.exit(0); // الغلاف worker-loop.cmd يعيد التشغيل فوراً
+    }
+  } catch (e) {
+    console.error("[worker] تعذّر فحص إعدادات القاعدة:", e instanceof Error ? e.message : e);
+  }
   try {
     const { startScheduler } = await import("@/lib/scheduler");
     const { startLocalSasServer } = await import("@/lib/localSasServer");
@@ -68,6 +79,9 @@ function ensureSingleInstance(): Promise<void> {
     startWaRelayPoller();
     startPrintAgent(); // الطباعة الصامتة لوصولات المكتب على الطابعة الافتراضية
     startSelfUpdateWatcher(); // تحديث ذاتي: يلتقط تحديثات الكود ويعيد التشغيل عبر الغلاف
+    // مراقب الإعدادات: يلتقط تبديل القاعدة المخطَّط ولو بقي الرابط القديم صالحاً
+    const { startConfigWatcher } = await import("@/lib/workerSelfConfig");
+    startConfigWatcher(() => { void gracefulShutdown("CONFIG"); });
     reportWorkerVersion(); // بصمة إصدار الكود في القاعدة — تكشف عن بُعد أي كود تشغّله كل حاسبة
     console.log("[worker] ✅ العامل يعمل. اتركه مفتوحاً.");
   } catch (e) {

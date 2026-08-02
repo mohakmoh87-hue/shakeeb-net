@@ -42,6 +42,9 @@ model Agent {
   // رابط دور قاعدة العامل لهذا الوكيل — يُدار بـSQL خام في agentDbRole.ts؛ أُدخل
   // للمخطط بعد اختبار الاستعادة (2026-08-02): كان خارجه فيفشل التعافي المبني على المخطط
   workerDbUrl      String?
+  // بصمات (sha256) الروابط السابقة — بها تُثبت حاسبة تحمل رابطاً قديماً هويتها فتستلم
+  // الرابط الجديد وحدها (الربط الذاتي 2026-08-02). بصمات فقط لا روابط — أأمن تخزيناً.
+  prevUrlHashes    String?
   isDeleted  Boolean   @default(false)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @default(now()) @updatedAt
@@ -942,6 +945,7 @@ model HybridWorker {
   towerId    Int? // المكتب التابع له (اختياري)
   priority  Int      @default(100) // الأصغر = أعلى أولوية ليكون القائد
   lastSeen  DateTime @default(now()) // آخر نبضة heartbeat
+  configAt  DateTime? // آخر مرة جلبت فيها الحاسبة إعداداتها من الموقع (الربط الذاتي)
   createdAt DateTime @default(now())
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
