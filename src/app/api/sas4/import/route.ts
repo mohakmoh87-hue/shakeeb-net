@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
+import { matcherForAgent } from "@/lib/packageMatch";
 import { getSession } from "@/lib/auth";
 
 const schema = z.object({
@@ -49,16 +50,9 @@ export async function POST(request: Request) {
   });
   const existingIds = new Set(existing.map((e) => e.sasId));
 
-  // سحب فئات SAS4 كباقات: إنشاء أي فئة غير موجودة وربطها بالاسم
-  const tierNames = [
-    ...new Set(users.map((u) => u.packageName?.trim()).filter(Boolean) as string[]),
-  ];
-  // الربط بفئة موجودة مسبقاً فقط (لا يُنشئ فئات تلقائياً — الفئات تُضاف يدوياً)
-  const existingPkgs = await prisma.package.findMany({
-    where: { isDeleted: false, name: { in: tierNames }, agentId: g.session?.agentId ?? -1 }, // عزل: باقات الوكيل فقط
-    select: { id: true, name: true },
-  });
-  const pkgMap = new Map(existingPkgs.map((p) => [p.name, p.id]));
+  // الربط بفئة موجودة مسبقاً فقط (لا تُنشأ فئات تلقائياً — تُضاف يدوياً)، بمطابقة
+  // متسامحة مع الفراغات الزائدة وحالة الأحرف وتقديم/تأخير الكلمات وصيغ العربية.
+  const matcher = await matcherForAgent(g.session?.agentId ?? null); // عزل: باقات الوكيل فقط
 
   const now = new Date();
   let created = 0;
@@ -71,7 +65,7 @@ export async function POST(request: Request) {
       let dateTo: Date | null = null;
       if (u.expiration) dateTo = new Date(u.expiration);
       else if (u.days) { dateTo = new Date(now); dateTo.setDate(dateTo.getDate() + u.days); }
-      const pkgId = u.packageName?.trim() ? pkgMap.get(u.packageName.trim()) ?? null : null;
+      const pkgId = matcher.match(u.packageName);
       return {
         name: u.name?.trim() || u.username,
         phone: u.phone?.trim() || null,

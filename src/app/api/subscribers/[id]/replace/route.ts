@@ -4,6 +4,7 @@ import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { sasBaseUrl, sasLogin, sasFindUserByUsername, type SasUser } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
+import { matcherForAgent } from "@/lib/packageMatch";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +30,11 @@ async function fetchSasForSubscriber(subscriberId: number) {
   const token = await sasLogin(base, tower.username, tower.password);
   const sas = await sasFindUserByUsername(base, token, sub.netUser);
   if (!sas) return { error: `اليوزر «${sub.netUser}» غير موجود في SAS — حدّثه هناك أولاً`, status: 404 as const };
-  // مطابقة باقة SAS مع باقاتنا بالاسم (باقات وكيل المشترك)
-  const pkg = sas.packageName
-    ? await prisma.package.findFirst({ where: { isDeleted: false, agentId: tower.agentId ?? -1, name: sas.packageName }, select: { id: true, name: true } })
+  // مطابقة باقة SAS مع باقاتنا — متسامحة مع الفراغات وحالة الأحرف وترتيب الكلمات
+  const matcher = await matcherForAgent(tower.agentId);
+  const pkgId = matcher.match(sas.packageName);
+  const pkg = pkgId != null
+    ? await prisma.package.findUnique({ where: { id: pkgId }, select: { id: true, name: true } })
     : null;
   return { sub, sas, pkg };
 }

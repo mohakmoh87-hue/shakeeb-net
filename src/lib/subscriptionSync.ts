@@ -7,6 +7,7 @@ import {
 import { sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
+import { matcherForOffice } from "@/lib/packageMatch";
 
 // ============================================================================
 // المزامنة اليومية مع SAS — نسخة مطوّرة على مرحلتين متتاليتين لكل مكتب:
@@ -30,7 +31,7 @@ export interface SyncResult {
     phantom: number; markedUsed: number; duplicates: number; imported: number;
     verifiedReal: number; // كروت مُستخدمة أمس أُكّد تفعيلها في SAS ببحث مباشر (ليست وهمية)
   };
-  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean; skippedPkg: number };
+  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean; skippedPkg: number; pkgFixed: number };
   events: SyncEvent[];
   reportSent: boolean | null; // true=أُرسل، false=مؤجّل (واتساب مقطوع)، null=لا تقرير
   error?: string;
@@ -90,7 +91,7 @@ export async function runOfficeSync(
     return {
       office: "المكتب",
       phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0 },
-      phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0 },
+      phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0, pkgFixed: 0 },
       events: [], reportSent: null,
       error: "مزامنة هذا المكتب قيد التنفيذ بالفعل — تم تجاهل الطلب المكرّر",
     };
@@ -115,7 +116,7 @@ async function runOfficeSyncInner(
   const empty: SyncResult = {
     office: officeName,
     phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0 },
-    phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0 },
+    phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0, pkgFixed: 0 },
     events: [], reportSent: null,
   };
 
@@ -345,24 +346,24 @@ async function runOfficeSyncInner(
   // تجلب كل مشتركي الساس (500/صفحة مع تأخير)، فتقوم بأمرين:
   //  (أ) استيراد كل مشترك موجود في الساس وغير موجود في البرنامج (استيراد شامل — السيناريو 7 لكامل القاعدة).
   //  (ب) تصحيح تاريخ الانتهاء بصمت للمشتركين الموجودين عند اختلافه (السيناريوهان 4 و5).
-  let checked = 0, dateFixed = 0, phase2Imported = 0, phase2Failed = false, skippedPkg = 0;
+  let checked = 0, dateFixed = 0, phase2Imported = 0, phase2Failed = false, skippedPkg = 0, pkgFixed = 0;
   try {
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
       where: { towerId: officeId, isDeleted: false, sasId: { not: null } },
-      select: { id: true, sasId: true, dateTo: true },
+      select: { id: true, sasId: true, dateTo: true, packageId: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
 
-    // فئات الاشتراك التي أضافها المدير في البرنامج (للمطابقة بالاسم، بلا حساسية حالة/فراغات):
-    // مشتركٌ فئته في الساس غير موجودة ضمنها ⇒ لا يُمَسّ إطلاقاً — لا تصحيح تاريخ انتهائه
-    // ولا أيامه المتبقية (بطلب صريح: فئة مجهولة = اتركه كما هو)
-    const progPackages = await prisma.package.findMany({ select: { name: true } });
-    const knownPkg = new Set(progPackages.map((p) => (p.name ?? "").trim().toLowerCase()).filter(Boolean));
+    // فئات الاشتراك التي أضافها المدير — مطابقة متسامحة (فراغات/حالة/ترتيب كلمات/صيغ
+    // عربية) عبر PackageMatcher، **وبعزل الوكيل** (كانت تقارن بباقات كل الوكلاء — خلل عزل).
+    // مشتركٌ فئته في الساس غير معروفة ⇒ لا يُمَسّ إطلاقاً (بطلب صريح: فئة مجهولة = اتركه كما هو)
+    const matcher = await matcherForOffice(officeId);
 
     const toImport: {
       name: string | null; netUser: string | null; phone: string | null;
       sasId: number; towerId: number; dateTo: Date | null; createdByUser: string;
+      packageId: number | null;
     }[] = [];
 
     for (const u of allUsers) {
@@ -371,17 +372,25 @@ async function runOfficeSyncInner(
       const validDate = sasDate && !isNaN(sasDate.getTime()) ? sasDate : null;
 
       if (!p) {
-        // مشترك في الساس غير موجود بالبرنامج → استيراد شامل
+        // مشترك في الساس غير موجود بالبرنامج → استيراد شامل **مع باقته وسعرها**.
+        // (كان packageId غائباً تماماً هنا فيولد كل مشتركي المزامنة بلا باقة وسعرٍ صفر —
+        //  العطل الذي رصده محمد 2026-08-02، وأوضح مثاله وكيل جاكوار.)
         toImport.push({
           name: u.name, netUser: u.username, phone: u.phone,
           sasId: u.sasId, towerId: officeId, dateTo: validDate, createdByUser: "sync",
+          packageId: matcher.match(u.packageName), // موجودة فقط — لا تُنشأ باقات جديدة أبداً
         });
         continue;
       }
-      // موجود → لكن إن كانت فئته في الساس غير موجودة ضمن فئات البرنامج ⇒ لا أي تعديل
-      // عليه (لا تاريخ انتهاء ولا أيام متبقية) — يُحصى فقط للتقرير.
-      const sasPkg = (u.packageName ?? "").trim().toLowerCase();
-      if (sasPkg && !knownPkg.has(sasPkg)) { skippedPkg++; continue; }
+      // موجود → لكن إن كانت فئته في الساس غير معروفة عندنا ⇒ لا أي تعديل عليه
+      // (لا تاريخ انتهاء ولا أيام متبقية) — يُحصى فقط للتقرير.
+      const sasPkgId = matcher.match(u.packageName);
+      if ((u.packageName ?? "").trim() && sasPkgId == null) { skippedPkg++; continue; }
+      // فئته معروفة: نملأ باقته إن كانت فارغة عندنا (تصحيح ذاتي للسجلات القديمة)
+      if (sasPkgId != null && p.packageId == null) {
+        await prisma.subscriber.update({ where: { id: p.id }, data: { packageId: sasPkgId } });
+        pkgFixed++;
+      }
 
       // فئته معروفة → تمديد التاريخ للأمام فقط: إن كان تاريخ الساس أبعد من تاريخ
       // البرنامج نضبطه مثل الساس؛ وإن كان تاريخ البرنامج أبعد (أو مساوياً) لا نغيّر شيئاً.
@@ -407,7 +416,7 @@ async function runOfficeSyncInner(
   const result: SyncResult = {
     office: officeName,
     phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported, verifiedReal },
-    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg },
+    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg, pkgFixed },
     events, reportSent: null,
   };
 
@@ -433,6 +442,7 @@ function buildReportText(r: SyncResult, day: Date, title = "تقرير المز�
   let text = `📋 ${title} — ${r.office}\n`;
   text += `تفعيلات ${formatDate(day)}: ${p1.activations} | كروت البرنامج: ${p1.internal} | خارجي: ${p1.external}\n`;
   text += `تصحيح تواريخ: ${r.phase2.dateFixed} من ${r.phase2.checked} مشترك\n`;
+  if (r.phase2.pkgFixed > 0) text += `🏷️ رُبطت باقاتهم وأسعارها: ${r.phase2.pkgFixed} مشترك\n`;
   if (r.phase2.skippedPkg > 0) text += `⏭️ تُركوا بلا تعديل (فئتهم غير مضافة بالبرنامج): ${r.phase2.skippedPkg} مشترك\n`;
   if (r.phase2.imported > 0) text += `🆕 استيراد شامل من الساس: ${r.phase2.imported} مشترك\n`;
 
