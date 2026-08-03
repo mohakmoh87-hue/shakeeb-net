@@ -44,8 +44,10 @@ export async function POST(request: Request) {
   }
 
   // المستوردون سابقاً (لتفادي التكرار)
+  // «المستوردون سابقاً»: بمكتب الاستيراد وغير المحذوفين فقط — كان يشمل المحذوفين ناعماً
+  // وكل المكاتب، فيتخطّى استيراداً مشروعاً بصمت رغم أن قيد القاعدة يسمح به (تدقيق 2026-08-02)
   const existing = await prisma.subscriber.findMany({
-    where: { sasId: { in: users.map((u) => u.sasId) } },
+    where: { sasId: { in: users.map((u) => u.sasId) }, towerId, isDeleted: false },
     select: { sasId: true },
   });
   const existingIds = new Set(existing.map((e) => e.sasId));

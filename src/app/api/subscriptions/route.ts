@@ -67,7 +67,8 @@ export async function POST(request: Request) {
   if (!subscriber || subscriber.isDeleted || !(await ownsTower(g.session, subscriber.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
-  const pkg = await prisma.package.findUnique({ where: { id: packageId } });
+  // عزل المستأجر: الباقة من باقات وكيل المستخدم حصراً (تدقيق 2026-08-02)
+  const pkg = await prisma.package.findFirst({ where: { id: packageId, agentId: g.session?.agentId ?? -1 } });
   if (!pkg || pkg.isDeleted) {
     return NextResponse.json({ error: "الباقة غير موجودة" }, { status: 404 });
   }

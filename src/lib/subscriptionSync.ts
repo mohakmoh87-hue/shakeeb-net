@@ -110,7 +110,7 @@ async function runOfficeSyncInner(
 ): Promise<SyncResult> {
   const office = await prisma.tower.findUnique({
     where: { id: officeId },
-    select: { id: true, name: true, loginUrl: true, username: true, password: true, managerPhone: true },
+    select: { id: true, name: true, agentId: true, loginUrl: true, username: true, password: true, managerPhone: true },
   });
   const officeName = office?.name ?? "المكتب";
   const empty: SyncResult = {
@@ -160,8 +160,11 @@ async function runOfficeSyncInner(
   const events: SyncEvent[] = [];
   let internal = 0, external = 0, phantom = 0, markedUsed = 0, duplicates = 0, imported = 0;
 
-  // كل كروت البرنامج (البِن → الكارت)
+  // كروت **وكيل هذا المكتب فقط** (البِن → الكارت). كان بلا أي فلتر، والمزامنة تكتب على
+  // الكارت المطابق (تستهلكه وتنسبه لمشترك) — أي أن مزامنة وكيل قد تستهلك كارت وكيل آخر
+  // بمجرد تشابه السيريال. عزل مالي حرج اصطاده تدقيق 2026-08-02.
   const cards = await prisma.rechargeCard.findMany({
+    where: { agentId: office.agentId ?? -1 },
     select: { id: true, serial: true, useDate: true, subscriberId: true },
   });
   const cardBySerial = new Map(cards.map((c) => [(c.serial ?? "").trim(), c]));
@@ -365,6 +368,7 @@ async function runOfficeSyncInner(
       sasId: number; towerId: number; dateTo: Date | null; createdByUser: string;
       packageId: number | null;
     }[] = [];
+    const pkgFixQueue = new Map<number, number[]>(); // باقة ← مشتركون بلا باقة يُربطون بها
 
     for (const u of allUsers) {
       const p = progBySasId.get(u.sasId);
@@ -386,10 +390,13 @@ async function runOfficeSyncInner(
       // (لا تاريخ انتهاء ولا أيام متبقية) — يُحصى فقط للتقرير.
       const sasPkgId = matcher.match(u.packageName);
       if ((u.packageName ?? "").trim() && sasPkgId == null) { skippedPkg++; continue; }
-      // فئته معروفة: نملأ باقته إن كانت فارغة عندنا (تصحيح ذاتي للسجلات القديمة)
+      // فئته معروفة: نملأ باقته إن كانت فارغة عندنا (تصحيح ذاتي للسجلات القديمة).
+      // تُجمَّع ثم تُكتب دفعةً واحدة لكل باقة بعد الحلقة — الكتابة صفّاً صفّاً هنا كانت
+      // تكلّف ~86 مللي ثانية للصفّ (عشرون دقيقة بالتشغيل الأول على تجمّع اتصالين).
       if (sasPkgId != null && p.packageId == null) {
-        await prisma.subscriber.update({ where: { id: p.id }, data: { packageId: sasPkgId } });
-        pkgFixed++;
+        const arr = pkgFixQueue.get(sasPkgId) ?? [];
+        arr.push(p.id);
+        pkgFixQueue.set(sasPkgId, arr);
       }
 
       // فئته معروفة → تمديد التاريخ للأمام فقط: إن كان تاريخ الساس أبعد من تاريخ
@@ -407,6 +414,16 @@ async function runOfficeSyncInner(
     if (toImport.length) {
       const res = await prisma.subscriber.createMany({ data: toImport, skipDuplicates: true });
       phase2Imported = res.count;
+    }
+    // ربط باقات المشتركين القائمين الفارغة — دفعة واحدة لكل باقة (استعلامات معدودة)
+    for (const [pid, ids] of pkgFixQueue) {
+      for (let i = 0; i < ids.length; i += 500) {
+        const r = await prisma.subscriber.updateMany({
+          where: { id: { in: ids.slice(i, i + 500) }, packageId: null }, // أمان: لا نلمس من له باقة
+          data: { packageId: pid },
+        });
+        pkgFixed += r.count;
+      }
     }
   } catch {
     phase2Failed = true; // لا نُسقط نتائج المرحلة 1

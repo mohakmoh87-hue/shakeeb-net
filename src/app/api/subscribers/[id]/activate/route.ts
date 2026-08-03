@@ -75,7 +75,9 @@ export async function POST(
     }
     activationAccount = { id: acc.id, name: acc.name };
   }
-  const pkg = await prisma.package.findUnique({ where: { id: packageId } });
+  // عزل المستأجر: الفئة يجب أن تكون من باقات وكيل المستخدم — وإلا أمكن تمرير معرّف
+  // باقة وكيل آخر فتُستعمل أسعاره ومكافآته (ثغرة اصطادها تدقيق 2026-08-02)
+  const pkg = await prisma.package.findFirst({ where: { id: packageId, agentId: g.session?.agentId ?? -1 } });
   if (!pkg || pkg.isDeleted) {
     return NextResponse.json({ error: "الفئة غير موجودة" }, { status: 404 });
   }
