@@ -1,13 +1,20 @@
 # كرون ليلي بديل لـ Vercel cron (الذي لا يعمل على Azure): بصمة خروج تلقائية للفنيين
-# المنسيّين + تنظيف الأرشيف + النسخ الاحتياطية اليومية بالبريد — من السحابة حتى لو كانت
-# كل حواسيب المكاتب مغلقة. يستدعي /api/cron/auto-checkout المحميّة بـ CRON_SECRET.
+# المنسيّين + تنظيف الأرشيف + النسخ الاحتياطية اليومية بالبريد + مزامنة SAS لكل المكاتب —
+# من السحابة حتى لو كانت كل حواسيب المكاتب مغلقة (لوحات SAS على الإنترنت).
+# يستدعي /api/cron/auto-checkout المحميّة بـ CRON_SECRET.
 # الأسرار المطلوبة (موجودة): CRON_SECRET + APP_BASE_URL.
+#
+# ⚠️ سبب توقّفه ليلتَي 3 و4 آب 2026: الحاوية على minReplicas=0 فتنام بعد خمول خمس دقائق،
+# والاستدعاء كان **بلا إحماء ولا مهلة ولا إعادة محاولة** — فيصطدم بخادمٍ نائم فترجع 503
+# أو تنقطع المهلة، فيسقط الـworkflow بـexit 1 وتضيع النسخة الاحتياطية والمزامنة بصمت.
+# العلاج: إحماء أولاً، ثم استدعاء بمهلة واسعة (المزامنة تمسح آلاف المشتركين)، بثلاث
+# محاولات — ولا يُعلَن النجاح إلا بـ200 فعلي.
 name: auto-checkout-cron
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 21 * * *" # 21:15 UTC = 00:15 بغداد (نفس توقيت Vercel cron السابق)
+    - cron: "15 21 * * *" # 21:15 UTC = 00:15 بغداد
 
 permissions:
   contents: read
@@ -15,15 +22,39 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: استدعاء كرون الخروج التلقائي + النسخ الاحتياطي
+      - name: إيقاظ الخادم (الحاوية تنام عند الخمول)
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+        run: |
+          set -uo pipefail
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$APP_BASE_URL/login" || echo 000)
+            echo "احماء [$i]: $code"
+            if [ "$code" = "200" ]; then echo "الخادم مستيقظ"; exit 0; fi
+            sleep 15
+          done
+          echo "لم يستيقظ الخادم بعد عشر محاولات — نكمل على أي حال"
+
+      - name: استدعاء كرون الخروج التلقائي + النسخ الاحتياطي + المزامنة
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
         run: |
-          set -euo pipefail
-          code=$(curl -s -o /tmp/resp -w "%{http_code}" \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "$APP_BASE_URL/api/cron/auto-checkout")
-          echo "الاستجابة: $code $(cat /tmp/resp)"
-          test "$code" = "200"
+          set -uo pipefail
+          ok=0
+          for i in 1 2 3; do
+            code=$(curl -s -o /tmp/resp -w "%{http_code}" --max-time 900 \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$APP_BASE_URL/api/cron/auto-checkout" || echo 000)
+            echo "المحاولة [$i]: $code"
+            head -c 2000 /tmp/resp 2>/dev/null || true
+            echo ""
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            sleep 30
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::فشل الكرون الليلي بعد ثلاث محاولات — لا نسخة احتياطية ولا مزامنة هذه الليلة"
+            exit 1
+          fi
