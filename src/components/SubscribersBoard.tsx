@@ -111,6 +111,10 @@ export default function SubscribersBoard() {
   const [payBusy, setPayBusy] = useState(false);
   const [payErr, setPayErr] = useState("");
   const [summaryBusy, setSummaryBusy] = useState(false);
+  // أرشيف المحذوفين: الحذف صار تعطيلاً، فوصولاتهم باقية والاسترجاع يعيدهم كاملين
+  const [archOpen, setArchOpen] = useState(false);
+  const [arch, setArch] = useState<{ id: number; name: string | null; netUser: string | null; phone: string | null; carry: number; office: string | null; receipts: number; receiptsTotal: number; invoices: number }[] | null>(null);
+  const [archBusy, setArchBusy] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
   // النقر خارج البطاقة يغلق شريط خيارات المشترك وقائمة «المزيد» (طلب محمد)
@@ -318,6 +322,21 @@ export default function SubscribersBoard() {
       .catch(() => {});
   }
 
+  function openArchive() {
+    setArchOpen(true); setArch(null);
+    fetch("/api/subscribers/deleted").then((r) => (r.ok ? r.json() : null)).then((d) => setArch(d?.rows ?? [])).catch(() => setArch([]));
+  }
+  async function restoreSub(id: number, name: string) {
+    if (!confirm(`استرجاع «${name}»؟\nيعود بكل وصولاته وفواتيره — فهي لم تُحذف أصلاً.`)) return;
+    setArchBusy(true);
+    const r = await fetch("/api/subscribers/deleted", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [id] }),
+    });
+    setArchBusy(false);
+    if (r.ok) { openArchive(); load(query, showAllTowers); }
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر الاسترجاع"); }
+  }
+
   function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); setOpsTech(""); setOpsTechs([]); }
   async function sendToField(operation: string) {
     if (!opsSub) return;
@@ -340,6 +359,7 @@ export default function SubscribersBoard() {
           {can("subscribers.import") && <Link className="gbtn" href="/subscribers/sas4">🔄 استيراد من SAS4</Link>}
           <Link className="gbtn" href="/debts">📑 ديون المشتركين</Link>
           <Link className="gbtn" href="/messages/compose">💬 ارسال رسالة للكل</Link>
+          {can("subscribers.delete") && <button className="gbtn" onClick={openArchive}>🗄️ المحذوفون</button>}
           <button className="gbtn" onClick={() => selected && openEdit(selected)} disabled={!selected}>✏️ تعديل</button>
           {can("subscribers.delete") && <button className="gbtn danger" onClick={() => setDelMenu(true)}>🗑️ حذف</button>}
           <span className="newgrp">
@@ -858,6 +878,53 @@ export default function SubscribersBoard() {
           onDone={() => { setAddingDebt(null); load(query, showAllTowers); }}
         />
       )}
+
+      {/* أرشيف المحذوفين — الحذف تعطيل، فالاسترجاع يعيد المشترك بكل وصولاته */}
+      {archOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setArchOpen(false)}>
+          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-800">🗄️ المشتركون المحذوفون</h3>
+                <p className="text-xs text-slate-500">الحذف تعطيلٌ لا محو — وصولاتهم وفواتيرهم محفوظة، وتقارير الأيام الماضية لم تتغيّر.</p>
+              </div>
+              <button onClick={() => setArchOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+            </div>
+            <div className="overflow-auto">
+              {arch == null ? (
+                <div className="p-8 text-center text-muted">جاري التحميل...</div>
+              ) : arch.length === 0 ? (
+                <div className="p-8 text-center text-muted">لا مشتركين محذوفين</div>
+              ) : (
+                <table className="w-full text-right text-xs">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-600">
+                    <tr><th className="p-2">المشترك</th><th className="p-2">اليوزر</th><th className="p-2">المكتب</th>
+                      <th className="p-2">وصولاته</th><th className="p-2">مجموعها</th><th className="p-2">فواتيره</th>
+                      <th className="p-2">دينه</th><th className="p-2"></th></tr>
+                  </thead>
+                  <tbody>
+                    {arch.map((r) => (
+                      <tr key={r.id} className="border-t border-slate-100">
+                        <td className="p-2 font-bold text-slate-800">{r.name ?? "—"}</td>
+                        <td className="p-2 text-slate-500" dir="ltr">{r.netUser ?? "—"}</td>
+                        <td className="p-2 text-slate-500">{r.office ?? "—"}</td>
+                        <td className="p-2">{r.receipts}</td>
+                        <td className="p-2 font-semibold">{fmt(r.receiptsTotal)}</td>
+                        <td className="p-2">{r.invoices}</td>
+                        <td className="p-2 font-semibold" style={{ color: r.carry > 0 ? "var(--bad)" : undefined }}>{fmt(r.carry)}</td>
+                        <td className="p-2">
+                          <button disabled={archBusy} onClick={() => restoreSub(r.id, r.name ?? r.netUser ?? String(r.id))}
+                            className="rounded bg-emerald-50 px-2 py-1 font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">استرجاع</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -877,6 +944,7 @@ function FRow({ label, children }: { label: string; children: React.ReactNode })
     <div className="mb-1.5 flex items-center gap-2">
       <label className="w-24 shrink-0 text-left text-xs font-semibold text-ink-2">{label}</label>
       <div className="flex-1">{children}</div>
+
     </div>
   );
 }
