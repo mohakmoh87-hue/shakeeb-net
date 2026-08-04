@@ -28,6 +28,7 @@ type Data = {
   cardPayments: number;
   cardDebtRemaining: number;
   managerExpenses: number;
+  salaryFromTotal: number; // رواتب سُدِّدت «من المبلغ الكلي» — كانت تُطرح بصمت
   managerReceipts: number;
   masterBalance: number;
   employees: { id: number; name: string | null; withdrawn: number; technicianId: number | null; net: number | null }[];
@@ -84,6 +85,7 @@ export default function ManagerAccountsPage() {
   const [logOffice, setLogOffice] = useState<number | "all">("all"); // المكتب المختار في السجل، all = الإجمالي
   const [masterDetail, setMasterDetail] = useState<MasterDetail | null>(null);
   const [showMaster, setShowMaster] = useState(false);
+  const [showTotal, setShowTotal] = useState(false); // تفكيك «المبلغ الكلي الموجود»
   // فترة احتساب الرواتب (عامة لكل الموظفين) — يومان من الشهر (بداية/نهاية) تتكرّران شهرياً
   const [pFromDay, setPFromDay] = useState("");
   const [pToDay, setPToDay] = useState("");
@@ -383,7 +385,7 @@ export default function ManagerAccountsPage() {
       <>
       {/* البطاقات الرئيسية */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Card label="المبلغ الكلي الموجود" value={fmt(data.totalAvailable)} color="text-emerald-700" bg="bg-emerald-50" big />
+        <Card label="المبلغ الكلي الموجود" value={fmt(data.totalAvailable)} color="text-emerald-700" bg="bg-emerald-50" big onClick={() => setShowTotal(true)} hint="اضغط لتفكيك المعادلة" />
         <Card label="مجموع المبالغ اليومية" value={fmt(data.cumulativeDaily)} color="text-slate-700" bg="bg-slate-50" onClick={openDailyLog} hint="اضغط لعرض السجل اليومي" />
         <Card label="ديون الكارتات" value={fmt(data.cardDebtRemaining)} color="text-red-700" bg="bg-red-50" />
         <Card label="مصروفات الإدارة" value={fmt(data.managerExpenses)} color="text-amber-700" bg="bg-amber-50" />
@@ -641,6 +643,53 @@ export default function ManagerAccountsPage() {
             </div>
             <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
               حركات المكاتب تؤثر على تقاريرها اليومية (عدا ما وُسِم ماستر) · حساباته العامة والماستر والرصيد السابق لا تؤثر على أي تقرير.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* تفكيك «المبلغ الكلي الموجود» (المرحلة ٥): أخطر رقم في الصفحة — مكوّناته
+          خمسة ولا يظهر منها إلا اثنان، فتُطرح تسديدات الكارتات والرواتب وتُضاف
+          مقبوضات الإدارة بصمت ولا سبيل لمعرفة لماذا تغيّر الرقم. */}
+      {showTotal && data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowTotal(false)}>
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 bg-emerald-50 px-4 py-3">
+              <div>
+                <h3 className="text-lg font-bold text-emerald-800">💰 من أين جاء «المبلغ الكلي الموجود»</h3>
+                <p className="text-xs text-slate-500">خمسة مكوّنات — اضغط ما هو قابل للفتح منها لترى حركاته</p>
+              </div>
+              <button onClick={() => setShowTotal(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+            </div>
+            <table className="w-full text-right text-sm">
+              <tbody>
+                <tr className="border-b border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => { setShowTotal(false); openDailyLog(); }}>
+                  <td className="p-3">مجموع المبالغ اليومية <span className="text-[10px] text-slate-400">(صافي كل تقارير المكاتب) ↗</span></td>
+                  <td className="p-3 text-left font-bold text-slate-800">{fmt(data.cumulativeDaily)}</td>
+                </tr>
+                <tr className="border-b border-slate-100">
+                  <td className="p-3">+ مقبوضات الإدارة <span className="text-[10px] text-slate-400">(قبضٌ في حسابات المدير)</span></td>
+                  <td className="p-3 text-left font-bold text-emerald-600">+{fmt(data.managerReceipts)}</td>
+                </tr>
+                <tr className="border-b border-slate-100">
+                  <td className="p-3">− مصروفات الإدارة</td>
+                  <td className="p-3 text-left font-bold text-red-600">−{fmt(data.managerExpenses)}</td>
+                </tr>
+                <tr className="border-b border-slate-100">
+                  <td className="p-3">− تسديد ديون الكارتات</td>
+                  <td className="p-3 text-left font-bold text-red-600">−{fmt(data.cardPayments)}</td>
+                </tr>
+                <tr className="border-b border-slate-100">
+                  <td className="p-3">− رواتب سُدِّدت من الكلي <span className="text-[10px] text-slate-400">(خارج التقرير اليومي)</span></td>
+                  <td className="p-3 text-left font-bold text-red-600">−{fmt(data.salaryFromTotal)}</td>
+                </tr>
+              </tbody>
+              <tfoot className="bg-emerald-50 font-extrabold">
+                <tr><td className="p-3">= المبلغ الكلي الموجود</td><td className="p-3 text-left text-emerald-700">{fmt(data.totalAvailable)}</td></tr>
+              </tfoot>
+            </table>
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
+              حساب الماستر خارج هذه المعادلة تماماً — له بطاقته المستقلة.
             </div>
           </div>
         </div>
