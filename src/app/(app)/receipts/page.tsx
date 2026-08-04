@@ -46,11 +46,32 @@ export default function ReceiptsPage() {
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [sort, setSort] = useState<{ key: "ref" | "date" | "who" | "amount"; dir: 1 | -1 }>({ key: "ref", dir: -1 });
   const [busy, setBusy] = useState(false);
+  // العدّ والمجاميع من الخادم — على كل المطابق لا على المحمّل (تدقيق 2026-08-04)
+  const [matched, setMatched] = useState(0);
+  const [srvSums, setSrvSums] = useState({ value: 0, collected: 0 });
   const [msg, setMsg] = useState("");
 
+  // البحث يجري في الخادم (كان في المتصفح على المحمّل وحده فوصلٌ أقدم لا يُبحث عنه)
   useEffect(() => {
-    fetch("/api/subscriptions").then((r) => (r.ok ? r.json() : [])).then(setSubRows).catch(() => {});
-    fetch("/api/invoices").then((r) => (r.ok ? r.json() : [])).then(setInvRows).catch(() => {});
+    const t = setTimeout(() => {
+      const qs = new URLSearchParams({ meta: "1" });
+      if (q.trim()) qs.set("q", q.trim());
+      if (kind === "sub") {
+        fetch(`/api/subscriptions?${qs}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+          if (!d) return;
+          setSubRows(d.rows ?? []); setMatched(d.matched ?? 0); setSrvSums(d.sums ?? { value: 0, collected: 0 });
+        }).catch(() => {});
+      } else {
+        fetch(`/api/invoices?${qs}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+          if (!d) return;
+          setInvRows(d.rows ?? []); setMatched(d.matched ?? 0); setSrvSums(d.sums ?? { value: 0, collected: 0 });
+        }).catch(() => {});
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [q, kind]);
+
+  useEffect(() => {
     fetch("/api/towers").then((r) => (r.ok ? r.json() : [])).then(setTowers).catch(() => {});
   }, []);
 
@@ -217,8 +238,15 @@ export default function ReceiptsPage() {
           </table>
         </div>
         <div className="pg-f">
-          <span>{rows.length} وصلاً{checked.size > 0 ? ` — محدّد ${checked.size}` : ""}</span>
-          <span className="pg-tot">المجموع: <b>{fmt(sum)}</b> د.ع</span>
+          <span>
+            معروض {rows.length} من أصل {matched || rows.length} وصلاً
+            {checked.size > 0 ? ` — محدّد ${checked.size}` : ""}
+          </span>
+          {/* المجموع من الخادم على **كل** المطابق — لا على المعروض وحده */}
+          <span className="pg-tot">
+            القيمة: <b>{fmt(srvSums.value)}</b> · الواصل: <b>{fmt(srvSums.collected)}</b> · الدين:{" "}
+            <b>{fmt(Math.max(0, srvSums.value - srvSums.collected))}</b> د.ع
+          </span>
         </div>
       </div>
     </div>

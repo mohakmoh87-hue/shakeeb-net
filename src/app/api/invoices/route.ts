@@ -30,16 +30,22 @@ const schema = z.object({
 
 // سجل وصولات فواتير المبيع — مع اسم المشترك/الزبون.
 // العزل: فواتير مكاتب وكيل المستخدم فقط (+ فواتير بلا مكتب أنشأها هو) — كانت بلا فلترة
-export async function GET() {
+export async function GET(request: Request) {
   const g = await guard("inventory.manage");
   if (g.error) return g.error;
 
+  // سقف 200 كان يخفي فواتير داخلة في المجاميع، والبحث يجري في المتصفح على المحمّل
+  // وحده — فأي فاتورة أقدم لا يمكن بلوغها ولا حذفها (تدقيق 2026-08-04).
+  const sp = new URL(request.url).searchParams;
+  const withMeta = sp.get("meta") === "1";
+  const take = Math.min(2000, Math.max(1, Number(sp.get("take")) || 500));
   const { towerScope } = await import("@/lib/guard");
   const scope = await towerScope(g.session);
+  const invWhere = { isDeleted: false, OR: [{ ...scope }, { towerId: null, user: g.session.username }] };
   const invoices = await prisma.invoice.findMany({
-    where: { isDeleted: false, OR: [{ ...scope }, { towerId: null, user: g.session.username }] },
+    where: invWhere,
     orderBy: { id: "desc" },
-    take: 200,
+    take,
   });
   const subIds = [...new Set(invoices.map((i) => i.subscriberId).filter((x): x is number => x != null))];
   const subs = subIds.length
@@ -65,11 +71,26 @@ export async function GET() {
     const part = (l.count ?? 1) > 1 ? `${nm} ×${l.count}` : nm;
     itemsText.set(l.invoiceId, itemsText.has(l.invoiceId) ? `${itemsText.get(l.invoiceId)}، ${part}` : part);
   }
-  return NextResponse.json(invoices.map((i) => ({
+  const rows = invoices.map((i) => ({
     ...i,
     subscriberName: i.subscriberId != null ? nameMap.get(i.subscriberId) ?? null : null,
     itemsText: itemsText.get(i.id) ?? null,
-  })));
+  }));
+
+  // meta=1: العدّ الكامل والمجاميع على كل المطابق — لا على المعروض
+  if (withMeta) {
+    const [matched, agg] = await Promise.all([
+      prisma.invoice.count({ where: invWhere }),
+      prisma.invoice.aggregate({ where: invWhere, _sum: { totalMy: true, waselHim: true } }),
+    ]);
+    return NextResponse.json({
+      rows,
+      matched,
+      sums: { value: agg._sum.totalMy ?? 0, collected: agg._sum.waselHim ?? 0 },
+    });
+  }
+
+  return NextResponse.json(rows);
 }
 
 export async function POST(request: Request) {

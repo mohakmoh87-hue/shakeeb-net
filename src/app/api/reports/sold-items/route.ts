@@ -21,17 +21,22 @@ export async function GET(request: Request) {
   if (to) { const d = new Date(to); if (!isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); dateFilter.lte = d; } }
 
   const scope = await towerScope(g.session!);
+  const invWhere = {
+    isDeleted: false,
+    OR: [{ ...scope }, { towerId: null, user: g.session!.username }],
+    ...(dateFilter.gte || dateFilter.lte ? { date: dateFilter } : {}),
+  };
+  // المجموع الحقيقي يُحسب على **كل** الفواتير المطابقة لا على المعروض منها —
+  // كان يُحسب من الـ500 المقصوصة فيخرج مجموعٌ خاطئ لا ناقص فقط (تدقيق 2026-08-04).
+  const matchedInvoices = await prisma.invoice.count({ where: invWhere });
+  const PAGE = 2000;
   const invoices = await prisma.invoice.findMany({
-    where: {
-      isDeleted: false,
-      OR: [{ ...scope }, { towerId: null, user: g.session!.username }],
-      ...(dateFilter.gte || dateFilter.lte ? { date: dateFilter } : {}),
-    },
+    where: invWhere,
     orderBy: { id: "desc" },
-    take: 500,
+    take: PAGE,
     select: { id: true, number: true, date: true, type: true, note: true, user: true, subscriberId: true, towerId: true },
   });
-  if (invoices.length === 0) return NextResponse.json({ rows: [], totalAmount: 0, invoiceCount: 0 });
+  if (invoices.length === 0) return NextResponse.json({ rows: [], totalAmount: 0, invoiceCount: 0, matchedInvoices, truncated: false, partialTotal: false });
 
   const invById = new Map(invoices.map((i) => [i.id, i]));
   const lines = await prisma.invoiceItem.findMany({
@@ -82,9 +87,24 @@ export async function GET(request: Request) {
           .some((v) => (v ?? "").toString().toLowerCase().includes(q)))
     : rows;
 
-  return NextResponse.json({
-    rows: filtered,
-    totalAmount: filtered.reduce((s, r) => s + r.total, 0),
-    invoiceCount: new Set(filtered.map((r) => r.invoiceId)).size,
-  });
+  // مجموع كل السطور المطابقة: SUM(count × price) على مستوى القاعدة — يشمل ما لم يُعرض.
+  // مع بحث حر لا يمكن حسابه في القاعدة (البحث يجري على أسماء مركّبة)، فيُعلَّم partialTotal
+  // ليُصرَّح للمستخدم أن المجموع يخص المعروض لا كل المدة.
+  let totalAmount = filtered.reduce((s, r) => s + r.total, 0);
+  let invoiceCount = new Set(filtered.map((r) => r.invoiceId)).size;
+  const truncated = matchedInvoices > invoices.length;
+  const partialTotal = !!q && truncated;
+  if (!q) {
+    const ids = await prisma.invoice.findMany({ where: invWhere, select: { id: true } });
+    const idList = ids.map((x) => x.id);
+    invoiceCount = idList.length;
+    if (idList.length) {
+      const rowsAgg = await prisma.$queryRaw<{ total: bigint | number | null }[]>`
+        SELECT COALESCE(SUM("count" * "price"), 0) AS total
+        FROM invoice_items WHERE "isDeleted" = false AND "invoiceId" = ANY(${idList})`;
+      totalAmount = Number(rowsAgg?.[0]?.total ?? 0);
+    } else totalAmount = 0;
+  }
+
+  return NextResponse.json({ rows: filtered, totalAmount, invoiceCount, matchedInvoices, truncated, partialTotal });
 }

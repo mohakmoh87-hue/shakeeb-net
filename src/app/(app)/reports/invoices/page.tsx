@@ -26,6 +26,10 @@ export default function SoldItemsReport() {
   const [rows, setRows] = useState<Row[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [invoiceCount, setInvoiceCount] = useState(0);
+  // شفافية القصّ: كم فاتورة طابقت فعلاً، وهل المجموع يخص المعروض فقط
+  const [matchedInvoices, setMatchedInvoices] = useState(0);
+  const [truncated, setTruncated] = useState(false);
+  const [partialTotal, setPartialTotal] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [from, setFrom] = useState("");
@@ -42,7 +46,7 @@ export default function SoldItemsReport() {
     if (search.trim()) qs.set("q", search.trim());
     fetch(`/api/reports/sold-items${qs.toString() ? `?${qs}` : ""}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) { setRows(d.rows ?? []); setTotalAmount(d.totalAmount ?? 0); setInvoiceCount(d.invoiceCount ?? 0); } })
+      .then((d) => { if (d) { setRows(d.rows ?? []); setTotalAmount(d.totalAmount ?? 0); setInvoiceCount(d.invoiceCount ?? 0); setMatchedInvoices(d.matchedInvoices ?? 0); setTruncated(!!d.truncated); setPartialTotal(!!d.partialTotal); } })
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -103,6 +107,15 @@ export default function SoldItemsReport() {
       </div>
 
       {/* الملخّص */}
+      {/* شفافية القصّ — كان الجدول يُقصّ بصمت والمجموع يُحسب على المقصوص */}
+      {(truncated || partialTotal) && (
+        <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
+          {truncated && <>معروض {invoiceCount ? rows.length : 0} سطراً من فواتير {matchedInvoices} مطابقة — ضيّق المدة لرؤية الباقي. </>}
+          {partialTotal
+            ? <b>المجموع أدناه يخصّ المعروض فقط (بسبب البحث الحر مع قصّ القائمة).</b>
+            : <>والمجموع أدناه محسوب على <b>كل</b> المدة لا على المعروض.</>}
+        </div>
+      )}
       <div className="mb-4 grid grid-cols-3 gap-3">
         <Stat label="أسطر المواد" value={fmt(sorted.length)} />
         <Stat label="عدد الوصولات" value={fmt(invoiceCount)} />

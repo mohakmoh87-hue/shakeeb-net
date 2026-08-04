@@ -45,6 +45,19 @@ type MgrBalance = {
   general: number; master: number; opening: number;
 };
 
+// كل حركات مدير واحد: قناة مكاتبه (ما يسجّله المستخدم من المصروفات والمقبوضات)
+// + حساباته العامة والماستر والرصيد السابق — في قائمة واحدة (طلب محمد 2026-08-04)
+type MgrTxRow = {
+  key: string; id: number; source: "money" | "manager"; date: string;
+  office: string | null; kind: string; deposited: number; withdrawn: number;
+  notes: string | null; by: string | null; affectsReport: boolean;
+};
+type MgrDetail = {
+  manager: { id: number; name: string };
+  rows: MgrTxRow[];
+  totals: { deposited: number; withdrawn: number; net: number; count: number };
+};
+
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
 const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات", salary: "راتب فني (من الكلي)", "card-debt-add": "إضافة يدوية لديون الكارتات", "card-debt-sub": "إنقاص يدوي من ديون الكارتات", "master-expense": "🅜 صرف ماستر", "master-receipt": "🅜 قبض ماستر", "opening-receipt": "رصيد سابق (إكسل) — أعطى", "opening-expense": "رصيد سابق (إكسل) — سحب" };
@@ -90,6 +103,9 @@ export default function ManagerAccountsPage() {
   const [mgrBusy, setMgrBusy] = useState(false);
   const [mgrMsg, setMgrMsg] = useState("");
   const [openMgr, setOpenMgr] = useState<number | null>(null);
+  const [mgrDetail, setMgrDetail] = useState<MgrDetail | null>(null); // نافذة «تفاصيل» المدير
+  const [mgrDetailQ, setMgrDetailQ] = useState("");
+  const [txQ, setTxQ] = useState(""); // بحث في سجل حركات المدير
 
   function openMaster() {
     setShowMaster(true); setMasterDetail(null);
@@ -215,6 +231,22 @@ export default function ManagerAccountsPage() {
       ? await fetch("/api/manager-accounts/tx?id=" + (-id), { method: "DELETE" })
       : await fetch("/api/money/" + id + "/void", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: true }) });
     if (res.ok) { openMaster(); load(); }
+    else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
+  }
+
+  // «تفاصيل» المدير: كل حركاته المالية من كل القنوات، ومنها ما سجّله المستخدم
+  // من صفحة المصروفات والمقبوضات على حساب هذا المدير في أي مكتب.
+  function openMgrDetail(id: number) {
+    setMgrDetail(null); setMgrDetailQ("");
+    fetch(`/api/managers/${id}/transactions`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setMgrDetail(d); }).catch(() => {});
+  }
+
+  async function delMgrRow(r: MgrTxRow) {
+    if (!confirm(`حذف هذه الحركة؟\n${r.kind} — ${fmt(r.deposited || r.withdrawn)} د.ع\n${r.notes ?? ""}`)) return;
+    const res = r.source === "money"
+      ? await fetch(`/api/money/${r.id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: true }) })
+      : await fetch(`/api/manager-accounts/tx?id=${r.id}`, { method: "DELETE" });
+    if (res.ok) { openMgrDetail(r.source === "money" ? (mgrDetail?.manager.id ?? 0) : (mgrDetail?.manager.id ?? 0)); loadManagers(); load(); }
     else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
   }
 
@@ -444,6 +476,10 @@ export default function ManagerAccountsPage() {
                         <b className={m.net < 0 ? "text-red-700" : "text-emerald-700"}>
                           {m.net < 0 ? `عليه ${fmt(-m.net)}` : `له ${fmt(m.net)}`} د.ع
                         </b>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openMgrDetail(m.id); }}
+                          className="rounded-lg bg-slate-800 px-3 py-1 text-[11px] font-bold text-white hover:bg-slate-900"
+                        >تفاصيل</button>
                         <span className="text-slate-400">{openMgr === m.id ? "▲" : "▼"}</span>
                       </span>
                     </div>
@@ -495,16 +531,28 @@ export default function ManagerAccountsPage() {
           </div>
         </div>
 
-        {/* سجل حركات المدير */}
+        {/* سجل حركات المدير — مع بحث (كان بلا أي وسيلة للوصول إلى حركة بعينها) */}
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 bg-slate-50 p-2">
+            <input value={txQ} onChange={(e) => setTxQ(e.target.value)}
+              placeholder="🔍 بحث في الحركات: نوع، مبلغ، ملاحظة، أو من سجّلها…"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
+          </div>
           <table className="w-full text-right text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr><th className="p-3">#</th><th className="p-3">التاريخ</th><th className="p-3">النوع</th><th className="p-3">المبلغ</th><th className="p-3">بواسطة</th><th className="p-3">ملاحظة</th><th className="p-3"></th></tr>
             </thead>
             <tbody>
-              {data.transactions.length === 0 ? (
-                <tr><td colSpan={7} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
-              ) : data.transactions.map((t) => (
+              {(() => {
+                const needle = txQ.trim().toLowerCase();
+                const list = needle
+                  ? data.transactions.filter((t) =>
+                      [TYPE_LABEL[t.type] ?? t.type, String(t.amount), t.notes ?? "", t.byUser ?? "", String(t.id)]
+                        .some((v) => v.toLowerCase().includes(needle)))
+                  : data.transactions;
+                return list.length === 0 ? (
+                <tr><td colSpan={7} className="p-6 text-center text-slate-400">لا توجد حركات مطابقة</td></tr>
+              ) : list.map((t) => (
                 <tr key={t.id} className="border-t border-slate-100">
                   <td className="p-3 text-slate-400">{t.id}</td>
                   <td className="p-3" dir="ltr">{fmtDate(t.date)}</td>
@@ -514,12 +562,88 @@ export default function ManagerAccountsPage() {
                   <td className="p-3 text-slate-600">{t.notes ?? "—"}</td>
                   <td className="p-3"><button onClick={() => del(t.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-100">حذف</button></td>
                 </tr>
-              ))}
+              ));
+              })()}
             </tbody>
           </table>
         </div>
       </div>
       </>
+      )}
+
+      {/* تفاصيل المدير: كل حركاته من كل القنوات — بما فيها ما سجّله المستخدم
+          من صفحة المصروفات والمقبوضات على حساب هذا المدير في أي مكتب */}
+      {mgrDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setMgrDetail(null)}>
+          <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 bg-sky-50 px-4 py-3">
+              <div>
+                <h3 className="text-lg font-bold text-sky-800">👔 تفاصيل حركات {mgrDetail.manager.name}</h3>
+                <p className="text-xs text-slate-500">كل الحركات: مكاتبه (بما سجّله المستخدم في المصروفات والمقبوضات) · حساباته العامة · الماستر · الرصيد السابق</p>
+              </div>
+              <button onClick={() => setMgrDetail(null)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 border-b border-slate-200 bg-white px-4 py-2.5 text-center text-sm">
+              <div><div className="text-xs text-slate-500">أودع</div><b className="text-emerald-600">{fmt(mgrDetail.totals.deposited)}</b></div>
+              <div><div className="text-xs text-slate-500">سحب</div><b className="text-red-600">{fmt(mgrDetail.totals.withdrawn)}</b></div>
+              <div><div className="text-xs text-slate-500">الصافي</div>
+                <b className={mgrDetail.totals.net < 0 ? "text-red-700" : "text-emerald-700"}>
+                  {mgrDetail.totals.net < 0 ? `عليه ${fmt(-mgrDetail.totals.net)}` : `له ${fmt(mgrDetail.totals.net)}`}
+                </b>
+              </div>
+            </div>
+
+            <div className="border-b border-slate-100 p-2">
+              <input value={mgrDetailQ} onChange={(e) => setMgrDetailQ(e.target.value)}
+                placeholder="🔍 بحث: مكتب، نوع، مبلغ، ملاحظة، أو من سجّلها…"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500" />
+            </div>
+
+            <div className="overflow-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="sticky top-0 bg-slate-50 text-slate-600">
+                  <tr><th className="p-2">التاريخ</th><th className="p-2">المكتب</th><th className="p-2">النوع</th>
+                    <th className="p-2">أودع</th><th className="p-2">سحب</th><th className="p-2">الملاحظة</th>
+                    <th className="p-2">بواسطة</th>{can("receipts.void") && <th className="p-2"></th>}</tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const needle = mgrDetailQ.trim().toLowerCase();
+                    const list = needle
+                      ? mgrDetail.rows.filter((r) =>
+                          [r.office ?? "", r.kind, String(r.deposited), String(r.withdrawn), r.notes ?? "", r.by ?? ""]
+                            .some((v) => v.toLowerCase().includes(needle)))
+                      : mgrDetail.rows;
+                    return list.length === 0 ? (
+                      <tr><td colSpan={8} className="p-8 text-center text-slate-400">لا حركات مطابقة</td></tr>
+                    ) : list.map((r) => (
+                      <tr key={r.key} className="border-t border-slate-100">
+                        <td className="p-2 whitespace-nowrap text-slate-500" dir="ltr">{fmtDate(r.date)}</td>
+                        <td className="p-2 text-slate-500">{r.office ?? "—"}</td>
+                        <td className="p-2">
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">{r.kind}</span>
+                        </td>
+                        <td className="p-2 font-bold text-emerald-600">{r.deposited ? fmt(r.deposited) : "—"}</td>
+                        <td className="p-2 font-bold text-red-600">{r.withdrawn ? fmt(r.withdrawn) : "—"}</td>
+                        <td className="p-2 text-slate-600">{r.notes ?? "—"}</td>
+                        <td className="p-2 text-slate-400">{r.by ?? "—"}</td>
+                        {can("receipts.void") && (
+                          <td className="p-2">
+                            <button onClick={() => delMgrRow(r)} className="rounded bg-red-50 px-2 py-1 font-semibold text-red-600 hover:bg-red-100" title="حذف الحركة">🗑</button>
+                          </td>
+                        )}
+                      </tr>
+                    ));
+                  })()}
+                </tbody>
+              </table>
+            </div>
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
+              حركات المكاتب تؤثر على تقاريرها اليومية (عدا ما وُسِم ماستر) · حساباته العامة والماستر والرصيد السابق لا تؤثر على أي تقرير.
+            </div>
+          </div>
+        </div>
       )}
 
       {/* سجل مجموع المبالغ اليومية (كل يوم بتاريخه وصافي مبلغه) */}
