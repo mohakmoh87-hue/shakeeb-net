@@ -96,7 +96,7 @@ export async function GET() {
 }
 
 const actionSchema = z.object({
-  action: z.enum(["return", "delete"]),
+  action: z.enum(["return", "delete", "link"]),
   cardIds: z.array(z.coerce.number()).min(1, "لم تُحدَّد كروت"),
 });
 
@@ -114,6 +114,71 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
   const { action, cardIds } = parsed.data;
+
+  // ===== ربط الكارت بمشتركه الحقيقي (طلب محمد 2026-08-05) =====
+  // بدل «أرجعه أو احذفه» فقط: نسأل SAS مَن استعمل هذا السيريال فعلاً.
+  // إن وُجد ⇒ يُربط الكارت بذلك المشترك ويسقط الوسم. وإن لم يوجد ⇒ يُقال صراحةً
+  // إن الكارت غير مستخدم، فتقرر إرجاعه للمخزن بنفسك.
+  if (action === "link") {
+    const { sasBaseUrl, sasLogin, sasSearchActivation } = await import("@/lib/sas4");
+    const cards = await prisma.rechargeCard.findMany({
+      where: { id: { in: cardIds }, agentId },
+      select: { id: true, serial: true, subscriberId: true },
+    });
+    if (!cards.length) return NextResponse.json({ error: "لا كارت مطابق ضمن حسابك" }, { status: 404 });
+
+    // مكاتب الوكيل المرتبطة بـSAS — نبحث في كلٍّ منها حتى نجد السيريال
+    const towers = await prisma.tower.findMany({
+      where: { agentId, isDeleted: false, loginUrl: { not: null }, username: { not: null }, password: { not: null } },
+      select: { id: true, name: true, loginUrl: true, username: true, password: true },
+    });
+    if (!towers.length) return NextResponse.json({ error: "لا مكتب مربوط بـSAS" }, { status: 400 });
+
+    const results: { cardId: number; serial: string | null; status: string; subscriber?: string; office?: string }[] = [];
+    for (const c of cards) {
+      const serial = (c.serial ?? "").trim();
+      if (!serial) { results.push({ cardId: c.id, serial: c.serial, status: "no-serial" }); continue; }
+      let found: { username: string | null; name: string | null } | null = null;
+      let office: string | null = null;
+      let reachable = false;
+      for (const t of towers) {
+        try {
+          const base = sasBaseUrl(t.loginUrl!);
+          const token = await sasLogin(base, t.username!, t.password!);
+          reachable = true;
+          const hit = await sasSearchActivation(base, token, serial);
+          if (hit) { found = { username: hit.username, name: hit.name }; office = t.name; break; }
+        } catch { /* مكتب متعذّر — نجرّب التالي */ }
+      }
+      if (!reachable) { results.push({ cardId: c.id, serial: c.serial, status: "sas-unreachable" }); continue; }
+      if (!found) { results.push({ cardId: c.id, serial: c.serial, status: "not-used" }); continue; }
+
+      // مطابقة صاحب التفعيل بمشترك في البرنامج (باليوزر) — ضمن مكاتب الوكيل
+      const uname = (found.username ?? "").trim();
+      const sub = uname
+        ? await prisma.subscriber.findFirst({
+            where: { netUser: uname, isDeleted: false, towerId: { in: towers.map((t) => t.id) } },
+            select: { id: true, name: true, netUser: true },
+          })
+        : null;
+      if (!sub) {
+        results.push({ cardId: c.id, serial: c.serial, status: "sas-user-not-in-app", subscriber: found.name ?? uname, office: office ?? undefined });
+        continue;
+      }
+      await prisma.rechargeCard.update({
+        where: { id: c.id },
+        data: { subscriberId: sub.id, userName: sub.netUser ?? sub.name },
+      });
+      await prisma.auditLog.create({
+        data: {
+          userId: session?.userId, action: "PHANTOM_CARD_LINK", entity: "rechargeCard", entityId: String(c.id),
+          details: "ربط كارت " + serial + " بمشتركه الحقيقي حسب SAS: " + (sub.name ?? sub.netUser) + " — بلا مساس بالوصل ولا المال",
+        },
+      });
+      results.push({ cardId: c.id, serial: c.serial, status: "linked", subscriber: sub.name ?? sub.netUser ?? undefined, office: office ?? undefined });
+    }
+    return NextResponse.json({ ok: true, results });
+  }
 
   if (action === "return") {
     // إرجاع للمخزن: تحرير الكارت فقط (يعود متاحاً) — دون لمس الوصل/المال/الأيام

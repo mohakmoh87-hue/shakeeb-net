@@ -184,10 +184,34 @@ export default function ManagerAccountsPage() {
   }, []);
   useEffect(() => { loadPhantom(); }, [loadPhantom]);
 
-  async function phantomAction(action: "return" | "delete") {
+  async function phantomAction(action: "return" | "delete" | "link") {
     setPhantomMsg("");
     const cardIds = [...phantomSel];
     if (cardIds.length === 0) { setPhantomMsg("علّم كارتاً واحداً على الأقل"); return; }
+    // «ربط بمشتركه»: يسأل SAS مَن استعمل هذا السيريال فعلاً ويربطه به —
+    // وإن لم يجده أخبرك أن الكارت غير مستخدم (طلب محمد 2026-08-05).
+    if (action === "link") {
+      setPhantomBusy(true);
+      const r = await fetch("/api/manager/phantom-cards", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, cardIds }),
+      });
+      const d = await r.json().catch(() => ({}));
+      setPhantomBusy(false);
+      if (!r.ok) { setPhantomMsg(d.error ?? "تعذّرت العملية"); return; }
+      type LinkRes = { serial: string | null; status: string; subscriber?: string; office?: string };
+      const rows: LinkRes[] = d.results ?? [];
+      const label = (x: LinkRes) => {
+        const head = (x.serial ?? "?") + ": ";
+        if (x.status === "linked") return "✅ " + head + "رُبط بـ" + (x.subscriber ?? "") + (x.office ? " (" + x.office + ")" : "");
+        if (x.status === "not-used") return "⚪ " + head + "هذا الكارت غير مستخدم في SAS";
+        if (x.status === "sas-user-not-in-app") return "⚠️ " + head + "مستعمله في SAS «" + (x.subscriber ?? "") + "» غير موجود في البرنامج";
+        if (x.status === "sas-unreachable") return "⛔ " + head + "تعذّر الوصول إلى SAS — شغّل حاسبة المكتب وأعد المحاولة";
+        return "⚠️ " + head + x.status;
+      };
+      setPhantomMsg(rows.map(label).join(" · "));
+      loadPhantom();
+      return;
+    }
     const verb = action === "return" ? "إرجاع للمخزن" : "حذف نهائي";
     // ⚠️ الحذف النهائي **يُنقص ديون الكارتات** بقيمة شرائها؛ أما الإرجاع فلا يغيّرها إطلاقاً.
     // (النص القديم كان يقول «لا يُمَسّ المال» فيُضلّل — حُذف 266 كارتاً يوم 27/7 ونزلت ملايين بصمت.)
@@ -371,6 +395,9 @@ export default function ManagerAccountsPage() {
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="text-xs text-slate-500">محدَّد: {phantomSel.size}</span>
+                <button onClick={() => phantomAction("link")} disabled={phantomBusy || phantomSel.size === 0}
+                  className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+                  title="يبحث في SAS عن مستعمل هذا الكارت فعلاً ويربطه به">🔗 ربط بمشتركه</button>
                 <button onClick={() => phantomAction("return")} disabled={phantomBusy || phantomSel.size === 0} className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">↩ إرجاع للمخزن</button>
                 <button onClick={() => phantomAction("delete")} disabled={phantomBusy || phantomSel.size === 0} className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50">🗑 حذف نهائي</button>
               </div>
