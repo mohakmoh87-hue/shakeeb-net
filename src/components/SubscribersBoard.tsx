@@ -63,7 +63,12 @@ export default function SubscribersBoard() {
   const [activating, setActivating] = useState<Subscriber | null>(null);
   const [addingDebt, setAddingDebt] = useState<Subscriber | null>(null);
   // نوافذ السجلات
-  const [logView, setLogView] = useState<"receipts" | "maintenance" | "invoices" | null>(null);
+  const [logView, setLogView] = useState<"receipts" | "maintenance" | "invoices" | "debt" | null>(null);
+  // دفتر الدين: الدين كان رقماً واحداً بلا تاريخ ولا مصدر (المرحلة ٧)
+  const [debtLog, setDebtLog] = useState<{
+    rows: { key: string; date: string | null; kind: string; added: number; paid: number; note: string | null; by: string | null }[];
+    totals: { added: number; paid: number; expected: number; carry: number; diff: number };
+  } | null>(null);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [maintLogs, setMaintLogs] = useState<MaintLog[]>([]);
   const [invRows, setInvRows] = useState<InvRow[]>([]);
@@ -174,10 +179,14 @@ export default function SubscribersBoard() {
     fetch(`/api/subscriptions?subscriberId=${selectedId}`).then((r) => { if (r.ok) r.json().then(setReceipts); });
   }, [selectedId]);
 
-  function openLog(view: "receipts" | "maintenance" | "invoices") {
+  function openLog(view: "receipts" | "maintenance" | "invoices" | "debt") {
     if (!selected) return;
     setLogView(view); setMoreMenu(false);
     if (view === "receipts") loadReceipts();
+    if (view === "debt") {
+      setDebtLog(null);
+      fetch(`/api/subscribers/${selected.id}/debt-log`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setDebtLog(d); }).catch(() => {});
+    }
     if (view === "maintenance") fetch(`/api/subscribers/${selected.id}/maintenance`).then((r) => { if (r.ok) r.json().then((d) => setMaintLogs(d.logs ?? [])); });
     if (view === "invoices") fetch("/api/invoices").then((r) => (r.ok ? r.json() : [])).then((rows: InvRow[]) => setInvRows(rows.filter((x) => x.subscriberId === selected.id))).catch(() => setInvRows([]));
   }
@@ -415,6 +424,7 @@ export default function SubscribersBoard() {
                         {moreMenu && (
                           <div className="sb-panel" onClick={(e) => e.stopPropagation()}>
                             <button className="sb-act" onClick={() => openLog("receipts")}>📄 سجل الوصولات</button>
+                            <button className="sb-act" onClick={() => openLog("debt")}>📕 دفتر الدين</button>
                             <button className="sb-act" onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
                             <MapButton subscriberId={s.id} />
                             <button className="sb-act" onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
@@ -452,10 +462,45 @@ export default function SubscribersBoard() {
       {logView && selected && (
         <Modal onClose={() => setLogView(null)} wide>
           <div className="mb-3 text-center text-base font-extrabold text-ink">
-            {logView === "receipts" ? "سجل وصولات المشترك" : logView === "maintenance" ? "سجل صيانات المشترك" : "وصولات الفواتير"} — {selected.name}
+            {logView === "receipts" ? "سجل وصولات المشترك" : logView === "maintenance" ? "سجل صيانات المشترك" : logView === "debt" ? "دفتر دين المشترك" : "وصولات الفواتير"} — {selected.name}
           </div>
           <div className="max-h-[62vh] overflow-auto rounded-lg border border-line">
-            {logView === "receipts" ? (
+            {logView === "debt" ? (
+              !debtLog ? (
+                <div className="p-8 text-center text-muted">جاري التحميل...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-2 p-3 text-center text-xs">
+                    <div><div className="text-muted">أُضيف ديناً</div><b className="text-bad">{fmt(debtLog.totals.added)}</b></div>
+                    <div><div className="text-muted">سُدِّد/أُسقط</div><b className="text-ok">{fmt(debtLog.totals.paid)}</b></div>
+                    <div><div className="text-muted">الدين الحالي</div><b>{fmt(debtLog.totals.carry)}</b></div>
+                  </div>
+                  {debtLog.totals.diff !== 0 && (
+                    <div className="mx-3 mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+                      ⚠️ فرق {fmt(Math.abs(debtLog.totals.diff))} بين الدين المسجَّل ومجموع مصادره —
+                      أي أن الدين عُدِّل يوماً من خارج التفعيلات والفواتير والتسديدات.
+                    </div>
+                  )}
+                  <table className="tbl">
+                    <thead><tr><th>التاريخ</th><th>النوع</th><th>أُضيف</th><th>سُدِّد</th><th>التفصيل</th><th>بواسطة</th></tr></thead>
+                    <tbody>
+                      {debtLog.rows.length === 0 ? (
+                        <tr><td colSpan={6} className="p-6 text-center text-muted">لا حركات دين لهذا المشترك</td></tr>
+                      ) : debtLog.rows.map((r) => (
+                        <tr key={r.key}>
+                          <td className="num" dir="ltr">{r.date ? formatDateTime(r.date) : "—"}</td>
+                          <td>{r.kind}</td>
+                          <td className="num" style={{ color: r.added ? "var(--bad)" : undefined }}>{r.added ? fmt(r.added) : "—"}</td>
+                          <td className="num" style={{ color: r.paid ? "var(--ok)" : undefined }}>{r.paid ? fmt(r.paid) : "—"}</td>
+                          <td style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }} title={r.note ?? undefined}>{r.note ?? "—"}</td>
+                          <td>{r.by ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )
+            ) : logView === "receipts" ? (
               <table className="w-full text-right text-xs [&_td]:tabular-nums">
                 <thead className="sticky top-0 bg-surface-2 text-ink-2"><tr>
                   <th className="p-2">#</th><th className="p-2">التاريخ والوقت</th><th className="p-2">الباقة</th>
