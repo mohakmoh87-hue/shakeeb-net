@@ -238,6 +238,16 @@ export function startWaRequestPoller() {
         const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
         const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
         if (!alive && !recentlyTried) void startWhatsApp(boundTower);
+        // نبضة صحّة لعميل الواتساب نفسه: كانت الحالة تُكتب مرّة عند ready ولا تُراجَع،
+        // فتبقى «متصل» بينما العميل ميت — وهذا ما رآه محمد في الشهداء (٣ آب): الحاسبة
+        // تنبض والحالة ready والإرسال يفشل بـ«انتهت المهلة». الآن الطابع الزمني يتجدّد
+        // ما دام العميل جاهزاً فعلاً، والموقع يعتبر ready قديمةً = غير متصل.
+        if (st.state === "ready" && st.client) {
+          await prisma.waSession.updateMany({
+            where: { towerId: boundTower },
+            data: { state: "ready", hostMachineId: mid ?? undefined },
+          }).catch(() => {});
+        }
         return;
       }
 
@@ -336,11 +346,15 @@ export async function readOfficeStates(officeIds: number[]): Promise<Record<numb
   const online = new Set(onlineWorkers.map((w) => w.machineId));
   const rows = await prisma.waSession.findMany({
     where: { towerId: { in: officeIds } },
-    select: { towerId: true, state: true, hostMachineId: true },
+    select: { towerId: true, state: true, hostMachineId: true, updatedAt: true },
   });
+  // «ready» لا تُصدَّق إن لم تتجدّد خلال ٥ دقائق: العامل يجدّدها كل دورة ما دام عميل
+  // الواتساب جاهزاً فعلاً — فحالةٌ قديمة تعني عميلاً ميتاً وإن كانت الحاسبة تنبض.
+  const FRESH_MS = 5 * 60 * 1000;
   for (const r of rows) {
     // «ready» صادقة فقط إذا كانت حاسبتها المستضيفة (hostMachineId) متصلة الآن؛ وإلا مُجمّدة
-    if (r.state === "ready" && (!r.hostMachineId || !online.has(r.hostMachineId))) {
+    const stale = r.updatedAt == null || Date.now() - r.updatedAt.getTime() > FRESH_MS;
+    if (r.state === "ready" && (!r.hostMachineId || !online.has(r.hostMachineId) || stale)) {
       out[r.towerId] = "disconnected";
     } else {
       out[r.towerId] = (r.state as WaState) ?? "disconnected";
