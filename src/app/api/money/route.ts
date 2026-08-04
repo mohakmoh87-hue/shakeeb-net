@@ -44,12 +44,20 @@ export async function GET(request: Request) {
     };
   }
 
-  // صفحة المصروفات والمقبوضات صارت **سجل الحركات المالية الشامل** (قرار محمد 2026-08-04):
-  // كانت تعرض اليدوي فقط، فكل حركة ماستر أو راتب أو تسديد دين أو بيع مخزن أو قبض تفعيل
-  // أو فاتورة تُسجَّل ثم لا تظهر في أي قائمة فيها زر حذف — وهكذا اختفت حركة الـ45 ألف ماستر.
-  // الافتراضي الآن: الكل. وtype=manual يعيد السلوك القديم لمن أراده.
-  const typeParam = (sp.get("type") ?? "all").trim();
+  // صفحة المصروفات والمقبوضات تعرض **ما أُدخل فيها**: صرف وقبض على أي حساب، بما فيه
+  // الماستر اليدوي (تصحيح محمد 2026-08-04). التفعيلات والمبيعات مكانها سجل الوصولات
+  // بتبويبَيه. وتمييز الماستر اليدوي عن ماستر التفعيل/الفاتورة بـsourceId: اليدوي بلا
+  // مرجع (null)، وماستر التفعيل يحمل رقم الوصل وماستر الفاتورة يحمل رقم الفاتورة.
+  // وتبقى بقية الأنواع متاحة في الفلتر — فلا يعود أي مال بلا مكان يُرى ويُحذف فيه.
+  const typeParam = (sp.get("type") ?? "entered").trim();
   const TYPE_WHERE: Record<string, object> = {
+    entered: {
+      OR: [
+        { sourceType: null },
+        { sourceType: "manual" },
+        { AND: [{ sourceType: "master" }, { sourceId: null }] },
+      ],
+    },
     manual: { OR: [{ sourceType: null }, { sourceType: "manual" }] },
     master: { sourceType: { in: ["master", "master-invoice"] } },
     activation: { sourceType: "activation" },

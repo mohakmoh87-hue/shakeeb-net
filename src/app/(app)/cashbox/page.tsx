@@ -65,12 +65,12 @@ export default function CashboxPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [detailId, setDetailId] = useState<number | null>(null); // حركة مفتوحة التفاصيل
   // فلتر نوع الحركة — الافتراضي «الكل»: الصفحة صارت سجل كل الحركات لا اليدوي فقط
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("entered");
   const [matched, setMatched] = useState(0); // إجمالي المطابق (قد يفوق المعروض)
 
-  const load = useCallback((f = "", t = "", search = "", kind = "all") => {
+  const load = useCallback((f = "", t = "", search = "", kind = "entered") => {
     const qs = new URLSearchParams();
-    if (kind && kind !== "all") qs.set("type", kind);
+    if (kind) qs.set("type", kind);
     if (f) qs.set("from", f);
     if (t) qs.set("to", t);
     if (search.trim()) qs.set("q", search.trim());
@@ -165,7 +165,7 @@ export default function CashboxPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="المصروفات والمقبوضات" subtitle="تسجيل الصرف والقبض — والسجل أدناه يعرض كل الحركات المالية: يدوي · ماستر · تفعيل · فاتورة · بيع مخزن · تسديد دين · راتب" />
+      <PageHeader title="المصروفات والمقبوضات" subtitle="الصرف والقبض المُسجَّل هنا على أي حساب — نقدي أو ماستر. التفعيلات والمبيعات مكانها «سجل الوصولات»، ويمكنك استعراضها من فلتر النوع عند الحاجة" />
 
       {/* بطاقات الرصيد */}
       {/* البطاقات تعكس **الفلتر المعروض** لا اليدوي وحده — والرصيد كان يُحسب في الخادم ولا يُعرض */}
@@ -199,8 +199,9 @@ export default function CashboxPage() {
           <label className="mb-1 block text-xs font-medium text-slate-600">النوع</label>
           <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); load(from, to, q, e.target.value); }}
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue">
-            <option value="all">الكل</option>
-            <option value="manual">يدوي (مصروف/مقبوض)</option>
+            <option value="entered">مصروف ومقبوض (المُدخَل هنا)</option>
+            <option value="all">كل الحركات المالية</option>
+            <option value="manual">يدوي نقدي فقط</option>
             <option value="master">🅜 ماستر</option>
             <option value="activation">تفعيل</option>
             <option value="invoice">فاتورة</option>
