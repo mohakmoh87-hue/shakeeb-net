@@ -8,11 +8,11 @@ import TrackModal from "./TrackModal";
 type Tech = {
   id: number; name: string; phone: string | null; username: string | null; plainCode?: string | null;
   towerId?: number | null; extraTowerIds?: number[]; isSupport?: boolean; isExtra?: boolean;
-  salary?: number | null; shiftStart?: string | null; shiftEnd?: string | null;
+  salary?: number | null; shiftStart?: string | null; shiftEnd?: string | null; ownCardsOnly?: boolean;
   entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null; missedCheckoutPenalty?: number | null;
 };
 type Form = Record<string, string>;
-const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0" };
+const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0" };
 
 // إدارة الفنيين للمدير: إضافة/تعديل بكل الإعدادات + حذف نهائي + بصمة خروج يدوية.
 export default function TechnicianManager({ officeId, officeName, onClose, onChange }: { officeId: number | null; officeName: string; onClose: () => void; onChange: () => void }) {
@@ -45,7 +45,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
     setEditId(t.id);
     setF({
       name: t.name ?? "", username: t.username ?? "", code: "", phone: t.phone ?? "",
-      salary: String(t.salary ?? ""), shiftStart: t.shiftStart ?? "", shiftEnd: t.shiftEnd ?? "",
+      salary: String(t.salary ?? ""), shiftStart: t.shiftStart ?? "", shiftEnd: t.shiftEnd ?? "", ownCardsOnly: t.ownCardsOnly ? "1" : "",
       entryGraceMin: String(t.entryGraceMin ?? 0), exitGraceMin: String(t.exitGraceMin ?? 0),
       lateRatePerMin: String(t.lateRatePerMin ?? 0), overtimeRatePerMin: String(t.overtimeRatePerMin ?? 0), paidLeavesPerMonth: String(t.paidLeavesPerMonth ?? 0),
       missedCheckoutPenalty: String(t.missedCheckoutPenalty ?? 0),

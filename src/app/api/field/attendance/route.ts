@@ -127,7 +127,15 @@ export async function POST(request: Request) {
     // كشف التأخّر (على الوقت المُحتسَب): دخول بعد (بدء الدوام + سماحية الدخول) ⇒ زر «هل نسيت البصمة؟»
     const isLate = startMin != null && baghdadMinutesOfDay(effectiveIn) > startMin + Math.max(0, t?.entryGraceMin ?? 0);
     await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkin", title: "بصمة دخول", body: `${tech.name} سجّل الدخول${onSupport ? " (دعم)" : ""}${isLate ? " (متأخّر)" : ""}`, refType: "technician", refId: tech.technicianId });
-    return NextResponse.json({ ok: true, state: "in", checkIn: created.checkIn, late: isLate, canExcuse: isLate });
+    // بطاقات الليل والفجر: تُرفع حين لا أحد على رأس عمله فتبقى بلا فني. نلتقطها **هنا**
+    // — لحظة أول بصمة دخول — بدل مهمة خلفية دورية تُبقي الخادم مستيقظاً وتكلّف على
+    // الخطة المجانية. الطلب موجود أصلاً كل صباح، فالكلفة الإضافية صفر (قرار محمد 2026-08-03).
+    let assignedPending = 0;
+    try {
+      const { distributePending } = await import("@/lib/autoAssign");
+      assignedPending = await distributePending(stampOffice, tech.agentId ?? null);
+    } catch { /* لا يُفشل البصمة إطلاقاً */ }
+    return NextResponse.json({ ok: true, state: "in", checkIn: created.checkIn, late: isLate, canExcuse: isLate, assignedPending });
   }
 
   // خروج

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard, sameAgentTower } from "@/lib/guard";
+import { guard, sameAgentTower, agentTowerIds } from "@/lib/guard";
 import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
+import { autoAssignOn, pickAssignee, verifyManualAssignee } from "@/lib/autoAssign";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ export async function POST(request: Request) {
   // مبلغ الاشتراك (لبطاقة «التوصيل» فقط) — يُخزَّن في subAmount ويظهر على وجه البطاقة قبل فتحها
   // ليعرف الفني كم يأخذ من الزبون. معلوماتي فقط (لا أثر مالي؛ يُسجَّل فعلياً عند التفعيل).
   const subAmount = operation === "توصيل" ? Math.max(0, Math.round(Number(body?.subAmount) || 0)) : 0;
+  // اختيار الفني (اختياري) — يُتحقَّق منه لاحقاً بعد معرفة مكتب المشترك
+  const wantedTech = body?.technicianId != null ? Number(body.technicianId) : null;
   if (!subscriberId) return NextResponse.json({ error: "معرّف المشترك مطلوب" }, { status: 400 });
   if (!OPERATIONS.includes(operation as (typeof OPERATIONS)[number])) {
     return NextResponse.json({ error: "عملية غير معروفة" }, { status: 400 });
@@ -77,13 +80,33 @@ export async function POST(request: Request) {
   ];
   if (extraPhone) descLines.push(`📞 هاتف إضافي: ${extraPhone}`);
   if (note) descLines.push(`📝 ملاحظة: ${note}`);
+  // الفني: اختيار المستخدم صراحةً (يُتحقَّق من وكيله ومكتبه)، وإلا التوزيع التلقائي
+  // إن كان مفعَّلاً للمكتب وللنوع. وأي تعثّر لا يُفشل إنشاء البطاقة.
+  const agentTowers = await agentTowerIds(g.session);
+  let technicianId: number | null = null;
+  let assignee: string | null = null;
+  let autoNote: string | null = null;
+  if (wantedTech != null) {
+    const ok = await verifyManualAssignee(wantedTech, sub.towerId, agentTowers);
+    if (!ok) return NextResponse.json({ error: "الفني غير موجود أو لا يتبع مكتب المشترك" }, { status: 400 });
+    technicianId = ok.id; assignee = ok.name;
+  } else {
+    try {
+      if (await autoAssignOn(sub.towerId, operation, g.session.agentId)) {
+        const picked = await pickAssignee(sub.towerId, agentTowers);
+        if (picked) { technicianId = picked.id; assignee = picked.name; autoNote = `توزيع تلقائي ← ${picked.name}`; }
+        else autoNote = "توزيع تلقائي: لا يوجد فني مؤهّل الآن (حضور/إجازة) — البطاقة بلا فني";
+      }
+    } catch { /* لا يُفشل الإنشاء */ }
+  }
   const position = await prisma.taskCard.count({ where: { listId: list.id, isDeleted: false } });
   const card = await prisma.taskCard.create({
     // نوع البطاقة يُؤخذ تلقائياً من العملية (توصيل/تحويل/صيانة/اعادة) + ربط المشترك (لمنع التكرار)
-    data: { listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id, subAmount: subAmount > 0 ? subAmount : null },
+    data: { listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id, subAmount: subAmount > 0 ? subAmount : null, technicianId, assignee },
   });
   // أول حدث في سجل التغييرات: إنشاء البطاقة (تاريخه ووقته وفاعله)
   await appendCardHistory(card.id, g.session.fullName ?? g.session.username, "إنشاء البطاقة");
+  if (autoNote) await appendCardHistory(card.id, "النظام", autoNote);
 
   return NextResponse.json({ ok: true, listName: list.name, card }, { status: 201 });
 }

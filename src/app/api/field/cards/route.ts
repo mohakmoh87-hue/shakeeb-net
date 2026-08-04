@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { agentOwnsCard, agentOwnsList, appendCardHistory, canOperateCard, canOperateList, resolveListActor } from "@/lib/field";
+import { agentOwnsCard, agentOwnsList, appendCardHistory, canOperateCard, canOperateList, cardOfficeId, listOfficeId, resolveListActor } from "@/lib/field";
+import { agentTowerIds } from "@/lib/guard";
+import { autoAssignOn, pickAssignee, verifyManualAssignee } from "@/lib/autoAssign";
 
 const VIEW_ONLY = { error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" };
 
@@ -14,8 +16,32 @@ export async function POST(request: Request) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const actor = auth.actor;
   // الفني: تُسنَد البطاقة إليه حصراً (لا يختار فنياً آخر). المستخدم: حسب اختياره.
-  const technicianId = actor.isTech ? actor.technicianId : (b.technicianId != null ? Number(b.technicianId) : null);
-  const assignee = actor.isTech ? actor.name : (b.assignee ? String(b.assignee) : null);
+  // **عزل إلزامي**: معرّف الفني القادم من المتصفح يُتحقَّق منه (وكيل/مكتب/غير محذوف)،
+  // و«اسم المنفّذ» يُشتقّ من صفّ الفني لا من العميل — كان يُقبل الاثنان بلا فحص إطلاقاً.
+  const officeId = await listOfficeId(Number(b.listId));
+  const agentTowers = actor.isTech ? [] : await agentTowerIds(actor.session ?? null);
+  let technicianId: number | null = null;
+  let assignee: string | null = null;
+  if (actor.isTech) {
+    technicianId = actor.technicianId; assignee = actor.name;
+  } else if (b.technicianId != null) {
+    const ok = await verifyManualAssignee(Number(b.technicianId), officeId, agentTowers);
+    if (!ok) return NextResponse.json({ error: "الفني غير موجود أو لا يتبع هذا المكتب" }, { status: 400 });
+    technicianId = ok.id; assignee = ok.name;
+  }
+  // التوزيع التلقائي: لا يعمل إلا للمستخدم/المدير على بطاقة **بلا فني** — الإسناد
+  // اليدوي وبطاقة الفني لنفسه لا يُمَسّان أبداً. وأي تعثّر يُبتلع فلا يفشل الإنشاء.
+  let autoNote: string | null = null;
+  if (!actor.isTech && technicianId == null) {
+    try {
+      const kind = b.kind ? String(b.kind).trim() : "صيانة";
+      if (await autoAssignOn(officeId, kind, actor.agentId)) {
+        const picked = await pickAssignee(officeId, agentTowers);
+        if (picked) { technicianId = picked.id; assignee = picked.name; autoNote = `توزيع تلقائي ← ${picked.name}`; }
+        else autoNote = "توزيع تلقائي: لا يوجد فني مؤهّل الآن (حضور/إجازة) — البطاقة بلا فني";
+      }
+    } catch { /* لا يُفشل إنشاء البطاقة إطلاقاً */ }
+  }
   const count = await prisma.taskCard.count({ where: { listId: Number(b.listId), isDeleted: false } });
   const created = await prisma.taskCard.create({
     data: {
@@ -33,6 +59,7 @@ export async function POST(request: Request) {
   });
   // أول حدث في سجل التغييرات: إنشاء البطاقة (تاريخه ووقته وفاعله)
   await appendCardHistory(created.id, actor.name ?? "مستخدم", "إنشاء البطاقة");
+  if (autoNote) await appendCardHistory(created.id, "النظام", autoNote);
   return NextResponse.json(created, { status: 201 });
 }
 
@@ -50,8 +77,16 @@ export async function PATCH(request: Request) {
   const data: Record<string, unknown> = {};
   if (typeof b.title === "string") data.title = b.title.trim();
   if ("description" in b) data.description = b.description || null;
-  if ("assignee" in b) data.assignee = b.assignee || null;
-  if ("technicianId" in b) data.technicianId = b.technicianId != null ? Number(b.technicianId) : null;
+  // تغيير الفني: يُتحقَّق منه كما في الإنشاء، والاسم يُشتقّ من صفّه لا من العميل
+  if ("technicianId" in b) {
+    if (b.technicianId == null) { data.technicianId = null; data.assignee = null; }
+    else {
+      const office = await cardOfficeId(Number(b.id));
+      const ok = await verifyManualAssignee(Number(b.technicianId), office, await agentTowerIds(s));
+      if (!ok) return NextResponse.json({ error: "الفني غير موجود أو لا يتبع هذا المكتب" }, { status: 400 });
+      data.technicianId = ok.id; data.assignee = ok.name;
+    }
+  }
   if ("kind" in b && b.kind) data.kind = String(b.kind).trim();
   if ("label" in b) data.label = b.label || null;
   if ("dueDate" in b) data.dueDate = b.dueDate ? new Date(b.dueDate) : null;

@@ -37,7 +37,7 @@ export async function GET() {
   // المعلَّق فقط: الكارت موجود، يتبع الوكيل، وما زال مستخدماً (لم يُرجَع/يُحذف)
   const cards = await prisma.rechargeCard.findMany({
     where: { id: { in: ids }, agentId, useDate: { not: null } },
-    select: { id: true, serial: true, useDate: true, subscriberId: true },
+    select: { id: true, serial: true, useDate: true, subscriberId: true, price: true },
   });
 
   // اسم المشترك ومكتبه
@@ -76,6 +76,9 @@ export async function GET() {
       office: sub?.towerId != null ? (towerName.get(sub.towerId) ?? null) : null,
       useDate: c.useDate,
       amount: amountBySerial.get((c.serial ?? "").trim()) ?? null,
+      // كلفة شراء الكارت — تنقص من «ديون الكارتات» عند الحذف النهائي (لا عند الإرجاع).
+      // منفصلة عن amount (مبلغ وصل الاشتراك) — خلطهما يضلّل المدير.
+      cardPrice: c.price ?? 0,
       detectedAt: detectedAt.get(c.id) ?? null,
     };
   });
@@ -118,13 +121,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, affected: res.count });
   }
 
-  // حذف نهائي من المخزن — دون لمس الوصل/المال
-  const res = await prisma.rechargeCard.deleteMany({ where: { id: { in: cardIds }, agentId } });
+  // حذف نهائي من المخزن — لا يمسّ الوصل ولا التقرير اليومي، **لكنه يُنقص «ديون الكارتات»**
+  // بقيمة شراء الكروت (الديون = مجموع أسعار كروت الوكيل). كان نص التدقيق يقول «بلا مساس
+  // بالمال» فيُضلّل: حُذف 266 كارتاً يوم 2026-07-27 ونزلت ملايين بلا أن يعرف أحد.
+  const delWhere = { id: { in: cardIds }, agentId };
+  const agg = await prisma.rechargeCard.aggregate({ where: delWhere, _sum: { price: true } });
+  const removedDebt = agg._sum.price ?? 0;
+  const res = await prisma.rechargeCard.deleteMany({ where: delWhere });
   await prisma.auditLog.create({
     data: {
       userId: session?.userId, action: "PHANTOM_CARD_DELETE", entity: "rechargeCard",
-      entityId: cardIds.join(","), details: `حذف ${res.count} كارت وهمي نهائياً من المخزن (بلا مساس بالوصل/المال)`,
+      entityId: cardIds.join(","),
+      details: `حذف ${res.count} كارت وهمي نهائياً من المخزن — نقصت ديون الكارتات ${removedDebt.toLocaleString("en-US")} د.ع (بلا مساس بالوصل ولا التقرير اليومي)`,
     },
   });
-  return NextResponse.json({ ok: true, affected: res.count });
+  return NextResponse.json({ ok: true, affected: res.count, removedDebt });
 }

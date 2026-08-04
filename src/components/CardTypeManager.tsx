@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type CardType = { id: number; name: string; deliveryOnly: boolean; execMinutes?: number | null; overrunDeduction?: number | null };
+type CardType = { id: number; name: string; deliveryOnly: boolean; autoAssign?: boolean; execMinutes?: number | null; overrunDeduction?: number | null };
 
 // إدارة أنواع البطاقات وأوقاتها المسموحة (للمدير): وقت الإنجاز + خصم دقيقة التجاوز.
 // التوصيل مُستثنى من الوقت (لا «بدء» ولا خصم).
@@ -61,6 +61,11 @@ export default function CardTypeManager({ types, colors, onColor, onClose, onCha
                   />
                   <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-500">
                     <input type="checkbox" checked={t.deliveryOnly} onChange={(e) => patch(t.id, { deliveryOnly: e.target.checked })} /> توصيل
+                  </label>
+                  {/* توزيع تلقائي: بوّابة النوع — لا تعمل إلا مع مفتاح «التوزيع التلقائي» للمكتب (صفحة المكاتب) */}
+                  <label className="flex items-center gap-1 text-[11px] font-semibold text-sky-600"
+                    title="تُسنَد بطاقات هذا النوع تلقائياً لصاحب العمل الأقل بين فنيي المكتب الحاضرين — ويلزم تفعيل التوزيع للمكتب أيضاً">
+                    <input type="checkbox" checked={!!t.autoAssign} onChange={(e) => patch(t.id, { autoAssign: e.target.checked })} /> 🎯 توزيع تلقائي
                   </label>
                   <button onClick={() => del(t)} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100">حذف</button>
                 </div>

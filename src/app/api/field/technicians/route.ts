@@ -57,6 +57,7 @@ export async function GET(request: Request) {
     return {
       ...base, plainCode: decryptSecret(t.plainCode), salary: t.salary, extraTowerIds: parseExtraTowers(t.extraTowerIds),
       shiftStart: t.shiftStart, shiftEnd: t.shiftEnd, entryGraceMin: t.entryGraceMin, exitGraceMin: t.exitGraceMin,
+      ownCardsOnly: t.ownCardsOnly,
       lateRatePerMin: t.lateRatePerMin, overtimeRatePerMin: t.overtimeRatePerMin, paidLeavesPerMonth: t.paidLeavesPerMonth,
       missedCheckoutPenalty: t.missedCheckoutPenalty,
     };
@@ -71,6 +72,7 @@ function readFields(b: Record<string, unknown>) {
   return {
     phone: str(b.phone), salary: num(b.salary),
     shiftStart: str(b.shiftStart), shiftEnd: str(b.shiftEnd),
+    ownCardsOnly: b.ownCardsOnly === true || b.ownCardsOnly === "1",
     entryGraceMin: num(b.entryGraceMin) ?? 0, exitGraceMin: num(b.exitGraceMin) ?? 0,
     lateRatePerMin: num(b.lateRatePerMin) ?? 0, overtimeRatePerMin: num(b.overtimeRatePerMin) ?? 0,
     paidLeavesPerMonth: num(b.paidLeavesPerMonth) ?? 0,

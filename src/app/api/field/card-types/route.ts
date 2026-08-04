@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   if (exists) return NextResponse.json(exists, { status: 200 });
   const count = await prisma.cardType.count({ where: { isDeleted: false, agentId: agentId ?? -1 } });
   const created = await prisma.cardType.create({
-    data: { name, deliveryOnly: !!b?.deliveryOnly, position: count, agentId, execMinutes: toMin(b?.execMinutes), overrunDeduction: toMin(b?.overrunDeduction) },
+    data: { name, deliveryOnly: !!b?.deliveryOnly, autoAssign: !!b?.autoAssign, position: count, agentId, execMinutes: toMin(b?.execMinutes), overrunDeduction: toMin(b?.overrunDeduction) },
   });
   return NextResponse.json(created, { status: 201 });
 }
@@ -49,9 +49,10 @@ export async function PATCH(request: Request) {
   const agentId = g.session?.agentId ?? -1;
   const type = await prisma.cardType.findFirst({ where: { id, agentId, isDeleted: false } });
   if (!type) return NextResponse.json({ error: "النوع غير موجود" }, { status: 404 });
-  const data: { name?: string; deliveryOnly?: boolean; execMinutes?: number | null; overrunDeduction?: number | null } = {};
+  const data: { name?: string; deliveryOnly?: boolean; autoAssign?: boolean; execMinutes?: number | null; overrunDeduction?: number | null } = {};
   if (typeof b.name === "string" && b.name.trim()) data.name = b.name.trim();
   if (typeof b.deliveryOnly === "boolean") data.deliveryOnly = b.deliveryOnly;
+  if (typeof b.autoAssign === "boolean") data.autoAssign = b.autoAssign;
   if ("execMinutes" in b) data.execMinutes = toMin(b.execMinutes);
   if ("overrunDeduction" in b) data.overrunDeduction = toMin(b.overrunDeduction);
   const updated = await prisma.cardType.update({ where: { id }, data });

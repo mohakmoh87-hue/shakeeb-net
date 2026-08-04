@@ -20,9 +20,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
 
-  const res = await prisma.rechargeCard.deleteMany({
-    // عزل: لا يُحذف إلا كروت وكيل المستخدم غير المستخدمة
-    where: { id: { in: parsed.data.ids }, useDate: null, agentId: g.session?.agentId ?? -1 },
-  });
-  return NextResponse.json({ ok: true, deleted: res.count });
+  // عزل: لا يُحذف إلا كروت وكيل المستخدم غير المستخدمة
+  const where = { id: { in: parsed.data.ids }, useDate: null, agentId: g.session?.agentId ?? -1 };
+  // المبلغ الذي سينقص من «ديون الكارتات» — بنفس شرط الحذف حرفياً وقبله
+  // (المحذوف فعلاً قد يقلّ عن المحدَّد، فتقدير المتصفح وحده يضلّل)
+  const agg = await prisma.rechargeCard.aggregate({ where, _sum: { price: true } });
+  const removedDebt = agg._sum?.price ?? 0;
+  const res = await prisma.rechargeCard.deleteMany({ where });
+  return NextResponse.json({ ok: true, deleted: res.count, removedDebt });
 }

@@ -147,6 +147,7 @@ model Tower {
   silent      String? @default("1") // 1 = إرسال صامت افتراضي لهذا المكتب
   waEnabled   String? @default("1") // 1 = تفعيل واتساب لهذا المكتب
   syncEnabled String? @default("0") // 1 = تفعيل المزامنة اليومية التلقائية
+  autoAssignEnabled Boolean @default(false) // 1 = التوزيع التلقائي للبطاقات مفعَّل لهذا المكتب (بوّابة المكتب)
   syncTime    String? // وقت مزامنة الاشتراكات اليومية مع SAS (HH:MM)
   reminderTime String? // وقت تذكير الانتهاء اليومي لهذا المكتب (HH:MM) — مرتبط بوقت تشغيل حاسبته؛ فارغ = وقت الوكيل العام
   lastReminderDate String? // آخر يوم (YYYY-MM-DD) أُرسل/عولج فيه تذكير الانتهاء (لمنطق الموافقة عند الدخول)
@@ -655,6 +656,7 @@ model Technician {
   supportKind String? // نوع الدعم: "cards" بطاقات محدّدة | "day" يوم كامل
   sessionToken String? // جهاز واحد فقط: رمز آخر تسجيل دخول — الدخول من جهاز جديد يُبطل السابق
   extraTowerIds String? // مكاتب إضافية دائمة (JSON [ids]): يتصرف فيها كفنيّ أصلي (لوحات/ذمم/تنفيذ) — يضبطها المدير فقط
+  ownCardsOnly Boolean @default(false) // رؤية بطاقاته فقط: لا يرى بطاقات زملائه ولا غير الموجَّهة
   supportCardIds String? // JSON بمعرّفات بطاقات الدعم (لنوع cards) — يعود تلقائياً عند إكمالها
   accountId Int? // حساب المصروفات/المقبوضات (موظف) المرتبط بهذا الفني في نفس مكتبه
   // ===== تطبيق إدارة الفنيين: الدخول والحضور والراتب =====
@@ -959,6 +961,10 @@ model CardType {
   agentId         Int? // الوكيل (المستأجر) مالك هذا الإعداد
   name            String
   deliveryOnly    Boolean @default(false)
+  // بوّابة النوع للتوزيع التلقائي — لا تعمل وحدها: يلزم معها مفتاح المكتب
+  // Tower.autoAssignEnabled (النوع مملوك للوكيل لا للمكتب، فبوّابة واحدة كانت
+  // ستُفعّل التوزيع على كل مكاتب الوكيل دفعةً — خلاف شرط محمد الصريح 2026-08-03)
+  autoAssign      Boolean @default(false)
   execMinutes     Int? // الوقت المسموح لإنجاز هذا النوع (دقائق) — أساس احتساب التجاوز
   overrunDeduction Int? // خصم لكل دقيقة تجاوز فوق الوقت المسموح
   position        Int     @default(0)

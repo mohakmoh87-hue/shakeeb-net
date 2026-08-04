@@ -57,7 +57,11 @@ export async function POST(request: Request) {
   const tech = await prisma.technician.findFirst({ where: { id: technicianId, isDeleted: false } });
   if (!tech) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
   if (tech.towerId === officeId) return NextResponse.json({ error: "الفني من نفس المكتب" }, { status: 400 });
-  if (tech.towerId != null && !agentTowers.includes(tech.towerId)) return NextResponse.json({ error: "الفني لا يتبع حسابك" }, { status: 403 });
+  // العزل كان مشروطاً بـ«towerId != null» — والفني بلا مكتب (إنشاؤه ممكن) يتخطّى الفحص
+  // فيستطيع أي وكيل ضمّه لمكاتبه. صار الشرط صريحاً: بلا مكتب معروف ⇒ مرفوض (تدقيق 2026-08-03)
+  if (tech.towerId == null || !agentTowers.includes(tech.towerId)) {
+    return NextResponse.json({ error: "الفني لا يتبع حسابك" }, { status: 403 });
+  }
 
   const kind = b?.kind === "cards" ? "cards" : "day";
   let cardIds: number[] = [];

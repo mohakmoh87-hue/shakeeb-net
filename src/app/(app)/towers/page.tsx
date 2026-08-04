@@ -20,6 +20,7 @@ type Office = {
   waEnabled: string | null;
   syncTime: string | null;
   syncEnabled: string | null;
+  autoAssignEnabled?: boolean;
   reminderTime: string | null;
   lat: number | null;
   lng: number | null;
@@ -225,6 +226,16 @@ export default function OfficesPage() {
                   <label className="flex items-center gap-2 text-sm text-slate-600">
                     <input type="checkbox" disabled={ro} checked={form.rewardsEnabled === "1"} onChange={(e) => set("rewardsEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-fuchsia-600" />
                     🎁 تفعيل نظام مكافآت المشتركين
+                  </label>
+                  {/* بوّابة المكتب للتوزيع التلقائي — تعمل مع خانة «توزيع تلقائي» بالنوع (الأنواع والأوقات).
+                      بوّابتان معاً: النوع مملوك للوكيل، فبدونها كان التفعيل يسري على كل مكاتب الوكيل. */}
+                  <label className="flex items-start gap-2 text-sm text-slate-600">
+                    <input type="checkbox" disabled={ro} checked={form.autoAssignEnabled === true}
+                      onChange={(e) => setForm((f) => ({ ...f, autoAssignEnabled: e.target.checked }))}
+                      className="mt-0.5 h-4 w-4 accent-sky-600" />
+                    <span>🎯 التوزيع التلقائي لبطاقات هذا المكتب
+                      <span className="block text-[11px] text-slate-400">تُسنَد البطاقة الجديدة لصاحب العمل الأقل بين فنيي المكتب الحاضرين — ويلزم تفعيل «توزيع تلقائي» للنوع أيضاً</span>
+                    </span>
                   </label>
                 </div>
 

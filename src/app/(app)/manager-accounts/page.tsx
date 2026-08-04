@@ -35,7 +35,7 @@ type Data = {
 };
 type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number; offices?: { towerId: number; name: string; net: number }[] }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string }[] };
 // كارت وهمي: عُلِّم مستخدماً في البرنامج بلا تفعيل مقابل في SAS (بعد تحقّق مباشر)
-type PhantomCard = { cardId: number; serial: string | null; subscriber: string | null; office: string | null; useDate: string | null; amount: number | null; detectedAt: string | null };
+type PhantomCard = { cardId: number; serial: string | null; subscriber: string | null; office: string | null; useDate: string | null; amount: number | null; cardPrice: number; detectedAt: string | null };
 
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
 const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -150,14 +150,23 @@ export default function ManagerAccountsPage() {
     const cardIds = [...phantomSel];
     if (cardIds.length === 0) { setPhantomMsg("علّم كارتاً واحداً على الأقل"); return; }
     const verb = action === "return" ? "إرجاع للمخزن" : "حذف نهائي";
-    if (!window.confirm(`${verb} لـ ${cardIds.length} كارت وهمي؟\n${action === "delete" ? "سيُحذف الكارت نهائياً من المخزن." : "سيعود الكارت متاحاً في المخزن."}\n(لا يُمَسّ الوصل ولا المال.)`)) return;
+    // ⚠️ الحذف النهائي **يُنقص ديون الكارتات** بقيمة شرائها؛ أما الإرجاع فلا يغيّرها إطلاقاً.
+    // (النص القديم كان يقول «لا يُمَسّ المال» فيُضلّل — حُذف 266 كارتاً يوم 27/7 ونزلت ملايين بصمت.)
+    const selDebt = phantomCards.filter((c) => phantomSel.has(c.cardId)).reduce((sum, c) => sum + (c.cardPrice ?? 0), 0);
+    const confirmText = action === "delete"
+      ? `حذف نهائي لـ ${cardIds.length} كارت وهمي؟\n\n⚠️ سيُنقص هذا ${fmt(selDebt)} د.ع من «ديون الكارتات».\nلا يُمَسّ الوصل ولا مبالغ التقرير اليومي.\nالحذف نهائي ولا يمكن التراجع عنه.`
+      : `إرجاع ${cardIds.length} كارت وهمي للمخزن؟\n\nيعود الكارت متاحاً للاستعمال — ولا يتغيّر شيء في ديون الكارتات (يبقى سعره مسجّلاً).`;
+    if (!window.confirm(confirmText)) return;
     setPhantomBusy(true);
     const res = await fetch("/api/manager/phantom-cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, cardIds }) });
     setPhantomBusy(false);
     if (res.ok) {
       const d = await res.json();
-      setPhantomMsg(`✓ ${action === "return" ? "أُرجع" : "حُذف"} ${d.affected ?? 0} كارت`);
+      setPhantomMsg(action === "delete"
+        ? `✓ حُذف ${d.affected ?? 0} كارت — نقصت ديون الكارتات ${fmt(d.removedDebt ?? 0)} د.ع`
+        : `✓ أُرجع ${d.affected ?? 0} كارت للمخزن (بلا تغيير في الديون)`);
       loadPhantom();
+      if (action === "delete") load(); // تحديث بطاقة «ديون الكارتات» فوراً على نفس الشاشة
     } else {
       const d = await res.json().catch(() => ({}));
       setPhantomMsg(d.error ?? "تعذّر تنفيذ الإجراء (تحقّق من صلاحية حذف الكروت)");

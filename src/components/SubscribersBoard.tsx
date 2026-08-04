@@ -82,6 +82,9 @@ export default function SubscribersBoard() {
   const [opsPhone, setOpsPhone] = useState("");
   const [opsNote, setOpsNote] = useState("");
   const [opsAmount, setOpsAmount] = useState("");
+  // اختيار الفني (اختياري تماماً — كالهاتف والملاحظة): فارغ ⇒ التوزيع التلقائي إن كان مفعَّلاً
+  const [opsTech, setOpsTech] = useState("");
+  const [opsTechs, setOpsTechs] = useState<{ id: number; name: string }[]>([]);
   // تسديد دين
   const [payDebtOpen, setPayDebtOpen] = useState(false);
   // استبدال المشترك (نفس اليوزر لساكن جديد) — بياناته تُسحب من SAS تلقائياً بلا ملء يدوي
@@ -285,13 +288,13 @@ export default function SubscribersBoard() {
   }
 
   // ===== عمليات 🛠️ =====
-  function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); }
+  function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); setOpsTech(""); setOpsTechs([]); }
   async function sendToField(operation: string) {
     if (!opsSub) return;
     setOpsBusy(true); setOpsMsg("");
     const res = await fetch("/api/field/from-subscriber", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriberId: opsSub.id, operation, extraPhone: opsPhone.trim() || undefined, note: opsNote.trim() || undefined, subAmount: operation === "توصيل" ? (Number(opsAmount) || 0) : undefined }),
+      body: JSON.stringify({ subscriberId: opsSub.id, operation, extraPhone: opsPhone.trim() || undefined, note: opsNote.trim() || undefined, subAmount: operation === "توصيل" ? (Number(opsAmount) || 0) : undefined, technicianId: opsTech ? Number(opsTech) : undefined }),
     });
     setOpsBusy(false);
     if (res.ok) { setOpsMsg(`✓ تمت إضافة «${opsSub.name ?? ""}» إلى عمود «${operation}» في إدارة الفنيين`); closeOps(); }
@@ -629,6 +632,11 @@ export default function SubscribersBoard() {
                   )}
                   <label className="ops-lb">رقم هاتف إضافي (اختياري)</label>
                   <input className="ops-in" value={opsPhone} onChange={(e) => setOpsPhone(e.target.value)} dir="ltr" placeholder={opsSub.phone ? `الأصلي: ${opsSub.phone}` : "07..."} />
+                  <label className="ops-lb">الفني (اختياري)</label>
+                  <select className="ops-in" value={opsTech} onChange={(e) => setOpsTech(e.target.value)}>
+                    <option value="">— بلا فني (توزيع تلقائي إن كان مفعَّلاً) —</option>
+                    {opsTechs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
                   <label className="ops-lb">ملاحظة (اختيارية)</label>
                   <textarea className="ops-in" value={opsNote} onChange={(e) => setOpsNote(e.target.value)} rows={3} placeholder="تفاصيل أو ملاحظة للفني..." />
                   <p className="ops-hint">تُضاف مع رقم المشترك الأصلي إلى البطاقة. اتركها فارغة واضغط موافق لإنشاء البطاقة كالمعتاد.</p>

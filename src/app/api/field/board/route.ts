@@ -31,12 +31,15 @@ export async function GET(request: Request) {
   // الفني: لوحة مكتبه الأصلي، بلا إدارة — ولا يُحرم منها أثناء الدعم المؤقت
   const tech = await getTechSession();
   if (tech) {
-    const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true, supportKind: true, extraTowerIds: true } });
+    const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true, supportKind: true, extraTowerIds: true, ownCardsOnly: true } });
+    // «رؤية بطاقاته فقط»: لا يرى بطاقات زملائه **ولا غير الموجَّهة لأحد** (طلب محمد 2026-08-03)
+    const onlyMine = <T extends { cards: { technicianId: number | null }[] }>(d: T): T =>
+      me?.ownCardsOnly ? { ...d, cards: d.cards.filter((c) => c.technicianId === tech.technicianId) } : d;
 
     // دعم «يوم كامل»: تُقلب لوحته كلياً — يرى كل بطاقات المكتب الطالب للدعم،
     // ولا يرى أي بطاقة من مكتبه الأصلي، حتى ينتهي الدعم فيعود تلقائياً.
     if (me?.supportTowerId != null && me.supportTowerId !== tech.towerId && me.supportKind === "day") {
-      const data = await buildBoard(me.supportTowerId, tech.agentId);
+      const data = onlyMine(await buildBoard(me.supportTowerId, tech.agentId));
       const sOffice = await prisma.tower.findUnique({ where: { id: me.supportTowerId }, select: { name: true } });
       return NextResponse.json({
         ...data, offices: [], officeId: me.supportTowerId, isManager: false, canManage: false,
@@ -55,7 +58,7 @@ export async function GET(request: Request) {
       ? await prisma.tower.findMany({ where: { id: { in: myOffices }, isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" } })
       : [];
 
-    const data = await buildBoard(viewOffice, tech.agentId);
+    const data = onlyMine(await buildBoard(viewOffice, tech.agentId));
     // مُعارٌ لدعم بطاقات محدّدة؟ تُضاف له (وله وحده) بطاقاته في مكتب الدعم بعمودٍ افتراضي «دعم مؤقت»
     // (على لوحة مكتبه الأصلي فقط، وليس مكتب دعمٍ هو أصلاً ضمن مكاتبه الإضافية)
     if (viewOffice === tech.towerId && me?.supportTowerId != null && me.supportTowerId !== tech.towerId && !myOffices.includes(me.supportTowerId)) {

@@ -54,7 +54,16 @@ export default function CardsPage() {
   }
   async function deleteSelected() {
     if (selected.size === 0) return;
-    if (!confirm(`حذف ${selected.size} كارت نهائياً من المخزن؟ سيُخصم مبلغها من ديون الكارتات.`)) return;
+    // المبلغ الذي سينقص من «ديون الكارتات» — الأسعار متاحة في القائمة أصلاً (بلا طلب إضافي)
+    const selDebt = avail.filter((c) => selected.has(c.id)).reduce((sum, c) => sum + (c.price ?? 0), 0);
+    if (!confirm(
+      `حذف ${selected.size} كارت نهائياً من المخزن؟
+
+` +
+      `⚠️ سيُنقص هذا ${fmt(selDebt)} د.ع من «ديون الكارتات».
+` +
+      `الحذف نهائي ولا يمكن التراجع عنه.`
+    )) return;
     setDeleting(true);
     try {
       const res = await fetch("/api/recharge-cards/bulk-delete", {
