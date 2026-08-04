@@ -36,8 +36,9 @@ export default function CashboxPage() {
 
   const [type, setType] = useState<"in" | "out">("in");
   const [amount, setAmount] = useState("");
-  // "master" = حساب الماستر المستقل (لا يدخل الصندوق اليومي، يؤثّر على حساب الماستر لمكتب المستخدم)
-  const [accountId, setAccountId] = useState<number | "" | "master">("");
+  const [accountId, setAccountId] = useState<number | "">("");
+  // الماستر صفة للحركة لا بديل عن الحساب: يمكن اختيار حساب (مدير/فني) ووسمها ماستر معاً
+  const [isMaster, setIsMaster] = useState(false);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [okMsg, setOkMsg] = useState("");
@@ -104,14 +105,13 @@ export default function CashboxPage() {
     }
     setSaving(true);
     try {
-      const isMaster = accountId === "master";
       const res = await fetch("/api/money", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type,
           amount: Number(amount),
-          accountId: isMaster ? null : (accountId || null),
+          accountId: accountId || null,
           notes,
           ...(isMaster ? { master: true } : {}),
         }),
@@ -215,11 +215,10 @@ export default function CashboxPage() {
           <label className="mb-1 block text-sm font-medium text-slate-700">الحساب</label>
           <select
             value={accountId}
-            onChange={(e) => { const v = e.target.value; setAccountId(v === "master" ? "master" : (Number(v) || "")); }}
+            onChange={(e) => setAccountId(Number(e.target.value) || "")}
             className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
           >
             <option value="">— بدون حساب —</option>
-            <option value="master">🅜 ماستر (حساب مستقل — لا يدخل الصندوق اليومي)</option>
             {accounts.map((a) => {
               const office = towerName(a.towerId);
               return (
@@ -227,9 +226,13 @@ export default function CashboxPage() {
               );
             })}
           </select>
-          {accountId === "master" && (
-            <div className="mb-3 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">🅜 حركة على <b>حساب الماستر</b> لمكتبك — تظهر في سطر الماستر بالتقرير اليومي، ولا تدخل إجمالي الصندوق اليومي.</div>
-          )}
+          <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+            <input type="checkbox" checked={isMaster} onChange={(e) => setIsMaster(e.target.checked)} className="mt-0.5 h-4 w-4" />
+            <span>
+              <b>🅜 هذه الحركة من/إلى الماستر</b> (لا نقدي)
+              <span className="block text-indigo-600">تظهر في سطر الماستر بالتقرير اليومي ولا تدخل إجمالي الصندوق — ويبقى الحساب المختار أعلاه منسوباً إليها (مدير أو فني).</span>
+            </span>
+          </label>
 
           <label className="mb-1 block text-sm font-medium text-slate-700">ملاحظات</label>
           <input

@@ -96,26 +96,12 @@ export async function POST(request: Request) {
   }
   const { type, amount, accountId, notes, date, master } = parsed.data;
 
-  // حساب الماستر: حركة مستقلة (sourceType="master") لا تدخل الصندوق اليومي، تُنسب لمكتب المستخدم
-  // فتظهر في سطر «حساب الماستر» بالتقرير اليومي ولكل مكتب على حدة. يتطلّب مكتباً للمستخدم
-  // (المدير بلا مكتب يستعمل «حساب الماستر» في صفحة حسابات المدير باختيار المكتب).
-  if (master) {
-    const towerId = session?.towerId ?? null;
-    if (towerId == null) {
-      return NextResponse.json({ error: "حركة الماستر تتطلّب أن يكون لحسابك مكتب — استخدم «حساب الماستر» في صفحة حسابات المدير لاختيار المكتب" }, { status: 400 });
-    }
-    const createdMaster = await prisma.moneyTx.create({
-      data: {
-        moneyIn: type === "in" ? amount : 0, moneyOut: type === "out" ? amount : 0,
-        accountId: null,
-        notes: notes ?? (type === "in" ? "قبض ماستر" : "صرف ماستر"),
-        date: date ? new Date(date) : new Date(),
-        userId: session?.userId, serverDate: new Date(),
-        sourceType: "master", towerId,
-      },
-    });
-    return NextResponse.json({ ...createdMaster, master: true }, { status: 201 });
-  }
+  // حساب الماستر (master=true) صار **صفةً للحركة لا بديلاً عن الحساب**: تُسجَّل بـ
+  // sourceType="master" فلا تدخل الصندوق اليومي وتظهر في سطر الماستر، **ومع ذلك تبقى
+  // منسوبة للحساب المختار**. بذلك يستطيع المدير إيداع/سحب ماستر من مكتب على حساب
+  // مدير باسمه، ويستطيع الفني سحب مبلغ من الماستر على حسابه — وكان ذلك مستحيلاً حين
+  // كان اختيار «ماستر» يمسح الحساب. ونسبة المكتب تمرّ بنفس منطق بقية الحركات أدناه،
+  // فلم يعد الماستر يتطلّب أن يكون لحساب المستخدم مكتب (يكفي حساب مرتبط بمكتب).
 
   // نسب الحركة لمكتب دائماً — قيد بلا towerId لا يظهر في أي تقرير أو صندوق
   // (حادثة وكيل سيف 2026-07-29: مصروفا 5000 من مدير بلا مكتب «اختفيا»):
@@ -147,11 +133,11 @@ export async function POST(request: Request) {
       moneyIn: type === "in" ? amount : 0,
       moneyOut: type === "out" ? amount : 0,
       accountId: accountId ?? null,
-      notes: notes ?? null,
+      notes: notes ?? (master ? (type === "in" ? "قبض ماستر" : "صرف ماستر") : null),
       date: date ? new Date(date) : new Date(),
       userId: session?.userId,
       serverDate: new Date(),
-      sourceType: "manual", towerId,
+      sourceType: master ? "master" : "manual", towerId,
     },
   });
   return NextResponse.json(created, { status: 201 });
