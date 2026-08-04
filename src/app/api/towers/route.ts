@@ -80,5 +80,9 @@ export async function POST(request: Request) {
   }
 
   const created = await prisma.tower.create({ data: { ...parsed.data, agentId } });
+  // كل مدراء الوكيل يحصلون على حساب مصروف/مقبوض في المكتب الجديد تلقائياً —
+  // وإلا نسي النظام مكتباً وصار المدير عاجزاً عن الأخذ/الإعطاء فيه
+  const { ensureAccountsForNewOffice } = await import("@/lib/managers");
+  await ensureAccountsForNewOffice(agentId, created.id).catch(() => {});
   return NextResponse.json(created, { status: 201 });
 }

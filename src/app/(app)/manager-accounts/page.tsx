@@ -33,9 +33,16 @@ type Data = {
   transactions: MgrTx[];
   salaryPeriod: { fromDay: number | null; toDay: number | null; from: string | null; to: string | null } | null;
 };
-type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number; offices?: { towerId: number; name: string; net: number }[] }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string }[] };
+type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number; offices?: { towerId: number; name: string; net: number }[] }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string; office: string | null; by: string | null }[] };
 // كارت وهمي: عُلِّم مستخدماً في البرنامج بلا تفعيل مقابل في SAS (بعد تحقّق مباشر)
 type PhantomCard = { cardId: number; serial: string | null; subscriber: string | null; office: string | null; useDate: string | null; amount: number | null; cardPrice: number; detectedAt: string | null };
+
+// رصيد المدير: كل ما أودعه في النظام − كل ما سحبه منه (عبر مكاتبه وحسابات المدير والماستر)
+type MgrBalance = {
+  id: number; name: string; deposited: number; withdrawn: number; net: number;
+  byOffice: { towerId: number; office: string; deposited: number; withdrawn: number; net: number }[];
+  general: number; master: number;
+};
 
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
 const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -72,6 +79,13 @@ export default function ManagerAccountsPage() {
   const [phantomDenied, setPhantomDenied] = useState(false);
   const [phantomBusy, setPhantomBusy] = useState(false);
   const [phantomMsg, setPhantomMsg] = useState("");
+  // المدراء: أرصدتهم + المدير المُنسب إليه كل حركة مصروف/مقبوض/ماستر
+  const [managers, setManagers] = useState<MgrBalance[]>([]);
+  const [txManager, setTxManager] = useState<"" | number>(""); // "" = من المبلغ الكلي مباشرة
+  const [newMgr, setNewMgr] = useState("");
+  const [mgrBusy, setMgrBusy] = useState(false);
+  const [mgrMsg, setMgrMsg] = useState("");
+  const [openMgr, setOpenMgr] = useState<number | null>(null);
 
   function openMaster() {
     setShowMaster(true); setMasterDetail(null);
@@ -91,7 +105,10 @@ export default function ManagerAccountsPage() {
       else setLoaded(true);
     });
   }, []);
-  useEffect(() => { load(); }, [load]);
+  const loadManagers = useCallback(() => {
+    fetch("/api/managers").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setManagers(d.managers ?? []); }).catch(() => {});
+  }, []);
+  useEffect(() => { load(); loadManagers(); }, [load, loadManagers]);
 
   // مزامنة حقلي اليوم مع القيم المحفوظة (عند التحميل/بعد الحفظ)
   useEffect(() => {
@@ -180,11 +197,35 @@ export default function ManagerAccountsPage() {
     setBusy(true);
     const res = await fetch("/api/manager-accounts/tx", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, amount: Number(amount), notes: notes || null }),
+      body: JSON.stringify({ type, amount: Number(amount), notes: notes || null, managerId: txManager === "" ? null : txManager }),
     });
     setBusy(false);
-    if (res.ok) { setAmount(""); setNotes(""); load(); if (showMaster) openMaster(); }
+    if (res.ok) { setAmount(""); setNotes(""); load(); loadManagers(); if (showMaster) openMaster(); }
     else { const d = await res.json().catch(() => ({})); setError(d.error ?? "فشل"); }
+  }
+
+  // حذف حركة ماستر مفردة — المعرّف الموجب حركة مكتب (money_tx) والسالب حركة حساب مدير
+  async function delMasterTx(id: number, label: string) {
+    if (!confirm("حذف حركة الماستر؟\n" + label + "\n\nستُحذف نهائياً ويُصحَّح رصيد الماستر بمقدارها. لا تتأثر التقارير اليومية.")) return;
+    const res = id < 0
+      ? await fetch("/api/manager-accounts/tx?id=" + (-id), { method: "DELETE" })
+      : await fetch("/api/money/" + id + "/void", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: true }) });
+    if (res.ok) { openMaster(); load(); }
+    else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
+  }
+
+  async function addManager() {
+    const name = newMgr.trim();
+    if (!name) { setMgrMsg("اكتب اسم المدير"); return; }
+    setMgrBusy(true); setMgrMsg("");
+    const r = await fetch("/api/managers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    const d = await r.json().catch(() => ({}));
+    setMgrBusy(false);
+    if (r.ok) {
+      setNewMgr("");
+      setMgrMsg("✓ أُنشئ «" + name + "» ومعه " + (d.accountsCreated ?? 0) + " حساب مصروف/مقبوض في مكاتبك");
+      loadManagers();
+    } else setMgrMsg(d.error ?? "تعذّر الإنشاء");
   }
 
   async function del(id: number) {
@@ -318,7 +359,14 @@ export default function ManagerAccountsPage() {
         <div className="space-y-5">
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="mb-3 font-bold text-slate-800">حركة جديدة (حساب المدير)</h3>
-            <label className="mb-1 block text-sm font-medium text-slate-700">المبلغ (د.ع)</label>
+            {/* مصدر الحركة: رصيد مدير معيّن، أو المبلغ الكلي مباشرة بلا مساس بأي مدير */}
+          <label className="mb-1 block text-sm font-medium text-slate-700">المصدر / الوجهة</label>
+          <select value={txManager} onChange={(e) => setTxManager(e.target.value === "" ? "" : Number(e.target.value))}
+            className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500">
+            <option value="">💰 المبلغ الكلي مباشرة (بلا مساس بأي مدير)</option>
+            {managers.map((m) => <option key={m.id} value={m.id}>👔 رصيد {m.name}</option>)}
+          </select>
+          <label className="mb-1 block text-sm font-medium text-slate-700">المبلغ (د.ع)</label>
             <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2" />
             <label className="mb-1 block text-sm font-medium text-slate-700">السبب / ملاحظة</label>
             <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="مثال: إيجار المكتب" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2" />
@@ -361,6 +409,61 @@ export default function ManagerAccountsPage() {
               <button onClick={savePeriod} disabled={savingPeriod} className="w-full rounded-lg bg-indigo-600 py-2 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60">{savingPeriod ? "..." : "حفظ الفترة"}</button>
             </div>
             {!data.salaryPeriod?.fromDay && <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700">لم تُضبط فترة بعد — يُحتسب حالياً كامل سجل الموظف. حدّد يومَي الفترة لتقييد الاحتساب.</div>}
+          </div>
+
+          {/* المدراء — رصيد كل مدير: ما أودعه في النظام ناقص ما سحبه منه.
+              لكل مدير حساب مصروف/مقبوض في كل مكتب (يُنشأ تلقائياً، وفي أي مكتب جديد لاحقاً). */}
+          <div className="rounded-xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
+            <h3 className="mb-1 font-bold text-slate-800">👔 المدراء</h3>
+            <p className="mb-3 text-xs text-slate-500">
+              رصيد المدير = ما أودعه في النظام − ما سحبه منه (عبر مكاتبه · حسابات المدير · الماستر).
+              <span className="block">موجب = <b>له</b> عند الشركة · سالب = <b>عليه</b> لها.</span>
+            </p>
+
+            <div className="mb-3 flex flex-wrap gap-2">
+              <input value={newMgr} onChange={(e) => setNewMgr(e.target.value)} placeholder="اسم المدير الجديد"
+                className="min-w-[180px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500" />
+              <button onClick={addManager} disabled={mgrBusy} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-60">
+                {mgrBusy ? "..." : "➕ إضافة مدير"}</button>
+            </div>
+            {mgrMsg && <div className="mb-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-sky-700 ring-1 ring-sky-200">{mgrMsg}</div>}
+
+            {managers.length === 0 ? <div className="text-sm text-slate-400">لا مدراء بعد — أضِف أول مدير.</div> : (
+              <div className="space-y-2">
+                {managers.map((m) => (
+                  <div key={m.id} className="rounded-lg bg-white p-3 ring-1 ring-slate-200">
+                    <div className="flex cursor-pointer flex-wrap items-center justify-between gap-2" onClick={() => setOpenMgr(openMgr === m.id ? null : m.id)}>
+                      <span className="font-bold text-slate-800">{m.name}</span>
+                      <span className="flex items-center gap-3 text-xs">
+                        <span className="text-emerald-600">أودع {fmt(m.deposited)}</span>
+                        <span className="text-red-600">سحب {fmt(m.withdrawn)}</span>
+                        <b className={m.net < 0 ? "text-red-700" : "text-emerald-700"}>
+                          {m.net < 0 ? `عليه ${fmt(-m.net)}` : `له ${fmt(m.net)}`} د.ع
+                        </b>
+                        <span className="text-slate-400">{openMgr === m.id ? "▲" : "▼"}</span>
+                      </span>
+                    </div>
+                    {openMgr === m.id && (
+                      <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-xs text-slate-600">
+                        {m.byOffice.length === 0 && m.general === 0 && m.master === 0 ? (
+                          <div className="text-slate-400">لا حركات بعد</div>
+                        ) : (<>
+                          {m.byOffice.map((o) => (
+                            <div key={o.towerId} className="flex justify-between">
+                              <span>🏢 {o.office}</span>
+                              <span>أودع {fmt(o.deposited)} · سحب {fmt(o.withdrawn)} · <b>{fmt(o.net)}</b></span>
+                            </div>
+                          ))}
+                          {m.general !== 0 && <div className="flex justify-between"><span>🧾 حسابات المدير</span><b>{fmt(m.general)}</b></div>}
+                          {m.master !== 0 && <div className="flex justify-between"><span>🅜 الماستر</span><b>{fmt(m.master)}</b></div>}
+                        </>)}
+                        <div className="mt-1 text-[11px] text-slate-400">حركات المكاتب تؤثر على تقاريرها اليومية · حسابات المدير والماستر لا تؤثر على أي تقرير.</div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* الموظفون — الراتب المتبقي + تفاصيل + تسديد */}
@@ -537,6 +640,33 @@ export default function ManagerAccountsPage() {
                     <tr><td className="p-3">الرصيد الكلي</td><td colSpan={2}></td><td className="p-3 text-indigo-700">{fmt(masterDetail.balance)}</td><td></td></tr>
                   </tfoot>
                 </table>
+              )}
+
+              {/* الحركات المفردة — المكان الوحيد الذي تُرى فيه حركة ماستر بعينها وتُحذف
+                  (صفحة الصندوق تعرض اليدوي فقط، فحركة الماستر كانت تختفي بعد تسجيلها) */}
+              {masterDetail && masterDetail.transactions.length > 0 && (
+                <div className="border-t-4 border-slate-100">
+                  <div className="bg-slate-50 px-4 py-2 text-xs font-bold text-slate-600">كل حركات الماستر ({masterDetail.transactions.length}) — اضغط 🗑 لحذف حركة خاطئة</div>
+                  <table className="w-full text-right text-xs">
+                    <tbody>
+                      {masterDetail.transactions.map((t) => (
+                        <tr key={t.id} className="border-t border-slate-100">
+                          <td className="p-2 whitespace-nowrap text-slate-500" dir="ltr">{fmtDate(t.date)}</td>
+                          <td className="p-2 text-slate-500">{t.office ?? "—"}</td>
+                          <td className="p-2 text-slate-700">{t.notes ?? "—"}</td>
+                          <td className="p-2 text-slate-400">{t.by ?? "—"}</td>
+                          <td className="p-2 whitespace-nowrap font-bold">
+                            {(t.moneyIn ?? 0) > 0 ? <span className="text-emerald-600">+{fmt(t.moneyIn ?? 0)}</span> : <span className="text-red-600">−{fmt(t.moneyOut ?? 0)}</span>}
+                          </td>
+                          <td className="p-2">
+                            <button onClick={() => delMasterTx(t.id, (t.notes ?? "حركة ماستر") + " — " + fmt((t.moneyIn ?? 0) || (t.moneyOut ?? 0)) + " د.ع")}
+                              className="rounded bg-red-50 px-2 py-1 font-semibold text-red-600 hover:bg-red-100" title="حذف الحركة">🗑</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>

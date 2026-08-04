@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
+import { reverseRewardGrant } from "@/lib/rewards";
 
 // حذف حركة مالية عكسياً من الصندوق.
 // تسديد دين → يُرجَع الدين للمشترك. حركة يدوية → تُحذف فقط.
@@ -46,6 +47,15 @@ export async function POST(
             await t.rechargeCard.updateMany({
               where: { serial: entry.card2, subscriberId: entry.subscriberId, useDate: { not: null } },
               data: { useDate: null, subscriberId: null, userName: null },
+            });
+          }
+          // عكس مكافأة هذا التفعيل — كان ناقصاً هنا بينما مسار «سجل وصولات المشترك»
+          // يعكسها، فحذف الوصل من الصندوق كان يترك الخصم ممنوحاً بلا وصل (حادثة
+          // علي سهيل 2026-08-04: منحتان 1,500 لتفعيل واحد أُعيد تسجيله).
+          if (entry.subscriberId) {
+            await reverseRewardGrant(t, {
+              entryId: entry.id, subscriberId: entry.subscriberId, towerId: entry.towerId,
+              agentId: g.session?.agentId ?? null, createdByUser: session?.username, createdByName: session?.fullName,
             });
           }
           await t.subscriptionEntry.update({ where: { id: entry.id }, data: { isDeleted: true } });

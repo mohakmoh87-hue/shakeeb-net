@@ -15,8 +15,14 @@ export async function GET() {
     where: { isDeleted: false, sourceType: { in: ["master", "master-invoice"] }, towerId: { in: agentTowers.length ? agentTowers : [-1] } },
     orderBy: { date: "desc" },
     take: 500,
-    select: { id: true, moneyIn: true, moneyOut: true, notes: true, date: true, towerId: true },
+    select: { id: true, moneyIn: true, moneyOut: true, notes: true, date: true, towerId: true, userId: true },
   });
+  // اسم مَن سجّل كل حركة — تدقيق حركات الماستر كان مستحيلاً بلا هذا
+  const txUserIds = [...new Set(officeTxs.map((t) => t.userId).filter((x): x is number => x != null))];
+  const txUsers = txUserIds.length
+    ? await prisma.user.findMany({ where: { id: { in: txUserIds } }, select: { id: true, fullName: true, username: true } })
+    : [];
+  const userName = new Map(txUsers.map((u) => [u.id, u.fullName ?? u.username]));
   // حركات ماستر المدير (طبقة الوكيل بلا مكاتب — قرار محمد 2026-07-30): تُدمج في
   // الرصيد والسجل اليومي بلا مكتب، فلا تمس ماستر المكاتب ولا تقاريرها
   const mgrTxs = await prisma.managerTx.findMany({
@@ -26,13 +32,16 @@ export async function GET() {
     select: { id: true, type: true, amount: true, notes: true, date: true },
   });
   const txs = [
-    ...officeTxs,
+    ...officeTxs.map((t) => ({
+      id: t.id, moneyIn: t.moneyIn, moneyOut: t.moneyOut, notes: t.notes, date: t.date,
+      towerId: t.towerId, by: t.userId != null ? userName.get(t.userId) ?? null : null,
+    })),
     ...mgrTxs.map((m) => ({
       id: -m.id, // معرّف سالب: تمييزها عن حركات المكاتب في القائمة
       moneyIn: m.type === "master-receipt" ? m.amount : 0,
       moneyOut: m.type === "master-expense" ? m.amount : 0,
       notes: `🧾 حساب المدير — ${m.notes ?? (m.type === "master-receipt" ? "قبض ماستر" : "صرف ماستر")}`,
-      date: m.date, towerId: null as number | null,
+      date: m.date, towerId: null as number | null, by: null as string | null,
     })),
   ].sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
   const offices = await prisma.tower.findMany({ where: { id: { in: agentTowers.length ? agentTowers : [-1] } }, select: { id: true, name: true } });
@@ -56,5 +65,10 @@ export async function GET() {
   }));
   const balance = days.reduce((s, x) => s + x.net, 0);
 
-  return NextResponse.json({ balance, days, transactions: txs });
+  return NextResponse.json({
+    balance, days,
+    // الحركات المفردة — بلا هذه القائمة كانت حركة الماستر تُسجَّل ولا تظهر في أي
+    // مكان فيه زر حذف (صفحة الصندوق تعرض اليدوي فقط)، فتبقى خطأً لا يُمحى.
+    transactions: txs.map((t) => ({ ...t, office: t.towerId != null ? officeName.get(t.towerId) ?? null : null })),
+  });
 }

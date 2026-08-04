@@ -271,6 +271,7 @@ model Account {
   userId    Int?
   isEmployee Boolean @default(false) // حساب موظف (تنظيمي) — يبقى يؤثر على التقرير اليومي
   isActivationOffice Boolean @default(false) // «مكتب تفعيل»: عند تفعيل اشتراك يمكن حسم مبلغه عليه (واصل كامل + مصروف على الحساب، يتعادل التقرير)
+  managerId Int? // حساب مدير في هذا المكتب — يُنشأ تلقائياً لكل مدير في كل مكتب
   towerId   Int? // المكتب المالك للحساب (قائمة حسابات مستقلة لكل مكتب؛ المدير يرى الكل)
   isDeleted Boolean @default(false)
 
@@ -372,6 +373,23 @@ model BoxDep {
 
 // ===== كروت التفعيل (cards) =====
 // ===== حساب مصروف/مقبوض المدير (لا يؤثر على التقرير اليومي) =====
+// ===== المدير: هوية مالية للوكيل تتبع ما له/عليه =====
+// ليست حساب دخول. لكل مدير حساب مصروف/مقبوض في **كل** مكاتب وكيله (يُنشأ تلقائياً،
+// وكذلك في أي مكتب جديد لاحقاً). رصيده = كل ما أودعه في النظام − كل ما سحبه منه،
+// عبر ثلاث قنوات: مكاتبه (تؤثر على تقاريرها) · حسابات المدير · الماستر.
+model Manager {
+  id        Int      @id @default(autoincrement())
+  agentId   Int? // الوكيل المالك
+  name      String
+  note      String?
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([agentId])
+  @@map("managers")
+}
+
 model ManagerTx {
   id        Int      @id @default(autoincrement())
   type      String // expense | receipt | card-payment | salary
@@ -381,6 +399,7 @@ model ManagerTx {
   userId    Int?
   byUser    String? // اسم المدير الذي أجرى الحركة (للتدقيق — يبقى ولو حُذف المستخدم)
   agentId   Int? // الوكيل (المستأجر) مالك الحركة — عزل حسابات المدير بين الوكلاء
+  managerId Int? // المدير صاحب الحركة — null = من/إلى المبلغ الكلي مباشرة (مصاريف عامة)
   isDeleted Boolean  @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
