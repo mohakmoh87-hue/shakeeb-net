@@ -321,7 +321,15 @@ export default function FieldManagementPage() {
   }
   async function deleteCard() {
     if (!sel || !canOperate) return;
-    if (!confirm("حذف هذه البطاقة؟")) return;
+    // تحذير بالمبلغ: حذف بطاقة منجزة لم تُحصَّل يُسقط مبلغها من تحصيل الفني، بينما
+    // تبقى فاتورتها وقبضها في التقارير — وكان يقع بصمت (المرحلة ٨).
+    // بطاقات اللوحة غير محصّلة بطبيعتها (المحصَّلة تُؤرشَف وتختفي)، والخادم يتحقق
+    // من ذلك مرّة أخرى قبل تسجيل القيد
+    const pending = sel.done ? (sel.amount ?? 0) + (sel.subAmount ?? 0) : 0;
+    const msg = pending > 0
+      ? `حذف هذه البطاقة؟\n\n⚠️ هي منجزة ولم تُحصَّل — سينقص تحصيل ${sel.assignee ?? "الفني"} بمقدار ${pending.toLocaleString("en-US")} د.ع، وتبقى فاتورتها وقبضها في التقارير.`
+      : "حذف هذه البطاقة؟";
+    if (!confirm(msg)) return;
     setCards((x) => x.filter((c) => c.id !== sel.id));
     const id = sel.id; setSel(null);
     await fetch(`/api/field/cards?id=${id}`, { method: "DELETE" });

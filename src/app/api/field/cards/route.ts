@@ -161,8 +161,34 @@ export async function DELETE(request: Request) {
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
   if (!(await agentOwnsCard(s, id))) return NextResponse.json({ error: "البطاقة لا تتبع حسابك" }, { status: 403 });
   if (!(await canOperateCard(s, id))) return NextResponse.json(VIEW_ONLY, { status: 403 });
+  // حذف بطاقة **منجزة ولم تُحصَّل** كان يُسقط مبلغها من تحصيل الفني بصمت، بينما
+  // تبقى فاتورتها وقبضها في التقارير — فينقص التحصيل بلا سبب ظاهر (المرحلة ٨).
+  const before = await prisma.taskCard.findUnique({
+    where: { id },
+    select: { done: true, settled: true, amount: true, subAmount: true, technicianId: true, title: true },
+  });
   await prisma.taskCard.update({ where: { id }, data: { isDeleted: true } });
   await prisma.cardPhoto.deleteMany({ where: { cardId: id } });
+  let droppedFromSettlement = 0;
+  if (before?.done && !before.settled) {
+    droppedFromSettlement = (before.amount ?? 0) + (before.subAmount ?? 0);
+    if (droppedFromSettlement > 0) {
+      const tech = before.technicianId != null
+        ? await prisma.technician.findUnique({ where: { id: before.technicianId }, select: { name: true } })
+        : null;
+      await prisma.auditLog.create({
+        data: {
+          userId: s.userId,
+          action: "DELETE_DONE_CARD", entity: "taskCard", entityId: String(id),
+          details:
+            "حذف بطاقة منجزة غير محصّلة (" + (before.title ?? id) + ") — ينقص تحصيل " +
+            (tech?.name ?? "الفني") + " بمقدار " + droppedFromSettlement.toLocaleString("en-US") +
+            " (مبيع " + (before.amount ?? 0).toLocaleString("en-US") + " + اشتراك " +
+            (before.subAmount ?? 0).toLocaleString("en-US") + ") — وفاتورتها وقبضها يبقيان",
+        },
+      });
+    }
+  }
 
   // إن كانت من بطاقات دعمٍ مؤقت: أعد فحص «اكتملت كل بطاقات الدعم» — وإلا يعلق الدعم بعد حذف بطاقة
   try {
@@ -183,5 +209,6 @@ export async function DELETE(request: Request) {
       }
     }
   } catch { /* لا يُفشل الحذف */ }
-  return NextResponse.json({ ok: true });
+  // الواجهة تُبلّغ المستخدم بالمبلغ الذي سقط من التحصيل بدل أن يقع بصمت
+  return NextResponse.json({ ok: true, droppedFromSettlement });
 }
