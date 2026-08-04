@@ -24,6 +24,22 @@ export async function POST(
     return NextResponse.json({ error: "الحركة غير موجودة أو محذوفة مسبقاً" }, { status: 404 });
   }
 
+  // حركة ماستر **مرتبطة بوصل** (تفعيل أو فاتورة): حذفها وحدها يمحو الجزء الماستر
+  // ويترك الوصل قائماً بمبلغ لا يقابله مال — فيبقى وصلٌ يزعم قبضاً لم يعد موجوداً.
+  // الحذف الصحيح من الوصل نفسه، فهو يعكس الأيام والكارت والدين والماستر معاً.
+  // (المرحلة ١٠ — الماستر اليدوي بلا sourceId يُحذف من هنا عادياً.)
+  if ((tx.sourceType === "master" || tx.sourceType === "master-invoice") && tx.sourceId) {
+    return NextResponse.json(
+      {
+        error:
+          tx.sourceType === "master"
+            ? "هذه حركة ماستر تخصّ وصل تفعيل — احذف الوصل نفسه من «سجل الوصولات» ليُعكس كل أثره معاً (الأيام والكارت والدين والماستر)."
+            : "هذه حركة ماستر تخصّ فاتورة — احذف الفاتورة نفسها من «سجل وصولات المبيع» ليُعكس كل أثرها معاً.",
+      },
+      { status: 400 },
+    );
+  }
+
   try {
     await prisma.$transaction(async (t) => {
      if (reverse) {
@@ -72,6 +88,18 @@ export async function POST(
         const sub = await t.subscriber.findUnique({ where: { id: tx.sourceId } });
         if (sub) {
           await t.subscriber.update({ where: { id: sub.id }, data: { carry: (sub.carry ?? 0) + (tx.moneyIn ?? 0) } });
+        }
+      }
+
+      // ===== بيع من المخزن: أرجِع الكمية إلى المادة (المرحلة ١٠) =====
+      // كان المال يعود والبضاعة لا تعود — بخلاف الفاتورة التي تُرجع كمياتها عند
+      // إبطالها. البيع من المخزن أُلغي كميزة، لكن حركاته القديمة ما تزال تُحذف.
+      // الكمية تُستخرج من نص الملاحظة («بيع {اسم} × {عدد} بسعر …») لأن الحركة لا
+      // تحمل حقل كمية — وإن تعذّر استخراجها لا نُخمّن.
+      if (tx.sourceType === "sale" && tx.sourceId) {
+        const qty = Number(tx.notes?.match(/×\s*(\d+(?:\.\d+)?)/)?.[1] ?? NaN);
+        if (Number.isFinite(qty) && qty > 0) {
+          await t.item.updateMany({ where: { id: tx.sourceId }, data: { count: { increment: qty } } });
         }
       }
      } // نهاية كتلة الإرجاع العكسي (reverse): بلا إرجاع لا نمسّ التفعيل/الفاتورة/الدين
