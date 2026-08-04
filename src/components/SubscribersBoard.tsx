@@ -63,7 +63,13 @@ export default function SubscribersBoard() {
   const [activating, setActivating] = useState<Subscriber | null>(null);
   const [addingDebt, setAddingDebt] = useState<Subscriber | null>(null);
   // نوافذ السجلات
-  const [logView, setLogView] = useState<"receipts" | "maintenance" | "invoices" | "debt" | null>(null);
+  const [logView, setLogView] = useState<"receipts" | "maintenance" | "invoices" | "debt" | "reward" | null>(null);
+  // سجل المكافأة: منح واستخدام وعكس — لم يكن في الواجهة ما يكشف تراكمها
+  const [rewardLog, setRewardLog] = useState<{
+    subscriber: { code: string | null; balance: number; grants: number };
+    logs: { id: number; kind: string; amount: number; code: string | null; context: string | null; createdAt: string; createdByName: string | null; balanceAfter: number }[];
+    granted: number; redeemed: number; reversed: number; expected: number;
+  } | null>(null);
   // دفتر الدين: الدين كان رقماً واحداً بلا تاريخ ولا مصدر (المرحلة ٧)
   const [debtLog, setDebtLog] = useState<{
     rows: { key: string; date: string | null; kind: string; added: number; paid: number; note: string | null; by: string | null }[];
@@ -179,10 +185,14 @@ export default function SubscribersBoard() {
     fetch(`/api/subscriptions?subscriberId=${selectedId}`).then((r) => { if (r.ok) r.json().then(setReceipts); });
   }, [selectedId]);
 
-  function openLog(view: "receipts" | "maintenance" | "invoices" | "debt") {
+  function openLog(view: "receipts" | "maintenance" | "invoices" | "debt" | "reward") {
     if (!selected) return;
     setLogView(view); setMoreMenu(false);
     if (view === "receipts") loadReceipts();
+    if (view === "reward") {
+      setRewardLog(null);
+      fetch(`/api/rewards/log?subscriberId=${selected.id}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setRewardLog(d); }).catch(() => {});
+    }
     if (view === "debt") {
       setDebtLog(null);
       fetch(`/api/subscribers/${selected.id}/debt-log`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setDebtLog(d); }).catch(() => {});
@@ -436,6 +446,7 @@ export default function SubscribersBoard() {
                           <div className="sb-panel" onClick={(e) => e.stopPropagation()}>
                             <button className="sb-act" onClick={() => openLog("receipts")}>📄 سجل الوصولات</button>
                             <button className="sb-act" onClick={() => openLog("debt")}>📕 دفتر الدين</button>
+                            <button className="sb-act" onClick={() => openLog("reward")}>🎁 سجل المكافأة</button>
                             <button className="sb-act" onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
                             <MapButton subscriberId={s.id} />
                             <button className="sb-act" onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
@@ -473,10 +484,47 @@ export default function SubscribersBoard() {
       {logView && selected && (
         <Modal onClose={() => setLogView(null)} wide>
           <div className="mb-3 text-center text-base font-extrabold text-ink">
-            {logView === "receipts" ? "سجل وصولات المشترك" : logView === "maintenance" ? "سجل صيانات المشترك" : logView === "debt" ? "دفتر دين المشترك" : "وصولات الفواتير"} — {selected.name}
+            {logView === "receipts" ? "سجل وصولات المشترك" : logView === "maintenance" ? "سجل صيانات المشترك" : logView === "debt" ? "دفتر دين المشترك" : logView === "reward" ? "سجل مكافأة المشترك" : "وصولات الفواتير"} — {selected.name}
           </div>
           <div className="max-h-[62vh] overflow-auto rounded-lg border border-line">
-            {logView === "debt" ? (
+            {logView === "reward" ? (
+              !rewardLog ? (
+                <div className="p-8 text-center text-muted">جاري التحميل...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-4 gap-2 p-3 text-center text-xs">
+                    <div><div className="text-muted">مُنح</div><b className="text-ok">{fmt(rewardLog.granted)}</b></div>
+                    <div><div className="text-muted">استُخدم</div><b>{fmt(rewardLog.redeemed)}</b></div>
+                    <div><div className="text-muted">عُكس</div><b className="text-bad">{fmt(rewardLog.reversed)}</b></div>
+                    <div><div className="text-muted">الرصيد الآن</div><b>{fmt(rewardLog.subscriber.balance)}</b></div>
+                  </div>
+                  {rewardLog.expected !== rewardLog.subscriber.balance && (
+                    <div className="mx-3 mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+                      ⚠️ فرق {fmt(Math.abs(rewardLog.expected - rewardLog.subscriber.balance))} بين الرصيد ومجموع سجلّه — أي أن الرصيد عُدِّل من خارج المنح والاستخدام.
+                    </div>
+                  )}
+                  <div className="px-3 pb-1 text-[11px] text-muted">الكود الحالي: <b>{rewardLog.subscriber.code ?? "—"}</b> · عدد المنح المتراكمة: {rewardLog.subscriber.grants}</div>
+                  <table className="tbl">
+                    <thead><tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>الكود</th><th>السياق</th><th>الرصيد بعده</th><th>بواسطة</th></tr></thead>
+                    <tbody>
+                      {rewardLog.logs.length === 0 ? (
+                        <tr><td colSpan={7} className="p-6 text-center text-muted">لا مكافآت لهذا المشترك</td></tr>
+                      ) : rewardLog.logs.map((r) => (
+                        <tr key={r.id}>
+                          <td className="num" dir="ltr">{formatDateTime(r.createdAt)}</td>
+                          <td>{r.kind === "grant" ? "منح" : r.kind === "redeem" ? "استخدام" : r.kind === "reverse" ? "عكس منح" : r.kind}</td>
+                          <td className="num" style={{ color: r.kind === "grant" ? "var(--ok)" : "var(--bad)" }}>{fmt(r.amount)}</td>
+                          <td dir="ltr">{r.code ?? "—"}</td>
+                          <td>{r.context ?? "—"}</td>
+                          <td className="num">{fmt(r.balanceAfter)}</td>
+                          <td>{r.createdByName ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )
+            ) : logView === "debt" ? (
               !debtLog ? (
                 <div className="p-8 text-center text-muted">جاري التحميل...</div>
               ) : (
