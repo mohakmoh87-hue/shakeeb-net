@@ -33,19 +33,78 @@ try {
 
 function Have($c) { return $null -ne (Get-Command $c -ErrorAction SilentlyContinue) }
 function RefreshPath {
-  $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+  $extra = ";" + $env:ProgramFiles + "\nodejs;" + $env:ProgramFiles + "\Git\cmd"
+  $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User") + $extra
 }
 
-# 1) Node.js و Git
+# 1) Node.js و Git — winget أولاً (الأسرع)، وإن غاب أو فشل نُنزّل المثبّت الرسمي مباشرةً.
+#    السبب: ويندوز حديث التنصيب كثيراً ما يأتي بـwinget غير مهيّأ (App Installer قديم) فيفشل
+#    التنصيب كلّه بخطأ أحمر. المُنصِّب يجب ألا يعتمد على أداة قد لا تكون موجودة.
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+
+function TryWinget($id) {
+  if (-not (Have winget)) { return $false }
+  try {
+    winget install -e --id $id --accept-source-agreements --accept-package-agreements | Out-Null
+    RefreshPath
+    return $true
+  } catch { return $false }
+}
+
+# التثبيت الصامت يحتاج صلاحية مدير — بدونها يفشل msiexec بصمت تام. نرفع الصلاحية
+# بـRunAs (تظهر نافذة ويندوز الزرقاء «هل تسمح؟» — يضغط المستخدم «نعم») ونُبلّغ برمز الخروج.
+function RunElevated($file, $argList) {
+  Write-Host "ستظهر نافذة ويندوز تسألك السماح — اضغط (نعم/Yes)." -ForegroundColor Cyan
+  $p = Start-Process $file -ArgumentList $argList -Verb RunAs -Wait -PassThru
+  return $p.ExitCode
+}
+
 if (-not (Have node)) {
   Write-Host "تثبيت Node.js LTS..." -ForegroundColor Yellow
-  winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements | Out-Null
-  RefreshPath
+  TryWinget "OpenJS.NodeJS.LTS" | Out-Null
+  if (-not (Have node)) {
+    Write-Host "winget غير متاح — التنزيل من nodejs.org مباشرة..." -ForegroundColor Yellow
+    try {
+      $idx = (iwr -UseBasicParsing "https://nodejs.org/dist/index.json").Content | ConvertFrom-Json
+      $ver = ($idx | Where-Object { $_.lts } | Select-Object -First 1).version
+      $arch = "x86"
+      if ([Environment]::Is64BitOperatingSystem) { $arch = "x64" }
+      $msi = Join-Path $env:TEMP ("node-" + $ver + "-" + $arch + ".msi")
+      iwr -UseBasicParsing ("https://nodejs.org/dist/" + $ver + "/node-" + $ver + "-" + $arch + ".msi") -OutFile $msi
+      Write-Host ("تثبيت Node " + $ver + "...") -ForegroundColor Yellow
+      $code = RunElevated "msiexec.exe" @("/i", ('"' + $msi + '"'), "/qn", "/norestart")
+      if ($code -ne 0) { Write-Host ("مثبّت Node انتهى برمز " + $code) -ForegroundColor Red }
+      RefreshPath
+    } catch { Write-Host ("تعذّر تثبيت Node تلقائياً: " + $_.Exception.Message) -ForegroundColor Red }
+  }
 }
 if (-not (Have git)) {
   Write-Host "تثبيت Git..." -ForegroundColor Yellow
-  winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements | Out-Null
-  RefreshPath
+  TryWinget "Git.Git" | Out-Null
+  if (-not (Have git)) {
+    Write-Host "winget غير متاح — التنزيل من git-scm.com مباشرة..." -ForegroundColor Yellow
+    try {
+      $rel = (iwr -UseBasicParsing "https://api.github.com/repos/git-for-windows/git/releases/latest" -Headers @{ "User-Agent" = "ShakeebNet" }).Content | ConvertFrom-Json
+      $pat = "*-64-bit.exe"
+      if (-not [Environment]::Is64BitOperatingSystem) { $pat = "*-32-bit.exe" }
+      $asset = $rel.assets | Where-Object { $_.name -like $pat -and $_.name -notlike "*Portable*" } | Select-Object -First 1
+      $exe = Join-Path $env:TEMP $asset.name
+      iwr -UseBasicParsing $asset.browser_download_url -OutFile $exe
+      Write-Host ("تثبيت " + $asset.name + "...") -ForegroundColor Yellow
+      $code = RunElevated $exe @("/VERYSILENT","/NORESTART","/NOCANCEL","/SP-","/SUPPRESSMSGBOXES")
+      if ($code -ne 0) { Write-Host ("مثبّت Git انتهى برمز " + $code) -ForegroundColor Red }
+      RefreshPath
+    } catch { Write-Host ("تعذّر تثبيت Git تلقائياً: " + $_.Exception.Message) -ForegroundColor Red }
+  }
+}
+if (-not (Have node) -or -not (Have git)) {
+  Write-Host ""
+  Write-Host "تعذّر تثبيت المتطلبات تلقائياً (لا اتصال بالانترنت غالباً)." -ForegroundColor Red
+  Write-Host "نزّل هذين وثبّتهما بالضغط التالي-التالي ثم اعد لصق امر التنصيب:" -ForegroundColor Yellow
+  Write-Host "  Node.js LTS : https://nodejs.org/en/download"
+  Write-Host "  Git         : https://git-scm.com/download/win"
+  Read-Host "اضغط Enter للانهاء"
+  exit 1
 }
 
 # 2) تنزيل/تحديث كود البرنامج
