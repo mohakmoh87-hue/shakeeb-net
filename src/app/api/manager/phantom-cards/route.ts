@@ -35,10 +35,19 @@ export async function GET() {
   if (ids.length === 0) return NextResponse.json({ cards: [] });
 
   // المعلَّق فقط: الكارت موجود، يتبع الوكيل، وما زال مستخدماً (لم يُرجَع/يُحذف)
-  const cards = await prisma.rechargeCard.findMany({
+  const cards = (await prisma.rechargeCard.findMany({
     where: { id: { in: ids }, agentId, useDate: { not: null } },
     select: { id: true, serial: true, useDate: true, subscriberId: true, price: true },
-  });
+  }))
+    // الوسم يخصّ **استعمالاً بعينه**: إن أُرجع الكارت بعد الاكتشاف ثم استُعمل من
+    // جديد (لمشترك آخر فُعِّل فعلاً في SAS) فالوسم القديم لا يخصّ هذا الاستعمال —
+    // وكان يبقى معلّقاً فيظهر كارتٌ سليم في قائمة الوهمية.
+    // (حادثة 422710444410792: وُسِم 30 تموز 09:16 على استعمال المواصلات، ثم
+    //  استعملته الشهداء 18:09 لمشترك فُعِّل في SAS — فبقي الوسم بلا سبب.)
+    .filter((c) => {
+      const at = detectedAt.get(c.id);
+      return !at || !c.useDate || c.useDate.getTime() <= at.getTime();
+    });
 
   // اسم المشترك ومكتبه
   const subIds = [...new Set(cards.map((c) => c.subscriberId).filter((x): x is number => x != null))];
