@@ -144,6 +144,24 @@ export async function POST(request: Request) {
     const e = requireTower(towerId, "الفاتورة");
     if (e) return e;
   }
+
+  // دينٌ بلا مدين (المرحلة ٨): في الفاتورة بلا مشترك كان المتبقّي يُحسب ثم **لا يُطبَّق
+  // على أحد** — فيظهر المبلغ مبيعاً في التقارير، لا هو في الصندوق ولا هو دين على أحد.
+  // الآن: البيع بلا مشترك يجب أن يكون واصلاً بالكامل (أو ماستر). ومَن أراد تقسيطاً
+  // يربط الفاتورة بمشترك فيُسجَّل الدين باسمه ويظهر في قائمة الديون.
+  if (!subscriber && !master) {
+    const grossTotal = items.reduce((s, it) => s + it.count * it.price, 0);
+    if (paid < grossTotal) {
+      return NextResponse.json(
+        {
+          error:
+            `البيع بلا مشترك يجب أن يكون واصلاً بالكامل (${grossTotal.toLocaleString("en-US")}). ` +
+            `الدين لا يمكن تسجيله على زبون غير مرتبط بحساب — اربط الفاتورة بمشترك ليُسجَّل الدين باسمه.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
     invoice = await prisma.$transaction(async (tx) => {
     // خصم كود المكافأة أولاً (بحدّ الإجمالي، يبقى الباقي للمشترك)
     if (rewardEligible && subscriber) {
