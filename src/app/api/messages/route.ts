@@ -119,7 +119,8 @@ export async function POST(request: Request) {
     where = { ...where, waEnabled: true };
   }
 
-  const recipients = await prisma.subscriber.findMany({ where });
+  // المشترك المُعطَّل (المحذوف) لا يُراسَل — وصولاته باقية لكنه خارج الخدمة
+  const recipients = await prisma.subscriber.findMany({ where: { ...where, isDeleted: false } });
   if (recipients.length === 0) {
     return NextResponse.json({ error: "لا يوجد مستلمون مطابقون" }, { status: 400 });
   }

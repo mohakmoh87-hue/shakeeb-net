@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "لم تحدّد مشتركين" }, { status: 400 });
   }
 
-  const { deleted: count } = await purgeSubscribers(targetIds);
+  const { deleted: count } = await purgeSubscribers(targetIds, { userId: g.session?.userId ?? null, name: g.session?.fullName ?? g.session?.username ?? null });
 
   await prisma.auditLog.create({
     data: {

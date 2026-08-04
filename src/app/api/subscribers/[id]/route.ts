@@ -111,6 +111,6 @@ export async function DELETE(
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
   // حذف نهائي مع كل السجلات المرتبطة (وصولات/فواتير/حركات/رسائل)
-  await purgeSubscribers([Number(id)]);
+  await purgeSubscribers([Number(id)], { userId: g.session?.userId ?? null, name: g.session?.fullName ?? g.session?.username ?? null });
   return NextResponse.json({ ok: true });
 }
