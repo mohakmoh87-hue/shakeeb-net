@@ -10,10 +10,10 @@ export type SalaryAttendance = {
 };
 export type SalaryLeave = { dayKey: string; kind: string; paid: boolean; status: string; reason: string };
 export type SalaryAdjustment = { dayKey: string; kind: string; amount: number; status: string; reason: string };
-export type SalaryMoneyTx = { dayKey: string; moneyIn: number; moneyOut: number; notes: string };
+export type SalaryMoneyTx = { dayKey: string; moneyIn: number; moneyOut: number; notes: string; txId?: number };
 export type SalaryPeriod = { from: string; to: string };
 
-export type SalaryItem = { date: string; type: string; label: string; amount: number; reason?: string };
+export type SalaryItem = { date: string; type: string; label: string; amount: number; reason?: string; txId?: number };
 export type SalaryDay = { date: string; amount: number; note: string }; // تفصيل مبالغ الأيام
 export type SalaryResult = {
   daysPaid: number; cleanDays: number; dailyAmount: number;
@@ -104,12 +104,12 @@ export async function statementForTechnician(
     prisma.leave.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
     prisma.adjustment.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
     accountId
-      ? prisma.moneyTx.findMany({ where: { accountId, isDeleted: false, salaryStatementId: null, ...(dateRange ? { date: dateRange } : {}) }, select: { date: true, moneyIn: true, moneyOut: true, notes: true } })
-      : Promise.resolve([] as { date: Date | null; moneyIn: number | null; moneyOut: number | null; notes: string | null }[]),
+      ? prisma.moneyTx.findMany({ where: { accountId, isDeleted: false, salaryStatementId: null, ...(dateRange ? { date: dateRange } : {}) }, select: { id: true, date: true, moneyIn: true, moneyOut: true, notes: true } })
+      : Promise.resolve([] as { id: number; date: Date | null; moneyIn: number | null; moneyOut: number | null; notes: string | null }[]),
   ]);
 
   const moneyItems: SalaryMoneyTx[] = money.map((m) => ({
-    dayKey: baghdadDayKey(m.date ?? new Date()), moneyIn: m.moneyIn ?? 0, moneyOut: m.moneyOut ?? 0, notes: m.notes ?? "",
+    dayKey: baghdadDayKey(m.date ?? new Date()), moneyIn: m.moneyIn ?? 0, moneyOut: m.moneyOut ?? 0, notes: m.notes ?? "", txId: m.id,
   }));
 
   return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], moneyItems, todayKey, p);
@@ -228,8 +228,8 @@ export function computeSalary(
   for (const m of moneyTxs) {
     if (!inPeriod(m.dayKey)) continue;
     const out = m.moneyOut ?? 0, inn = m.moneyIn ?? 0;
-    if (out) { advances += out; keys.push(m.dayKey); items.push({ date: m.dayKey, type: "advance", label: "سحب من الحساب", amount: -out, reason: m.notes || undefined }); }
-    if (inn) { credits += inn; keys.push(m.dayKey); items.push({ date: m.dayKey, type: "credit", label: "إضافة للحساب", amount: inn, reason: m.notes || undefined }); }
+    if (out) { advances += out; keys.push(m.dayKey); items.push({ date: m.dayKey, type: "advance", label: "سحب من الحساب", amount: -out, reason: m.notes || undefined, txId: m.txId }); }
+    if (inn) { credits += inn; keys.push(m.dayKey); items.push({ date: m.dayKey, type: "credit", label: "إضافة للحساب", amount: inn, reason: m.notes || undefined, txId: m.txId }); }
   }
 
   const net = baseEarned + overtime + bonuses + credits - attDed - confDed - advances;

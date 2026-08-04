@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import MoneyTxModal from "@/components/MoneyTxModal";
 
-type Item = { date: string; type: string; label: string; amount: number; reason?: string };
+type Item = { date: string; type: string; label: string; amount: number; reason?: string; txId?: number };
 type Day = { date: string; amount: number; note: string };
 type Statement = {
   daysPaid: number; cleanDays: number; dailyAmount: number; baseEarned: number; overtime: number; bonuses: number; credits: number;
@@ -29,6 +30,8 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   const [st, setSt] = useState<Statement | null>(null);
   const [history, setHistory] = useState<Archive[]>([]);
   const [openSt, setOpenSt] = useState<StView | null>(null);
+  // حركة مالية مفتوحة التفاصيل من داخل بنود الراتب (سحب/إضافة للحساب)
+  const [txDetail, setTxDetail] = useState<number | null>(null);
   const [stBusy, setStBusy] = useState(false);
   const [period, setPeriod] = useState<Period | null>(null);
   const [cardCounts, setCardCounts] = useState<{ kind: string; count: number }[]>([]); // بطاقات منجزة حسب الفئة ضمن الفترة
@@ -122,9 +125,15 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
             ) : (
               <ul className="mb-3 space-y-1">
                 {st.items.map((it, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs">
-                    <div className="min-w-0">
-                      <span className="font-semibold text-slate-700">{it.label}</span>
+                  <li key={i}
+                    onClick={() => it.txId && setTxDetail(it.txId)}
+                    title={it.txId ? "اضغط لعرض الحركة المالية وراء هذا البند" : undefined}
+                    className={
+                      "flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs" +
+                      (it.txId ? " cursor-pointer hover:border-mynet-blue hover:bg-white" : "")
+                    }>
+                    <div className="min-w-0">
+                      <span className="font-semibold text-slate-700">{it.label}{it.txId ? " ↗" : ""}</span>
                       <span className="mr-1 text-slate-400" dir="ltr"> {it.date}</span>
                       {it.reason && <div className="truncate text-[11px] text-slate-500">{it.reason}</div>}
                     </div>
@@ -228,6 +237,9 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
           </>
         )}
       </div>
+
+      {/* الحركة المالية وراء بند «سحب/إضافة للحساب» — كان البند رقماً بلا مصدر */}
+      {txDetail != null && <MoneyTxModal id={txDetail} onClose={() => setTxDetail(null)} onDeleted={load} />}
     </div>
   );
 }
@@ -283,6 +295,7 @@ function DetailPanel({ cat, st, onClose }: { cat: string; st: Statement; onClose
           ))}
         </ul>
       )}
+
     </div>
   );
 }
