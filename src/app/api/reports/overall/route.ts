@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { notMaster } from "@/lib/moneyKinds";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope } from "@/lib/guard";
 
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
     prisma.tower.count({ where: { isDeleted: false } }),
     prisma.moneyTx.aggregate({
       // حساب الماستر مستقل — لا يدخل بالتقرير الإجمالي
-      where: { isDeleted: false, ...scope, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
+      where: { isDeleted: false, ...scope, ...notMaster },
       _sum: { moneyIn: true, moneyOut: true },
     }),
     prisma.subscriber.aggregate({

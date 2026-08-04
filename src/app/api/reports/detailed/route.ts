@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { notMaster } from "@/lib/moneyKinds";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope } from "@/lib/guard";
 
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
       take: 500,
     }),
     prisma.moneyTx.findMany({
-      where: { isDeleted: false, date: range, ...scope, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
+      where: { isDeleted: false, date: range, ...scope, ...notMaster },
       orderBy: { id: "desc" },
       take: 500,
     }),
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
     }),
     prisma.moneyTx.aggregate({
       // الماستر مستقل — خارج التقرير التفصيلي
-      where: { isDeleted: false, date: range, ...scope, OR: [{ sourceType: null }, { sourceType: { not: "master" } }] },
+      where: { isDeleted: false, date: range, ...scope, ...notMaster },
       _sum: { moneyIn: true, moneyOut: true },
     }),
   ]);

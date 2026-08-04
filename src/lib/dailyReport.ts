@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { notMaster, onlyMaster, otherIncomeOnly } from "@/lib/moneyKinds";
 
 // حدود يوم العراق (UTC+3)
 export function iraqTodayRange(now = new Date()): { start: Date; end: Date } {
@@ -34,7 +35,7 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
     }),
     // حركات الصندوق العادية — باستثناء الماستر (حساب مستقل لا يُجمع مع التقرير)
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, ...dateWhere, ...towerWhere, OR: [{ sourceType: null }, { sourceType: { notIn: ["master", "master-invoice"] } }] },
+      where: { isDeleted: false, ...dateWhere, ...towerWhere, ...notMaster },
       _sum: { moneyIn: true, moneyOut: true },
     }),
     prisma.invoice.aggregate({
@@ -51,7 +52,7 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
     }),
     // حساب الماستر — مستقل تماماً، يظهر بسطر منفصل ولا يدخل بالمجموع
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, sourceType: { in: ["master", "master-invoice"] }, ...dateWhere, ...towerWhere },
+      where: { isDeleted: false, ...onlyMaster, ...dateWhere, ...towerWhere },
       _sum: { moneyIn: true, moneyOut: true },
     }),
     // «المقبوضات (اليوم)»: **مجموع صريح** لما ليس تفعيلاً ولا فاتورة ولا بيع مخزن ولا
@@ -59,8 +60,8 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
     // فيبتلع مقبوضات حقيقية ولا يمكن سرد مكوّناته إطلاقاً (تدقيق 2026-08-04).
     prisma.moneyTx.aggregate({
       where: {
-        isDeleted: false, ...dateWhere, ...towerWhere, moneyIn: { gt: 0 },
-        OR: [{ sourceType: null }, { sourceType: { notIn: ["activation", "invoice", "sale", "master", "master-invoice"] } }],
+        isDeleted: false, ...dateWhere, ...towerWhere,
+        ...otherIncomeOnly, // يحمل moneyIn > 0 والاستثناءات معاً — من المصدر الموحّد
       },
       _sum: { moneyIn: true },
     }),

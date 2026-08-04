@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { notMaster, onlyMaster, otherIncomeOnly } from "@/lib/moneyKinds";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
@@ -47,16 +48,16 @@ export async function GET(request: Request) {
 
   // «المقبوضات (اليوم)» = ما ليس تفعيلاً ولا فاتورة ولا بيع مخزن ولا ماستر:
   // تسديدات الديون والحركات اليدوية. تعريفٌ صريح يمكن سرده — بخلاف الطرح القديم.
-  const OTHER_EXCLUDED = ["activation", "invoice", "sale", "master", "master-invoice"];
+  // التعريفات من مصدر واحد — لا تُكتب يدوياً هنا
 
   const whereByKind: Record<Kind, object> = {
     activation: { ...base, sourceType: "activation" },
     invoice: { ...base, sourceType: "invoice" },
     sale: { ...base, sourceType: "sale" },
-    other: { ...base, moneyIn: { gt: 0 }, OR: [{ sourceType: null }, { sourceType: { notIn: OTHER_EXCLUDED } }] },
-    expenses: { ...base, moneyOut: { gt: 0 }, OR: [{ sourceType: null }, { sourceType: { notIn: ["master", "master-invoice"] } }] },
-    master: { ...base, sourceType: { in: ["master", "master-invoice"] } },
-    total: { ...base, OR: [{ sourceType: null }, { sourceType: { notIn: ["master", "master-invoice"] } }] },
+    other: { ...base, ...otherIncomeOnly },
+    expenses: { ...base, moneyOut: { gt: 0 }, ...notMaster },
+    master: { ...base, ...onlyMaster },
+    total: { ...base, ...notMaster },
   };
 
   const where = whereByKind[kind];
