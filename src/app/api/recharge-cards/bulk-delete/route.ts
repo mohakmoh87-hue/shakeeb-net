@@ -26,6 +26,18 @@ export async function POST(request: Request) {
   // (المحذوف فعلاً قد يقلّ عن المحدَّد، فتقدير المتصفح وحده يضلّل)
   const agg = await prisma.rechargeCard.aggregate({ where, _sum: { price: true } });
   const removedDebt = agg._sum?.price ?? 0;
+  // السيريلات قبل الحذف — الحذف فيزيائي فلا سبيل لمعرفتها بعده (المرحلة ٨)
+  const doomed = await prisma.rechargeCard.findMany({ where, select: { serial: true }, take: 500 });
   const res = await prisma.rechargeCard.deleteMany({ where });
+  await prisma.auditLog.create({
+    data: {
+      userId: g.session?.userId,
+      action: "DELETE_CARDS", entity: "rechargeCard", entityId: String(res.count),
+      details:
+        "حذف " + res.count + " كارتاً — ينقص ديون الكارتات " +
+        removedDebt.toLocaleString("en-US") + " — سيريلات: " +
+        doomed.map((c) => c.serial).filter(Boolean).join(", ").slice(0, 4000),
+    },
+  });
   return NextResponse.json({ ok: true, deleted: res.count, removedDebt });
 }

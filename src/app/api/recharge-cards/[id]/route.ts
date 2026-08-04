@@ -49,6 +49,18 @@ export async function DELETE(
   if (!card) return NextResponse.json({ error: "الكارت غير موجود ضمن حسابك" }, { status: 404 });
   if (card.useDate) return NextResponse.json({ error: "لا يمكن حذف كارت مستخدم" }, { status: 400 });
 
+  // سجل تدقيق قبل الحذف (المرحلة ٨): الحذف فيزيائي لا رجعة فيه، وكان يقع بلا أي أثر
+  // — فينقص «ديون الكارتات» بلا وصل يشرح السبب (حادثة 266 كارتاً 2026-07-27).
+  const full = await prisma.rechargeCard.findUnique({ where: { id: Number(id) }, select: { serial: true, price: true } });
   await prisma.rechargeCard.delete({ where: { id: Number(id) } });
-  return NextResponse.json({ ok: true });
+  await prisma.auditLog.create({
+    data: {
+      userId: g.session?.userId,
+      action: "DELETE_CARDS", entity: "rechargeCard", entityId: String(id),
+      details:
+        "حذف كارت " + (full?.serial ?? id) +
+        " — ينقص ديون الكارتات " + (full?.price ?? 0).toLocaleString("en-US"),
+    },
+  });
+  return NextResponse.json({ ok: true, removedDebt: full?.price ?? 0 });
 }
