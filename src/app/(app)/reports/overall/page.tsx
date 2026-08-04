@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import PageHeader from "@/components/PageHeader";
 import PrintButton from "@/components/PrintButton";
 import { formatDate } from "@/lib/format";
@@ -107,18 +108,18 @@ export default function OverallReport() {
 
           {/* البطاقات */}
           <div className="print-area grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            <Card label="إجمالي المشتركين" value={fmt(d.subscribers.total)} />
-            <Card label="اشتراكات نشطة (مفعّلة)" value={fmt(d.subscribers.active)} color="text-emerald-600" bg="bg-emerald-50" />
+            <Card label="إجمالي المشتركين" value={fmt(d.subscribers.total)} href="/subscribers" />
+            <Card label="اشتراكات نشطة (مفعّلة)" value={fmt(d.subscribers.active)} color="text-emerald-600" bg="bg-emerald-50" href="/subscribers" />
             <Card label="المشتركون غير المفعّلين" value={fmt(d.subscribers.inactive)} color="text-red-600" bg="bg-red-50" />
-            <Card label="رصيد الصندوق" value={fmt(d.cash.balance)} color="text-mynet-blue" bg="bg-blue-50" />
-            <Card label="إجمالي الديون" value={fmt(d.debts.total)} color="text-amber-600" />
-            <Card label="عدد المدينين" value={fmt(d.debts.count)} />
-            <Card label="إجمالي القبض" value={fmt(d.cash.totalIn)} color="text-emerald-600" />
-            <Card label="إجمالي الصرف" value={fmt(d.cash.totalOut)} color="text-red-600" />
-            <Card label="الباقات" value={fmt(d.packages)} />
-            <Card label="المكاتب" value={fmt(d.towers)} />
-            <Card label="عدد الفواتير" value={fmt(d.invoices.count)} />
-            <Card label="الفواتير — المُفوتَر (لا المُحصَّل)" value={fmt(d.invoices.total)} color="text-mynet-blue" />
+            <Card label="رصيد الصندوق" value={fmt(d.cash.balance)} color="text-mynet-blue" bg="bg-blue-50" href="/cashbox?type=all" />
+            <Card label="إجمالي الديون" value={fmt(d.debts.total)} color="text-amber-600" href="/debts" />
+            <Card label="عدد المدينين" value={fmt(d.debts.count)} href="/debts" />
+            <Card label="إجمالي القبض" value={fmt(d.cash.totalIn)} color="text-emerald-600" href="/cashbox?type=all" />
+            <Card label="إجمالي الصرف" value={fmt(d.cash.totalOut)} color="text-red-600" href="/cashbox?type=all" />
+            <Card label="الباقات" value={fmt(d.packages)} href="/packages" />
+            <Card label="المكاتب" value={fmt(d.towers)} href="/towers" />
+            <Card label="عدد الفواتير" value={fmt(d.invoices.count)} href="/reports/invoices" />
+            <Card label="الفواتير — المُفوتَر (لا المُحصَّل)" value={fmt(d.invoices.total)} color="text-mynet-blue" href="/reports/invoices" />
             <Card label="عمليات التفعيل (الكل)" value={fmt(d.activations.count)} />
             <Card label="قيمة التفعيلات" value={fmt(d.activations.total)} color="text-mynet-blue" />
             <Card label="رسائل مُرسلة" value={fmt(d.messagesSent)} />
@@ -181,11 +182,18 @@ export default function OverallReport() {
   );
 }
 
-function Card({ label, value, color, bg }: { label: string; value: string; color?: string; bg?: string }) {
-  return (
-    <div className={`rounded-xl border border-slate-200 ${bg ?? "bg-white"} p-4 shadow-sm`}>
+// البطاقة القابلة للضغط: href يفتح الصفحة التي تُظهر الحركات المكوّنة للرقم
+// (المرحلة ٥ — كل رقم كان جامداً لا يقود إلى مصدره).
+function Card({ label, value, color, bg, href }: { label: string; value: string; color?: string; bg?: string; href?: string }) {
+  const inner = (
+    <>
       <div className="text-sm text-slate-600">{label}</div>
-      <div className={`text-2xl font-extrabold ${color ?? "text-slate-800"}`}>{value}</div>
-    </div>
+      <div className={"text-2xl font-extrabold " + (color ?? "text-slate-800")}>{value}</div>
+      {href && <div className="mt-0.5 text-[11px] font-semibold text-mynet-blue">اعرض التفاصيل ↗</div>}
+    </>
   );
+  const cls = "rounded-xl border border-slate-200 " + (bg ?? "bg-white") + " p-4 shadow-sm";
+  return href
+    ? <Link href={href} className={cls + " block transition hover:border-mynet-blue hover:shadow-md"} style={{ textDecoration: "none" }}>{inner}</Link>
+    : <div className={cls}>{inner}</div>;
 }
