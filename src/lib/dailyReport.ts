@@ -25,7 +25,7 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
   const towerWhere =
     towerId == null ? {} : Array.isArray(towerId) ? { towerId: { in: towerId.length ? towerId : [-1] } } : { towerId };
 
-  const [activations, todayMoney, todayInvoices, todaySales, todayMaster] = await Promise.all([
+  const [activations, todayMoney, todayInvoices, todaySales, todayMaster, todayOther] = await Promise.all([
     // تفعيلات عادية فقط (ماستر مستقل)
     prisma.subscriptionEntry.aggregate({
       where: { isDeleted: false, isMaster: false, ...dateWhere, ...towerWhere },
@@ -54,6 +54,16 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
       where: { isDeleted: false, sourceType: { in: ["master", "master-invoice"] }, ...dateWhere, ...towerWhere },
       _sum: { moneyIn: true, moneyOut: true },
     }),
+    // «المقبوضات (اليوم)»: **مجموع صريح** لما ليس تفعيلاً ولا فاتورة ولا بيع مخزن ولا
+    // ماستر (تسديدات ديون + حركات يدوية). كان طرحاً بين ثلاثة جداول مقصوصاً عند الصفر
+    // فيبتلع مقبوضات حقيقية ولا يمكن سرد مكوّناته إطلاقاً (تدقيق 2026-08-04).
+    prisma.moneyTx.aggregate({
+      where: {
+        isDeleted: false, ...dateWhere, ...towerWhere, moneyIn: { gt: 0 },
+        OR: [{ sourceType: null }, { sourceType: { notIn: ["activation", "invoice", "sale", "master", "master-invoice"] } }],
+      },
+      _sum: { moneyIn: true },
+    }),
   ]);
 
   const todayIn = todayMoney._sum.moneyIn ?? 0;
@@ -62,7 +72,7 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
   const invoiceIn = todayInvoices._sum.waselHim ?? 0;
   const salesIn = todaySales._sum.moneyIn ?? 0;
   const masterIn = (todayMaster._sum.moneyIn ?? 0) - (todayMaster._sum.moneyOut ?? 0);
-  const otherIn = Math.max(0, todayIn - activationIn - invoiceIn - salesIn);
+  const otherIn = todayOther._sum.moneyIn ?? 0;
   const total = todayIn - todayOut; // لا يشمل الماستر
 
   return {
