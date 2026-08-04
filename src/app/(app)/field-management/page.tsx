@@ -88,6 +88,10 @@ export default function FieldManagementPage() {
   const [completing, setCompleting] = useState<Card | null>(null);
   const [postponing, setPostponing] = useState<Card | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
+  // سحب بالضغط المطوّل — يعمل باللمس والفأرة معاً (Pointer Events):
+  // الأعمدة تُنقل يميناً ويساراً، والبطاقات أعلى وأسفل داخل عمودها. (طلب محمد)
+  const [press, setPress] = useState<{ kind: "list" | "card"; id: number } | null>(null);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // الفنيون والمكاتب (لوحة مستقلّة لكل مكتب، والمدير يختار المكتب)
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [offices, setOffices] = useState<Office[]>([]);
@@ -256,6 +260,69 @@ export default function FieldManagementPage() {
     setCards((x) => x.filter((c) => c.listId !== l.id));
     await fetch(`/api/field/lists?id=${l.id}`, { method: "DELETE" });
   }
+  // ===== السحب بالضغط المطوّل =====
+  function beginPress(kind: "list" | "card", id: number) {
+    if (!canOperate || isTech) return;
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => setPress({ kind, id }), 400);
+  }
+  function cancelPress() {
+    if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
+  }
+  // عند رفع الإصبع/الفأرة: ما العنصر الذي تحته؟ نُدرج المسحوب مكانه
+  function endPress(e: React.PointerEvent) {
+    cancelPress();
+    const cur = press;
+    setPress(null);
+    if (!cur) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    if (!el) return;
+    if (cur.kind === "list") {
+      const target = el.closest("[data-list-id]") as HTMLElement | null;
+      const toId = Number(target?.dataset.listId);
+      if (!toId || toId === cur.id) return;
+      void reorderLists(cur.id, toId);
+    } else {
+      const target = el.closest("[data-card-id]") as HTMLElement | null;
+      const toId = Number(target?.dataset.cardId);
+      if (!toId || toId === cur.id) return;
+      void reorderCards(cur.id, toId);
+    }
+  }
+
+  // نقل عمود إلى موضع عمود آخر — ثم تثبيت الترتيب في الخادم
+  async function reorderLists(fromId: number, toId: number) {
+    const arr = [...lists].sort((a, b) => a.position - b.position);
+    const fi = arr.findIndex((x) => x.id === fromId);
+    const ti = arr.findIndex((x) => x.id === toId);
+    if (fi < 0 || ti < 0) return;
+    const [moved] = arr.splice(fi, 1);
+    arr.splice(ti, 0, moved);
+    const next = arr.map((x, i) => ({ ...x, position: i }));
+    setLists(next);
+    await Promise.all(next.map((x) =>
+      fetch("/api/field/lists", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: x.id, position: x.position }) }).catch(() => {}),
+    ));
+  }
+
+  // نقل بطاقة إلى موضع بطاقة أخرى **داخل عمودها** (أعلى/أسفل)
+  async function reorderCards(fromId: number, toId: number) {
+    const from = cards.find((c) => c.id === fromId);
+    const to = cards.find((c) => c.id === toId);
+    if (!from || !to || from.listId !== to.listId) return;
+    const arr = cards.filter((c) => c.listId === from.listId && !c.done).sort((a, b) => a.position - b.position);
+    const fi = arr.findIndex((x) => x.id === fromId);
+    const ti = arr.findIndex((x) => x.id === toId);
+    if (fi < 0 || ti < 0) return;
+    const [moved] = arr.splice(fi, 1);
+    arr.splice(ti, 0, moved);
+    const posById = new Map(arr.map((x, i) => [x.id, i]));
+    setCards((x) => x.map((c) => (posById.has(c.id) ? { ...c, position: posById.get(c.id)! } : c)));
+    await Promise.all(arr.map((x, i) =>
+      fetch("/api/field/cards", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: x.id, position: i }) }).catch(() => {}),
+    ));
+  }
+
   async function moveCard(card: Card, toListId: number) {
     if (!canOperate) return;
     if (card.listId === toListId) return;
@@ -458,12 +525,20 @@ export default function FieldManagementPage() {
           return (
             <div
               key={l.id}
+              data-list-id={l.id}
+              onPointerUp={endPress}
+              onPointerCancel={cancelPress}
+              style={press?.kind === "list" && press.id === l.id ? { opacity: .55, transform: "scale(.98)" } : undefined}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => { if (!canOperate || isTech) return; const c = cards.find((x) => x.id === dragId); if (c) moveCard(c, l.id); setDragId(null); }}
               className={`flex max-h-full w-[280px] shrink-0 flex-col rounded-xl shadow-lg ${isTech ? "bg-slate-100" : "border border-line bg-surface-2"}`}
             >
               {/* رأس العمود: بالمتصفح للمدير — خطّ أبيض على خلفية بلون فئة العمود */}
-              <div className={`flex items-center justify-between px-3 py-2 ${isTech ? "" : "rounded-t-[11px]"}`}
+              <div
+                onPointerDown={() => beginPress("list", l.id)}
+                onPointerMove={cancelPress}
+                title="اضغط مطوّلاً على رأس العمود ثم اسحبه يميناً أو يساراً"
+                className={`flex items-center justify-between px-3 py-2 ${isTech ? "" : "rounded-t-[11px]"}`}
                 style={!isTech ? { background: catColorOf(l.name ?? "") } : undefined}>
                 <span className={`font-bold ${isTech ? "text-slate-700" : "text-white"}`}>
                   {l.name} <span className={`text-xs font-normal ${isTech ? "text-slate-400" : "text-white/75"}`}>({listCards.length})</span>
@@ -482,9 +557,16 @@ export default function FieldManagementPage() {
                 {listCards.map((c) => (
                   <div
                     key={c.id}
+                    data-card-id={c.id}
                     draggable={canOperate && !isTech}
                     onDragStart={() => canOperate && !isTech && setDragId(c.id)}
-                    onClick={() => setSel(c)}
+                    onPointerDown={() => beginPress("card", c.id)}
+                    onPointerMove={cancelPress}
+                    onPointerUp={endPress}
+                    onPointerCancel={cancelPress}
+                    onClick={() => { if (press) return; setSel(c); }}
+                    title="اضغط مطوّلاً ثم اسحب لتغيير ترتيب البطاقة داخل العمود"
+                    style={press?.kind === "card" && press.id === c.id ? { opacity: .55, transform: "scale(.98)" } : undefined}
                     className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md"
                   >
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
