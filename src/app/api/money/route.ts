@@ -87,8 +87,14 @@ export async function GET(request: Request) {
       }
     : await towerScope(g.session);
 
+  // فلتر مكتب واحد (تصل به بطاقة الشاشة الرئيسية) — مقيَّد بمكاتب وكيل المستخدم
+  const officeParam = Number(sp.get("officeId"));
+  const agentTowersForFilter = await agentTowerIds(g.session);
+  const officeWhere = agentTowersForFilter.includes(officeParam) ? { towerId: officeParam } : {};
+
   const where = {
     isDeleted: false,
+    ...officeWhere,
     AND: [
       ...(Object.keys(typeWhere).length ? [typeWhere] : []),
       ...(q ? [qWhere] : []),

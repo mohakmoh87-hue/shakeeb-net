@@ -14,6 +14,12 @@ type Office = { id: number; name: string | null };
 
 const fmt = (n: number | null | undefined) => Number(n ?? 0).toLocaleString("en-US");
 
+// مفتاح يوم العراق (YYYY-MM-DD) — نفس اليوم الذي تُحسب به أرقام البطاقات
+function todayKey() {
+  const d = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function StatCards({ initialReport, towerIds, offices, isAdmin }: { initialReport: Report; towerIds: number[]; offices: Office[]; isAdmin: boolean }) {
   return (
     <section className="stats max-[1050px]:!grid-cols-2">
@@ -161,7 +167,11 @@ function MoneyCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
   const sum = totalIn + totalOut;
   const inPct = sum > 0 ? Math.round((totalIn / sum) * 100) : 50;
   return (
-    <Link href="/cashbox" className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح المصروفات والمقبوضات">
+    // البطاقة تعرض **يوم العراق الحالي** بينما الصفحة كانت تُفتح على كل الأزمنة —
+    // فتضغط رقماً وتصل إلى صفحة لا تجد فيها ما يجمعه. الرابط الآن يحمل اليوم والمكتب.
+    <Link
+      href={"/cashbox?from=" + todayKey() + "&to=" + todayKey() + (officeSel === "all" ? "" : "&office=" + officeSel)}
+      className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح المصروفات والمقبوضات — مفلترة على اليوم ونفس المكتب">
       <div className="st-top">
         <span className="st-lb">المصروفات والمقبوضات</span>
         {isAdmin && offices.length > 1 && (

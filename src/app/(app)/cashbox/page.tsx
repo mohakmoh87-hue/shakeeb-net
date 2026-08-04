@@ -67,10 +67,13 @@ export default function CashboxPage() {
   // فلتر نوع الحركة — الافتراضي «الكل»: الصفحة صارت سجل كل الحركات لا اليدوي فقط
   const [typeFilter, setTypeFilter] = useState("entered");
   const [matched, setMatched] = useState(0); // إجمالي المطابق (قد يفوق المعروض)
+  // فلتر مكتب واحد يصل من رابط بطاقة الشاشة الرئيسية (?office=)
+  const [officeId, setOfficeId] = useState<number | "">("");
 
-  const load = useCallback((f = "", t = "", search = "", kind = "entered") => {
+  const load = useCallback((f = "", t = "", search = "", kind = "entered", office: number | "" = "") => {
     const qs = new URLSearchParams();
     if (kind) qs.set("type", kind);
+    if (office !== "") qs.set("officeId", String(office));
     if (f) qs.set("from", f);
     if (t) qs.set("to", t);
     if (search.trim()) qs.set("q", search.trim());
@@ -88,7 +91,19 @@ export default function CashboxPage() {
   }, []);
 
   useEffect(() => {
-    load(from, to, q, typeFilter);
+    // الرابط القادم من بطاقة الرئيسية يحمل اليوم والمكتب — بدونه كنت تضغط رقم
+    // اليوم فتفتح صفحةً تعرض كل الأزمنة ولا تجد فيها ما يجمعه
+    const sp = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+    const uf = sp.get("from") ?? "";
+    const ut = sp.get("to") ?? "";
+    const uk = sp.get("type") ?? "entered";
+    const uo = Number(sp.get("office"));
+    const office: number | "" = Number.isFinite(uo) && uo > 0 ? uo : "";
+    if (uf) setFrom(uf);
+    if (ut) setTo(ut);
+    setTypeFilter(uk);
+    setOfficeId(office);
+    load(uf, ut, q, uk, office);
     fetch("/api/accounts").then((r) => void (r.ok && r.json().then(setAccounts)));
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setTowers)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -142,7 +157,7 @@ export default function CashboxPage() {
       setTimeout(() => setOkMsg(""), 3500);
       setAmount("");
       setNotes("");
-      load(from, to, q, typeFilter);
+      load(from, to, q, typeFilter, officeId);
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {
@@ -156,7 +171,7 @@ export default function CashboxPage() {
     const choice = await askVoidEffect(label);
     if (!choice) return;
     const res = await fetch(`/api/money/${t.id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
-    if (res.ok) load(from, to, q, typeFilter);
+    if (res.ok) load(from, to, q, typeFilter, officeId);
     else {
       const d = await res.json().catch(() => ({}));
       alert(d.error ?? "تعذّر الحذف");
@@ -175,6 +190,17 @@ export default function CashboxPage() {
         <StatCard label="الرصيد (قبض − صرف)" value={fmt(summary.balance)} color={summary.balance < 0 ? "text-red-600" : "text-sky-700"} bg="bg-sky-50" />
       </div>
 
+      {officeId !== "" && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-800 ring-1 ring-sky-200">
+          <span>
+            معروض مكتب واحد: <b>{towers.find((t) => t.id === officeId)?.name ?? officeId}</b>
+            {from ? <> — يوم <b dir="ltr">{from}</b></> : null}
+          </span>
+          <button onClick={() => { setOfficeId(""); setFrom(""); setTo(""); load("", "", q, typeFilter, ""); }}
+            className="rounded-lg bg-white px-3 py-1 text-xs font-bold text-sky-700 ring-1 ring-sky-300 hover:bg-sky-100">أظهر الكل</button>
+        </div>
+      )}
+
       {/* بحث بالتاريخ (من – إلى) — يشمل اليومين، والإجماليات أعلاه تعكس النتيجة */}
       <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div>
@@ -190,14 +216,14 @@ export default function CashboxPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") load(from, to, q, typeFilter); }}
+            onKeyDown={(e) => { if (e.key === "Enter") load(from, to, q, typeFilter, officeId); }}
             placeholder="كلمة من الملاحظات، اسم حساب، مبلغ، أو رقم حركة…"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
           />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-600">النوع</label>
-          <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); load(from, to, q, e.target.value); }}
+          <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); load(from, to, q, e.target.value, officeId); }}
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue">
             <option value="entered">مصروف ومقبوض (المُدخَل هنا)</option>
             <option value="all">كل الحركات المالية</option>
@@ -211,9 +237,9 @@ export default function CashboxPage() {
             <option value="orphan">⚠️ بلا مكتب (يجب ألا يوجد شيء)</option>
           </select>
         </div>
-        <button onClick={() => load(from, to, q, typeFilter)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
+        <button onClick={() => load(from, to, q, typeFilter, officeId)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
         {(from || to || q) && (
-          <button onClick={() => { setFrom(""); setTo(""); setQ(""); load("", "", "", typeFilter); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
+          <button onClick={() => { setFrom(""); setTo(""); setQ(""); load("", "", "", typeFilter, officeId); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
         )}
         <span className="mr-auto self-center text-xs font-semibold text-slate-500">
           معروض {sortedTxs.length} من أصل {matched}{matched > sortedTxs.length ? " — ضيّق البحث لرؤية الباقي" : ""}
