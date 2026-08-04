@@ -114,6 +114,7 @@ export async function POST(request: Request) {
     select: { id: true, amount: true, subAmount: true },
   });
   const ids = cards.map((c) => c.id);
+  let settlementId: number | null = null;
   // المجموع المحصَّل من الفني = المبيع + الاشتراك (وللتوصيل مبلغه)
   const total = cards.reduce((s, c) => s + (c.amount ?? 0) + (c.subAmount ?? 0), 0);
 
@@ -124,6 +125,27 @@ export async function POST(request: Request) {
     const byName = session.fullName ?? session.username;
     const { appendCardHistory } = await import("@/lib/field");
     await Promise.all(ids.map((id) => appendCardHistory(id, byName, "تحصيل وأرشفة البطاقة")));
+
+    // قيد تحصيل دائم (المرحلة ٨): كان التحصيل يعلّم البطاقات محصَّلة بلا أي أثر —
+    // لا قيد ولا تراجع — والبطاقات تُحذف بعد أسبوع فيضيع أصل الرقم نهائياً.
+    // لا يُنشأ قيد مالي هنا عمداً: مالُ «المبيع» سُجّل فاتورةً لحظة إنجاز البطاقة،
+    // فإنشاء حركة ثانية هنا يعني احتساب المبلغ مرتين. الأثر المطلوب هو سجلّ يوثّق
+    // ويسمح بالتراجع — وهذا ما يفعله هذا القيد.
+    settlementId = (await prisma.auditLog.create({
+      data: {
+        userId: session.userId,
+        action: "SETTLE_TECH",
+        entity: "technician",
+        entityId: String(technicianId),
+        details: JSON.stringify({
+          tech: tech.name, by: byName, count: ids.length, total,
+          sale: cards.reduce((s2, c) => s2 + (c.amount ?? 0), 0),
+          sub: cards.reduce((s2, c) => s2 + (c.subAmount ?? 0), 0),
+          cardIds: ids,
+        }),
+      },
+      select: { id: true },
+    })).id;
   }
-  return NextResponse.json({ ok: true, settledCount: ids.length, total });
+  return NextResponse.json({ ok: true, settledCount: ids.length, total, settlementId });
 }
