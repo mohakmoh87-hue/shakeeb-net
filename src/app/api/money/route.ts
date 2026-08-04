@@ -44,11 +44,26 @@ export async function GET(request: Request) {
     };
   }
 
-  // صفحة الصندوق للحركات اليدوية فقط (المصروفات والمقبوضات) — التفعيلات/الفواتير تُدار من صفحاتها
+  // صفحة المصروفات والمقبوضات صارت **سجل الحركات المالية الشامل** (قرار محمد 2026-08-04):
+  // كانت تعرض اليدوي فقط، فكل حركة ماستر أو راتب أو تسديد دين أو بيع مخزن أو قبض تفعيل
+  // أو فاتورة تُسجَّل ثم لا تظهر في أي قائمة فيها زر حذف — وهكذا اختفت حركة الـ45 ألف ماستر.
+  // الافتراضي الآن: الكل. وtype=manual يعيد السلوك القديم لمن أراده.
+  const typeParam = (sp.get("type") ?? "all").trim();
+  const TYPE_WHERE: Record<string, object> = {
+    manual: { OR: [{ sourceType: null }, { sourceType: "manual" }] },
+    master: { sourceType: { in: ["master", "master-invoice"] } },
+    activation: { sourceType: "activation" },
+    invoice: { sourceType: "invoice" },
+    sale: { sourceType: "sale" },
+    debt: { sourceType: "debt" },
+    salary: { sourceType: "salary" },
+  };
+  const typeWhere = TYPE_WHERE[typeParam] ?? {};
+
   const where = {
     isDeleted: false,
     AND: [
-      { OR: [{ sourceType: null }, { sourceType: "manual" }] },
+      ...(Object.keys(typeWhere).length ? [typeWhere] : []),
       ...(q ? [qWhere] : []),
     ],
     ...(await towerScope(g.session)),
@@ -56,7 +71,9 @@ export async function GET(request: Request) {
     ...(dateFilter.gte || dateFilter.lte ? { date: dateFilter } : {}),
   };
 
-  const [transactions, agg, accounts] = await Promise.all([
+  // عدد الصفوف المطابقة كاملاً — لشريط «معروض 200 من أصل كذا»، فلا يظن المستخدم
+  // أن ما يراه هو كل ما هناك بينما المجاميع محسوبة على الكل
+  const [transactions, agg, accounts, matched] = await Promise.all([
     prisma.moneyTx.findMany({ where, orderBy: { id: "desc" }, take: 200 }),
     prisma.moneyTx.aggregate({
       where,
@@ -66,6 +83,7 @@ export async function GET(request: Request) {
       where: { isDeleted: false },
       select: { id: true, name: true },
     }),
+    prisma.moneyTx.count({ where }),
   ]);
 
   const nameMap = new Map(accounts.map((a) => [a.id, a.name]));
@@ -78,6 +96,7 @@ export async function GET(request: Request) {
       accountName: t.accountId ? nameMap.get(t.accountId) ?? null : null,
     })),
     summary: { totalIn, totalOut, balance: totalIn - totalOut },
+    matched, // إجمالي المطابق (قد يفوق الـ200 المعروضة)
   });
 }
 

@@ -19,7 +19,10 @@ export async function GET(request: Request) {
     if (!param || param === "all") scope = agentTowers;
     else { const t = Number(param) || -1; scope = agentTowers.includes(t) ? t : -1; }
   } else {
-    scope = session.towerId ?? null; // مستخدم المكتب مقيّد بمكتبه
+    // مستخدم المكتب مقيّد بمكتبه؛ ومَن بلا مكتب يُقيَّد **بمكاتب وكيله** لا بـnull —
+    // لأن null كان يعني «بلا فلتر» فيرى مال كل المكاتب في القاعدة بما فيها وكلاء آخرون
+    // (خرق عزل + مبالغ ضخمة بلا مصدر). وبلا مكاتب لوكيله: لا شيء.
+    scope = session.towerId ?? (agentTowers.length ? agentTowers : [-1]);
   }
 
   const r = await computeDailyReport(scope);

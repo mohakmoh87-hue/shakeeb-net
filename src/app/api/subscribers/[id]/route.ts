@@ -11,7 +11,11 @@ const schema = z.object({
   packageId: z.coerce.number().nullable().optional(),
   towerId: z.coerce.number().nullable().optional(),
   note: z.string().nullable().optional(),
-  carry: z.coerce.number().nullable().optional(),
+  // الدين (carry) **لا يُقبل من نموذج تعديل المشترك** — قرار محمد 2026-08-04:
+  // النموذج كان يعيد إرسال الدين بالقيمة المحمّلة في المتصفح، فإن سدّد مكتبٌ آخر
+  // أثناء فتح النموذج **عاد الدين المسدَّد** بلا أي أثر، والحقل غير معروض أصلاً
+  // فيظن المستخدم أنه عدّل الاسم فقط. الدين يتغيّر من مساراته وحدها: تفعيل،
+  // فاتورة، تسديد، إسقاط.
   wifiUser: z.string().nullable().optional(),
   wifiPass: z.string().nullable().optional(),
   netUser: z.string().nullable().optional(),

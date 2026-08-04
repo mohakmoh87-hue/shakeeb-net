@@ -27,6 +27,18 @@ const fmt = (n: number | null | undefined) =>
   n == null ? "0" : Number(n).toLocaleString("en-US");
 const fmtDate = (d: string | null) => formatDateTime(d); // بالتاريخ والساعة والدقيقة (طلب محمد)
 
+// أسماء أنواع الحركات كما يراها المستخدم — الصفحة صارت سجل الحركات الشامل
+const SRC_LABEL: Record<string, string> = {
+  manual: "يدوي", master: "🅜 ماستر", "master-invoice": "🅜 فاتورة ماستر",
+  activation: "تفعيل", invoice: "فاتورة", sale: "بيع مخزن", debt: "تسديد دين", salary: "راتب",
+};
+const srcLabel = (s: string | null) => (s == null ? "يدوي" : SRC_LABEL[s] ?? s);
+const SRC_CLASS: Record<string, string> = {
+  master: "bg-indigo-50 text-indigo-700", "master-invoice": "bg-indigo-50 text-indigo-700",
+  activation: "bg-emerald-50 text-emerald-700", invoice: "bg-sky-50 text-sky-700",
+  sale: "bg-amber-50 text-amber-700", debt: "bg-rose-50 text-rose-700", salary: "bg-violet-50 text-violet-700",
+};
+
 export default function CashboxPage() {
   const [txs, setTxs] = useState<Tx[]>([]);
   const [listState, setListState] = useState<"loading" | "ok" | "error">("loading");
@@ -52,9 +64,13 @@ export default function CashboxPage() {
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [detailId, setDetailId] = useState<number | null>(null); // حركة مفتوحة التفاصيل
+  // فلتر نوع الحركة — الافتراضي «الكل»: الصفحة صارت سجل كل الحركات لا اليدوي فقط
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [matched, setMatched] = useState(0); // إجمالي المطابق (قد يفوق المعروض)
 
-  const load = useCallback((f = "", t = "", search = "") => {
+  const load = useCallback((f = "", t = "", search = "", kind = "all") => {
     const qs = new URLSearchParams();
+    if (kind && kind !== "all") qs.set("type", kind);
     if (f) qs.set("from", f);
     if (t) qs.set("to", t);
     if (search.trim()) qs.set("q", search.trim());
@@ -64,6 +80,7 @@ export default function CashboxPage() {
         r.json().then((d) => {
           setTxs(d.transactions);
           setSummary(d.summary);
+          setMatched(d.matched ?? d.transactions.length);
           setListState("ok");
         });
       else setListState("error"); // فشل الجلب لا يُعرض قائمة فارغة موهِمة بالمسح
@@ -71,7 +88,7 @@ export default function CashboxPage() {
   }, []);
 
   useEffect(() => {
-    load(from, to, q);
+    load(from, to, q, typeFilter);
     fetch("/api/accounts").then((r) => void (r.ok && r.json().then(setAccounts)));
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setTowers)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,7 +142,7 @@ export default function CashboxPage() {
       setTimeout(() => setOkMsg(""), 3500);
       setAmount("");
       setNotes("");
-      load(from, to, q);
+      load(from, to, q, typeFilter);
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {
@@ -139,7 +156,7 @@ export default function CashboxPage() {
     const choice = await askVoidEffect(label);
     if (!choice) return;
     const res = await fetch(`/api/money/${t.id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
-    if (res.ok) load(from, to, q);
+    if (res.ok) load(from, to, q, typeFilter);
     else {
       const d = await res.json().catch(() => ({}));
       alert(d.error ?? "تعذّر الحذف");
@@ -148,7 +165,7 @@ export default function CashboxPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="المصروفات والمقبوضات" subtitle="تسجيل الصرف والقبض اليدوي فقط (إيجار، كهرباء، ...) — لا تظهر هنا التفعيلات" />
+      <PageHeader title="المصروفات والمقبوضات" subtitle="تسجيل الصرف والقبض — والسجل أدناه يعرض كل الحركات المالية: يدوي · ماستر · تفعيل · فاتورة · بيع مخزن · تسديد دين · راتب" />
 
       {/* بطاقات الرصيد */}
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -171,16 +188,32 @@ export default function CashboxPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") load(from, to, q); }}
+            onKeyDown={(e) => { if (e.key === "Enter") load(from, to, q, typeFilter); }}
             placeholder="كلمة من الملاحظات، اسم حساب، مبلغ، أو رقم حركة…"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
           />
         </div>
-        <button onClick={() => load(from, to, q)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">النوع</label>
+          <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); load(from, to, q, e.target.value); }}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue">
+            <option value="all">الكل</option>
+            <option value="manual">يدوي (مصروف/مقبوض)</option>
+            <option value="master">🅜 ماستر</option>
+            <option value="activation">تفعيل</option>
+            <option value="invoice">فاتورة</option>
+            <option value="sale">بيع مخزن</option>
+            <option value="debt">تسديد دين</option>
+            <option value="salary">راتب</option>
+          </select>
+        </div>
+        <button onClick={() => load(from, to, q, typeFilter)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
         {(from || to || q) && (
-          <button onClick={() => { setFrom(""); setTo(""); setQ(""); load("", "", ""); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
+          <button onClick={() => { setFrom(""); setTo(""); setQ(""); load("", "", "", typeFilter); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
         )}
-        <span className="mr-auto self-center text-xs text-slate-400">{sortedTxs.length} حركة</span>
+        <span className="mr-auto self-center text-xs font-semibold text-slate-500">
+          معروض {sortedTxs.length} من أصل {matched}{matched > sortedTxs.length ? " — ضيّق البحث لرؤية الباقي" : ""}
+        </span>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
@@ -262,6 +295,7 @@ export default function CashboxPage() {
                 <SortTh label="التاريخ" k="date" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
                 <SortTh label="قبض" k="moneyIn" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
                 <SortTh label="صرف" k="moneyOut" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+                <th className="p-3">النوع</th>
                 <SortTh label="الحساب" k="accountName" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
                 <th className="p-3">المكتب</th>
                 <SortTh label="ملاحظات" k="notes" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
@@ -270,11 +304,11 @@ export default function CashboxPage() {
             </thead>
             <tbody>
               {listState === "loading" ? (
-                <tr><td colSpan={8} className="p-8 text-center text-slate-400">جاري تحميل الحركات...</td></tr>
+                <tr><td colSpan={9} className="p-8 text-center text-slate-400">جاري تحميل الحركات...</td></tr>
               ) : listState === "error" ? (
-                <tr><td colSpan={8} className="p-8 text-center font-semibold text-red-500">تعذّر جلب الحركات — حدّث الصفحة (البيانات محفوظة بالقاعدة)</td></tr>
+                <tr><td colSpan={9} className="p-8 text-center font-semibold text-red-500">تعذّر جلب الحركات — حدّث الصفحة (البيانات محفوظة بالقاعدة)</td></tr>
               ) : sortedTxs.length === 0 ? (
-                <tr><td colSpan={can("receipts.void") ? 8 : 7} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
+                <tr><td colSpan={can("receipts.void") ? 9 : 8} className="p-6 text-center text-slate-400">لا توجد حركات</td></tr>
               ) : (
                 sortedTxs.map((t) => (
                   <tr key={t.id} onClick={() => setDetailId(t.id)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" title="عرض التفاصيل">
@@ -282,6 +316,9 @@ export default function CashboxPage() {
                     <td className="p-3">{fmtDate(t.date)}</td>
                     <td className="p-3 font-semibold text-emerald-600">{t.moneyIn ? fmt(t.moneyIn) : "—"}</td>
                     <td className="p-3 font-semibold text-red-600">{t.moneyOut ? fmt(t.moneyOut) : "—"}</td>
+                    <td className="p-3">
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${SRC_CLASS[t.sourceType ?? "manual"] ?? "bg-slate-100 text-slate-600"}`}>{srcLabel(t.sourceType)}</span>
+                    </td>
                     <td className="p-3">{t.accountName ?? "—"}</td>
                     <td className="p-3">{towerName(t.towerId) ?? "—"}</td>
                     <td className="p-3 text-slate-600">{t.notes ?? "—"}</td>

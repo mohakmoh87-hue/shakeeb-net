@@ -20,10 +20,16 @@ export type ManagerBalance = {
   net: number;         // الصافي: موجب = له عند الشركة · سالب = عليه لها
   byOffice: { towerId: number; office: string; deposited: number; withdrawn: number; net: number }[];
   general: number;     // صافي حركاته في حسابات المدير (قناة ٢)
+  opening: number;     // رصيد سابق منقول من إكسل — لا يمسّ أي مجموع مالي
   master: number;      // صافي حركاته على الماستر (قناة ٣)
 };
 
 const MASTER_TYPES = ["master-receipt", "master-expense"];
+// أرصدة سابقة نُقلت من ملف إكسل (قرار محمد 2026-08-04): تدخل رصيد المدير وحده
+// و**لا تمسّ أي مجموع مالي** — لا المبلغ الكلي ولا الماستر ولا التقارير. أمانها بنيوي:
+// حسابات الصفحة تجمع أنواعاً مسمّاة بعينها (receipt/expense/salary/card-*)، فنوعٌ
+// جديد لا يدخل أي معادلة منها إطلاقاً.
+const OPENING_TYPES = ["opening-receipt", "opening-expense"];
 
 // أرصدة كل مدراء الوكيل — بثلاث استعلامات مجمّعة (لا حلقة لكل مدير)
 export async function managerBalances(agentId: number | null | undefined, towerIds: number[]): Promise<ManagerBalance[]> {
@@ -75,17 +81,19 @@ export async function managerBalances(agentId: number | null | undefined, towerI
         byOffice.push({ towerId: a.towerId, office: officeName.get(a.towerId) ?? `مكتب ${a.towerId}`, deposited: dep, withdrawn: wd, net: dep - wd });
       }
     }
-    let general = 0, master = 0;
+    let general = 0, master = 0, opening = 0;
     for (const r of mgrAgg.filter((x) => x.managerId === m.id)) {
       const amt = r._sum.amount ?? 0;
       const isMaster = MASTER_TYPES.includes(r.type);
+      const isOpening = OPENING_TYPES.includes(r.type);
       // «مقبوض» = دخل مال للنظام من المدير (إيداع) · «مصروف» = خرج له (سحب)
-      const isDeposit = r.type === "receipt" || r.type === "master-receipt";
+      const isDeposit = r.type === "receipt" || r.type === "master-receipt" || r.type === "opening-receipt";
       if (isDeposit) deposited += amt; else withdrawn += amt;
-      if (isMaster) master += isDeposit ? amt : -amt;
+      if (isOpening) opening += isDeposit ? amt : -amt;
+      else if (isMaster) master += isDeposit ? amt : -amt;
       else general += isDeposit ? amt : -amt;
     }
-    return { id: m.id, name: m.name, deposited, withdrawn, net: deposited - withdrawn, byOffice, general, master };
+    return { id: m.id, name: m.name, deposited, withdrawn, net: deposited - withdrawn, byOffice, general, master, opening };
   });
 }
 

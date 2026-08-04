@@ -6,6 +6,7 @@ import OfficeChat from "@/components/OfficeChat";
 import InstallComputer from "@/components/InstallComputer";
 import RewardConfig from "@/components/RewardConfig";
 import SalaryModal from "@/components/SalaryModal";
+import { usePermission } from "@/lib/usePermission";
 
 type WaOffice = { id: number; name: string | null; state: string };
 
@@ -41,14 +42,17 @@ type PhantomCard = { cardId: number; serial: string | null; subscriber: string |
 type MgrBalance = {
   id: number; name: string; deposited: number; withdrawn: number; net: number;
   byOffice: { towerId: number; office: string; deposited: number; withdrawn: number; net: number }[];
-  general: number; master: number;
+  general: number; master: number; opening: number;
 };
 
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
 const fmtDate = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات", salary: "راتب فني (من الكلي)", "card-debt-add": "إضافة يدوية لديون الكارتات", "card-debt-sub": "إنقاص يدوي من ديون الكارتات", "master-expense": "🅜 صرف ماستر", "master-receipt": "🅜 قبض ماستر" };
+const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "مقبوض", "card-payment": "تسديد كارتات", salary: "راتب فني (من الكلي)", "card-debt-add": "إضافة يدوية لديون الكارتات", "card-debt-sub": "إنقاص يدوي من ديون الكارتات", "master-expense": "🅜 صرف ماستر", "master-receipt": "🅜 قبض ماستر", "opening-receipt": "رصيد سابق (إكسل) — أعطى", "opening-expense": "رصيد سابق (إكسل) — سحب" };
 
 export default function ManagerAccountsPage() {
+  // حذف أي حركة يتطلّب صلاحية «مسح الوصولات» صراحةً (شرط محمد 2026-08-04):
+  // لم تُمنح لأحد بعد، فالحذف للمدير وحده.
+  const { can } = usePermission();
   const [data, setData] = useState<Data | null>(null);
   const [denied, setDenied] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -456,6 +460,7 @@ export default function ManagerAccountsPage() {
                           ))}
                           {m.general !== 0 && <div className="flex justify-between"><span>🧾 حسابات المدير</span><b>{fmt(m.general)}</b></div>}
                           {m.master !== 0 && <div className="flex justify-between"><span>🅜 الماستر</span><b>{fmt(m.master)}</b></div>}
+                          {m.opening !== 0 && <div className="flex justify-between"><span>📗 رصيد سابق (إكسل)</span><b>{fmt(m.opening)}</b></div>}
                         </>)}
                         <div className="mt-1 text-[11px] text-slate-400">حركات المكاتب تؤثر على تقاريرها اليومية · حسابات المدير والماستر لا تؤثر على أي تقرير.</div>
                       </div>
@@ -659,8 +664,8 @@ export default function ManagerAccountsPage() {
                             {(t.moneyIn ?? 0) > 0 ? <span className="text-emerald-600">+{fmt(t.moneyIn ?? 0)}</span> : <span className="text-red-600">−{fmt(t.moneyOut ?? 0)}</span>}
                           </td>
                           <td className="p-2">
-                            <button onClick={() => delMasterTx(t.id, (t.notes ?? "حركة ماستر") + " — " + fmt((t.moneyIn ?? 0) || (t.moneyOut ?? 0)) + " د.ع")}
-                              className="rounded bg-red-50 px-2 py-1 font-semibold text-red-600 hover:bg-red-100" title="حذف الحركة">🗑</button>
+                            {can("receipts.void") && <button onClick={() => delMasterTx(t.id, (t.notes ?? "حركة ماستر") + " — " + fmt((t.moneyIn ?? 0) || (t.moneyOut ?? 0)) + " د.ع")}
+                              className="rounded bg-red-50 px-2 py-1 font-semibold text-red-600 hover:bg-red-100" title="حذف الحركة">🗑</button>}
                           </td>
                         </tr>
                       ))}

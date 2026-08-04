@@ -12,13 +12,26 @@ import { askVoidEffect } from "@/lib/voidPrompt";
 type SubRow = {
   id: number; date: string | null; money: number | null; moneyIn: number | null;
   cardType: string | null; createdByUser: string | null; subscriberName: string | null; towerId: number | null;
+  isMaster?: boolean | null; addPrice?: number | null;
 };
 type InvRow = {
   id: number; number: number | null; date: string | null; totalMy: number | null;
   waselHim: number | null; type: string | null; user: string | null; subscriberName: string | null; note: string | null;
   itemsText: string | null; towerId: number | null;
 };
-type Row = { id: number; ref: number; date: string | null; who: string; cat: string; amount: number; by: string; items: string | null; office: string };
+// الصف الموحّد: القيمة والواصل والدين وطريقة الدفع أعمدة مستقلة — كانت كلها
+// مطوية في رقم واحد «المبلغ» رغم وجودها في القاعدة (طلب محمد 2026-08-04).
+type Pay = "master" | "cash" | "debt" | "partial";
+type Row = {
+  id: number; ref: number; date: string | null; who: string; cat: string;
+  value: number; amount: number; debt: number; pay: Pay;
+  by: string; items: string | null; office: string;
+};
+const PAY_LABEL: Record<Pay, string> = { master: "🅜 ماستر", cash: "نقدي", debt: "دين", partial: "نقدي + دين" };
+const PAY_CLASS: Record<Pay, string> = {
+  master: "bg-indigo-50 text-indigo-700", cash: "bg-emerald-50 text-emerald-700",
+  debt: "bg-rose-50 text-rose-700", partial: "bg-amber-50 text-amber-700",
+};
 
 const fmt = (n: number) => Number(n).toLocaleString("en-US");
 
@@ -48,16 +61,30 @@ export default function ReceiptsPage() {
   const rows: Row[] = useMemo(() => {
     const list: Row[] =
       kind === "sub"
-        ? subRows.map((e) => ({
-            id: e.id, ref: e.id, date: e.date, who: e.subscriberName ?? "—",
-            cat: e.cardType ?? "تفعيل", amount: e.moneyIn ?? 0, by: e.createdByUser ?? "—", items: null,
-            office: officeName(e.towerId),
-          }))
-        : invRows.map((v) => ({
-            id: v.id, ref: v.number ?? v.id, date: v.date, who: v.subscriberName ?? (v.note?.match(/الزبون:\s*([^—]+)/)?.[1]?.trim() ?? "—"),
-            cat: v.type ?? "بيع", amount: v.waselHim ?? 0, by: v.user ?? "—", items: v.itemsText ?? null,
-            office: officeName(v.towerId),
-          }));
+        ? subRows.map((e) => {
+            // القيمة = مبلغ الاشتراك + أجور التوصيل · الواصل = ما قُبض · الدين = الفرق
+            const value = (e.money ?? 0) + (e.addPrice ?? 0);
+            const paid = e.moneyIn ?? 0;
+            const debt = Math.max(0, value - paid);
+            const pay: Pay = e.isMaster ? "master" : debt > 0 ? (paid > 0 ? "partial" : "debt") : "cash";
+            return {
+              id: e.id, ref: e.id, date: e.date, who: e.subscriberName ?? "—",
+              cat: e.cardType ?? "تفعيل", value, amount: paid, debt, pay,
+              by: e.createdByUser ?? "—", items: null, office: officeName(e.towerId),
+            };
+          })
+        : invRows.map((v) => {
+            // المفوتَر مقابل الواصل: الفرق دين على الزبون — كان الجدول يعرض الواصل وحده
+            const value = v.totalMy ?? 0;
+            const paid = v.waselHim ?? 0;
+            const debt = Math.max(0, value - paid);
+            const pay: Pay = v.type === "ماستر" ? "master" : debt > 0 ? (paid > 0 ? "partial" : "debt") : "cash";
+            return {
+              id: v.id, ref: v.number ?? v.id, date: v.date, who: v.subscriberName ?? (v.note?.match(/الزبون:\s*([^—]+)/)?.[1]?.trim() ?? "—"),
+              cat: v.type ?? "بيع", value, amount: paid, debt, pay,
+              by: v.user ?? "—", items: v.itemsText ?? null, office: officeName(v.towerId),
+            };
+          });
     const needle = q.trim().toLowerCase();
     const filtered = needle
       ? list.filter((r) =>
@@ -158,13 +185,16 @@ export default function ReceiptsPage() {
               <th className="srt" onClick={() => toggleSort("who")}>المشترك <i>{arrow("who")}</i></th>
               <th>الفئة</th>
               {kind === "inv" && <th>المواد</th>}
-              <th className="srt" onClick={() => toggleSort("amount")}>المبلغ <i>{arrow("amount")}</i></th>
+              <th>طريقة الدفع</th>
+              <th className="num">القيمة</th>
+              <th className="srt" onClick={() => toggleSort("amount")}>الواصل <i>{arrow("amount")}</i></th>
+              <th className="num">الدين</th>
               <th>المستخدم</th>
               <th>المكتب</th>
             </tr></thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={kind === "inv" ? 9 : 8} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>لا وصولات</td></tr>
+                <tr><td colSpan={kind === "inv" ? 12 : 11} style={{ textAlign: "center", padding: 28, color: "var(--muted)" }}>لا وصولات</td></tr>
               ) : rows.map((r) => (
                 <tr key={r.id} className={checked.has(r.id) ? "picked" : ""}>
                   <td className="cbcol"><input type="checkbox" className="cb" checked={checked.has(r.id)} onChange={() => toggle(r.id)} /></td>
@@ -173,7 +203,12 @@ export default function ReceiptsPage() {
                   <td>{r.who}</td>
                   <td>{r.cat}</td>
                   {kind === "inv" && <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }} title={r.items ?? undefined}>{r.items ?? "—"}</td>}
+                  <td>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${PAY_CLASS[r.pay]}`}>{PAY_LABEL[r.pay]}</span>
+                  </td>
+                  <td className="num">{fmt(r.value)}</td>
                   <td className="num">{fmt(r.amount)}</td>
+                  <td className="num" style={{ color: r.debt > 0 ? "var(--bad)" : "inherit", fontWeight: r.debt > 0 ? 700 : 400 }}>{r.debt ? fmt(r.debt) : "—"}</td>
                   <td>{r.by}</td>
                   <td>{r.office}</td>
                 </tr>
