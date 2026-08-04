@@ -12,14 +12,21 @@ const schema = z.object({
   enable: z.string().nullable().optional(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   // القراءة متاحة لمن يدير القوالب أو الرسائل (قائمة القوالب الجاهزة في الإرسال)
   const g = await guardAny("templates.manage", "messaging.manage");
   if (g.error) return g.error;
 
+  // all=1: **كل** القوالب بما فيها تخصيصات المكاتب — لقائمة الاختيار في الإرسال
+  // (طلب محمد: «تظهر لي قوالب الرسائل كلها»). وبدونها يبقى السلوك القديم:
+  // قوالب الوكيل العامة فقط، لأن صفحة إدارة القوالب تُدير تخصيصات المكاتب بمبدّلها.
+  const includeOffices = new URL(request.url).searchParams.get("all") === "1";
   const templates = await prisma.smsTemplate.findMany({
-    // بلا صفوف العلامات الداخلية ولا تخصيصات المكاتب (تُدار من قوالب الأحداث بمبدّل المكتب)
-    where: { agentId: g.session?.agentId ?? -1, towerId: null, NOT: { type: { startsWith: "__" } } },
+    where: {
+      agentId: g.session?.agentId ?? -1,
+      ...(includeOffices ? {} : { towerId: null }),
+      NOT: { type: { startsWith: "__" } },
+    },
     orderBy: { id: "asc" },
   });
   return NextResponse.json(templates);

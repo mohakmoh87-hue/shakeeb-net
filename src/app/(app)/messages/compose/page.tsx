@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 
-type Template = { id: number; type: string | null; text: string | null };
+type Template = { id: number; type: string | null; text: string | null; towerId?: number | null; enable?: string | null };
 
 const TARGETS = [
   { key: "all", label: "كل المشتركين" },
@@ -24,6 +24,9 @@ const EVENT_LABELS: Record<string, string> = {
   reward: "منح المكافأة",
   rewardUsed: "استخدام المكافأة",
   other: "أخرى (عام)",
+  subSummary: "ملخص الاشتراك",
+  noAnswer: "اتصلنا ولم تُجب",
+  expiringToday: "ينتهي اليوم",
 };
 
 export default function ComposePage() {
@@ -47,6 +50,7 @@ function ComposeInner() {
   const [searchQ, setSearchQ] = useState("");
   const [text, setText] = useState("");
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [towers, setTowers] = useState<{ id: number; name: string | null }[]>([]);
   const [result, setResult] = useState<string>("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
@@ -54,7 +58,9 @@ function ComposeInner() {
   const [confirmBeforeSend, setConfirmBeforeSend] = useState(false);
 
   useEffect(() => {
-    fetch("/api/sms-templates").then((r) => void (r.ok && r.json().then(setTemplates)));
+    // all=1: كل القوالب بما فيها تخصيصات المكاتب — «تظهر لي قوالب الرسائل كلها»
+    fetch("/api/sms-templates?all=1").then((r) => void (r.ok && r.json().then(setTemplates)));
+    fetch("/api/towers").then((r) => void (r.ok && r.json().then((d) => setTowers(d))));
     // اقرأ إعداد الصمت الافتراضي؛ إن كان مُطفأ يُطلب التأكيد افتراضياً
     fetch("/api/settings").then((r) => void (r.ok && r.json().then((s: Record<string, string>) => {
       setConfirmBeforeSend(s.silent === "0");
@@ -159,9 +165,16 @@ function ComposeInner() {
           className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
         >
           <option value="">— اختر قالباً لتحميل نصّه —</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>{EVENT_LABELS[t.type ?? ""] ?? t.type}</option>
-          ))}
+          {templates.map((t) => {
+            const base = EVENT_LABELS[t.type ?? ""] ?? t.type ?? "قالب";
+            const office = t.towerId != null ? towers.find((x) => x.id === t.towerId)?.name ?? `مكتب ${t.towerId}` : null;
+            const off = t.enable === "0" ? " — معطَّل" : "";
+            return (
+              <option key={t.id} value={t.id}>
+                {base}{office ? ` — ${office}` : " — عام"}{off}
+              </option>
+            );
+          })}
         </select>
         {templates.length === 0 && <div className="mb-4 -mt-2 text-xs text-slate-400">لا قوالب محفوظة بعد — أضِفها من صفحة «قوالب الرسائل».</div>}
 

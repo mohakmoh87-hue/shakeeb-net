@@ -297,6 +297,17 @@ export default function SubscribersBoard() {
   }
 
   // ===== عمليات 🛠️ =====
+  // قائمة فنيي مكتب المشترك — كانت لا تُجلب إطلاقاً فتبقى القائمة فارغة دائماً
+  // (اختيار الفني في «عمليات» المشترك بلا خيارات — بلاغ محمد ٤ آب).
+  function loadOpsTechs(towerId: number | null) {
+    setOpsTechs([]);
+    const qs = towerId != null ? "?officeId=" + towerId : "";
+    fetch("/api/field/technicians" + qs)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.technicians) setOpsTechs(d.technicians.map((t: { id: number; name: string }) => ({ id: t.id, name: t.name }))); })
+      .catch(() => {});
+  }
+
   function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); setOpsTech(""); setOpsTechs([]); }
   async function sendToField(operation: string) {
     if (!opsSub) return;
@@ -377,7 +388,7 @@ export default function SubscribersBoard() {
                   </td>
                   <td>{s.name}</td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <button className="op" title="عمليات المشترك" onClick={() => { setOpsSub(s); setOpsMsg(""); }}>🛠️</button>
+                    <button className="op" title="عمليات المشترك" onClick={() => { setOpsSub(s); setOpsMsg(""); loadOpsTechs(s.towerId); }}>🛠️</button>
                   </td>
                   <td dir="ltr">{s.netUser ?? "—"}</td>
                   <td className="num" dir="ltr">{s.phone ?? "—"}</td>
