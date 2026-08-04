@@ -26,7 +26,6 @@ export default function InventoryPage() {
   const [towers, setTowers] = useState<Tower[]>([]);
   const [custodies, setCustodies] = useState<Custody[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [sellItem, setSellItem] = useState<Item | null>(null);
   const [transferItem, setTransferItem] = useState<Item | null>(null);
   const [custodyOpen, setCustodyOpen] = useState(false);
   const [filterTower, setFilterTower] = useState(""); // فلتر مكتب (للمدير)
@@ -123,12 +122,8 @@ export default function InventoryPage() {
         }
         rowActions={(r) => (
           <div className="flex gap-1.5">
-            <button
-              onClick={() => setSellItem(r)}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-            >
-              💵 بيع
-            </button>
+            {/* لا بيع من المخزن — قرار محمد 2026-08-04: البيع حصراً من «فاتورة مبيع»
+                كي يكون لكل بيع وصلٌ يُرى ويُحذف. المخزن للتعديل والإضافة والترحيل فقط. */}
             <button
               onClick={() => setTransferItem(r)}
               className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700"
@@ -168,9 +163,6 @@ export default function InventoryPage() {
         ]}
       />
 
-      {sellItem && (
-        <SellModal item={sellItem} onClose={() => setSellItem(null)} onDone={() => { setSellItem(null); afterChange(); }} />
-      )}
       {transferItem && (
         <TransferModal
           item={transferItem}
@@ -188,58 +180,6 @@ export default function InventoryPage() {
         />
       )}
     </>
-  );
-}
-
-/* ============ نافذة البيع المباشر ============ */
-function SellModal({ item, onClose, onDone }: { item: Item; onClose: () => void; onDone: () => void }) {
-  const [qty, setQty] = useState("1");
-  const [price, setPrice] = useState(String(item.priceSale ?? 0));
-  const [received, setReceived] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  const nQty = Number(qty) || 0;
-  const nPrice = Number(price) || 0;
-  const nRecv = Number(received) || 0;
-  const total = nQty * nPrice;
-  const remaining = Math.max(0, total - nRecv);
-
-  async function submit() {
-    setBusy(true); setErr("");
-    const r = await fetch("/api/inventory/sell", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId: item.id, qty: nQty, price: nPrice, received: nRecv }),
-    });
-    const d = await r.json().catch(() => null);
-    setBusy(false);
-    if (!r.ok) { setErr(d?.error ?? "تعذّر إتمام البيع"); return; }
-    onDone();
-  }
-
-  return (
-    <Overlay onClose={onClose}>
-      <h3 className="mb-1 text-lg font-bold text-slate-800">💵 بيع: {item.name}</h3>
-      <p className="mb-4 text-sm text-slate-500">بيع مباشر — يمكنك تعديل السعر قبل تسجيله.</p>
-      <div className="grid grid-cols-2 gap-3">
-        <L label="الكمية"><Inp value={qty} onChange={setQty} type="number" /></L>
-        <L label="سعر البيع (قابل للتعديل)"><Inp value={price} onChange={setPrice} type="number" /></L>
-        <L label="المبلغ الواصل"><Inp value={received} onChange={setReceived} type="number" placeholder="0" /></L>
-        <L label="الإجمالي"><div className="rounded-lg bg-slate-100 px-3 py-2 font-bold text-slate-800">{total.toLocaleString("en-US")}</div></L>
-      </div>
-      <div className="mt-3 flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-sm">
-        <span className="text-slate-600">المتبقّي (دين):</span>
-        <span className={`font-bold ${remaining > 0 ? "text-red-600" : "text-emerald-700"}`}>{remaining.toLocaleString("en-US")}</span>
-      </div>
-      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
-      <div className="mt-5 flex gap-2">
-        <button onClick={submit} disabled={busy || nQty <= 0}
-          className="flex-1 rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-          {busy ? "جارٍ…" : "تأكيد البيع"}
-        </button>
-        <button onClick={onClose} className="rounded-lg bg-slate-200 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-300">إلغاء</button>
-      </div>
-    </Overlay>
   );
 }
 
