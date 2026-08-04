@@ -366,7 +366,7 @@ export default function CashboxPage() {
       </div>
 
       {/* نافذة تفاصيل الحركة المالية */}
-      {detailId != null && <MoneyTxModal id={detailId} onClose={() => setDetailId(null)} />}
+      {detailId != null && <MoneyTxModal id={detailId} onClose={() => setDetailId(null)} onDeleted={() => load(from, to, q, typeFilter, officeId)} />}
     </div>
   );
 }

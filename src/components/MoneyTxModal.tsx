@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePermission } from "@/lib/usePermission";
+import { askVoidEffect } from "@/lib/voidPrompt";
 
 type Detail = {
   id: number;
@@ -23,7 +25,10 @@ const dt = (s: string | null) =>
   s ? new Date(s).toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
 // نافذة تفاصيل حركة مالية: تُفتح بالنقر على أي حركة في الصندوق أو التقرير التفصيلي
-export default function MoneyTxModal({ id, onClose }: { id: number; onClose: () => void }) {
+// onDeleted (اختياري): تُستدعى بعد حذف الحركة من داخل النافذة — كان يجب إغلاقها
+// والبحث عن السطر في الجدول لحذفه (المرحلة ٥).
+export default function MoneyTxModal({ id, onClose, onDeleted }: { id: number; onClose: () => void; onDeleted?: () => void }) {
+  const { can } = usePermission();
   const [d, setD] = useState<Detail | null>(null);
   const [err, setErr] = useState("");
 
@@ -49,6 +54,20 @@ export default function MoneyTxModal({ id, onClose }: { id: number; onClose: () 
         </div>
 
         {err && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{err}</div>}
+        {can("receipts.void") && d && (
+          <button
+            onClick={async () => {
+              const choice = await askVoidEffect("هذه الحركة");
+              if (!choice) return;
+              const r = await fetch("/api/money/" + id + "/void", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }),
+              });
+              if (r.ok) { onDeleted?.(); onClose(); }
+              else { const e2 = await r.json().catch(() => ({})); alert(e2.error ?? "تعذّر الحذف"); }
+            }}
+            className="mb-3 w-full rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100"
+          >🗑 حذف هذه الحركة</button>
+        )}
         {!d && !err && <div className="py-6 text-center text-sm text-slate-400">جار التحميل…</div>}
 
         {d && (

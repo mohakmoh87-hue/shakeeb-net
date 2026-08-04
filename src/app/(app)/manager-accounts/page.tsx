@@ -387,8 +387,8 @@ export default function ManagerAccountsPage() {
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card label="المبلغ الكلي الموجود" value={fmt(data.totalAvailable)} color="text-emerald-700" bg="bg-emerald-50" big onClick={() => setShowTotal(true)} hint="اضغط لتفكيك المعادلة" />
         <Card label="مجموع المبالغ اليومية" value={fmt(data.cumulativeDaily)} color="text-slate-700" bg="bg-slate-50" onClick={openDailyLog} hint="اضغط لعرض السجل اليومي" />
-        <Card label="ديون الكارتات" value={fmt(data.cardDebtRemaining)} color="text-red-700" bg="bg-red-50" />
-        <Card label="مصروفات الإدارة" value={fmt(data.managerExpenses)} color="text-amber-700" bg="bg-amber-50" />
+        <Card label="ديون الكارتات" value={fmt(data.cardDebtRemaining)} color="text-red-700" bg="bg-red-50" onClick={() => setTxQ("كارتات")} hint="اضغط لتصفية السجل على حركاتها" />
+        <Card label="مصروفات الإدارة" value={fmt(data.managerExpenses)} color="text-amber-700" bg="bg-amber-50" onClick={() => setTxQ("مصروف")} hint="اضغط لتصفية السجل عليها" />
         <Card label="🅜 حساب الماستر (مستقل)" value={fmt(data.masterBalance)} color="text-indigo-700" bg="bg-indigo-50" onClick={openMaster} hint="اضغط لعرض تفاصيله اليومية" />
       </div>
 
@@ -515,11 +515,21 @@ export default function ManagerAccountsPage() {
             <p className="mb-2 text-xs text-slate-500">الراتب المتبقّي لكل موظف (فني) بعد الحضور والخصومات ضمن الفترة المحدّدة. اضغط «تفاصيل» للكشف، و«تسديد» لصرف راتبه.</p>
             {data.employees.length === 0 ? <div className="text-sm text-slate-400">لا توجد حسابات موظفين</div> : (
               <table className="w-full text-right text-sm">
+                <thead>
+                  <tr className="text-xs text-slate-500">
+                    <th className="py-1 text-right font-medium">الموظف</th>
+                    <th className="py-1 text-right font-medium">الراتب المتبقّي</th>
+                    <th className="py-1 text-right font-medium">ما سحبه</th>
+                    <th />
+                  </tr>
+                </thead>
                 <tbody>
                   {data.employees.map((e) => (
                     <tr key={e.id} className="border-t border-slate-100">
                       <td className="py-2 font-medium">{e.name ?? "—"}</td>
                       <td className="py-2 font-bold text-emerald-700">{e.net != null ? `${fmt(e.net)} د.ع` : <span className="text-xs font-normal text-slate-400">حساب غير مرتبط بفني</span>}</td>
+                      {/* ما سحبه الموظف: كان يُحسب في الخادم ولا يُعرض في الشاشة إطلاقاً */}
+                      <td className="py-2 font-semibold text-red-600">{e.withdrawn ? fmt(e.withdrawn) : "—"}</td>
                       <td className="py-2 text-left">
                         {e.technicianId != null && (
                           <button onClick={() => setSalaryTech({ id: e.technicianId!, name: e.name ?? "الموظف" })} className="rounded-lg bg-mynet-blue px-3 py-1.5 text-xs font-bold text-white hover:bg-mynet-blue-dark">💰 تفاصيل / تسديد</button>
