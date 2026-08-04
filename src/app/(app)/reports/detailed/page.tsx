@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import PageHeader from "@/components/PageHeader";
 import PrintButton from "@/components/PrintButton";
 import PrintNowButton from "@/components/PrintNowButton";
@@ -94,11 +95,11 @@ export default function DetailedReport() {
         <div className="print-area space-y-6">
           {/* ملخّص */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <Summary label="عدد التفعيلات" value={fmt(data.totals.activationsCount)} />
-            <Summary label="قيمة التفعيلات" value={fmt(data.totals.activationsTotal)} />
-            <Summary label="المُحصّل" value={fmt(data.totals.activationsCollected)} color="text-emerald-600" />
-            <Summary label="قبض الصندوق" value={fmt(data.totals.cashIn)} color="text-emerald-600" />
-            <Summary label="صرف الصندوق" value={fmt(data.totals.cashOut)} color="text-red-600" />
+            <Summary label="عدد التفعيلات" value={fmt(data.totals.activationsCount)} href="/receipts" />
+            <Summary label="قيمة التفعيلات" value={fmt(data.totals.activationsTotal)} href="/receipts" />
+            <Summary label="المُحصّل (من التفعيلات)" value={fmt(data.totals.activationsCollected)} color="text-emerald-600" href="/receipts" />
+            <Summary label="قبض الصندوق (يشمل التفعيلات)" value={fmt(data.totals.cashIn)} color="text-emerald-600" href="/cashbox?type=all" />
+            <Summary label="صرف الصندوق" value={fmt(data.totals.cashOut)} color="text-red-600" href="/cashbox?type=all" />
           </div>
 
           {/* التفعيلات */}
@@ -172,11 +173,17 @@ export default function DetailedReport() {
   );
 }
 
-function Summary({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+// بطاقة قابلة للضغط: href تفتح الصفحة التي تعرض الحركات المكوّنة للرقم (المرحلة ٥)
+function Summary({ label, value, color, href }: { label: string; value: string; color?: string; href?: string }) {
+  const inner = (
+    <>
       <div className="text-xs text-slate-500">{label}</div>
-      <div className={`text-xl font-bold ${color ?? "text-slate-800"}`}>{value}</div>
-    </div>
+      <div className={"text-xl font-bold " + (color ?? "text-slate-800")}>{value}</div>
+      {href && <div className="mt-0.5 text-[10px] font-semibold text-mynet-blue">التفاصيل ↗</div>}
+    </>
   );
+  const cls = "rounded-xl border border-slate-200 bg-white p-3 shadow-sm";
+  return href
+    ? <Link href={href} className={cls + " block transition hover:border-mynet-blue hover:shadow-md"} style={{ textDecoration: "none" }}>{inner}</Link>
+    : <div className={cls}>{inner}</div>;
 }
