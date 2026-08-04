@@ -207,6 +207,8 @@ model Package {
 model Subscriber {
   id           Int       @id @default(autoincrement())
   name         String?
+  // مسح نهائي: بياناته مُحيت ولا يُسترجَع — ويبقى اسمه وحده كي تُقرأ وصولاته القديمة
+  purgedAt     DateTime?
   phone        String?
   address      String?
   packageId    Int? // cost_cardFk

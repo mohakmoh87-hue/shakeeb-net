@@ -115,6 +115,7 @@ export default function SubscribersBoard() {
   const [archOpen, setArchOpen] = useState(false);
   const [arch, setArch] = useState<{ id: number; name: string | null; netUser: string | null; phone: string | null; carry: number; office: string | null; receipts: number; receiptsTotal: number; invoices: number }[] | null>(null);
   const [archBusy, setArchBusy] = useState(false);
+  const [archSel, setArchSel] = useState<Set<number>>(new Set());
 
   const rootRef = useRef<HTMLDivElement>(null);
   // النقر خارج البطاقة يغلق شريط خيارات المشترك وقائمة «المزيد» (طلب محمد)
@@ -323,9 +324,31 @@ export default function SubscribersBoard() {
   }
 
   function openArchive() {
-    setArchOpen(true); setArch(null);
+    setArchOpen(true); setArch(null); setArchSel(new Set());
     fetch("/api/subscribers/deleted").then((r) => (r.ok ? r.json() : null)).then((d) => setArch(d?.rows ?? [])).catch(() => setArch([]));
   }
+  // عملية على المحدَّدين: استرجاع أو مسح نهائي
+  async function archAction(action: "restore" | "purge") {
+    const ids = [...archSel];
+    if (!ids.length || !arch) return;
+    const rows = arch.filter((r) => ids.includes(r.id));
+    const receipts = rows.reduce((s2, r) => s2 + r.receipts, 0);
+    const total = rows.reduce((s2, r) => s2 + r.receiptsTotal, 0);
+    const msg = action === "purge"
+      ? `مسح نهائي لـ${ids.length} مشترك؟\n\n· تُمحى بياناتهم كلها (الهاتف · العنوان · اليوزر · كلمات السر · الملاحظات) ولا استرجاع بعده.\n· يبقى اسم كل واحد على وصولاته كي تُقرأ.\n· وصولاتهم (${receipts} وصلاً بمجموع ${fmt(total)}) وفواتيرهم وكل حركاتهم المالية **لا تُمَسّ**، وتقارير الأيام الماضية لا تتغيّر.`
+      : `استرجاع ${ids.length} مشترك؟ يعودون بكل وصولاتهم.`;
+    if (!confirm(msg)) return;
+    setArchBusy(true);
+    const r = await fetch("/api/subscribers/deleted", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, ...(action === "purge" ? { action: "purge" } : {}) }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setArchBusy(false);
+    if (r.ok) { openArchive(); load(query, showAllTowers); }
+    else alert(d.error ?? "تعذّرت العملية");
+  }
+
   async function restoreSub(id: number, name: string) {
     if (!confirm(`استرجاع «${name}»؟\nيعود بكل وصولاته وفواتيره — فهي لم تُحذف أصلاً.`)) return;
     setArchBusy(true);
@@ -890,6 +913,22 @@ export default function SubscribersBoard() {
               </div>
               <button onClick={() => setArchOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
             </div>
+
+            {arch != null && arch.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 text-xs">
+                <label className="flex items-center gap-1.5 font-semibold text-slate-700">
+                  <input type="checkbox" className="h-4 w-4"
+                    checked={arch.length > 0 && archSel.size === arch.length}
+                    onChange={() => setArchSel(archSel.size === arch.length ? new Set() : new Set(arch.map((r) => r.id)))} />
+                  تحديد الكل ({arch.length})
+                </label>
+                <span className="text-slate-500">محدَّد: {archSel.size}</span>
+                <button disabled={archBusy || archSel.size === 0} onClick={() => archAction("restore")}
+                  className="mr-auto rounded-lg bg-emerald-600 px-3 py-1.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-40">↩️ استرجاع المحدَّد</button>
+                <button disabled={archBusy || archSel.size === 0} onClick={() => archAction("purge")}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 font-bold text-white hover:bg-red-700 disabled:opacity-40">🗑 مسح نهائي</button>
+              </div>
+            )}
             <div className="overflow-auto">
               {arch == null ? (
                 <div className="p-8 text-center text-muted">جاري التحميل...</div>
@@ -898,13 +937,17 @@ export default function SubscribersBoard() {
               ) : (
                 <table className="w-full text-right text-xs">
                   <thead className="sticky top-0 bg-slate-50 text-slate-600">
-                    <tr><th className="p-2">المشترك</th><th className="p-2">اليوزر</th><th className="p-2">المكتب</th>
+                    <tr><th className="p-2 w-8"></th><th className="p-2">المشترك</th><th className="p-2">اليوزر</th><th className="p-2">المكتب</th>
                       <th className="p-2">وصولاته</th><th className="p-2">مجموعها</th><th className="p-2">فواتيره</th>
                       <th className="p-2">دينه</th><th className="p-2"></th></tr>
                   </thead>
                   <tbody>
                     {arch.map((r) => (
                       <tr key={r.id} className="border-t border-slate-100">
+                        <td className="p-2">
+                          <input type="checkbox" className="h-4 w-4" checked={archSel.has(r.id)}
+                            onChange={() => setArchSel((x) => { const n = new Set(x); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} />
+                        </td>
                         <td className="p-2 font-bold text-slate-800">{r.name ?? "—"}</td>
                         <td className="p-2 text-slate-500" dir="ltr">{r.netUser ?? "—"}</td>
                         <td className="p-2 text-slate-500">{r.office ?? "—"}</td>

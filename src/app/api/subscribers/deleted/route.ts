@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope } from "@/lib/guard";
-import { restoreSubscribers } from "@/lib/subscriberDelete";
+import { restoreSubscribers, purgeSubscribersFinal } from "@/lib/subscriberDelete";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export async function GET() {
   if (g.error) return g.error;
 
   const subs = await prisma.subscriber.findMany({
-    where: { isDeleted: true, ...(await towerScope(g.session)) },
+    where: { isDeleted: true, purgedAt: null, ...(await towerScope(g.session)) },
     orderBy: { id: "desc" },
     take: 500,
     select: { id: true, name: true, netUser: true, phone: true, carry: true, towerId: true, dateTo: true },
@@ -60,14 +60,19 @@ export async function POST(request: Request) {
 
   // عزل: لا يُسترجَع إلا مشترك ضمن نطاق مكاتب المستخدم
   const owned = await prisma.subscriber.findMany({
-    where: { id: { in: ids }, isDeleted: true, ...(await towerScope(g.session)) },
+    where: { id: { in: ids }, isDeleted: true, purgedAt: null, ...(await towerScope(g.session)) },
     select: { id: true },
   });
   if (!owned.length) return NextResponse.json({ error: "لا مشترك مطابق ضمن حسابك" }, { status: 404 });
 
-  const { restored } = await restoreSubscribers(
-    owned.map((s) => s.id),
-    { userId: g.session?.userId ?? null, name: g.session?.fullName ?? g.session?.username ?? null },
-  );
+  const actor = { userId: g.session?.userId ?? null, name: g.session?.fullName ?? g.session?.username ?? null };
+
+  // المسح النهائي: يمحو بيانات المشترك ويُبقي اسمه — ولا يمسّ وصلاً ولا حركة مالية
+  if (body?.action === "purge") {
+    const { purged } = await purgeSubscribersFinal(owned.map((s) => s.id), actor);
+    return NextResponse.json({ ok: true, purged });
+  }
+
+  const { restored } = await restoreSubscribers(owned.map((s) => s.id), actor);
   return NextResponse.json({ ok: true, restored });
 }
