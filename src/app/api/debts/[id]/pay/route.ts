@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower } from "@/lib/guard";
@@ -41,6 +42,10 @@ export async function POST(
   const currentCarry = subscriber.carry ?? 0;
   const newCarry = Math.max(0, currentCarry - amount);
 
+  {
+    const e = requireTower(subscriber.towerId, "تسديد الدين");
+    if (e) return e;
+  }
   await prisma.$transaction([
     prisma.subscriber.update({
       where: { id: subscriberId },

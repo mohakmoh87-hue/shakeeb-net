@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower, sameAgentTower } from "@/lib/guard";
@@ -167,6 +168,10 @@ export async function POST(
   let msgRewardCode: string | null = subscriber.rewardCode ?? null;
   let msgRewardBalance = subscriber.rewardBalance ?? 0;
   try {
+    {
+      const e = requireTower(subscriber.towerId, "التفعيل");
+      if (e) return e;
+    }
     const result = await prisma.$transaction(async (tx) => {
       // استهلاك الكارت ذرّياً عند التأكيد فقط (يمنع تعارض مكتبين)
       if (cardId) {

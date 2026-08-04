@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope, ownsTower } from "@/lib/guard";
@@ -85,6 +86,10 @@ export async function POST(request: Request) {
   });
 
   // إنشاء الوصل وتحديث المشترك في معاملة واحدة
+  {
+    const e = requireTower(subscriber.towerId, "وصل التفعيل");
+    if (e) return e;
+  }
   const [entry] = await prisma.$transaction([
     prisma.subscriptionEntry.create({
       data: {

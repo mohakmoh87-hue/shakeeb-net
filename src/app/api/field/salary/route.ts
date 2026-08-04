@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getTechSession } from "@/lib/auth";
@@ -93,6 +94,10 @@ export async function POST(request: Request) {
   const dateRange = { gte: new Date(`${from}T00:00:00+03:00`), lte: new Date(`${to}T23:59:59.999+03:00`) };
   const dayRange = { gte: from, lte: to };
 
+  {
+    const e = requireTower(t.towerId, "صرف الراتب");
+    if (e) return e;
+  }
   const statement = await prisma.$transaction(async (tx) => {
     // قيد الصرف — يُنقص المبلغ الكلي الموجود (فقط إن كان الصافي موجباً)
     let moneyTxId: number | null = null;

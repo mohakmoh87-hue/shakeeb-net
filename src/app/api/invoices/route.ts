@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower } from "@/lib/guard";
@@ -118,6 +119,10 @@ export async function POST(request: Request) {
   let rewardDiscount = 0;
   let invoice;
   try {
+  {
+    const e = requireTower(towerId, "الفاتورة");
+    if (e) return e;
+  }
     invoice = await prisma.$transaction(async (tx) => {
     // خصم كود المكافأة أولاً (بحدّ الإجمالي، يبقى الباقي للمشترك)
     if (rewardEligible && subscriber) {

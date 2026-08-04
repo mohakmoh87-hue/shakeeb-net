@@ -60,13 +60,32 @@ export async function GET(request: Request) {
   };
   const typeWhere = TYPE_WHERE[typeParam] ?? {};
 
+  // «بلا مكتب»: صمّام أمان. القيد بلا towerId لا يطابق أي نطاق مكتب فيختفي عن كل
+  // القوائم — فحصُ 2026-08-04 أثبت أن العدد صفر اليوم والمنع مُضاف في كل مسارات
+  // الإنشاء، لكن إن ظهر واحد يوماً فهذا الفلتر يُظهره ليُحذف. ونطاقه: الحركات التي
+  // سجّلها مستخدمو **وكيلك** حصراً — فلا تُكشف حركات وكيل آخر يتيمة.
+  const isOrphan = typeParam === "orphan";
+  const scopeWhere = isOrphan
+    ? {
+        towerId: null,
+        userId: {
+          in: (
+            await prisma.user.findMany({
+              where: { agentId: g.session?.agentId ?? -1 },
+              select: { id: true },
+            })
+          ).map((u) => u.id),
+        },
+      }
+    : await towerScope(g.session);
+
   const where = {
     isDeleted: false,
     AND: [
       ...(Object.keys(typeWhere).length ? [typeWhere] : []),
       ...(q ? [qWhere] : []),
     ],
-    ...(await towerScope(g.session)),
+    ...scopeWhere,
     ...(accountId ? { accountId: Number(accountId) } : {}),
     ...(dateFilter.gte || dateFilter.lte ? { date: dateFilter } : {}),
   };

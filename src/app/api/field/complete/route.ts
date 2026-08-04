@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { appendCardHistory, endSupport, resolveCardActor } from "@/lib/field";
@@ -125,6 +126,11 @@ export async function POST(request: Request) {
   const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true, timeTracked: true } });
   const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
   const towerId = board?.towerId ?? tech?.towerId ?? null;
+
+  {
+    const e = requireTower(towerId, "إنجاز البطاقة");
+    if (e) return e;
+  }
 
   // ===== معالجة المواد (للصيانة فقط؛ التوصيل بلا مواد) =====
   const soldInfo: { itemId: number; name: string; qty: number; price: number }[] = [];

@@ -168,9 +168,11 @@ export default function CashboxPage() {
       <PageHeader title="المصروفات والمقبوضات" subtitle="تسجيل الصرف والقبض — والسجل أدناه يعرض كل الحركات المالية: يدوي · ماستر · تفعيل · فاتورة · بيع مخزن · تسديد دين · راتب" />
 
       {/* بطاقات الرصيد */}
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard label="إجمالي القبض (يدوي)" value={fmt(summary.totalIn)} color="text-emerald-600" bg="bg-emerald-50" />
-        <StatCard label="إجمالي الصرف (يدوي)" value={fmt(summary.totalOut)} color="text-red-600" bg="bg-red-50" />
+      {/* البطاقات تعكس **الفلتر المعروض** لا اليدوي وحده — والرصيد كان يُحسب في الخادم ولا يُعرض */}
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label="إجمالي القبض (حسب الفلتر)" value={fmt(summary.totalIn)} color="text-emerald-600" bg="bg-emerald-50" />
+        <StatCard label="إجمالي الصرف (حسب الفلتر)" value={fmt(summary.totalOut)} color="text-red-600" bg="bg-red-50" />
+        <StatCard label="الرصيد (قبض − صرف)" value={fmt(summary.balance)} color={summary.balance < 0 ? "text-red-600" : "text-sky-700"} bg="bg-sky-50" />
       </div>
 
       {/* بحث بالتاريخ (من – إلى) — يشمل اليومين، والإجماليات أعلاه تعكس النتيجة */}
@@ -205,6 +207,7 @@ export default function CashboxPage() {
             <option value="sale">بيع مخزن</option>
             <option value="debt">تسديد دين</option>
             <option value="salary">راتب</option>
+            <option value="orphan">⚠️ بلا مكتب (يجب ألا يوجد شيء)</option>
           </select>
         </div>
         <button onClick={() => load(from, to, q, typeFilter)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
