@@ -58,6 +58,12 @@ function RunElevated($file, $argList) {
   $p = Start-Process $file -ArgumentList $argList -Verb RunAs -Wait -PassThru
   return $p.ExitCode
 }
+# رموز نجاح المثبّتات: 0 نجاح، 3010/1641 نجاح يطلب إعادة تشغيل، وغياب الرمز ليس فشلاً.
+# بدونها كان إنذار أحمر كاذب يظهر بعد تثبيت ناجح فيظنّه المستخدم عطلاً.
+function BadCode($c) {
+  if ($null -eq $c) { return $false }
+  return (@(0, 3010, 1641) -notcontains $c)
+}
 
 if (-not (Have node)) {
   Write-Host "تثبيت Node.js LTS..." -ForegroundColor Yellow
@@ -73,7 +79,7 @@ if (-not (Have node)) {
       iwr -UseBasicParsing ("https://nodejs.org/dist/" + $ver + "/node-" + $ver + "-" + $arch + ".msi") -OutFile $msi
       Write-Host ("تثبيت Node " + $ver + "...") -ForegroundColor Yellow
       $code = RunElevated "msiexec.exe" @("/i", ('"' + $msi + '"'), "/qn", "/norestart")
-      if ($code -ne 0) { Write-Host ("مثبّت Node انتهى برمز " + $code) -ForegroundColor Red }
+      if (BadCode $code) { Write-Host ("مثبّت Node انتهى برمز " + $code) -ForegroundColor Red }
       RefreshPath
     } catch { Write-Host ("تعذّر تثبيت Node تلقائياً: " + $_.Exception.Message) -ForegroundColor Red }
   }
@@ -92,7 +98,7 @@ if (-not (Have git)) {
       iwr -UseBasicParsing $asset.browser_download_url -OutFile $exe
       Write-Host ("تثبيت " + $asset.name + "...") -ForegroundColor Yellow
       $code = RunElevated $exe @("/VERYSILENT","/NORESTART","/NOCANCEL","/SP-","/SUPPRESSMSGBOXES")
-      if ($code -ne 0) { Write-Host ("مثبّت Git انتهى برمز " + $code) -ForegroundColor Red }
+      if (BadCode $code) { Write-Host ("مثبّت Git انتهى برمز " + $code) -ForegroundColor Red }
       RefreshPath
     } catch { Write-Host ("تعذّر تثبيت Git تلقائياً: " + $_.Exception.Message) -ForegroundColor Red }
   }
