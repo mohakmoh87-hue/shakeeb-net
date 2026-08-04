@@ -193,13 +193,16 @@ export default function CardsPage() {
           </div>
         ) : (
           stats.map((s) => (
-            <div key={s.packageId} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div key={s.packageId}
+              onClick={() => { setAvailFilter(s.packageId); setView("available"); }}
+              title="اضغط لعرض كروت هذه الفئة"
+              className="cursor-pointer rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-mynet-blue hover:shadow-md">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-slate-800">{s.name}</span>
                 <span className="text-sm text-slate-500">{fmt(s.price)} د.ع</span>
               </div>
               <div className="mt-2 text-3xl font-extrabold text-mynet-blue">{s.available}</div>
-              <div className="text-xs text-slate-400">كارت متاح</div>
+              <div className="text-xs text-slate-400">كارت متاح — اضغط لعرضها ↗</div>
             </div>
           ))
         )}
