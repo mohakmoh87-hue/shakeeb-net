@@ -119,7 +119,7 @@ export default function SoldItemsReport() {
       <div className="mb-4 grid grid-cols-3 gap-3">
         <Stat label="أسطر المواد" value={fmt(sorted.length)} />
         <Stat label="عدد الوصولات" value={fmt(invoiceCount)} />
-        <Stat label="إجمالي المبيع" value={fmt(totalAmount)} color="text-emerald-600" />
+        <Stat label="قيمة المواد المباعة" value={fmt(totalAmount)} color="text-emerald-600" />
       </div>
 
       {/* الجدول — كل ترويسة قابلة للترتيب */}

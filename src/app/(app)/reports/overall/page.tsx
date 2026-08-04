@@ -118,7 +118,7 @@ export default function OverallReport() {
             <Card label="الباقات" value={fmt(d.packages)} />
             <Card label="المكاتب" value={fmt(d.towers)} />
             <Card label="عدد الفواتير" value={fmt(d.invoices.count)} />
-            <Card label="مبيعات الفواتير" value={fmt(d.invoices.total)} color="text-mynet-blue" />
+            <Card label="الفواتير — المُفوتَر (لا المُحصَّل)" value={fmt(d.invoices.total)} color="text-mynet-blue" />
             <Card label="عمليات التفعيل (الكل)" value={fmt(d.activations.count)} />
             <Card label="قيمة التفعيلات" value={fmt(d.activations.total)} color="text-mynet-blue" />
             <Card label="رسائل مُرسلة" value={fmt(d.messagesSent)} />

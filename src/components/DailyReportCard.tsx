@@ -107,7 +107,7 @@ export default function DailyReportCard({
 
   const rows = [
     { cat: "تفعيل اشتراكات", count: String(data.activationCount), wasel: fmt(data.activationIn), kind: "activation" },
-    { cat: "فاتورة المبيع", count: String(data.invoiceCount), wasel: fmt(data.invoiceIn), kind: "invoice" },
+    { cat: "فاتورة المبيع (المُحصَّل)", count: String(data.invoiceCount), wasel: fmt(data.invoiceIn), kind: "invoice" },
     { cat: "مبيعات المخزن", count: "", wasel: fmt(data.salesIn), kind: "sale" },
     { cat: "المقبوضات (اليوم)", count: "", wasel: fmt(data.otherIn), kind: "other" },
     { cat: "المصروفات (اليوم)", count: "", wasel: fmt(data.expenses), kind: "expenses" },
