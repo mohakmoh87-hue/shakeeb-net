@@ -10,6 +10,16 @@ type Statement = {
 };
 type Period = { from: string | null; to: string | null };
 type Archive = { id: number; periodFrom: string; periodTo: string; net: number; daysPaid: number; createdAt: string; paidByUser: string | null };
+// تفاصيل كشف سابق: كانت محفوظة كاملةً في القاعدة ولا تصل الواجهة إطلاقاً
+// — فتقرأ «صافي كذا» بلا سبيل لمعرفة كيف تكوّن، ولا يمكن إلغاؤه (المرحلة ١٠).
+type StDetail = { date?: string; kind?: string; amount?: number; reason?: string };
+type StView = {
+  statement: { id: number; technicianName: string; periodFrom: string; periodTo: string; daysPaid: number; dailyAmount: number; baseEarned: number; overtime: number; bonuses: number; attendanceDeductions: number; confirmedDeductions: number; net: number; paidByUser: string | null };
+  details: StDetail[];
+  payment: { id: number; amount: number; deleted: boolean } | null;
+  cancelled: { at: string } | null;
+};
+
 const num = (n: number) => Number(n).toLocaleString("en-US");
 const signed = (n: number) => (n >= 0 ? `+${num(n)}` : `−${num(Math.abs(n))}`);
 
@@ -18,6 +28,8 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   const isManager = technicianId != null;
   const [st, setSt] = useState<Statement | null>(null);
   const [history, setHistory] = useState<Archive[]>([]);
+  const [openSt, setOpenSt] = useState<StView | null>(null);
+  const [stBusy, setStBusy] = useState(false);
   const [period, setPeriod] = useState<Period | null>(null);
   const [cardCounts, setCardCounts] = useState<{ kind: string; count: number }[]>([]); // بطاقات منجزة حسب الفئة ضمن الفترة
   const [techName, setTechName] = useState(name ?? "");
@@ -151,9 +163,63 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
                 <div className="mb-1 text-sm font-bold text-slate-700">كشوف سابقة</div>
                 <ul className="space-y-1">
                   {history.map((h) => (
-                    <li key={h.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs">
-                      <span className="text-slate-500" dir="ltr">{h.periodFrom} → {h.periodTo}</span>
-                      <span className="font-bold text-slate-700">{num(h.net)} د.ع · {h.daysPaid} يوم</span>
+                    <li key={h.id} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs">
+                      <div className="flex cursor-pointer items-center justify-between gap-2"
+                        onClick={() => {
+                          if (openSt?.statement.id === h.id) { setOpenSt(null); return; }
+                          setStBusy(true);
+                          fetch(`/api/field/salary/statement/${h.id}`)
+                            .then((r) => (r.ok ? r.json() : null))
+                            .then((d) => setOpenSt(d))
+                            .finally(() => setStBusy(false));
+                        }}>
+                        <span className="text-slate-500" dir="ltr">{h.periodFrom} → {h.periodTo}</span>
+                        <span className="font-bold text-slate-700">{num(h.net)} د.ع · {h.daysPaid} يوم <span className="text-slate-400">{openSt?.statement.id === h.id ? "▲" : "▼"}</span></span>
+                      </div>
+                      {openSt?.statement.id === h.id && (
+                        <div className="mt-2 border-t border-slate-100 pt-2 text-[11px] text-slate-600">
+                          {openSt.cancelled && (
+                            <div className="mb-1 rounded bg-red-50 px-2 py-1 font-bold text-red-700">هذا الكشف مُلغى</div>
+                          )}
+                          {openSt.payment?.deleted && !openSt.cancelled && (
+                            <div className="mb-1 rounded bg-amber-50 px-2 py-1 font-bold text-amber-800">⚠️ قيد الصرف محذوف — الكشف يزعم دفعاً لم يعد قائماً</div>
+                          )}
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                            <span>مبالغ الأيام ({openSt.statement.daysPaid} × {num(openSt.statement.dailyAmount)})</span><b>{num(openSt.statement.baseEarned)}</b>
+                            <span>الإضافي</span><b>{num(openSt.statement.overtime)}</b>
+                            <span>المكافآت</span><b>{num(openSt.statement.bonuses)}</b>
+                            <span>خصم الحضور</span><b className="text-red-600">−{num(openSt.statement.attendanceDeductions)}</b>
+                            <span>خصومات مؤكّدة</span><b className="text-red-600">−{num(openSt.statement.confirmedDeductions)}</b>
+                            <span className="font-bold">الصافي المدفوع</span><b className="text-emerald-700">{num(openSt.statement.net)}</b>
+                          </div>
+                          {openSt.details.length > 0 && (
+                            <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-auto border-t border-slate-100 pt-1.5">
+                              {openSt.details.map((d, i) => (
+                                <li key={i} className="flex justify-between gap-2">
+                                  <span dir="ltr" className="text-slate-400">{d.date ?? ""}</span>
+                                  <span className="flex-1">{d.kind ?? ""}{d.reason ? ` — ${d.reason}` : ""}</span>
+                                  <b>{d.amount != null ? num(d.amount) : ""}</b>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {isManager && !openSt.cancelled && (
+                            <button
+                              disabled={stBusy}
+                              onClick={async () => {
+                                if (!confirm(`إلغاء كشف ${openSt.statement.periodFrom} → ${openSt.statement.periodTo}؟\nيُعاد المبلغ ${num(openSt.statement.net)} بحذف قيد الصرف.\n\nتنبيه: سجلات الحضور والخصومات لتلك الفترة حُذفت لحظة التسديد فلا تعود.`)) return;
+                                setStBusy(true);
+                                const r = await fetch(`/api/field/salary/statement/${openSt.statement.id}`, { method: "POST" });
+                                const d = await r.json().catch(() => ({}));
+                                setStBusy(false);
+                                if (r.ok) { alert(d.note ?? "أُلغي الكشف"); setOpenSt(null); load(); }
+                                else alert(d.error ?? "تعذّر الإلغاء");
+                              }}
+                              className="mt-2 rounded bg-red-50 px-3 py-1 text-[11px] font-bold text-red-700 hover:bg-red-100 disabled:opacity-60"
+                            >إلغاء هذا الكشف</button>
+                          )}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
