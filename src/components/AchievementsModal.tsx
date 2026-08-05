@@ -75,7 +75,7 @@ export default function AchievementsModal({ onClose }: { onClose: () => void }) 
                     <button onClick={() => setOpen(open === r.technicianId ? null : r.technicianId)} className="w-full px-3 py-2.5 text-right">
                       <div className="flex items-center gap-2">
                         <span className="flex w-8 shrink-0 items-center justify-center text-lg font-extrabold text-slate-400">
-                          {crown ? <ChampionEmoji size={26} /> : (MEDAL[i] ?? i + 1)}
+                          {crown ? <ChampionEmoji size={38} /> : (MEDAL[i] ?? i + 1)}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-bold text-slate-800">
