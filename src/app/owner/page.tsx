@@ -321,7 +321,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
    كل تحديث خريطة كان يحتاج إدخالاً يدوياً على القاعدة من خارج البرنامج. الآن: اختر الملف
    فيُقرأ **قبل الكتابة** ويُقال لك ماذا سيتغيّر (جديد/تحرّك/بلا تغيير)، ثم تعتمده بضغطة.
    ولا يُحذف شيء أبداً: الرفع يُضيف ويُحدّث فقط — خريطة ناقصة أهون من خريطة تُمحى بالخطأ. */
-type MapPreview = { points: number; added: number; moved: number; unchanged: number; skipped: number; areas: string[]; sample?: string[] };
+type MapPreview = { points: number; added: number; overTech: number; keptKml: number; skipped: number; areas: string[]; sample?: string[]; techNames?: string[] };
 function MapImport() {
   const [areas, setAreas] = useState<{ code: string; count: number }[]>([]);
   const [total, setTotal] = useState(0);
@@ -364,7 +364,7 @@ function MapImport() {
     const d = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { setMsg(d.error ?? "تعذّر الرفع"); return; }
-    setMsg(`✓ رُفعت ${d.points} نقطة — جديدة ${d.added} · مُحدَّثة ${d.moved} · بلا تغيير ${d.unchanged}. مجموع نقاط الخريطة الآن ${Number(d.total).toLocaleString("en-US")}`);
+    setMsg(`✓ رُفعت ${d.points} نقطة — جديدة ${d.added} · حلّت محلّ نقاط فنيّين ${d.overTech} · مكرّرة تُركت ${d.keptKml}. مجموع نقاط الخريطة الآن ${Number(d.total).toLocaleString("en-US")}`);
     setPreview(null); setKml(""); setFileName("");
     loadAreas();
   }
@@ -401,6 +401,7 @@ function MapImport() {
             <div className="text-2xl">📂</div>
             <div className="mt-1 text-sm font-bold text-slate-700">{fileName || "اختر ملف KML"}</div>
             <div className="mt-0.5 text-[11px] text-slate-400">يُقرأ الملف ويُعرض أثره قبل الكتابة — لا شيء يُحفظ قبل ضغطك «اعتماد»</div>
+            <div className="mt-0.5 text-[11px] text-slate-400">المكرّر يُترك كما هو · وما أضافه فنيّ يحلّ ملفُّك محلّه</div>
           </label>
 
           {busy && <div className="mt-2 text-center text-xs text-slate-400">جاري القراءة…</div>}
@@ -411,8 +412,8 @@ function MapImport() {
               <div className="grid grid-cols-2 gap-1.5 text-xs sm:grid-cols-4">
                 <Box label="نقاط الملف" v={preview.points} />
                 <Box label="جديدة تُضاف" v={preview.added} good />
-                <Box label="تتحرّك إحداثيّاتها" v={preview.moved} />
-                <Box label="بلا تغيير" v={preview.unchanged} />
+                <Box label="تحلّ محلّ نقاط الفنيين" v={preview.overTech} />
+                <Box label="مكرّرة تُترك كما هي" v={preview.keptKml} />
               </div>
               <div className="mt-2 text-[11px] text-slate-500">
                 المناطق: <b dir="ltr">{preview.areas.join("، ")}</b>
@@ -421,7 +422,15 @@ function MapImport() {
               {preview.sample?.length ? (
                 <div className="mt-1 text-[11px] text-slate-400" dir="ltr">{preview.sample.join(" · ")}…</div>
               ) : null}
-              <div className="mt-1.5 text-[11px] font-semibold text-emerald-700">لا تُحذف أي نقطة موجودة — الرفع يُضيف ويُحدّث فقط.</div>
+              {preview.overTech > 0 && (
+                <div className="mt-1.5 rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                  ستحلّ محلّ <b>{preview.overTech}</b> نقطة أضافها فنيّون من الأرض (الأولوية لملفّك):
+                  <span dir="ltr"> {preview.techNames?.join("، ")}</span>
+                </div>
+              )}
+              <div className="mt-1.5 text-[11px] font-semibold text-emerald-700">
+                لا تُحذف أي نقطة، ولا يُمَسّ ما ثبت من ملفٍ سابق — المكرّر يُترك كما هو.
+              </div>
               <div className="mt-2 flex gap-2">
                 <button onClick={apply} disabled={busy} className="flex-1 rounded-lg bg-sky-600 py-2 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-60">
                   {busy ? "…" : `اعتماد ورفع ${preview.points} نقطة`}

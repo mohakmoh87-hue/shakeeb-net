@@ -168,7 +168,8 @@ export async function PATCH(request: Request) {
     });
     return NextResponse.json({ error: `العمود ${row.name} صار موجوداً على الخريطة — أُغلق الاقتراح`, status: "rejected" }, { status: 409 });
   }
-  await prisma.mapPoint.create({ data: { name: row.name, lat: row.lat, lng: row.lng } });
+  // مصدرها «tech»: سدُّ ثغرة حتى يصل ملف المالك الرسمي — فحين يُرفع يحلّ محلّها
+  await prisma.mapPoint.create({ data: { name: row.name, lat: row.lat, lng: row.lng, source: "tech", updatedAt: new Date() } });
   await prisma.mapPointProposal.update({
     where: { id }, data: { status: "accepted", decidedById: g.session?.userId ?? null, decidedAt: new Date() },
   });

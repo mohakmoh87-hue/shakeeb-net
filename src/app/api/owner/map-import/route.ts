@@ -61,34 +61,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "لم يُعثر على نقطة واحدة بصيغة اسمٍ مفهومة (F1/64/ENT)" }, { status: 400 });
   }
 
-  // ماذا سيتغيّر؟ يُقال قبل الكتابة (وفي الفحص المسبق لا يُكتب شيء)
+  // ===== قاعدة الدمج (قرار محمد 2026-08-05) =====
+  // • نقطة جديدة        ⇒ تُضاف.
+  // • مكرّرة مصدرها kml  ⇒ **تُترك كما هي**: رفعُ ملفٍ مكرّر لا يحرّك ما ثبت من ملفٍ قبله.
+  // • مكرّرة مصدرها tech ⇒ **يحلّ الملف محلّها**: الأولوية لخرائط المالك على ما سدّه فنيّ
+  //   مؤقّتاً بموقع هاتفه. (وهذا الحدّ الوحيد الذي يُكتب فيه فوق نقطة قائمة.)
   const existing = await prisma.mapPoint.findMany({
     where: { name: { in: rows.map((r) => r.name) } },
-    select: { name: true, lat: true, lng: true },
+    select: { name: true, lat: true, lng: true, source: true },
   });
   const byName = new Map(existing.map((e) => [e.name, e]));
   const added = rows.filter((r) => !byName.has(r.name));
-  const moved = rows.filter((r) => {
-    const e = byName.get(r.name);
-    return e != null && (Math.abs(e.lat - r.lat) > 1e-9 || Math.abs(e.lng - r.lng) > 1e-9);
-  });
+  const overTech = rows.filter((r) => byName.get(r.name)?.source === "tech");
+  const keptKml = rows.filter((r) => { const e = byName.get(r.name); return e != null && e.source !== "tech"; });
   const areas = [...new Set(rows.map((r) => r.name.split("/")[2] ?? "?"))];
 
   if (dryRun) {
     return NextResponse.json({
-      ok: true, dryRun: true, points: rows.length, added: added.length, moved: moved.length,
-      unchanged: rows.length - added.length - moved.length, skipped, areas,
+      ok: true, dryRun: true, points: rows.length,
+      added: added.length, overTech: overTech.length, keptKml: keptKml.length,
+      skipped, areas,
       sample: rows.slice(0, 8).map((r) => r.name),
+      techNames: overTech.slice(0, 10).map((r) => r.name),
     });
   }
 
-  for (const r of rows) {
-    await prisma.mapPoint.upsert({
-      where: { name: r.name },
-      update: { lat: r.lat, lng: r.lng },
-      create: { name: r.name, lat: r.lat, lng: r.lng },
+  const now = new Date();
+  if (added.length) {
+    await prisma.mapPoint.createMany({
+      data: added.map((r) => ({ name: r.name, lat: r.lat, lng: r.lng, source: "kml", updatedAt: now })),
+      skipDuplicates: true,
     });
   }
+  for (const r of overTech) {
+    await prisma.mapPoint.update({ where: { name: r.name }, data: { lat: r.lat, lng: r.lng, source: "kml", updatedAt: now } });
+  }
+  // keptKml: لا شيء — تُترك كما هي عمداً
 
   await prisma.auditLog.create({
     data: {
@@ -96,8 +104,10 @@ export async function POST(request: Request) {
       action: "MAP_IMPORT", entity: "mapPoint", entityId: areas.join("،"),
       details:
         "رفع خريطة: " + rows.length + " نقطة (" + areas.join("، ") + ") — " +
-        "جديدة " + added.length + " · مُحدَّثة الإحداثيات " + moved.length +
-        " · بلا تغيير " + (rows.length - added.length - moved.length) +
+        "جديدة " + added.length +
+        " · حلّت محلّ نقاط أضافها فنيّون " + overTech.length +
+        (overTech.length ? " (" + overTech.slice(0, 10).map((r) => r.name).join("، ") + ")" : "") +
+        " · مكرّرة تُركت كما هي " + keptKml.length +
         " · علامات متجاهَلة (خطوط/أسماء غير مفهومة) " + skipped +
         " — لم تُحذف أي نقطة",
     },
@@ -105,8 +115,8 @@ export async function POST(request: Request) {
 
   const total = await prisma.mapPoint.count();
   return NextResponse.json({
-    ok: true, points: rows.length, added: added.length, moved: moved.length,
-    unchanged: rows.length - added.length - moved.length, skipped, areas, total,
+    ok: true, points: rows.length, added: added.length, overTech: overTech.length, keptKml: keptKml.length,
+    skipped, areas, total,
   });
 }
 

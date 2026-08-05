@@ -891,6 +891,11 @@ model MapPoint {
   name String  @id // مثل F2/1/MWA
   lat  Float
   lng  Float
+  // ===== مصدر النقطة وأولويّته (قرار محمد 2026-08-05) =====
+  // kml  = ملفٌ رفعه المالك — **له الأولوية**: يحلّ محلّ ما أضافه فني، ولا يُمسّ برفعٍ لاحق.
+  // tech = أرسلها فنيّ من عند العمود وقبِلها المدير — سدّ ثغرة حتى يصل الملف الرسمي.
+  source    String? // kml | tech
+  updatedAt DateTime?
 
   @@map("map_points")
 }
