@@ -551,11 +551,32 @@ async function sendWhatsAppLocal(officeId: number, phone: string, text: string):
   if (s.state !== "ready" || !s.client) return { ok: false, error: "واتساب المكتب غير متصل — اربطه من إدارة المكاتب" };
   const waId = toWaId(phone);
   if (!waId) return { ok: false, error: `رقم غير صالح: ${phone}` };
+  const client = s.client;
   try {
-    await s.client.sendMessage(waId, text);
+    await client.sendMessage(waId, text);
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    const msg = e instanceof Error ? e.message : String(e);
+    // ===== «No LID for user» — رسائل تضيع بلا محاولة ثانية (تشخيص 2026-08-05) =====
+    // واتساب انتقل إلى عناوين LID، فالمعرّف القديم (964…@c.us) لم يعد يكفي وحده:
+    // رقمٌ لم تخاطبه هذه الجلسة من قبل ليس في مخزنها، فترمي المكتبة هذا الخطأ
+    // وتُسجَّل الرسالة FAILED وتُنسى. القياس على القاعدة: ~٢٢٠ رسالة ضاعت هكذا
+    // منذ 31 تموز — منها رسالة تفعيل خالد في الرسالة اليوم ١٥:٤٩.
+    // العلاج: نسأل خادم واتساب عن معرّف الرقم (getNumberId — وهي نفسها المستعملة
+    // في فحص «هل له واتساب») ثم نُعيد الإرسال إلى المعرّف الذي أعاده. وإن لم يُعِد
+    // شيئاً فالرقم فعلاً بلا واتساب، وهذه حقيقة تُقال لا خطأ تقني مبهم.
+    if (/lid/i.test(msg)) {
+      const digits = waId.replace(/@c\.us$/, "");
+      try {
+        const id = await client.getNumberId(digits);
+        if (!id?._serialized) return { ok: false, error: "الرقم ليس له واتساب" };
+        await client.sendMessage(id._serialized, text);
+        return { ok: true };
+      } catch (e2) {
+        return { ok: false, error: `تعذّر حلّ معرّف الرقم: ${e2 instanceof Error ? e2.message : String(e2)}` };
+      }
+    }
+    return { ok: false, error: msg };
   }
 }
 
