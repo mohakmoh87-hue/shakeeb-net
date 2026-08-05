@@ -128,6 +128,21 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
               <L label="غرامة نسيان الخروج"><I v={f.missedCheckoutPenalty} on={(v) => set("missedCheckoutPenalty", v)} num /></L>
             </div>
 
+            {/* «رؤية بطاقاته فقط» — الخانة التي كانت ناقصة (تصحيح 2026-08-05).
+                الميزة كانت مبنيّة كاملةً: العمود في القاعدة، وقبولها في الحفظ، وتطبيقها
+                في لوحة الفني — إلا **الخانة نفسها**، فلم يكن لمحمد سبيل لتشغيلها إطلاقاً. */}
+            <label className={`mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 ${f.ownCardsOnly === "1" ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
+              <input
+                type="checkbox" checked={f.ownCardsOnly === "1"}
+                onChange={(e) => set("ownCardsOnly", e.target.checked ? "1" : "")}
+                className="mt-0.5 h-4 w-4 accent-amber-600"
+              />
+              <span>
+                <span className="block text-xs font-bold text-slate-700">👁️ رؤية بطاقاته فقط</span>
+                <span className="block text-[11px] leading-5 text-slate-500">لا يرى بطاقات زملائه ولا البطاقات غير الموجَّهة لأحد — يرى ما أُسند إليه وحده.</span>
+              </span>
+            </label>
+
             {/* المكتب الأصلي (قابل للتغيير) + المكاتب الإضافية الدائمة — للمدير عند التعديل.
                 تغيير الأصلي يُنقّيه من الإضافية تلقائياً، وكل بطاقة تُحسب لمكتبها */}
             {editId != null && allOffices.length > 0 && (
