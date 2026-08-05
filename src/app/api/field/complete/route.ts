@@ -89,15 +89,21 @@ export async function POST(request: Request) {
   const durationSec = card.startedAt ? Math.max(0, Math.round((Date.now() - card.startedAt.getTime()) / 1000)) : null;
 
   // ===== التحقّق حسب النوع =====
-  // التوصيل (كما هو): مبلغ معلوماتي إلزامي، صفر جائز، وما فوق الصفر لا يقل عن 1000
-  if (isDelivery) {
+  // ===== التوصيل: المبلغ يأتي من وجه البطاقة لا من يد الفني (قرار محمد 2026-08-05) =====
+  // كان يُكتب مرّتين: مرّةً بلا إلزام عند الإنشاء، ومرّةً على الفني عند الإنجاز — فيختلف
+  // الرقمان ولا مرجع يُحتكم إليه. الآن يُثبَّت عند الإنشاء إلزاماً ويُقرأ منه عند الإنجاز.
+  // والبطاقات القديمة (أُنشئت قبل هذا) لا مبلغ عليها، فتُسأل كما كانت تماماً.
+  const fixedDelivery = isDelivery && card.amount != null ? card.amount : null;
+  // المبلغ المعتمَد للتوصيل: المثبَّت على البطاقة إن وُجد، وإلا ما أدخله الفني (بطاقة قديمة)
+  const deliveryAmt = isDelivery ? (fixedDelivery ?? amount ?? 0) : 0;
+  if (isDelivery && fixedDelivery == null) {
     if (amount == null || amount < 0) {
       return NextResponse.json({ error: "المبلغ مطلوب (يمكن أن يكون صفراً)" }, { status: 400 });
     }
     if (amount > 0 && amount < 1000) {
       return NextResponse.json({ error: "المبلغ لا يقل عن 1000 دينار (أو صفر للمجاني)" }, { status: 400 });
     }
-  } else {
+  } else if (!isDelivery) {
     // الحقول الكاملة والتحويل (التحويل بشروطه القديمة + الجديدة):
     if (isTransfer && !newUser?.trim()) {
       return NextResponse.json({ error: "اليوزر الجديد مطلوب لإنجاز التحويل" }, { status: 400 });
@@ -257,7 +263,7 @@ export async function POST(request: Request) {
       where: { id: cardId },
       data: {
         done: true, completedAt: new Date(), durationSec,
-        amount: isDelivery ? (amount ?? 0) : netSale,
+        amount: isDelivery ? deliveryAmt : netSale,
         subAmount: subAmountVal,
         serviceDetails: (serviceDetails?.trim() || null) ? `${serviceDetails!.trim()}${rewardDiscount > 0 ? `\n(خصم مكافأة: ${rewardDiscount} د.ع)` : ""}` : (rewardDiscount > 0 ? `(خصم مكافأة: ${rewardDiscount} د.ع)` : null),
         materialsInfo: soldInfo.length ? JSON.stringify(soldInfo) : null,
@@ -271,9 +277,9 @@ export async function POST(request: Request) {
   });
 
   // سجل التغييرات داخل البطاقة + المجموع المستلم من الفني (مبيع + اشتراك؛ وللتوصيل مبلغه)
-  const totalReceived = isDelivery ? (amount ?? 0) : netSale + (subAmountVal ?? 0);
+  const totalReceived = isDelivery ? deliveryAmt : netSale + (subAmountVal ?? 0);
   const amountsLabel = isDelivery
-    ? `المبلغ ${(amount ?? 0).toLocaleString("en-US")} د.ع`
+    ? `مبلغ التوصيل ${deliveryAmt.toLocaleString("en-US")} د.ع`
     : `مبيع ${netSale.toLocaleString("en-US")} + اشتراك ${(subAmountVal ?? 0).toLocaleString("en-US")} د.ع`;
   await appendCardHistory(cardId, actor.name, `إنجاز البطاقة — ${amountsLabel}`);
 

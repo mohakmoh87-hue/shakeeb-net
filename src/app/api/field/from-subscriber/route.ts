@@ -22,9 +22,23 @@ export async function POST(request: Request) {
   // اختياريان: رقم هاتف إضافي + ملاحظة يكتبهما المستخدم في مربع الحوار (يُضافان للبطاقة)
   const extraPhone = String(body?.extraPhone ?? "").trim().slice(0, 40);
   const note = String(body?.note ?? "").trim().slice(0, 1000);
-  // مبلغ الاشتراك (لبطاقة «التوصيل» فقط) — يُخزَّن في subAmount ويظهر على وجه البطاقة قبل فتحها
-  // ليعرف الفني كم يأخذ من الزبون. معلوماتي فقط (لا أثر مالي؛ يُسجَّل فعلياً عند التفعيل).
-  const subAmount = operation === "توصيل" ? Math.max(0, Math.round(Number(body?.subAmount) || 0)) : 0;
+  // ===== مبلغا بطاقة التوصيل (قرار محمد 2026-08-05) =====
+  // «الاشتراك»: **تلقائي من باقة المشترك** — لا يُكتب يدوياً ولا يُقبل من المتصفّح، فسعر
+  //   الباقة معروف في النظام وكتابته باليد بابُ خطأ لا فائدة فيه.
+  // «التوصيل»: **يدويّ وإلزاميّ عند الإنشاء** (الصفر جائز لكن يُكتب صراحةً) — يُخزَّن على
+  //   البطاقة ويظهر على وجهها، فلا يُطلب من الفني عند الإنجاز كما كان.
+  let deliveryAmount: number | null = null;
+  if (operation === "توصيل") {
+    const raw = body?.amount;
+    const n = raw == null || raw === "" ? NaN : Math.round(Number(raw));
+    if (!Number.isFinite(n) || n < 0) {
+      return NextResponse.json({ error: "مبلغ التوصيل مطلوب (اكتب 0 إن كان مجاناً)" }, { status: 400 });
+    }
+    if (n > 0 && n < 1000) {
+      return NextResponse.json({ error: "مبلغ التوصيل لا يقل عن 1000 دينار (أو صفر للمجاني)" }, { status: 400 });
+    }
+    deliveryAmount = n;
+  }
   // اختيار الفني (اختياري) — يُتحقَّق منه لاحقاً بعد معرفة مكتب المشترك
   const wantedTech = body?.technicianId != null ? Number(body.technicianId) : null;
   if (!subscriberId) return NextResponse.json({ error: "معرّف المشترك مطلوب" }, { status: 400 });
@@ -34,10 +48,23 @@ export async function POST(request: Request) {
 
   const sub = await prisma.subscriber.findFirst({
     where: { id: subscriberId, isDeleted: false },
-    select: { id: true, name: true, phone: true, netUser: true, towerId: true },
+    select: { id: true, name: true, phone: true, netUser: true, towerId: true, packageId: true },
   });
   if (!sub || !(await sameAgentTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
+  }
+
+  // سعر باقة المشترك — مصدر «مبلغ الاشتراك» على البطاقة. مقصور على باقات وكيل المستخدم
+  // (كي لا يُقرأ سعر وكيل آخر)، وهو نفسه السعر الذي يُحتسب عند التفعيل فلا يختلف رقمان.
+  let subAmount = 0;
+  let packageName: string | null = null;
+  if (operation === "توصيل" && sub.packageId != null) {
+    const pkg = await prisma.package.findFirst({
+      where: { id: sub.packageId, agentId: g.session?.agentId ?? -1, isDeleted: false },
+      select: { name: true, priceDinar: true },
+    });
+    subAmount = Math.max(0, Math.round(pkg?.priceDinar ?? 0));
+    packageName = pkg?.name ?? null;
   }
 
   // منع بطاقتين فعّالتين لنفس المشترك: إن كانت له بطاقة «مرفوعة» (غير محصّلة/اكمال) نرفض
@@ -78,6 +105,7 @@ export async function POST(request: Request) {
     `👤 اليوزر: ${sub.netUser?.trim() || "—"}`,  // (يبقى للمطابقة الآلية للمكافآت)
     `🧑 المشترك: ${sub.name?.trim() || "—"}`,    // اسم المشترك — يظهر بفتح البطاقة فقط
   ];
+  if (packageName) descLines.push(`📦 الباقة: ${packageName} (${subAmount.toLocaleString("en-US")} د.ع)`);
   if (extraPhone) descLines.push(`📞 هاتف إضافي: ${extraPhone}`);
   if (note) descLines.push(`📝 ملاحظة: ${note}`);
   // الفني: اختيار المستخدم صراحةً (يُتحقَّق من وكيله ومكتبه)، وإلا التوزيع التلقائي
@@ -102,7 +130,13 @@ export async function POST(request: Request) {
   const position = await prisma.taskCard.count({ where: { listId: list.id, isDeleted: false } });
   const card = await prisma.taskCard.create({
     // نوع البطاقة يُؤخذ تلقائياً من العملية (توصيل/تحويل/صيانة/اعادة) + ربط المشترك (لمنع التكرار)
-    data: { listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id, subAmount: subAmount > 0 ? subAmount : null, technicianId, assignee },
+    data: {
+      listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id,
+      subAmount: subAmount > 0 ? subAmount : null,
+      // مبلغ التوصيل يُثبَّت على البطاقة منذ إنشائها (والصفر يُخزَّن صفراً لا فراغاً — فرقٌ يعني «مجاناً بقرار»)
+      amount: deliveryAmount,
+      technicianId, assignee,
+    },
   });
   // أول حدث في سجل التغييرات: إنشاء البطاقة (تاريخه ووقته وفاعله)
   await appendCardHistory(card.id, g.session.fullName ?? g.session.username, "إنشاء البطاقة");

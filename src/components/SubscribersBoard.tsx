@@ -363,10 +363,19 @@ export default function SubscribersBoard() {
   function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); setOpsTech(""); setOpsTechs([]); }
   async function sendToField(operation: string) {
     if (!opsSub) return;
+    // مبلغ التوصيل إلزاميّ صراحةً: الفراغ ليس صفراً — «مجاناً» قرارٌ يُكتب لا يُفترَض
+    if (operation === "توصيل") {
+      const raw = opsAmount.trim();
+      if (raw === "") { setOpsMsg("اكتب مبلغ التوصيل (0 إن كان مجاناً)"); return; }
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) { setOpsMsg("مبلغ التوصيل غير صالح"); return; }
+      if (n > 0 && n < 1000) { setOpsMsg("مبلغ التوصيل لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
+    }
     setOpsBusy(true); setOpsMsg("");
     const res = await fetch("/api/field/from-subscriber", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriberId: opsSub.id, operation, extraPhone: opsPhone.trim() || undefined, note: opsNote.trim() || undefined, subAmount: operation === "توصيل" ? (Number(opsAmount) || 0) : undefined, technicianId: opsTech ? Number(opsTech) : undefined }),
+      // مبلغ الاشتراك لا يُرسل: الخادم يحسبه من باقة المشترك. والمُرسَل هو مبلغ التوصيل وحده.
+      body: JSON.stringify({ subscriberId: opsSub.id, operation, extraPhone: opsPhone.trim() || undefined, note: opsNote.trim() || undefined, amount: operation === "توصيل" ? Number(opsAmount) : undefined, technicianId: opsTech ? Number(opsTech) : undefined }),
     });
     setOpsBusy(false);
     if (res.ok) { setOpsMsg(`✓ تمت إضافة «${opsSub.name ?? ""}» إلى عمود «${operation}» في إدارة الفنيين`); closeOps(); }
@@ -773,8 +782,18 @@ export default function SubscribersBoard() {
                   <div className="ops-chip">{FIELD_OPS.find((o) => o.key === opsChosen)?.icon} {opsChosen}</div>
                   {opsChosen === "توصيل" && (
                     <>
-                      <label className="ops-lb amt">💵 مبلغ الاشتراك (يظهر على وجه البطاقة ليعرف الفني كم يأخذ من الزبون)</label>
-                      <input type="number" className="ops-in" value={opsAmount} onChange={(e) => setOpsAmount(e.target.value)} dir="ltr" placeholder="مثال: 25000" />
+                      {/* مبلغ الاشتراك: من باقة المشترك تلقائياً — لا يُكتب يدوياً (قرار محمد 2026-08-05) */}
+                      <label className="ops-lb amt">💵 مبلغ الاشتراك (تلقائي من باقة المشترك)</label>
+                      <div className="ops-in" style={{ background: "#f8fafc", fontWeight: 700, direction: "ltr", textAlign: "left" }}>
+                        {(packages.find((p) => p.id === opsSub.packageId)?.priceDinar ?? 0).toLocaleString("en-US")} د.ع
+                        <span style={{ float: "right", fontWeight: 400, color: "#64748b" }}>
+                          {packages.find((p) => p.id === opsSub.packageId)?.name ?? "بلا باقة"}
+                        </span>
+                      </div>
+                      {/* مبلغ التوصيل: يدويّ وإلزاميّ — يُكتب مرّة عند الإنشاء ويظهر على وجه البطاقة،
+                          فلا يُطلب من الفني عند الإنجاز. والصفر جائز لكن لا بدّ من كتابته صراحةً. */}
+                      <label className="ops-lb amt">🚚 مبلغ التوصيل (إلزامي — اكتب 0 إن كان مجاناً)</label>
+                      <input type="number" className="ops-in" value={opsAmount} onChange={(e) => setOpsAmount(e.target.value)} dir="ltr" placeholder="مثال: 5000 أو 0" />
                     </>
                   )}
                   <label className="ops-lb">رقم هاتف إضافي (اختياري)</label>

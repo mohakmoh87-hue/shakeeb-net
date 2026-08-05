@@ -84,6 +84,8 @@ export default function FieldManagementPage() {
   const [cardKind, setCardKind] = useState("صيانة");
   const [cardTech, setCardTech] = useState("");
   const [cardDue, setCardDue] = useState("");
+  // مبلغ التوصيل للبطاقة اليدوية: إلزاميّ لأنواع التوصيل ولو كان صفراً (قرار محمد 2026-08-05)
+  const [cardAmount, setCardAmount] = useState("");
   const [sel, setSel] = useState<Card | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
   const [postponing, setPostponing] = useState<Card | null>(null);
@@ -232,12 +234,23 @@ export default function FieldManagementPage() {
     const title = cardText.trim();
     if (!title) { setAddingTo(null); return; }
     const tech = technicians.find((t) => String(t.id) === cardTech);
+    // بطاقة توصيل يدوية: المبلغ يُكتب هنا مرّة واحدة ويظهر على وجهها، فلا يُسأل عنه الفني
+    let amt: number | undefined;
+    if (isDeliveryKind(cardKind)) {
+      const raw = cardAmount.trim();
+      if (raw === "") { alert("اكتب مبلغ التوصيل (0 إن كان مجاناً)"); return; }
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) { alert("مبلغ التوصيل غير صالح"); return; }
+      if (n > 0 && n < 1000) { alert("مبلغ التوصيل لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
+      amt = n;
+    }
     const payload = {
       listId, title, kind: cardKind,
       technicianId: tech?.id ?? null, assignee: tech?.name ?? null,
       dueDate: cardDue || null,
+      amount: amt,
     };
-    setCardText(""); setCardTech(""); setCardDue(""); setCardKind(cardTypes[0]?.name ?? "صيانة");
+    setCardText(""); setCardTech(""); setCardDue(""); setCardAmount(""); setCardKind(cardTypes[0]?.name ?? "صيانة");
     const r = await fetch("/api/field/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (r.ok) { const c = await r.json(); setCards((x) => [...x, c]); }
   }
@@ -574,9 +587,16 @@ export default function FieldManagementPage() {
                     {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
                     {faceNoteOf(c.description) && <div className="mt-0.5 text-xs text-slate-500">📝 {faceNoteOf(c.description)}</div>}
                     {c.techNote && <div className="mt-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">🗒️ {c.techNote}</div>}
-                    {/* بطاقة التوصيل فقط: مبلغ الاشتراك ظاهر على الوجه قبل فتح البطاقة (كم يأخذ الفني من الزبون) */}
+                    {/* بطاقة التوصيل: المبلغان على الوجه قبل فتح البطاقة — الاشتراك (من باقة
+                        المشترك تلقائياً) والتوصيل (كتبه المكتب عند الإنشاء). والتوصيل يظهر ولو
+                        كان صفراً: «مجاناً» خبرٌ يحتاجه الفني لا فراغ يُترك له. */}
                     {!c.done && isDeliveryKind(c.kind) && (c.subAmount ?? 0) > 0 && (
                       <div className="mt-1 rounded bg-indigo-50 px-1.5 py-1 text-xs font-bold text-indigo-700">💵 مبلغ الاشتراك: {Number(c.subAmount).toLocaleString("en-US")} د.ع</div>
+                    )}
+                    {!c.done && isDeliveryKind(c.kind) && c.amount != null && (
+                      <div className="mt-1 rounded bg-emerald-50 px-1.5 py-1 text-xs font-bold text-emerald-700">
+                        🚚 مبلغ التوصيل: {Number(c.amount) > 0 ? `${Number(c.amount).toLocaleString("en-US")} د.ع` : "مجاناً"}
+                      </div>
                     )}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
                       <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`} style={!isTech && typeColors[c.kind] ? { background: typeColors[c.kind] } : undefined}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
@@ -615,6 +635,9 @@ export default function FieldManagementPage() {
                         </select>
                       )}
                     </div>
+                    {isDeliveryKind(cardKind) && (
+                      <input type="number" value={cardAmount} onChange={(e) => setCardAmount(e.target.value)} dir="ltr" placeholder="مبلغ التوصيل (إلزامي — 0 للمجاني)" className="w-full rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1.5 text-xs" />
+                    )}
                     <input type="date" value={cardDue} onChange={(e) => setCardDue(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs" />
                     <div className="flex gap-1">
                       <button onClick={() => addCard(l.id)} className="flex-1 rounded-lg bg-mynet-blue px-3 py-1 text-sm font-semibold text-white">إضافة البطاقة</button>
@@ -1182,7 +1205,9 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   const fullFlow = !isDelivery;
   const [details, setDetails] = useState("");
   const [newUser, setNewUser] = useState("");
-  const [amount, setAmount] = useState(""); // «التوصيل» فقط: مبلغه المعلوماتي
+  const [amount, setAmount] = useState(""); // «التوصيل» فقط: مبلغه — للبطاقات القديمة بلا مبلغ مثبَّت
+  // المبلغ المثبَّت عند إنشاء بطاقة التوصيل: يُعرض ولا يُكتب (والصفر مبلغٌ مثبَّت لا فراغ)
+  const fixedAmount = isDelivery && card.amount != null ? Number(card.amount) : null;
   const [saleStr, setSaleStr] = useState("0"); // «المبيع»: يتزامن مع مجموع المواد حتى أول تعديل يدوي
   const [saleDirty, setSaleDirty] = useState(false);
   const [subStr, setSubStr] = useState(""); // «اشتراك»: إلزامي كتابته يدوياً ولو 0
@@ -1280,9 +1305,11 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   async function submit() {
     setErr("");
     if (isDelivery) {
-      // التوصيل كما هو: مبلغ معلوماتي، الصفر جائز، وما فوقه ≥ 1000
-      if (nAmount < 0) { setErr("المبلغ لا يكون سالباً"); return; }
-      if (nAmount > 0 && nAmount < 1000) { setErr("المبلغ لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
+      // المبلغ المثبَّت لا يُراجَع هنا — البطاقة هي المرجع. والقديمة (بلا مبلغ) تُفحص كما كانت.
+      if (fixedAmount == null) {
+        if (nAmount < 0) { setErr("المبلغ لا يكون سالباً"); return; }
+        if (nAmount > 0 && nAmount < 1000) { setErr("المبلغ لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
+      }
     } else {
       if (isTransfer && !newUser.trim()) { setErr("اليوزر الجديد مطلوب لإنجاز التحويل"); return; }
       if (fullFields) {
@@ -1302,7 +1329,8 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         cardId: card.id, serviceDetails: details, newUser,
-        amount: isDelivery ? nAmount : undefined,
+        // المبلغ المثبَّت لا يُرسَل: الخادم يقرأه من البطاقة نفسها فلا يُغيَّر من المتصفّح
+        amount: isDelivery && fixedAmount == null ? nAmount : undefined,
         sale: isDelivery ? undefined : nSale,
         subscription: isDelivery ? undefined : nSub,
         materials, useReward: rewardPulled, noSale,
@@ -1339,11 +1367,19 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
           </>
         )}
 
-        {/* التوصيل فقط: مبلغه المعلوماتي كما هو */}
-        {isDelivery && (<>
+        {/* التوصيل: المبلغ مثبَّت على البطاقة منذ إنشائها — يُعرض ولا يُكتب. والبطاقات
+            القديمة (بلا مبلغ مثبَّت) تُسأل كما كانت، فلا تعلق بطاقة بين نظامين. */}
+        {isDelivery && (fixedAmount != null ? (
+          <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <div className="text-xs font-semibold text-emerald-700">🚚 مبلغ التوصيل (مثبَّت عند إنشاء البطاقة)</div>
+            <div className="text-lg font-extrabold text-emerald-800" dir="ltr">
+              {fixedAmount > 0 ? `${fixedAmount.toLocaleString("en-US")} د.ع` : "مجاناً (0)"}
+            </div>
+          </div>
+        ) : (<>
           <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-slate-400">(0 = مجاني)</span></label>
           <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </>)}
+        </>))}
 
         {/* سلسلة قوائم المواد: الأولى إلزامية (مادة أو «بلا مبيع») وكل اختيار يُظهر قائمة جديدة */}
         {fullFlow && (
