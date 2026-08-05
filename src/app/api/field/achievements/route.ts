@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, getTechSession } from "@/lib/auth";
 import { computeAchievements } from "@/lib/achievements";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +17,11 @@ export async function GET(request: Request) {
   // كان الجدول الكامل مقصوراً على صلاحية إدارة الفنيين — والمسابقة بطبيعتها تُرى:
   // ترتيب فنيّي **كل المكاتب** معاً، لا ترتيب كل مكتب في جزيرته. ولا مال فيه ولا سرّ،
   // إنما عدد بطاقات وزمن إنجاز. وزرّ الشاشة في لوحة الفنيين يبقى للمدير كما طلب.
+  // ويراه **الفني من تطبيقه** أيضاً (طلب محمد): يعرف مرتبته ومقدار تقدّمه بنفسه.
   const session = await getSession();
-  if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
-  const agentId = session.agentId ?? null; // العزل بالوكيل لا بالمكتب
+  const tech = session ? null : await getTechSession();
+  if (!session && !tech) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  const agentId = session?.agentId ?? tech?.agentId ?? null; // العزل بالوكيل لا بالمكتب
   const from = (sp.get("from") ?? "").trim() || null;
   const to = (sp.get("to") ?? "").trim() || null;
 

@@ -137,6 +137,26 @@ export default function FieldManagementPage() {
   const [archiveModal, setArchiveModal] = useState(false);
   const [trashModal, setTrashModal] = useState(false); // سلّة محذوفات البطاقات
   const [achModal, setAchModal] = useState(false); // إنجازات الفنيين (للمدير)
+  // ===== مرتبة الفني في تطبيقه (طلب محمد 2026-08-05) =====
+  // الفني كان يعمل بلا أن يعرف أين هو من زملائه — والمسابقة بلا لوحة نتائج ليست مسابقة.
+  // يرى مرتبته ونقاطه ومعدّله، وبضغطة يفتح **نفس ترتيب المكاتب كلّه** الذي يراه المكتب.
+  const [myRank, setMyRank] = useState<{ rank: number; of: number; points: number; cards: number; avgMin: number | null } | null>(null);
+  useEffect(() => {
+    if (role !== "technician" || myTechId == null) return;
+    let stop = false;
+    fetch("/api/field/achievements")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (stop || !d?.rows) return;
+        const idx = (d.rows as { technicianId: number; points: number; cards: number; avgMin: number | null }[])
+          .findIndex((x) => x.technicianId === myTechId);
+        if (idx < 0) { setMyRank(null); return; }
+        const me = d.rows[idx];
+        setMyRank({ rank: idx + 1, of: d.rows.length, points: me.points, cards: me.cards, avgMin: me.avgMin });
+      })
+      .catch(() => {});
+    return () => { stop = true; };
+  }, [role, myTechId, cards.length]);
   const [dedModal, setDedModal] = useState(false);
   const [dedPending, setDedPending] = useState(0);
   // مواقع أعمدة أرسلها الفنيون من الأرض — بانتظار قبول المدير
@@ -684,6 +704,12 @@ export default function FieldManagementPage() {
           {/* إنجازات الفنيين: في شريط التطبيق أيضاً — كان في ترويسة المتصفّح وحدها فلا يراه
               المدير من هاتفه (تصحيح 2026-08-05) */}
           {canManage && <button onClick={() => setAchModal(true)} className="ftb">🏅 إنجازات الفنيين</button>}
+          {isTech && myRank && (
+            <button onClick={() => setAchModal(true)} className="ftb" title="اضغط لترتيب كل الفنيين">
+              🏅 مرتبتك {myRank.rank}/{myRank.of} · {myRank.points} نقطة
+              {myRank.avgMin != null ? ` · معدّل ${myRank.avgMin} د` : ""}
+            </button>
+          )}
           {canManage && <button onClick={() => setTypesModal(true)} className="ftb">⏱ الأنواع والأوقات</button>}
           <button onClick={() => setArchiveModal(true)} className="ftb">🗂️ الأرشيف</button>
           {canOperate && !isTech && <button onClick={() => setTrashModal(true)} className="ftb">🗑️ المحذوفة</button>}
