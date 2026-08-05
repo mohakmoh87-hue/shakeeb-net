@@ -1,20 +1,22 @@
 # كرون ليلي بديل لـ Vercel cron (الذي لا يعمل على Azure): بصمة خروج تلقائية للفنيين
 # المنسيّين + تنظيف الأرشيف + النسخ الاحتياطية اليومية بالبريد + مزامنة SAS لكل المكاتب —
 # من السحابة حتى لو كانت كل حواسيب المكاتب مغلقة (لوحات SAS على الإنترنت).
-# يستدعي /api/cron/auto-checkout المحميّة بـ CRON_SECRET.
 # الأسرار المطلوبة (موجودة): CRON_SECRET + APP_BASE_URL.
 #
-# ⚠️ سبب توقّفه ليلتَي 3 و4 آب 2026: الحاوية على minReplicas=0 فتنام بعد خمول خمس دقائق،
-# والاستدعاء كان **بلا إحماء ولا مهلة ولا إعادة محاولة** — فيصطدم بخادمٍ نائم فترجع 503
-# أو تنقطع المهلة، فيسقط الـworkflow بـexit 1 وتضيع النسخة الاحتياطية والمزامنة بصمت.
-# العلاج: إحماء أولاً، ثم استدعاء بمهلة واسعة (المزامنة تمسح آلاف المشتركين)، بثلاث
-# محاولات — ولا يُعلَن النجاح إلا بـ200 فعلي.
+# ⚠️ سبب الفشل من 1 آب 2026 حتى 5 آب: **مهلة بوابة Azure للطلب الواحد ~240 ثانية**.
+# كان الـworkflow ينادي المسار مرّة واحدة فينفّذ كل شيء (إغلاق البصمات + الأرشيف +
+# النسخ الاحتياطية + تنبيهات الخطة + مزامنة كل المكاتب). ولمّا كبرت البيانات تجاوز
+# المجموع الأربع دقائق فصارت البوابة تقطع الطلب — وكل تشغيل في سجل GitHub يفشل بعد
+# 4m تماماً. فضاعت النسخة الاحتياطية والمزامنة أربع ليالٍ بلا أن يعلم أحد.
+#
+# العلاج: نداءات قصيرة مستقلة — daily (ثوانٍ) ثم مزامنة **مكتب واحد لكل نداء**،
+# فلا يقترب أيّ نداء من المهلة. ومع إحماء أولاً لأن الحاوية تنام عند الخمول.
 name: auto-checkout-cron
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 21 * * *" # 21:15 UTC = 00:15 بغداد
+    - cron: "15 21 * * *" # 21:15 UTC = 00:15 بغداد (GitHub قد يؤخّر التنفيذ ساعات — مقبول)
 
 permissions:
   contents: read
@@ -22,22 +24,21 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: إيقاظ الخادم (الحاوية تنام عند الخمول)
         env:
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
         run: |
           set -uo pipefail
-          for i in 1 2 3 4 5 6 7 8 9 10; do
+          for i in $(seq 1 10); do
             code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$APP_BASE_URL/login" || echo 000)
             echo "احماء [$i]: $code"
-            if [ "$code" = "200" ]; then echo "الخادم مستيقظ"; exit 0; fi
+            [ "$code" = "200" ] && { echo "الخادم مستيقظ"; break; }
             sleep 15
           done
-          echo "لم يستيقظ الخادم بعد عشر محاولات — نكمل على أي حال"
 
-      - name: استدعاء كرون الخروج التلقائي + النسخ الاحتياطي + المزامنة
+      - name: المهام الليلية (بصمات + أرشيف + نسخ احتياطية + تنبيهات الخطة)
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
@@ -45,16 +46,42 @@ jobs:
           set -uo pipefail
           ok=0
           for i in 1 2 3; do
-            code=$(curl -s -o /tmp/resp -w "%{http_code}" --max-time 900 \
+            code=$(curl -s -o /tmp/daily -w "%{http_code}" --max-time 200 \
               -H "Authorization: Bearer $CRON_SECRET" \
-              "$APP_BASE_URL/api/cron/auto-checkout" || echo 000)
-            echo "المحاولة [$i]: $code"
-            head -c 2000 /tmp/resp 2>/dev/null || true
-            echo ""
-            if [ "$code" = "200" ]; then ok=1; break; fi
-            sleep 30
+              "$APP_BASE_URL/api/cron/auto-checkout?step=daily" || echo 000)
+            echo "المحاولة [$i]: $code"; head -c 1500 /tmp/daily 2>/dev/null; echo ""
+            [ "$code" = "200" ] && { ok=1; break; }
+            sleep 20
           done
-          if [ "$ok" != "1" ]; then
-            echo "::error::فشل الكرون الليلي بعد ثلاث محاولات — لا نسخة احتياطية ولا مزامنة هذه الليلة"
+          [ "$ok" = "1" ] || { echo "::error::فشلت المهام الليلية — لا نسخة احتياطية هذه الليلة"; exit 1; }
+
+      - name: مزامنة SAS — مكتب واحد لكل نداء (تفادياً لمهلة البوابة)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+        run: |
+          set -uo pipefail
+          code=$(curl -s -o /tmp/list -w "%{http_code}" --max-time 120 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/auto-checkout?step=list" || echo 000)
+          [ "$code" = "200" ] || { echo "::error::تعذّر جلب قائمة المكاتب ($code)"; exit 1; }
+          ids=$(grep -o '"id":[0-9]*' /tmp/list | grep -o '[0-9]*' | tr '\n' ' ')
+          echo "المكاتب المفعَّلة: $ids"
+          failed=""
+          for id in $ids; do
+            done_ok=0
+            for i in 1 2; do
+              code=$(curl -s -o /tmp/sync -w "%{http_code}" --max-time 220 \
+                -H "Authorization: Bearer $CRON_SECRET" \
+                "$APP_BASE_URL/api/cron/auto-checkout?step=sync&officeId=$id" || echo 000)
+              echo "مكتب $id — محاولة [$i]: $code"; head -c 800 /tmp/sync 2>/dev/null; echo ""
+              [ "$code" = "200" ] && { done_ok=1; break; }
+              sleep 20
+            done
+            [ "$done_ok" = "1" ] || failed="$failed $id"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::فشلت مزامنة المكاتب:$failed"
             exit 1
           fi
+          echo "اكتملت مزامنة كل المكاتب"

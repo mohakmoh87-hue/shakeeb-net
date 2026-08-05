@@ -16,6 +16,43 @@ export async function GET(request: Request) {
   if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   }
+
+  // ===== تقسيم العمل إلى خطوات قصيرة (تشخيص 2026-08-05) =====
+  // بوابة Azure تقطع أي طلب يتجاوز ~240 ثانية. وكان هذا المسار ينفّذ كل شيء في
+  // نداء واحد: إغلاق البصمات + تنظيف الأرشيف + النسخ الاحتياطية + تنبيهات الخطة +
+  // مزامنة كل المكاتب. فلمّا كبرت البيانات تجاوز المجموع الأربع دقائق، فصارت البوابة
+  // تقطع الطلب ويسقط الكرون بـexit 1 — وتضيع النسخة الاحتياطية والمزامنة بصمت.
+  // (سجل GitHub: كل تشغيل يفشل بعد 4m تماماً منذ 1 آب.)
+  // الآن: step=list يعطي قائمة المكاتب، وstep=sync&officeId يزامن مكتباً واحداً،
+  // وstep=daily ينفّذ المهام غير المزامنة. وبلا step يبقى السلوك القديم (توافق).
+  const sp = new URL(request.url).searchParams;
+  const step = (sp.get("step") ?? "").trim();
+
+  if (step === "list") {
+    const offices = await prisma.tower.findMany({
+      where: { isDeleted: false, syncEnabled: "1" },
+      select: { id: true, name: true },
+      orderBy: { id: "asc" },
+    });
+    return NextResponse.json({ ok: true, offices });
+  }
+
+  if (step === "sync") {
+    const officeId = Number(sp.get("officeId"));
+    if (!officeId) return NextResponse.json({ error: "officeId مطلوب" }, { status: 400 });
+  
+  const { runOfficeSync } = await import("@/lib/subscriptionSync");
+    try {
+      const sr = await runOfficeSync(officeId, { notify: false });
+      return NextResponse.json({
+        ok: true, office: sr.office,
+        checked: sr.phase2?.checked ?? 0, activations: sr.phase1?.activations ?? 0,
+        phantom: sr.phase1?.phantom ?? 0, error: sr.error ?? null,
+      });
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
+    }
+  }
   const r = await runAutoCheckout({ resetSupport: true }); // المهمة الليلية: أنهِ كل دعم نشط لليوم الجديد
   // تنظيف الأرشيف: حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (لا يعتمد على حواسيب المكاتب)
   const { purgeOldArchivedCards } = await import("@/lib/field");
@@ -32,6 +69,11 @@ export async function GET(request: Request) {
   // على الإنترنت فتُنفَّذ خادمياً. notify=false: بيانات فقط بلا تقرير (يتفادى ازدواج تقرير
   // المكتب الذي يُرسله المجدول المحلي عند وقت المزامنة). قفل التزامن يمنع أي تعارض.
   const { runOfficeSync } = await import("@/lib/subscriptionSync");
+  // خطوة daily: كل المهام الليلية عدا المزامنة — تنتهي في ثوانٍ فلا تُقطع
+  if (step === "daily") {
+    return NextResponse.json({ ok: true, closed: r.closed, purgedArchive: purged, backups, planWarnings });
+  }
+
   const syncOffices = await prisma.tower.findMany({
     where: { isDeleted: false, syncEnabled: "1" },
     select: { id: true },
