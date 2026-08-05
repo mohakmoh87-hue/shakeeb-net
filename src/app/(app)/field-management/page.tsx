@@ -681,6 +681,9 @@ export default function FieldManagementPage() {
               {dedPending > 0 && <i className="fbadge">{dedPending}</i>}
             </button>
           )}
+          {/* إنجازات الفنيين: في شريط التطبيق أيضاً — كان في ترويسة المتصفّح وحدها فلا يراه
+              المدير من هاتفه (تصحيح 2026-08-05) */}
+          {canManage && <button onClick={() => setAchModal(true)} className="ftb">🏅 إنجازات الفنيين</button>}
           {canManage && <button onClick={() => setTypesModal(true)} className="ftb">⏱ الأنواع والأوقات</button>}
           <button onClick={() => setArchiveModal(true)} className="ftb">🗂️ الأرشيف</button>
           {canOperate && !isTech && <button onClick={() => setTrashModal(true)} className="ftb">🗑️ المحذوفة</button>}

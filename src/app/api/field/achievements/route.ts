@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { guard } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { computeAchievements } from "@/lib/achievements";
 
@@ -14,14 +13,13 @@ export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams;
   const leaderOnly = sp.get("leader") === "1";
 
-  // المتصدّر وحده يُعرض في الشاشة الرئيسية لكل من يرى لوحة الفنيين؛ أمّا الجدول الكامل
-  // فللمدير حصراً (فيه أداء كل فنيّ مقارناً بغيره).
-  const session = leaderOnly ? await getSession() : null;
-  if (leaderOnly && !session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
-  const g = leaderOnly ? null : await guard("field.manage");
-  if (g?.error) return g.error;
-
-  const agentId = leaderOnly ? session?.agentId ?? null : g?.session?.agentId ?? null;
+  // ===== الترتيب يراه كل مكاتب الوكيل (تصحيح محمد 2026-08-05) =====
+  // كان الجدول الكامل مقصوراً على صلاحية إدارة الفنيين — والمسابقة بطبيعتها تُرى:
+  // ترتيب فنيّي **كل المكاتب** معاً، لا ترتيب كل مكتب في جزيرته. ولا مال فيه ولا سرّ،
+  // إنما عدد بطاقات وزمن إنجاز. وزرّ الشاشة في لوحة الفنيين يبقى للمدير كما طلب.
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  const agentId = session.agentId ?? null; // العزل بالوكيل لا بالمكتب
   const from = (sp.get("from") ?? "").trim() || null;
   const to = (sp.get("to") ?? "").trim() || null;
 
