@@ -42,6 +42,12 @@ export function weightOfKind(kind: string | null | undefined): number {
   return DEFAULT_WEIGHT;
 }
 
+// ===== التوصيل خارج معادلة الوقت تماماً (تصحيح محمد 2026-08-05) =====
+// بطاقة التوصيل مستثناة أصلاً من «بدء» فلا زمن لها، وما وُجد منها بزمنٍ شاذّ (٣ بطاقات
+// في فترة تموز) كان يلوّث متوسط الفئة ومتوسط الفني. الآن: **لا تدخل الوقت إطلاقاً** —
+// لا في المتوسطات ولا في معامل السرعة — وتُحسب في العدد بنصف نقطة ثابتة للواحدة.
+export const isDeliveryKind = (kind: string | null | undefined) => (kind ?? "").includes("توصيل");
+
 // زمنٌ يتجاوز ٤ ساعات = نسيانُ ضغط «إنجاز» غالباً لا عملٌ فعليّ — يُعرض ولا يُفسد المتوسط
 export const MAX_VALID_SEC = 4 * 3600;
 const SPEED_MIN = 0.6, SPEED_MAX = 1.6; // حدّا معامل السرعة (الصعوبة تغلب السرعة عمداً)
@@ -103,6 +109,7 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
   // متوسط زمن كل فئة عبر **كل الفنيين** — هو المرجع الذي تُقاس عليه سرعة كلٍّ منهم
   const kindTimes = new Map<string, number[]>();
   for (const c of comps) {
+    if (isDeliveryKind(c.kind)) continue; // التوصيل لا يدخل الوقت إطلاقاً
     const d = c.durationSec ?? 0;
     if (d > 0 && d <= MAX_VALID_SEC) {
       const k = norm(c.kind) || "—";
@@ -128,9 +135,9 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
     const k = norm(c.kind) || "—";
     const weight = weightOfKind(k);
     const d = c.durationSec ?? 0;
-    const valid = d > 0 && d <= MAX_VALID_SEC;
+    // التوصيل: خارج الوقت كلّياً ⇒ زمنه لا يُحتسب ومعامل سرعته ١ دائماً ⇒ نصف نقطة ثابتة
+    const valid = !isDeliveryKind(k) && d > 0 && d <= MAX_VALID_SEC;
     const avg = kindAvgSec.get(k);
-    // معامل السرعة: متوسط الفئة ÷ زمنه فيها. بلا زمن صالح ⇒ ١ (محايد — والتوصيل كلّه هكذا)
     const speed = valid && avg ? Math.min(SPEED_MAX, Math.max(SPEED_MIN, avg / d)) : 1;
 
     const a: Acc = acc.get(c.technicianId) ?? { cards: 0, points: 0, timedSec: [] as number[], kinds: new Map() };
