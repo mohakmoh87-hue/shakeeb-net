@@ -84,5 +84,8 @@ export async function POST(request: Request) {
   // وإلا نسي النظام مكتباً وصار المدير عاجزاً عن الأخذ/الإعطاء فيه
   const { ensureAccountsForNewOffice } = await import("@/lib/managers");
   await ensureAccountsForNewOffice(agentId, created.id).catch(() => {});
+  // ومخزنه يُولد بكتالوج الوكيل كاملاً بكمية صفر — فلا يبدأ مكتبٌ جديد بشاشة مخزنٍ فارغة
+  const { ensureOfficeCatalog } = await import("@/lib/itemCatalog");
+  await ensureOfficeCatalog(agentId, [created.id], { force: true }).catch(() => {});
   return NextResponse.json(created, { status: 201 });
 }

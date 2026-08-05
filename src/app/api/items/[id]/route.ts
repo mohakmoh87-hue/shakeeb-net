@@ -26,10 +26,31 @@ export async function PUT(
   const body = await request.json().catch(() => null);
 
   // منع تعديل مادة مكتب آخر
-  const existing = await prisma.item.findUnique({ where: { id: Number(id) }, select: { towerId: true, count: true } });
+  const existing = await prisma.item.findUnique({ where: { id: Number(id) }, select: { towerId: true, count: true, name: true } });
   if (!existing || !(await ownsTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
+
+  // ===== قيد تدقيق لكل تغيير كمية (قرار محمد 2026-08-05) =====
+  // كانت الكمية تُكتب فوق الكمية بلا أثر: من صفر إلى خمسين بلا اسمٍ ولا وقت ولا رقم سابق.
+  // فلو اختلف المخزن عن الواقع لما أمكن معرفة متى بدأ الخلل ولا بيد مَن. الآن كل تغيير يُسجَّل.
+  const logQty = async (before: number, after: number) => {
+    if (before === after) return;
+    const up = after > before;
+    await prisma.auditLog.create({
+      data: {
+        userId: g.session?.userId ?? null,
+        action: up ? "ITEM_QTY_UP" : "ITEM_QTY_DOWN",
+        entity: "item",
+        entityId: String(id),
+        details:
+          (up ? "زيادة كمية «" : "إنقاص كمية «") + (existing.name ?? id) + "» من " + before + " إلى " + after +
+          " (" + (up ? "+" : "−") + Math.abs(after - before) + ")" +
+          " — مكتب " + (existing.towerId ?? "—") +
+          (g.session?.fullName || g.session?.username ? " — بواسطة " + (g.session.fullName ?? g.session.username) : ""),
+      },
+    }).catch(() => { /* لا نُفشل التعديل بسبب القيد */ });
+  };
 
   // ===== المستخدم العادي: زيادة الكمية حصراً =====
   if (!g.session?.isAdmin) {
@@ -43,6 +64,7 @@ export async function PUT(
       );
     }
     const bumped = await prisma.item.update({ where: { id: Number(id) }, data: { count: q.data.count } });
+    await logQty(current, q.data.count);
     return NextResponse.json(bumped);
   }
 
@@ -58,6 +80,8 @@ export async function PUT(
     where: { id: Number(id) },
     data: parsed.data,
   });
+  // حتى تعديل المدير يُسجَّل — فالسجل لا يُفيد إن كان يوثّق نصف الأيدي
+  if (parsed.data.count != null) await logQty(existing.count ?? 0, parsed.data.count);
   return NextResponse.json(updated);
 }
 

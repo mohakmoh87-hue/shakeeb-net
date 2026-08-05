@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, towerScope, ownsTower } from "@/lib/guard";
+import { guard, towerScope, ownsTower, agentTowerIds } from "@/lib/guard";
+import { ensureOfficeCatalog, clearCatalogCache } from "@/lib/itemCatalog";
 
 const schema = z.object({
   name: z.string().min(1, "اسم المادة مطلوب"),
@@ -19,12 +20,29 @@ export async function GET(request: Request) {
   if (g.error) return g.error;
 
   // مخزن مستقل لكل مكتب؛ المدير يرى كل المكاتب — مع فلتر اختياري بمكتب معيّن (officeId)
-  const officeId = Number(new URL(request.url).searchParams.get("officeId")) || null;
+  const sp = new URL(request.url).searchParams;
+  const officeId = Number(sp.get("officeId")) || null;
+  // فاتورة المبيع تطلب المتوفّر فقط: ما رصيده صفر يُعرض في المخزن ليُزاد، ولا يُعرض للبيع
+  const inStockOnly = sp.get("inStock") === "1";
   const scope = await towerScope(g.session);
   // الفلتر لا يتجاوز العزل: يُطبَّق فقط إن كان المكتب يتبع الوكيل
   const officeFilter = officeId != null && (await ownsTower(g.session, officeId)) ? { towerId: officeId } : {};
+
+  // كتالوج الوكيل: أسماء المدير تظهر في كل مكتب ولو بصفر — يُستكمل الناقص عند أول فتح
+  // للشاشة (شفاء ذاتي، فلا يحتاج مكتبٌ جديد ولا مادةٌ جديدة تدخّلاً يدوياً)
+  const ensureIds =
+    officeId != null && (await ownsTower(g.session, officeId))
+      ? [officeId]
+      : g.session && !g.session.isAdmin && g.session.towerId != null
+        ? [g.session.towerId]
+        : await agentTowerIds(g.session);
+  await ensureOfficeCatalog(g.session?.agentId ?? null, ensureIds).catch(() => {});
+
   const items = await prisma.item.findMany({
-    where: { isDeleted: false, ...scope, ...officeFilter },
+    where: {
+      isDeleted: false, ...scope, ...officeFilter,
+      ...(inStockOnly ? { count: { gt: 0 } } : {}),
+    },
     orderBy: { id: "asc" },
   });
   // كلفة الشراء سرّ إداري: تُحجب عن غير المدير من الردّ نفسه (لا إخفاءً بالواجهة فقط).
@@ -61,5 +79,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   }
   const created = await prisma.item.create({ data: { ...parsed.data, towerId } });
+  // المادة الجديدة تظهر فوراً في كل مكاتب الوكيل بكمية صفر — فمن اشتراها يزيد كميته بنفسه
+  clearCatalogCache();
+  await ensureOfficeCatalog(g.session?.agentId ?? null, await agentTowerIds(g.session), { force: true }).catch(() => {});
   return NextResponse.json(created, { status: 201 });
 }

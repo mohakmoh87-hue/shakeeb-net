@@ -65,7 +65,9 @@ export default function NewInvoicePage() {
   const rewardLookup = useRef<Promise<{ balance: number } | null> | null>(null); // استعلام الرصيد الجاري
 
   useEffect(() => {
-    fetch(`/api/items${officeSel ? `?officeId=${officeSel}` : ""}`).then((r) => void (r.ok && r.json().then(setItems)));
+    // المتوفّر فقط: أسماء المدير تظهر في المخزن ولو بصفر ليزيدها المستخدم، أمّا البيع
+    // فلا يُعرض فيه ما ليس في الرفّ — وإلا بيع رصيدٌ لا وجود له (قرار محمد 2026-08-05)
+    fetch(`/api/items?inStock=1${officeSel ? `&officeId=${officeSel}` : ""}`).then((r) => void (r.ok && r.json().then(setItems)));
   }, [officeSel]);
   useEffect(() => {
     fetch("/api/towers").then((r) => (r.ok ? r.json() : [])).then((ts: Office[]) => setOffices(ts)).catch(() => {});
