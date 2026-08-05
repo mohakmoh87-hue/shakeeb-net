@@ -189,7 +189,16 @@ function TransferModal({ item, towers, atOffice, onClose, onDone }: { item: Item
   const [toTower, setToTower] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const dests = towers.filter((t) => t.id !== item.towerId);
+  // مكاتب الوجهة تُجلب من مسار الترحيل نفسه: قائمة /api/towers مقصورة على مكتب
+  // المستخدم، فكانت هذه القائمة تظهر **فارغة** لمستخدم المكتب فلا يستطيع الترحيل.
+  const [agentTowers, setAgentTowers] = useState<Tower[]>([]);
+  useEffect(() => {
+    fetch("/api/inventory/transfer")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.offices) setAgentTowers(d.offices); })
+      .catch(() => {});
+  }, []);
+  const dests = (agentTowers.length ? agentTowers : towers).filter((t) => t.id !== item.towerId);
 
   async function submit() {
     setErr("");
@@ -216,7 +225,7 @@ function TransferModal({ item, towers, atOffice, onClose, onDone }: { item: Item
         <L label="الكمية"><Inp value={qty} onChange={setQty} type="number" /></L>
         <L label="إلى مكتب">
           <select value={toTower} onChange={(e) => setToTower(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value="">اختر المكتب…</option>
+            <option value="">{dests.length ? "اختر المكتب…" : "لا مكتب آخر لوكيلك"}</option>
             {dests.map((t) => <option key={t.id} value={t.id}>{t.name ?? `#${t.id}`}</option>)}
           </select>
         </L>

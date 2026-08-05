@@ -11,6 +11,22 @@ const schema = z.object({
   toTowerId: z.coerce.number().int().positive(),
 });
 
+// ===== مكاتب الوجهة المتاحة للترحيل (تصحيح 2026-08-05) =====
+// كانت قائمة «إلى مكتب» تُبنى من /api/towers — وهي مقصورة على مكتب المستخدم نفسه، فيراها
+// **فارغة تماماً** ولا يستطيع الترحيل أصلاً. والترحيل بطبيعته إلى مكتب آخر من مكاتب وكيله،
+// وهذا ما يتحقّق منه POST نفسه. فهنا تُعطى الأسماء وحدها (بلا أي بيانات مكتب أخرى).
+export async function GET() {
+  const g = await guard("inventory.manage");
+  if (g.error) return g.error;
+  const ids = await agentTowerIds(g.session);
+  const offices = await prisma.tower.findMany({
+    where: { id: { in: ids.length ? ids : [-1] }, isDeleted: false },
+    select: { id: true, name: true },
+    orderBy: { id: "asc" },
+  });
+  return NextResponse.json({ offices });
+}
+
 // ترحيل مادة من مخزن مكتب إلى مكتب آخر (عند وفرة مادة بمكتب ونفادها بآخر).
 // يُنقِص من مخزن المصدر ويزيد في مخزن الوجهة (يُنشئ المادة هناك إن لم توجد).
 export async function POST(request: Request) {

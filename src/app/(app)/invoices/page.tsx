@@ -35,7 +35,6 @@ export default function NewInvoicePage() {
   const [offices, setOffices] = useState<Office[]>([]);
   const [officeSel, setOfficeSel] = useState<number | "">("");
   const [lines, setLines] = useState<Line[]>([]);
-  const [pick, setPick] = useState<number | "">("");
   const [itemQuery, setItemQuery] = useState(""); // بحث عن مادة
   const [paid, setPaid] = useState("");
   const [note, setNote] = useState("");
@@ -118,16 +117,14 @@ export default function NewInvoicePage() {
     return () => clearTimeout(t);
   }, [subQuery, sub]);
 
-  function addLine() {
-    if (!pick) return;
-    const it = items.find((i) => i.id === pick);
-    if (!it) return;
-    if (lines.some((l) => l.itemId === it.id)) return;
+  // إضافة مادة بضغطة واحدة على سطرها (كانت: اختَر من قائمة منسدلة ثم اضغط «إضافة»)
+  function addItem(it: Item) {
+    if (lines.some((l) => l.itemId === it.id)) { setItemQuery(""); return; }
     setLines((ls) => [
       ...ls,
       { itemId: it.id, name: it.name ?? `#${it.id}`, count: 1, price: it.priceSale ?? 0 },
     ]);
-    setPick("");
+    setItemQuery("");
   }
 
   function updateLine(itemId: number, field: "count" | "price", value: number) {
@@ -237,36 +234,61 @@ export default function NewInvoicePage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         {/* الأصناف */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          {/* بحث عن مادة + الاختيار (القائمة تتصفّى بالبحث فوراً) */}
-          <div className="mb-2">
+          {/* ===== اختيار المادة: بحثٌ فوري وبطاقات تُضاف بضغطة (طلب محمد 2026-08-05) =====
+              كانت قائمةً منسدلة بسطورٍ متلاصقة: تنزل فيها تقرأ عشرات المواد لتجد واحدة،
+              ثم تضغط زرّاً ثانياً لإضافتها. الآن: تكتب أول حرفين فتَظهر، وتضغطها فتُضاف. */}
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-2">
             <input
               value={itemQuery}
               onChange={(e) => setItemQuery(e.target.value)}
-              placeholder="🔍 ابحث عن مادة بالاسم..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                const hits = items.filter((i) => !itemQuery.trim() || (i.name ?? "").toLowerCase().includes(itemQuery.trim().toLowerCase()));
+                if (hits.length === 1) addItem(hits[0]); // نتيجةٌ واحدة ⇒ Enter يضيفها
+              }}
+              placeholder="🔍 اكتب اسم المادة… ثم اضغط عليها لإضافتها"
+              className="mb-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-mynet-blue"
             />
-          </div>
-          <div className="mb-4 flex gap-2">
-            <select
-              value={pick}
-              onChange={(e) => setPick(Number(e.target.value) || "")}
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
-            >
-              <option value="">— اختر مادة لإضافتها —</option>
-              {items
-                .filter((i) => !itemQuery.trim() || (i.name ?? "").toLowerCase().includes(itemQuery.trim().toLowerCase()))
-                .map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({fmt(i.priceSale ?? 0)} د.ع) — متوفر: {i.count ?? 0}
-                  </option>
-                ))}
-            </select>
-            <button
-              onClick={addLine}
-              className="rounded-lg bg-mynet-blue px-4 py-2 font-semibold text-white hover:bg-mynet-blue-dark"
-            >
-              + إضافة
-            </button>
+            {(() => {
+              const qq = itemQuery.trim().toLowerCase();
+              const hits = items.filter((i) => !qq || (i.name ?? "").toLowerCase().includes(qq));
+              if (items.length === 0) return <div className="py-6 text-center text-sm text-slate-400">لا مواد متوفّرة في مخزن هذا المكتب</div>;
+              if (hits.length === 0) return <div className="py-6 text-center text-sm text-slate-400">لا مادة باسم «{itemQuery}»</div>;
+              return (
+                <div className="max-h-64 space-y-1.5 overflow-y-auto pl-1">
+                  {hits.map((i) => {
+                    const added = lines.some((l) => l.itemId === i.id);
+                    const qty = i.count ?? 0;
+                    return (
+                      <button
+                        key={i.id}
+                        onClick={() => addItem(i)}
+                        disabled={added}
+                        className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-right transition ${
+                          added
+                            ? "cursor-default border-emerald-200 bg-emerald-50"
+                            : "border-slate-200 bg-white hover:border-mynet-blue hover:bg-sky-50 active:scale-[.99]"
+                        }`}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold text-slate-800">{i.name ?? `#${i.id}`}</span>
+                          <span className="block text-[11px] text-slate-500">
+                            متوفّر: <b className={qty > 3 ? "text-emerald-600" : "text-amber-600"}>{qty}</b>
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-left">
+                          <span className="block text-sm font-extrabold text-mynet-blue" dir="ltr">{fmt(i.priceSale ?? 0)}</span>
+                          <span className="block text-[10px] text-slate-400">د.ع</span>
+                        </span>
+                        <span className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold ${added ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}>
+                          {added ? "أُضيفت ✓" : "+ إضافة"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           <table className="w-full text-right text-sm">
