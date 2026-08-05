@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import DateRangeFilter from "@/components/DateRangeFilter";
 import { formatDateTime } from "@/lib/format";
 
 type Stat = { packageId: number; name: string | null; price: number | null; available: number };
@@ -24,6 +25,7 @@ export default function CardsPage() {
   const [uFrom, setUFrom] = useState("");  // من تاريخ الاستخدام
   const [uTo, setUTo] = useState("");      // إلى تاريخ الاستخدام
   const [uMatched, setUMatched] = useState(0);
+  const [uDateOn, setUDateOn] = useState(false); // مطفأ = كل التواريخ
   const [uLoading, setULoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [view, setView] = useState<"stock" | "available" | "used">("stock");
@@ -63,7 +65,7 @@ export default function CardsPage() {
   }, []);
   useEffect(() => {
     // تأجيلٌ بدورة واحدة: نداء يضبط الحالة داخل التأثير مباشرةً يُشعل إعادة تصيير متتالية
-    if (view === "used") { const t = setTimeout(() => loadUsed(uq, uFrom, uTo), 0); return () => clearTimeout(t); }
+    if (view === "used") { const t = setTimeout(() => loadUsed(uq, uDateOn ? uFrom : "", uDateOn ? uTo : ""), 0); return () => clearTimeout(t); }
     if (view === "available") loadAvail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, loadAvail, loadUsed]);
@@ -192,27 +194,21 @@ export default function CardsPage() {
             <input
               value={uq}
               onChange={(e) => setUq(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") loadUsed(uq, uFrom, uTo); }}
+              onKeyDown={(e) => { if (e.key === "Enter") loadUsed(uq, uDateOn ? uFrom : "", uDateOn ? uTo : ""); }}
               placeholder="🔍 سيريال الكارت، أو اسم المشترك، أو من سحبه…"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
             />
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">من تاريخ</label>
-            <input type="date" value={uFrom} onChange={(e) => setUFrom(e.target.value)} dir="ltr"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">إلى تاريخ</label>
-            <input type="date" value={uTo} onChange={(e) => setUTo(e.target.value)} dir="ltr"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
-          </div>
-          <button onClick={() => loadUsed(uq, uFrom, uTo)} disabled={uLoading}
+          <DateRangeFilter
+            on={uDateOn} setOn={setUDateOn} from={uFrom} setFrom={setUFrom} to={uTo} setTo={setUTo}
+            onChange={(onNow, f, t) => loadUsed(uq, onNow ? f : "", onNow ? t : "")}
+          />
+          <button onClick={() => loadUsed(uq, uDateOn ? uFrom : "", uDateOn ? uTo : "")} disabled={uLoading}
             className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
             {uLoading ? "…" : "🔍 بحث"}
           </button>
-          {(uq || uFrom || uTo) && (
-            <button onClick={() => { setUq(""); setUFrom(""); setUTo(""); loadUsed("", "", ""); }}
+          {(uq || uDateOn) && (
+            <button onClick={() => { setUq(""); setUFrom(""); setUTo(""); setUDateOn(false); loadUsed("", "", ""); }}
               className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
           )}
           <span className="mr-auto self-center text-xs font-semibold text-slate-500">
@@ -226,7 +222,7 @@ export default function CardsPage() {
             </thead>
             <tbody>
               {used.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-slate-400">{uq || uFrom || uTo ? "لا كارت يطابق بحثك" : "لا توجد كروت مستخدمة"}</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-slate-400">{uq || uDateOn ? "لا كارت يطابق بحثك" : "لا توجد كروت مستخدمة"}</td></tr>
               ) : used.map((c) => (
                 <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="p-3">{c.id}</td>

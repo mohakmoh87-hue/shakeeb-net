@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import DateRangeFilter from "@/components/DateRangeFilter";
 import PrintNowButton from "@/components/PrintNowButton";
 import { usePermission } from "@/lib/usePermission";
 import { askVoidEffect } from "@/lib/voidPrompt";
@@ -34,6 +35,7 @@ export default function SoldItemsReport() {
 
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [dateOn, setDateOn] = useState(false); // الافتراض: كل التواريخ
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -82,27 +84,23 @@ export default function SoldItemsReport() {
 
       {/* الفلاتر: تاريخ (من/إلى) + بحث حر بأي شيء */}
       <div className="no-print mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">من تاريخ</label>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">إلى تاريخ</label>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
-        </div>
+        <DateRangeFilter
+          on={dateOn} setOn={setDateOn} from={from} setFrom={setFrom} to={to} setTo={setTo}
+          onChange={(onNow, f, t) => load(onNow ? f : "", onNow ? t : "", q)}
+        />
         <div className="min-w-[220px] flex-1">
           <label className="mb-1 block text-xs font-medium text-slate-600">بحث حر</label>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") load(from, to, q); }}
+            onKeyDown={(e) => { if (e.key === "Enter") load(dateOn ? from : "", dateOn ? to : "", q); }}
             placeholder="اسم مادة، مشترٍ، فني، نوع، رقم وصل، مبلغ…"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
           />
         </div>
-        <button onClick={() => load(from, to, q)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
+        <button onClick={() => load(dateOn ? from : "", dateOn ? to : "", q)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
         {(from || to || q) && (
-          <button onClick={() => { setFrom(""); setTo(""); setQ(""); load("", "", ""); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
+          <button onClick={() => { setFrom(""); setTo(""); setQ(""); setDateOn(false); load("", "", ""); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
         )}
       </div>
 

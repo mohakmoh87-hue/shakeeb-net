@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import MoneyTxModal from "@/components/MoneyTxModal";
+import DateRangeFilter from "@/components/DateRangeFilter";
 import { formatDateTime } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 import { askVoidEffect } from "@/lib/voidPrompt";
@@ -78,6 +79,8 @@ export default function CashboxPage() {
   const [officeId, setOfficeId] = useState<number | "">("");
   // فلتر حساب واحد (نثرية مثلاً) — يسار البحث الحرّ، فالبحث كان يبتلع الشريط كلّه
   const [accFilter, setAccFilter] = useState<number | "">("");
+  // مفتاح المدى: مطفأ = كل التواريخ (يُشعَل تلقائياً إن وصل الرابط بتاريخ من بطاقة الرئيسية)
+  const [dateOn, setDateOn] = useState(false);
   // ===== مكاتب التسديد: ما عليها، وتسديده كلّه أو بعضه =====
   const [settleOffices, setSettleOffices] = useState<SettleOffice[]>([]);
   const [openOffice, setOpenOffice] = useState<number | null>(null); // المكتب المفتوحة تفاصيله
@@ -131,6 +134,7 @@ export default function CashboxPage() {
     const office: number | "" = Number.isFinite(uo) && uo > 0 ? uo : "";
     if (uf) setFrom(uf);
     if (ut) setTo(ut);
+    if (uf || ut) setDateOn(true); // جئت من بطاقة تحمل تاريخاً ⇒ المدى مُفعَّل
     setTypeFilter(uk);
     setOfficeId(office);
     load(uf, ut, q, uk, office, "");
@@ -375,14 +379,10 @@ export default function CashboxPage() {
 
       {/* بحث بالتاريخ (من – إلى) — يشمل اليومين، والإجماليات أعلاه تعكس النتيجة */}
       <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">من تاريخ</label>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600">إلى تاريخ</label>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
-        </div>
+        <DateRangeFilter
+          on={dateOn} setOn={setDateOn} from={from} setFrom={setFrom} to={to} setTo={setTo}
+          onChange={(onNow, f, t) => load(onNow ? f : "", onNow ? t : "", q, typeFilter, officeId, accFilter)}
+        />
         {/* اختيار حساب بعينه (نثرية مثلاً) — يسار البحث الحرّ الذي كان يبتلع الشريط */}
         <div className="w-[180px]">
           <label className="mb-1 block text-xs font-medium text-slate-600">الحساب</label>

@@ -11,11 +11,13 @@ export async function GET(request: Request) {
   const fromStr = url.searchParams.get("from");
   const toStr = url.searchParams.get("to");
 
+  // ?all=1 ⇒ كل التواريخ (لا مدى) — انظر تعليق التقرير التفصيلي
+  const allDates = url.searchParams.get("all") === "1";
   const from = fromStr ? new Date(fromStr) : new Date(new Date().setDate(1));
   const to = toStr ? new Date(toStr) : new Date();
   to.setHours(23, 59, 59, 999);
 
-  const where = { isDeleted: false, date: { gte: from, lte: to }, ...(await towerScope(g.session)) };
+  const where = { isDeleted: false, date: allDates ? undefined : { gte: from, lte: to }, ...(await towerScope(g.session)) };
   const [invoices, agg] = await Promise.all([
     prisma.invoice.findMany({ where, orderBy: { id: "desc" }, take: 500 }),
     prisma.invoice.aggregate({

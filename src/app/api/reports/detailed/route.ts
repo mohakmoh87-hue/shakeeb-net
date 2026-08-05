@@ -12,11 +12,14 @@ export async function GET(request: Request) {
   const fromStr = url.searchParams.get("from");
   const toStr = url.searchParams.get("to");
 
+  // ?all=1 ⇒ **كل التواريخ** بلا مدى (قرار محمد 2026-08-05): المدى كان مفروضاً من أول
+  // الشهر إلى اليوم، فلا سبيل لسؤال «كل شيء منذ البداية» — والآن الاختيار بيد المستخدم.
+  const allDates = url.searchParams.get("all") === "1";
   const from = fromStr ? new Date(fromStr) : new Date(new Date().setDate(1));
   const to = toStr ? new Date(toStr) : new Date();
   to.setHours(23, 59, 59, 999);
 
-  const range = { gte: from, lte: to };
+  const range = allDates ? undefined : { gte: from, lte: to };
   const scope = await towerScope(g.session);
 
   const [entries, money, entriesAgg, moneyAgg] = await Promise.all([

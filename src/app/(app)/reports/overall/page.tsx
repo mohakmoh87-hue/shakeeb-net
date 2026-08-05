@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/PageHeader";
+import DateRangeFilter from "@/components/DateRangeFilter";
 import PrintButton from "@/components/PrintButton";
 import { formatDate } from "@/lib/format";
 
@@ -27,6 +28,7 @@ export default function OverallReport() {
   const firstOfMonth = new Date(new Date().setDate(1));
   const [from, setFrom] = useState(iso(firstOfMonth));
   const [to, setTo] = useState(iso(new Date()));
+  const [dateOn, setDateOn] = useState(false); // الافتراض: كل التواريخ
   const [d, setD] = useState<Overall | null>(null);
 
   // نافذة "لم يفعّلوا"
@@ -40,10 +42,10 @@ export default function OverallReport() {
   const [result, setResult] = useState("");
 
   const load = useCallback(() => {
-    fetch(`/api/reports/overall?from=${from}&to=${to}`).then(
+    fetch(dateOn ? `/api/reports/overall?from=${from}&to=${to}` : "/api/reports/overall?all=1").then(
       (r) => void (r.ok && r.json().then(setD)),
     );
-  }, [from, to]);
+  }, [from, to, dateOn]);
   useEffect(() => { load(); }, [load]);
 
   const notActivated = d ? d.subscribers.total - d.period.activated : 0;
@@ -79,6 +81,11 @@ export default function OverallReport() {
   return (
     <div className="p-6">
       <PageHeader title="التقرير الاجمالي" subtitle="نظرة شاملة على النظام" action={<PrintButton />} />
+
+      {/* مدى التقرير: مطفأ = كل التواريخ منذ البداية (قرار محمد 2026-08-05) */}
+      <div className="no-print mb-4">
+        <DateRangeFilter on={dateOn} setOn={setDateOn} from={from} setFrom={setFrom} to={to} setTo={setTo} label="التقرير بين تاريخين" />
+      </div>
 
       {!d ? <div className="text-slate-400">جاري التحميل...</div> : (
         <>

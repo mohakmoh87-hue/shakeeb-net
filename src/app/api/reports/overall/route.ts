@@ -14,16 +14,19 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const fromStr = url.searchParams.get("from");
   const toStr = url.searchParams.get("to");
+  // ?all=1 ⇒ كل التواريخ (لا مدى) — انظر تعليق التقرير التفصيلي
+  const allDates = url.searchParams.get("all") === "1";
   const from = fromStr ? new Date(fromStr) : new Date(new Date().setDate(1));
   const to = toStr ? new Date(toStr) : new Date();
   to.setHours(23, 59, 59, 999);
+  const range = allDates ? undefined : { gte: from, lte: to };
 
   const scope = await towerScope(g.session); // فلتر المكتب (الأدمن يرى الكل)
 
   // المشتركون الذين فعّلوا اشتراكهم خلال المدة (مميّزون — كل مشترك مرة واحدة)
   const activatedGroups = await prisma.subscriptionEntry.groupBy({
     by: ["subscriberId"],
-    where: { isDeleted: false, date: { gte: from, lte: to }, subscriberId: { not: null }, ...scope },
+    where: { isDeleted: false, date: range, subscriberId: { not: null }, ...scope },
   });
 
   const [

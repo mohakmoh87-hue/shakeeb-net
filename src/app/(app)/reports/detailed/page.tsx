@@ -9,6 +9,7 @@ import MoneyTxModal from "@/components/MoneyTxModal";
 import { askVoidEffect } from "@/lib/voidPrompt";
 import { formatDate } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
+import DateRangeFilter from "@/components/DateRangeFilter";
 
 type Entry = {
   id: number;
@@ -46,15 +47,17 @@ export default function DetailedReport() {
   const firstOfMonth = new Date(new Date().setDate(1));
   const [from, setFrom] = useState(iso(firstOfMonth));
   const [to, setTo] = useState(iso(new Date()));
+  // الافتراض: كل التواريخ. المدى يُفعَّل بمفتاحه (قرار محمد 2026-08-05)
+  const [dateOn, setDateOn] = useState(false);
   const [data, setData] = useState<Data | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null); // حركة مالية مفتوحة التفاصيل
   const { can } = usePermission();
 
   const load = useCallback(() => {
-    fetch(`/api/reports/detailed?from=${from}&to=${to}`).then(
+    fetch(dateOn ? `/api/reports/detailed?from=${from}&to=${to}` : "/api/reports/detailed?all=1").then(
       (r) => void (r.ok && r.json().then(setData)),
     );
-  }, [from, to]);
+  }, [from, to, dateOn]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -81,14 +84,7 @@ export default function DetailedReport() {
       <PageHeader title="تقرير تفصيلي" subtitle="التفعيلات والحركات المالية ضمن مدة" action={<PrintButton />} />
 
       <div className="no-print mb-5 flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1 block text-sm text-slate-600">من</label>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2" />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm text-slate-600">إلى</label>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2" />
-        </div>
+        <DateRangeFilter on={dateOn} setOn={setDateOn} from={from} setFrom={setFrom} to={to} setTo={setTo} />
       </div>
 
       {data && (
