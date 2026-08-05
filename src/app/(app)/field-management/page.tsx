@@ -8,6 +8,7 @@ import TechnicianManager from "@/components/TechnicianManager";
 import LeaveReview from "@/components/LeaveReview";
 import CardTypeManager from "@/components/CardTypeManager";
 import DeductionReview from "@/components/DeductionReview";
+import MapProposalReview from "@/components/MapProposalReview";
 import NotificationsBell from "@/components/NotificationsBell";
 import FieldAppMenu from "@/components/FieldAppMenu";
 import { FieldTrackerProvider } from "@/components/FieldTracker";
@@ -136,6 +137,9 @@ export default function FieldManagementPage() {
   const [archiveModal, setArchiveModal] = useState(false);
   const [dedModal, setDedModal] = useState(false);
   const [dedPending, setDedPending] = useState(0);
+  // مواقع أعمدة أرسلها الفنيون من الأرض — بانتظار قبول المدير
+  const [mapModal, setMapModal] = useState(false);
+  const [mapPending, setMapPending] = useState(0);
 
   const load = useCallback((office?: number | null) => {
     const q = office != null ? `?officeId=${office}` : "";
@@ -184,6 +188,7 @@ export default function FieldManagementPage() {
     const openModal = (which: string) => {
       if (which === "deductions") setDedModal(true);
       else if (which === "leaves") setLeaveModal(true);
+      else if (which === "map-proposals") setMapModal(true);
     };
     const onBell = (e: Event) => openModal(String((e as CustomEvent).detail ?? ""));
     window.addEventListener("bell:open-modal", onBell);
@@ -191,6 +196,13 @@ export default function FieldManagementPage() {
     if (q) { openModal(q); window.history.replaceState(null, "", window.location.pathname); }
     return () => window.removeEventListener("bell:open-modal", onBell);
   }, [canManage]);
+
+  // عدد مواقع الأعمدة المعلّقة (للمدير) — بشارة على زرّها
+  const loadMapPending = useCallback(() => {
+    if (!canManage) return;
+    fetch("/api/field/map-proposal").then((r) => (r.ok ? r.json() : null)).then((d) => d && setMapPending(d.pending ?? 0)).catch(() => {});
+  }, [canManage]);
+  useEffect(() => { loadMapPending(); }, [loadMapPending]);
 
   // عدد طلبات الإجازة المعلّقة (للمدير) — بشارة على زر الإجازات
   const loadLeavePending = useCallback((office?: number | null) => {
@@ -893,6 +905,12 @@ export default function FieldManagementPage() {
             </button>
           )}
           {canManage && (
+            <button onClick={() => setMapModal(true)} className="relative rounded-lg bg-teal-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-teal-700">
+              📍 مواقع الأعمدة
+              {mapPending > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white ring-2 ring-black/25">{mapPending}</span>}
+            </button>
+          )}
+          {canManage && (
             <button onClick={() => setTypesModal(true)} className="rounded-lg bg-sky-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-sky-700">
               ⏱ الأنواع والأوقات
             </button>
@@ -1188,6 +1206,10 @@ export default function FieldManagementPage() {
           onClose={() => setLeaveModal(false)}
           onChange={() => loadLeavePending(officeId)}
         />
+      )}
+
+      {mapModal && (
+        <MapProposalReview onClose={() => setMapModal(false)} onChange={loadMapPending} />
       )}
 
       {dedModal && (

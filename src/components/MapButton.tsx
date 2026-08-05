@@ -16,9 +16,14 @@ export default function MapButton({
   const [loc, setLoc] = useState<Loc | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  // ===== عمودٌ بلا موقع: الفني الواقف عنده يرسله (طلب محمد 2026-08-05) =====
+  // الخيار لا يظهر إلا لمن **لا موقع له** — فمن له موقع لا شأن له بهذا.
+  const [noLoc, setNoLoc] = useState(false); // فشل التحديد ⇒ يجوز الإرسال
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState("");
 
   async function fetchLoc() {
-    setLoading(true); setErr("");
+    setLoading(true); setErr(""); setNoLoc(false); setSent("");
     const qs = new URLSearchParams();
     if (subscriberId) qs.set("subscriberId", String(subscriberId));
     if (netUser) qs.set("netUser", netUser);
@@ -28,9 +33,35 @@ export default function MapButton({
       const r = await fetch(`/api/map/resolve?${qs.toString()}`);
       const d = await r.json();
       if (r.ok) { setLoc(d); setOpen(true); }
-      else setErr(d.error ?? "تعذّر تحديد الموقع");
+      else { setErr(d.error ?? "تعذّر تحديد الموقع"); setNoLoc(r.status === 404); }
     } catch { setErr("تعذّر تحديد الموقع"); }
     setLoading(false);
+  }
+
+  // يقرأ موقع الجهاز ويرسله للمدير ليقبله — لا يُكتب في الخريطة إلا بقبوله
+  function sendPole() {
+    if (!navigator.geolocation) { setSent("هذا الجهاز لا يدعم تحديد الموقع"); return; }
+    setSending(true); setSent("");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const r = await fetch("/api/field/map-proposal", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              subscriberId, netUser, text, towerId,
+              lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy,
+            }),
+          });
+          const d = await r.json().catch(() => ({}));
+          setSending(false);
+          setSent(r.ok
+            ? `✓ أُرسل موقع العمود ${d.name ?? ""} — بانتظار قبول المدير`
+            : (d.error ?? "تعذّر الإرسال"));
+        } catch { setSending(false); setSent("تعذّر الإرسال"); }
+      },
+      (e) => { setSending(false); setSent(e.code === 1 ? "امنح التطبيق إذن الموقع ثم أعد المحاولة" : "تعذّرت قراءة موقعك — جرّب في مكان مكشوف"); },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+    );
   }
 
   const btnCls = size === "sm"
@@ -48,11 +79,29 @@ export default function MapButton({
         🗺️ {loading ? "…" : "خريطة"}
       </button>
       {err && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/40 p-4" onClick={() => setErr("")}>
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/40 p-4" onClick={() => { setErr(""); setSent(""); }}>
           <div className="w-full max-w-xs rounded-2xl bg-white p-5 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 text-3xl">📍</div>
-            <div className="mb-4 text-sm font-semibold text-slate-700">{err}</div>
-            <button onClick={() => setErr("")} className="w-full rounded-lg bg-slate-100 py-2 text-slate-600">حسناً</button>
+            <div className="mb-3 text-sm font-semibold text-slate-700">{err}</div>
+            {/* عمودٌ ليس على الخريطة: أنت واقفٌ عنده الآن — أرسِله */}
+            {noLoc && !sent.startsWith("✓") && (
+              <>
+                <button
+                  onClick={sendPole}
+                  disabled={sending}
+                  className="mb-2 w-full rounded-xl bg-sky-600 py-3 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-60"
+                >
+                  {sending ? "…جاري قراءة موقعك" : "📡 أرسل موقع العمود من هنا"}
+                </button>
+                <div className="mb-3 text-[11px] leading-5 text-slate-500">
+                  قِف بجانب العمود ثم اضغط. يصل المدير إشعارٌ، ولا يُضاف للخريطة إلا بقبوله.
+                </div>
+              </>
+            )}
+            {sent && (
+              <div className={`mb-3 rounded-lg px-3 py-2 text-xs font-semibold ${sent.startsWith("✓") ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{sent}</div>
+            )}
+            <button onClick={() => { setErr(""); setSent(""); }} className="w-full rounded-lg bg-slate-100 py-2 text-slate-600">حسناً</button>
           </div>
         </div>
       )}

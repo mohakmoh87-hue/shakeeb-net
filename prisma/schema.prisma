@@ -895,6 +895,35 @@ model MapPoint {
   @@map("map_points")
 }
 
+// ===== عمودٌ يقترحه الفني من موقعه (طلب محمد 2026-08-05) =====
+// مشتركٌ عموده ليس على الخريطة = فنيٌّ يبحث عنه بالسؤال. والفني واقفٌ عند العمود فعلاً،
+// فهو أصدق مَن يحدّده. يُرسل إحداثيه من هاتفه، ويصل المدير إشعارٌ فيقبل أو يرفض — ولا
+// يُكتب في الخريطة الدائمة إلا بقبوله. واسم العمود يُحسب في الخادم من يوزر المشترك ومنطقة
+// مكتبه (لا يُقبل من الهاتف) فلا يُسمّى عمودٌ باسم غيره.
+model MapPointProposal {
+  id           Int       @id @default(autoincrement())
+  agentId      Int? // الوكيل (للعزل والإشعار)
+  towerId      Int? // مكتب المشترك
+  name         String // اسم العمود المحسوب: F{b}/{a}/{المنطقة}
+  lat          Float
+  lng          Float
+  accuracy     Float? // دقّة الـGPS بالأمتار كما أفاد بها الجهاز
+  netUser      String?
+  subscriberId Int?
+  technicianId Int? // الفني المُرسِل (إن كانت جلسة فني)
+  byName       String? // اسم المُرسِل للعرض
+  status       String    @default("pending") // pending | accepted | rejected
+  note         String? // سبب الرفض أو ملاحظة المدير
+  decidedById  Int?
+  decidedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  updatedAt DateTime @default(now()) @updatedAt
+  @@index([agentId, status])
+  @@index([name])
+  @@map("map_point_proposals")
+}
+
 // رمز تنصيب لمرّة واحدة — يُسلّم رابط قاعدة البيانات للمُنصِّب بأمان (بلا إدخال يدوي ولا سكربت عام)
 // ===== سجل مكافآت المشتركين (منح/استخدام) =====
 model RewardLog {
