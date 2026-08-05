@@ -233,6 +233,9 @@ export default function OwnerPage() {
         </div>
       )}
 
+      {/* رفع خريطة الأعمدة — كانت تُدخَل يدوياً على القاعدة خارج البرنامج (طلب محمد) */}
+      <MapImport />
+
       {loading ? (
         <div className="p-8 text-center text-slate-400">جاري التحميل…</div>
       ) : agents.length === 0 ? (
@@ -312,6 +315,135 @@ export default function OwnerPage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="mb-0.5 block text-xs font-semibold text-slate-500">{label}</span>{children}</label>;
+}
+
+/* ===== رفع خريطة الأعمدة (KML) =====
+   كل تحديث خريطة كان يحتاج إدخالاً يدوياً على القاعدة من خارج البرنامج. الآن: اختر الملف
+   فيُقرأ **قبل الكتابة** ويُقال لك ماذا سيتغيّر (جديد/تحرّك/بلا تغيير)، ثم تعتمده بضغطة.
+   ولا يُحذف شيء أبداً: الرفع يُضيف ويُحدّث فقط — خريطة ناقصة أهون من خريطة تُمحى بالخطأ. */
+type MapPreview = { points: number; added: number; moved: number; unchanged: number; skipped: number; areas: string[]; sample?: string[] };
+function MapImport() {
+  const [areas, setAreas] = useState<{ code: string; count: number }[]>([]);
+  const [total, setTotal] = useState(0);
+  const [kml, setKml] = useState<string>("");
+  const [fileName, setFileName] = useState("");
+  const [preview, setPreview] = useState<MapPreview | null>(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const loadAreas = useCallback(() => {
+    fetch("/api/owner/map-import").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) { setAreas(d.areas ?? []); setTotal(d.total ?? 0); }
+    }).catch(() => {});
+  }, []);
+  useEffect(() => { if (open) loadAreas(); }, [open, loadAreas]);
+
+  async function pick(file: File) {
+    setMsg(""); setPreview(null); setFileName(file.name);
+    const text = await file.text();
+    setKml(text);
+    setBusy(true);
+    const r = await fetch("/api/owner/map-import", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kml: text, dryRun: true }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) { setMsg(d.error ?? "تعذّرت قراءة الملف"); setKml(""); return; }
+    setPreview(d);
+  }
+
+  async function apply() {
+    if (!kml) return;
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/owner/map-import", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kml }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) { setMsg(d.error ?? "تعذّر الرفع"); return; }
+    setMsg(`✓ رُفعت ${d.points} نقطة — جديدة ${d.added} · مُحدَّثة ${d.moved} · بلا تغيير ${d.unchanged}. مجموع نقاط الخريطة الآن ${Number(d.total).toLocaleString("en-US")}`);
+    setPreview(null); setKml(""); setFileName("");
+    loadAreas();
+  }
+
+  return (
+    <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-bold text-slate-800">🗺️ خريطة الأعمدة (KML)
+          <span className="mr-2 text-[11px] font-normal text-slate-400">ارفع منطقة جديدة أو حدّث موجودة</span>
+        </div>
+        <button onClick={() => setOpen((v) => !v)} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-200">
+          {open ? "▲ إخفاء" : "▼ فتح"}
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-3">
+          {areas.length > 0 && (
+            <div className="mb-3">
+              <div className="mb-1 text-[11px] text-slate-400">الموجود الآن ({Number(total).toLocaleString("en-US")} نقطة):</div>
+              <div className="flex flex-wrap gap-1.5">
+                {areas.map((a) => (
+                  <span key={a.code} className="rounded-lg bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200" dir="ltr">
+                    {a.code} · {a.count.toLocaleString("en-US")}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <label className="block cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center hover:border-sky-400 hover:bg-sky-50">
+            <input type="file" accept=".kml,application/vnd.google-earth.kml+xml,text/xml" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.currentTarget.value = ""; }} />
+            <div className="text-2xl">📂</div>
+            <div className="mt-1 text-sm font-bold text-slate-700">{fileName || "اختر ملف KML"}</div>
+            <div className="mt-0.5 text-[11px] text-slate-400">يُقرأ الملف ويُعرض أثره قبل الكتابة — لا شيء يُحفظ قبل ضغطك «اعتماد»</div>
+          </label>
+
+          {busy && <div className="mt-2 text-center text-xs text-slate-400">جاري القراءة…</div>}
+
+          {preview && (
+            <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
+              <div className="mb-1 text-sm font-bold text-sky-800">ماذا سيتغيّر؟</div>
+              <div className="grid grid-cols-2 gap-1.5 text-xs sm:grid-cols-4">
+                <Box label="نقاط الملف" v={preview.points} />
+                <Box label="جديدة تُضاف" v={preview.added} good />
+                <Box label="تتحرّك إحداثيّاتها" v={preview.moved} />
+                <Box label="بلا تغيير" v={preview.unchanged} />
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500">
+                المناطق: <b dir="ltr">{preview.areas.join("، ")}</b>
+                {preview.skipped > 0 && <> · علامات متجاهَلة (خطوط أو أسماء غير مفهومة): <b>{preview.skipped}</b></>}
+              </div>
+              {preview.sample?.length ? (
+                <div className="mt-1 text-[11px] text-slate-400" dir="ltr">{preview.sample.join(" · ")}…</div>
+              ) : null}
+              <div className="mt-1.5 text-[11px] font-semibold text-emerald-700">لا تُحذف أي نقطة موجودة — الرفع يُضيف ويُحدّث فقط.</div>
+              <div className="mt-2 flex gap-2">
+                <button onClick={apply} disabled={busy} className="flex-1 rounded-lg bg-sky-600 py-2 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-60">
+                  {busy ? "…" : `اعتماد ورفع ${preview.points} نقطة`}
+                </button>
+                <button onClick={() => { setPreview(null); setKml(""); setFileName(""); }} className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-500 ring-1 ring-slate-200">إلغاء</button>
+              </div>
+            </div>
+          )}
+
+          {msg && <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-semibold ${msg.startsWith("✓") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{msg}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+function Box({ label, v, good }: { label: string; v: number; good?: boolean }) {
+  return (
+    <div className="rounded-lg bg-white/80 px-2.5 py-1.5 ring-1 ring-slate-200">
+      <div className="text-[10px] text-slate-400">{label}</div>
+      <div className={`text-sm font-extrabold ${good && v > 0 ? "text-emerald-600" : "text-slate-700"}`} dir="ltr">{v.toLocaleString("en-US")}</div>
+    </div>
+  );
 }
 
 // حقل تعديل حدٍّ للوكيل (يُحفظ عند مغادرة الحقل) — key={value} يعيد ضبط القيمة بعد الحفظ

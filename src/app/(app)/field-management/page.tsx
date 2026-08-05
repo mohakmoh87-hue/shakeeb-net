@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import MapButton from "@/components/MapButton";
 import TechOpsBar from "@/components/TechOpsBar";
@@ -70,6 +70,20 @@ const facePhoneOf = (desc?: string | null): string | null => lineOf(desc, "📞"
 const faceNoteOf = (desc?: string | null): string | null => lineOf(desc, "📝", "ملاحظة");
 // الهاتف الظاهر على وجه البطاقة: المُدخَل في النافذة المنبثقة إن وُجد، وإلا الرقم المخزون للمشترك
 const faceCallPhone = (desc?: string | null): string | null => facePhoneOf(desc) ?? phoneOf(desc);
+// عنوان البطاقة هو اليوزر نفسه، والوصف يحمل سطر «👤 اليوزر: …» أيضاً (يبقى مخزَّناً لأن
+// مطابقة المكافآت الآلية تقرأه) — فكان يُعرض مرّتين في التفاصيل. يُطوى السطر عند العرض
+// إن كان نفس العنوان حرفاً بحرف، ويبقى ظاهراً إن اختلف (فاختلافه خبرٌ يُقرأ).
+const descNoDupUser = (desc?: string | null, title?: string | null): string => {
+  const t = (title ?? "").trim();
+  if (!desc || !t) return desc ?? "";
+  return desc
+    .split("\n")
+    .filter((ln) => {
+      const m = ln.match(/^\s*👤\s*اليوزر:\s*(.+?)\s*$/);
+      return !(m && m[1] === t);
+    })
+    .join("\n");
+};
 
 export default function FieldManagementPage() {
   const router = useRouter();
@@ -89,10 +103,17 @@ export default function FieldManagementPage() {
   const [sel, setSel] = useState<Card | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
   const [postponing, setPostponing] = useState<Card | null>(null);
-  const [dragId, setDragId] = useState<number | null>(null);
-  // سحب بالضغط المطوّل — يعمل باللمس والفأرة معاً (Pointer Events):
-  // الأعمدة تُنقل يميناً ويساراً، والبطاقات أعلى وأسفل داخل عمودها. (طلب محمد)
-  const [press, setPress] = useState<{ kind: "list" | "card"; id: number } | null>(null);
+  // ===== السحب: ترى ما تحمله وأين سيقع قبل أن تُفلته (طلب محمد 2026-08-05) =====
+  // كان السحب «وضعاً» خفيّاً: تضغط مطوّلاً فتبهت البطاقة قليلاً، ثم ترفع إصبعك فوق أخرى
+  // فتُبدَّل — بلا أن ترى ما تحمله ولا أين سيستقرّ. الآن نسخةٌ منها ترتفع تحت إصبعك مائلةً
+  // بظلّها، والبطاقات تنزاح بانسيابٍ لتفتح لها المكان، وسلّتها الأصلية تنطوي.
+  type DragCard = { kind: "card"; id: number; fromList: number; toList: number; index: number; w: number; h: number; offX: number; offY: number; x: number; y: number };
+  type DragList = { kind: "list"; id: number; index: number; w: number; h: number; offX: number; offY: number; x: number; y: number };
+  const [drag, setDrag] = useState<DragCard | DragList | null>(null);
+  const dragRef = useRef<DragCard | DragList | null>(null);
+  const pendRef = useRef<{ kind: "card" | "list"; id: number; x: number; y: number; el: HTMLElement } | null>(null);
+  const draggedAt = useRef(0); // لمنع فتح البطاقة بالنقرة التي أنهت السحب
+  const boardRef = useRef<HTMLDivElement | null>(null);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // الفنيون والمكاتب (لوحة مستقلّة لكل مكتب، والمدير يختار المكتب)
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -140,18 +161,18 @@ export default function FieldManagementPage() {
   useEffect(() => {
     const t = setInterval(() => {
       if (document.hidden) return;
-      if (sel || completing || postponing || dragId != null || addingTo != null) return;
+      if (sel || completing || postponing || drag != null || addingTo != null) return;
       load(officeId);
     }, 20000);
     // العودة للتبويب/التطبيق ⇒ تحديث فوري (لا انتظار الدورة القادمة)
     const onVisible = () => {
       if (document.hidden) return;
-      if (sel || completing || postponing || dragId != null || addingTo != null) return;
+      if (sel || completing || postponing || drag != null || addingTo != null) return;
       load(officeId);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVisible); };
-  }, [load, officeId, sel, completing, postponing, dragId, addingTo]);
+  }, [load, officeId, sel, completing, postponing, drag, addingTo]);
 
   // اسم الدور الحالي (للفني: اسمه ومعرّفه) — لعرضه في الشريط السفلي وللتحويل على نفسه
   useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.name) setMyName(d.name); if (d?.technicianId != null) setMyTechId(d.technicianId); }); }, []);
@@ -273,44 +294,118 @@ export default function FieldManagementPage() {
     setCards((x) => x.filter((c) => c.listId !== l.id));
     await fetch(`/api/field/lists?id=${l.id}`, { method: "DELETE" });
   }
-  // ===== السحب بالضغط المطوّل =====
-  function beginPress(kind: "list" | "card", id: number) {
+  // ===== محرّك السحب (لمس وفأرة بواجهة Pointer واحدة) =====
+  const DRAG_HOLD_MS = 200; // ما دونه سحبٌ عرضي، وما فوقه انتظارٌ ثقيل
+  const DRAG_SLOP = 10; // حركة قبل انطلاق السحب ⇒ تمريرُ شاشة لا سحب
+  const CARD_GAP = 8; // فراغ space-y-2 بين البطاقات
+
+  const applyDrag = useCallback((d: DragCard | DragList | null) => { dragRef.current = d; setDrag(d); }, []);
+
+  function pressStart(e: React.PointerEvent, kind: "card" | "list", id: number) {
     if (!canOperate || isTech) return;
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    const sel = kind === "card" ? "[data-card-id]" : "[data-list-id]";
+    const el = (e.target as HTMLElement).closest(sel) as HTMLElement | null;
+    if (!el) return;
+    pendRef.current = { kind, id, x: e.clientX, y: e.clientY, el };
     if (pressTimer.current) clearTimeout(pressTimer.current);
-    pressTimer.current = setTimeout(() => setPress({ kind, id }), 400);
+    pressTimer.current = setTimeout(startDrag, DRAG_HOLD_MS);
   }
   function cancelPress() {
     if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
+    pendRef.current = null;
   }
-  // عند رفع الإصبع/الفأرة: ما العنصر الذي تحته؟ نُدرج المسحوب مكانه
-  function endPress(e: React.PointerEvent) {
-    cancelPress();
-    const cur = press;
-    setPress(null);
-    if (!cur) return;
-    const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-    if (!el) return;
-    if (cur.kind === "list") {
-      const target = el.closest("[data-list-id]") as HTMLElement | null;
-      const toId = Number(target?.dataset.listId);
-      if (!toId || toId === cur.id) return;
-      void reorderLists(cur.id, toId);
+  function startDrag() {
+    const p = pendRef.current;
+    if (!p) return;
+    const r = p.el.getBoundingClientRect();
+    const base = { id: p.id, w: r.width, h: r.height, offX: p.x - r.left, offY: p.y - r.top, x: p.x, y: p.y };
+    if (p.kind === "card") {
+      const c = cards.find((x) => x.id === p.id);
+      if (!c) return;
+      const idx = cards.filter((x) => x.listId === c.listId && !x.done).sort((a, b) => a.position - b.position).findIndex((x) => x.id === c.id);
+      applyDrag({ kind: "card", ...base, fromList: c.listId, toList: c.listId, index: Math.max(0, idx) });
     } else {
-      const target = el.closest("[data-card-id]") as HTMLElement | null;
-      const toId = Number(target?.dataset.cardId);
-      if (!toId || toId === cur.id) return;
-      void reorderCards(cur.id, toId);
+      const idx = [...lists].sort((a, b) => a.position - b.position).findIndex((x) => x.id === p.id);
+      applyDrag({ kind: "list", ...base, index: Math.max(0, idx) });
     }
+    try { navigator.vibrate?.(12); } catch { /* الاهتزاز رفاهية */ }
   }
 
-  // نقل عمود إلى موضع عمود آخر — ثم تثبيت الترتيب في الخادم
-  async function reorderLists(fromId: number, toId: number) {
+  // أين سيقع؟ العمود من تحت الإصبع، والموضع بمقارنة الإصبع بمنتصف كل بطاقة
+  function cardTargetAt(x: number, y: number, d: DragCard): { listId: number; index: number } {
+    const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    const listEl = el?.closest("[data-list-id]") as HTMLElement | null;
+    const listId = Number(listEl?.dataset.listId) || d.toList;
+    const nodes = listEl ? (Array.from(listEl.querySelectorAll("[data-card-id]")) as HTMLElement[]) : [];
+    const others = nodes.filter((n) => Number(n.dataset.cardId) !== d.id);
+    let index = others.length;
+    for (let i = 0; i < others.length; i++) {
+      const r = others[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) { index = i; break; }
+    }
+    return { listId, index };
+  }
+  // الأعمدة من اليمين لليسار (RTL): الإفلات يمين منتصف عمودٍ يعني قبله
+  function listTargetAt(x: number, d: DragList): number {
+    const nodes = Array.from(document.querySelectorAll("[data-list-id]")) as HTMLElement[];
+    const others = nodes.filter((n) => Number(n.dataset.listId) !== d.id);
+    let index = others.length;
+    for (let i = 0; i < others.length; i++) {
+      const r = others[i].getBoundingClientRect();
+      if (x > r.left + r.width / 2) { index = i; break; }
+    }
+    return index;
+  }
+  // تمرير اللوحة أفقياً حين يقترب الإصبع من حافّتها (وإلا تعذّر النقل لعمودٍ خارج الشاشة)
+  function autoScroll(x: number) {
+    const el = boardRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (x < r.left + 70) el.scrollLeft -= 20;
+    else if (x > r.right - 70) el.scrollLeft += 20;
+  }
+
+
+  // إزاحة البطاقات لفتح المكان — بـtransform وحده: سلسٌ بلا إعادة تخطيط
+  function cardShift(listId: number, visIndex: number): number {
+    const d = drag;
+    if (!d || d.kind !== "card" || d.toList !== listId) return 0;
+    return visIndex >= d.index ? d.h + CARD_GAP : 0;
+  }
+
+  // تثبيت إفلات البطاقة: ترتيب العمود الهدف كاملاً (والانتقال بين الأعمدة إن حصل)
+  async function commitCard(d: DragCard) {
+    const card = cards.find((c) => c.id === d.id);
+    if (!card) return;
+    const rest = cards.filter((c) => c.listId === d.toList && !c.done && c.id !== d.id).sort((a, b) => a.position - b.position);
+    const idx = Math.max(0, Math.min(d.index, rest.length));
+    const wasIdx = cards.filter((c) => c.listId === d.fromList && !c.done).sort((a, b) => a.position - b.position).findIndex((c) => c.id === d.id);
+    if (d.toList === d.fromList && idx === wasIdx) return; // لم يتغيّر شيء
+    const arr = [...rest.slice(0, idx), { ...card, listId: d.toList }, ...rest.slice(idx)];
+    const posById = new Map(arr.map((x, i) => [x.id, i]));
+    setCards((x) => x.map((c) => {
+      if (c.id === d.id) return { ...c, listId: d.toList, position: posById.get(c.id) ?? 0 };
+      return posById.has(c.id) ? { ...c, position: posById.get(c.id)! } : c;
+    }));
+    if (sel?.id === d.id && d.toList !== d.fromList) setSel({ ...sel, listId: d.toList });
+    await Promise.all(arr.map((x, i) =>
+      fetch("/api/field/cards", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(x.id === d.id ? { id: x.id, listId: d.toList, position: i } : { id: x.id, position: i }),
+      }).catch(() => {}),
+    ));
+  }
+
+  // تثبيت إفلات العمود في موضعه الجديد
+  async function commitList(d: DragList) {
     const arr = [...lists].sort((a, b) => a.position - b.position);
-    const fi = arr.findIndex((x) => x.id === fromId);
-    const ti = arr.findIndex((x) => x.id === toId);
-    if (fi < 0 || ti < 0) return;
+    const fi = arr.findIndex((x) => x.id === d.id);
+    if (fi < 0) return;
     const [moved] = arr.splice(fi, 1);
-    arr.splice(ti, 0, moved);
+    const idx = Math.max(0, Math.min(d.index, arr.length));
+    if (idx === fi) return;
+    arr.splice(idx, 0, moved);
     const next = arr.map((x, i) => ({ ...x, position: i }));
     setLists(next);
     await Promise.all(next.map((x) =>
@@ -318,23 +413,41 @@ export default function FieldManagementPage() {
     ));
   }
 
-  // نقل بطاقة إلى موضع بطاقة أخرى **داخل عمودها** (أعلى/أسفل)
-  async function reorderCards(fromId: number, toId: number) {
-    const from = cards.find((c) => c.id === fromId);
-    const to = cards.find((c) => c.id === toId);
-    if (!from || !to || from.listId !== to.listId) return;
-    const arr = cards.filter((c) => c.listId === from.listId && !c.done).sort((a, b) => a.position - b.position);
-    const fi = arr.findIndex((x) => x.id === fromId);
-    const ti = arr.findIndex((x) => x.id === toId);
-    if (fi < 0 || ti < 0) return;
-    const [moved] = arr.splice(fi, 1);
-    arr.splice(ti, 0, moved);
-    const posById = new Map(arr.map((x, i) => [x.id, i]));
-    setCards((x) => x.map((c) => (posById.has(c.id) ? { ...c, position: posById.get(c.id)! } : c)));
-    await Promise.all(arr.map((x, i) =>
-      fetch("/api/field/cards", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: x.id, position: i }) }).catch(() => {}),
-    ));
-  }
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) {
+        const p = pendRef.current;
+        if (p && (Math.abs(e.clientX - p.x) > DRAG_SLOP || Math.abs(e.clientY - p.y) > DRAG_SLOP)) cancelPress();
+        return;
+      }
+      e.preventDefault();
+      if (d.kind === "card") {
+        const t = cardTargetAt(e.clientX, e.clientY, d);
+        applyDrag({ ...d, x: e.clientX, y: e.clientY, toList: t.listId, index: t.index });
+      } else {
+        applyDrag({ ...d, x: e.clientX, y: e.clientY, index: listTargetAt(e.clientX, d) });
+      }
+      autoScroll(e.clientX);
+    };
+    const up = () => {
+      cancelPress();
+      const d = dragRef.current;
+      if (!d) return;
+      applyDrag(null);
+      draggedAt.current = Date.now();
+      if (d.kind === "card") void commitCard(d);
+      else void commitList(d);
+    };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  });
 
   async function moveCard(card: Card, toListId: number) {
     if (!canOperate) return;
@@ -450,6 +563,45 @@ export default function FieldManagementPage() {
   return (
     <FieldTrackerProvider enabled={canTrack}>
     <div data-app-fullheight className={`field-canvas ${isTech ? "" : "nst field-site"} flex h-[calc(100dvh-52px)] flex-col md:h-screen`}>
+      {/* حركة السحب: انطواء سلّة البطاقة المحمولة، وارتفاع النسخة الطائرة تحت الإصبع */}
+      <style>{`
+        @keyframes fmCollapse { from { height: var(--fm-h); opacity: .45 } to { height: 0; opacity: 0 } }
+        .fm-collapsing { overflow: hidden; padding-top: 0 !important; padding-bottom: 0 !important; pointer-events: none;
+          animation: fmCollapse .16s cubic-bezier(.2,.8,.2,1) forwards; }
+        @keyframes fmLift { from { transform: scale(1) rotate(0deg) } to { transform: scale(1.05) rotate(2deg) } }
+        .fm-lift { animation: fmLift .16s cubic-bezier(.2,.8,.2,1) forwards; transform-origin: 50% 50%; }
+      `}</style>
+      {/* النسخة الطائرة: ما تحمله ظاهرٌ تحت إصبعك حتى تُفلته */}
+      {drag && (() => {
+        const c = drag.kind === "card" ? cards.find((x) => x.id === drag.id) : null;
+        const l = drag.kind === "list" ? lists.find((x) => x.id === drag.id) : null;
+        return (
+          <div
+            className="pointer-events-none fixed z-[95] select-none"
+            style={{ left: 0, top: 0, width: drag.w, transform: `translate3d(${drag.x - drag.offX}px, ${drag.y - drag.offY}px, 0)` }}
+          >
+            <div className="fm-lift">
+              {c && (
+                <div className="rounded-lg bg-white p-2.5 shadow-2xl ring-2 ring-sky-400/70">
+                  <div className="text-sm font-medium text-slate-800">{c.title}</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className="rounded px-1.5 py-0.5 font-semibold text-white" style={{ background: catColorOf(lists.find((x) => x.id === (drag.kind === "card" ? drag.toList : -1))?.name ?? "") }}>{c.kind}</span>
+                    {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
+                  </div>
+                </div>
+              )}
+              {l && (
+                <div className="rounded-xl border border-line bg-surface-2 shadow-2xl ring-2 ring-sky-400/70">
+                  <div className="rounded-t-[11px] px-3 py-2 font-bold text-white" style={{ background: catColorOf(l.name ?? "") }}>
+                    {l.name} <span className="text-xs font-normal text-white/75">({cards.filter((x) => x.listId === l.id && !x.done).length})</span>
+                  </div>
+                  <div className="px-3 py-3 text-center text-xs text-slate-400">— أفلته في مكانه الجديد —</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       {/* ترويسة اللوحة */}
       <div data-app-safetop className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className={`flex items-center gap-2 ${isTech ? "text-white" : "text-ink"}`}>
@@ -521,7 +673,12 @@ export default function FieldManagementPage() {
       {/* صف: اللوحة (يمين) + لوحة خريطة التتبّع الجانبية (يسار، سطح المكتب — تحجز مكانها) */}
       <div className="flex min-h-0 flex-1 gap-3 px-4 pb-4">
       {/* الأعمدة */}
-      <div data-empty={lists.length === 0 ? "1" : undefined} className="flex min-w-0 flex-1 items-start gap-3 overflow-x-auto">
+      <div
+        ref={boardRef}
+        data-empty={lists.length === 0 ? "1" : undefined}
+        style={drag ? { touchAction: "none" } : undefined}
+        className="flex min-w-0 flex-1 items-start gap-3 overflow-x-auto"
+      >
         {/* حالة فارغة أنيقة (تظهر داخل التطبيق فقط عبر CSS) */}
         {lists.length === 0 && (
           <div data-app-only>
@@ -532,24 +689,25 @@ export default function FieldManagementPage() {
             </div>
           </div>
         )}
-        {lists.map((l) => {
+        {lists.map((l, listIdx) => {
           // البطاقات المنجزة تنتقل لعمود «المنجزة» فتُستبعَد من عمودها الأصلي
           const listCards = cards.filter((c) => c.listId === l.id && !c.done).sort((a, b) => a.position - b.position);
+          const dragThisList = drag?.kind === "list" && drag.id === l.id;
+          // شريط الإفلات للأعمدة: علامةٌ واضحة أين سيستقرّ العمود المحمول
+          const others = [...lists].sort((a, b) => a.position - b.position).filter((x) => !(drag?.kind === "list" && x.id === drag.id));
+          const barBefore = drag?.kind === "list" && others.findIndex((x) => x.id === l.id) === drag.index;
+          const barAfterLast = drag?.kind === "list" && drag.index >= others.length && listIdx === lists.length - 1;
           return (
+            <Fragment key={l.id}>
+            {barBefore && <div className="h-24 w-1.5 shrink-0 animate-pulse self-stretch rounded-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,.9)]" />}
             <div
-              key={l.id}
               data-list-id={l.id}
-              onPointerUp={endPress}
-              onPointerCancel={cancelPress}
-              style={press?.kind === "list" && press.id === l.id ? { opacity: .55, transform: "scale(.98)" } : undefined}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => { if (!canOperate || isTech) return; const c = cards.find((x) => x.id === dragId); if (c) moveCard(c, l.id); setDragId(null); }}
+              style={dragThisList ? { opacity: .3, filter: "grayscale(.4)", transition: "opacity .15s" } : undefined}
               className={`flex max-h-full w-[280px] shrink-0 flex-col rounded-xl shadow-lg ${isTech ? "bg-slate-100" : "border border-line bg-surface-2"}`}
             >
               {/* رأس العمود: بالمتصفح للمدير — خطّ أبيض على خلفية بلون فئة العمود */}
               <div
-                onPointerDown={() => beginPress("list", l.id)}
-                onPointerMove={cancelPress}
+                onPointerDown={(e) => pressStart(e, "list", l.id)}
                 title="اضغط مطوّلاً على رأس العمود ثم اسحبه يميناً أو يساراً"
                 className={`flex items-center justify-between px-3 py-2 ${isTech ? "" : "rounded-t-[11px]"}`}
                 style={!isTech ? { background: catColorOf(l.name ?? "") } : undefined}>
@@ -566,21 +724,25 @@ export default function FieldManagementPage() {
                 )}
               </div>
 
-              <div className="flex-1 space-y-2 overflow-y-auto px-2">
-                {listCards.map((c) => (
+              <div className="flex-1 space-y-2 overflow-y-auto px-2" style={drag?.kind === "card" && drag.toList === l.id ? { paddingBottom: drag.h + CARD_GAP } : undefined}>
+                {listCards.map((c, cardIdx) => {
+                  const dragged = drag?.kind === "card" && drag.id === c.id;
+                  // ترتيب البطاقة بين الظاهرات (بعد استبعاد المسحوبة) — عليه تُحسب الإزاحة
+                  const visIdx = drag?.kind === "card" && drag.fromList === l.id && cardIdx > listCards.findIndex((x) => x.id === drag.id) ? cardIdx - 1 : cardIdx;
+                  const shift = dragged ? 0 : cardShift(l.id, visIdx);
+                  return (
                   <div
                     key={c.id}
                     data-card-id={c.id}
-                    draggable={canOperate && !isTech}
-                    onDragStart={() => canOperate && !isTech && setDragId(c.id)}
-                    onPointerDown={() => beginPress("card", c.id)}
-                    onPointerMove={cancelPress}
-                    onPointerUp={endPress}
-                    onPointerCancel={cancelPress}
-                    onClick={() => { if (press) return; setSel(c); }}
-                    title="اضغط مطوّلاً ثم اسحب لتغيير ترتيب البطاقة داخل العمود"
-                    style={press?.kind === "card" && press.id === c.id ? { opacity: .55, transform: "scale(.98)" } : undefined}
-                    className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md"
+                    onPointerDown={(e) => pressStart(e, "card", c.id)}
+                    onClick={() => { if (drag || Date.now() - draggedAt.current < 250) return; setSel(c); }}
+                    title="اضغط مطوّلاً ثم اسحب: أعلى وأسفل داخل العمود أو إلى عمود آخر"
+                    style={{
+                      ...(dragged ? { ["--fm-h" as string]: `${drag!.h}px` } : null),
+                      ...(shift ? { transform: `translateY(${shift}px)` } : null),
+                      transition: drag ? "transform .18s cubic-bezier(.2,.8,.2,1)" : undefined,
+                    }}
+                    className={`cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md ${dragged ? "fm-collapsing" : ""}`}
                   >
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
                     {/* على الوجه: هاتف النافذة المنبثقة إن وُجد وإلا الرقم المخزون + الملاحظة — واسم المشترك يظهر بفتح البطاقة فقط */}
@@ -599,7 +761,10 @@ export default function FieldManagementPage() {
                       </div>
                     )}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(c.kind)}`} style={!isTech && typeColors[c.kind] ? { background: typeColors[c.kind] } : undefined}>{isDeliveryKind(c.kind) ? "🚚" : "🔧"} {c.kind}</span>
+                      {/* اللون والأيقونة من **العمود** الذي تسكنه البطاقة لا من فئتها: بطاقة صيانة
+                          نُقلت إلى عمود تنصيب تأخذ لون التنصيب وخصائصه — ويبقى اسمها «صيانة»
+                          كما هو (طلب محمد 2026-08-05). فالعمود هو مكان العمل، والفئة هوية العمل. */}
+                      <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(l.name ?? c.kind)}`} style={!isTech ? { background: catColorOf(l.name ?? "") } : undefined}>{isDeliveryKind(l.name ?? c.kind) ? "🚚" : "🔧"} {c.kind}</span>
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
                       {c.dueDate && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 {fmtDue(c.dueDate)}</span>}
                       {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة {c.amount != null ? `— ${Number(c.amount).toLocaleString("en-US")}` : ""}</span>}
@@ -613,7 +778,8 @@ export default function FieldManagementPage() {
                       <MapButton text={`${c.title}\n${c.description ?? ""}`} towerId={c.listId === -1 ? (supportOfficeId ?? officeId) : officeId} size="sm" />
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* إضافة بطاقة — للمكتب أو للفني (تُسنَد له تلقائياً) */}
@@ -650,6 +816,8 @@ export default function FieldManagementPage() {
               </div>
               )}
             </div>
+            {barAfterLast && <div className="h-24 w-1.5 shrink-0 animate-pulse self-stretch rounded-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,.9)]" />}
+            </Fragment>
           );
         })}
 
@@ -851,7 +1019,7 @@ export default function FieldManagementPage() {
               <textarea value={sel.description ?? ""} onChange={(e) => setSel({ ...sel, description: e.target.value })} onBlur={() => saveCard({ description: sel.description })} rows={4} placeholder="تفاصيل الطلب / الصيانة / التنصيب..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             ) : (
               <div className="mb-3 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
-                {sel.description?.trim() ? sel.description : <span className="text-slate-400">لا توجد تفاصيل</span>}
+                {sel.description?.trim() ? descNoDupUser(sel.description, sel.title) : <span className="text-slate-400">لا توجد تفاصيل</span>}
                 {sel.postponedTo && <div className="mt-2 font-bold text-amber-600">📅 مؤجّلة إلى {fmtDateTime(sel.postponedTo)}</div>}
                 {canOperate && <div className="mt-2 text-[11px] text-slate-400">اضغط «بدء العمل» لبدء احتساب الوقت والتمكّن من التعديل والإنجاز.</div>}
               </div>

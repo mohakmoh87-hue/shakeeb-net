@@ -76,9 +76,16 @@ export async function POST(request: Request) {
   if (card.technicianId == null) {
     return NextResponse.json({ error: "يجب توجيه البطاقة لفني قبل إنجازها" }, { status: 400 });
   }
-  // نوع البطاقة (معزول بالوكيل): توصيل (مبلغ فقط) / تحويل (يوزر جديد إلزامي) / صيانة وغيرها (حقول كاملة)
-  const type = await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false, agentId: actor.agentId ?? -1 } });
-  const isDelivery = type?.deliveryOnly ?? card.kind === "توصيل";
+  // ===== الخصائص من العمود الذي تسكنه البطاقة (قرار محمد 2026-08-05) =====
+  // بطاقة نُقلت من «صيانة» إلى عمود «تنصيب» تعمل بخصائص التنصيب — وقته المسموح وخصم
+  // تجاوزه وكونه توصيلاً أو لا — ويبقى **اسمها** صيانة كما هو. العمود مكان العمل،
+  // والفئة هويّته. وإن لم يكن للعمود فئةٌ بنفس اسمه رجعنا لفئة البطاقة كما كان.
+  const cardList = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { name: true, boardId: true, timeTracked: true } });
+  const typeOfList = cardList?.name
+    ? await prisma.cardType.findFirst({ where: { name: cardList.name, isDeleted: false, agentId: actor.agentId ?? -1 } })
+    : null;
+  const type = typeOfList ?? await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false, agentId: actor.agentId ?? -1 } });
+  const isDelivery = type?.deliveryOnly ?? (cardList?.name ?? card.kind) === "توصيل";
   const isTransfer = card.kind === "تحويل";
 
   // التوصيل مُستثنى من «بدء» واحتساب الوقت؛ ما عداه يتطلّب «بدء»
@@ -129,7 +136,7 @@ export async function POST(request: Request) {
 
   const tech = await prisma.technician.findUnique({ where: { id: card.technicianId } });
   // مكتب البطاقة (حيث تمّ العمل) — لعزل المبيعات/النثرية؛ يهمّ عند الدعم المؤقّت من مكتب آخر
-  const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true, timeTracked: true } });
+  const list = cardList; // قُرئ أعلاه (الاسم + boardId + الاحتساب بالوقت)
   const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
   const towerId = board?.towerId ?? tech?.towerId ?? null;
 
