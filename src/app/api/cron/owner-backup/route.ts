@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { sendOwnerFullBackup } from "@/lib/backupJob";
 
 export const dynamic = "force-dynamic";
@@ -17,19 +16,13 @@ export async function POST(request: Request) {
   }
   const force = new URL(request.url).searchParams.get("force") === "1";
 
-  if (!force) {
-    const row = await prisma.systemSetting.findFirst({ where: { type: "ownerBackupTime" } });
-    const configured = (row?.value ?? "").trim(); // "HH:MM"
-    const wantHour = parseInt(configured.split(":")[0] ?? "", 10);
-    if (!Number.isInteger(wantHour)) {
-      return NextResponse.json({ ok: true, skipped: "لم يُضبط وقت الإرسال" });
-    }
-    // ساعة بغداد الحالية (UTC+3)
-    const nowHour = new Date(Date.now() + 3 * 3600 * 1000).getUTCHours();
-    if (nowHour !== wantHour) {
-      return NextResponse.json({ ok: true, skipped: `ليست الساعة (الآن ${nowHour}، المطلوب ${wantHour})` });
-    }
-  }
+  // ===== الضمان: مرّة كل يوم — لا «في الساعة كذا حصراً» (تصحيح 2026-08-05) =====
+  // كان الإرسال مشروطاً بمطابقة ساعة بغداد للساعة المضبوطة (23:55). لكن GitHub يؤخّر
+  // جدولة المستودعات المجانية ساعات، فيقع التشغيل في ساعة أخرى فيتخطّى الإرسال **بصمت**
+  // ويقول «ليست الساعة». النتيجة: لم تصل نسخة كاملة من 2 آب إلى 5 آب — ثلاث ليالٍ.
+  // الآن: مانع الازدواج بيوم بغداد (lastOwnerBackupDate) هو الضامن — أول تشغيل في اليوم
+  // يُرسل، ثم لا يُرسل ثانيةً. فتصل النسخة كل يوم مضموناً، وإن تقدّم وقتها أو تأخّر.
+  // والوقت المضبوط يبقى تفضيلاً معروضاً في حساب المالك لا شرطاً يمنع الإرسال.
 
   const r = await sendOwnerFullBackup({ skipDedup: force });
   return NextResponse.json(r);
