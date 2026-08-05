@@ -10,6 +10,7 @@ import CardTypeManager from "@/components/CardTypeManager";
 import DeductionReview from "@/components/DeductionReview";
 import MapProposalReview from "@/components/MapProposalReview";
 import DeletedCardsModal from "@/components/DeletedCardsModal";
+import AchievementsModal from "@/components/AchievementsModal";
 import NotificationsBell from "@/components/NotificationsBell";
 import FieldAppMenu from "@/components/FieldAppMenu";
 import { FieldTrackerProvider } from "@/components/FieldTracker";
@@ -135,6 +136,7 @@ export default function FieldManagementPage() {
   const [typesModal, setTypesModal] = useState(false);
   const [archiveModal, setArchiveModal] = useState(false);
   const [trashModal, setTrashModal] = useState(false); // سلّة محذوفات البطاقات
+  const [achModal, setAchModal] = useState(false); // إنجازات الفنيين (للمدير)
   const [dedModal, setDedModal] = useState(false);
   const [dedPending, setDedPending] = useState(0);
   // مواقع أعمدة أرسلها الفنيون من الأرض — بانتظار قبول المدير
@@ -189,6 +191,7 @@ export default function FieldManagementPage() {
       if (which === "deductions") setDedModal(true);
       else if (which === "leaves") setLeaveModal(true);
       else if (which === "map-proposals") setMapModal(true);
+      else if (which === "achievements") setAchModal(true);
     };
     const onBell = (e: Event) => openModal(String((e as CustomEvent).detail ?? ""));
     window.addEventListener("bell:open-modal", onBell);
@@ -912,6 +915,11 @@ export default function FieldManagementPage() {
             </button>
           )}
           {canManage && (
+            <button onClick={() => setAchModal(true)} title="ترتيب كل فنيّي مكاتبك بالإنجاز والسرعة" className="rounded-lg bg-amber-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-amber-700">
+              🏅 إنجازات الفنيين
+            </button>
+          )}
+          {canManage && (
             <button onClick={() => setMapModal(true)} className="relative rounded-lg bg-teal-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-teal-700">
               📍 مواقع الأعمدة
               {mapPending > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white ring-2 ring-black/25">{mapPending}</span>}
@@ -1226,6 +1234,8 @@ export default function FieldManagementPage() {
           onChange={() => loadLeavePending(officeId)}
         />
       )}
+
+      {achModal && <AchievementsModal onClose={() => setAchModal(false)} />}
 
       {trashModal && (
         <DeletedCardsModal

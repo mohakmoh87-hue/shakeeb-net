@@ -851,6 +851,9 @@ model CardCompletion {
   agentId      Int?
   towerId      Int?
   kind         String?
+  // زمن الإنجاز محفوظ هنا لأن البطاقة تُحذف بعد أسبوع من تحصيلها — وبدونه تصير
+  // «إنجازات الفنيين» عمياء عن السرعة بعد أسبوع من كل بطاقة (قرار محمد 2026-08-05)
+  durationSec  Int?
   completedAt  DateTime @default(now())
 
   @@index([technicianId, completedAt])

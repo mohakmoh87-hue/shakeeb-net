@@ -283,6 +283,16 @@ function Spark({ values }: { values: number[] }) {
 // ٤ · إدارة الفنيين — دونات بقوسين (لاجورد منجزة + برتقالي متبقّية)
 function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }) {
   const [v, setV] = useState<{ done: number; rest: number } | null>(null);
+  // 👑 متصدّر فترة الراتب — مسابقةٌ تبدأ مع الفترة وتُصفَّر مع نهايتها (طلب محمد 2026-08-05)
+  const [king, setKing] = useState<{ name: string; office: string | null; cards: number; points: number; avgMin: number | null } | null>(null);
+  useEffect(() => {
+    let stop = false;
+    fetch("/api/field/achievements?leader=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!stop && d?.leader) setKing(d.leader); })
+      .catch(() => {});
+    return () => { stop = true; };
+  }, []);
   const [officeSel, setOfficeSel] = useState<"all" | number>("all");
   useEffect(() => {
     let stop = false;
@@ -320,7 +330,7 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
   const R = 28, C = 2 * Math.PI * R, GAP = 4;
   const doneLen = Math.max(0, pct * C - GAP), restLen = Math.max(0, (1 - pct) * C - GAP);
   return (
-    <Link href="/field-management" className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح إدارة الفنيين">
+    <Link href={king ? "/field-management?open=achievements" : "/field-management"} className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح إدارة الفنيين">
       <div className="st-top">
         <span className="st-lb">🛠️ إدارة الفنيين</span>
         {isAdmin && offices.length > 1 && (
@@ -356,6 +366,14 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
           <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--orange)" }} /> متبقّية</span><b>{v?.rest ?? "—"}</b></div>
         </div>
       </div>
+      {/* 👑 متصدّر الفترة: اسمٌ واحد لكل المكاتب، يبقى حتى يتجاوزه غيره أو تنتهي الفترة */}
+      {king && (
+        <div className="crown" title={`نقاط ${king.points} · ${king.cards} بطاقة${king.avgMin != null ? ` · متوسط ${king.avgMin} د` : ""} — اضغط للترتيب الكامل`}>
+          <span className="crown-ic">👑</span>
+          <span className="crown-nm">{king.name}</span>
+          <span className="crown-pt">{king.points}</span>
+        </div>
+      )}
     </Link>
   );
 }

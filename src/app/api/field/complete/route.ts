@@ -280,7 +280,8 @@ export async function POST(request: Request) {
     // سجل الإنجاز الدائم (البطاقة تُحذف من الأرشيف بعد أسبوع — هذا يبقى):
     // لعدّ بطاقات الفني حسب الفئة في كشف راتبه
     await tx.cardCompletion.create({
-      data: { cardId, technicianId: card.technicianId!, agentId: actor.agentId ?? null, towerId, kind: card.kind, completedAt: new Date() },
+      // durationSec يُحفظ هنا لأن البطاقة تُحذف بعد أسبوع — وبدونه تعمى «إنجازات الفنيين» عن السرعة
+      data: { cardId, technicianId: card.technicianId!, agentId: actor.agentId ?? null, towerId, kind: card.kind, durationSec, completedAt: new Date() },
     });
   });
 
