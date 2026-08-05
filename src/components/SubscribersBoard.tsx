@@ -61,6 +61,24 @@ export default function SubscribersBoard() {
   const [delMenu, setDelMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
   const [activating, setActivating] = useState<Subscriber | null>(null);
+  // ===== تحذير التفعيل المكرّر (طلب محمد 2026-08-05) =====
+  // مشتركٌ فُعِّل خلال أسبوع ثم يُضغط «تفعيل» عليه = مالٌ قد يُقبض مرّتين. الشاشة كانت
+  // تُفتح كأنّ شيئاً لم يكن — الآن يُسأل الخادم أولاً، وإن كان قريباً ظهر تنبيهٌ يُقرأ.
+  type RecentAct = { days: number; at: string; dateTo: string | null; packageName: string | null; moneyIn: number; isMaster: boolean; by: string | null };
+  const [recentAct, setRecentAct] = useState<{ sub: Subscriber; info: RecentAct } | null>(null);
+  const [actChecking, setActChecking] = useState<number | null>(null);
+
+  // ضغط «تفعيل»: نسأل عن آخر تفعيل خلال ٧ أيام قبل فتح الشاشة
+  async function startActivation(s: Subscriber) {
+    setActChecking(s.id);
+    try {
+      const r = await fetch(`/api/subscribers/${s.id}/last-activation`);
+      const d = await r.json().catch(() => null);
+      setActChecking(null);
+      if (r.ok && d?.recent) { setRecentAct({ sub: s, info: d as RecentAct }); return; }
+    } catch { setActChecking(null); }
+    setActivating(s); // لا تفعيل قريب (أو تعذّر الفحص) ⇒ افتح الشاشة كالمعتاد
+  }
   const [addingDebt, setAddingDebt] = useState<Subscriber | null>(null);
   // نوافذ السجلات
   const [logView, setLogView] = useState<"receipts" | "maintenance" | "invoices" | "debt" | "reward" | null>(null);
@@ -453,7 +471,7 @@ export default function SubscribersBoard() {
                     <tr key={`${s.id}-bar`} className="subrow"><td colSpan={6}>
                       <div className="subbar">
                         <div className="sb-row">
-                          <button className="sb-act go" onClick={() => setActivating(s)}>⚡ تفعيل</button>
+                          <button className="sb-act go" disabled={actChecking === s.id} onClick={() => startActivation(s)}>⚡ {actChecking === s.id ? "…" : "تفعيل"}</button>
                           <span className="sb-sep" />
                           <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}>الأيام المتبقية <b>{d}</b></span>
                           <button className={`sb-chip c-debt ${(s.carry ?? 0) <= 0 ? "zero" : ""}`} style={{ border: 0, cursor: "pointer", fontFamily: "inherit" }}
@@ -892,6 +910,44 @@ export default function SubscribersBoard() {
           )}
         </Modal>
       )}
+
+      {/* تنبيه: هذا المشترك فُعِّل قريباً — بالمدّة والمبلغ ومَن فعّله، والقرار لك */}
+      {recentAct && (() => {
+        const { sub, info } = recentAct;
+        const d = info.days;
+        const when = d === 0 ? "اليوم" : d === 1 ? "قبل يوم واحد" : d === 2 ? "قبل يومين" : `قبل ${d} أيام`;
+        const at = new Date(info.at).toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        const until = info.dateTo ? new Date(info.dateTo).toLocaleDateString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", year: "numeric" }) : null;
+        return (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 p-4" onClick={() => setRecentAct(null)}>
+            <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-2 text-center text-4xl">⚠️</div>
+              <div className="mb-1 text-center text-lg font-extrabold text-amber-700">
+                هذا المشترك تم تفعيله {when}
+              </div>
+              <div className="mb-3 text-center text-sm font-semibold text-slate-700">
+                {sub.name ?? sub.netUser ?? `#${sub.id}`}
+              </div>
+              <div className="mb-4 space-y-1 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                <div>🕒 وقت التفعيل: <b dir="ltr">{at}</b></div>
+                {info.packageName && <div>📦 الباقة: <b>{info.packageName}</b></div>}
+                <div>💵 الواصل: <b>{Number(info.moneyIn ?? 0).toLocaleString("en-US")}</b> د.ع{info.isMaster ? " (ماستر)" : ""}</div>
+                {until && <div>📅 ينتهي اشتراكه في: <b dir="ltr">{until}</b></div>}
+                {info.by && <div>👤 بواسطة: <b>{info.by}</b></div>}
+              </div>
+              <button
+                onClick={() => { const s2 = sub; setRecentAct(null); setActivating(s2); }}
+                className="mb-2 w-full rounded-xl bg-amber-600 py-3 font-bold text-white hover:bg-amber-700"
+              >
+                متابعة التفعيل رغم ذلك
+              </button>
+              <button onClick={() => setRecentAct(null)} className="w-full rounded-lg bg-slate-100 py-2.5 font-semibold text-slate-600 hover:bg-slate-200">
+                إلغاء
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {activating && (
         <ActivationModal
