@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import DateRangeFilter from "@/components/DateRangeFilter";
+import ChampionEmoji from "@/components/ChampionEmoji";
 
 // ===== إنجازات الفنيين: الترتيب من الأول إلى الأخير (طلب محمد 2026-08-05) =====
 // كل فنيّي مكاتب الوكيل معاً — لا مكتباً مكتباً. الفترة الافتراضية فترة الراتب الحالية،
@@ -73,10 +74,12 @@ export default function AchievementsModal({ onClose }: { onClose: () => void }) 
                   <li key={r.technicianId} className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${crown ? "border-amber-300 ring-2 ring-amber-200" : "border-slate-200"}`}>
                     <button onClick={() => setOpen(open === r.technicianId ? null : r.technicianId)} className="w-full px-3 py-2.5 text-right">
                       <div className="flex items-center gap-2">
-                        <span className="w-8 shrink-0 text-center text-lg font-extrabold text-slate-400">{MEDAL[i] ?? i + 1}</span>
+                        <span className="flex w-8 shrink-0 items-center justify-center text-lg font-extrabold text-slate-400">
+                          {crown ? <ChampionEmoji size={26} /> : (MEDAL[i] ?? i + 1)}
+                        </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-bold text-slate-800">
-                            {crown && "👑 "}{r.name}
+                            {r.name}
                             {r.cards < (d.minCards ?? 5) && <span className="mr-1 text-[10px] font-normal text-slate-400">(دون حدّ التتويج)</span>}
                           </span>
                           <span className="block text-[11px] text-slate-500">

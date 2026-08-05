@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import AchievementsModal from "@/components/AchievementsModal";
+import ChampionEmoji from "@/components/ChampionEmoji";
 import Link from "next/link";
 import { localSasBase } from "@/lib/localSas";
 import { onMoneyRefresh } from "@/lib/moneyRefresh";
@@ -379,7 +380,7 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRankOpen(true); }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setRankOpen(true); } }}
         >
-          <span className="crown-ic">👑</span>
+          <ChampionEmoji size={20} className="crown-ic" />
           <span className="crown-nm">{king.name}</span>
           <span className="crown-pt">{king.points}</span>
         </div>
