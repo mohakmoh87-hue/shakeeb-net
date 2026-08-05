@@ -18,6 +18,13 @@ export default function CardsPage() {
   const [canDelete, setCanDelete] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [availFilter, setAvailFilter] = useState<number | "">("");
+  // ===== بحث الكروت المستخدمة (طلب محمد 2026-08-05) =====
+  // البحث في الخادم لا في المعروض: فيطال كل الكروت لا آخر ألف فقط.
+  const [uq, setUq] = useState("");        // سيريال أو اسم مشترك أو ساحب الكارت
+  const [uFrom, setUFrom] = useState("");  // من تاريخ الاستخدام
+  const [uTo, setUTo] = useState("");      // إلى تاريخ الاستخدام
+  const [uMatched, setUMatched] = useState(0);
+  const [uLoading, setULoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [view, setView] = useState<"stock" | "available" | "used">("stock");
   const [packageId, setPackageId] = useState<number | "">("");
@@ -40,10 +47,26 @@ export default function CardsPage() {
       setSelected(new Set());
     })));
   }, []);
+  const loadUsed = useCallback((q = "", from = "", to = "") => {
+    const qs = new URLSearchParams();
+    if (q.trim()) qs.set("q", q.trim());
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    setULoading(true);
+    fetch(`/api/recharge-cards/used${qs.toString() ? `?${qs}` : ""}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) { setUsed(d.cards ?? d ?? []); setUMatched(d.matched ?? (d.cards ?? d ?? []).length); }
+        setULoading(false);
+      })
+      .catch(() => setULoading(false));
+  }, []);
   useEffect(() => {
-    if (view === "used") fetch("/api/recharge-cards/used").then((r) => { if (r.ok) r.json().then(setUsed); });
+    // تأجيلٌ بدورة واحدة: نداء يضبط الحالة داخل التأثير مباشرةً يُشعل إعادة تصيير متتالية
+    if (view === "used") { const t = setTimeout(() => loadUsed(uq, uFrom, uTo), 0); return () => clearTimeout(t); }
     if (view === "available") loadAvail();
-  }, [view, loadAvail]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, loadAvail, loadUsed]);
 
   const availShown = availFilter ? avail.filter((c) => c.packageId === availFilter) : avail;
   function toggle(id: number) {
@@ -161,6 +184,41 @@ export default function CardsPage() {
           {!canDelete && <div className="mt-2 text-xs text-slate-400">حذف الكروت متاح للمدير أو من يملك صلاحية «حذف كروت التفعيل من المخزن».</div>}
         </div>
       ) : view === "used" ? (
+        <>
+        {/* بحث: سيريال أو اسم مشترك + مدى تاريخ الاستخدام */}
+        <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="min-w-[220px] flex-1">
+            <label className="mb-1 block text-xs font-medium text-slate-600">بحث</label>
+            <input
+              value={uq}
+              onChange={(e) => setUq(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") loadUsed(uq, uFrom, uTo); }}
+              placeholder="🔍 سيريال الكارت، أو اسم المشترك، أو من سحبه…"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">من تاريخ</label>
+            <input type="date" value={uFrom} onChange={(e) => setUFrom(e.target.value)} dir="ltr"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">إلى تاريخ</label>
+            <input type="date" value={uTo} onChange={(e) => setUTo(e.target.value)} dir="ltr"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
+          </div>
+          <button onClick={() => loadUsed(uq, uFrom, uTo)} disabled={uLoading}
+            className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
+            {uLoading ? "…" : "🔍 بحث"}
+          </button>
+          {(uq || uFrom || uTo) && (
+            <button onClick={() => { setUq(""); setUFrom(""); setUTo(""); loadUsed("", "", ""); }}
+              className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
+          )}
+          <span className="mr-auto self-center text-xs font-semibold text-slate-500">
+            معروض {used.length} من أصل {uMatched}{uMatched > used.length ? " — ضيّق البحث لرؤية الباقي" : ""}
+          </span>
+        </div>
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full text-right text-sm">
             <thead className="bg-slate-50 text-slate-600">
@@ -168,9 +226,9 @@ export default function CardsPage() {
             </thead>
             <tbody>
               {used.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-slate-400">لا توجد كروت مستخدمة</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-slate-400">{uq || uFrom || uTo ? "لا كارت يطابق بحثك" : "لا توجد كروت مستخدمة"}</td></tr>
               ) : used.map((c) => (
-                <tr key={c.id} className="border-t border-slate-100">
+                <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="p-3">{c.id}</td>
                   <td className="p-3 font-bold" dir="ltr">{c.serial}</td>
                   <td className="p-3">{c.packageName ?? "—"}</td>
@@ -183,6 +241,7 @@ export default function CardsPage() {
             </tbody>
           </table>
         </div>
+        </>
       ) : (
       <>
       {/* المتاح لكل فئة */}
