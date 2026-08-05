@@ -380,7 +380,7 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRankOpen(true); }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setRankOpen(true); } }}
         >
-          <ChampionEmoji size={44} className="crown-ic" />
+          <ChampionEmoji size={66} className="crown-ic" />
           <span className="crown-nm">{king.name}</span>
           <span className="crown-pt">{king.points}</span>
         </div>
