@@ -96,21 +96,21 @@ export async function POST(request: Request) {
   const durationSec = card.startedAt ? Math.max(0, Math.round((Date.now() - card.startedAt.getTime()) / 1000)) : null;
 
   // ===== التحقّق حسب النوع =====
-  // ===== التوصيل: المبلغ يأتي من وجه البطاقة لا من يد الفني (قرار محمد 2026-08-05) =====
-  // كان يُكتب مرّتين: مرّةً بلا إلزام عند الإنشاء، ومرّةً على الفني عند الإنجاز — فيختلف
-  // الرقمان ولا مرجع يُحتكم إليه. الآن يُثبَّت عند الإنشاء إلزاماً ويُقرأ منه عند الإنجاز.
-  // والبطاقات القديمة (أُنشئت قبل هذا) لا مبلغ عليها، فتُسأل كما كانت تماماً.
-  const fixedDelivery = isDelivery && card.amount != null ? card.amount : null;
-  // المبلغ المعتمَد للتوصيل: المثبَّت على البطاقة إن وُجد، وإلا ما أدخله الفني (بطاقة قديمة)
-  const deliveryAmt = isDelivery ? (fixedDelivery ?? amount ?? 0) : 0;
-  if (isDelivery && fixedDelivery == null) {
+  // **الفني هو من يكتب المبلغين عند الباب** (تصحيح محمد 2026-08-05): مبلغ التوصيل يُكتب
+  // هنا (صفر أو أي رقم)، ومبلغ الاشتراك يصل محسوباً من الباقة **وله أن يعدّله** إن اختلف
+  // ما استلمه. فلا رقم يُفرَض عليه من فوق ولا بطاقة تعجز عن الإنجاز لاختلاف دينار.
+  const deliveryAmt = isDelivery ? (amount ?? 0) : 0;
+  if (isDelivery) {
     if (amount == null || amount < 0) {
-      return NextResponse.json({ error: "المبلغ مطلوب (يمكن أن يكون صفراً)" }, { status: 400 });
+      return NextResponse.json({ error: "مبلغ التوصيل مطلوب (يمكن أن يكون صفراً)" }, { status: 400 });
     }
     if (amount > 0 && amount < 1000) {
-      return NextResponse.json({ error: "المبلغ لا يقل عن 1000 دينار (أو صفر للمجاني)" }, { status: 400 });
+      return NextResponse.json({ error: "مبلغ التوصيل لا يقل عن 1000 دينار (أو صفر للمجاني)" }, { status: 400 });
     }
-  } else if (!isDelivery) {
+    if (subscription != null && subscription > 0 && subscription < 1000) {
+      return NextResponse.json({ error: "مبلغ الاشتراك لا يقل عن 1000 دينار (أو صفر)" }, { status: 400 });
+    }
+  } else {
     // الحقول الكاملة والتحويل (التحويل بشروطه القديمة + الجديدة):
     if (isTransfer && !newUser?.trim()) {
       return NextResponse.json({ error: "اليوزر الجديد مطلوب لإنجاز التحويل" }, { status: 400 });
@@ -170,7 +170,8 @@ export async function POST(request: Request) {
 
   // «المبيع» و«اشتراك» للحقول الكاملة والتحويل — التوصيل يبقى على مبلغه المعلوماتي
   const saleGross = isDelivery ? 0 : (sale ?? 0);
-  const subAmountVal = isDelivery ? null : (subscription ?? 0);
+  // التوصيل: مبلغ الاشتراك يبقى على البطاقة — يعدّله الفني إن اختلف، وإلا يبقى المحسوب من الباقة
+  const subAmountVal = isDelivery ? (subscription ?? card.subAmount ?? null) : (subscription ?? 0);
 
   // سحب كود المكافأة (اختياري): يخصم من «المبيع» حصراً — لا يلمس «اشتراك» أبداً.
   // التوصيل مستثنى (مكافأته عند التفعيل — مصدره المالي الوحيد).
@@ -284,9 +285,9 @@ export async function POST(request: Request) {
   });
 
   // سجل التغييرات داخل البطاقة + المجموع المستلم من الفني (مبيع + اشتراك؛ وللتوصيل مبلغه)
-  const totalReceived = isDelivery ? deliveryAmt : netSale + (subAmountVal ?? 0);
+  const totalReceived = isDelivery ? deliveryAmt + (subAmountVal ?? 0) : netSale + (subAmountVal ?? 0);
   const amountsLabel = isDelivery
-    ? `مبلغ التوصيل ${deliveryAmt.toLocaleString("en-US")} د.ع`
+    ? `توصيل ${deliveryAmt.toLocaleString("en-US")} + اشتراك ${(subAmountVal ?? 0).toLocaleString("en-US")} د.ع`
     : `مبيع ${netSale.toLocaleString("en-US")} + اشتراك ${(subAmountVal ?? 0).toLocaleString("en-US")} د.ع`;
   await appendCardHistory(cardId, actor.name, `إنجاز البطاقة — ${amountsLabel}`);
 

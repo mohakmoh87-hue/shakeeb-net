@@ -92,7 +92,6 @@ export default function SubscribersBoard() {
   const [opsChosen, setOpsChosen] = useState<string | null>(null);
   const [opsPhone, setOpsPhone] = useState("");
   const [opsNote, setOpsNote] = useState("");
-  const [opsAmount, setOpsAmount] = useState("");
   // اختيار الفني (اختياري تماماً — كالهاتف والملاحظة): فارغ ⇒ التوزيع التلقائي إن كان مفعَّلاً
   const [opsTech, setOpsTech] = useState("");
   const [opsTechs, setOpsTechs] = useState<{ id: number; name: string }[]>([]);
@@ -360,22 +359,14 @@ export default function SubscribersBoard() {
     else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر الاسترجاع"); }
   }
 
-  function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); setOpsTech(""); setOpsTechs([]); }
+  function closeOps() { setOpsSub(null); setOpsChosen(null); setOpsPhone(""); setOpsNote(""); setOpsTech(""); setOpsTechs([]); }
   async function sendToField(operation: string) {
     if (!opsSub) return;
-    // مبلغ التوصيل إلزاميّ صراحةً: الفراغ ليس صفراً — «مجاناً» قرارٌ يُكتب لا يُفترَض
-    if (operation === "توصيل") {
-      const raw = opsAmount.trim();
-      if (raw === "") { setOpsMsg("اكتب مبلغ التوصيل (0 إن كان مجاناً)"); return; }
-      const n = Number(raw);
-      if (!Number.isFinite(n) || n < 0) { setOpsMsg("مبلغ التوصيل غير صالح"); return; }
-      if (n > 0 && n < 1000) { setOpsMsg("مبلغ التوصيل لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
-    }
     setOpsBusy(true); setOpsMsg("");
     const res = await fetch("/api/field/from-subscriber", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      // مبلغ الاشتراك لا يُرسل: الخادم يحسبه من باقة المشترك. والمُرسَل هو مبلغ التوصيل وحده.
-      body: JSON.stringify({ subscriberId: opsSub.id, operation, extraPhone: opsPhone.trim() || undefined, note: opsNote.trim() || undefined, amount: operation === "توصيل" ? Number(opsAmount) : undefined, technicianId: opsTech ? Number(opsTech) : undefined }),
+      // لا مبالغ تُرسَل من هنا: الاشتراك يحسبه الخادم من الباقة، والتوصيل يكتبه الفني عند الإنجاز
+      body: JSON.stringify({ subscriberId: opsSub.id, operation, extraPhone: opsPhone.trim() || undefined, note: opsNote.trim() || undefined, technicianId: opsTech ? Number(opsTech) : undefined }),
     });
     setOpsBusy(false);
     if (res.ok) { setOpsMsg(`✓ تمت إضافة «${opsSub.name ?? ""}» إلى عمود «${operation}» في إدارة الفنيين`); closeOps(); }
@@ -769,7 +760,7 @@ export default function SubscribersBoard() {
                   <div className="ops-grid">
                     {FIELD_OPS.map((op) => (
                       <button key={op.key} disabled={opsBusy} className="ops-btn"
-                        onClick={() => { setOpsChosen(op.key); setOpsPhone(""); setOpsNote(""); setOpsAmount(""); }}>
+                        onClick={() => { setOpsChosen(op.key); setOpsPhone(""); setOpsNote(""); }}>
                         <span className="e">{op.icon}</span>
                         <span>{op.key}</span>
                       </button>
@@ -790,10 +781,9 @@ export default function SubscribersBoard() {
                           {packages.find((p) => p.id === opsSub.packageId)?.name ?? "بلا باقة"}
                         </span>
                       </div>
-                      {/* مبلغ التوصيل: يدويّ وإلزاميّ — يُكتب مرّة عند الإنشاء ويظهر على وجه البطاقة،
-                          فلا يُطلب من الفني عند الإنجاز. والصفر جائز لكن لا بدّ من كتابته صراحةً. */}
-                      <label className="ops-lb amt">🚚 مبلغ التوصيل (إلزامي — اكتب 0 إن كان مجاناً)</label>
-                      <input type="number" className="ops-in" value={opsAmount} onChange={(e) => setOpsAmount(e.target.value)} dir="ltr" placeholder="مثال: 5000 أو 0" />
+                      {/* لا مبلغ يُكتب هنا: التوصيل يكتبه الفني عند الباب، والاشتراك أعلاه محسوب
+                          من الباقة وله تعديله عند الإنجاز إن اختلف ما استلمه. */}
+                      <div className="ops-hint">🚚 مبلغ التوصيل يكتبه الفني عند الإنجاز — ولا يُطلب منك الآن.</div>
                     </>
                   )}
                   <label className="ops-lb">رقم هاتف إضافي (اختياري)</label>

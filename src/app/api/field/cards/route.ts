@@ -42,27 +42,9 @@ export async function POST(request: Request) {
       }
     } catch { /* لا يُفشل إنشاء البطاقة إطلاقاً */ }
   }
-  // ===== بطاقة التوصيل: مبلغها يُثبَّت عند الإنشاء إلزاماً (قرار محمد 2026-08-05) =====
-  // نفس قاعدة البطاقة المُنشأة من المشترك — كي لا يبقى بابٌ تُنشأ منه بطاقة توصيل بلا مبلغ
-  // فيُسأل عنه الفني عند الإنجاز. والصفر جائز لكنه يُكتب صراحةً.
+  // بطاقة التوصيل تُرفع **بلا أرقام** (تصحيح محمد 2026-08-05): الفني يكتب مبلغ التوصيل
+  // ويعدّل مبلغ الاشتراك عند الإنجاز — فالمبلغ يُعرف عند الباب لا قبله.
   const kindName = b.kind ? String(b.kind).trim() : "صيانة";
-  const kindType = await prisma.cardType.findFirst({
-    where: { name: kindName, isDeleted: false, agentId: actor.agentId ?? -1 },
-    select: { deliveryOnly: true },
-  });
-  const isDeliveryKind = kindType?.deliveryOnly ?? kindName === "توصيل";
-  let deliveryAmount: number | null = null;
-  if (isDeliveryKind) {
-    const n = b.amount == null || b.amount === "" ? NaN : Math.round(Number(b.amount));
-    if (!Number.isFinite(n) || n < 0) {
-      return NextResponse.json({ error: "مبلغ التوصيل مطلوب (اكتب 0 إن كان مجاناً)" }, { status: 400 });
-    }
-    if (n > 0 && n < 1000) {
-      return NextResponse.json({ error: "مبلغ التوصيل لا يقل عن 1000 دينار (أو صفر للمجاني)" }, { status: 400 });
-    }
-    deliveryAmount = n;
-  }
-
   const count = await prisma.taskCard.count({ where: { listId: Number(b.listId), isDeleted: false } });
   const created = await prisma.taskCard.create({
     data: {
@@ -71,7 +53,6 @@ export async function POST(request: Request) {
       position: count,
       // نوع البطاقة = اسم الفئة (CardType) كما اختاره المستخدم — لا يُقسَر إلى maintenance/delivery
       kind: kindName,
-      amount: deliveryAmount,
       assignee,
       technicianId,
       dueDate: b.dueDate ? new Date(b.dueDate) : null,

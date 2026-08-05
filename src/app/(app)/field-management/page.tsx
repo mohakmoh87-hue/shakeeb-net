@@ -99,8 +99,6 @@ export default function FieldManagementPage() {
   const [cardKind, setCardKind] = useState("صيانة");
   const [cardTech, setCardTech] = useState("");
   const [cardDue, setCardDue] = useState("");
-  // مبلغ التوصيل للبطاقة اليدوية: إلزاميّ لأنواع التوصيل ولو كان صفراً (قرار محمد 2026-08-05)
-  const [cardAmount, setCardAmount] = useState("");
   const [sel, setSel] = useState<Card | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
   const [postponing, setPostponing] = useState<Card | null>(null);
@@ -267,23 +265,12 @@ export default function FieldManagementPage() {
     const title = cardText.trim();
     if (!title) { setAddingTo(null); return; }
     const tech = technicians.find((t) => String(t.id) === cardTech);
-    // بطاقة توصيل يدوية: المبلغ يُكتب هنا مرّة واحدة ويظهر على وجهها، فلا يُسأل عنه الفني
-    let amt: number | undefined;
-    if (isDeliveryKind(cardKind)) {
-      const raw = cardAmount.trim();
-      if (raw === "") { alert("اكتب مبلغ التوصيل (0 إن كان مجاناً)"); return; }
-      const n = Number(raw);
-      if (!Number.isFinite(n) || n < 0) { alert("مبلغ التوصيل غير صالح"); return; }
-      if (n > 0 && n < 1000) { alert("مبلغ التوصيل لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
-      amt = n;
-    }
     const payload = {
       listId, title, kind: cardKind,
       technicianId: tech?.id ?? null, assignee: tech?.name ?? null,
       dueDate: cardDue || null,
-      amount: amt,
     };
-    setCardText(""); setCardTech(""); setCardDue(""); setCardAmount(""); setCardKind(cardTypes[0]?.name ?? "صيانة");
+    setCardText(""); setCardTech(""); setCardDue(""); setCardKind(cardTypes[0]?.name ?? "صيانة");
     const r = await fetch("/api/field/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (r.ok) { const c = await r.json(); setCards((x) => [...x, c]); }
   }
@@ -813,9 +800,6 @@ export default function FieldManagementPage() {
                         </select>
                       )}
                     </div>
-                    {isDeliveryKind(cardKind) && (
-                      <input type="number" value={cardAmount} onChange={(e) => setCardAmount(e.target.value)} dir="ltr" placeholder="مبلغ التوصيل (إلزامي — 0 للمجاني)" className="w-full rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1.5 text-xs" />
-                    )}
                     <input type="date" value={cardDue} onChange={(e) => setCardDue(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs" />
                     <div className="flex gap-1">
                       <button onClick={() => addCard(l.id)} className="flex-1 rounded-lg bg-mynet-blue px-3 py-1 text-sm font-semibold text-white">إضافة البطاقة</button>
@@ -1395,12 +1379,11 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   const fullFlow = !isDelivery;
   const [details, setDetails] = useState("");
   const [newUser, setNewUser] = useState("");
-  const [amount, setAmount] = useState(""); // «التوصيل» فقط: مبلغه — للبطاقات القديمة بلا مبلغ مثبَّت
-  // المبلغ المثبَّت عند إنشاء بطاقة التوصيل: يُعرض ولا يُكتب (والصفر مبلغٌ مثبَّت لا فراغ)
-  const fixedAmount = isDelivery && card.amount != null ? Number(card.amount) : null;
+  const [amount, setAmount] = useState(""); // «التوصيل»: يكتبه الفني عند الباب (صفر أو أي رقم)
   const [saleStr, setSaleStr] = useState("0"); // «المبيع»: يتزامن مع مجموع المواد حتى أول تعديل يدوي
   const [saleDirty, setSaleDirty] = useState(false);
-  const [subStr, setSubStr] = useState(""); // «اشتراك»: إلزامي كتابته يدوياً ولو 0
+  // «اشتراك»: في التوصيل يصل محسوباً من باقة المشترك **وللفني تعديله**؛ وفي غيره يُكتب يدوياً
+  const [subStr, setSubStr] = useState(isDelivery && card.subAmount != null ? String(card.subAmount) : "");
   const [rewardsOn, setRewardsOn] = useState(false); // مكتب المشترك مفعّل للمكافآت
   const [reward, setReward] = useState<{ balance: number; name: string | null } | null>(null); // رصيد مكافأة المشترك (إن وُجد)
   const [rewardPulled, setRewardPulled] = useState(false); // سُحب الكود لهذا الإنجاز
@@ -1495,11 +1478,10 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   async function submit() {
     setErr("");
     if (isDelivery) {
-      // المبلغ المثبَّت لا يُراجَع هنا — البطاقة هي المرجع. والقديمة (بلا مبلغ) تُفحص كما كانت.
-      if (fixedAmount == null) {
-        if (nAmount < 0) { setErr("المبلغ لا يكون سالباً"); return; }
-        if (nAmount > 0 && nAmount < 1000) { setErr("المبلغ لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
-      }
+      if (amount.trim() === "") { setErr("اكتب مبلغ التوصيل (0 إن كان مجاناً)"); return; }
+      if (nAmount < 0) { setErr("المبلغ لا يكون سالباً"); return; }
+      if (nAmount > 0 && nAmount < 1000) { setErr("مبلغ التوصيل لا يقل عن 1000 دينار (أو صفر للمجاني)"); return; }
+      if (nSub > 0 && nSub < 1000) { setErr("مبلغ الاشتراك لا يقل عن 1000 دينار (أو صفر)"); return; }
     } else {
       if (isTransfer && !newUser.trim()) { setErr("اليوزر الجديد مطلوب لإنجاز التحويل"); return; }
       if (fullFields) {
@@ -1519,10 +1501,10 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         cardId: card.id, serviceDetails: details, newUser,
-        // المبلغ المثبَّت لا يُرسَل: الخادم يقرأه من البطاقة نفسها فلا يُغيَّر من المتصفّح
-        amount: isDelivery && fixedAmount == null ? nAmount : undefined,
+        amount: isDelivery ? nAmount : undefined,
         sale: isDelivery ? undefined : nSale,
-        subscription: isDelivery ? undefined : nSub,
+        // التوصيل يرسل الاشتراك أيضاً — لأن الفني قد يعدّله عمّا حسبته الباقة
+        subscription: nSub,
         materials, useReward: rewardPulled, noSale,
       }),
     });
@@ -1557,19 +1539,20 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
           </>
         )}
 
-        {/* التوصيل: المبلغ مثبَّت على البطاقة منذ إنشائها — يُعرض ولا يُكتب. والبطاقات
-            القديمة (بلا مبلغ مثبَّت) تُسأل كما كانت، فلا تعلق بطاقة بين نظامين. */}
-        {isDelivery && (fixedAmount != null ? (
-          <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-            <div className="text-xs font-semibold text-emerald-700">🚚 مبلغ التوصيل (مثبَّت عند إنشاء البطاقة)</div>
-            <div className="text-lg font-extrabold text-emerald-800" dir="ltr">
-              {fixedAmount > 0 ? `${fixedAmount.toLocaleString("en-US")} د.ع` : "مجاناً (0)"}
-            </div>
-          </div>
-        ) : (<>
-          <label className="mb-1 block text-xs font-semibold text-slate-500">المبلغ المستلم من الزبون <span className="text-slate-400">(0 = مجاني)</span></label>
-          <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </>))}
+        {/* التوصيل: المبلغان بيد الفني عند الباب — الاشتراك يصل محسوباً من الباقة **وله
+            تعديله**، والتوصيل يكتبه (صفر أو أي رقم). فلا رقم يُفرَض من فوق. */}
+        {isDelivery && (<>
+          <label className="mb-1 block text-xs font-semibold text-slate-500">
+            💵 مبلغ الاشتراك <span className="text-slate-400">(محسوب من باقة المشترك — عدّله إن اختلف)</span>
+          </label>
+          <input type="number" value={subStr} onChange={(e) => setSubStr(e.target.value)} placeholder="0" dir="ltr"
+            className="mb-3 w-full rounded-lg border border-indigo-300 bg-indigo-50/40 px-3 py-2 text-sm font-bold" />
+          <label className="mb-1 block text-xs font-semibold text-slate-500">
+            🚚 مبلغ التوصيل <span className="text-slate-400">(اكتب 0 إن كان مجاناً)</span>
+          </label>
+          <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" dir="ltr"
+            className="mb-3 w-full rounded-lg border border-emerald-300 bg-emerald-50/40 px-3 py-2 text-sm font-bold" />
+        </>)}
 
         {/* سلسلة قوائم المواد: الأولى إلزامية (مادة أو «بلا مبيع») وكل اختيار يُظهر قائمة جديدة */}
         {fullFlow && (

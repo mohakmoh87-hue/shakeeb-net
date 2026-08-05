@@ -22,23 +22,10 @@ export async function POST(request: Request) {
   // اختياريان: رقم هاتف إضافي + ملاحظة يكتبهما المستخدم في مربع الحوار (يُضافان للبطاقة)
   const extraPhone = String(body?.extraPhone ?? "").trim().slice(0, 40);
   const note = String(body?.note ?? "").trim().slice(0, 1000);
-  // ===== مبلغا بطاقة التوصيل (قرار محمد 2026-08-05) =====
-  // «الاشتراك»: **تلقائي من باقة المشترك** — لا يُكتب يدوياً ولا يُقبل من المتصفّح، فسعر
-  //   الباقة معروف في النظام وكتابته باليد بابُ خطأ لا فائدة فيه.
-  // «التوصيل»: **يدويّ وإلزاميّ عند الإنشاء** (الصفر جائز لكن يُكتب صراحةً) — يُخزَّن على
-  //   البطاقة ويظهر على وجهها، فلا يُطلب من الفني عند الإنجاز كما كان.
-  let deliveryAmount: number | null = null;
-  if (operation === "توصيل") {
-    const raw = body?.amount;
-    const n = raw == null || raw === "" ? NaN : Math.round(Number(raw));
-    if (!Number.isFinite(n) || n < 0) {
-      return NextResponse.json({ error: "مبلغ التوصيل مطلوب (اكتب 0 إن كان مجاناً)" }, { status: 400 });
-    }
-    if (n > 0 && n < 1000) {
-      return NextResponse.json({ error: "مبلغ التوصيل لا يقل عن 1000 دينار (أو صفر للمجاني)" }, { status: 400 });
-    }
-    deliveryAmount = n;
-  }
+  // ===== مبلغا بطاقة التوصيل (تصحيح محمد 2026-08-05) =====
+  // **الرفع بلا أرقام**: المكتب يرفع البطاقة ولا يُطالَب بكتابة مبلغ إطلاقاً.
+  // «الاشتراك» يُحسب تلقائياً من باقة المشترك ويظهر على الوجه، و**الفني يعدّله عند الإنجاز
+  // إن اختلف**، ويكتب «مبلغ التوصيل» هناك (صفر أو أي رقم). فالمبلغ يُعرف عند الباب لا قبله.
   // اختيار الفني (اختياري) — يُتحقَّق منه لاحقاً بعد معرفة مكتب المشترك
   const wantedTech = body?.technicianId != null ? Number(body.technicianId) : null;
   if (!subscriberId) return NextResponse.json({ error: "معرّف المشترك مطلوب" }, { status: 400 });
@@ -133,8 +120,6 @@ export async function POST(request: Request) {
     data: {
       listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id,
       subAmount: subAmount > 0 ? subAmount : null,
-      // مبلغ التوصيل يُثبَّت على البطاقة منذ إنشائها (والصفر يُخزَّن صفراً لا فراغاً — فرقٌ يعني «مجاناً بقرار»)
-      amount: deliveryAmount,
       technicianId, assignee,
     },
   });
