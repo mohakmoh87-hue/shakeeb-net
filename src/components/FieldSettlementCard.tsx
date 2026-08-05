@@ -149,8 +149,10 @@ export default function FieldSettlementCard() {
                   {(t.items ?? []).map((it, idx) => (
                     <div key={idx} className="sd-row">
                       <span>
+                        {/* عنوان البطاقة **هو** اليوزر في بطاقات المشتركين، فكان يُطبع مرّتين
+                            متلاصقتين. يُعرض الثاني فقط إن اختلف — واختلافه خبرٌ يستحق أن يُرى. */}
                         {KIND_ICON[it.kind] ?? "🔧"} {it.kind} — {it.title}
-                        {it.netUser && <i dir="ltr"> {it.netUser}</i>}
+                        {it.netUser && it.netUser.trim() !== (it.title ?? "").trim() && <i dir="ltr"> {it.netUser}</i>}
                       </span>
                       <b>
                         {it.amount > 0 && fmt(it.amount)}
