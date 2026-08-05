@@ -54,12 +54,14 @@ export default function OfficesPage() {
     if (isManager) fetch("/api/map/areas").then((r) => r.ok ? r.json() : null).then((d) => d && setAreas(d.areas ?? []));
   }, [isManager]);
 
-  // وضع QR فقط: جلب مكتب المستخدم دائماً للربط (متاح بلا صلاحية إدارة/مزامنة)
+  // وضع QR: جلب مكاتب المستخدم للربط لكل من لا يدير المكاتب — **بمن فيهم صاحب صلاحية
+  // المزامنة**. كان الشرط يستثنيه (canSync)، فسقط ربط الواتساب عن مستخدم مكتب الرسالة
+  // وحده: صلاحياته sync بلا edit ⇒ صفحته «المزامنة فقط» ولا صندوق واتساب فيها إطلاقاً.
   useEffect(() => {
-    if (me && !isManager && !canSync) {
+    if (me && !isManager) {
       fetch("/api/whatsapp/my-offices").then((r) => void (r.ok && r.json().then((d) => setWaOnly(d.offices ?? []))));
     }
-  }, [me, isManager, canSync]);
+  }, [me, isManager]);
 
   if (!me) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
 
@@ -67,7 +69,7 @@ export default function OfficesPage() {
   if (!isManager && canSync) {
     return (
       <div className="p-6">
-        <PageHeader title="مزامنة اشتراكات المكاتب" subtitle="زامن اشتراكات مكاتبك من SAS (استيراد وتحديث) — بلا تعديل بيانات المكتب" />
+        <PageHeader title="مكتبي: المزامنة وربط الواتساب" subtitle="زامن اشتراكاتك من SAS واربط واتساب مكتبك — بلا تعديل بيانات المكتب" />
         {offices.length === 0 ? (
           <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">لا توجد مكاتب مرتبطة بحسابك.</div>
         ) : (
@@ -76,6 +78,10 @@ export default function OfficesPage() {
               <div key={o.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <h3 className="mb-2 font-bold text-slate-800">🏢 {o.name ?? `مكتب ${o.id}`}</h3>
                 <OfficeSync officeId={o.id} />
+                {/* ربط الواتساب هنا أيضاً — كان الغائب الوحيد عن هذه الشاشة */}
+                <div className="mt-4">
+                  <OfficeWhatsApp officeId={o.id} />
+                </div>
               </div>
             ))}
           </div>
@@ -289,7 +295,11 @@ const WA_LABEL: Record<string, string> = { disconnected: "غير متصل", star
 function OfficeWhatsApp({ officeId }: { officeId: number }) {
   const { can } = usePermission();
   const canConnect = can("whatsapp.connect"); // فصل الواتساب بصلاحية (سدّ ثغرة logout)
-  const [st, setSt] = useState<{ state: string; qrImage: string | null; error: string | null }>({ state: "disconnected", qrImage: null, error: null });
+  type WaSt = {
+    state: string; qrImage: string | null; error: string | null;
+    hint?: string | null; machine?: { name: string | null; online: boolean; minutesAgo: number | null } | null;
+  };
+  const [st, setSt] = useState<WaSt>({ state: "disconnected", qrImage: null, error: null });
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const poll = useCallback(async () => {
@@ -322,6 +332,18 @@ function OfficeWhatsApp({ officeId }: { officeId: number }) {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={st.qrImage} alt="QR" className="h-56 w-56" />
           <div className="mt-2 text-xs text-slate-500">واتساب ← الأجهزة المرتبطة ← ربط جهاز</div>
+        </div>
+      )}
+      {/* لماذا لا يظهر رمز؟ — الصمت كان أسوأ من العطل: المستخدم يرى شاشةً خالية بلا سبب.
+          الرمز لا يولد إلا على حاسبة المكتب، فإن كانت مطفأة تُقال العلّة والعلاج صراحةً. */}
+      {st.hint && (
+        <div className={`mb-2 rounded-lg px-3 py-2 text-xs leading-5 ${st.state === "qr" ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-800"}`}>
+          {st.hint}
+          {st.machine && !st.machine.online && st.machine.minutesAgo != null && (
+            <span className="mt-1 block text-[11px] text-amber-700">
+              آخر ظهور للحاسبة: قبل {st.machine.minutesAgo < 60 ? `${st.machine.minutesAgo} دقيقة` : `${Math.round(st.machine.minutesAgo / 60)} ساعة`}
+            </span>
+          )}
         </div>
       )}
       {st.error && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{st.error}</div>}
