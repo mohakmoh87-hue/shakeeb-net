@@ -19,7 +19,12 @@ type Tx = {
   date: string | null;
   sourceType: string | null;
   towerId: number | null;
+  settledAt?: string | null;   // قيدُ مكتبٍ وُسِم مسدَّداً
+  settledTxId?: number | null;
 };
+// مكتب تسديد (حساب عليه علامة «مكتب تفعيل») وما عليه من قيود غير مسدَّدة
+type SettleOffice = { id: number; name: string | null; towerId: number | null; office: string | null; owed: number; count: number };
+type SettleRow = { id: number; date: string | null; moneyIn: number | null; moneyOut: number | null; notes: string | null; settledAt: string | null; sourceType: string | null };
 type Account = { id: number; name: string | null; towerId: number | null };
 type Tower = { id: number; name: string | null };
 
@@ -31,12 +36,14 @@ const fmtDate = (d: string | null) => formatDateTime(d); // بالتاريخ و�
 const SRC_LABEL: Record<string, string> = {
   manual: "يدوي", master: "🅜 ماستر", "master-invoice": "🅜 فاتورة ماستر",
   activation: "تفعيل", invoice: "فاتورة", sale: "بيع مخزن", debt: "تسديد دين", salary: "راتب",
+  "office-settle": "تسديد مكتب",
 };
 const srcLabel = (s: string | null) => (s == null ? "يدوي" : SRC_LABEL[s] ?? s);
 const SRC_CLASS: Record<string, string> = {
   master: "bg-indigo-50 text-indigo-700", "master-invoice": "bg-indigo-50 text-indigo-700",
   activation: "bg-emerald-50 text-emerald-700", invoice: "bg-sky-50 text-sky-700",
   sale: "bg-amber-50 text-amber-700", debt: "bg-rose-50 text-rose-700", salary: "bg-violet-50 text-violet-700",
+  "office-settle": "bg-teal-50 text-teal-700",
 };
 
 export default function CashboxPage() {
@@ -69,11 +76,34 @@ export default function CashboxPage() {
   const [matched, setMatched] = useState(0); // إجمالي المطابق (قد يفوق المعروض)
   // فلتر مكتب واحد يصل من رابط بطاقة الشاشة الرئيسية (?office=)
   const [officeId, setOfficeId] = useState<number | "">("");
+  // فلتر حساب واحد (نثرية مثلاً) — يسار البحث الحرّ، فالبحث كان يبتلع الشريط كلّه
+  const [accFilter, setAccFilter] = useState<number | "">("");
+  // ===== مكاتب التسديد: ما عليها، وتسديده كلّه أو بعضه =====
+  const [settleOffices, setSettleOffices] = useState<SettleOffice[]>([]);
+  const [openOffice, setOpenOffice] = useState<number | null>(null); // المكتب المفتوحة تفاصيله
+  const [settleRows, setSettleRows] = useState<SettleRow[]>([]);
+  const [settleSel, setSettleSel] = useState<Set<number>>(new Set());
+  const [showSettled, setShowSettled] = useState(false); // إظهار المسدَّدة (لإرجاعها)
+  const [settleBusy, setSettleBusy] = useState(false);
+  const [settleMsg, setSettleMsg] = useState("");
 
-  const load = useCallback((f = "", t = "", search = "", kind = "entered", office: number | "" = "") => {
+  const loadSettle = useCallback(() => {
+    fetch("/api/money/settlements").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) setSettleOffices(d.offices ?? []);
+    }).catch(() => {});
+  }, []);
+  const loadSettleRows = useCallback((accId: number, withSettled: boolean) => {
+    fetch("/api/money/settlements?accountId=" + accId + (withSettled ? "&settled=1" : ""))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setSettleRows(d.rows ?? []); setSettleSel(new Set()); } })
+      .catch(() => {});
+  }, []);
+
+  const load = useCallback((f = "", t = "", search = "", kind = "entered", office: number | "" = "", acc: number | "" = "") => {
     const qs = new URLSearchParams();
     if (kind) qs.set("type", kind);
     if (office !== "") qs.set("officeId", String(office));
+    if (acc !== "") qs.set("accountId", String(acc));
     if (f) qs.set("from", f);
     if (t) qs.set("to", t);
     if (search.trim()) qs.set("q", search.trim());
@@ -103,11 +133,55 @@ export default function CashboxPage() {
     if (ut) setTo(ut);
     setTypeFilter(uk);
     setOfficeId(office);
-    load(uf, ut, q, uk, office);
+    load(uf, ut, q, uk, office, "");
     fetch("/api/accounts").then((r) => void (r.ok && r.json().then(setAccounts)));
+    loadSettle();
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setTowers)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load]);
+  }, [load, loadSettle]);
+
+  // تسديد: الكل إن لم يُحدَّد شيء، أو المحدَّد فقط. يُقيَّد قبضاً بتاريخ اليوم فيدخل تقريره.
+  async function settle(accId: number, ids?: number[]) {
+    const office = settleOffices.find((o) => o.id === accId);
+    const partial = Array.isArray(ids) && ids.length > 0;
+    const sum = partial
+      ? settleRows.filter((r) => ids.includes(r.id)).reduce((s2, r) => s2 + (r.moneyOut ?? 0) - (r.moneyIn ?? 0), 0)
+      : (office?.owed ?? 0);
+    if (sum <= 0) { setSettleMsg("لا مبلغ للتسديد"); return; }
+    const n = partial ? ids.length : (office?.count ?? 0);
+    if (!confirm("تسديد " + sum.toLocaleString("en-US") + " د.ع من «" + (office?.name ?? "") + "»؟\n" +
+      "يُقيَّد قبضاً بتاريخ اليوم فيدخل تقرير اليوم، وتُوسَم " + n + " قيداً بأنها سُدِّدت.")) return;
+    setSettleBusy(true); setSettleMsg("");
+    const r = await fetch("/api/money/settlements", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId: accId, ...(partial ? { txIds: ids } : {}) }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setSettleBusy(false);
+    if (!r.ok) { setSettleMsg(d.error ?? "تعذّر التسديد"); return; }
+    setSettleMsg("✓ سُدِّد " + Number(d.total).toLocaleString("en-US") + " د.ع (" + d.settled + " قيد) — دخل تقرير اليوم");
+    loadSettle();
+    if (openOffice === accId) loadSettleRows(accId, showSettled);
+    load(from, to, q, typeFilter, officeId, accFilter);
+  }
+
+  // إرجاع قيد مسدَّد إلى الدين (ينقص حركة التسديد بمقداره فلا يبقى مالٌ مقبوضٌ بلا مقابل)
+  async function unsettle(ids: number[]) {
+    if (!ids.length) return;
+    if (!confirm("إرجاع " + ids.length + " قيد إلى الدين؟\nستنقص حركة التسديد بمقدارها من تقرير يومها.")) return;
+    setSettleBusy(true); setSettleMsg("");
+    const r = await fetch("/api/money/settlements", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unsettle: true, txIds: ids }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setSettleBusy(false);
+    if (!r.ok) { setSettleMsg(d.error ?? "تعذّر الإرجاع"); return; }
+    setSettleMsg("✓ أُرجع " + d.reverted + " قيد إلى الدين");
+    loadSettle();
+    if (openOffice != null) loadSettleRows(openOffice, showSettled);
+    load(from, to, q, typeFilter, officeId, accFilter);
+  }
 
   // اسم المكتب لعرضه بجانب اسم الحساب (لتمييز الحسابات المتكرّرة مثل «نثرية»)
   const towerName = (id: number | null) => towers.find((t) => t.id === id)?.name ?? null;
@@ -157,7 +231,7 @@ export default function CashboxPage() {
       setTimeout(() => setOkMsg(""), 3500);
       setAmount("");
       setNotes("");
-      load(from, to, q, typeFilter, officeId);
+      load(from, to, q, typeFilter, officeId, accFilter);
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {
@@ -171,7 +245,7 @@ export default function CashboxPage() {
     const choice = await askVoidEffect(label);
     if (!choice) return;
     const res = await fetch(`/api/money/${t.id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
-    if (res.ok) load(from, to, q, typeFilter, officeId);
+    if (res.ok) load(from, to, q, typeFilter, officeId, accFilter);
     else {
       const d = await res.json().catch(() => ({}));
       alert(d.error ?? "تعذّر الحذف");
@@ -201,6 +275,104 @@ export default function CashboxPage() {
         </div>
       )}
 
+      {/* ===== مكاتب التسديد: ما عليها من دين (طلب محمد 2026-08-05) =====
+          ما يُحسم على «مكتب تفعيل» يبقى ديناً عليه يسدّده أسبوعياً أو شهرياً — ولم يكن في
+          البرنامج مكانٌ يجمعه ولا زرٌّ يسدّده، فكان يُدار على ورقة خارج النظام. */}
+      {settleOffices.length > 0 && (
+        <div className="mb-6 rounded-xl border border-teal-200 bg-teal-50/60 p-4 shadow-sm">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="font-bold text-teal-900">🏪 مكاتب التسديد — ما عليها</div>
+            <div className="text-xs font-semibold text-teal-700">المجموع: {fmt(settleOffices.reduce((s2, o) => s2 + o.owed, 0))} د.ع</div>
+          </div>
+          {settleMsg && (
+            <div className={"mb-2 rounded-lg px-3 py-2 text-xs font-semibold " + (settleMsg.startsWith("✓") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600")}>{settleMsg}</div>
+          )}
+          <div className="space-y-2">
+            {settleOffices.map((o) => (
+              <div key={o.id} className="rounded-lg border border-teal-200 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-800">{o.name ?? ("حساب " + o.id)}</div>
+                    <div className="text-[11px] text-slate-500">{o.office ?? "—"} · {o.count} قيد غير مسدَّد</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className={"text-lg font-extrabold " + (o.owed > 0 ? "text-rose-600" : "text-emerald-600")} dir="ltr">{fmt(o.owed)}</div>
+                    {can("finance.manage") && o.owed > 0 && (
+                      <button onClick={() => settle(o.id, undefined)} disabled={settleBusy}
+                        className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-teal-700 disabled:opacity-60">تسديد</button>
+                    )}
+                    <button
+                      onClick={() => {
+                        const next = openOffice === o.id ? null : o.id;
+                        setOpenOffice(next); setSettleMsg("");
+                        if (next != null) loadSettleRows(next, showSettled);
+                      }}
+                      className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200"
+                      title="عرض القيود واختيار بعضها"
+                    >{openOffice === o.id ? "−" : "+"}</button>
+                  </div>
+                </div>
+
+                {openOffice === o.id && (
+                  <div className="border-t border-teal-100 px-3 py-2">
+                    <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                      <label className="flex cursor-pointer items-center gap-1 text-slate-600">
+                        <input type="checkbox" checked={showSettled} onChange={(e) => { setShowSettled(e.target.checked); loadSettleRows(o.id, e.target.checked); }} className="h-3.5 w-3.5 accent-teal-600" />
+                        إظهار المسدَّدة (لإرجاعها)
+                      </label>
+                      <span className="text-slate-400">·</span>
+                      <button onClick={() => setSettleSel(new Set(settleRows.filter((r) => !r.settledAt).map((r) => r.id)))} className="font-semibold text-teal-700 hover:underline">تحديد الكل</button>
+                      <button onClick={() => setSettleSel(new Set())} className="font-semibold text-slate-500 hover:underline">إلغاء التحديد</button>
+                      {settleSel.size > 0 && can("finance.manage") && (
+                        <button onClick={() => settle(o.id, [...settleSel])} disabled={settleBusy}
+                          className="mr-auto rounded-lg bg-teal-600 px-3 py-1 text-xs font-bold text-white hover:bg-teal-700 disabled:opacity-60">
+                          تسديد المحدَّد ({settleSel.size}) — {fmt(settleRows.filter((r) => settleSel.has(r.id)).reduce((s2, r) => s2 + (r.moneyOut ?? 0) - (r.moneyIn ?? 0), 0))}
+                        </button>
+                      )}
+                    </div>
+                    {settleRows.length === 0 ? (
+                      <div className="py-3 text-center text-xs text-slate-400">لا قيود</div>
+                    ) : (
+                      <div className="max-h-64 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <tbody>
+                            {settleRows.map((r) => (
+                              <tr key={r.id} className={"border-b border-slate-100 " + (r.settledAt ? "bg-emerald-50/50" : "")}>
+                                <td className="w-6 py-1">
+                                  {!r.settledAt && (
+                                    <input type="checkbox" checked={settleSel.has(r.id)}
+                                      onChange={() => setSettleSel((prev) => { const nx = new Set(prev); if (nx.has(r.id)) nx.delete(r.id); else nx.add(r.id); return nx; })}
+                                      className="h-3.5 w-3.5 accent-teal-600" />
+                                  )}
+                                </td>
+                                <td className="py-1 text-slate-400" dir="ltr">#{r.id}</td>
+                                <td className="py-1 text-slate-500">{fmtDate(r.date)}</td>
+                                <td className="max-w-[260px] truncate py-1 text-slate-700" title={r.notes ?? ""}>{r.notes ?? "—"}</td>
+                                <td className="py-1 text-left font-bold text-rose-600" dir="ltr">{fmt((r.moneyOut ?? 0) - (r.moneyIn ?? 0))}</td>
+                                <td className="w-24 py-1 text-left">
+                                  {r.settledAt ? (
+                                    <span className="inline-flex items-center gap-1">
+                                      <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-bold text-emerald-700">سُدِّدت</span>
+                                      {can("finance.manage") && (
+                                        <button onClick={() => unsettle([r.id])} disabled={settleBusy} className="text-[10px] font-semibold text-slate-500 hover:text-rose-600 hover:underline">إرجاع</button>
+                                      )}
+                                    </span>
+                                  ) : null}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* بحث بالتاريخ (من – إلى) — يشمل اليومين، والإجماليات أعلاه تعكس النتيجة */}
       <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div>
@@ -211,13 +383,27 @@ export default function CashboxPage() {
           <label className="mb-1 block text-xs font-medium text-slate-600">إلى تاريخ</label>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
         </div>
-        <div className="min-w-[200px] flex-1">
+        {/* اختيار حساب بعينه (نثرية مثلاً) — يسار البحث الحرّ الذي كان يبتلع الشريط */}
+        <div className="w-[180px]">
+          <label className="mb-1 block text-xs font-medium text-slate-600">الحساب</label>
+          <select
+            value={accFilter}
+            onChange={(e) => { const v = e.target.value === "" ? "" : Number(e.target.value); setAccFilter(v); load(from, to, q, typeFilter, officeId, v); }}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
+          >
+            <option value="">كل الحسابات</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>{a.name ?? `حساب ${a.id}`}{towerName(a.towerId) ? ` — ${towerName(a.towerId)}` : ""}</option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-[150px] flex-1">
           <label className="mb-1 block text-xs font-medium text-slate-600">بحث حر</label>
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") load(from, to, q, typeFilter, officeId); }}
-            placeholder="كلمة من الملاحظات، اسم حساب، مبلغ، أو رقم حركة…"
+            onKeyDown={(e) => { if (e.key === "Enter") load(from, to, q, typeFilter, officeId, accFilter); }}
+            placeholder="كلمة، مبلغ، أو رقم حركة…"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue"
           />
         </div>
@@ -237,9 +423,9 @@ export default function CashboxPage() {
             <option value="orphan">⚠️ بلا مكتب (يجب ألا يوجد شيء)</option>
           </select>
         </div>
-        <button onClick={() => load(from, to, q, typeFilter, officeId)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
-        {(from || to || q) && (
-          <button onClick={() => { setFrom(""); setTo(""); setQ(""); load("", "", "", typeFilter, officeId); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
+        <button onClick={() => load(from, to, q, typeFilter, officeId, accFilter)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">🔍 بحث</button>
+        {(from || to || q || accFilter !== "") && (
+          <button onClick={() => { setFrom(""); setTo(""); setQ(""); setAccFilter(""); load("", "", "", typeFilter, officeId, ""); }} className="rounded-lg bg-slate-100 px-4 py-2 text-sm text-slate-600 hover:bg-slate-200">إظهار الكل</button>
         )}
         <span className="mr-auto self-center text-xs font-semibold text-slate-500">
           معروض {sortedTxs.length} من أصل {matched}{matched > sortedTxs.length ? " — ضيّق البحث لرؤية الباقي" : ""}
@@ -348,6 +534,8 @@ export default function CashboxPage() {
                     <td className="p-3 font-semibold text-red-600">{t.moneyOut ? fmt(t.moneyOut) : "—"}</td>
                     <td className="p-3">
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${SRC_CLASS[t.sourceType ?? "manual"] ?? "bg-slate-100 text-slate-600"}`}>{srcLabel(t.sourceType)}</span>
+                      {/* قيدٌ سدّده مكتبه — يُعرَف من الجدول نفسه بلا فتح لوحة التسديد */}
+                      {t.settledAt && <span className="mr-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700" title={`سُدِّد في ${fmtDate(t.settledAt)}`}>سُدِّدت</span>}
                     </td>
                     <td className="p-3">{t.accountName ?? "—"}</td>
                     <td className="p-3">{towerName(t.towerId) ?? "—"}</td>
@@ -366,7 +554,7 @@ export default function CashboxPage() {
       </div>
 
       {/* نافذة تفاصيل الحركة المالية */}
-      {detailId != null && <MoneyTxModal id={detailId} onClose={() => setDetailId(null)} onDeleted={() => load(from, to, q, typeFilter, officeId)} />}
+      {detailId != null && <MoneyTxModal id={detailId} onClose={() => setDetailId(null)} onDeleted={() => load(from, to, q, typeFilter, officeId, accFilter)} />}
     </div>
   );
 }

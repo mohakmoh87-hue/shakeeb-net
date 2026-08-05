@@ -334,6 +334,12 @@ model MoneyTx {
   sourceId   Int? // معرّف المصدر (وصل التفعيل/الفاتورة/المشترك)
   towerId    Int? // البرج/المكتب الذي تخصّه الحركة (لتقارير كل برج)
   salaryStatementId Int? // كشف الراتب الذي احتُسبت فيه هذه الحركة (لحساب الموظف) — يمنع تكرار احتسابها؛ لا تُحذف من التقرير اليومي
+  // ===== تسديد مكاتب التفعيل/التوصيل (قرار محمد 2026-08-05) =====
+  // ما يُحسم على «مكتب تفعيل» يبقى ديناً عليه حتى يسدّده أسبوعياً أو شهرياً. الوسم هنا:
+  // settledAt متى سُدِّد هذا القيد، و settledTxId حركةُ القبض التي غطّته (تدخل تقرير يومها).
+  // ورفع الوسم يعيد القيد ديناً وينقص حركة القبض بمقداره — فلا مالٌ يُقبض مرّتين ولا يضيع.
+  settledAt   DateTime?
+  settledTxId Int?
   isDeleted  Boolean   @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
@@ -341,6 +347,7 @@ model MoneyTx {
   @@index([date])
   @@index([sourceType, sourceId])
   @@index([towerId])
+  @@index([settledTxId])
   @@map("money_tx")
 }
 
