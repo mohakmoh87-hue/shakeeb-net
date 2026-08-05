@@ -9,6 +9,7 @@ import LeaveReview from "@/components/LeaveReview";
 import CardTypeManager from "@/components/CardTypeManager";
 import DeductionReview from "@/components/DeductionReview";
 import MapProposalReview from "@/components/MapProposalReview";
+import DeletedCardsModal from "@/components/DeletedCardsModal";
 import NotificationsBell from "@/components/NotificationsBell";
 import FieldAppMenu from "@/components/FieldAppMenu";
 import { FieldTrackerProvider } from "@/components/FieldTracker";
@@ -133,6 +134,7 @@ export default function FieldManagementPage() {
   const [leavePending, setLeavePending] = useState(0);
   const [typesModal, setTypesModal] = useState(false);
   const [archiveModal, setArchiveModal] = useState(false);
+  const [trashModal, setTrashModal] = useState(false); // سلّة محذوفات البطاقات
   const [dedModal, setDedModal] = useState(false);
   const [dedPending, setDedPending] = useState(0);
   // مواقع أعمدة أرسلها الفنيون من الأرض — بانتظار قبول المدير
@@ -526,6 +528,26 @@ export default function FieldManagementPage() {
     const id = sel.id; setSel(null);
     await fetch(`/api/field/cards?id=${id}`, { method: "DELETE" });
   }
+  // ↩️ إلغاء إنجاز بطاقة لم تُحصَّل: تعود للانتظار في عمودها، ويسقط مبلغها من تحصيل
+  // الفني ومن عدّ بطاقاته في كشف الراتب. أمّا فاتورة مبيعها وقبضها فيبقيان — فالمال
+  // سُجّل لحظة الإنجاز، وإلغاؤه هنا لا يعكسه (وهذا يُقال صراحةً قبل التأكيد).
+  async function undoDone() {
+    if (!sel || !canOperate) return;
+    const back = (sel.amount ?? 0) + (sel.subAmount ?? 0);
+    const msg =
+      `إلغاء إنجاز «${sel.title}»؟\n\n` +
+      `• تعود للانتظار في عمودها ويُطلب «بدء» من جديد.\n` +
+      (back > 0 ? `• ينقص تحصيل ${sel.assignee ?? "الفني"} بمقدار ${back.toLocaleString("en-US")} د.ع.\n` : "") +
+      `• فاتورة المبيع وقبضها **يبقيان** — والمواد المباعة لا تعود لذمّة الفني.`;
+    if (!confirm(msg)) return;
+    const id = sel.id;
+    const r = await fetch("/api/field/cards", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, done: false }), // التنظيف كلّه في الخادم
+    });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر إلغاء الإنجاز"); return; }
+    setSel(null); load(officeId);
+  }
   // الفني يحوّل بطاقةً على نفسه (كانت على فنيٍّ آخر في نفس مكتبه)
   async function claimCard() {
     if (!sel || myTechId == null) return;
@@ -658,6 +680,7 @@ export default function FieldManagementPage() {
           )}
           {canManage && <button onClick={() => setTypesModal(true)} className="ftb">⏱ الأنواع والأوقات</button>}
           <button onClick={() => setArchiveModal(true)} className="ftb">🗂️ الأرشيف</button>
+          {canOperate && !isTech && <button onClick={() => setTrashModal(true)} className="ftb">🗑️ المحذوفة</button>}
           {officeId != null && <button onClick={() => setSupportModal(true)} className="ftb">🤝 دعم مؤقت</button>}
         </div>
       )}
@@ -899,6 +922,11 @@ export default function FieldManagementPage() {
               ⏱ الأنواع والأوقات
             </button>
           )}
+          {canOperate && !isTech && (
+            <button onClick={() => setTrashModal(true)} title="البطاقات المحذوفة — تُسترجَع إلى عمودها" className="rounded-lg bg-slate-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-slate-600">
+              🗑️ المحذوفة
+            </button>
+          )}
           {!isTech && (
             <button onClick={() => setArchiveModal(true)} className="rounded-lg bg-slate-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-slate-700">
               🗂️ الأرشيف
@@ -1059,6 +1087,13 @@ export default function FieldManagementPage() {
                 {sel.serviceDetails && <div className="text-slate-600">التفاصيل: {sel.serviceDetails}</div>}
                 {sel.durationSec != null && <div className="text-slate-600">⏱ مدة الإنجاز: <b>{fmtDuration(sel.durationSec)}</b></div>}
                 {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
+                {/* ↩️ إلغاء الإنجاز (طلب محمد 2026-08-05): الخادم كان يقبله منذ زمن ولا زرّ له،
+                    فكان الطريق الوحيد: «اكمال» ثم استرجاع من الأرشيف — التفافٌ لا معنى له. */}
+                {canOperate && !isTech && (
+                  <button onClick={() => void undoDone()} className="mt-2 w-full rounded-lg bg-white px-3 py-2 text-xs font-bold text-amber-700 ring-1 ring-amber-300 hover:bg-amber-50">
+                    ↩️ إلغاء الإنجاز — تعود للانتظار في عمودها
+                  </button>
+                )}
               </div>
             ) : !(canOperate && (!isTech || sel.technicianId === myTechId)) ? (
               // الفني يرى بطاقة زميله بلا أزرار عمل (يحوّلها لنفسه أولاً)
@@ -1189,6 +1224,15 @@ export default function FieldManagementPage() {
           officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"}
           onClose={() => setLeaveModal(false)}
           onChange={() => loadLeavePending(officeId)}
+        />
+      )}
+
+      {trashModal && (
+        <DeletedCardsModal
+          officeId={officeId}
+          officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"}
+          onClose={() => setTrashModal(false)}
+          onChange={() => load(officeId)}
         />
       )}
 

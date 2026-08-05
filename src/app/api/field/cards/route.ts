@@ -98,6 +98,12 @@ export async function PATCH(request: Request) {
   // ملاحظة: الإنجاز (done=true) يتمّ عبر /api/field/complete فقط (بحقوله الواجبة)
   if (b.done === false) {
     data.done = false; data.completedAt = null;
+    // ===== إلغاء الإنجاز يُنظّف أثره كاملاً (طلب محمد 2026-08-05) =====
+    // البطاقة تعود للانتظار **كما كانت قبل الإنجاز**: بلا مبالغ ولا تفاصيل ولا مواد،
+    // ويُطلب «بدء» من جديد (وإلا حُسبت مدّتها من وقت البدء القديم فخرج رقمٌ كاذب).
+    // التنظيف هنا في الخادم لا في المتصفّح — فلا يعتمد على ما يرسله العميل.
+    data.amount = null; data.subAmount = null; data.serviceDetails = null;
+    data.materialsInfo = null; data.startedAt = null; data.durationSec = null;
     // إلغاء الإنجاز يلغي آخر سجل إنجاز دائم للبطاقة (كي لا يُعدّ في كشف الراتب)
     const lastComp = await prisma.cardCompletion.findFirst({ where: { cardId: Number(b.id) }, orderBy: { id: "desc" }, select: { id: true } });
     if (lastComp) await prisma.cardCompletion.delete({ where: { id: lastComp.id } }).catch(() => {});
