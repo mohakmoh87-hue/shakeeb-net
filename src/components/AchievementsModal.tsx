@@ -81,7 +81,17 @@ export default function AchievementsModal({ onClose }: { onClose: () => void }) 
                           </span>
                           <span className="block text-[11px] text-slate-500">
                             {r.office ?? "—"} · {r.cards} بطاقة
-                            {r.avgMin != null && <> · متوسط {r.avgMin} د ({r.timed} مؤقّتة)</>}
+                            {r.avgMin != null && <> · متوسط عام {r.avgMin} د</>}
+                          </span>
+                          {/* معدّل الإنجاز **لكل فئة على حدة** — ظاهرٌ بلا فتح الجدول (طلب محمد).
+                              التوصيل بلا زمن فيُعرض بعدده وحده. */}
+                          <span className="mt-1 flex flex-wrap gap-1">
+                            {r.byKind.map((k) => (
+                              <span key={k.kind} className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ring-1 ${k.avgMin != null ? "bg-sky-50 text-sky-700 ring-sky-200" : "bg-slate-50 text-slate-500 ring-slate-200"}`}>
+                                {k.kind} <b>{k.count}</b>
+                                {k.avgMin != null ? <> · {k.avgMin} د</> : null}
+                              </span>
+                            ))}
                           </span>
                         </span>
                         <span className="shrink-0 text-left">
