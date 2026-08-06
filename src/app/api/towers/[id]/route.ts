@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
+import { encryptSecret, decryptSecret } from "@/lib/secretbox";
 
 const schema = z.object({
   name: z.string().min(1, "اسم المكتب مطلوب"),
@@ -30,6 +31,9 @@ const schema = z.object({
   lng: z.coerce.number().nullable().optional(),
   geoRadius: z.coerce.number().int().min(20).max(5000).nullable().optional(),
   geoEnabled: z.boolean().optional(),
+  loanEnabled: z.string().nullable().optional(), // 1 = تفعيل قروض سوبر سيل (مدير فقط)
+  loanUser: z.string().nullable().optional(), // اسم مستخدم قروض سوبر سيل (مدير فقط)
+  loanPass: z.string().nullable().optional(), // كلمة مرور القروض — تُشفَّر (مدير فقط)
 });
 
 export async function PUT(
@@ -53,11 +57,48 @@ export async function PUT(
     );
   }
 
+  // حالة القرض قبل التعديل — لكشف تحويل الإطفاء→تشغيل (فحص إعادة التشغيل)
+  const before = g.session?.isAdmin
+    ? await prisma.tower.findUnique({ where: { id: Number(id) }, select: { loanEnabled: true } })
+    : null;
+
+  // إعداد القرض للمدير حصراً. loanPass يُشفَّر؛ والفراغ لا يمحو القديم (يُحفظ لإعادة التفعيل).
+  const data = { ...parsed.data };
+  if (!g.session?.isAdmin) {
+    // غير المدير لا يعدّل إعداد القرض إطلاقاً
+    delete data.loanEnabled; delete data.loanUser; delete data.loanPass;
+  } else if (data.loanPass == null || data.loanPass === "") {
+    delete data.loanPass; // فارغ = أبقِ القديم
+  } else {
+    data.loanPass = encryptSecret(data.loanPass);
+  }
   const updated = await prisma.tower.update({
     where: { id: Number(id) },
-    data: parsed.data,
+    data,
   });
-  return NextResponse.json(updated);
+
+  // فحص إعادة التشغيل (طلب محمد): عند تحويل القرض من إطفاء→تشغيل، امسح ديون مَن فُعِّل عاديّاً
+  // منذ منح قرضه (لأنه سدّد فعليّاً). عزل صارم: مقيَّد بمكتب هذا الـid المُتحقَّق ملكيّته؛ لا
+  // يمسّ مكتباً/وكيلاً آخر. عددها قليل (قروض مكتبٍ واحد) فالحلقة مقبولة.
+  if (g.session?.isAdmin && data.loanEnabled === "1" && before?.loanEnabled !== "1") {
+    const debts = await prisma.loanDebt.findMany({
+      where: { towerId: Number(id), isDeleted: false },
+      select: { id: true, subscriberId: true, grantDate: true },
+    });
+    for (const d of debts) {
+      const activated = await prisma.subscriptionEntry.findFirst({
+        where: { subscriberId: d.subscriberId, isDeleted: false, moneyType: 1, date: { gt: d.grantDate } },
+        select: { id: true },
+      });
+      if (activated) await prisma.loanDebt.delete({ where: { id: d.id } });
+    }
+  }
+  // تعقيم الردّ كـ GET: بيانات القرض للمدير حصراً — يراها مفكوكةً؛ غيره لا يراها إطلاقاً.
+  // (كان الردّ يُعيد الصفّ خاماً فيسرّب loanUser/loanPass لمستخدم مكتبٍ يملك offices.edit.)
+  const row: Record<string, unknown> = { ...updated };
+  if (g.session?.isAdmin) row.loanPass = decryptSecret(updated.loanPass);
+  else { delete row.loanUser; delete row.loanPass; }
+  return NextResponse.json(row);
 }
 
 export async function DELETE(

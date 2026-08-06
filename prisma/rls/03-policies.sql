@@ -104,6 +104,14 @@ CREATE POLICY rls_card_types ON card_types TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
+-- loan_debts: ديون قروض فزعة — المزامنة تقرؤها لتتجاهل أصحاب القروض (قراءة فقط بالصلاحيات؛
+-- الكتابة خادميّة بدور المالك). عزل بالوكيل مباشرةً عبر agentId.
+ALTER TABLE loan_debts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_loan_debts ON loan_debts;
+CREATE POLICY rls_loan_debts ON loan_debts TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 -- hybrid_workers: الحاسبة تسجّل نفسها قبل اعتماد المدير (agentId فارغ حينها)
 ALTER TABLE hybrid_workers ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS rls_hybrid_workers ON hybrid_workers;

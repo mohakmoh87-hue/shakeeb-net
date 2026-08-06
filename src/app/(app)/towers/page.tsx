@@ -26,6 +26,10 @@ type Office = {
   lng: number | null;
   geoRadius: number | null;
   geoEnabled: boolean | null;
+  loanEnabled: string | null; // 1 = تفعيل قروض سوبر سيل
+  loanUser: string | null; // اسم مستخدم القروض (مدير فقط)
+  loanPass: string | null; // كلمة مرور القروض (مفكوكة للمدير)
+  hasLoanCreds?: boolean;
 };
 type MapArea = { code: string; count: number };
 
@@ -45,6 +49,8 @@ export default function OfficesPage() {
   const [editing, setEditing] = useState(false);
   const [msg, setMsg] = useState("");
   const [areas, setAreas] = useState<MapArea[]>([]); // مناطق الخريطة المتاحة
+  const [loanTest, setLoanTest] = useState(""); // نتيجة اختبار اتصال القروض
+  const [testing, setTesting] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setOffices)));
@@ -142,6 +148,20 @@ export default function OfficesPage() {
       const d = await res.json().catch(() => ({}));
       setMsg(d.error ?? "فشل الحفظ");
     }
+  }
+
+  // اختبار اتصال قروض سوبر سيل — للمكتب المحفوظ حصراً (يحتاج towerId لعزله والتحقّق من ملكيّته)
+  async function testLoan() {
+    if (!sel) { setLoanTest("احفظ المكتب أولاً ثم اختبر"); return; }
+    setTesting(true); setLoanTest("جارٍ الاختبار…");
+    try {
+      const res = await fetch(`/api/towers/${sel.id}/loan-test`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loanUser: form.loanUser, loanPass: form.loanPass }),
+      }).then((r) => r.json());
+      setLoanTest(res ? `${res.ok ? "✓" : "✗"} ${res.message ?? ""}` : "تعذّر الاختبار");
+    } catch { setLoanTest("تعذّر الاختبار"); }
+    setTesting(false);
   }
 
   async function remove(o: Office) {
@@ -266,6 +286,27 @@ export default function OfficesPage() {
                         <input type="number" min={20} max={5000} disabled={ro} value={form.geoRadius ?? 200} onChange={(e) => set("geoRadius", Number(e.target.value) || 200)} dir="ltr" className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-100" />
                       </div>
                       <p className="text-xs text-slate-500">افتح هذه الصفحة من هاتفك <b>وأنت عند المكتب</b> ثم اضغط «تحديد موقعي الآن». يمكن تعديله لاحقاً. النطاق الافتراضي 200 متر يراعي دقّة الـ GPS.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* قروض سوبر سيل — إعداد للمدير حصراً. إطفاء الخانة يُخفي الميزة ويحفظ البيانات */}
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                  <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <input type="checkbox" disabled={ro} checked={form.loanEnabled === "1"} onChange={(e) => set("loanEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-amber-600" />
+                    💳 تفعيل قروض سوبر سيل (فزعة)
+                  </label>
+                  {form.loanEnabled === "1" && (
+                    <div className="mt-2 space-y-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <F label="اسم مستخدم قروض سوبر سيل"><I v={form.loanUser} on={(v) => set("loanUser", v)} ro={ro} dir="ltr" /></F>
+                        <F label="كلمة مرور القروض"><I v={form.loanPass} on={(v) => set("loanPass", v)} ro={ro} dir="ltr" /></F>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" disabled={testing} onClick={testLoan} className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50">🔌 اختبار الاتصال</button>
+                        {loanTest && <span className={`text-xs ${loanTest.startsWith("✓") ? "text-emerald-700" : loanTest.startsWith("✗") ? "text-red-600" : "text-slate-500"}`}>{loanTest}</span>}
+                      </div>
+                      <p className="text-xs text-slate-500">بيانات لوحة القروض خاصّة بهذا المكتب وحده. عند المنح: يُمدَّد المشترك ٣٠ يوماً ويُسجَّل دَينٌ في «ديون القروض». إطفاء الخانة يُخفي الميزة بكلّ آثارها ويحفظ البيانات لإعادة التفعيل.</p>
                     </div>
                   )}
                 </div>

@@ -148,6 +148,10 @@ model Tower {
   waEnabled   String? @default("1") // 1 = تفعيل واتساب لهذا المكتب
   syncEnabled String? @default("0") // 1 = تفعيل المزامنة اليومية التلقائية
   autoAssignEnabled Boolean @default(false) // 1 = التوزيع التلقائي للبطاقات مفعَّل لهذا المكتب (بوّابة المكتب)
+  // قروض سوبر سيل (فزعة) — إعداد للمدير حصراً. إطفاؤه يُخفي الميزة بلا محو البيانات.
+  loanEnabled String? @default("0") // 1 = تفعيل نظام القرض لهذا المكتب
+  loanUser    String? // اسم مستخدم لوحة قروض سوبر سيل (dealer) — لا يُرسَل لغير المدير
+  loanPass    String? // كلمة مرور القروض — مشفّرة عبر secretbox (enc:v1:)
   syncTime    String? // وقت مزامنة الاشتراكات اليومية مع SAS (HH:MM)
   reminderTime String? // وقت تذكير الانتهاء اليومي لهذا المكتب (HH:MM) — مرتبط بوقت تشغيل حاسبته؛ فارغ = وقت الوكيل العام
   lastReminderDate String? // آخر يوم (YYYY-MM-DD) أُرسل/عولج فيه تذكير الانتهاء (لمنطق الموافقة عند الدخول)
@@ -261,6 +265,30 @@ model Subscriber {
   @@index([isDeleted, towerId, name]) // يطابق فلترة+ترتيب قائمة المشتركين
   @@index([towerId, netUser]) // مطابقة اليوزر السريعة لسحب كود المكافأة
   @@map("subscribers")
+}
+
+// ===== ديون القروض (فزعة سوبر سيل) — منفصلة تماماً عن carry (طلب محمد 2026-08-06) =====
+// دَينٌ تتبّعيّ لا يُحصَّل: لا زرّ تسديد، ولا يدخل التقرير اليوميّ إطلاقاً. يُمحى نهائيّاً
+// بلا أيّ أثرٍ ماليّ عند تفعيل المشترك تفعيلاً عاديّاً. المزامنة تتجاهل صاحبه (له ٧ أيّام
+// حقيقيّة في الساس و٣٠ يوماً وهميّة عندنا). لا يُعاد استعماله عبر carry كي لا يظهر في «الديون».
+model LoanDebt {
+  id            Int       @id @default(autoincrement())
+  subscriberId  Int // المشترك صاحب القرض
+  towerId       Int? // المكتب (للعزل والفلترة ونطاق الرؤية)
+  agentId       Int? // الوكيل (المستأجر)
+  amount        Float // مبلغ اشتراكه وقت المنح (35/45/65)
+  packageId     Int? // الباقة وقت المنح
+  netUser       String? // يوزر المشترك وقت المنح (للتدقيق ومطابقة الأمان)
+  sasId         Int? // رقم الساس المستعمَل في المنح
+  grantDate     DateTime  @default(now()) // تاريخ منح القرض (للبحث بين تاريخين)
+  expiryVirtual DateTime? // تاريخ الانتهاء الوهميّ (تاريخ المنح + ٣٠)
+  createdByUser String? // مَن منح القرض (للمحاسبة)
+  isDeleted     Boolean   @default(false)
+
+  updatedAt DateTime @default(now()) @updatedAt
+  @@index([subscriberId])
+  @@index([towerId])
+  @@map("loan_debts")
 }
 
 // ===== الحسابات (acounts) =====

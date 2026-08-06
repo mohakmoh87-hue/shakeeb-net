@@ -98,7 +98,7 @@ export async function POST(
   const tower = subscriber.towerId
     ? await prisma.tower.findUnique({
         where: { id: subscriber.towerId },
-        select: { activationMode: true, loginUrl: true, username: true, password: true, rewardsEnabled: true },
+        select: { activationMode: true, loginUrl: true, username: true, password: true, rewardsEnabled: true, loanEnabled: true },
       })
     : null;
 
@@ -255,6 +255,21 @@ export async function POST(
           details: `تفعيل ${pkg.name} - كارت ${cardSerial ?? "بدون"} - اشتراك ${total}${delivery > 0 ? ` - توصيل ${delivery}` : ""} - واصل ${paid} - دين ${newCarry}`,
         },
       });
+      // مسح دين القرض (إن وُجد) نهائيّاً بلا أيّ أثرٍ ماليّ — التفعيل العاديّ يُسقط القرض.
+      // مشروطٌ بأن ميزة القرض مشغّلة للمكتب: إن كانت مطفأة يبقى الدين محفوظاً ويُنظَّف عند
+      // إعادة التشغيل (منطق «كأنّ الميزة غير موجودة» حين الإطفاء — طلب محمد 2026-08-06).
+      // عزل: subscriberId فريد + towerId المشترك؛ لا يمسّ مكتباً/وكيلاً آخر. لا MoneyTx ولا carry.
+      const clearedLoan = tower?.loanEnabled === "1"
+        ? await tx.loanDebt.deleteMany({ where: { subscriberId, towerId: subscriber.towerId } })
+        : { count: 0 };
+      if (clearedLoan.count > 0) {
+        await tx.auditLog.create({
+          data: {
+            userId: session?.userId, action: "CLEAR_LOAN", entity: "subscriber", entityId: String(subscriberId),
+            details: `مسح دين قرض عند التفعيل العاديّ — ${subscriber.netUser ?? subscriberId}`,
+          },
+        });
+      }
       return { ok: true, serial: cardSerial, dateTo, newCarry, entryId: entry.id };
     });
 

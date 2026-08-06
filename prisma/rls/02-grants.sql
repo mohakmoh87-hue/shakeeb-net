@@ -47,8 +47,9 @@ GRANT SELECT ON packages, tower_info, accounts, subscription_entries, money_tx,
                 invoices, invoice_items, items, custodies, tickets, card_types,
                 sms_templates, reward_logs, salary_statements, leaves,
                 task_boards, task_lists, task_cards, card_photos,
-                maintenance_logs
+                maintenance_logs, loan_debts
   TO agent_worker;
+-- loan_debts: المزامنة تقرؤها لتتجاهل أصحاب القروض (قراءة فقط؛ الكتابة خادميّة بدور المالك)
 
 -- ---------- مراجع عامة مشتركة (قراءة فقط) ----------
 GRANT SELECT ON map_points, push_types, ticket_types, ticket_priorities, ticket_states

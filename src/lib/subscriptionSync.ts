@@ -358,6 +358,15 @@ async function runOfficeSyncInner(
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
 
+    // أصحاب القروض القائمة في هذا المكتب — المزامنة تتجاهلهم تماماً: لهم 7 أيام حقيقيّة في
+    // الساس و30 يوماً وهميّة عندنا؛ ولو زامنّاهم لأفسدنا الأيام الوهميّة (طلب محمد 2026-08-06).
+    // عزل صارم: مقيَّد بـ towerId = officeId (مكتب المزامنة وحده)، لا عموميّة.
+    const loanRows = await prisma.loanDebt.findMany({
+      where: { towerId: officeId, isDeleted: false },
+      select: { subscriberId: true },
+    });
+    const loanSubIds = new Set(loanRows.map((r) => r.subscriberId));
+
     // فئات الاشتراك التي أضافها المدير — مطابقة متسامحة (فراغات/حالة/ترتيب كلمات/صيغ
     // عربية) عبر PackageMatcher، **وبعزل الوكيل** (كانت تقارن بباقات كل الوكلاء — خلل عزل).
     // مشتركٌ فئته في الساس غير معروفة ⇒ لا يُمَسّ إطلاقاً (بطلب صريح: فئة مجهولة = اتركه كما هو)
@@ -386,6 +395,9 @@ async function runOfficeSyncInner(
         });
         continue;
       }
+      // صاحب قرضٍ قائم ⇒ لا تلمسه المزامنة إطلاقاً (لا تاريخ ولا باقة ولا عدّ) حتى يُسدَّد
+      // بالتفعيل العاديّ فيُمحى قرضه ويعود طبيعيّاً.
+      if (loanSubIds.has(p.id)) continue;
       // موجود → لكن إن كانت فئته في الساس غير معروفة عندنا ⇒ لا أي تعديل عليه
       // (لا تاريخ انتهاء ولا أيام متبقية) — يُحصى فقط للتقرير.
       const sasPkgId = matcher.match(u.packageName);

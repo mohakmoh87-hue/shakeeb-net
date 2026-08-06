@@ -24,9 +24,10 @@ type Subscriber = {
   dateTo: string | null; netUser: string | null; sasId: number | null;
   note: string | null; smsEnabled: number | null; waEnabled: boolean | null;
   transferredTo: string | null; rewardBalance: number | null; rewardCode: string | null;
+  hasLoan?: boolean; // عليه دين قرضٍ قائم (للوسم والتنبيه ومنع قرضٍ ثانٍ)
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
-type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null };
+type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null };
 type Receipt = { id: number; date: string | null; dateTo: string | null; money: number | null; moneyIn: number | null; moneyCarry: number | null; cardType: string | null; month: string | null };
 type MaintLog = { id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; amount: number | null; date: string };
 type InvRow = { id: number; number: number | null; date: string | null; totalMy: number | null; waselHim: number | null; type: string | null; note: string | null; subscriberId: number | null };
@@ -80,6 +81,29 @@ export default function SubscribersBoard() {
     setActivating(s); // لا تفعيل قريب (أو تعذّر الفحص) ⇒ افتح الشاشة كالمعتاد
   }
   const [addingDebt, setAddingDebt] = useState<Subscriber | null>(null);
+  // ===== قرض فزعة (طلب محمد 2026-08-06) =====
+  const [loanSub, setLoanSub] = useState<Subscriber | null>(null); // مشترك نافذة تأكيد القرض
+  const [loanBusy, setLoanBusy] = useState(false);
+  const [loanMsg, setLoanMsg] = useState("");
+  // هل المكتب مفعَّل للقرض؟ (loanEnabled يصل ضمن /api/towers لكلّ المستخدمين)
+  const officeLoanOn = (towerId: number | null) => towers.find((t) => t.id === towerId)?.loanEnabled === "1";
+  async function confirmLoan() {
+    if (!loanSub) return;
+    setLoanBusy(true); setLoanMsg("");
+    try {
+      const r = await fetch(`/api/subscribers/${loanSub.id}/loan`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      setLoanBusy(false);
+      if (r.ok) {
+        setLoanSub(null);
+        setMsg("✅ تم منح القرض بنجاح — مُدِّد ٣٠ يوماً");
+        load(query, showAllTowers);
+        announceMoneyChanged();
+      } else {
+        setLoanMsg(d.error ?? "تعذّر منح القرض");
+      }
+    } catch { setLoanBusy(false); setLoanMsg("تعذّر الاتصال بالخادم"); }
+  }
   // نوافذ السجلات
   const [logView, setLogView] = useState<"receipts" | "maintenance" | "invoices" | "debt" | "reward" | null>(null);
   // سجل المكافأة: منح واستخدام وعكس — لم يكن في الواجهة ما يكشف تراكمها
@@ -197,7 +221,9 @@ export default function SubscribersBoard() {
   // الضغط على صفّ: يفتح شريط الخيارات؛ الضغط على الصفّ المفتوح يغلقه
   function selectRow(s: Subscriber) {
     if (selectedId === s.id) { setSelectedId(null); setMoreMenu(false); return; }
-    setSelectedId(s.id); setMoreMenu(false); setMsg("");
+    setSelectedId(s.id); setMoreMenu(false);
+    // تنبيه القرض: يظهر عند كلّ ضغطةٍ على مشترك عليه قرضٌ قائم (طلب محمد)
+    setMsg(s.hasLoan ? "💳 تنبيه: هذا المشترك لديه قرضٌ قائم" : "");
     checkWhatsApp(s);
   }
 
@@ -399,6 +425,7 @@ export default function SubscribersBoard() {
         <div className="hbtns">
           {can("subscribers.import") && <Link className="gbtn" href="/subscribers/sas4">🔄 استيراد من SAS4</Link>}
           <Link className="gbtn" href="/debts">📑 ديون المشتركين</Link>
+          {can("finance.view") && <Link className="gbtn" href="/loan-debts">💳 ديون القروض</Link>}
           <Link className="gbtn" href="/messages/compose">💬 ارسال رسالة للكل</Link>
           {can("subscribers.delete") && <button className="gbtn" onClick={openArchive}>🗄️ المحذوفون</button>}
           <button className="gbtn" onClick={() => selected && openEdit(selected)} disabled={!selected}>✏️ تعديل</button>
@@ -457,7 +484,7 @@ export default function SubscribersBoard() {
                   <td className="cbcol" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" className="cb" checked={checked.has(s.id)} onChange={() => toggleCheck(s.id)} />
                   </td>
-                  <td>{s.name}</td>
+                  <td>{s.name}{s.hasLoan && <span className="loan-badge" title="لديه قرض قائم">قرض</span>}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <button className="op" title="عمليات المشترك" onClick={() => { setOpsSub(s); setOpsMsg(""); loadOpsTechs(s.towerId); }}>🛠️</button>
                   </td>
@@ -472,6 +499,10 @@ export default function SubscribersBoard() {
                       <div className="subbar">
                         <div className="sb-row">
                           <button className="sb-act go" disabled={actChecking === s.id} onClick={() => startActivation(s)}>⚡ {actChecking === s.id ? "…" : "تفعيل"}</button>
+                          {/* قرض فزعة: يظهر للمنتهي فقط، في مكتبٍ مفعَّل، لمن يملك تفعيل الاشتراكات، وبلا قرضٍ قائم */}
+                          {!s.hasLoan && d <= 0 && can("subscriptions.manage") && officeLoanOn(s.towerId) && (
+                            <button className="sb-act loan" onClick={() => { setLoanSub(s); setLoanMsg(""); }}>💳 قرض</button>
+                          )}
                           <span className="sb-sep" />
                           <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}>الأيام المتبقية <b>{d}</b></span>
                           <button className={`sb-chip c-debt ${(s.carry ?? 0) <= 0 ? "zero" : ""}`} style={{ border: 0, cursor: "pointer", fontFamily: "inherit" }}
@@ -948,6 +979,27 @@ export default function SubscribersBoard() {
           </div>
         );
       })()}
+
+      {/* نافذة تأكيد قرض فزعة — تعرض الاسم واليوزر صراحةً (يراهما المدير قبل المنح) */}
+      {loanSub && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 p-4" onClick={() => !loanBusy && setLoanSub(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 text-center text-4xl">💳</div>
+            <div className="mb-3 text-center text-lg font-extrabold text-amber-700">منح قرض فزعة؟</div>
+            <div className="mb-3 space-y-1 rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+              <div>👤 المشترك: <b>{loanSub.name ?? "—"}</b></div>
+              <div>🔑 اليوزر: <b dir="ltr">{loanSub.netUser ?? "—"}</b></div>
+              <div>💵 مبلغ القرض: <b>{fmt(packages.find((p) => p.id === loanSub.packageId)?.priceDinar ?? 0)}</b> د.ع</div>
+              <div>📅 يُمدَّد <b>٣٠ يوماً</b> (٧ حقيقيّة في الساس)</div>
+            </div>
+            {loanMsg && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">{loanMsg}</div>}
+            <button onClick={() => void confirmLoan()} disabled={loanBusy} className="mb-2 w-full rounded-xl bg-amber-600 py-3 font-bold text-white hover:bg-amber-700 disabled:opacity-50">
+              {loanBusy ? "جارٍ المنح…" : "تأكيد ومنح القرض"}
+            </button>
+            <button onClick={() => setLoanSub(null)} disabled={loanBusy} className="w-full rounded-lg bg-slate-100 py-2.5 font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50">إلغاء</button>
+          </div>
+        </div>
+      )}
 
       {activating && (
         <ActivationModal

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, guardAny, agentTowerIds } from "@/lib/guard";
 import { can } from "@/lib/rbac";
+import { encryptSecret, decryptSecret } from "@/lib/secretbox";
 
 const schema = z.object({
   name: z.string().min(1, "اسم المكتب مطلوب"),
@@ -25,6 +26,9 @@ const schema = z.object({
   syncTime: z.string().nullable().optional(), // وقت مزامنة الاشتراكات اليومية (HH:MM)
   syncEnabled: z.string().nullable().optional(), // 1 = تفعيل المزامنة التلقائية
   autoAssignEnabled: z.boolean().optional(), // توزيع البطاقات تلقائياً على فنيي هذا المكتب
+  loanEnabled: z.string().nullable().optional(), // 1 = تفعيل قروض سوبر سيل (مدير فقط)
+  loanUser: z.string().nullable().optional(), // اسم مستخدم قروض سوبر سيل (مدير فقط)
+  loanPass: z.string().nullable().optional(), // كلمة مرور القروض — تُشفَّر (مدير فقط)
 });
 
 export async function GET() {
@@ -50,10 +54,20 @@ export async function GET() {
   // بقية المستخدمين يحصلون على الحقول اللازمة للقوائم فقط (بلا كلمات سر) —
   // مع علامة hasSas الآمنة: «مربوط بـSAS» بلا كشف البيانات (تحتاجها صفحة الاستيراد)
   const canManage = can(session, "offices.edit");
-  const withFlag = towers.map((t) => ({ ...t, hasSas: !!(t.loginUrl && t.username && t.password) }));
-  const safe = canManage
-    ? withFlag
-    : withFlag.map(({ username, password, passOnline, ...rest }) => { void username; void password; void passOnline; return rest; });
+  const isAdmin = !!session?.isAdmin; // إعداد القرض للمدير حصراً (طبقة أدقّ من offices.edit)
+  const safe = towers.map((t) => {
+    const row: Record<string, unknown> = {
+      ...t,
+      hasSas: !!(t.loginUrl && t.username && t.password),
+      hasLoanCreds: !!(t.loanUser && t.loanPass), // «مربوط بقروض سوبر سيل» بلا كشف البيانات
+    };
+    // بيانات دخول SAS تُكشف لمديري المكاتب فقط
+    if (!canManage) { delete row.username; delete row.password; delete row.passOnline; }
+    // بيانات القرض للمدير حصراً: يراها مفكوكةً؛ غيره لا يراها (يبقى loanEnabled + hasLoanCreds)
+    if (isAdmin) row.loanPass = decryptSecret(t.loanPass);
+    else { delete row.loanUser; delete row.loanPass; }
+    return row;
+  });
   return NextResponse.json(safe);
 }
 
@@ -79,7 +93,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `بلغت الحد الأقصى للمكاتب (${agent.officeCap})` }, { status: 403 });
   }
 
-  const created = await prisma.tower.create({ data: { ...parsed.data, agentId } });
+  // إعداد القرض للمدير حصراً: يُشفَّر loanPass، وتُهمَل حقول القرض من غير المدير
+  const { loanEnabled, loanUser, loanPass, ...rest } = parsed.data;
+  const loanFields = g.session?.isAdmin
+    ? { loanEnabled, loanUser, loanPass: encryptSecret(loanPass) }
+    : {};
+  const created = await prisma.tower.create({ data: { ...rest, ...loanFields, agentId } });
   // كل مدراء الوكيل يحصلون على حساب مصروف/مقبوض في المكتب الجديد تلقائياً —
   // وإلا نسي النظام مكتباً وصار المدير عاجزاً عن الأخذ/الإعطاء فيه
   const { ensureAccountsForNewOffice } = await import("@/lib/managers");

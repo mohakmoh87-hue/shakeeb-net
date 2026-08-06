@@ -364,6 +364,14 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
     box-shadow: 0 2px 9px rgba(24,169,124,.36); }
   .sb-act.go:hover { background: linear-gradient(120deg, #2ecb99, #12946c); border-color: #12946c; color: #fff;
     box-shadow: 0 4px 13px rgba(24,169,124,.48); }
+  /* زرّ قرض فزعة — عنبريّ كي يتميّز عن «تفعيل» الأخضر */
+  .sb-act.loan { background: linear-gradient(120deg, #f7b955, #e0930f); border-color: #e0930f; color: #fff;
+    font-size: 12px; font-weight: 800; padding: 5px 18px; box-shadow: 0 2px 9px rgba(224,147,15,.34); }
+  .sb-act.loan:hover { background: linear-gradient(120deg, #f2ad3d, #cc850a); border-color: #cc850a; color: #fff;
+    box-shadow: 0 4px 13px rgba(224,147,15,.46); }
+  /* وسم «قرض» الثابت بجانب اسم المشترك */
+  .loan-badge { display: inline-block; margin-inline-start: 6px; padding: 1px 7px; border-radius: 999px;
+    background: #fef3c7; color: #b45309; border: 1px solid #f5cf6b; font-size: 10px; font-weight: 800; vertical-align: middle; }
   .sb-sep { width: 1px; height: 19px; background: var(--line); margin: 0 3px; }
   .sb-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 7px; padding: 6px 11px;
     font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; line-height: 1.45; }

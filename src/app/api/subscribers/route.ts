@@ -27,6 +27,27 @@ const schema = z.object({
   waEnabled: z.boolean().optional(), // إرسال واتساب لهذا المشترك (افتراضي مفعّل)
 });
 
+// وسم hasLoan لكلّ مشترك: هل عليه دين قرضٍ قائم **ومكتبه مفعَّل للقرض**؟ (للوسم والتنبيه والزرّ).
+// إطفاء المكتب يُخفي كلّ الآثار: hasLoan يعود false فيختفي الوسم والتنبيه — مع بقاء الدين محفوظاً.
+// عزل: يُستعلَم بمعرّفات المشتركين المسحوبين أصلاً (المعزولين بالمكتب/الوكيل)، فلا تسرّب.
+async function attachLoanFlag<T extends { id: number; towerId: number | null }>(items: T[]): Promise<(T & { hasLoan: boolean })[]> {
+  if (!items.length) return [];
+  const ids = items.map((i) => i.id);
+  const loans = await prisma.loanDebt.findMany({
+    where: { subscriberId: { in: ids }, isDeleted: false },
+    select: { subscriberId: true },
+  });
+  const loanSet = new Set(loans.map((l) => l.subscriberId));
+  if (!loanSet.size) return items.map((i) => ({ ...i, hasLoan: false }));
+  // المكاتب المفعّلة للقرض فقط تُظهر الوسم/التنبيه (إطفاء المكتب = إخفاء تامّ بلا محو الدين)
+  const towerIds = [...new Set(items.map((i) => i.towerId).filter((x): x is number => x != null))];
+  const onTowers = towerIds.length
+    ? await prisma.tower.findMany({ where: { id: { in: towerIds }, loanEnabled: "1" }, select: { id: true } })
+    : [];
+  const onSet = new Set(onTowers.map((t) => t.id));
+  return items.map((i) => ({ ...i, hasLoan: loanSet.has(i.id) && i.towerId != null && onSet.has(i.towerId) }));
+}
+
 export async function GET(request: Request) {
   const g = await guard("subscribers.manage");
   if (g.error) return g.error;
@@ -94,7 +115,7 @@ export async function GET(request: Request) {
     ]);
     const rank = new Map(ids.map((id, i) => [id, i]));
     items.sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
-    return NextResponse.json(items, { headers: { "X-Total-Count": String(total), "X-Limit": "50" } });
+    return NextResponse.json(await attachLoanFlag(items), { headers: { "X-Total-Count": String(total), "X-Limit": "50" } });
   }
 
   // حدّ التحميل: نجلب أول 300 فقط (القائمة كبيرة — 5000+)، والبحث يغطّي الباقي.
@@ -116,7 +137,7 @@ export async function GET(request: Request) {
     prisma.subscriber.count({ where }),
   ]);
   // نُبقي الرد مصفوفةً (توافقاً مع بقية الصفحات)، والمجموع/الحدّ في ترويسات
-  return NextResponse.json(items, {
+  return NextResponse.json(await attachLoanFlag(items), {
     headers: { "X-Total-Count": String(total), "X-Limit": String(LIMIT) },
   });
 }
