@@ -125,7 +125,7 @@ export default function AchievementsModal({ onClose }: { onClose: () => void }) 
                             ))}
                           </tbody>
                         </table>
-                        <div className="mt-1 text-[10px] text-slate-400">«النقاط ≈» بلا معامل السرعة — والمجموع أعلاه يشمله.</div>
+                        <div className="mt-1 text-[10px] text-slate-400">«النقاط» = البطاقات × وزن الفئة — بلا أيّ عامل وقت.</div>
                       </div>
                     )}
                   </li>
@@ -176,10 +176,9 @@ export default function AchievementsModal({ onClose }: { onClose: () => void }) 
             <details className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
               <summary className="cursor-pointer font-bold text-slate-700">كيف تُحتسب النقاط؟</summary>
               <p className="mt-2 leading-6">
-                نقاط البطاقة = <b>وزن صعوبة فئتها</b> × <b>معامل سرعتها</b> (زمنها مقارناً بمتوسط الفئة نفسها،
-                محدود بين ٠٫٦ و١٫٦). و<b>التوصيل خارج معادلة الوقت تماماً</b>: لا يدخل أي متوسط، ويُحسب
-                في العدد بنصف نقطة ثابتة. وأي زمن يتجاوز ٤ ساعات يُتجاهَل (نسيان ضغط «إنجاز» غالباً).
-                ولا تتويج بأقلّ من {d.minCards} بطاقات.
+                نقاط البطاقة = <b>وزن صعوبة فئتها</b> فقط، <b>بلا أيّ عامل وقت أو سرعة</b>. ونقاط الفني =
+                مجموع أوزان بطاقاته في الفترة. الأوزان ثابتة (أدناه)، ولا تتويج بأقلّ من {d.minCards} بطاقات.
+                <span className="text-slate-400"> (الزمن المعروض لكلّ فئة للاطّلاع فقط لا للاحتساب.)</span>
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {d.weights.map((w) => (

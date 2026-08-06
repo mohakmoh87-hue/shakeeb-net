@@ -6,22 +6,22 @@ import { baghdadDayKey } from "@/lib/attendance";
 // كان الترتيب بالعدد وحده مضلّلاً: التوصيل **نصف كل ما يُنجَز** (٢٦٧ من ٥٣٥ في فترة
 // تموز) وهو أسهلها وبلا زمن أصلاً — فمن يأخذ توصيلات كثيرة يبدو الأكثر إنجازاً.
 //
-// القاعدة كما أملاها محمد: لكل فئة **وزن صعوبة**، ولكل بطاقة **معامل سرعة** يقارن زمنها
-// بمتوسط **فئتها هي** لا بمتوسط عام (وإلا ظُلم من يأخذ التنصيبات الطويلة).
+// القاعدة كما أملاها محمد (عُدِّلت 2026-08-07): لكل فئة **وزن صعوبة** فقط، ونقاط الفني =
+// **مجموع أوزان بطاقاته** في الفترة — **بلا أيّ عامل وقت/سرعة إطلاقاً**. الزمن يبقى
+// معروضاً للاطّلاع فقط (متوسط كل فئة) لا للاحتساب.
 //
-//   نقاط البطاقة = وزن الفئة × معامل السرعة
-//   نقاط الفني   = مجموع نقاط بطاقاته في الفترة
+//   نقاط الفني = Σ وزن فئة كل بطاقة
 //
-// والوزن يغلب السرعة عمداً: صيانةٌ خارقة (٢×١٫٦ = ٣٫٢) تبقى دون تنصيبٍ عاديّ (٥).
+// الأوزان: تنصيب/سحب ٢ · تحويل ١٫٥ · إعادة ١٫٥ · صيانة ١ · توصيل ٠٫٢٥ · أي نوع جديد ١.
 
 // أوزان الصعوبة — ثابتة في الكود بقرار محمد (لا تُعدَّل من الشاشة)
 export const KIND_WEIGHTS: { label: string; weight: number }[] = [
-  { label: "تنصيب", weight: 5 },
-  { label: "سحب جديد", weight: 5 }, // «هو نفسه تنصيب»
-  { label: "تحويل", weight: 4 },
-  { label: "اعادة", weight: 3 },
-  { label: "صيانة", weight: 2 },
-  { label: "توصيل", weight: 0.5 },
+  { label: "تنصيب", weight: 2 },
+  { label: "سحب جديد", weight: 2 }, // «هو نفسه تنصيب»
+  { label: "تحويل", weight: 1.5 },
+  { label: "اعادة", weight: 1.5 },
+  { label: "صيانة", weight: 1 },
+  { label: "توصيل", weight: 0.25 },
 ];
 export const DEFAULT_WEIGHT = 1; // أي نوع جديد يضيفه الوكيل ⇒ نقطة واحدة
 
@@ -34,11 +34,11 @@ export function weightOfKind(kind: string | null | undefined): number {
   if (exact) return exact.weight;
   // مرادفات شائعة كتبها المستخدم بصيغة أخرى («إعادة» بهمزة، maintenance بالإنجليزية،
   // «تنصيب جديد»…) تُنسب لعائلتها بدل أن تسقط إلى وزن النوع الجديد
-  if (k.includes("تنصيب") || k.includes("سحب")) return 5;
-  if (k.includes("تحويل")) return 4;
-  if (k.includes("اعادة") || k.includes("إعادة")) return 3;
-  if (k === "maintenance" || k.includes("صيانة")) return 2;
-  if (k.includes("توصيل")) return 0.5;
+  if (k.includes("تنصيب") || k.includes("سحب")) return 2;
+  if (k.includes("تحويل")) return 1.5;
+  if (k.includes("اعادة") || k.includes("إعادة")) return 1.5;
+  if (k === "maintenance" || k.includes("صيانة")) return 1;
+  if (k.includes("توصيل")) return 0.25;
   return DEFAULT_WEIGHT;
 }
 
@@ -48,9 +48,8 @@ export function weightOfKind(kind: string | null | undefined): number {
 // لا في المتوسطات ولا في معامل السرعة — وتُحسب في العدد بنصف نقطة ثابتة للواحدة.
 export const isDeliveryKind = (kind: string | null | undefined) => (kind ?? "").includes("توصيل");
 
-// زمنٌ يتجاوز ٤ ساعات = نسيانُ ضغط «إنجاز» غالباً لا عملٌ فعليّ — يُعرض ولا يُفسد المتوسط
+// زمنٌ يتجاوز ٤ ساعات = نسيانُ ضغط «إنجاز» غالباً لا عملٌ فعليّ — يُستبعَد من متوسط العرض
 export const MAX_VALID_SEC = 4 * 3600;
-const SPEED_MIN = 0.6, SPEED_MAX = 1.6; // حدّا معامل السرعة (الصعوبة تغلب السرعة عمداً)
 export const MIN_CARDS_FOR_CROWN = 5; // لا تتويج بأقلّ من خمس بطاقات
 
 export type TechRow = {
@@ -135,14 +134,14 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
     const k = norm(c.kind) || "—";
     const weight = weightOfKind(k);
     const d = c.durationSec ?? 0;
-    // التوصيل: خارج الوقت كلّياً ⇒ زمنه لا يُحتسب ومعامل سرعته ١ دائماً ⇒ نصف نقطة ثابتة
+    // الاحتساب = وزن الفئة فقط، بلا أيّ عامل سرعة (قرار محمد 2026-08-07).
+    // `valid` لا يخصّ الاحتساب — يقتصر على تجميع الأزمنة الصالحة لعرض المتوسطات فقط،
+    // والتوصيل مستبعَد منها (لا زمن له).
     const valid = !isDeliveryKind(k) && d > 0 && d <= MAX_VALID_SEC;
-    const avg = kindAvgSec.get(k);
-    const speed = valid && avg ? Math.min(SPEED_MAX, Math.max(SPEED_MIN, avg / d)) : 1;
 
     const a: Acc = acc.get(c.technicianId) ?? { cards: 0, points: 0, timedSec: [] as number[], kinds: new Map() };
     a.cards += 1;
-    a.points += weight * speed;
+    a.points += weight;
     if (valid) a.timedSec.push(d);
     const kk = a.kinds.get(k) ?? { count: 0, secs: [] };
     kk.count += 1;
