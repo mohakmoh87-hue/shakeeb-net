@@ -13,6 +13,24 @@ export function getMachineId(): string {
   if (!mid) mid = process.env.MACHINE_ID || os.hostname() || `worker-${Math.random().toString(36).slice(2, 8)}`;
   return mid;
 }
+
+// طابعات هذه الحاسبة (JSON بأسماء) — تُقرأ مرّة كل 5 دقائق (استدعاء SumatraPDF/النظام ثقيل)
+// وتُرفَع في النبضة ليختار المدير طابعة الوصل من قائمةٍ حقيقيّة بدل كتابة الاسم يدويّاً.
+let printersCache = "";
+let printersAt = 0;
+async function readPrinters(): Promise<string> {
+  if (printersCache && Date.now() - printersAt < 5 * 60_000) return printersCache;
+  try {
+    const mod = (await import("pdf-to-printer")) as unknown as { getPrinters?: () => Promise<Array<{ name?: string }>> };
+    if (typeof mod.getPrinters === "function") {
+      const list = await mod.getPrinters();
+      const names = Array.from(new Set(list.map((p) => (p?.name ?? "").trim()).filter(Boolean)));
+      printersCache = JSON.stringify(names);
+      printersAt = Date.now();
+    }
+  } catch { /* أبقِ القديم — لا تُعطّل النبضة لأجل قائمة الطابعات */ }
+  return printersCache;
+}
 export function isLeaderNow(): boolean { return leaderNow; }
 // وكيل هذه الحاسبة (لحصر جلسات الواتساب بمكاتب هذا الوكيل)
 export function getWorkerAgentId(): number | null { return myAgentId; }
@@ -35,12 +53,13 @@ export function startHybridAgent() {
   let timer: ReturnType<typeof setInterval> | null = null;
   async function beat() {
     try {
+      const printers = await readPrinters(); // "" إن تعذّر — لا نكتب فوق القائمة القديمة حينها
       const row = await prisma.hybridWorker.upsert({
         where: { machineId: id },
         // ربط المكتب: env WORKER_TOWER_ID (إن وُجد) يُثبّت/يُصحّح الربط في القاعدة؛
         // وإلا يبقى ما ضبطه المدير مركزياً (لا يُدهَس بـnull عند غياب الـenv)
-        update: { lastSeen: new Date(), name, ...(towerId != null ? { towerId } : {}) },
-        create: { machineId: id, name, towerId, lastSeen: new Date() },
+        update: { lastSeen: new Date(), name, ...(towerId != null ? { towerId } : {}), ...(printers ? { printers } : {}) },
+        create: { machineId: id, name, towerId, lastSeen: new Date(), ...(printers ? { printers } : {}) },
         select: { agentId: true, approved: true, blocked: true, towerId: true },
       });
       // محظورة (حذفها المدير): توقّف تماماً — أغلق الواتساب نظيفاً ثم اخرج (لا تعد للظهور)

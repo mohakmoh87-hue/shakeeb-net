@@ -1049,6 +1049,7 @@ model HybridWorker {
   priority  Int      @default(100) // الأصغر = أعلى أولوية ليكون القائد
   lastSeen  DateTime @default(now()) // آخر نبضة heartbeat
   configAt  DateTime? // آخر مرة جلبت فيها الحاسبة إعداداتها من الموقع (الربط الذاتي)
+  printers  String? // قائمة طابعات هذه الحاسبة (JSON بأسماء) — تكتبها النبضة لاختيار طابعة الوصل
   createdAt DateTime @default(now())
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة

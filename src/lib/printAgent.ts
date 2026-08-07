@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "@/lib/prisma";
 import { subscriptionReceiptHtml, invoiceReceiptHtml } from "@/lib/printReceiptHtml";
+import { getReceiptTemplate } from "@/lib/receiptTemplate";
 
 type Browser = { newPage: () => Promise<Page>; close: () => Promise<void> };
 type Page = {
@@ -62,12 +63,16 @@ async function htmlToPdf(html: string): Promise<string> {
   }
 }
 
-// طباعة صامتة على الطابعة الافتراضية (بلا تحجيم — القياس مضبوط 80مم من المصدر)
-async function printPdfSilently(file: string): Promise<void> {
+// طباعة صامتة (بلا تحجيم — القياس مضبوط من المصدر). طابعة الوصل: الاسم المختار للمكتب
+// إن وُجد، وإلا الطابعة الافتراضية للحاسبة (سلوك حالي محفوظ لمن لم يختر طابعة).
+async function printPdfSilently(file: string, printerName?: string | null): Promise<void> {
   const { print } = (await import("pdf-to-printer")) as unknown as {
     print: (f: string, o?: Record<string, unknown>) => Promise<void>;
   };
-  await print(file, { scale: "noscale" });
+  const opts: Record<string, unknown> = { scale: "noscale" };
+  const name = (printerName ?? "").trim();
+  if (name) opts.printer = name;
+  await print(file, opts);
 }
 
 async function renderJobHtml(kind: string, refId: number, agentId: number | null): Promise<string | null> {
@@ -76,7 +81,7 @@ async function renderJobHtml(kind: string, refId: number, agentId: number | null
   return null;
 }
 
-async function processJob(job: { id: number; kind: string; refId: number; agentId: number | null }): Promise<void> {
+async function processJob(job: { id: number; kind: string; refId: number; agentId: number | null; towerId: number | null }): Promise<void> {
   // التقاط ذرّي: الفائز الوحيد يقلب pending → printing (يمنع طباعة مزدوجة بين حاسبتين)
   const claimed = await prisma.printJob.updateMany({
     where: { id: job.id, status: "pending" },
@@ -87,8 +92,11 @@ async function processJob(job: { id: number; kind: string; refId: number; agentI
   try {
     const html = await renderJobHtml(job.kind, job.refId, job.agentId);
     if (!html) throw new Error("الوصل غير موجود");
+    // طابعة الوصل من قالب **مكتب هذا الأمر نفسه** (عزل: agentId+towerId الخاصّان بالأمر
+    // فقط)؛ فارغ ⇒ الطابعة الافتراضية للحاسبة. لا يُستعمل قالب مكتبٍ/وكيلٍ آخر أبداً.
+    const tpl = await getReceiptTemplate(job.agentId, job.towerId);
     file = await htmlToPdf(html);
-    await printPdfSilently(file);
+    await printPdfSilently(file, tpl.printerName);
     await prisma.printJob.update({ where: { id: job.id }, data: { status: "done", doneAt: new Date(), error: null } });
     console.log(`[print] ✅ طُبع وصل ${job.kind}#${job.refId} (أمر ${job.id})`);
   } catch (e) {
@@ -103,6 +111,7 @@ async function processJob(job: { id: number; kind: string; refId: number; agentI
 }
 
 let lastCleanup = 0;
+let lastPendingCleanup = 0;
 
 export function startPrintAgent() {
   const gg = globalThis as unknown as { __printAgentStarted?: boolean };
@@ -114,6 +123,18 @@ export function startPrintAgent() {
     try {
       const { hostsOfficeLocally } = await import("@/lib/whatsapp");
       const { isLeaderNow, getWorkerAgentId } = await import("@/lib/hybridAgent");
+
+      // تنظيف الأوامر المعلّقة الأقدم من 30 دقيقة (لم تُرسَل) — كل 5 دقائق، ولمكاتب
+      // **وكيل هذه الحاسبة حصراً** (عزل: agentId العامل). يمنع تراكم أوامر عالقة (مثل مكتب
+      // بلا طابعة صحيحة) ويمنع طبعها دفعةً عند الإصلاح لاحقاً. يعمل قبل جلب الطابور كي
+      // يُنظَّف حتى لو لم تُوجد أوامر حديثة.
+      const cleanupAid = getWorkerAgentId();
+      if (cleanupAid != null && Date.now() - lastPendingCleanup > 5 * 60_000) {
+        lastPendingCleanup = Date.now();
+        await prisma.printJob.deleteMany({
+          where: { agentId: cleanupAid, status: "pending", createdAt: { lt: new Date(Date.now() - 30 * 60_000) } },
+        }).catch(() => {});
+      }
 
       // أوامر آخر 10 دقائق فقط (الأقدم فاتت فائدتها — الوصل يُعاد طبعه بضغطة)
       const pend = await prisma.printJob.findMany({

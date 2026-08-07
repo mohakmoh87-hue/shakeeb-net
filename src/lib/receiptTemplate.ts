@@ -16,6 +16,7 @@ export type ReceiptTemplate = {
   contentW: number;
   fields: ReceiptFields; // أيّ معلومةٍ تظهر في الوصل
   fieldOrder: ReceiptBodyKey[]; // ترتيب صفوف الجسم (إعادة الترتيب بالسحب)
+  printerName: string; // اسم طابعة الوصل (فارغ = الطابعة الافتراضية للحاسبة)
 };
 
 export const DEFAULT_RECEIPT: ReceiptTemplate = {
@@ -32,6 +33,7 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
   contentW: 68,
   fields: resolveFields(null),
   fieldOrder: DEFAULT_ORDER,
+  printerName: "",
 };
 
 // مفتاح قالب وصل مكتب محدّد (يغلب قالب الوكيل العام)

@@ -21,6 +21,7 @@ const schema = z.object({
   contentW: z.coerce.number().min(PAPER_LIMITS.minC).max(PAPER_LIMITS.maxW).default(68),
   fields: z.record(z.string(), z.boolean()).default({}), // إظهار/إخفاء كل حقل
   fieldOrder: z.array(z.string()).default([]), // ترتيب صفوف الجسم (سحب)
+  printerName: z.string().default(""), // طابعة الوصل (فارغ = الافتراضية للحاسبة — سلوك حالي)
 });
 
 export type ReceiptTemplate = z.infer<typeof schema>;
@@ -39,6 +40,7 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
   contentW: 68,
   fields: {},
   fieldOrder: DEFAULT_ORDER as unknown as string[],
+  printerName: "",
 };
 
 // مفتاح قالب الوصل لكل وكيل (عزل المستأجر) — ومفتاح مكتبٍ محدّد يغلب مفتاح الوكيل
@@ -73,11 +75,28 @@ export async function GET(request: Request) {
   }
   // حلّ الأبعاد (مع ترحيل النوع القديم) والحقول والترتيب قبل الإرسال للواجهة
   const d = resolveDims(data as { paperW?: number; paperH?: number; contentW?: number; paper?: string });
+
+  // قائمة الطابعات المتاحة لاختيارها — من حاسبات هذا الوكيل حصراً (عزل الوكيل)، ومقيَّدة
+  // بمكتب القالب المحدَّد إن وُجد (عزل المكتب). لا تُسرَّب طابعات وكيلٍ أو مكتبٍ آخر أبداً.
+  const availablePrinters: string[] = [];
+  if (g.session?.agentId != null) {
+    const workers = await prisma.hybridWorker.findMany({
+      where: { agentId: g.session.agentId, blocked: false, ...(officeId != null ? { towerId: officeId } : {}) },
+      select: { printers: true },
+    });
+    const set = new Set<string>();
+    for (const w of workers) {
+      try { for (const n of JSON.parse(w.printers ?? "[]")) { const s = String(n).trim(); if (s) set.add(s); } } catch { /* تجاهل قائمة تالفة */ }
+    }
+    availablePrinters.push(...[...set].sort((a, b) => a.localeCompare(b, "ar")));
+  }
+
   return NextResponse.json({
     ...data,
     paperW: d.paperW, paperH: d.paperH, contentW: d.contentW,
     fields: resolveFields((data as { fields?: Record<string, boolean> }).fields),
     fieldOrder: resolveOrder((data as { fieldOrder?: string[] }).fieldOrder),
+    availablePrinters,
     officeCustom: !!oRow, officeId,
   });
 }

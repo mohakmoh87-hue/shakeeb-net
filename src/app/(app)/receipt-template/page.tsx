@@ -22,6 +22,7 @@ type Tpl = {
   contentW: number;
   fields: Record<string, boolean>;
   fieldOrder: string[];
+  printerName: string;
 };
 
 const DEFAULT: Tpl = {
@@ -30,6 +31,7 @@ const DEFAULT: Tpl = {
   fontSize: 14, showLogo: true,
   paperW: 80, paperH: 0, contentW: 68,
   fields: resolveFields(null), fieldOrder: [...DEFAULT_ORDER],
+  printerName: "",
 };
 
 const FIELD_LABEL: Record<string, string> = Object.fromEntries(RECEIPT_FIELDS.map((f) => [f.key, f.label]));
@@ -46,12 +48,15 @@ export default function ReceiptTemplatePage() {
   const [offices, setOffices] = useState<Office[]>([]);
   const [officeSel, setOfficeSel] = useState<string>("");
   const [officeCustom, setOfficeCustom] = useState(false);
+  // طابعات حاسبة المكتب (يبلّغ بها العامل) — للاختيار من قائمة بدل كتابة الاسم يدويّاً
+  const [printers, setPrinters] = useState<string[]>([]);
 
   const load = (office: string) => {
     const qs = office ? `?officeId=${office}` : "";
     fetch(`/api/receipt-template${qs}`).then((r) => void (r.ok && r.json().then((d) => {
       setT({ ...DEFAULT, ...d, fields: resolveFields(d.fields), fieldOrder: resolveOrder(d.fieldOrder) });
       setOfficeCustom(!!d.officeCustom);
+      setPrinters(Array.isArray(d.availablePrinters) ? d.availablePrinters : []);
       setSaved(false);
       if (d.officeId != null && String(d.officeId) !== office) setOfficeSel(String(d.officeId));
     })));
@@ -159,6 +164,25 @@ export default function ReceiptTemplatePage() {
             )}
             <p className="mt-2 text-[11px] text-slate-400">
               أمثلة: حراري ٨٠ (عرض ٨٠، كتابة ٦٨، لفّة) · A4 (عرض ٢١٠، كتابة ٧٨، طول ٢٩٧) · الكتابة تُطبع وسط الورقة.
+            </p>
+          </div>
+
+          {/* طابعة الوصل — فارغ = الطابعة الافتراضية للحاسبة (سلوك حاليّ لبقية الوكلاء) */}
+          <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="mb-2 text-sm font-semibold text-slate-700">طابعة الوصل</div>
+            <input list="rt-printers" value={t.printerName} onChange={(e) => set("printerName", e.target.value)}
+              placeholder="الطابعة الافتراضية للحاسبة (اتركه فارغاً)"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue" />
+            <datalist id="rt-printers">{printers.map((p) => <option key={p} value={p} />)}</datalist>
+            {t.printerName && (
+              <button onClick={() => set("printerName", "")} className="mt-1 text-xs text-red-500 hover:underline">إفراغ (استخدام الافتراضية)</button>
+            )}
+            <p className="mt-2 text-[11px] text-slate-400">
+              {officeSel
+                ? (printers.length
+                    ? `اختر من طابعات حاسبة هذا المكتب (${printers.length}) أو اكتب الاسم. فارغ = الطابعة الافتراضية.`
+                    : "اكتب اسم الطابعة كما يظهر في ويندوز — أو انتظر ظهور قائمة طابعات الحاسبة بعد نبضة عاملها. فارغ = الافتراضية.")
+                : "اختر مكتباً محدّداً من الأعلى لرؤية طابعات حاسبته. الحقل الفارغ يعني الطابعة الافتراضية (سلوك حاليّ)."}
             </p>
           </div>
 
