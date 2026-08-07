@@ -462,6 +462,10 @@ model RechargeCard {
   userName     String?
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
+  // قيد فريد يمنع تكرار السيريال داخل الوكيل الواحد (طلب محمد 2026-08-07): مكتبان يرفعان
+  // نفس الدفعة — ولو باللحظة نفسها — لا يُنشئان صفوفاً مكرّرة؛ القاعدة تردّ الثاني.
+  // (السيريالات الفارغة NULL متمايزة في بوستغرس فلا تتعارض.)
+  @@unique([agentId, serial])
   @@index([serial])
   @@index([packageId, useDate])
   @@map("recharge_cards")

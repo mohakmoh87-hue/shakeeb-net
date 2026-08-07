@@ -45,13 +45,16 @@ export async function POST(request: Request) {
   const existingSet = new Set(existing.map((e) => e.serial));
   const toAdd = clean.filter((s) => !existingSet.has(s));
 
+  // skipDuplicates: حصنٌ ذرّيّ مع القيد الفريد (agentId, serial) — لو تزامن مكتبٌ آخر
+  // وأدرج نفس السيريال بعد فحص existing أعلاه، تتجاهله القاعدة بلا خطأ بدل إنشاء مكرّر.
   const res = await prisma.rechargeCard.createMany({
     data: toAdd.map((serial) => ({ serial, number: serial, packageId, price, addDate: new Date(), agentId })),
+    skipDuplicates: true,
   });
 
   return NextResponse.json({
     ok: true,
-    added: res.count,
-    duplicates: clean.length - toAdd.length,
+    added: res.count, // العدد الفعليّ المُدرَج (قد يقلّ عن toAdd لو ابتلع القيدُ متزامناً)
+    duplicates: clean.length - res.count,
   });
 }

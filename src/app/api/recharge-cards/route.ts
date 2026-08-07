@@ -33,8 +33,16 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const created = await prisma.rechargeCard.create({
-    data: { ...parsed.data, addDate: new Date(), agentId: g.session?.agentId ?? null }, // عزل: كارت وكيل المستخدم
-  });
-  return NextResponse.json(created, { status: 201 });
+  try {
+    const created = await prisma.rechargeCard.create({
+      data: { ...parsed.data, addDate: new Date(), agentId: g.session?.agentId ?? null }, // عزل: كارت وكيل المستخدم
+    });
+    return NextResponse.json(created, { status: 201 });
+  } catch (e) {
+    // تعارض القيد الفريد (agentId, serial) ⇒ الكارت موجودٌ مسبقاً — نردّه بلطف بدل خطأ ٥٠٠
+    if ((e as { code?: string }).code === "P2002") {
+      return NextResponse.json({ error: "هذا الكارت (السيريال) موجودٌ مسبقاً" }, { status: 409 });
+    }
+    throw e;
+  }
 }
