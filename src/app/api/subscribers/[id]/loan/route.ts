@@ -11,7 +11,6 @@ import { sendLoanMessage } from "@/lib/loanMessage";
 //   • الوكيل: sameAgentTower (لا يُمنح إلا مشترك يتبع وكيل المستخدم).
 //   • المكتب: يُستعمل حساب قروض **مكتب المشترك نفسه** حصراً (لكلّ مكتب دخوله).
 //   • الفنيّ مُستبعَد (guard يرفض جلسة الفنيّ). مدير + مستخدم فقط.
-const LOAN_DAYS = 30; // الأيام الوهميّة محليّاً (الساس يمنح 7 حقيقيّة، والمزامنة تتجاهل صاحب القرض)
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await guard("subscriptions.manage");
@@ -85,9 +84,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // ===== نجح المنح: الكتابات المحليّة (٣٠ يوماً وهميّة + دين قرض + سجلّ تدقيق) =====
   // المنح في سوبر سيل نهائيٌّ لا يُلغى؛ فإن فشلت القاعدة بعده نوثّق «قرضاً يتيماً» كي لا يضيع.
   const now = new Date();
-  const expiryVirtual = new Date(now.getTime() + LOAN_DAYS * 86400000);
-  // طريقة المكتب: activation = قرض كتفعيل (دَين + رسالة)؛ normal = قرض عادي (تمديد فقط بلا أثر)
+  // طريقة المكتب:
+  //   • activation (قرض كتفعيل): ٣٠ يوماً وهميّة (شهر كامل) + دَين، وتتجاهله المزامنة ليبقى الـ٣٠.
+  //   • normal (قرض عادي): ٧ أيام حقيقيّة فقط — نفس ما تمنحه سوبر سيل؛ بلا دَين، فلا تتجاهله
+  //     المزامنة بل تؤكّد أيّامه السبعة من الساس (لا نفخ محليّ بلا مبرّر).
   const isNormal = office.loanMode === "normal";
+  const LOAN_DAYS = isNormal ? 7 : 30;
+  const expiryVirtual = new Date(now.getTime() + LOAN_DAYS * 86400000);
   try {
     await prisma.$transaction(async (tx) => {
       // كلا الطريقتين: تمديد ٣٠ يوماً وهميّة (المزامنة أمامها-فقط تحمي الـ٣٠ لأنها > ٧ الساس)
