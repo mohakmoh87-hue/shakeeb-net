@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope, agentTowerIds } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
+import { onlyMaster } from "@/lib/moneyKinds";
 
 const schema = z.object({
   type: z.enum(["in", "out"]), // قبض / صرف
@@ -59,11 +60,11 @@ export async function GET(request: Request) {
       ],
     },
     manual: { OR: [{ sourceType: null }, { sourceType: "manual" }] },
-    master: { sourceType: { in: ["master", "master-invoice"] } },
+    master: { ...onlyMaster },
     activation: { sourceType: "activation" },
     invoice: { sourceType: "invoice" },
     sale: { sourceType: "sale" },
-    debt: { sourceType: "debt" },
+    debt: { sourceType: { in: ["debt", "master-debt"] } },
     salary: { sourceType: "salary" },
   };
   const typeWhere = TYPE_WHERE[typeParam] ?? {};

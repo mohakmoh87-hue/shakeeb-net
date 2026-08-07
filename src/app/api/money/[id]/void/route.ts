@@ -83,8 +83,8 @@ export async function POST(
         await t.invoice.updateMany({ where: { id: tx.sourceId, isDeleted: false }, data: { isDeleted: true } });
       }
 
-      // ===== تسديد دين: أرجِع المبلغ ديناً على المشترك =====
-      if (tx.sourceType === "debt" && tx.sourceId) {
+      // ===== تسديد دين (نقدي أو ماستر): أرجِع المبلغ ديناً على المشترك =====
+      if ((tx.sourceType === "debt" || tx.sourceType === "master-debt") && tx.sourceId) {
         const sub = await t.subscriber.findUnique({ where: { id: tx.sourceId } });
         if (sub) {
           await t.subscriber.update({ where: { id: sub.id }, data: { carry: (sub.carry ?? 0) + (tx.moneyIn ?? 0) } });

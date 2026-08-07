@@ -35,13 +35,13 @@ const fmtDate = (d: string | null) => formatDateTime(d); // بالتاريخ و�
 
 // أسماء أنواع الحركات كما يراها المستخدم — الصفحة صارت سجل الحركات الشامل
 const SRC_LABEL: Record<string, string> = {
-  manual: "يدوي", master: "🅜 ماستر", "master-invoice": "🅜 فاتورة ماستر",
+  manual: "يدوي", master: "🅜 ماستر", "master-invoice": "🅜 فاتورة ماستر", "master-debt": "🅜 تسديد دين ماستر",
   activation: "تفعيل", invoice: "فاتورة", sale: "بيع مخزن", debt: "تسديد دين", salary: "راتب",
   "office-settle": "تسديد مكتب",
 };
 const srcLabel = (s: string | null) => (s == null ? "يدوي" : SRC_LABEL[s] ?? s);
 const SRC_CLASS: Record<string, string> = {
-  master: "bg-indigo-50 text-indigo-700", "master-invoice": "bg-indigo-50 text-indigo-700",
+  master: "bg-indigo-50 text-indigo-700", "master-invoice": "bg-indigo-50 text-indigo-700", "master-debt": "bg-indigo-50 text-indigo-700",
   activation: "bg-emerald-50 text-emerald-700", invoice: "bg-sky-50 text-sky-700",
   sale: "bg-amber-50 text-amber-700", debt: "bg-rose-50 text-rose-700", salary: "bg-violet-50 text-violet-700",
   "office-settle": "bg-teal-50 text-teal-700",

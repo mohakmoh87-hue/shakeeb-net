@@ -45,10 +45,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       select: { id: true, number: true, date: true, totalMy: true, waselHim: true, type: true, user: true },
     }),
     prisma.moneyTx.findMany({
-      where: { sourceType: "debt", sourceId: subscriberId, isDeleted: false },
+      // تسديد الدين نقداً (debt) أو على الماستر (master-debt) — كلاهما يُنقص الدين
+      where: { sourceType: { in: ["debt", "master-debt"] }, sourceId: subscriberId, isDeleted: false },
       orderBy: { id: "desc" },
       take: 500,
-      select: { id: true, date: true, moneyIn: true, notes: true, userId: true },
+      select: { id: true, date: true, moneyIn: true, notes: true, userId: true, sourceType: true },
     }),
     prisma.auditLog.findMany({
       where: { action: "CLEAR_DEBT", entity: "subscriber", entityId: String(subscriberId) },
@@ -91,7 +92,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     ...payments.map((p) => ({
       key: `p${p.id}`,
       date: p.date,
-      kind: "تسديد",
+      kind: p.sourceType === "master-debt" ? "تسديد (ماستر)" : "تسديد",
       added: 0,
       paid: p.moneyIn ?? 0,
       note: p.notes,

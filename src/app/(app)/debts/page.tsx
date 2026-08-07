@@ -25,6 +25,7 @@ export default function DebtsPage() {
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [banner, setBanner] = useState("");
   const [busy, setBusy] = useState(false);
+  const [payMaster, setPayMaster] = useState(false); // تسديد على حساب الماستر
   const { can } = usePermission();
 
   // مسح دين مشترك واحد أو المحددين (إسقاط الدين)
@@ -65,6 +66,7 @@ export default function DebtsPage() {
   function openPay(d: Debtor) {
     setPaying(d);
     setAmount(String(d.carry ?? ""));
+    setPayMaster(false);
     setError("");
   }
 
@@ -81,7 +83,7 @@ export default function DebtsPage() {
       const res = await fetch(`/api/debts/${paying.id}/pay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: Number(amount) }),
+        body: JSON.stringify({ amount: Number(amount), master: payMaster }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -238,6 +240,10 @@ export default function DebtsPage() {
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
               />
             </div>
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700">
+              <input type="checkbox" checked={payMaster} onChange={(e) => setPayMaster(e.target.checked)} className="h-4 w-4" />
+              🅜 تسديد على حساب الماستر (يُضاف للماستر لا للصندوق)
+            </label>
             {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setPaying(null)} className="rounded-lg bg-slate-100 px-4 py-2 text-slate-600 hover:bg-slate-200">إلغاء</button>

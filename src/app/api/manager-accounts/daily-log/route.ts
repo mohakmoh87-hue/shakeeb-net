@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
+import { notMaster } from "@/lib/moneyKinds";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function GET() {
   const [txs, towers] = await Promise.all([
     prisma.moneyTx.findMany({
       // باستثناء حساب الماستر (مستقل عن التقرير اليومي)
-      where: { isDeleted: false, towerId: { in: agentTowers }, OR: [{ sourceType: null }, { sourceType: { notIn: ["master", "master-invoice"] } }] },
+      where: { isDeleted: false, towerId: { in: agentTowers }, ...notMaster },
       select: { moneyIn: true, moneyOut: true, date: true, towerId: true },
       orderBy: { date: "asc" },
     }),

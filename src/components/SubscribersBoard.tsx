@@ -156,6 +156,7 @@ export default function SubscribersBoard() {
   const [payAmount, setPayAmount] = useState("");
   const [payBusy, setPayBusy] = useState(false);
   const [payErr, setPayErr] = useState("");
+  const [payMaster, setPayMaster] = useState(false); // تسديد الدين على حساب الماستر
   const [summaryBusy, setSummaryBusy] = useState(false);
   // أرشيف المحذوفين: الحذف صار تعطيلاً، فوصولاتهم باقية والاسترجاع يعيدهم كاملين
   const [archOpen, setArchOpen] = useState(false);
@@ -285,11 +286,11 @@ export default function SubscribersBoard() {
     const n = Number(payAmount) || 0;
     if (n <= 0) { setPayErr("أدخل مبلغاً صحيحاً أو اضغط + لتسديد كامل الدين"); return; }
     setPayBusy(true); setPayErr("");
-    const r = await fetch(`/api/debts/${selected.id}/pay`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: n }) });
+    const r = await fetch(`/api/debts/${selected.id}/pay`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: n, master: payMaster }) });
     const d = await r.json().catch(() => ({}));
     setPayBusy(false);
     if (!r.ok) { setPayErr(d.error ?? "تعذّر التسديد"); return; }
-    setPayDebtOpen(false); setPayAmount("");
+    setPayDebtOpen(false); setPayAmount(""); setPayMaster(false);
     setMsg(`✓ سُدِّد ${n.toLocaleString("en-US")} د.ع — المتبقّي ${Number(d.newCarry ?? 0).toLocaleString("en-US")} د.ع`);
     announceMoneyChanged();
     load(query, showAllTowers);
@@ -876,7 +877,7 @@ export default function SubscribersBoard() {
 
       {/* نافذة تسديد الدين */}
       {payDebtOpen && selected && (
-        <Modal onClose={() => setPayDebtOpen(false)}>
+        <Modal onClose={() => { setPayDebtOpen(false); setPayMaster(false); }}>
           <h3 className="mb-1 text-lg font-bold text-ink">💵 تسديد دين: {selected.name}</h3>
           <div className="mb-3 flex items-center justify-between rounded-lg bg-red-50 px-3 py-2">
             <span className="text-sm text-ink-2">الدين الحالي عليه:</span>
@@ -889,10 +890,14 @@ export default function SubscribersBoard() {
             <button onClick={() => setPayAmount(String(selected.carry ?? 0))} title="تسديد كامل الدين" className="rounded-lg bg-ok px-4 py-2 text-lg font-extrabold text-white">+</button>
           </div>
           <p className="mb-2 text-[11px] text-muted">اضغط «+» ليصل كامل المبلغ، أو اكتب المبلغ الواصل يدوياً فقط.</p>
+          <label className="mb-2 flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700">
+            <input type="checkbox" checked={payMaster} onChange={(e) => setPayMaster(e.target.checked)} className="h-4 w-4" />
+            🅜 تسديد على حساب الماستر (يُضاف للماستر لا للصندوق)
+          </label>
           {payErr && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-bad">{payErr}</div>}
           <div className="flex gap-2">
             <button onClick={() => void payDebt()} disabled={payBusy} className="flex-1 rounded-lg bg-ok py-2.5 font-bold text-white disabled:opacity-50">{payBusy ? "جارٍ التسديد..." : "✓ تسديد"}</button>
-            <button onClick={() => setPayDebtOpen(false)} className="rounded-lg bg-surface-2 px-4 py-2.5 font-semibold text-ink-2">إلغاء</button>
+            <button onClick={() => { setPayDebtOpen(false); setPayMaster(false); }} className="rounded-lg bg-surface-2 px-4 py-2.5 font-semibold text-ink-2">إلغاء</button>
           </div>
         </Modal>
       )}

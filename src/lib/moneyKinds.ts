@@ -7,8 +7,9 @@
 // القاعدة: أي استعلام يريد «مال الصندوق» يستعمل notCashless، وأي استعلام يريد
 // «مال الماستر» يستعمل onlyMaster. لا تُكتب القوائم يدوياً في أي مكان بعد اليوم.
 
-/** أنواع الحركات التي تنتمي لحساب الماستر المستقل — لا تدخل الصندوق ولا التقارير. */
-export const MASTER_SOURCE_TYPES = ["master", "master-invoice"] as const;
+/** أنواع الحركات التي تنتمي لحساب الماستر المستقل — لا تدخل الصندوق ولا التقارير.
+ *  master = ماستر تفعيل · master-invoice = ماستر فاتورة · master-debt = تسديد دين على الماستر. */
+export const MASTER_SOURCE_TYPES = ["master", "master-invoice", "master-debt"] as const;
 
 /** شرط Prisma: حركات الماستر وحدها. */
 export const onlyMaster = { sourceType: { in: [...MASTER_SOURCE_TYPES] } };

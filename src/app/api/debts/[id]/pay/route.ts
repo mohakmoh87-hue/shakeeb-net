@@ -9,6 +9,7 @@ import { getEffectiveTemplate } from "@/lib/smsTemplates";
 
 const schema = z.object({
   amount: z.coerce.number().positive("المبلغ يجب أن يكون أكبر من صفر"),
+  master: z.boolean().optional(), // تسديد على حساب الماستر بدل الصندوق النقدي
 });
 
 // تسديد دين مشترك: يقلّل الدين + يسجّل قبضاً في الصندوق
@@ -30,7 +31,7 @@ export async function POST(
       { status: 400 },
     );
   }
-  const { amount } = parsed.data;
+  const { amount, master } = parsed.data;
 
   const subscriber = await prisma.subscriber.findUnique({
     where: { id: subscriberId },
@@ -55,11 +56,12 @@ export async function POST(
       data: {
         moneyIn: amount,
         moneyOut: 0,
-        notes: `تسديد دين - ${subscriber.name ?? subscriberId}`,
+        notes: `تسديد دين${master ? " (ماستر)" : ""} - ${subscriber.name ?? subscriberId}`,
         date: new Date(),
         serverDate: new Date(),
         userId: session?.userId,
-        sourceType: "debt", sourceId: subscriberId, towerId: subscriber.towerId,
+        // master ⇒ يُوجَّه لحساب الماستر (خارج الصندوق والتقارير) بدل النقد
+        sourceType: master ? "master-debt" : "debt", sourceId: subscriberId, towerId: subscriber.towerId,
       },
     }),
     prisma.auditLog.create({
@@ -68,7 +70,7 @@ export async function POST(
         action: "PAY_DEBT",
         entity: "subscriber",
         entityId: String(subscriberId),
-        details: `تسديد ${amount} - المتبقّي ${newCarry}`,
+        details: `تسديد${master ? " ماستر" : ""} ${amount} - المتبقّي ${newCarry}`,
       },
     }),
   ]);
