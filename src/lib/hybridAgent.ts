@@ -1,4 +1,5 @@
 import os from "node:os";
+import { execFile } from "node:child_process";
 import { prisma } from "@/lib/prisma";
 import { computeLeaderMachineId } from "@/lib/hybridLeader";
 
@@ -14,20 +15,49 @@ export function getMachineId(): string {
   return mid;
 }
 
-// طابعات هذه الحاسبة (JSON بأسماء) — تُقرأ مرّة كل 5 دقائق (استدعاء SumatraPDF/النظام ثقيل)
-// وتُرفَع في النبضة ليختار المدير طابعة الوصل من قائمةٍ حقيقيّة بدل كتابة الاسم يدويّاً.
+// طابعات هذه الحاسبة (JSON بأسماء) — تُقرأ مرّة كل 5 دقائق وتُرفَع في النبضة ليختار المدير
+// طابعة الوصل من قائمةٍ حقيقيّة. عدّة طرق بالترتيب لأنّ WMI (Get-CimInstance Win32_Printer)
+// يفشل على بعض الأجهزة (حاسبة الشدن): نبدأ بـGet-Printer (نظام الطباعة الحديث) ثم نرتدّ لـWMI.
 let printersCache = "";
 let printersAt = 0;
-async function readPrinters(): Promise<string> {
-  if (printersCache && Date.now() - printersAt < 5 * 60_000) return printersCache;
+
+function psNames(command: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", command],
+      { timeout: 20_000, windowsHide: true },
+      (err, stdout) => {
+        if (err) { resolve([]); return; }
+        const names = String(stdout).split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+        resolve(Array.from(new Set(names)));
+      },
+    );
+  });
+}
+
+async function enumeratePrinters(): Promise<string[]> {
+  // ١) Get-Printer (يعمل حيث يفشل WMI)
+  let names = await psNames("Get-Printer | Select-Object -ExpandProperty Name");
+  if (names.length) return names;
+  // ٢) pdf-to-printer (WMI) — ارتداد
   try {
     const mod = (await import("pdf-to-printer")) as unknown as { getPrinters?: () => Promise<Array<{ name?: string }>> };
     if (typeof mod.getPrinters === "function") {
       const list = await mod.getPrinters();
-      const names = Array.from(new Set(list.map((p) => (p?.name ?? "").trim()).filter(Boolean)));
-      printersCache = JSON.stringify(names);
-      printersAt = Date.now();
+      names = Array.from(new Set(list.map((p) => (p?.name ?? "").trim()).filter(Boolean)));
+      if (names.length) return names;
     }
+  } catch { /* تجاهل */ }
+  // ٣) WMI مباشرةً — ارتداد أخير
+  return psNames("Get-CimInstance Win32_Printer | Select-Object -ExpandProperty Name");
+}
+
+async function readPrinters(): Promise<string> {
+  if (printersCache && Date.now() - printersAt < 5 * 60_000) return printersCache;
+  try {
+    const names = await enumeratePrinters();
+    if (names.length) { printersCache = JSON.stringify(names); printersAt = Date.now(); }
   } catch { /* أبقِ القديم — لا تُعطّل النبضة لأجل قائمة الطابعات */ }
   return printersCache;
 }
