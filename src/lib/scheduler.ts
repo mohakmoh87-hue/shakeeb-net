@@ -306,7 +306,6 @@ export function startScheduler() {
     const { getAgentSetting } = await import("@/lib/agentSettings");
     const wAgent = getWorkerAgentId();
     const reminderTime = await getAgentSetting("reminderTime", wAgent, "13:00");
-    const reportTime = await getAgentSetting("reportTime", wAgent, "23:55");
     // تذكير الانتهاء: وقتٌ خاص لكل مكتب (towers.reminderTime — مرتبط بوقت تشغيل حاسبته:
     // مكتب يفتح 12:00 وآخر 2:00)، والمكتب بلا وقتٍ خاص يتبع وقت الوكيل العام.
     // الإرسال التلقائي فقط لمكاتب "الإرسال الصامت" (silent != "0")؛
@@ -337,10 +336,7 @@ export function startScheduler() {
         runDebtReminder(dueDebt).catch((e) => console.error("[scheduler] debtReminder:", e));
       }
     }
-    if (nowHM === reportTime) {
-      // احتياطي: يُرسل تقرير أي مكتب لم يُرسَل تقريره اليوم (لمن أطفأ دون تسجيل خروج)
-      runManagerDailyReport(undefined, { oncePerDay: true }).catch((e) => console.error("[scheduler] managerReport:", e));
-    }
+    // (أُزيل تقرير المدير عبر واتساب — حلقة زائدة؛ المدير يرى تقارير كل الأيّام في «حسابات المدير».)
     // نسخة احتياطية يومية إلى إيميل الوكيل (افتراضي 04:00 بغداد).
     // قائد كل وكيل ينفّذها لوكيله فقط بوقت وكيله (تفادي التكرار وعزل الأوقات).
     const backupTime = await getAgentSetting("backupTime", wAgent, "04:00");
@@ -377,7 +373,7 @@ export function startScheduler() {
     }
   }, { timezone: TZ });
 
-  console.log("[scheduler] started (Asia/Baghdad): تذكير الانتهاء (افتراضي 13:00) وتقرير المدير (افتراضي 23:55) حسب الإعدادات");
+  console.log("[scheduler] started (Asia/Baghdad): تذكير الانتهاء (افتراضي 13:00) حسب الإعدادات");
 
   // بدء واتساب ومهام الإقلاع بعد ~5ث (بعد أول نبضة تحسم القيادة) — للقائد فقط
   setTimeout(async () => {
@@ -387,9 +383,8 @@ export function startScheduler() {
     // تدارك بصمة الخروج المنسيّة لأيامٍ سابقة عند إقلاع الحاسبة صباحاً (تُغلَق ولو كانت الحاسبات
     // مغلقة ساعة الجدولة 00:15). لا يحتاج واتساب — يُنفَّذ فوراً.
     import("@/lib/autoCheckout").then((m) => m.runAutoCheckout()).then((r) => { if (r.closed) console.log(`[scheduler] تدارك خروج تلقائي عند الإقلاع: أُغلق ${r.closed}`); }).catch((e) => console.error("[scheduler] startup autoCheckout:", e));
-    // بعد إتاحة وقت لاتصال الواتساب: تدارك تقرير الأمس + إلغاء ما لم يُرسل
+    // بعد إتاحة وقت لاتصال الواتساب: إلغاء ما لم يُرسل
     setTimeout(() => {
-      catchUpManagerReport().catch((e) => console.error("[scheduler] catchup report:", e));
       cancelUnsentMessages().catch((e) => console.error("[scheduler] startup cancel:", e));
     }, 30000);
   }, 5000);

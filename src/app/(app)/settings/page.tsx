@@ -75,7 +75,6 @@ export default function SettingsPage() {
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
           ⏰ وقت تذكير انتهاء الاشتراك صار <b>لكل مكتب على حدة</b> — اضبطه من صفحة <a href="/towers" className="font-bold underline">المكاتب</a> (حقل «وقت تذكير انتهاء الاشتراك») بحسب وقت فتح كل مكتب وتشغيل حاسبته.
         </div>
-        <Field label="وقت إرسال تقرير المدير (يومياً)" value={form.reportTime || "23:55"} onChange={(v) => set("reportTime", v)} type="time" />
         <Field label="وقت إرسال النسخة الاحتياطية للإيميل (يومياً)" value={form.backupTime || "04:00"} onChange={(v) => set("backupTime", v)} type="time" />
 
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-700">
