@@ -100,7 +100,8 @@ export default function SubscribersBoard() {
       setLoanBusy(false);
       if (r.ok) {
         setLoanSub(null);
-        setMsg("✅ تم منح القرض بنجاح — مُدِّد ٣٠ يوماً");
+        // الأيام حسب طريقة المكتب: قرض عادي ٧ (نفس الساس)، قرض كتفعيل ٣٠ وهميّة
+        setMsg(d.mode === "normal" ? "✅ تم منح القرض بنجاح — مُدِّد ٧ أيّام" : "✅ تم منح القرض بنجاح — مُدِّد ٣٠ يوماً");
         load(query, showAllTowers);
         announceMoneyChanged();
       } else {
@@ -996,7 +997,9 @@ export default function SubscribersBoard() {
               {officeLoanMode(loanSub.towerId) === "normal"
                 ? <div>⚡ <b>قرض عادي</b> — بلا دَين ولا رسالة (تمديد فقط)</div>
                 : <div>💵 مبلغ الدَين: <b>{fmt(packages.find((p) => p.id === loanSub.packageId)?.priceDinar ?? 0)}</b> د.ع</div>}
-              <div>📅 يُمدَّد <b>٣٠ يوماً</b> (٧ حقيقيّة في الساس)</div>
+              {officeLoanMode(loanSub.towerId) === "normal"
+                ? <div>📅 يُمدَّد <b>٧ أيّام</b> (نفس منحة الساس)</div>
+                : <div>📅 يُمدَّد <b>٣٠ يوماً</b> (٧ حقيقيّة في الساس)</div>}
             </div>
             {loanMsg && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">{loanMsg}</div>}
             <button onClick={() => void confirmLoan()} disabled={loanBusy} className="mb-2 w-full rounded-xl bg-amber-600 py-3 font-bold text-white hover:bg-amber-700 disabled:opacity-50">
