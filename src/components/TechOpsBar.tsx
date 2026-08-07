@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import TechLeaveModal from "./TechLeaveModal";
 import TechAdjustments from "./TechAdjustments";
 import SalaryModal from "./SalaryModal";
+import AchievementsModal from "./AchievementsModal";
 import { bioConfirm, bioReRegister } from "@/lib/biometric";
 import { isNativeApp, registerPushToken, startNativeTracking, stopNativeTracking, openNativeSettings } from "@/lib/nativeTracking";
 
@@ -22,6 +23,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [leaveMode, setLeaveMode] = useState<"day" | "time" | null>(null);
   const [adjOpen, setAdjOpen] = useState(false);
   const [salaryOpen, setSalaryOpen] = useState(false);
+  const [achOpen, setAchOpen] = useState(false); // نافذة ترتيب الإنجازات (يراها الفني)
   const [bioOpen, setBioOpen] = useState(false); // نافذة تأكيد البصمة
   const [bioBusy, setBioBusy] = useState(false);
   const [bioErr, setBioErr] = useState("");
@@ -190,6 +192,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
       {leaveMode && <TechLeaveModal mode={leaveMode} onClose={() => setLeaveMode(null)} />}
       {adjOpen && <TechAdjustments onClose={() => setAdjOpen(false)} />}
       {salaryOpen && <SalaryModal onClose={() => setSalaryOpen(false)} />}
+      {achOpen && <AchievementsModal onClose={() => setAchOpen(false)} />}
       {toast && <div className="fixed bottom-24 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-slate-900/90 px-5 py-2 text-sm font-semibold text-white shadow-lg">{toast}</div>}
 
       {/* دخول متأخّر: سؤال الفني هل نسي البصمة في وقتها؟ */}
@@ -348,6 +351,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
                 </div>
                 <div className="grid grid-cols-2 gap-2.5">
                   {([
+                    { key: "rank", icon: "🏅", label: "الترتيب", sub: "إنجازات الفنيين", cls: "from-indigo-600 to-indigo-800", on: () => setAchOpen(true) },
                     { key: "leave", icon: "📅", label: "طلب إجازة", sub: "يوم كامل", cls: "from-amber-500 to-amber-700", on: () => setLeaveMode("day") },
                     { key: "tleave", icon: "⏱️", label: "إجازة زمنية", sub: "ساعات من اليوم", cls: "from-sky-600 to-sky-800", on: () => setLeaveMode("time") },
                     { key: "adjust", icon: "💠", label: "الخصومات والمكافآت", sub: "سجلّي", cls: "from-rose-600 to-rose-800", on: () => setAdjOpen(true) },
