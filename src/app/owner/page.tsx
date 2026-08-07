@@ -13,7 +13,10 @@ type Agent = {
   isTrial: boolean; approved: boolean; officeCount: number; userCount: number;
   managerCount: number; techCount: number; subscriberCount: number;
   manager: Manager | null; expired: boolean;
+  managerPhones: string[]; backupEmail: string | null;
 };
+
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "بلا انتهاء";
 
@@ -63,6 +66,30 @@ export default function OwnerPage() {
   async function patch(id: number, body: Record<string, unknown>) {
     const r = await fetch(`/api/owner/agents/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (r.ok) load(); else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر التعديل"); }
+  }
+
+  // رسالة المالك للوكلاء بالإيميل — فرديّة (وكيل واحد) أو جماعيّة (الكل)
+  const [mailSubject, setMailSubject] = useState("");
+  const [mailBody, setMailBody] = useState("");
+  const [mailBusy, setMailBusy] = useState(false);
+  const [mailMsg, setMailMsg] = useState("");
+  async function sendMailTo(agentIds: number[]) {
+    if (!mailSubject.trim() || !mailBody.trim()) { setMailMsg("اكتب العنوان والنص أولاً"); return; }
+    if (agentIds.length === 0) { setMailMsg("لا يوجد وكلاء للإرسال إليهم"); return; }
+    if (agentIds.length > 1 && !confirm(`إرسال الرسالة إلى ${agentIds.length} وكيل؟`)) return;
+    setMailBusy(true); setMailMsg("");
+    const r = await fetch("/api/owner/messages", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject: mailSubject.trim(), body: mailBody.trim(), agentIds }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setMailBusy(false);
+    if (r.ok) {
+      let m = `✓ أُرسلت إلى ${d.sent} وكيل`;
+      if (d.noEmail?.length) m += ` · بلا بريد (${d.noEmail.length}): ${d.noEmail.join("، ")}`;
+      if (d.failed?.length) m += ` · فشل: ${d.failed.join("، ")}`;
+      setMailMsg(m);
+    } else setMailMsg(d.error ?? "تعذّر الإرسال");
   }
   async function remove(a: Agent) {
     if (!confirm(`حذف الوكيل «${a.name}» نهائياً؟\nسيُمحى كل شيء: ${a.officeCount} مكتب، ${a.userCount} مستخدم، وكل المشتركين والحسابات والكروت. لا يمكن التراجع.`)) return;
@@ -236,6 +263,24 @@ export default function OwnerPage() {
       {/* رفع خريطة الأعمدة — كانت تُدخَل يدوياً على القاعدة خارج البرنامج (طلب محمد) */}
       <MapImport />
 
+      {/* رسالة للوكلاء بالإيميل: عنوان + نصّ، ثم «إرسال للكل» هنا أو «✉️» بجانب وكيلٍ بعينه */}
+      <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-2 font-bold text-slate-800">✉️ رسالة للوكلاء (بريد إلكتروني)
+          <span className="mr-2 text-[11px] font-normal text-slate-400">تصل بريد الوكيل (backupEmail) — للكل أو لوكيلٍ بزرّ «✉️» بجانبه</span>
+        </div>
+        <div className="space-y-2">
+          <input value={mailSubject} onChange={(e) => setMailSubject(e.target.value)} placeholder="عنوان الرسالة" className="inp" />
+          <textarea value={mailBody} onChange={(e) => setMailBody(e.target.value)} placeholder="نصّ الرسالة…" rows={4} className="inp" />
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={() => sendMailTo(agents.map((a) => a.id))} disabled={mailBusy} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">
+              {mailBusy ? "جارٍ الإرسال…" : `📢 إرسال للكل (${agents.length})`}
+            </button>
+            <span className="text-[11px] text-slate-400">أو اضغط «✉️» بجانب وكيلٍ لإرساله له وحده.</span>
+          </div>
+          {mailMsg && <div className={`rounded-lg px-3 py-2 text-xs font-semibold ${mailMsg.startsWith("✓") ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{mailMsg}</div>}
+        </div>
+      </div>
+
       {loading ? (
         <div className="p-8 text-center text-slate-400">جاري التحميل…</div>
       ) : agents.length === 0 ? (
@@ -252,6 +297,10 @@ export default function OwnerPage() {
                     {!a.approved && <span className="mr-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">بانتظار الموافقة</span>}
                   </div>
                   <div className="mt-1 text-xs text-slate-500">🏢 {a.officeCount}/{a.officeCap} مكتب · 👔 {a.managerCount}/{a.maxManagers} مدير · 👤 {a.userCount}/{a.maxUsers} مستخدم · 🔧 {a.techCount}/{a.maxTechnicians} فني · 👥 {a.subscriberCount}/{a.maxSubscribers} مشترك · 📅 ينتهي: <span className={a.expired ? "font-bold text-red-600" : "text-slate-600"}>{fmtDate(a.planExpiry)}{a.expired ? " (منتهٍ)" : ""}</span></div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    📞 {a.managerPhones.length ? <span dir="ltr" className="font-semibold text-slate-600">{a.managerPhones.join("، ")}</span> : <span className="text-slate-400">لا رقم مدير</span>}
+                    {" · "}✉️ {a.backupEmail ? <span dir="ltr" className="font-semibold text-slate-600">{a.backupEmail}</span> : <span className="text-amber-600">لا بريد</span>}
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {!a.approved && <button onClick={() => patch(a.id, { approve: true })} className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-700">✓ موافقة وتفعيل</button>}
@@ -262,9 +311,10 @@ export default function OwnerPage() {
                   <LimitInput label="مستخدمين" value={a.maxUsers} onSave={(v) => { if (v !== a.maxUsers) patch(a.id, { maxUsers: v }); }} />
                   <LimitInput label="فنيين" value={a.maxTechnicians} onSave={(v) => { if (v !== a.maxTechnicians) patch(a.id, { maxTechnicians: v }); }} />
                   <LimitInput label="مشتركين" value={a.maxSubscribers} onSave={(v) => { if (v !== a.maxSubscribers) patch(a.id, { maxSubscribers: v }); }} />
+                  <button onClick={() => sendMailTo([a.id])} disabled={!a.backupEmail || mailBusy} title={a.backupEmail ? "إرسال رسالة (العنوان والنصّ من الأعلى) لهذا الوكيل" : "لا بريد لهذا الوكيل — اطلب منه ضبط بريده"} className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-40">✉️ إرسال</button>
                   <button onClick={() => patch(a.id, { addMonths: 1 })} className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">+شهر</button>
                   <button onClick={() => patch(a.id, { addMonths: 12 })} className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">+سنة</button>
-                  <button onClick={() => { const m = prompt("تمديد بعدد أشهر:"); if (m) patch(a.id, { addMonths: Number(m) }); }} className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">تمديد…</button>
+                  <ExtendDate onApply={(dt) => patch(a.id, { setExpiry: dt })} />
                   <button onClick={() => patch(a.id, { clearExpiry: true })} className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200">بلا انتهاء</button>
                   <button onClick={() => remove(a)} className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100">🗑 حذف</button>
                 </div>
@@ -461,6 +511,17 @@ function LimitInput({ label, value, onSave }: { label: string; value: number; on
     <label className="flex items-center gap-1 text-xs text-slate-600">{label}
       <input type="number" min={0} defaultValue={value} key={value} onBlur={(e) => onSave(Number(e.target.value))} className="w-16 rounded border border-slate-300 px-2 py-1 text-center" />
     </label>
+  );
+}
+
+// تمديد الاشتراك إلى تاريخ محدَّد يختاره المالك (بدل عدد الأشهر فقط)
+function ExtendDate({ onApply }: { onApply: (date: string) => void }) {
+  const [d, setD] = useState("");
+  return (
+    <span className="flex items-center gap-1 rounded-lg bg-blue-50 px-2 py-1 text-xs" title="تمديد إلى تاريخ محدَّد">
+      <input type="date" value={d} min={todayStr()} onChange={(e) => setD(e.target.value)} className="rounded border border-blue-200 bg-white px-1 py-0.5 text-xs text-blue-700" />
+      <button onClick={() => { if (d) { onApply(d); setD(""); } }} disabled={!d} className="font-semibold text-blue-700 disabled:opacity-40">لتاريخ ✓</button>
+    </span>
   );
 }
 

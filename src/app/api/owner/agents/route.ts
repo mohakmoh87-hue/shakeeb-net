@@ -13,7 +13,7 @@ export async function GET() {
   if (g.error) return g.error;
 
   const agents = await prisma.agent.findMany({ where: { isDeleted: false }, orderBy: { id: "asc" } });
-  const [towerCounts, userCounts, mgrCounts, techCounts, subCounts, managers] = await Promise.all([
+  const [towerCounts, userCounts, mgrCounts, techCounts, subCounts, managers, towerPhones] = await Promise.all([
     prisma.tower.groupBy({ by: ["agentId"], where: { isDeleted: false }, _count: true }),
     prisma.user.groupBy({ by: ["agentId"], where: { isDeleted: false, isOwner: false, isAdmin: false }, _count: true }),
     prisma.user.groupBy({ by: ["agentId"], where: { isDeleted: false, isOwner: false, isAdmin: true }, _count: true }),
@@ -28,7 +28,20 @@ export async function GET() {
       select: { id: true, username: true, plainPassword: true, agentId: true },
       orderBy: { id: "asc" },
     }),
+    // أرقام مدراء مكاتب كل وكيل (managerPhone) — للتواصل من لوحة المالك
+    prisma.tower.findMany({
+      where: { isDeleted: false, managerPhone: { not: null } },
+      select: { agentId: true, managerPhone: true },
+    }),
   ]);
+  // خريطة أرقام المدير لكل وكيل (مميّزة، بلا فراغات)
+  const phoneMap = new Map<number, string[]>();
+  for (const t of towerPhones) {
+    const ph = (t.managerPhone ?? "").trim();
+    if (t.agentId == null || !ph) continue;
+    const arr = phoneMap.get(t.agentId) ?? [];
+    if (!arr.includes(ph)) { arr.push(ph); phoneMap.set(t.agentId, arr); }
+  }
   const tc = new Map(towerCounts.map((t) => [t.agentId, t._count]));
   const uc = new Map(userCounts.map((u) => [u.agentId, u._count]));
   const mc = new Map(mgrCounts.map((u) => [u.agentId, u._count]));
@@ -46,6 +59,8 @@ export async function GET() {
       managerCount: mc.get(a.id) ?? 0, techCount: thc.get(a.id) ?? 0,
       subscriberCount: sc.get(a.id) ?? 0,
       manager: mgr.get(a.id) ?? null,
+      managerPhones: phoneMap.get(a.id) ?? [], // أرقام مدراء مكاتبه (للتواصل)
+      backupEmail: a.backupEmail ?? null, // إيميل الوكيل (وجهة رسائل المالك والتنبيهات)
       expired: a.planExpiry ? a.planExpiry.getTime() < Date.now() : false,
     })),
   });

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { guardOwner, confirmOwnerPassword } from "@/lib/guard";
 import { hashPassword } from "@/lib/auth";
 import { encryptSecret } from "@/lib/secretbox";
+import { sendMail, mailerConfigured } from "@/lib/mailer";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ const patchSchema = z.object({
   maxTechnicians: z.coerce.number().int().min(0).optional(),
   maxSubscribers: z.coerce.number().int().min(0).optional(),
   addMonths: z.coerce.number().int().optional(), // تمديد الاشتراك بعدد أشهر (يُضاف للانتهاء الحالي أو من الآن)
+  setExpiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "تاريخ غير صالح").optional(), // تمديد إلى تاريخ محدَّد YYYY-MM-DD
   clearExpiry: z.boolean().optional(), // إزالة تاريخ الانتهاء (بلا انتهاء)
   approve: z.boolean().optional(), // موافقة المالك على تفعيل الوكيل (التجريبي)
   managerUsername: z.string().min(1).optional(), // تعديل يوزر مدير الوكيل
@@ -42,18 +44,35 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (d.maxTechnicians != null) data.maxTechnicians = d.maxTechnicians;
   if (d.maxSubscribers != null) data.maxSubscribers = d.maxSubscribers;
   if (d.approve) data.approved = true; // تفعيل الوكيل التجريبي
+  // تاريخ الانتهاء: إزالة، أو تمديد بأشهر (من الانتهاء الحالي/الآن)، أو ضبط تاريخ محدَّد
+  let renewedTo: Date | null = null;
   if (d.clearExpiry) { data.planExpiry = null; data.isTrial = false; }
   else if (d.addMonths != null && d.addMonths !== 0) {
     const base = agent.planExpiry && agent.planExpiry.getTime() > Date.now() ? agent.planExpiry.getTime() : Date.now();
     data.planExpiry = new Date(base + d.addMonths * 30 * 24 * 3600 * 1000);
     data.isTrial = false; // التمديد يحوّله لحساب عادي
+    renewedTo = data.planExpiry as Date;
+  } else if (d.setExpiry) {
+    // نهاية اليوم المختار (بغداد ≈ +03) كي يبقى الاشتراك سارياً طوال ذلك اليوم
+    const dt = new Date(`${d.setExpiry}T23:59:59+03:00`);
+    if (!isNaN(dt.getTime())) { data.planExpiry = dt; data.isTrial = false; renewedTo = dt; }
   }
 
   if (Object.keys(data).length > 0) await prisma.agent.update({ where: { id: agentId }, data });
 
   // التجديد/التمديد يصفّر علامة التنبيه — لتعمل تنبيهات الدورة القادمة من جديد
-  if (d.clearExpiry || (d.addMonths != null && d.addMonths !== 0)) {
+  if (d.clearExpiry || renewedTo) {
     await prisma.systemSetting.deleteMany({ where: { type: `planWarn:${agentId}` } }).catch(() => {});
+  }
+
+  // إيميل التجديد للوكيل (على بريده backupEmail) — صامت، لا يُعطّل التعديل
+  if (renewedTo && agent.backupEmail && mailerConfigured()) {
+    const dateStr = renewedTo.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+    void sendMail({
+      to: agent.backupEmail,
+      subject: `✅ تم تجديد اشتراكك — ${agent.name ?? "SHAKEEB"}`,
+      text: `مرحباً ${agent.name ?? ""}،\n\nتم تجديد اشتراكك في النظام حتى تاريخ ${dateStr}.\n\nشكراً لك.`,
+    }).catch(() => {});
   }
 
   // تعديل بيانات دخول مدير الوكيل (أول أدمن للوكيل)
