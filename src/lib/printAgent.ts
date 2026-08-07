@@ -34,13 +34,21 @@ async function htmlToPdf(html: string): Promise<string> {
   const page = await b.newPage();
   try {
     await page.setContent(html, { waitUntil: "networkidle0" });
-    // ارتفاع الصفحة = طول المحتوى الفعلي (+2مم أماناً): تبدأ الطباعة من رأس الورقة
-    // وتُقصّ بنهاية الكتابة — ورقة واحدة دائماً مهما طال الوصل أو قصُر.
-    const px = await page.evaluate(() => document.documentElement.scrollHeight);
-    const mm = Math.min(Math.max(Math.ceil(px * 25.4 / 96) + 2, 40), 500);
+    // أبعاد الورقة تأتي من القالب موسومةً على <html> (data-paper-w/-h):
+    //   • عرض الصفحة = عرض الورقة المختارة (٥٨/٧٦/٨٠مم حراريّة، أو A4/Letter).
+    //   • paper-h > 0 (ورق مقصوص): الطول ثابت ⇒ صفحة كاملة والمحتوى أعلى-وسط.
+    //   • paper-h = 0 (لفّة حراريّة): الطول = طول المحتوى (+2مم) فتُقصّ بنهاية الكتابة.
+    const meta = await page.evaluate(() => ({
+      w: Number(document.documentElement.getAttribute("data-paper-w")) || 80,
+      h: Number(document.documentElement.getAttribute("data-paper-h")) || 0,
+      px: document.documentElement.scrollHeight,
+    }));
+    const heightMm = meta.h > 0
+      ? meta.h
+      : Math.min(Math.max(Math.ceil(meta.px * 25.4 / 96) + 2, 40), 500);
     const pdf = await page.pdf({
-      width: "80mm",
-      height: `${mm}mm`,
+      width: `${meta.w}mm`,
+      height: `${heightMm}mm`,
       printBackground: true,
       preferCSSPageSize: false,
       pageRanges: "1", // ضمانة صلبة: صفحة واحدة فقط مهما حدث

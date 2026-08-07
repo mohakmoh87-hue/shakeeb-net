@@ -57,7 +57,7 @@ export default async function InvoiceReceipt({
 
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">
-      <ReceiptPrintStyle />
+      <ReceiptPrintStyle paper={tpl.paper} />
       <div className="w-full max-w-md">
         <SilentPrint kind="invoice" id={invoice.id} />
         <div className="no-print mb-4 flex justify-between">

@@ -3,22 +3,26 @@
 // يُحوَّل إلى PDF عبر puppeteer ثم يُطبع بصمت على الطابعة الافتراضية.
 import { prisma } from "@/lib/prisma";
 import { getReceiptTemplate } from "@/lib/receiptTemplate";
+import { paperGeometry, type PaperKind } from "@/lib/receiptPaper";
 import { formatDate } from "@/lib/format";
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
 const esc = (s: string | null | undefined) =>
   (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-// غلاف المستند: نفس هندسة ReceiptPrintStyle (@page 80×120مم، كتابة 68مم موسَّطة، أبيض/أسود)
-function wrap(body: string, fontSize: number): string {
-  return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><style>
+// غلاف المستند: هندسة الورقة المختارة (paperGeometry). عرض الصفحة = عرض الورقة، وصندوق
+// الكتابة موسَّطٌ (margin:auto) ⇒ يُطبع وسط الورقة أيّاً كان عرضها. أبعاد الورقة تُوسَم على
+// <html> (data-paper-w/-h) ليقرأها printAgent فيولّد PDF بمقاسها (0 = لفّة، الطول من المحتوى).
+function wrap(body: string, fontSize: number, paper: PaperKind): string {
+  const g = paperGeometry(paper);
+  // ورق مقصوص (A4/Letter): الصفحة بطولٍ ثابت والمحتوى أعلى-وسط. لفّة حراريّة: بلا طولٍ ثابت.
+  const sheet = g.pageH > 0;
+  return `<!doctype html><html dir="rtl" data-paper-w="${g.pageW}" data-paper-h="${g.pageH}"><head><meta charset="utf-8"><style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  /* بلا مقاس صفحة ثابت: ارتفاع الـPDF يُقاس من طول المحتوى نفسه (في printAgent)
-     ⇒ الطباعة تبدأ من رأس الورقة وتنتهي بنهاية الكتابة — ورقة واحدة دائماً */
   @page { margin: 0; }
-  html, body { width: 80mm; background: #fff; color: #000; font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
+  html, body { width: ${g.pageW}mm; ${sheet ? `min-height: ${g.pageH}mm;` : ""} background: #fff; color: #000; font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
   /* كل النص أسود خالص وعريض (بولد) — طلب صريح لوضوح الطباعة الحرارية */
-  .print-area { width: 68mm; max-width: 68mm; margin: 0 auto; padding: 1mm 4mm 2mm; font-size: ${fontSize}px;
+  .print-area { width: ${g.contentW}mm; max-width: ${g.contentW}mm; margin: 0 auto; padding: 1mm ${g.padX}mm 2mm; font-size: ${fontSize}px;
                 font-weight: 700; color: #000; }
   .print-area * { color: #000 !important; border-color: #000 !important; background: transparent !important;
                   font-weight: 700 !important; opacity: 1 !important;
@@ -90,7 +94,7 @@ export async function subscriptionReceiptHtml(entryId: number, agentId: number |
   const body =
     header(tpl, officeName, "وصل تفعيل / تجديد اشتراك") + rows + notes +
     `<div class="ftr">${esc(tpl.footerText || "شكراً لاشتراككم")} — ${esc(officeName)}</div>`;
-  return wrap(body, tpl.fontSize);
+  return wrap(body, tpl.fontSize, tpl.paper);
 }
 
 // وصل فاتورة بيع — يطابق صفحة /invoices/[id]/receipt
@@ -119,5 +123,5 @@ export async function invoiceReceiptHtml(invoiceId: number, agentId: number | nu
     line("المتبقّي", `${fmt((invoice.totalMy ?? 0) - (invoice.waselHim ?? 0))} د.ع`, true) +
     (invoice.note ? `<div class="notes">ملاحظات: ${esc(invoice.note)}</div>` : "") +
     `<div class="ftr">${esc(tpl.footerText || "شكراً لتعاملكم")} — ${esc(officeName)}</div>`;
-  return wrap(body, tpl.fontSize);
+  return wrap(body, tpl.fontSize, tpl.paper);
 }

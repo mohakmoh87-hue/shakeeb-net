@@ -42,7 +42,7 @@ export default async function ReceiptPage({
 
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">
-      <ReceiptPrintStyle />
+      <ReceiptPrintStyle paper={tpl.paper} />
       <div className="w-full max-w-sm">
         <SilentPrint kind="subscription" id={entry.id} />
         {/* أزرار التحكم (تختفي عند الطباعة) */}

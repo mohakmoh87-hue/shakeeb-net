@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_PAPER, type PaperKind } from "@/lib/receiptPaper";
 
 export type ReceiptTemplate = {
   headerText: string;
@@ -9,6 +10,7 @@ export type ReceiptTemplate = {
   headerColor: string;
   fontSize: number;
   showLogo: boolean;
+  paper: PaperKind; // حجم ورق الطابعة المختار لهذا المكتب/الوكيل
 };
 
 export const DEFAULT_RECEIPT: ReceiptTemplate = {
@@ -20,6 +22,7 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
   headerColor: "#1e66c9",
   fontSize: 14,
   showLogo: true,
+  paper: DEFAULT_PAPER,
 };
 
 // مفتاح قالب وصل مكتب محدّد (يغلب قالب الوكيل العام)

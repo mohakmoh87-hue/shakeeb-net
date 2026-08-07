@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import type { SessionPayload } from "@/lib/auth";
+import { DEFAULT_PAPER } from "@/lib/receiptPaper";
 
 // قالب الوصل المطبوع (#13) — يُخزَّن كـ JSON في system_settings (type=receipt)
 const schema = z.object({
@@ -14,6 +15,7 @@ const schema = z.object({
   headerColor: z.string().default("#1e66c9"),
   fontSize: z.coerce.number().default(14),
   showLogo: z.boolean().default(true),
+  paper: z.enum(["thermal58", "thermal76", "thermal80", "a4", "letter"]).default(DEFAULT_PAPER), // حجم ورق الطابعة
 });
 
 export type ReceiptTemplate = z.infer<typeof schema>;
@@ -27,6 +29,7 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
   headerColor: "#1e66c9",
   fontSize: 14,
   showLogo: true,
+  paper: DEFAULT_PAPER,
 };
 
 // مفتاح قالب الوصل لكل وكيل (عزل المستأجر) — ومفتاح مكتبٍ محدّد يغلب مفتاح الوكيل

@@ -1,14 +1,20 @@
-// نمط طباعة مخصّص لطابعة POS الحرارية بعرض 80 ملم.
+// نمط طباعة الوصل من المتصفّح (Ctrl+P) — يتبع حجم ورق الطابعة المختار للمكتب/الوكيل.
 // مقتصر على صفحات الوصل (‎.receipt-page‎) فلا يؤثّر على التقارير (تبقى A4).
-// يُجبر العرض على 80 ملم، بلا هوامش، أبيض/أسود لتوافق الطابعة الحرارية.
-export default function ReceiptPrintStyle() {
+// يُجبر العرض على عرض الورقة، بلا هوامش، أبيض/أسود لتوافق الطابعة الحرارية،
+// وصندوق الكتابة موسَّطٌ (margin:auto) ⇒ يُطبع وسط الورقة أيّاً كان عرضها.
+import { paperGeometry, DEFAULT_PAPER, type PaperKind } from "@/lib/receiptPaper";
+
+export default function ReceiptPrintStyle({ paper = DEFAULT_PAPER }: { paper?: PaperKind }) {
+  const g = paperGeometry(paper);
+  const sheet = g.pageH > 0; // ورق مقصوص (A4/Letter) بطولٍ ثابت مقابل لفّة حراريّة
+  const pageSize = sheet ? `${g.pageW}mm ${g.pageH}mm` : `${g.pageW}mm auto`;
   const css = `
 @media print {
-  /* بلا ارتفاع ثابت: يتبع ورق الطابعة (لفة 80مم) ⇒ يطبع من رأس الورقة ويُقصّ
-     بنهاية الكتابة — لا صفحة ثانية أبداً */
-  @page { margin: 0; }
+  /* حجم الورقة يتبع اختيار المكتب: لفّة حراريّة (طول تلقائيّ يُقصّ بنهاية الكتابة)
+     أو ورق مقصوص A4/Letter (صفحة كاملة والمحتوى أعلى-وسط) */
+  @page { size: ${pageSize}; margin: 0; }
   html, body {
-    width: 80mm !important;
+    width: ${g.pageW}mm !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #fff !important;
@@ -21,19 +27,19 @@ export default function ReceiptPrintStyle() {
     background: #fff !important;
   }
   .receipt-page > * {
-    width: 80mm !important;
-    max-width: 80mm !important;
+    width: ${g.pageW}mm !important;
+    max-width: ${g.pageW}mm !important;
     margin: 0 !important;
   }
-  /* عرض الورقة 80مم. صندوق الكتابة 68مم موسَّط ⇒ فراغ أبيض حقيقي ~6مم بكل جانب
-     (لا يُطبَع فلا تقصّه الطابعة) + حشو داخلي 4مم ⇒ يبدأ النص على بُعد ~10مم من حافة الورق،
-     وهو أكبر من الهامش غير القابل للطباعة في أي طابعة حرارية/عادية. الكتابة + الهامشان = 80مم. */
+  /* صندوق الكتابة موسَّطٌ على الورقة ⇒ هامشا بياضٍ متساويان (لا يُطبَعان فلا تقصّهما
+     الطابعة) + حشو داخليّ ⇒ يبدأ النص بعيداً عن حافة الورق، أبعد من الهامش غير القابل
+     للطباعة في أيّ طابعة. الكتابة + الهامشان = عرض الورقة. */
   .print-area {
-    width: 68mm !important;
-    max-width: 68mm !important;
+    width: ${g.contentW}mm !important;
+    max-width: ${g.contentW}mm !important;
     box-sizing: border-box !important;
-    padding: 3mm 4mm !important;
-    margin: 0 auto !important;   /* توسيط الكتابة على الورقة ⇒ هامشان متساويان */
+    padding: 3mm ${g.padX}mm !important;
+    margin: 0 auto !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
