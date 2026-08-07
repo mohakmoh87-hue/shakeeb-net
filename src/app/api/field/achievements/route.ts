@@ -35,5 +35,11 @@ export async function GET(request: Request) {
       minCards: data.minCards,
     });
   }
+  // «حصاد المكاتب» (توزيع الإنجاز بين المكاتب + المجموع) للمدير/المستخدم فقط — لا للفني.
+  // يُجرَّد من الخادم لجلسة الفني (لا يصله حتى باستدعاء مباشر)؛ والنافذة تُخفي القسم عند فراغه.
+  if (tech && !session) {
+    data.byOffice = [];
+    data.totals = { total: 0, kinds: [] };
+  }
   return NextResponse.json(data);
 }
