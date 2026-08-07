@@ -83,15 +83,29 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-// حذف حاسبة من القائمة: حظر ناعم (blocked=true) بدل الحذف الفعلي — كي لا تعيد نبضتها
+// حذف حاسبة: افتراضيّاً حظر ناعم (blocked=true) بدل الحذف الفعلي — كي لا تعيد نبضتها
 // إنشاء الصفّ فتظهر ثانيةً. تبقى مخفيّة، وعاملها يتوقّف تلقائياً عند تحديث كوده.
+// hard=1: حذفٌ نهائيّ **للحاسبة المحظورة فقط** (لجهازٍ مُستبعَد فعليّاً). إن كان الجهاز
+// ما زال يعمل فسيُسجّل نفسه من جديد كحاسبةٍ «بانتظار الاعتماد» — فلا تعتمِدها.
 export async function DELETE(request: Request) {
   const g = await guard("hybrid.manage");
   if (g.error) return g.error;
-  const id = Number(new URL(request.url).searchParams.get("id"));
+  const url = new URL(request.url);
+  const id = Number(url.searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
-  // عزل المستأجر: لا تُحظر إلا حاسبة تتبع وكيل المدير أو غير مُطالَب بها
+  const hard = url.searchParams.get("hard") === "1";
+  // عزل المستأجر: لا تُحظر/تُحذف إلا حاسبة تتبع وكيل المدير أو غير مُطالَب بها
   const agentId = g.session?.agentId ?? null;
+
+  if (hard) {
+    // حذفٌ نهائيّ — للمحظورة حصراً (تُحظر أولاً ثم تُحذف نهائيّاً)، ضمن عزل الوكيل.
+    const res = await prisma.hybridWorker.deleteMany({
+      where: { id, blocked: true, OR: [{ agentId }, { agentId: null }] },
+    });
+    if (res.count === 0) return NextResponse.json({ error: "الحاسبة غير محظورة أو لا تتبع حسابك" }, { status: 403 });
+    return NextResponse.json({ ok: true, hard: true });
+  }
+
   const upd = await prisma.hybridWorker.updateMany({
     where: { id, OR: [{ agentId }, { agentId: null }] },
     data: { blocked: true, approved: false },

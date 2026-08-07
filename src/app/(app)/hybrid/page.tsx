@@ -61,6 +61,12 @@ export default function HybridWorkersPage() {
     const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.id, blocked: false }) });
     if (r.ok) load();
   }
+  async function hardDelete(b: Blocked) {
+    if (!confirm(`حذف الحاسبة «${b.name ?? b.machineId}» نهائيّاً؟\n\nتُمحى من القائمة تماماً (لا مجرّد حظر). إن كان الجهاز ما زال يعمل فسيُسجّل نفسه من جديد كحاسبةٍ بانتظار الاعتماد — فلا تعتمِدها.\n\nلا يمكن التراجع.`)) return;
+    const r = await fetch(`/api/hybrid/workers?id=${b.id}&hard=1`, { method: "DELETE" });
+    if (r.ok) load();
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف النهائيّ"); }
+  }
 
   if (!loaded) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
   if (denied) return <div className="p-6"><PageHeader title="حواسيب النظام الهجين" /><div className="rounded-lg bg-red-50 px-4 py-3 text-red-600">ليس لديك صلاحية.</div></div>;
@@ -166,7 +172,10 @@ export default function HybridWorkersPage() {
                       <span className={`text-xs ${b.online ? "text-emerald-600" : "text-slate-400"}`}>{b.online ? "🟢 تعمل حالياً" : "🔴 متوقّفة"}</span>
                     </td>
                     <td className="p-3 text-left">
-                      <button onClick={() => unblock(b)} className="rounded bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">↩️ رفع الحظر</button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => unblock(b)} className="rounded bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">↩️ رفع الحظر</button>
+                        <button onClick={() => hardDelete(b)} className="rounded bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100">🗑️ حذف نهائيّ</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
