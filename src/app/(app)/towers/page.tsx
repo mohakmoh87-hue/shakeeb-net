@@ -29,6 +29,7 @@ type Office = {
   loanEnabled: string | null; // 1 = تفعيل قروض سوبر سيل
   loanUser: string | null; // اسم مستخدم القروض (مدير فقط)
   loanPass: string | null; // كلمة مرور القروض (مفكوكة للمدير)
+  loanMode: string | null; // activation | normal (طريقة القرض)
   hasLoanCreds?: boolean;
 };
 type MapArea = { code: string; count: number };
@@ -306,7 +307,25 @@ export default function OfficesPage() {
                         <button type="button" disabled={testing} onClick={testLoan} className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50">🔌 اختبار الاتصال</button>
                         {loanTest && <span className={`text-xs ${loanTest.startsWith("✓") ? "text-emerald-700" : loanTest.startsWith("✗") ? "text-red-600" : "text-slate-500"}`}>{loanTest}</span>}
                       </div>
-                      <p className="text-xs text-slate-500">بيانات لوحة القروض خاصّة بهذا المكتب وحده. عند المنح: يُمدَّد المشترك ٣٠ يوماً ويُسجَّل دَينٌ في «ديون القروض». إطفاء الخانة يُخفي الميزة بكلّ آثارها ويحفظ البيانات لإعادة التفعيل.</p>
+
+                      {/* طريقة القرض — تُعمَّم على كلّ مشتركي المكتب (طلب محمد 2026-08-07) */}
+                      <div className="rounded-lg border border-amber-200 bg-white/70 p-2">
+                        <div className="mb-1 text-xs font-bold text-slate-600">طريقة القرض لكلّ مشتركي هذا المكتب:</div>
+                        <label className="flex items-start gap-2 py-1 text-sm text-slate-700">
+                          <input type="radio" name={`loanMode-${sel?.id ?? "new"}`} disabled={ro} checked={(form.loanMode ?? "activation") === "activation"} onChange={() => set("loanMode", "activation")} className="mt-1 h-4 w-4 accent-amber-600" />
+                          <span>💳 <b>قرض كتفعيل</b>
+                            <span className="block text-[11px] font-normal text-slate-500">يُمدَّد المشترك ٣٠ يوماً، ويُسجَّل عليه دَينٌ بمبلغ اشتراكه في «ديون القروض»، وتصله رسالة — ويُمحى الدَين عند تفعيله عاديّاً.</span>
+                          </span>
+                        </label>
+                        <label className="flex items-start gap-2 py-1 text-sm text-slate-700">
+                          <input type="radio" name={`loanMode-${sel?.id ?? "new"}`} disabled={ro} checked={(form.loanMode ?? "activation") === "normal"} onChange={() => set("loanMode", "normal")} className="mt-1 h-4 w-4 accent-amber-600" />
+                          <span>⚡ <b>قرض عادي</b>
+                            <span className="block text-[11px] font-normal text-slate-500">يُمدَّد المشترك ٣٠ يوماً فقط — بلا أيّ دَين ولا رسالة ولا ظهورٍ في «ديون القروض»، مجرّد فزعة.</span>
+                          </span>
+                        </label>
+                      </div>
+
+                      <p className="text-xs text-slate-500">بيانات لوحة القروض خاصّة بهذا المكتب وحده. إطفاء الخانة يُخفي الميزة بكلّ آثارها ويحفظ البيانات لإعادة التفعيل.</p>
                     </div>
                   )}
                 </div>

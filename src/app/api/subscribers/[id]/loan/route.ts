@@ -31,7 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // عزل المكتب: القرض يمرّ عبر حساب قروض **مكتب المشترك نفسه** — لا مكتبٍ آخر
   const office = await prisma.tower.findUnique({
     where: { id: subscriber.towerId! },
-    select: { id: true, name: true, agentId: true, waEnabled: true, loanEnabled: true, loanUser: true, loanPass: true },
+    select: { id: true, name: true, agentId: true, waEnabled: true, loanEnabled: true, loanUser: true, loanPass: true, loanMode: true },
   });
   if (!office || office.loanEnabled !== "1") {
     return NextResponse.json({ error: "قروض سوبر سيل غير مفعّلة لهذا المكتب" }, { status: 403 });
@@ -86,34 +86,41 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // المنح في سوبر سيل نهائيٌّ لا يُلغى؛ فإن فشلت القاعدة بعده نوثّق «قرضاً يتيماً» كي لا يضيع.
   const now = new Date();
   const expiryVirtual = new Date(now.getTime() + LOAN_DAYS * 86400000);
+  // طريقة المكتب: activation = قرض كتفعيل (دَين + رسالة)؛ normal = قرض عادي (تمديد فقط بلا أثر)
+  const isNormal = office.loanMode === "normal";
   try {
-    await prisma.$transaction([
-      prisma.subscriber.update({ where: { id: subscriberId }, data: { dateTo: expiryVirtual } }),
-      prisma.loanDebt.create({
-        data: {
-          subscriberId,
-          towerId: subscriber.towerId,
-          agentId: office.agentId,
-          amount,
-          packageId,
-          netUser: subscriber.netUser,
-          sasId: subscriber.sasId,
-          grantDate: now,
-          expiryVirtual,
-          prevDateTo: subscriber.dateTo, // تاريخ الانتهاء قبل القرض — لإرجاعه عند الإلغاء العكسيّ
-          createdByUser: session?.username ?? null,
-        },
-      }),
-      prisma.auditLog.create({
+    await prisma.$transaction(async (tx) => {
+      // كلا الطريقتين: تمديد ٣٠ يوماً وهميّة (المزامنة أمامها-فقط تحمي الـ٣٠ لأنها > ٧ الساس)
+      await tx.subscriber.update({ where: { id: subscriberId }, data: { dateTo: expiryVirtual } });
+      if (!isNormal) {
+        // قرض كتفعيل فقط: يُسجَّل الدَين (يظهر في «ديون القروض»، يُمحى عند التفعيل، تتجاهله المزامنة)
+        await tx.loanDebt.create({
+          data: {
+            subscriberId,
+            towerId: subscriber.towerId,
+            agentId: office.agentId,
+            amount,
+            packageId,
+            netUser: subscriber.netUser,
+            sasId: subscriber.sasId,
+            grantDate: now,
+            expiryVirtual,
+            prevDateTo: subscriber.dateTo, // تاريخ الانتهاء قبل القرض — لإرجاعه عند الإلغاء العكسيّ
+            createdByUser: session?.username ?? null,
+          },
+        });
+      }
+      // قرض عادي: لا سطر في أيّ مكان (لا دَين ولا رسالة) — مجرّد تمديد.
+      await tx.auditLog.create({
         data: {
           userId: session?.userId,
           action: "GRANT_LOAN",
           entity: "subscriber",
           entityId: String(subscriberId),
-          details: `قرض فزعة — ${subscriber.netUser} — مبلغ ${amount} — مكتب ${office.name ?? subscriber.towerId} — ينتهي ${expiryVirtual.toISOString().slice(0, 10)}`,
+          details: `قرض فزعة (${isNormal ? "عادي" : "كتفعيل"}) — ${subscriber.netUser} — ${isNormal ? "بلا دَين" : "مبلغ " + amount} — مكتب ${office.name ?? subscriber.towerId} — ينتهي ${expiryVirtual.toISOString().slice(0, 10)}`,
         },
-      }),
-    ]);
+      });
+    });
   } catch (e) {
     // القرض مُنِح فعليّاً في سوبر سيل لكن تعذّر تسجيله محليّاً — نوثّقه بسجلٍّ مستقلّ للمراجعة اليدويّة
     try {
@@ -133,21 +140,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     );
   }
 
-  // رسالة القرض (صامتة، لا تُعطّل المنح) — عزل: مكتب المشترك وحده
-  void sendLoanMessage({
-    subscriberId,
-    officeId: subscriber.towerId,
-    agentId: office.agentId,
-    phone: subscriber.phone,
-    waEnabled: subscriber.waEnabled,
-    officeName: office.name,
-    officeWaEnabled: office.waEnabled,
-    name: subscriber.name,
-    netUser: subscriber.netUser,
-    amount,
-    expiryVirtual,
-    createdByUser: session?.username ?? null,
-  });
+  // رسالة القرض — لقرض «كتفعيل» فقط؛ «العادي» بلا رسالة إطلاقاً. (صامتة، لا تُعطّل المنح)
+  if (!isNormal) {
+    void sendLoanMessage({
+      subscriberId,
+      officeId: subscriber.towerId,
+      agentId: office.agentId,
+      phone: subscriber.phone,
+      waEnabled: subscriber.waEnabled,
+      officeName: office.name,
+      officeWaEnabled: office.waEnabled,
+      name: subscriber.name,
+      netUser: subscriber.netUser,
+      amount,
+      expiryVirtual,
+      createdByUser: session?.username ?? null,
+    });
+  }
 
-  return NextResponse.json({ ok: true, verifiedUser: res.verifiedUser, amount, expiryVirtual });
+  return NextResponse.json({ ok: true, verifiedUser: res.verifiedUser, mode: isNormal ? "normal" : "activation", amount: isNormal ? 0 : amount, expiryVirtual });
 }

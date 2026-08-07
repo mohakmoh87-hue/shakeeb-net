@@ -29,6 +29,7 @@ const schema = z.object({
   loanEnabled: z.string().nullable().optional(), // 1 = تفعيل قروض سوبر سيل (مدير فقط)
   loanUser: z.string().nullable().optional(), // اسم مستخدم قروض سوبر سيل (مدير فقط)
   loanPass: z.string().nullable().optional(), // كلمة مرور القروض — تُشفَّر (مدير فقط)
+  loanMode: z.string().nullable().optional(), // activation | normal (طريقة القرض، مدير فقط)
 });
 
 export async function GET() {
@@ -94,9 +95,9 @@ export async function POST(request: Request) {
   }
 
   // إعداد القرض للمدير حصراً: يُشفَّر loanPass، وتُهمَل حقول القرض من غير المدير
-  const { loanEnabled, loanUser, loanPass, ...rest } = parsed.data;
+  const { loanEnabled, loanUser, loanPass, loanMode, ...rest } = parsed.data;
   const loanFields = g.session?.isAdmin
-    ? { loanEnabled, loanUser, loanPass: encryptSecret(loanPass) }
+    ? { loanEnabled, loanUser, loanPass: encryptSecret(loanPass), loanMode }
     : {};
   const created = await prisma.tower.create({ data: { ...rest, ...loanFields, agentId } });
   // كل مدراء الوكيل يحصلون على حساب مصروف/مقبوض في المكتب الجديد تلقائياً —

@@ -34,6 +34,7 @@ const schema = z.object({
   loanEnabled: z.string().nullable().optional(), // 1 = تفعيل قروض سوبر سيل (مدير فقط)
   loanUser: z.string().nullable().optional(), // اسم مستخدم قروض سوبر سيل (مدير فقط)
   loanPass: z.string().nullable().optional(), // كلمة مرور القروض — تُشفَّر (مدير فقط)
+  loanMode: z.string().nullable().optional(), // activation | normal (طريقة القرض، مدير فقط)
 });
 
 export async function PUT(
@@ -66,7 +67,7 @@ export async function PUT(
   const data = { ...parsed.data };
   if (!g.session?.isAdmin) {
     // غير المدير لا يعدّل إعداد القرض إطلاقاً
-    delete data.loanEnabled; delete data.loanUser; delete data.loanPass;
+    delete data.loanEnabled; delete data.loanUser; delete data.loanPass; delete data.loanMode;
   } else if (data.loanPass == null || data.loanPass === "") {
     delete data.loanPass; // فارغ = أبقِ القديم
   } else {

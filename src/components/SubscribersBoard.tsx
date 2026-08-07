@@ -27,7 +27,7 @@ type Subscriber = {
   hasLoan?: boolean; // عليه دين قرضٍ قائم (للوسم والتنبيه ومنع قرضٍ ثانٍ)
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
-type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null };
+type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null; loanMode?: string | null };
 type Receipt = { id: number; date: string | null; dateTo: string | null; money: number | null; moneyIn: number | null; moneyCarry: number | null; cardType: string | null; month: string | null };
 type MaintLog = { id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; amount: number | null; date: string };
 type InvRow = { id: number; number: number | null; date: string | null; totalMy: number | null; waselHim: number | null; type: string | null; note: string | null; subscriberId: number | null };
@@ -87,6 +87,10 @@ export default function SubscribersBoard() {
   const [loanMsg, setLoanMsg] = useState("");
   // هل المكتب مفعَّل للقرض؟ (loanEnabled يصل ضمن /api/towers لكلّ المستخدمين)
   const officeLoanOn = (towerId: number | null) => towers.find((t) => t.id === towerId)?.loanEnabled === "1";
+  const officeLoanMode = (towerId: number | null) => towers.find((t) => t.id === towerId)?.loanMode ?? "activation";
+  // مدخل «ديون القروض» يظهر فقط إن وُجد مكتبٌ مفعّلٌ بطريقة «كتفعيل» (هي وحدها تُنشئ ديوناً).
+  // إطفاء الميزة أو اختيار «قرض عادي» ⇒ لا ديون ⇒ يُخفى المدخل (طلب محمد 2026-08-07).
+  const showLoanDebts = towers.some((t) => t.loanEnabled === "1" && (t.loanMode ?? "activation") !== "normal");
   async function confirmLoan() {
     if (!loanSub) return;
     setLoanBusy(true); setLoanMsg("");
@@ -425,7 +429,7 @@ export default function SubscribersBoard() {
         <div className="hbtns">
           {can("subscribers.import") && <Link className="gbtn" href="/subscribers/sas4">🔄 استيراد من SAS4</Link>}
           <Link className="gbtn" href="/debts">📑 ديون المشتركين</Link>
-          {can("finance.view") && <Link className="gbtn" href="/loan-debts">💳 ديون القروض</Link>}
+          {can("finance.view") && showLoanDebts && <Link className="gbtn" href="/loan-debts">💳 ديون القروض</Link>}
           <Link className="gbtn" href="/messages/compose">💬 ارسال رسالة للكل</Link>
           {can("subscribers.delete") && <button className="gbtn" onClick={openArchive}>🗄️ المحذوفون</button>}
           <button className="gbtn" onClick={() => selected && openEdit(selected)} disabled={!selected}>✏️ تعديل</button>
@@ -989,7 +993,9 @@ export default function SubscribersBoard() {
             <div className="mb-3 space-y-1 rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
               <div>👤 المشترك: <b>{loanSub.name ?? "—"}</b></div>
               <div>🔑 اليوزر: <b dir="ltr">{loanSub.netUser ?? "—"}</b></div>
-              <div>💵 مبلغ القرض: <b>{fmt(packages.find((p) => p.id === loanSub.packageId)?.priceDinar ?? 0)}</b> د.ع</div>
+              {officeLoanMode(loanSub.towerId) === "normal"
+                ? <div>⚡ <b>قرض عادي</b> — بلا دَين ولا رسالة (تمديد فقط)</div>
+                : <div>💵 مبلغ الدَين: <b>{fmt(packages.find((p) => p.id === loanSub.packageId)?.priceDinar ?? 0)}</b> د.ع</div>}
               <div>📅 يُمدَّد <b>٣٠ يوماً</b> (٧ حقيقيّة في الساس)</div>
             </div>
             {loanMsg && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">{loanMsg}</div>}

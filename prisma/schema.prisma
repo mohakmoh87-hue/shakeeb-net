@@ -152,6 +152,9 @@ model Tower {
   loanEnabled String? @default("0") // 1 = تفعيل نظام القرض لهذا المكتب
   loanUser    String? // اسم مستخدم لوحة قروض سوبر سيل (dealer) — لا يُرسَل لغير المدير
   loanPass    String? // كلمة مرور القروض — مشفّرة عبر secretbox (enc:v1:)
+  // طريقة القرض للمكتب كلّه: activation = قرض كتفعيل (تمديد + دَين + رسالة)؛
+  // normal = قرض عادي (تمديد ٣٠ يوماً فقط، بلا دَين ولا رسالة ولا أيّ أثر)
+  loanMode    String? @default("activation")
   syncTime    String? // وقت مزامنة الاشتراكات اليومية مع SAS (HH:MM)
   reminderTime String? // وقت تذكير الانتهاء اليومي لهذا المكتب (HH:MM) — مرتبط بوقت تشغيل حاسبته؛ فارغ = وقت الوكيل العام
   lastReminderDate String? // آخر يوم (YYYY-MM-DD) أُرسل/عولج فيه تذكير الانتهاء (لمنطق الموافقة عند الدخول)
