@@ -17,7 +17,7 @@ type Office = { id: number; name: string | null };
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
 
 export default function LoanDebtsPage() {
-  const { me } = usePermission();
+  const { me, can } = usePermission();
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
@@ -51,6 +51,20 @@ export default function LoanDebtsPage() {
   }, [q, on, from, to, office]);
 
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
+
+  // إلغاء قرضٍ عكسيّاً: يحذف الدين ويُرجع تاريخ الانتهاء لما قبل القرض (تزول الـ٣٠ يوماً)
+  const canReverse = can("subscriptions.manage");
+  async function reverseLoan(r: Row) {
+    if (!confirm(
+      `إلغاء قرض «${r.name ?? r.netUser ?? r.subscriberId}» عكسيّاً؟\n\n` +
+      `• يُحذف الدين (${fmt(r.amount)} د.ع) من القائمة.\n` +
+      `• يعود تاريخ انتهائه لما كان قبل القرض (تزول الـ٣٠ يوماً).\n` +
+      `• الساس لا يتغيّر (أيّامه الحقيقيّة تبقى كما هي).\n\nلا يمكن التراجع.`
+    )) return;
+    const res = await fetch(`/api/loan-debts/${r.id}`, { method: "DELETE" });
+    if (res.ok) load();
+    else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الإلغاء"); }
+  }
 
   return (
     <div className="p-6">
@@ -90,13 +104,14 @@ export default function LoanDebtsPage() {
                 <th className="p-2">ينتهي (وهميّ)</th>
                 <th className="p-2">المكتب</th>
                 <th className="p-2">مَن منح</th>
+                {canReverse && <th className="p-2">إلغاء</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="p-8 text-center text-slate-400">جارٍ التحميل…</td></tr>
+                <tr><td colSpan={canReverse ? 8 : 7} className="p-8 text-center text-slate-400">جارٍ التحميل…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-slate-400">لا قروض قائمة</td></tr>
+                <tr><td colSpan={canReverse ? 8 : 7} className="p-8 text-center text-slate-400">لا قروض قائمة</td></tr>
               ) : rows.map((r) => (
                 <tr key={r.id} className="border-t border-slate-100">
                   <td className="p-2 font-semibold text-slate-800">
@@ -109,6 +124,11 @@ export default function LoanDebtsPage() {
                   <td className="p-2 text-center text-slate-500" dir="ltr">{r.expiryVirtual ? formatDate(r.expiryVirtual) : "—"}</td>
                   <td className="p-2 text-center text-slate-600">{r.office ?? "—"}</td>
                   <td className="p-2 text-center text-slate-500">{r.createdByUser ?? "—"}</td>
+                  {canReverse && (
+                    <td className="p-2 text-center">
+                      <button onClick={() => reverseLoan(r)} className="rounded bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100" title="إلغاء القرض عكسيّاً — يزيل الدين والـ30 يوماً">🗑️ إلغاء</button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

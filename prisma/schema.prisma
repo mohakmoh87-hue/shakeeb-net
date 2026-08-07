@@ -282,6 +282,7 @@ model LoanDebt {
   sasId         Int? // رقم الساس المستعمَل في المنح
   grantDate     DateTime  @default(now()) // تاريخ منح القرض (للبحث بين تاريخين)
   expiryVirtual DateTime? // تاريخ الانتهاء الوهميّ (تاريخ المنح + ٣٠)
+  prevDateTo    DateTime? // تاريخ انتهاء المشترك **قبل** القرض — لإرجاعه عند الإلغاء العكسيّ
   createdByUser String? // مَن منح القرض (للمحاسبة)
   isDeleted     Boolean   @default(false)
 

@@ -100,6 +100,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           sasId: subscriber.sasId,
           grantDate: now,
           expiryVirtual,
+          prevDateTo: subscriber.dateTo, // تاريخ الانتهاء قبل القرض — لإرجاعه عند الإلغاء العكسيّ
           createdByUser: session?.username ?? null,
         },
       }),
