@@ -100,6 +100,62 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
   return { sent, failed };
 }
 
+// ===== رسائل الديون اليومية — لمكاتب فعّلت «إرسال رسائل يومية للديون» (طلب محمد) =====
+// تُرسَل لكلّ مشترك عليه دين (carry > 0) في المكاتب المعنيّة، بقالب "debts" (مطالبة بالديون).
+// عزل صارم: مقيَّدة بالمكاتب المُمرَّرة (مكاتب وكيل هذا العامل حصراً — يُحدَّد في الكرون).
+export async function runDebtReminder(officeIds: number[]): Promise<{ sent: number; failed: number }> {
+  if (!officeIds.length) return { sent: 0, failed: 0 };
+  const recipients = await prisma.subscriber.findMany({
+    where: { isDeleted: false, waEnabled: true, carry: { gt: 0 }, towerId: { in: officeIds } },
+  });
+  if (!recipients.length) return { sent: 0, failed: 0 };
+  const packages = await prisma.package.findMany({ select: { id: true, name: true, priceDinar: true } });
+  const priceMap = new Map(packages.map((p) => [p.id, p.priceDinar ?? 0]));
+  const pkgNameMap = new Map(packages.map((p) => [p.id, p.name]));
+  const offices = await prisma.tower.findMany({ select: { id: true, name: true, waEnabled: true, agentId: true } });
+  const officeMap = new Map(offices.map((o) => [o.id, o]));
+  const { getAgentSetting } = await import("@/lib/agentSettings");
+  const fallbackCache = new Map<number | null, string>();
+  const fallbackOfficeFor = async (aid: number | null): Promise<string> => {
+    if (!fallbackCache.has(aid)) fallbackCache.set(aid, await getAgentSetting("office", aid, "SHAKEEB"));
+    return fallbackCache.get(aid)!;
+  };
+  const tplCache = new Map<string, string | null>();
+  async function templateFor(agentId: number | null, towerId: number | null): Promise<string | null> {
+    if (agentId == null) return null;
+    const key = `${agentId}:${towerId ?? 0}`;
+    if (!tplCache.has(key)) tplCache.set(key, await getTemplate("debts", agentId, towerId));
+    return tplCache.get(key) ?? null;
+  }
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let sent = 0, failed = 0, i = 0;
+  for (const sub of recipients) {
+    const office = sub.towerId ? officeMap.get(sub.towerId) : null;
+    if (office?.waEnabled === "0") continue;
+    const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null);
+    if (!template) continue; // لا قالب "debts" مفعّل لوكيل هذا المكتب
+    if (i++ > 0) await sleep(10000);
+    const text = renderTemplate(template, {
+      name: sub.name, netUser: sub.netUser,
+      package: sub.packageId ? pkgNameMap.get(sub.packageId) ?? "" : "",
+      phone: sub.phone, dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",
+      carry: sub.carry ?? 0, remaining: sub.carry ?? 0,
+      price: sub.packageId ? priceMap.get(sub.packageId) ?? 0 : 0,
+      code: sub.rewardCode, balance: sub.rewardBalance ?? 0,
+      office: office?.name ?? (await fallbackOfficeFor(office?.agentId ?? null)),
+    });
+    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId);
+    await prisma.message.create({
+      data: {
+        channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
+        status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: "scheduler",
+      },
+    });
+    res.ok ? sent++ : failed++;
+  }
+  return { sent, failed };
+}
+
 // ===== التقرير اليومي لمدير كل مكتب من واتساب مكتبه (صامت) =====
 // officeIds: مكاتب محدّدة (مثلاً مكتب المستخدم عند تسجيل الخروج)، أو كلها إن أُهملت.
 // oncePerDay: يُرسل مرة واحدة فقط في اليوم لكل مكتب (يعتمد lastReportDate) — لمنع التكرار
@@ -267,6 +323,18 @@ export function startScheduler() {
       const due = offs.filter((o) => (o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
       if (due.length) {
         runExpiringReminder(due).catch((e) => console.error("[scheduler] expiring:", e));
+      }
+    }
+    // رسائل الديون اليومية: لمكاتب فعّلت الخانة، بوقت تذكير المكتب (أو وقت الوكيل العام).
+    // عزل: مكاتب وكيل هذا العامل حصراً (agentId).
+    {
+      const debtOffs = await prisma.tower.findMany({
+        where: { isDeleted: false, debtReminderEnabled: "1", NOT: { waEnabled: "0" }, ...(wAgent != null ? { agentId: wAgent } : {}) },
+        select: { id: true, reminderTime: true },
+      }).catch(() => [] as { id: number; reminderTime: string | null }[]);
+      const dueDebt = debtOffs.filter((o) => (o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
+      if (dueDebt.length) {
+        runDebtReminder(dueDebt).catch((e) => console.error("[scheduler] debtReminder:", e));
       }
     }
     if (nowHM === reportTime) {

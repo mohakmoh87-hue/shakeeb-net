@@ -20,6 +20,7 @@ type Office = {
   waEnabled: string | null;
   syncTime: string | null;
   syncEnabled: string | null;
+  debtReminderEnabled: string | null;
   autoAssignEnabled?: boolean;
   reminderTime: string | null;
   lat: number | null;
@@ -249,6 +250,10 @@ export default function OfficesPage() {
                   <label className="flex items-center gap-2 text-sm text-slate-600">
                     <input type="checkbox" disabled={ro} checked={form.syncEnabled === "1"} onChange={(e) => set("syncEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-emerald-600" />
                     تفعيل المزامنة اليومية (بالوقت المحدّد)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <input type="checkbox" disabled={ro} checked={form.debtReminderEnabled === "1"} onChange={(e) => set("debtReminderEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-amber-600" />
+                    💳 إرسال رسائل يومية للديون (قالب «مطالبة بالديون»)
                   </label>
                   <label className="flex items-center gap-2 text-sm text-slate-600">
                     <input type="checkbox" disabled={ro} checked={form.rewardsEnabled === "1"} onChange={(e) => set("rewardsEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-fuchsia-600" />
