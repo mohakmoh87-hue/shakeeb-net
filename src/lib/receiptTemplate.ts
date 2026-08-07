@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_PAPER, type PaperKind } from "@/lib/receiptPaper";
+import { resolveDims, resolveFields, resolveOrder, DEFAULT_ORDER, type ReceiptFields, type ReceiptBodyKey } from "@/lib/receiptPaper";
 
 export type ReceiptTemplate = {
   headerText: string;
@@ -10,7 +10,12 @@ export type ReceiptTemplate = {
   headerColor: string;
   fontSize: number;
   showLogo: boolean;
-  paper: PaperKind; // حجم ورق الطابعة المختار لهذا المكتب/الوكيل
+  // أبعاد ورق الطابعة (يدويّة، بالمليمتر). paperH=0 ⇒ لفّة حراريّة (طول تلقائيّ).
+  paperW: number;
+  paperH: number;
+  contentW: number;
+  fields: ReceiptFields; // أيّ معلومةٍ تظهر في الوصل
+  fieldOrder: ReceiptBodyKey[]; // ترتيب صفوف الجسم (إعادة الترتيب بالسحب)
 };
 
 export const DEFAULT_RECEIPT: ReceiptTemplate = {
@@ -22,7 +27,11 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
   headerColor: "#1e66c9",
   fontSize: 14,
   showLogo: true,
-  paper: DEFAULT_PAPER,
+  paperW: 80,
+  paperH: 0,
+  contentW: 68,
+  fields: resolveFields(null),
+  fieldOrder: DEFAULT_ORDER,
 };
 
 // مفتاح قالب وصل مكتب محدّد (يغلب قالب الوكيل العام)
@@ -42,7 +51,17 @@ export async function getReceiptTemplate(agentId?: number | null, towerId?: numb
   // غيره يأخذ الافتراضي المحايد (سدّ تسريب شعار/ترويسة الوكيل الأول لوكلاء جدد)
   if (!row && agentId === 1) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
   if (row?.text) {
-    try { return { ...DEFAULT_RECEIPT, ...JSON.parse(row.text) }; } catch { /* ignore */ }
+    try {
+      const raw = { ...DEFAULT_RECEIPT, ...JSON.parse(row.text) };
+      // حلّ الأبعاد (مع ترحيل النوع القديم paper) والحقول والترتيب — فلا يختفي حقلٌ ولا بُعد
+      const d = resolveDims(raw as { paperW?: number; paperH?: number; contentW?: number; paper?: string });
+      return {
+        ...raw,
+        paperW: d.paperW, paperH: d.paperH, contentW: d.contentW,
+        fields: resolveFields((raw as { fields?: Record<string, boolean> }).fields),
+        fieldOrder: resolveOrder((raw as { fieldOrder?: string[] }).fieldOrder),
+      };
+    } catch { /* ignore */ }
   }
   return DEFAULT_RECEIPT;
 }

@@ -1,38 +1,91 @@
 // هندسة ورق الوصل — وحدة نقيّة (بلا prisma) يشاركها الخادم (توليد PDF/HTML) والواجهة
-// (مُبدِّل حجم الورقة + المعاينة). كلّ مكتب/وكيل يختار حجم ورقة طابعته، فيُطبع الوصل
-// بعرض تلك الورقة والمحتوى **موسَّطاً** فيها — يعالج انزياح الوصل الضيّق لجانب الورقة.
+// (مدخلات الأبعاد + المعاينة). كلّ مكتب/وكيل يكتب أبعاد ورق طابعته يدويّاً، ويختار أيّ
+// معلومةٍ تظهر في الوصل — فيُطبع بعرض تلك الورقة والمحتوى **موسَّطاً** فيها.
 
-export type PaperKind = "thermal58" | "thermal76" | "thermal80" | "a4" | "letter";
+// أبعاد الورقة بالمليمتر (مصدرها الوحيد resolveDims):
+//   paperW  = عرض الورقة (عرض صفحة الـPDF/‏@page)
+//   paperH  = طول الورقة الثابت (ورق مقصوص). 0 ⇒ لفّة حراريّة: الطول = طول المحتوى.
+//   contentW= عرض صندوق الكتابة، موسَّطٌ ⇒ هامشا بياضٍ متساويان = (paperW-contentW)/2
+//   padX    = حشو أفقيّ داخل صندوق الكتابة (ثابت صغير كي لا يلامس النصّ الحدّ)
+export type PaperDims = { paperW: number; paperH: number; contentW: number; padX: number };
 
-export const DEFAULT_PAPER: PaperKind = "thermal80";
+export const PAPER_LIMITS = { minW: 30, maxW: 400, minH: 40, maxH: 600, minC: 20 };
 
-// هندسة الورقة بالمليمتر:
-//   pageW   = عرض الورقة (عرض صفحة الـPDF/‏@page)
-//   pageH   = طول الورقة الثابت (ورق مقصوص A4/Letter). 0 ⇒ لفّة حراريّة: الطول = طول
-//             المحتوى (يُقاس وقت التوليد) فتُقصّ بنهاية الكتابة — ورقة واحدة دائماً.
-//   contentW= عرض صندوق الكتابة، موسَّطٌ بـ margin:auto ⇒ هامشا بياضٍ متساويان
-//   padX    = حشو أفقيّ داخل صندوق الكتابة
-export type PaperGeometry = { pageW: number; pageH: number; contentW: number; padX: number };
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
-export function paperGeometry(kind: PaperKind | null | undefined): PaperGeometry {
-  switch (kind) {
-    case "thermal58": return { pageW: 58, pageH: 0, contentW: 46, padX: 3 };
-    case "thermal76": return { pageW: 76, pageH: 0, contentW: 64, padX: 4 };
-    case "a4":        return { pageW: 210, pageH: 297, contentW: 78, padX: 5 };
-    case "letter":    return { pageW: 216, pageH: 279, contentW: 78, padX: 5 };
-    case "thermal80":
-    default:          return { pageW: 80, pageH: 0, contentW: 68, padX: 4 };
-  }
+// ترحيل القوالب القديمة: كانت تخزّن نوعاً مُعدّاً (paper) بدل أبعادٍ رقميّة.
+const LEGACY: Record<string, { paperW: number; paperH: number; contentW: number }> = {
+  thermal58: { paperW: 58, paperH: 0, contentW: 46 },
+  thermal76: { paperW: 76, paperH: 0, contentW: 64 },
+  thermal80: { paperW: 80, paperH: 0, contentW: 68 },
+  a4: { paperW: 210, paperH: 297, contentW: 78 },
+  letter: { paperW: 216, paperH: 279, contentW: 78 },
+};
+
+// الأبعاد الفعّالة من القالب: أرقامٌ صريحة إن وُجدت، وإلا اشتقاقٌ من النوع القديم، وإلا
+// الافتراضيّ (٨٠مم لفّة). يُقصُّ كلٌّ ضمن حدوده، وعرض الكتابة ≤ عرض الورقة.
+export function resolveDims(t: {
+  paperW?: number | null; paperH?: number | null; contentW?: number | null; paper?: string | null;
+}): PaperDims {
+  let pw = Number(t.paperW) || 0;
+  let ph = Number(t.paperH) || 0;
+  let cw = Number(t.contentW) || 0;
+  if (!pw && t.paper && LEGACY[t.paper]) { const L = LEGACY[t.paper]; pw = L.paperW; ph = L.paperH; cw = L.contentW; }
+  pw = clamp(pw || 80, PAPER_LIMITS.minW, PAPER_LIMITS.maxW);
+  ph = ph > 0 ? clamp(ph, PAPER_LIMITS.minH, PAPER_LIMITS.maxH) : 0;
+  cw = clamp(cw || Math.max(pw - 12, PAPER_LIMITS.minC), PAPER_LIMITS.minC, pw);
+  return { paperW: pw, paperH: ph, contentW: cw, padX: 3 };
 }
 
-export const PAPER_OPTIONS: { value: PaperKind; label: string; hint: string }[] = [
-  { value: "thermal80", label: "حراريّة ٨٠مم", hint: "الأكثر شيوعاً لطابعات الوصولات (POS)" },
-  { value: "thermal76", label: "حراريّة ٧٦مم", hint: "طابعات الوصولات الأقدم/الإبريّة" },
-  { value: "thermal58", label: "حراريّة ٥٨مم", hint: "طابعات الوصولات الصغيرة" },
-  { value: "a4",        label: "A4 عاديّة",    hint: "طابعة حبر/ليزر — الوصل عمودٌ موسَّط في الصفحة" },
-  { value: "letter",    label: "Letter عاديّة", hint: "طابعة حبر/ليزر بمقاس Letter" },
-];
+// ===== حقول الوصل: إظهار/إخفاء + إعادة ترتيب (وصل الاشتراك) =====
+// مشتركة بين الخادم (البناء) والواجهة. الافتراضيّ: الكلّ ظاهر بالترتيب أدناه.
+//   • RECEIPT_FIELDS: صفوف الجسم — قابلة للإظهار/الإخفاء **وإعادة الترتيب بالسحب**.
+//   • RECEIPT_TOGGLES: مفاتيح ثابتة الموضع (سطر العنوان الفرعيّ/التذييل) — إظهار فقط.
+export const RECEIPT_FIELDS = [
+  { key: "receiptNo", label: "رقم الوصل" },
+  { key: "date", label: "التاريخ" },
+  { key: "subscriber", label: "اسم المشترك" },
+  { key: "phone", label: "رقم الهاتف" },
+  { key: "package", label: "الباقة" },
+  { key: "months", label: "عدد الأشهر" },
+  { key: "dateFrom", label: "من تاريخ" },
+  { key: "dateTo", label: "إلى تاريخ" },
+  { key: "price", label: "قيمة الاشتراك" },
+  { key: "moneyIn", label: "المبلغ الواصل" },
+  { key: "moneyCarry", label: "الدين المتبقّي" },
+  { key: "notes", label: "الملاحظات" },
+] as const;
 
-export function paperLabel(kind: PaperKind | null | undefined): string {
-  return PAPER_OPTIONS.find((o) => o.value === kind)?.label ?? "حراريّة ٨٠مم";
+export const RECEIPT_TOGGLES = [
+  { key: "subtitle", label: "سطر «وصل تفعيل / تجديد»" },
+  { key: "footer", label: "سطر التذييل" },
+] as const;
+
+export type ReceiptBodyKey = (typeof RECEIPT_FIELDS)[number]["key"];
+export type ReceiptFieldKey = ReceiptBodyKey | (typeof RECEIPT_TOGGLES)[number]["key"];
+export type ReceiptFields = Record<ReceiptFieldKey, boolean>;
+
+const ALL_FIELDS = [...RECEIPT_FIELDS, ...RECEIPT_TOGGLES];
+export const DEFAULT_FIELDS: ReceiptFields = Object.fromEntries(
+  ALL_FIELDS.map((f) => [f.key, true]),
+) as ReceiptFields;
+
+export const DEFAULT_ORDER: ReceiptBodyKey[] = RECEIPT_FIELDS.map((f) => f.key);
+
+// دمج حقول القالب مع الافتراضيّ: أيّ مفتاحٍ غائب (قالب قديم) ⇒ ظاهر.
+export function resolveFields(f: Partial<Record<string, boolean>> | null | undefined): ReceiptFields {
+  return { ...DEFAULT_FIELDS, ...(f ?? {}) } as ReceiptFields;
+}
+
+// ترتيبٌ صالح لصفوف الجسم: يحترم ترتيب القالب، يُسقط المجهول والمكرَّر، ويُلحق أيّ حقلٍ
+// ناقص (قالب قديم أو حقل مُستحدَث) بترتيبه الافتراضيّ — فلا يختفي حقلٌ أبداً بسبب الترتيب.
+export function resolveOrder(order: string[] | null | undefined): ReceiptBodyKey[] {
+  const valid = new Set<string>(DEFAULT_ORDER);
+  const seen = new Set<string>();
+  const out: ReceiptBodyKey[] = [];
+  for (const k of order ?? []) {
+    if (valid.has(k) && !seen.has(k)) { out.push(k as ReceiptBodyKey); seen.add(k); }
+  }
+  for (const k of DEFAULT_ORDER) if (!seen.has(k)) out.push(k);
+  return out;
 }

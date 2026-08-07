@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import type { SessionPayload } from "@/lib/auth";
-import { DEFAULT_PAPER } from "@/lib/receiptPaper";
+import { resolveDims, resolveFields, resolveOrder, DEFAULT_ORDER, PAPER_LIMITS } from "@/lib/receiptPaper";
 
 // قالب الوصل المطبوع (#13) — يُخزَّن كـ JSON في system_settings (type=receipt)
 const schema = z.object({
@@ -15,7 +15,12 @@ const schema = z.object({
   headerColor: z.string().default("#1e66c9"),
   fontSize: z.coerce.number().default(14),
   showLogo: z.boolean().default(true),
-  paper: z.enum(["thermal58", "thermal76", "thermal80", "a4", "letter"]).default(DEFAULT_PAPER), // حجم ورق الطابعة
+  // أبعاد ورق الطابعة (يدويّة، مم). paperH=0 ⇒ لفّة حراريّة (طول تلقائيّ).
+  paperW: z.coerce.number().min(PAPER_LIMITS.minW).max(PAPER_LIMITS.maxW).default(80),
+  paperH: z.coerce.number().min(0).max(PAPER_LIMITS.maxH).default(0),
+  contentW: z.coerce.number().min(PAPER_LIMITS.minC).max(PAPER_LIMITS.maxW).default(68),
+  fields: z.record(z.string(), z.boolean()).default({}), // إظهار/إخفاء كل حقل
+  fieldOrder: z.array(z.string()).default([]), // ترتيب صفوف الجسم (سحب)
 });
 
 export type ReceiptTemplate = z.infer<typeof schema>;
@@ -29,7 +34,11 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
   headerColor: "#1e66c9",
   fontSize: 14,
   showLogo: true,
-  paper: DEFAULT_PAPER,
+  paperW: 80,
+  paperH: 0,
+  contentW: 68,
+  fields: {},
+  fieldOrder: DEFAULT_ORDER as unknown as string[],
 };
 
 // مفتاح قالب الوصل لكل وكيل (عزل المستأجر) — ومفتاح مكتبٍ محدّد يغلب مفتاح الوكيل
@@ -62,7 +71,15 @@ export async function GET(request: Request) {
   if (row?.text) {
     try { data = { ...DEFAULT_RECEIPT, ...JSON.parse(row.text) }; } catch { /* keep default */ }
   }
-  return NextResponse.json({ ...data, officeCustom: !!oRow, officeId });
+  // حلّ الأبعاد (مع ترحيل النوع القديم) والحقول والترتيب قبل الإرسال للواجهة
+  const d = resolveDims(data as { paperW?: number; paperH?: number; contentW?: number; paper?: string });
+  return NextResponse.json({
+    ...data,
+    paperW: d.paperW, paperH: d.paperH, contentW: d.contentW,
+    fields: resolveFields((data as { fields?: Record<string, boolean> }).fields),
+    fieldOrder: resolveOrder((data as { fieldOrder?: string[] }).fieldOrder),
+    officeCustom: !!oRow, officeId,
+  });
 }
 
 export async function POST(request: Request) {

@@ -42,7 +42,7 @@ export default async function ReceiptPage({
 
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">
-      <ReceiptPrintStyle paper={tpl.paper} />
+      <ReceiptPrintStyle paperW={tpl.paperW} paperH={tpl.paperH} contentW={tpl.contentW} />
       <div className="w-full max-w-sm">
         <SilentPrint kind="subscription" id={entry.id} />
         {/* أزرار التحكم (تختفي عند الطباعة) */}
@@ -73,45 +73,37 @@ export default async function ReceiptPage({
               )
             )}
             <h1 className="text-xl font-bold" style={{ color: tpl.headerColor }}>{tpl.headerText || officeName}</h1>
-            <p className="text-sm text-slate-500">وصل تفعيل / تجديد اشتراك</p>
-          </div>
-
-          <div className="space-y-2 text-sm">
-            <Line label="رقم الوصل" value={`#${entry.id}`} />
-            <Line label="التاريخ" value={fmtDate(entry.date)} />
-            <Line label="المشترك" value={subscriber?.name ?? "—"} />
-            {subscriber?.phone && (
-              <Line label="الهاتف" value={subscriber.phone} />
+            {tpl.fields.subtitle !== false && (
+              <p className="text-sm text-slate-500">وصل تفعيل / تجديد اشتراك</p>
             )}
-            <Line label="الباقة" value={entry.cardType ?? "—"} />
-            <Line label="عدد الأشهر" value={entry.month ?? "—"} />
-            <div className="my-2 border-t border-dashed border-slate-200" />
-            <Line label="من تاريخ" value={fmtDate(entry.dateFrom)} />
-            <Line label="إلى تاريخ" value={fmtDate(entry.dateTo)} bold />
-            <div className="my-2 border-t border-dashed border-slate-200" />
-            <Line label="قيمة الاشتراك" value={`${fmt(entry.money)} د.ع`} />
-            <Line
-              label="المبلغ الواصل"
-              value={`${fmt(entry.moneyIn)} د.ع`}
-              color="text-emerald-600"
-            />
-            <Line
-              label="الدين المتبقّي"
-              value={`${fmt(entry.moneyCarry)} د.ع`}
-              color="text-red-600"
-              bold
-            />
           </div>
 
-          {entry.notes && (
-            <p className="mt-3 rounded bg-slate-50 p-2 text-xs text-slate-600">
-              ملاحظات: {entry.notes}
-            </p>
+          {/* الصفوف حسب ترتيب القالب (fieldOrder) وإظهاره (fields) — يطابق الطباعة الصامتة */}
+          <div className="space-y-2 text-sm">
+            {tpl.fieldOrder.filter((k) => tpl.fields[k] !== false).map((key) => {
+              switch (key) {
+                case "receiptNo": return <Line key={key} label="رقم الوصل" value={`#${entry.id}`} />;
+                case "date": return <Line key={key} label="التاريخ" value={fmtDate(entry.date)} />;
+                case "subscriber": return <Line key={key} label="المشترك" value={subscriber?.name ?? "—"} />;
+                case "phone": return subscriber?.phone ? <Line key={key} label="الهاتف" value={subscriber.phone} /> : null;
+                case "package": return <Line key={key} label="الباقة" value={entry.cardType ?? "—"} />;
+                case "months": return <Line key={key} label="عدد الأشهر" value={entry.month ?? "—"} />;
+                case "dateFrom": return <Line key={key} label="من تاريخ" value={fmtDate(entry.dateFrom)} />;
+                case "dateTo": return <Line key={key} label="إلى تاريخ" value={fmtDate(entry.dateTo)} bold />;
+                case "price": return <Line key={key} label="قيمة الاشتراك" value={`${fmt(entry.money)} د.ع`} />;
+                case "moneyIn": return <Line key={key} label="المبلغ الواصل" value={`${fmt(entry.moneyIn)} د.ع`} color="text-emerald-600" />;
+                case "moneyCarry": return <Line key={key} label="الدين المتبقّي" value={`${fmt(entry.moneyCarry)} د.ع`} color="text-red-600" bold />;
+                case "notes": return entry.notes ? <p key={key} className="mt-1 rounded bg-slate-50 p-2 text-xs text-slate-600">ملاحظات: {entry.notes}</p> : null;
+                default: return null;
+              }
+            })}
+          </div>
+
+          {tpl.fields.footer !== false && (
+            <div className="mt-5 border-t-2 border-dashed border-slate-300 pt-3 text-center text-xs text-slate-400">
+              {tpl.footerText || "شكراً لاشتراككم"} — {officeName}
+            </div>
           )}
-
-          <div className="mt-5 border-t-2 border-dashed border-slate-300 pt-3 text-center text-xs text-slate-400">
-            {tpl.footerText || "شكراً لاشتراككم"} — {officeName}
-          </div>
         </div>
       </div>
     </div>

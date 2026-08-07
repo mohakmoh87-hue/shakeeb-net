@@ -57,7 +57,7 @@ export default async function InvoiceReceipt({
 
   return (
     <div className="receipt-page flex min-h-[calc(100vh-140px)] items-start justify-center bg-slate-100 p-6">
-      <ReceiptPrintStyle paper={tpl.paper} />
+      <ReceiptPrintStyle paperW={tpl.paperW} paperH={tpl.paperH} contentW={tpl.contentW} />
       <div className="w-full max-w-md">
         <SilentPrint kind="invoice" id={invoice.id} />
         <div className="no-print mb-4 flex justify-between">
@@ -74,7 +74,7 @@ export default async function InvoiceReceipt({
               <img src={tpl.logo} alt="شعار" className="mx-auto mb-2 h-14 object-contain" />
             )}
             <h1 className="text-xl font-bold" style={{ color: tpl.headerColor }}>{tpl.headerText || officeName}</h1>
-            <p className="text-sm text-slate-500">فاتورة بيع</p>
+            {tpl.fields.subtitle !== false && <p className="text-sm text-slate-500">فاتورة بيع</p>}
           </div>
 
           <div className="mb-3 flex justify-between text-sm">
@@ -121,9 +121,11 @@ export default async function InvoiceReceipt({
           {invoice.note && (
             <p className="mt-3 rounded bg-slate-50 p-2 text-xs text-slate-600">ملاحظات: {invoice.note}</p>
           )}
-          <div className="mt-5 border-t-2 border-dashed border-slate-300 pt-3 text-center text-xs text-slate-400">
-            {tpl.footerText || "شكراً لتعاملكم"} — {officeName}
-          </div>
+          {tpl.fields.footer !== false && (
+            <div className="mt-5 border-t-2 border-dashed border-slate-300 pt-3 text-center text-xs text-slate-400">
+              {tpl.footerText || "شكراً لتعاملكم"} — {officeName}
+            </div>
+          )}
         </div>
       </div>
     </div>

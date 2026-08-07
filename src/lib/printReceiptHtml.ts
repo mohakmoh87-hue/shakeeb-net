@@ -1,26 +1,24 @@
 // مولّد HTML الوصل للطباعة الصامتة (العامل المحلي): مستند مكتفٍ ذاتياً يطابق تخطيط
-// صفحتَي الوصل (اشتراك/فاتورة) وهندسة ReceiptPrintStyle: ورقة 80مم، كتابة 68مم موسَّطة.
+// صفحتَي الوصل (اشتراك/فاتورة) وهندسة ReceiptPrintStyle: عرض الورقة يدويّ والكتابة موسَّطة.
 // يُحوَّل إلى PDF عبر puppeteer ثم يُطبع بصمت على الطابعة الافتراضية.
 import { prisma } from "@/lib/prisma";
-import { getReceiptTemplate } from "@/lib/receiptTemplate";
-import { paperGeometry, type PaperKind } from "@/lib/receiptPaper";
+import { getReceiptTemplate, type ReceiptTemplate } from "@/lib/receiptTemplate";
+import { resolveDims, type PaperDims, type ReceiptBodyKey } from "@/lib/receiptPaper";
 import { formatDate } from "@/lib/format";
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
 const esc = (s: string | null | undefined) =>
   (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-// غلاف المستند: هندسة الورقة المختارة (paperGeometry). عرض الصفحة = عرض الورقة، وصندوق
-// الكتابة موسَّطٌ (margin:auto) ⇒ يُطبع وسط الورقة أيّاً كان عرضها. أبعاد الورقة تُوسَم على
-// <html> (data-paper-w/-h) ليقرأها printAgent فيولّد PDF بمقاسها (0 = لفّة، الطول من المحتوى).
-function wrap(body: string, fontSize: number, paper: PaperKind): string {
-  const g = paperGeometry(paper);
-  // ورق مقصوص (A4/Letter): الصفحة بطولٍ ثابت والمحتوى أعلى-وسط. لفّة حراريّة: بلا طولٍ ثابت.
-  const sheet = g.pageH > 0;
-  return `<!doctype html><html dir="rtl" data-paper-w="${g.pageW}" data-paper-h="${g.pageH}"><head><meta charset="utf-8"><style>
+// غلاف المستند: أبعاد الورقة اليدويّة (resolveDims). عرض الصفحة = عرض الورقة، وصندوق الكتابة
+// موسَّطٌ (margin:auto) ⇒ يُطبع وسط الورقة أيّاً كان عرضها. الأبعاد تُوسَم على <html>
+// (data-paper-w/-h) ليقرأها printAgent فيولّد PDF بمقاسها (0 = لفّة، الطول من المحتوى).
+function wrap(body: string, fontSize: number, g: PaperDims): string {
+  const sheet = g.paperH > 0; // ورق مقصوص بطولٍ ثابت مقابل لفّة حراريّة
+  return `<!doctype html><html dir="rtl" data-paper-w="${g.paperW}" data-paper-h="${g.paperH}"><head><meta charset="utf-8"><style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   @page { margin: 0; }
-  html, body { width: ${g.pageW}mm; ${sheet ? `min-height: ${g.pageH}mm;` : ""} background: #fff; color: #000; font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
+  html, body { width: ${g.paperW}mm; ${sheet ? `min-height: ${g.paperH}mm;` : ""} background: #fff; color: #000; font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
   /* كل النص أسود خالص وعريض (بولد) — طلب صريح لوضوح الطباعة الحرارية */
   .print-area { width: ${g.contentW}mm; max-width: ${g.contentW}mm; margin: 0 auto; padding: 1mm ${g.padX}mm 2mm; font-size: ${fontSize}px;
                 font-weight: 700; color: #000; }
@@ -58,9 +56,11 @@ async function brandName(agentId: number | null): Promise<string> {
   return getAgentSetting("office", agentId, "SHAKEEB");
 }
 
-function header(tpl: { showLogo: boolean; logo: string; headerText: string }, officeName: string, subtitle: string): string {
+// الترويسة: الشعار (إن فُعِّل) + اسم المكتب دائماً + سطرٌ فرعيّ (إن فُعِّل حقل subtitle)
+function header(tpl: { showLogo: boolean; logo: string; headerText: string }, officeName: string, subtitle: string, showSubtitle: boolean): string {
   const logo = tpl.showLogo && tpl.logo ? `<img src="${esc(tpl.logo)}" alt="">` : "";
-  return `<div class="hdr">${logo}<h1>${esc(tpl.headerText || officeName)}</h1><p>${esc(subtitle)}</p></div>`;
+  const sub = showSubtitle ? `<p>${esc(subtitle)}</p>` : "";
+  return `<div class="hdr">${logo}<h1>${esc(tpl.headerText || officeName)}</h1>${sub}</div>`;
 }
 
 // وصل تفعيل/تجديد اشتراك — يطابق صفحة /subscriptions/[id]/receipt
@@ -73,28 +73,31 @@ export async function subscriptionReceiptHtml(entryId: number, agentId: number |
   const officeName = await brandName(agentId);
   // قالب مكتب الوصل المخصّص إن وُجد، وإلا قالب الوكيل العام
   const tpl = await getReceiptTemplate(agentId, entry.towerId);
+  const F = tpl.fields;
 
-  const rows = [
-    line("رقم الوصل", `#${entry.id}`),
-    line("التاريخ", formatDate(entry.date)),
-    line("المشترك", subscriber?.name ?? "—"),
-    subscriber?.phone ? line("الهاتف", subscriber.phone) : "",
-    line("الباقة", entry.cardType ?? "—"),
-    line("عدد الأشهر", entry.month ?? "—"),
-    `<div class="sep"></div>`,
-    line("من تاريخ", formatDate(entry.dateFrom)),
-    line("إلى تاريخ", formatDate(entry.dateTo), true),
-    `<div class="sep"></div>`,
-    line("قيمة الاشتراك", `${fmt(entry.money)} د.ع`),
-    line("المبلغ الواصل", `${fmt(entry.moneyIn)} د.ع`),
-    line("الدين المتبقّي", `${fmt(entry.moneyCarry)} د.ع`, true),
-  ].join("");
+  // صفٌّ واحد حسب مفتاحه — تُبنى الصفوف بترتيب tpl.fieldOrder، وتُعرَض إن كان حقلها ظاهراً
+  const bodyRow = (key: ReceiptBodyKey): string => {
+    switch (key) {
+      case "receiptNo": return line("رقم الوصل", `#${entry.id}`);
+      case "date": return line("التاريخ", formatDate(entry.date));
+      case "subscriber": return line("المشترك", subscriber?.name ?? "—");
+      case "phone": return subscriber?.phone ? line("الهاتف", subscriber.phone) : "";
+      case "package": return line("الباقة", entry.cardType ?? "—");
+      case "months": return line("عدد الأشهر", entry.month ?? "—");
+      case "dateFrom": return line("من تاريخ", formatDate(entry.dateFrom));
+      case "dateTo": return line("إلى تاريخ", formatDate(entry.dateTo), true);
+      case "price": return line("قيمة الاشتراك", `${fmt(entry.money)} د.ع`);
+      case "moneyIn": return line("المبلغ الواصل", `${fmt(entry.moneyIn)} د.ع`);
+      case "moneyCarry": return line("الدين المتبقّي", `${fmt(entry.moneyCarry)} د.ع`, true);
+      case "notes": return entry.notes ? `<div class="notes">ملاحظات: ${esc(entry.notes)}</div>` : "";
+      default: return "";
+    }
+  };
+  const rows = tpl.fieldOrder.filter((k) => F[k] !== false).map(bodyRow).join("");
 
-  const notes = entry.notes ? `<div class="notes">ملاحظات: ${esc(entry.notes)}</div>` : "";
-  const body =
-    header(tpl, officeName, "وصل تفعيل / تجديد اشتراك") + rows + notes +
-    `<div class="ftr">${esc(tpl.footerText || "شكراً لاشتراككم")} — ${esc(officeName)}</div>`;
-  return wrap(body, tpl.fontSize, tpl.paper);
+  const footer = F.footer ? `<div class="ftr">${esc(tpl.footerText || "شكراً لاشتراككم")} — ${esc(officeName)}</div>` : "";
+  const body = header(tpl, officeName, "وصل تفعيل / تجديد اشتراك", F.subtitle !== false) + rows + footer;
+  return wrap(body, tpl.fontSize, resolveDims(tpl as ReceiptTemplate));
 }
 
 // وصل فاتورة بيع — يطابق صفحة /invoices/[id]/receipt
@@ -108,13 +111,15 @@ export async function invoiceReceiptHtml(invoiceId: number, agentId: number | nu
   const officeName = await brandName(agentId);
   // قالب مكتب الفاتورة المخصّص إن وُجد، وإلا قالب الوكيل العام
   const tpl = await getReceiptTemplate(agentId, invoice.towerId);
+  const F = tpl.fields;
 
   const tableRows = lines.map((l) =>
     `<tr><td>${esc(l.itemId ? nameMap.get(l.itemId) ?? "—" : "—")}</td><td>${fmt(l.count)}</td><td>${fmt(l.price)}</td><td class="b">${fmt((l.count ?? 0) * (l.price ?? 0))}</td></tr>`,
   ).join("");
 
+  const footer = F.footer ? `<div class="ftr">${esc(tpl.footerText || "شكراً لتعاملكم")} — ${esc(officeName)}</div>` : "";
   const body =
-    header(tpl, officeName, "فاتورة بيع") +
+    header(tpl, officeName, "فاتورة بيع", F.subtitle !== false) +
     `<div class="line"><span>رقم الفاتورة: <b>#${invoice.number ?? invoice.id}</b></span><span>${esc(formatDate(invoice.date))}</span></div>` +
     `<table><thead><tr><th>المادة</th><th>كمية</th><th>سعر</th><th>مجموع</th></tr></thead><tbody>${tableRows}</tbody></table>` +
     `<div class="sep"></div>` +
@@ -122,6 +127,6 @@ export async function invoiceReceiptHtml(invoiceId: number, agentId: number | nu
     line("المدفوع", `${fmt(invoice.waselHim)} د.ع`) +
     line("المتبقّي", `${fmt((invoice.totalMy ?? 0) - (invoice.waselHim ?? 0))} د.ع`, true) +
     (invoice.note ? `<div class="notes">ملاحظات: ${esc(invoice.note)}</div>` : "") +
-    `<div class="ftr">${esc(tpl.footerText || "شكراً لتعاملكم")} — ${esc(officeName)}</div>`;
-  return wrap(body, tpl.fontSize, tpl.paper);
+    footer;
+  return wrap(body, tpl.fontSize, resolveDims(tpl as ReceiptTemplate));
 }

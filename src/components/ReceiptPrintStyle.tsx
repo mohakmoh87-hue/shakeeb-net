@@ -1,20 +1,20 @@
-// نمط طباعة الوصل من المتصفّح (Ctrl+P) — يتبع حجم ورق الطابعة المختار للمكتب/الوكيل.
+// نمط طباعة الوصل من المتصفّح (Ctrl+P) — يتبع أبعاد ورق الطابعة اليدويّة للمكتب/الوكيل.
 // مقتصر على صفحات الوصل (‎.receipt-page‎) فلا يؤثّر على التقارير (تبقى A4).
-// يُجبر العرض على عرض الورقة، بلا هوامش، أبيض/أسود لتوافق الطابعة الحرارية،
-// وصندوق الكتابة موسَّطٌ (margin:auto) ⇒ يُطبع وسط الورقة أيّاً كان عرضها.
-import { paperGeometry, DEFAULT_PAPER, type PaperKind } from "@/lib/receiptPaper";
+// عرض الورقة يدويّ، بلا هوامش، أبيض/أسود، وصندوق الكتابة موسَّطٌ (margin:auto) ⇒ يُطبع
+// وسط الورقة أيّاً كان عرضها.
+import { resolveDims } from "@/lib/receiptPaper";
 
-export default function ReceiptPrintStyle({ paper = DEFAULT_PAPER }: { paper?: PaperKind }) {
-  const g = paperGeometry(paper);
-  const sheet = g.pageH > 0; // ورق مقصوص (A4/Letter) بطولٍ ثابت مقابل لفّة حراريّة
-  const pageSize = sheet ? `${g.pageW}mm ${g.pageH}mm` : `${g.pageW}mm auto`;
+export default function ReceiptPrintStyle({ paperW, paperH, contentW }: { paperW?: number; paperH?: number; contentW?: number }) {
+  const g = resolveDims({ paperW, paperH, contentW });
+  const sheet = g.paperH > 0; // ورق مقصوص (طول ثابت) مقابل لفّة حراريّة
+  const pageSize = sheet ? `${g.paperW}mm ${g.paperH}mm` : `${g.paperW}mm auto`;
   const css = `
 @media print {
-  /* حجم الورقة يتبع اختيار المكتب: لفّة حراريّة (طول تلقائيّ يُقصّ بنهاية الكتابة)
-     أو ورق مقصوص A4/Letter (صفحة كاملة والمحتوى أعلى-وسط) */
+  /* حجم الورقة يتبع أبعاد المكتب: لفّة حراريّة (طول تلقائيّ يُقصّ بنهاية الكتابة)
+     أو ورق مقصوص (صفحة كاملة والمحتوى أعلى-وسط) */
   @page { size: ${pageSize}; margin: 0; }
   html, body {
-    width: ${g.pageW}mm !important;
+    width: ${g.paperW}mm !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #fff !important;
@@ -27,13 +27,12 @@ export default function ReceiptPrintStyle({ paper = DEFAULT_PAPER }: { paper?: P
     background: #fff !important;
   }
   .receipt-page > * {
-    width: ${g.pageW}mm !important;
-    max-width: ${g.pageW}mm !important;
+    width: ${g.paperW}mm !important;
+    max-width: ${g.paperW}mm !important;
     margin: 0 !important;
   }
   /* صندوق الكتابة موسَّطٌ على الورقة ⇒ هامشا بياضٍ متساويان (لا يُطبَعان فلا تقصّهما
-     الطابعة) + حشو داخليّ ⇒ يبدأ النص بعيداً عن حافة الورق، أبعد من الهامش غير القابل
-     للطباعة في أيّ طابعة. الكتابة + الهامشان = عرض الورقة. */
+     الطابعة) + حشو داخليّ ⇒ يبدأ النص بعيداً عن حافة الورق. الكتابة + الهامشان = عرض الورقة. */
   .print-area {
     width: ${g.contentW}mm !important;
     max-width: ${g.contentW}mm !important;
