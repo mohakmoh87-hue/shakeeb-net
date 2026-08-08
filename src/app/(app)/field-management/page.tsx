@@ -12,6 +12,7 @@ import MapProposalReview from "@/components/MapProposalReview";
 import DeletedCardsModal from "@/components/DeletedCardsModal";
 import AchievementsModal from "@/components/AchievementsModal";
 import NotificationsBell from "@/components/NotificationsBell";
+import { isPageActive } from "@/lib/usePolling";
 import FieldAppMenu from "@/components/FieldAppMenu";
 import { FieldTrackerProvider } from "@/components/FieldTracker";
 
@@ -186,13 +187,13 @@ export default function FieldManagementPage() {
   // والعودة للتبويب تُحدّث لحظياً عبر مستمع visibilitychange أدناه.
   useEffect(() => {
     const t = setInterval(() => {
-      if (document.hidden) return;
+      if (!isPageActive()) return; // مخفيّ أو متروك بلا تفاعل ٣ دقائق (حمية يقظة Azure)
       if (sel || completing || postponing || drag != null || addingTo != null) return;
       load(officeId);
     }, 20000);
     // العودة للتبويب/التطبيق ⇒ تحديث فوري (لا انتظار الدورة القادمة)
     const onVisible = () => {
-      if (document.hidden) return;
+      if (!isPageActive()) return;
       if (sel || completing || postponing || drag != null || addingTo != null) return;
       load(officeId);
     };

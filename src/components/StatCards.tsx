@@ -6,6 +6,7 @@ import ChampionEmoji from "@/components/ChampionEmoji";
 import Link from "next/link";
 import { localSasBase } from "@/lib/localSas";
 import { onMoneyRefresh } from "@/lib/moneyRefresh";
+import { isPageActive } from "@/lib/usePolling";
 
 // بطاقات الإحصاء الأربع — مطابقة حرفياً للنموذج المعتمد (أصناف .nst في globals.css):
 // المشتركين (داكنة: الفعالين والمتصلين + الكلي) · المصروفات والمقبوضات (سطران +
@@ -76,7 +77,7 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
       if (!base) {
         // بلا عامل محلي: المخزون السحابي (مرة فوراً ثم كل 10 دقائق) + إعادة البحث عن العامل
         // — والتبويب المخفي يصمت (حمية يقظة Azure)، وعند العودة تُجلب القراءة فوراً
-        if (!cloudPoll) { void loadCloud(); cloudPoll = setInterval(() => { if (!document.hidden) void loadCloud(); }, 10 * 60 * 1000); }
+        if (!cloudPoll) { void loadCloud(); cloudPoll = setInterval(() => { if (isPageActive()) void loadCloud(); }, 10 * 60 * 1000); }
         retry = setTimeout(start, 15000);
         return;
       }
@@ -95,7 +96,7 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
       poll = setInterval(load, 5000);
     };
     // العودة للتبويب أثناء وضع القراءة السحابية = قراءة فورية (لا انتظار الدورة)
-    const onVis = () => { if (!document.hidden && cloudPoll) void loadCloud(); };
+    const onVis = () => { if (isPageActive() && cloudPoll) void loadCloud(); };
     document.addEventListener("visibilitychange", onVis);
     void start();
     return () => {

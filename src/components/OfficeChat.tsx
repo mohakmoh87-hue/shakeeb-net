@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePolling } from "@/lib/usePolling";
 
 type Chat = { id: string; name: string; unread: number; timestamp: number; last: string; isGroup: boolean };
 type Msg = { id: string; body: string; fromMe: boolean; timestamp: number; type: string; hasMedia?: boolean };
@@ -45,22 +46,14 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
     if (r.ok) { const d = await r.json(); setMsgs(d.messages ?? []); }
   }, [officeId]);
 
-  // التبويب المخفي يصمت (حمية يقظة Azure 2026-07-30) — وعند العودة يُحدَّث فوراً
-  useEffect(() => {
-    loadChats();
-    const i = setInterval(() => { if (!document.hidden) void loadChats(); }, 6000);
-    const onVis = () => { if (!document.hidden) void loadChats(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(i); document.removeEventListener("visibilitychange", onVis); };
-  }, [loadChats]);
-  useEffect(() => {
-    if (!sel) return;
-    loadMsgs(sel.id);
-    const i = setInterval(() => { if (!document.hidden) void loadMsgs(sel.id); }, 3500);
-    const onVis = () => { if (!document.hidden) void loadMsgs(sel.id); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(i); document.removeEventListener("visibilitychange", onVis); };
-  }, [sel, loadMsgs]);
+  // تحميل أوّليّ للمحادثات + عند تغيّر المكتب
+  useEffect(() => { void loadChats(); }, [loadChats]);
+  // تحديث دوريّ — يصمت عند الإخفاء أو الخمول (حمية يقظة Azure)، ويُستأنف عند العودة
+  usePolling(loadChats, 6000, { runOnMount: false });
+  // فتح محادثة = جلبٌ فوريّ للرسائل
+  useEffect(() => { if (sel) void loadMsgs(sel.id); }, [sel, loadMsgs]);
+  // تحديث دوريّ للرسائل — يصمت عند الإخفاء أو الخمول
+  usePolling(() => { if (sel) void loadMsgs(sel.id); }, 3500, { enabled: !!sel, runOnMount: false });
   // تمرير تلقائي للأسفل فقط عند: فتح محادثة جديدة، أو وصول رسالة جديدة والمستخدم قريب من الأسفل.
   // (يمنع القفز للأسفل أثناء تصفّح الرسائل القديمة مع كل تحديث دوري)
   useEffect(() => {

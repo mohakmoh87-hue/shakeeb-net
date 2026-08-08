@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isNativeApp, getFcmToken } from "@/lib/nativeTracking";
+import { usePolling } from "@/lib/usePolling";
 
 type Notif = { id: number; type: string; title: string; body: string; read: boolean; createdAt: string };
 const ICON: Record<string, string> = { checkin: "🟢", checkout: "🔴", leave: "📅", deduction: "💠", cardDone: "✅" };
@@ -31,15 +32,9 @@ export default function NotificationsBell() {
       if (!d) return; setItems(d.notifications ?? []); setUnread(d.unread ?? 0);
     });
   }, []);
-  // تحديث الجرس كل 60ث — والتبويب المخفي يصمت (حمية يقظة Azure 2026-07-30)،
-  // وعند العودة للتبويب يُحدَّث فوراً؛ الأحداث العاجلة تصل Push فوراً على أي حال
-  useEffect(() => {
-    load();
-    const t = setInterval(() => { if (!document.hidden) load(); }, 60000);
-    const onVis = () => { if (!document.hidden) load(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
-  }, [load]);
+  // تحديث الجرس كل 60ث — يصمت عند الإخفاء أو الخمول (حمية يقظة Azure)، ويُستأنف عند العودة؛
+  // الأحداث العاجلة تصل Push فوراً على أي حال
+  usePolling(load, 60000);
 
   // حالة اشتراك Push الحالية
   useEffect(() => {

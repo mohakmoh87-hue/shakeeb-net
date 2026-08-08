@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { usePolling } from "@/lib/usePolling";
 
 type Done = { id: number; title: string; kind: string | null; amount: number | null; technicianName: string; completedAt: string };
 
@@ -11,30 +12,23 @@ export default function CompletionNotifier() {
   const since = useRef<string>(new Date().toISOString());
   const seen = useRef<Set<number>>(new Set());
 
-  useEffect(() => {
-    let alive = true;
-    async function poll() {
-      try {
-        const r = await fetch(`/api/field/recent-completions?since=${encodeURIComponent(since.current)}`);
-        if (r.ok) {
-          const d = await r.json();
-          const fresh: Done[] = (d.completions ?? []).filter((c: Done) => !seen.current.has(c.id));
-          if (fresh.length) {
-            for (const c of fresh) seen.current.add(c.id);
-            since.current = fresh[fresh.length - 1].completedAt;
-            if (alive) setQueue((q) => [...q, ...fresh]);
-          }
+  const poll = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/field/recent-completions?since=${encodeURIComponent(since.current)}`);
+      if (r.ok) {
+        const d = await r.json();
+        const fresh: Done[] = (d.completions ?? []).filter((c: Done) => !seen.current.has(c.id));
+        if (fresh.length) {
+          for (const c of fresh) seen.current.add(c.id);
+          since.current = fresh[fresh.length - 1].completedAt;
+          setQueue((q) => [...q, ...fresh]);
         }
-      } catch { /* تجاهل */ }
-    }
-    // حمية اليقظة (2026-07-30): التبويب المخفي يصمت (لا طلبات تُبقي خادم Azure صاحياً
-    // بلا مشاهد)، وعند العودة للتبويب يسأل فوراً فلا يفوت شيء. والفاصل 60ث بدل 25.
-    const iv = setInterval(() => { if (!document.hidden) void poll(); }, 60000);
-    const onVis = () => { if (!document.hidden) void poll(); };
-    document.addEventListener("visibilitychange", onVis);
-    poll();
-    return () => { alive = false; clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
+      }
+    } catch { /* تجاهل */ }
   }, []);
+  // حمية اليقظة: لا استطلاع والتبويب مخفيّ أو متروك بلا تفاعل (يُبقي خادم Azure نائماً)،
+  // ويُستأنف فوراً عند العودة فلا يفوت شيء. الفاصل 60ث.
+  usePolling(poll, 60000);
 
   if (queue.length === 0) return null;
   const cur = queue[0];

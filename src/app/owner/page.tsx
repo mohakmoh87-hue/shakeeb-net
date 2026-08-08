@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePolling } from "@/lib/usePolling";
 
 type Manager = { id: number; username: string; plainPassword: string | null };
 type DbSize = { dbHost?: string; dbName?: string; usedMB: number; freeMB?: number; limitMB: number; percent: number; totalRows?: number; tableCount?: number; level: "ok" | "warn" | "danger"; connUsed?: number; connApp?: number; connMax?: number; connLevel?: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
@@ -43,11 +44,8 @@ export default function OwnerPage() {
   const loadDbSize = useCallback(() => {
     fetch("/api/owner/db-size", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setDbSize(d); setDbSizeAt(new Date()); } });
   }, []);
-  useEffect(() => {
-    loadDbSize();
-    const t = setInterval(loadDbSize, 60_000);
-    return () => clearInterval(t);
-  }, [loadDbSize]);
+  // تحديث حجم القاعدة كل دقيقة — يصمت عند الإخفاء أو الخمول (حمية يقظة Azure)
+  usePolling(loadDbSize, 60_000);
   // استخدام الاستضافة (Azure) — يُحدَّث يومياً من مهمة مجدولة؛ نقرؤه عند الفتح فقط
   useEffect(() => {
     fetch("/api/owner/hosting-usage", { cache: "no-store" })

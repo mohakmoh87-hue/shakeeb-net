@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { usePermission } from "@/lib/usePermission";
+import { usePolling } from "@/lib/usePolling";
 
 type Office = {
   id: number;
@@ -365,18 +366,13 @@ function OfficeWhatsApp({ officeId }: { officeId: number }) {
     hint?: string | null; machine?: { name: string | null; online: boolean; minutesAgo: number | null } | null;
   };
   const [st, setSt] = useState<WaSt>({ state: "disconnected", qrImage: null, error: null });
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const poll = useCallback(async () => {
     const r = await fetch(`/api/whatsapp/status?officeId=${officeId}`);
     if (r.ok) setSt(await r.json());
   }, [officeId]);
 
-  useEffect(() => {
-    poll();
-    timer.current = setInterval(poll, 3000);
-    return () => { if (timer.current) clearInterval(timer.current); };
-  }, [poll]);
+  // تحديث حالة الواتساب كل 3ث — يصمت عند الإخفاء أو الخمول (حمية يقظة Azure)، ويُستأنف عند العودة
+  usePolling(poll, 3000);
 
   async function logout() {
     await fetch("/api/whatsapp/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ officeId }) });

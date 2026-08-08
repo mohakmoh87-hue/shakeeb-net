@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import { usePolling } from "@/lib/usePolling";
 
 type Worker = {
   id: number; machineId: string; name: string | null; towerId: number | null;
@@ -28,7 +29,8 @@ export default function HybridWorkersPage() {
       else setLoaded(true);
     });
   }, []);
-  useEffect(() => { load(); const iv = setInterval(load, 15000); return () => clearInterval(iv); }, [load]);
+  // تحميل أوّليّ + تحديث كل 15ث يصمت عند الإخفاء أو الخمول (حمية يقظة Azure)
+  usePolling(load, 15000);
 
   async function savePriority(w: Worker) {
     const val = Number(edits[w.id] ?? w.priority);
