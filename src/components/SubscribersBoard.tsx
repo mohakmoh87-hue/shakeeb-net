@@ -27,7 +27,7 @@ type Subscriber = {
   hasLoan?: boolean; // عليه دين قرضٍ قائم (للوسم والتنبيه ومنع قرضٍ ثانٍ)
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
-type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null; loanMode?: string | null };
+type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null; loanMode?: string | null; rewardsEnabled?: string | null };
 type Receipt = { id: number; date: string | null; dateTo: string | null; money: number | null; moneyIn: number | null; moneyCarry: number | null; cardType: string | null; month: string | null };
 type MaintLog = { id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; amount: number | null; date: string };
 type InvRow = { id: number; number: number | null; date: string | null; totalMy: number | null; waselHim: number | null; type: string | null; note: string | null; subscriberId: number | null };
@@ -90,6 +90,8 @@ export default function SubscribersBoard() {
   // هل المكتب مفعَّل للقرض؟ (loanEnabled يصل ضمن /api/towers لكلّ المستخدمين)
   const officeLoanOn = (towerId: number | null) => towers.find((t) => t.id === towerId)?.loanEnabled === "1";
   const officeLoanMode = (towerId: number | null) => towers.find((t) => t.id === towerId)?.loanMode ?? "activation";
+  // هل نظام المكافآت مفعَّل لهذا المكتب؟ خانة «كود المكافأة» تُخفى إن لم يُفعَّل (طلب محمد)
+  const officeRewardsOn = (towerId: number | null) => towers.find((t) => t.id === towerId)?.rewardsEnabled === "1";
   // مدخل «ديون القروض» يظهر فقط إن وُجد مكتبٌ مفعّلٌ بطريقة «كتفعيل» (هي وحدها تُنشئ ديوناً).
   // إطفاء الميزة أو اختيار «قرض عادي» ⇒ لا ديون ⇒ يُخفى المدخل (طلب محمد 2026-08-07).
   const showLoanDebts = towers.some((t) => t.loanEnabled === "1" && (t.loanMode ?? "activation") !== "normal");
@@ -529,7 +531,7 @@ export default function SubscribersBoard() {
                             title="تسديد دين">
                             الديون <b>{fmt(s.carry)}</b>
                           </button>
-                          <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>
+                          {officeRewardsOn(s.towerId) && <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>}
                           {/* مبلغ الاشتراك = سعر فئة المشترك (طلب محمد) */}
                           <span className="sb-chip c-sub">مبلغ الاشتراك <b>{fmt(packages.find((p) => p.id === s.packageId)?.priceDinar ?? 0)}</b></span>
                           {/* حالة الاتصال من الساس — تُجلب عند الضغط على المشترك فقط، وتُعرض بين المبلغ و«المزيد» */}
