@@ -534,10 +534,14 @@ export default function SubscribersBoard() {
                           {officeRewardsOn(s.towerId) && <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>}
                           {/* مبلغ الاشتراك = سعر فئة المشترك (طلب محمد) */}
                           <span className="sb-chip c-sub">مبلغ الاشتراك <b>{fmt(packages.find((p) => p.id === s.packageId)?.priceDinar ?? 0)}</b></span>
-                          {/* حالة الاتصال من الساس — تُجلب عند الضغط على المشترك فقط، وتُعرض بين المبلغ و«المزيد» */}
+                          {/* حالة الاتصال من الساس — خلفية صلبة واضحة: أخضر للمتصل وأحمر لغير المتصل بكتابة بيضاء (طلب محمد) */}
                           {sasStatus?.id === s.id && (
-                            <span className={`sb-chip ${sasStatus.state === "online" ? "ok" : sasStatus.state === "offline" ? "bad" : ""}`} title="حالة الاتصال من الساس (عند الضغط)">
-                              {sasStatus.state === "loading" ? "⏳ جارٍ الفحص…" : sasStatus.state === "online" ? "🟢 متصل" : sasStatus.state === "offline" ? "🔴 غير متصل" : "⚪ غير معروف"}
+                            <span className="sb-chip" title="حالة الاتصال من الساس (عند الضغط)"
+                              style={{
+                                color: "#fff", fontWeight: 800, border: 0,
+                                background: sasStatus.state === "online" ? "#16a34a" : sasStatus.state === "offline" ? "#dc2626" : sasStatus.state === "loading" ? "#64748b" : "#94a3b8",
+                              }}>
+                              {sasStatus.state === "loading" ? "… جارٍ الفحص" : sasStatus.state === "online" ? "✓ متصل" : sasStatus.state === "offline" ? "✗ غير متصل" : "غير معروف"}
                             </span>
                           )}
                           <button className={`sb-act ${moreMenu ? "on" : ""}`} aria-haspopup="true"
