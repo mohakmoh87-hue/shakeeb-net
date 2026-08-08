@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ownsTower } from "@/lib/guard";
-import { encryptSecret, decryptSecret } from "@/lib/secretbox";
+import { decryptSecret } from "@/lib/secretbox";
 import { odooLogin } from "@/lib/odoo";
 
 // إعداد ربط أودو لمكتب — **للمدير والمستخدم** (كلٌّ لمكتبه) عبر ownsTower.
@@ -59,8 +59,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (parsed.data.odooEnabled != null) data.odooEnabled = parsed.data.odooEnabled;
   if (parsed.data.odooUser != null) data.odooUser = parsed.data.odooUser.trim();
   if (parsed.data.odooUrl != null) data.odooUrl = parsed.data.odooUrl.trim() || null;
-  // كلمة المرور: الفراغ لا يمحو القديم؛ وإلا تُشفَّر
-  if (parsed.data.odooPass != null && parsed.data.odooPass !== "") data.odooPass = encryptSecret(parsed.data.odooPass);
+  // كلمة المرور: الفراغ لا يمحو القديم؛ وإلا تُخزَّن نصّاً صريحاً (كـSAS) ليقرأها العامل بلا مفتاح
+  if (parsed.data.odooPass != null && parsed.data.odooPass !== "") data.odooPass = parsed.data.odooPass;
 
   await prisma.tower.update({ where: { id: towerId }, data });
 

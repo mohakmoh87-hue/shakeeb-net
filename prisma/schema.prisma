@@ -160,7 +160,7 @@ model Tower {
   // ربط تذاكر أودو (Helpdesk) — إعداد للمكتب (مدير أو مستخدم). العمليّات محليّة على العامل حصراً (لا سحابة).
   odooEnabled String? @default("0") // 1 = تفعيل ربط أودو لهذا المكتب
   odooUser    String? // مستخدم بوّابة أودو للمكتب — لا يُرسَل بصيغته الخام لغير مكتبه
-  odooPass    String? // كلمة مرور أودو — مشفّرة عبر secretbox (enc:v1:)
+  odooPass    String? // كلمة مرور أودو — نصٌّ صريح (كـSAS): يقرؤها العامل المحليّ بلا مفتاح تشفير. لا تُعرَض في أيّ واجهة/API.
   odooUrl     String? @default("https://odoo.supercell.iq") // أساس بوّابة أودو
   odooUid     Int? // uid حساب المكتب في أودو (يُملأ عند أوّل دخول ناجح — لمطابقة Assigned to)
   odooLastOk  DateTime? // آخر دخول ناجح للعامل (الشارة الديناميّة: أخضر/أحمر)

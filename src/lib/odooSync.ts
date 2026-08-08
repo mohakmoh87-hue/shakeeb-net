@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { isLeaderNow, getWorkerAgentId } from "@/lib/hybridAgent";
-import { decryptSecret } from "@/lib/secretbox";
 import { appendCardHistory } from "@/lib/field";
 import { upsertOdooCard, countOpenOdooCards } from "@/lib/odooCards";
 import {
@@ -28,7 +27,7 @@ async function officeSession(o: OfficeRow): Promise<OdooSession> {
   const now = Date.now();
   const c = sessionCache.get(o.id);
   if (c && now - c.at < SESSION_TTL) return c.s;
-  const pass = decryptSecret(o.odooPass) ?? "";
+  const pass = o.odooPass ?? ""; // نصٌّ صريح (كـSAS) — العامل لا يملك مفتاح التشفير
   const s = await odooLogin(o.odooUrl, o.odooUser ?? "", pass);
   sessionCache.set(o.id, { s, at: now });
   return s;

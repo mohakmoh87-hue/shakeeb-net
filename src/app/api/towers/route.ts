@@ -69,6 +69,10 @@ export async function GET() {
     // بيانات القرض للمدير حصراً: يراها مفكوكةً؛ غيره لا يراها (يبقى loanEnabled + hasLoanCreds)
     if (isAdmin) row.loanPass = decryptSecret(t.loanPass);
     else { delete row.loanUser; delete row.loanPass; }
+    // أودو: كلمة المرور نصٌّ صريح — لا تُعاد أبداً؛ واسم المستخدم لمديري المكاتب فقط (تُدار عبر مسار /odoo)
+    row.hasOdooCreds = !!(t.odooUser && t.odooPass);
+    delete row.odooPass;
+    if (!canManage) delete row.odooUser;
     return row;
   });
   return NextResponse.json(safe);

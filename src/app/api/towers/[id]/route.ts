@@ -101,6 +101,7 @@ export async function PUT(
   const row: Record<string, unknown> = { ...updated };
   if (g.session?.isAdmin) row.loanPass = decryptSecret(updated.loanPass);
   else { delete row.loanUser; delete row.loanPass; }
+  delete row.odooPass; // أودو نصٌّ صريح — لا يُعاد أبداً
   return NextResponse.json(row);
 }
 
