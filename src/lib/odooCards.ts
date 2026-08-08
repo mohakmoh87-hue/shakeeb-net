@@ -35,7 +35,8 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket)
   if (ticket.phone) descLines.push(`📱 الهاتف: ${ticket.phone}`); // يظهر على وجه البطاقة (phoneOf)
   // اليوزر من حقل bg بالتذكرة (bg-7-26-2@mu) — للخريطة والمطابقة (سطر «اليوزر:» يقرؤه المنطق القائم)
   if (ticket.bg) descLines.push(`👤 اليوزر: ${ticket.bg}`);
-  if (ticket.fdt || ticket.fat) descLines.push(`🗺️ FDT/FAT: ${ticket.fdt ?? "—"} / ${ticket.fat ?? "—"}`);
+  // كلّ رقمٍ ملصقٌ بتسميته — صيغة «FDT/FAT: 7 / 26» كان الـRTL يقلب رقميها بصريّاً فتُقرأ معكوسة
+  if (ticket.fdt || ticket.fat) descLines.push(`🗺️ FDT: ${ticket.fdt ?? "—"} · FAT: ${ticket.fat ?? "—"}`);
   if (ticket.issueType || ticket.typeName) descLines.push(`🏷️ النوع: ${ticket.issueType ?? ticket.typeName}`);
   descLines.push(`🔗 عبر أودو — تذكرة #${ticket.id}`);
   if (usernameRequired) descLines.push("⚠️ إدخال اليوزر (BG) إلزاميّ عند الإنجاز — بصيغة bg-x-x-x@x");
@@ -59,11 +60,16 @@ export async function refreshOdooCard(cardId: number, ticket: OdooTicket): Promi
   const data: Record<string, unknown> = {};
   const req = !bgIsSet(ticket.bg);
   if (req !== card.usernameRequired) data.usernameRequired = req;
-  const desc = card.description ?? "";
+  let desc = card.description ?? "";
+  // استبدال السطر القديم الملتبس «FDT/FAT: X / Y» (كان يظهر معكوساً بالـRTL) بالصيغة الملصقة
+  if ((ticket.fdt || ticket.fat) && /🗺️\s*FDT\/FAT:/.test(desc)) {
+    desc = desc.replace(/🗺️\s*FDT\/FAT:[^\n]*/, `🗺️ FDT: ${ticket.fdt ?? "—"} · FAT: ${ticket.fat ?? "—"}`);
+    if (desc !== (card.description ?? "")) data.description = desc;
+  }
   const add: string[] = [];
   if (ticket.phone && !/📱\s*الهاتف:/.test(desc)) add.push(`📱 الهاتف: ${ticket.phone}`);
   if (ticket.bg && !/👤\s*اليوزر:/.test(desc)) add.push(`👤 اليوزر: ${ticket.bg}`);
-  if ((ticket.fdt || ticket.fat) && !/FDT\/FAT/.test(desc)) add.push(`🗺️ FDT/FAT: ${ticket.fdt ?? "—"} / ${ticket.fat ?? "—"}`);
+  if ((ticket.fdt || ticket.fat) && !/FDT/.test(desc)) add.push(`🗺️ FDT: ${ticket.fdt ?? "—"} · FAT: ${ticket.fat ?? "—"}`);
   if (add.length) data.description = (desc ? desc + "\n" : "") + add.join("\n");
   if (Object.keys(data).length) await prisma.taskCard.update({ where: { id: cardId }, data });
 }
