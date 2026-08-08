@@ -166,6 +166,34 @@ export async function sasFetchOnlineCount(base: string, token: string): Promise<
   return null;
 }
 
+// حالة اتصال مستخدمٍ واحد الآن (متّصل/غير متّصل): نبحث عن يوزره في قائمة المتّصلين
+// (index/online + search). ظهوره حرفيّاً = متّصل. يعيد true/false، أو null عند التعذّر
+// (خطأ/جلسة منتهية) أو حين لا يُطبّق الخادم البحث (فلا نجزم بعدم الاتصال خطأً).
+export async function sasFetchUserOnline(base: string, token: string, username: string): Promise<boolean | null> {
+  const q = username.trim();
+  if (!q) return null;
+  const candidates = onlineRouteCache.has(base)
+    ? [onlineRouteCache.get(base)!]
+    : ["index/online", "index/online_user"];
+  for (const route of candidates) {
+    try {
+      const raw = await sasPost(base, route, { page: 1, count: 50, search: q }, token);
+      const j = JSON.parse(raw.text);
+      if (typeof j?.total === "number") {
+        onlineRouteCache.set(base, route);
+        const rows = (j.data ?? []) as Record<string, unknown>[];
+        // متّصل إن ظهر يوزره حرفيّاً في أيّ حقلٍ من صفوف المتّصلين (شكل الصف يختلف بين الخوادم)
+        const found = rows.some((r) => Object.values(r).some((v) => typeof v === "string" && v.toLowerCase() === q.toLowerCase()));
+        if (found) return true;
+        // إن بقيت نتائج لم نرها (total أكبر من الصفحة ⇒ البحث غالباً غير مُطبَّق) فلا نجزم بعدم الاتصال
+        if (j.total > rows.length) return null;
+        return false; // رأينا كلّ النتائج ولا تطابق تامّ ⇒ غير متّصل
+      }
+    } catch { /* جرّب المسار التالي */ }
+  }
+  return null;
+}
+
 // إيجاد مشترك واحد بيوزره عبر بحث قائمة SAS (index/user + search) — يعيد بياناته
 // الكاملة كما تعرضها اللوحة (الاسم/الهاتف/الباقة/الانتهاء/الحالة). للاستبدال (2026-07-30):
 // محمد يحدّث معلومات الساكن الجديد في SAS أولاً ثم يسحبها الموقع تلقائياً بلا ملء يدوي.

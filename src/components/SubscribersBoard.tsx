@@ -57,6 +57,8 @@ export default function SubscribersBoard() {
   const [query, setQuery] = useState("");
   const [showAllTowers, setShowAllTowers] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // حالة اتصال المشترك من الساس — تُجلب عند الضغط على المشترك فقط (لا استطلاع)
+  const [sasStatus, setSasStatus] = useState<{ id: number; state: "loading" | "online" | "offline" | "unknown" } | null>(null);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [msg, setMsg] = useState("");
   const [delMenu, setDelMenu] = useState(false);
@@ -224,13 +226,23 @@ export default function SubscribersBoard() {
       .catch(() => {});
   }
 
+  // حالة اتصال المشترك من الساس (متصل/غير متصل) — تُطلَب عند الضغط على المشترك فقط، بأسرع ما يمكن
+  function fetchSasStatus(s: Subscriber) {
+    setSasStatus({ id: s.id, state: "loading" });
+    fetch(`/api/subscribers/${s.id}/sas-status`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setSasStatus((prev) => (prev?.id === s.id ? { id: s.id, state: d == null ? "unknown" : d.online === true ? "online" : d.online === false ? "offline" : "unknown" } : prev)))
+      .catch(() => setSasStatus((prev) => (prev?.id === s.id ? { id: s.id, state: "unknown" } : prev)));
+  }
+
   // الضغط على صفّ: يفتح شريط الخيارات؛ الضغط على الصفّ المفتوح يغلقه
   function selectRow(s: Subscriber) {
-    if (selectedId === s.id) { setSelectedId(null); setMoreMenu(false); return; }
+    if (selectedId === s.id) { setSelectedId(null); setMoreMenu(false); setSasStatus(null); return; }
     setSelectedId(s.id); setMoreMenu(false);
     // تنبيه القرض: يظهر عند كلّ ضغطةٍ على مشترك عليه قرضٌ قائم (طلب محمد)
     setMsg(s.hasLoan ? "💳 تنبيه: هذا المشترك لديه قرضٌ قائم" : "");
     checkWhatsApp(s);
+    fetchSasStatus(s); // حالة الاتصال من الساس — عند الضغط فقط
   }
 
   // ===== السجلات (نوافذ) =====
@@ -520,6 +532,12 @@ export default function SubscribersBoard() {
                           <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>
                           {/* مبلغ الاشتراك = سعر فئة المشترك (طلب محمد) */}
                           <span className="sb-chip c-sub">مبلغ الاشتراك <b>{fmt(packages.find((p) => p.id === s.packageId)?.priceDinar ?? 0)}</b></span>
+                          {/* حالة الاتصال من الساس — تُجلب عند الضغط على المشترك فقط، وتُعرض بين المبلغ و«المزيد» */}
+                          {sasStatus?.id === s.id && (
+                            <span className={`sb-chip ${sasStatus.state === "online" ? "ok" : sasStatus.state === "offline" ? "bad" : ""}`} title="حالة الاتصال من الساس (عند الضغط)">
+                              {sasStatus.state === "loading" ? "⏳ جارٍ الفحص…" : sasStatus.state === "online" ? "🟢 متصل" : sasStatus.state === "offline" ? "🔴 غير متصل" : "⚪ غير معروف"}
+                            </span>
+                          )}
                           <button className={`sb-act ${moreMenu ? "on" : ""}`} aria-haspopup="true"
                             onClick={(e) => {
                               e.stopPropagation();
