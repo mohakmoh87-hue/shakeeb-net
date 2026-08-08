@@ -150,14 +150,24 @@ export default function SubscribersBoard() {
   // اختيار الفني (اختياري تماماً — كالهاتف والملاحظة): فارغ ⇒ التوزيع التلقائي إن كان مفعَّلاً
   const [opsTech, setOpsTech] = useState("");
   const [opsTechs, setOpsTechs] = useState<{ id: number; name: string }[]>([]);
-  // عمليّات ديناميّة = أنواع الوكيل (كلّ نوع/عمود يظهر خياراً تلقائيّاً)
+  // عمليّات ديناميّة = أعمدة **مكتب المشترك** حصراً (عزل مكاتب — طلب محمد 2026-08-08؛
+  // والمدير كذلك يرى أعمدة مكتب المشترك المعنيّ فقط). تُجلب عند فتح النافذة، بكاشٍ لكلّ مكتب.
   const [ops, setOps] = useState<{ key: string; icon: string }[]>(FIELD_OPS);
-  useEffect(() => {
-    fetch("/api/field/card-types").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      const t = Array.isArray(d?.types) ? d.types : [];
-      if (t.length) setOps(t.map((x: { name: string }) => ({ key: x.name, icon: opIcon(x.name) })));
+  const opsCache = useRef<Map<number, { key: string; icon: string }[]>>(new Map());
+  function loadOps(towerId: number | null) {
+    setOps(FIELD_OPS); // افتراضيّ ريثما يصل ردّ المكتب
+    if (towerId == null) return;
+    const cached = opsCache.current.get(towerId);
+    if (cached) { setOps(cached); return; }
+    fetch(`/api/field/ops?officeId=${towerId}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      const names: string[] = Array.isArray(d?.ops) ? d.ops : [];
+      if (names.length) {
+        const list = names.map((n) => ({ key: n, icon: opIcon(n) }));
+        opsCache.current.set(towerId, list);
+        setOps(list);
+      }
     }).catch(() => {});
-  }, []);
+  }
   // تسديد دين
   const [payDebtOpen, setPayDebtOpen] = useState(false);
   // استبدال المشترك (نفس اليوزر لساكن جديد) — بياناته تُسحب من SAS تلقائياً بلا ملء يدوي
@@ -518,7 +528,7 @@ export default function SubscribersBoard() {
                   </td>
                   <td>{s.name}{s.hasLoan && <span className="loan-badge" title="لديه قرض قائم">قرض</span>}</td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <button className="op" title="عمليات المشترك" onClick={() => { setOpsSub(s); setOpsMsg(""); loadOpsTechs(s.towerId); }}>🛠️</button>
+                    <button className="op" title="عمليات المشترك" onClick={() => { setOpsSub(s); setOpsMsg(""); loadOpsTechs(s.towerId); loadOps(s.towerId); }}>🛠️</button>
                   </td>
                   <td dir="ltr">{s.netUser ?? "—"}</td>
                   <td className="num" dir="ltr">{s.phone ?? "—"}</td>
