@@ -70,7 +70,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
           // ونفس الخدمة تُوقظها FCM حين يكون التطبيق مُغلَقاً. تعمل والتطبيق مُبعَد.
           void startNativeTracking();
         } else if (!locTimer) {
-          sendLoc(); locTimer = setInterval(sendLoc, 30_000); // المتصفح: إرسال فوري ثم كل 30ث
+          sendLoc(); locTimer = setInterval(sendLoc, 60_000); // المتصفح: إرسال فوري ثم كل 60ث (طلب محمد 2026-08-08)
         }
       } else {
         setTrackReq(false); setGeoBlocked(false);
@@ -79,7 +79,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     };
     check();
     // فحص «هل التتبع مطلوب؟» كل 60ث (كان 30ث) — حمية بولنغ: يخفّض طلبات كل فني طوال
-    // اليوم للنصف. عند تفعيل التتبع فعلاً يبقى إرسال الموقع كل 30ث (جودة التتبع كما هي)،
+    // اليوم للنصف. وعند تفعيل التتبع فعلاً صار إرسال الموقع كل 60ث (كان 30ث — طلب محمد)،
     // والتطبيق الأصلي يُوقَظ فورياً عبر FCM أصلاً.
     const checkTimer = setInterval(check, 60_000);
     return () => { stopped = true; clearInterval(checkTimer); stopLoc(); };
