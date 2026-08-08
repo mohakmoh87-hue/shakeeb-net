@@ -94,6 +94,7 @@ export default function FieldManagementPage() {
   const router = useRouter();
   const [board, setBoard] = useState<Board | null>(null);
   const [lists, setLists] = useState<List[]>([]);
+  const [odooActive, setOdooActive] = useState(false); // أودو نشط للمكتب المعروض (مفعّل أو به بطاقات مفتوحة) — يحكم إظهار عمود «تذاكر أودو»
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [newList, setNewList] = useState("");
@@ -169,7 +170,7 @@ export default function FieldManagementPage() {
     const q = office != null ? `?officeId=${office}` : "";
     fetch(`/api/field/board${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (d) {
-        setBoard(d.board); setLists(d.lists); setCards(d.cards);
+        setBoard(d.board); setLists(d.lists); setCards(d.cards); setOdooActive(!!d.odooActive);
         setTechnicians(d.technicians ?? []); setOffices(d.offices ?? []);
         setCardTypes(d.cardTypes ?? []); setOfficeId(d.officeId ?? null);
         setIsManager(!!d.isManager); setCanManage(!!d.canManage); setRole(d.role ?? "");
@@ -746,6 +747,8 @@ export default function FieldManagementPage() {
           </div>
         )}
         {lists.map((l, listIdx) => {
+          // عمود «تذاكر أودو» يظهر فقط حين «أودو نشط» (مفعّل أو به بطاقات مفتوحة) — يُخفى إن خمد
+          if (!odooActive && l.name === "تذاكر أودو") return null;
           // البطاقات المنجزة تنتقل لعمود «المنجزة» فتُستبعَد من عمودها الأصلي
           const listCards = cards.filter((c) => c.listId === l.id && !c.done).sort((a, b) => a.position - b.position);
           const dragThisList = drag?.kind === "list" && drag.id === l.id;
@@ -1461,8 +1464,9 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   const fullFields = !isDelivery && !isTransfer; // صيانة/تنصيب/اعادة: تفاصيل كاملة
   // «التدفق الكامل» = كل الأنواع عدا التوصيل (يشمل التحويل بشروطه القديمة + الجديدة):
   // مواد متسلسلة + «المبيع» + «اشتراك»
-  const fullFlow = !isDelivery;
-  const odooBgRequired = !!card.viaOdoo && !!card.usernameRequired; // بطاقة أودو تشترط اليوزر
+  const isOdoo = !!card.viaOdoo; // بطاقة أودو = بطاقة عاديّة (قد يُباع للمشترك) — تُضاف فقط BG عند الإنجاز
+  const fullFlow = !isDelivery; // أودو ضمن التدفّق الكامل (مبيع/مواد/اشتراك متاحة كأيّ بطاقة)
+  const odooBgRequired = isOdoo && !!card.usernameRequired; // بطاقة أودو تشترط اليوزر
   const [odooBg, setOdooBg] = useState("");
   const [details, setDetails] = useState("");
   const [newUser, setNewUser] = useState("");
@@ -1578,7 +1582,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
       if (odooBgRequired && !/^bg-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-?@[a-z0-9]+$/i.test(odooBg.trim())) {
         setErr("أدخل اليوزر (BG) بصيغة bg-x-x-x@x"); return;
       }
-      // القائمة الأولى إلزامية: مادة أو «بلا مبيع»
+      // القائمة الأولى إلزامية: مادة أو «بلا مبيع» (أودو كأيّ بطاقة — قد يُباع للمشترك)
       if (pickedRows.length === 0 && !noSale) { setErr("اختر مادة من ذمّتك أو «بلا مبيع» (إلزامي)"); return; }
       // «المبيع»: 0 جائز، وما فوقه ≥ 1000
       if (nSale > 0 && nSale < 1000) { setErr("مبلغ المبيع لا يقل عن 1000 دينار (أو صفر)"); return; }
@@ -1609,7 +1613,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={onClose}>
       <div className="flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
-          <h3 className="text-lg font-bold text-slate-800">{isTransfer ? "🔁 إنجاز تحويل" : isDelivery ? "🚚 إنجاز توصيل" : "🔧 إنجاز صيانة"}: {card.title}</h3>
+          <h3 className="text-lg font-bold text-slate-800">{isTransfer ? "🔁 إنجاز تحويل" : isDelivery ? "🚚 إنجاز توصيل" : isOdoo ? "🔗 إنجاز تذكرة أودو" : "🔧 إنجاز صيانة"}: {card.title}</h3>
           <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
         </div>
         {/* الجسم القابل للتمرير — الأزرار في تذييل ثابت أسفله فلا تتداخل */}
@@ -1625,7 +1629,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
 
         {fullFields && (
           <>
-            <label className="mb-1 block text-xs font-semibold text-slate-500">تفاصيل الصيانة <span className="text-red-500">*</span></label>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">{isOdoo ? "ملاحظة الإنجاز (تُرسَل إلى أودو)" : "تفاصيل الصيانة"} <span className="text-red-500">*</span></label>
             <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={3} placeholder="ماذا تمّ من عمل..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           </>
         )}
