@@ -3,9 +3,10 @@ import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
 import { bgIsSet, type OdooTicket } from "@/lib/odoo";
 
 // ===== بطاقات تذاكر أودو في لوحة إدارة الفنيين — يعيد استعمال TaskCard/TaskList القائمين =====
-export const ODOO_LIST_NAME = "تذاكر أودو";
-// اسم فئة sentinel لا يقابله CardType ⇒ البطاقة «بلا فئة»: لا لون فئة، لا خصم وقت، لا نقل قسريّ.
-export const ODOO_KIND = "تذاكر أودو";
+export const ODOO_LIST_NAME = "تذاكر أودو"; // اسم عمود الوصول (صندوق وارد) — ليس فئة
+
+// بطاقة أودو تأتي **بلا فئة** (kind فارغ): لا فئة «أودو»، ولا لون فئة، ولا خصم وقت.
+// التمييز البصريّ = وسمٌ جانبيّ عاموديّ (viaOdoo) يُصيّره العميل، لونه لون الفئة عند إسنادها.
 
 // العمود «تذاكر أودو» للوحة المكتب — يُنشأ إن لم يوجد (بلا CardType ⇒ بلا فئة)
 export async function getOrCreateOdooList(towerId: number | null) {
@@ -41,7 +42,7 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket)
   const card = await prisma.taskCard.create({
     data: {
       listId: list.id, title, description: descLines.join("\n"), position,
-      kind: ODOO_KIND, viaOdoo: true, odooTicketId: ticket.id, usernameRequired,
+      kind: "", viaOdoo: true, odooTicketId: ticket.id, usernameRequired, // بلا فئة — الوسم الجانبيّ يميّزها
     },
   });
   await appendCardHistory(card.id, "أودو", `سُحبت من أودو (تذكرة #${ticket.id})${usernameRequired ? " — يوزر إلزاميّ" : ""}`);

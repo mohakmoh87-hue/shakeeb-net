@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { guard } from "@/lib/guard";
+import { ensureFieldDefaults } from "@/lib/fieldDefaults";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  // يضمن الأنواع/الأعمدة القياسيّة للوكيل ويُصلح القائمين (مرّة لكلّ وكيل في عمر العمليّة)
+  await ensureFieldDefaults(s.agentId ?? null);
   const types = await prisma.cardType.findMany({
     where: { isDeleted: false, agentId: s.agentId ?? -1 }, orderBy: [{ position: "asc" }, { id: "asc" }],
   });

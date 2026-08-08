@@ -794,6 +794,9 @@ export default function FieldManagementPage() {
                   // ترتيب البطاقة بين الظاهرات (بعد استبعاد المسحوبة) — عليه تُحسب الإزاحة
                   const visIdx = drag?.kind === "card" && drag.fromList === l.id && cardIdx > listCards.findIndex((x) => x.id === drag.id) ? cardIdx - 1 : cardIdx;
                   const shift = dragged ? 0 : cardShift(l.id, visIdx);
+                  const isOdoo = !!c.viaOdoo; // بطاقة واردة من أودو
+                  const odooInbox = isOdoo && l.name === "تذاكر أودو"; // غير مُصنّفة بعد (صندوق الوارد)
+                  const odooColor = l.name && l.name !== "تذاكر أودو" ? catColorOf(l.name) : "#7c3aed"; // لون الفئة إن أُسندت، وإلا بنفسجيّ افتراضيّ
                   return (
                   <div
                     key={c.id}
@@ -806,8 +809,15 @@ export default function FieldManagementPage() {
                       ...(shift ? { transform: `translateY(${shift}px)` } : null),
                       transition: drag ? "transform .18s cubic-bezier(.2,.8,.2,1)" : undefined,
                     }}
-                    className={`cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md ${dragged ? "fm-collapsing" : ""}`}
+                    className={`relative overflow-hidden cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md ${isOdoo ? "pl-7" : ""} ${dragged ? "fm-collapsing" : ""}`}
                   >
+                    {/* وسم «أودو» عاموديّ على الحافّة اليسرى: كلمةٌ مُدوَّرة ككتلة (transform) فتبقى حروفها موصولة،
+                        لونها لون الفئة إن أُسندت وإلا بنفسجيّ — يبقى دائماً على بطاقة أودو */}
+                    {isOdoo && (
+                      <div className="absolute inset-y-0 left-0 flex w-5 items-center justify-center" style={{ background: `${odooColor}1f` }} title="بطاقة واردة من أودو">
+                        <span className="text-[11px] font-extrabold leading-none" style={{ color: odooColor, transform: "rotate(-90deg)" }}>أودو</span>
+                      </div>
+                    )}
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
                     {/* على الوجه: هاتف النافذة المنبثقة إن وُجد وإلا الرقم المخزون + الملاحظة — واسم المشترك يظهر بفتح البطاقة فقط */}
                     {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
@@ -828,7 +838,8 @@ export default function FieldManagementPage() {
                       {/* اللون والأيقونة من **العمود** الذي تسكنه البطاقة لا من فئتها: بطاقة صيانة
                           نُقلت إلى عمود تنصيب تأخذ لون التنصيب وخصائصه — ويبقى اسمها «صيانة»
                           كما هو (طلب محمد 2026-08-05). فالعمود هو مكان العمل، والفئة هوية العمل. */}
-                      <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(l.name ?? c.kind)}`} style={!isTech ? { background: catColorOf(l.name ?? "") } : undefined}>{isDeliveryKind(l.name ?? c.kind) ? "🚚" : "🔧"} {c.kind}</span>
+                      {/* شارة الفئة: تُخفى لبطاقة أودو غير المُصنّفة (لا فئة — يميّزها الوسم العاموديّ) */}
+                      {!odooInbox && <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(l.name ?? c.kind)}`} style={!isTech ? { background: catColorOf(l.name ?? "") } : undefined}>{isDeliveryKind(l.name ?? c.kind) ? "🚚" : "🔧"} {c.kind}</span>}
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
                       {c.dueDate && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 {fmtDue(c.dueDate)}</span>}
                       {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة {c.amount != null ? `— ${Number(c.amount).toLocaleString("en-US")}` : ""}</span>}

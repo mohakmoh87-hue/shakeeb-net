@@ -3,11 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower, agentTowerIds } from "@/lib/guard";
 import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
 import { autoAssignOn, pickAssignee, verifyManualAssignee } from "@/lib/autoAssign";
+import { isSystemList, ensureCardType } from "@/lib/fieldDefaults";
 
 export const dynamic = "force-dynamic";
 
-// خيارات العمليات المسموحة — كل خيار يقابل عموداً في لوحة إدارة الفنيين بنفس الاسم
-const OPERATIONS = ["صيانة", "اعادة", "توصيل", "تحويل"] as const;
+// العمليّات ديناميّة = أنواع الوكيل (طلب محمد 2026-08-08): أيّ اسمٍ غير نظاميٍّ مقبول،
+// ويقابل عموداً في اللوحة بنفس الاسم + نوعاً في «الأنواع والأوقات».
 
 // إنشاء بطاقة في لوحة إدارة الفنيين انطلاقاً من مشترك:
 // يأخذ معلومات المشترك (الاسم، الهاتف، اليوزر) ويضعها في العمود الذي يحمل اسم
@@ -29,8 +30,9 @@ export async function POST(request: Request) {
   // اختيار الفني (اختياري) — يُتحقَّق منه لاحقاً بعد معرفة مكتب المشترك
   const wantedTech = body?.technicianId != null ? Number(body.technicianId) : null;
   if (!subscriberId) return NextResponse.json({ error: "معرّف المشترك مطلوب" }, { status: 400 });
-  if (!OPERATIONS.includes(operation as (typeof OPERATIONS)[number])) {
-    return NextResponse.json({ error: "عملية غير معروفة" }, { status: 400 });
+  // ديناميّ: أيّ عمليّة غير فارغةٍ وغير نظاميّة (العميل يعرض أنواع الوكيل)
+  if (!operation || isSystemList(operation)) {
+    return NextResponse.json({ error: "عملية غير صالحة" }, { status: 400 });
   }
 
   const sub = await prisma.subscriber.findFirst({
@@ -83,6 +85,8 @@ export async function POST(request: Request) {
     const count = await prisma.taskList.count({ where: { boardId: board.id, isDeleted: false } });
     list = await prisma.taskList.create({ data: { boardId: board.id, name: operation, position: count } });
   }
+  // ربطٌ تلقائيّ: يضمن نوع «الأنواع والأوقات» لهذه العمليّة (عزلٌ بوكيل المشترك)
+  await ensureCardType(sub.towerId != null ? g.session?.agentId ?? null : null, operation);
 
   // العنوان = اليوزر (يظهر على وجه البطاقة، لا اسم المشترك). الاسم والرقم المخزون في الوصف
   // (يظهران بفتح البطاقة فقط). الهاتف الإضافي والملاحظة (إن كُتبا) يظهران على الوجه أيضاً.

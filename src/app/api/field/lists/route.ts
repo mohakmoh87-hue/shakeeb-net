@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 import { agentOwnsBoard, agentOwnsList } from "@/lib/field";
+import { ensureCardType } from "@/lib/fieldDefaults";
 
 // إدارة الأعمدة للمدير فقط (field.manage) — إضافة/تسمية/حذف/تحديد «محسوب بالوقت».
 
@@ -14,6 +15,8 @@ export async function POST(request: Request) {
   if (!(await agentOwnsBoard(g.session, Number(b.boardId)))) return NextResponse.json({ error: "اللوحة لا تتبع حسابك" }, { status: 403 });
   const count = await prisma.taskList.count({ where: { boardId: Number(b.boardId), isDeleted: false } });
   const created = await prisma.taskList.create({ data: { boardId: Number(b.boardId), name: String(b.name).trim(), position: count, timeTracked: !!b.timeTracked } });
+  // ربطٌ تلقائيّ: إنشاء عمودٍ جديد يُنشئ نوعه في «الأنواع والأوقات» بنفس الاسم (يتخطّى النظاميّة)
+  await ensureCardType(g.session?.agentId ?? null, created.name);
   return NextResponse.json(created, { status: 201 });
 }
 

@@ -32,10 +32,14 @@ type Receipt = { id: number; date: string | null; dateTo: string | null; money: 
 type MaintLog = { id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; amount: number | null; date: string };
 type InvRow = { id: number; number: number | null; date: string | null; totalMy: number | null; waselHim: number | null; type: string | null; note: string | null; subscriberId: number | null };
 
-const FIELD_OPS = [
-  { key: "صيانة", icon: "🔧" }, { key: "اعادة", icon: "🔁" },
-  { key: "توصيل", icon: "🔌" }, { key: "تحويل", icon: "↪️" },
-] as const;
+// أيقونات العمليّات المعروفة (أيّ نوعٍ إضافيّ يأخذ 🛠️)
+const OP_ICONS: Record<string, string> = { "صيانة": "🔧", "اعادة": "🔁", "توصيل": "🔌", "تحويل": "↪️", "تنصيب": "🛠️" };
+const opIcon = (name: string): string => OP_ICONS[String(name).trim()] ?? "🛠️";
+// القائمة الافتراضيّة (تُستبدَل ديناميّاً بأنواع الوكيل عند الجلب) — القياسيّة الخمسة
+const FIELD_OPS: { key: string; icon: string }[] = [
+  { key: "صيانة", icon: "🔧" }, { key: "تنصيب", icon: "🛠️" }, { key: "تحويل", icon: "↪️" },
+  { key: "توصيل", icon: "🔌" }, { key: "اعادة", icon: "🔁" },
+];
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
 const daysLeft = (dateTo: string | null) => {
@@ -146,6 +150,14 @@ export default function SubscribersBoard() {
   // اختيار الفني (اختياري تماماً — كالهاتف والملاحظة): فارغ ⇒ التوزيع التلقائي إن كان مفعَّلاً
   const [opsTech, setOpsTech] = useState("");
   const [opsTechs, setOpsTechs] = useState<{ id: number; name: string }[]>([]);
+  // عمليّات ديناميّة = أنواع الوكيل (كلّ نوع/عمود يظهر خياراً تلقائيّاً)
+  const [ops, setOps] = useState<{ key: string; icon: string }[]>(FIELD_OPS);
+  useEffect(() => {
+    fetch("/api/field/card-types").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      const t = Array.isArray(d?.types) ? d.types : [];
+      if (t.length) setOps(t.map((x: { name: string }) => ({ key: x.name, icon: opIcon(x.name) })));
+    }).catch(() => {});
+  }, []);
   // تسديد دين
   const [payDebtOpen, setPayDebtOpen] = useState(false);
   // استبدال المشترك (نفس اليوزر لساكن جديد) — بياناته تُسحب من SAS تلقائياً بلا ملء يدوي
@@ -838,7 +850,7 @@ export default function SubscribersBoard() {
               {!opsChosen ? (
                 <>
                   <div className="ops-grid">
-                    {FIELD_OPS.map((op) => (
+                    {ops.map((op) => (
                       <button key={op.key} disabled={opsBusy} className="ops-btn"
                         onClick={() => { setOpsChosen(op.key); setOpsPhone(""); setOpsNote(""); }}>
                         <span className="e">{op.icon}</span>
@@ -850,7 +862,7 @@ export default function SubscribersBoard() {
                 </>
               ) : (
                 <>
-                  <div className="ops-chip">{FIELD_OPS.find((o) => o.key === opsChosen)?.icon} {opsChosen}</div>
+                  <div className="ops-chip">{ops.find((o) => o.key === opsChosen)?.icon} {opsChosen}</div>
                   {opsChosen === "توصيل" && (
                     <>
                       {/* مبلغ الاشتراك: من باقة المشترك تلقائياً — لا يُكتب يدوياً (قرار محمد 2026-08-05) */}
