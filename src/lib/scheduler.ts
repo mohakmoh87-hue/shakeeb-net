@@ -324,14 +324,15 @@ export function startScheduler() {
         runExpiringReminder(due).catch((e) => console.error("[scheduler] expiring:", e));
       }
     }
-    // رسائل الديون اليومية: لمكاتب فعّلت الخانة، بوقت تذكير المكتب (أو وقت الوكيل العام).
+    // رسائل الديون اليومية: لمكاتب فعّلت الخانة، بوقتها الخاص debtReminderTime (أو وقت تذكير المكتب/الوكيل).
     // عزل: مكاتب وكيل هذا العامل حصراً (agentId).
     {
       const debtOffs = await prisma.tower.findMany({
         where: { isDeleted: false, debtReminderEnabled: "1", NOT: { waEnabled: "0" }, ...(wAgent != null ? { agentId: wAgent } : {}) },
-        select: { id: true, reminderTime: true },
-      }).catch(() => [] as { id: number; reminderTime: string | null }[]);
-      const dueDebt = debtOffs.filter((o) => (o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
+        select: { id: true, reminderTime: true, debtReminderTime: true },
+      }).catch(() => [] as { id: number; reminderTime: string | null; debtReminderTime: string | null }[]);
+      // وقتٌ خاصّ برسائل الديون إن وُجد، وإلّا يتبع وقت تذكير الانتهاء (ثمّ وقت الوكيل العام)
+      const dueDebt = debtOffs.filter((o) => (o.debtReminderTime?.trim() || o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
       if (dueDebt.length) {
         runDebtReminder(dueDebt).catch((e) => console.error("[scheduler] debtReminder:", e));
       }

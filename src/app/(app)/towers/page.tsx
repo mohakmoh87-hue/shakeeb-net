@@ -22,6 +22,7 @@ type Office = {
   syncTime: string | null;
   syncEnabled: string | null;
   debtReminderEnabled: string | null;
+  debtReminderTime: string | null;
   autoAssignEnabled?: boolean;
   reminderTime: string | null;
   lat: number | null;
@@ -256,6 +257,13 @@ export default function OfficesPage() {
                     <input type="checkbox" disabled={ro} checked={form.debtReminderEnabled === "1"} onChange={(e) => set("debtReminderEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-amber-600" />
                     💳 إرسال رسائل يومية للديون (قالب «مطالبة بالديون»)
                   </label>
+                  {form.debtReminderEnabled === "1" && (
+                    <div className="ms-6 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                      <span>🕐 وقت رسائل الديون:</span>
+                      <input type="time" value={form.debtReminderTime ?? ""} disabled={ro} onChange={(e) => set("debtReminderTime", e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50" />
+                      <span className="text-xs text-slate-400">فارغ = يتبع وقت تذكير الانتهاء</span>
+                    </div>
+                  )}
                   <label className="flex items-center gap-2 text-sm text-slate-600">
                     <input type="checkbox" disabled={ro} checked={form.rewardsEnabled === "1"} onChange={(e) => set("rewardsEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4 accent-fuchsia-600" />
                     🎁 تفعيل نظام مكافآت المشتركين

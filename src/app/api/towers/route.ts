@@ -26,6 +26,7 @@ const schema = z.object({
   syncTime: z.string().nullable().optional(), // وقت مزامنة الاشتراكات اليومية (HH:MM)
   syncEnabled: z.string().nullable().optional(), // 1 = تفعيل المزامنة التلقائية
   debtReminderEnabled: z.string().nullable().optional(), // 1 = رسائل ديون يومية
+  debtReminderTime: z.string().nullable().optional(), // وقت رسائل الديون (HH:MM) — فارغ = يتبع reminderTime
   autoAssignEnabled: z.boolean().optional(), // توزيع البطاقات تلقائياً على فنيي هذا المكتب
   loanEnabled: z.string().nullable().optional(), // 1 = تفعيل قروض سوبر سيل (مدير فقط)
   loanUser: z.string().nullable().optional(), // اسم مستخدم قروض سوبر سيل (مدير فقط)

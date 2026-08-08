@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { notMaster } from "@/lib/moneyKinds";
 import { prisma } from "@/lib/prisma";
-import { guard, towerScope } from "@/lib/guard";
+import { Prisma } from "@prisma/client";
+import { guard, towerScope, agentOfficeFilter, agentTowerIds } from "@/lib/guard";
 
 // التقرير الاجمالي: إحصائيات شاملة للنظام
 export async function GET(request: Request) {
@@ -21,7 +22,12 @@ export async function GET(request: Request) {
   to.setHours(23, 59, 59, 999);
   const range = allDates ? undefined : { gte: from, lte: to };
 
-  const scope = await towerScope(g.session); // فلتر المكتب (الأدمن يرى الكل)
+  const scope = await towerScope(g.session); // فلتر المكتب (معزول بالوكيل)
+  // عزل بقيّة العدّادات بالوكيل أيضاً (كانت تعدّ كلّ الوكلاء — تسريب عزل):
+  const officeFilter = await agentOfficeFilter(g.session); // فلتر جدول المكاتب بالـ id
+  const agentTowersForMsg = await agentTowerIds(g.session);
+  const msgTowerIds = agentTowersForMsg.length ? agentTowersForMsg : [-1];
+  const myAgentId = g.session.agentId ?? -1;
 
   // المشتركون الذين فعّلوا اشتراكهم خلال المدة (مميّزون — كل مشترك مرة واحدة)
   const activatedGroups = await prisma.subscriptionEntry.groupBy({
@@ -39,7 +45,7 @@ export async function GET(request: Request) {
     debts,
     invoicesAgg,
     activationsAgg,
-    messagesSent,
+    messagesSentRows,
   ] = await Promise.all([
     prisma.subscriber.count({ where: { isDeleted: false, ...scope } }),
     prisma.subscriber.count({
@@ -48,8 +54,8 @@ export async function GET(request: Request) {
     prisma.subscriber.count({
       where: { isDeleted: false, dateTo: { lt: now }, ...scope },
     }),
-    prisma.package.count({ where: { isDeleted: false } }),
-    prisma.tower.count({ where: { isDeleted: false } }),
+    prisma.package.count({ where: { isDeleted: false, agentId: myAgentId } }),
+    prisma.tower.count({ where: { isDeleted: false, ...officeFilter } }),
     prisma.moneyTx.aggregate({
       // حساب الماستر مستقل — لا يدخل بالتقرير الإجمالي
       where: { isDeleted: false, ...scope, ...notMaster },
@@ -70,8 +76,10 @@ export async function GET(request: Request) {
       _sum: { money: true, moneyIn: true },
       _count: true,
     }),
-    prisma.message.count({ where: { status: "SENT" } }),
+    // الرسائل المرسَلة لمشتركي مكاتب هذا الوكيل فقط (Message بلا towerId — تُربط بالمشترك)
+    prisma.$queryRaw<{ count: number }[]>(Prisma.sql`SELECT count(*)::int AS count FROM messages m JOIN subscribers s ON s.id = m."subscriberId" WHERE m.status::text = 'SENT' AND s."towerId" IN (${Prisma.join(msgTowerIds)})`),
   ]);
+  const messagesSent = Number(messagesSentRows?.[0]?.count ?? 0);
 
   return NextResponse.json({
     subscribers: {
