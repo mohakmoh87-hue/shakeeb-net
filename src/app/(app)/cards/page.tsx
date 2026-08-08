@@ -5,7 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import DateRangeFilter from "@/components/DateRangeFilter";
 import { formatDateTime } from "@/lib/format";
 
-type Stat = { packageId: number; name: string | null; price: number | null; available: number };
+type Stat = { packageId: number; name: string | null; price: number | null; cardCost: number | null; available: number; amount: number };
 type UsedCard = { id: number; serial: string | null; packageName: string | null; subscriber: string | null; office: string | null; useDate: string | null; userName: string | null };
 type AvailCard = { id: number; serial: string | null; packageId: number | null; packageName: string | null; price: number | null; addDate: string | null };
 
@@ -248,20 +248,29 @@ export default function CardsPage() {
           </div>
         ) : (
           stats.map((s) => (
-            <div key={s.packageId}
-              onClick={() => { setAvailFilter(s.packageId); setView("available"); }}
-              title="اضغط لعرض كروت هذه الفئة"
+            <div key={s.packageId}
+              onClick={() => { setAvailFilter(s.packageId); setView("available"); }}
+              title="اضغط لعرض كروت هذه الفئة"
               className="cursor-pointer rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-mynet-blue hover:shadow-md">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-slate-800">{s.name}</span>
-                <span className="text-sm text-slate-500">{fmt(s.price)} د.ع</span>
+                <span className="text-sm text-slate-500">سعر الكارت {fmt(s.cardCost)} د.ع</span>
               </div>
               <div className="mt-2 text-3xl font-extrabold text-mynet-blue">{s.available}</div>
               <div className="text-xs text-slate-400">كارت متاح — اضغط لعرضها ↗</div>
+              <div className="mt-2 border-t border-slate-100 pt-2 text-sm font-bold text-emerald-700">المبلغ: {fmt(s.amount)} د.ع</div>
             </div>
           ))
         )}
       </div>
+
+      {/* المجموع الكلي لمبالغ الكروت المتاحة (بالأسعار الفعليّة المخزَّنة لكل كارت) */}
+      {stats.length > 0 && (
+        <div className="mb-6 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+          <span className="font-bold text-emerald-800">💰 المجموع الكلي لمبالغ الكروت المتاحة</span>
+          <span className="text-2xl font-extrabold text-emerald-700">{fmt(stats.reduce((sum, s) => sum + (s.amount ?? 0), 0))} د.ع</span>
+        </div>
+      )}
 
       {/* لصق كروت جديدة */}
       <div className="max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
