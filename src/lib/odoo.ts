@@ -21,6 +21,8 @@ export interface OdooSession {
   name: string; // الاسم الظاهر (Omer Raad Fareed)
   username: string;
   csrf: string; // csrf_token للجلسة (لـ chatter وبعض المسارات)
+  user: string; // بيانات الدخول — للتجديد التلقائيّ عند "Session expired"
+  pass: string;
 }
 
 // مراحل أودو المفتوحة (تُعالَج) والمنتهية (تُتجاهَل) — بالاسم
@@ -170,11 +172,11 @@ export async function odooLogin(baseUrl: string | null, user: string, pass: stri
   const info = (await rpc(base, cookie, "/web/session/get_session_info", {})) as Record<string, unknown> | null;
   const uid = Number(info?.uid ?? 0);
   if (!uid || info?.uid === false) throw new Error("فشل الدخول إلى أودو — تحقّق من اسم المستخدم وكلمة المرور");
-  // 4) csrf ما بعد الدخول (للـ chatter وبعض المسارات) — من صفحة /my
+  // 4) csrf ما بعد الدخول (للـ chatter) — من صفحة /my. **لا نُدمج كوكيها**: قد تُدوّر جلسة
+  //    أودو فتُبطل call_kw ("Session expired"). نُبقي جلسة الدخول المصادَقة كما هي.
   let csrf = csrf0;
   try {
     const my = await undiciFetch(base + "/my", { method: "GET", headers: { cookie }, dispatcher: insecureAgent });
-    cookie = mergeCookies(cookie, getSetCookies(my));
     const c = extractCsrf(await my.text());
     if (c) csrf = c;
   } catch { /* غير قاتل */ }
@@ -182,8 +184,23 @@ export async function odooLogin(baseUrl: string | null, user: string, pass: stri
     base, cookie, uid,
     name: String(info?.name ?? info?.username ?? ""),
     username: String(info?.username ?? user),
-    csrf,
+    csrf, user, pass,
   };
+}
+
+// تجديد الجلسة تلقائياً عند "Session expired": نعيد الدخول ونُعيد المحاولة مرّةً واحدة.
+function isSessionExpired(msg: string): boolean {
+  return /session\s*expired|sessionexpired/i.test(msg || "");
+}
+async function withReauth<T>(s: OdooSession, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!isSessionExpired((e as Error).message || "")) throw e;
+    const fresh = await odooLogin(s.base, s.user, s.pass);
+    s.cookie = fresh.cookie; s.csrf = fresh.csrf; s.uid = fresh.uid; s.name = fresh.name; s.username = fresh.username;
+    return fn(); // إعادة مرّة واحدة بالجلسة الجديدة
+  }
 }
 
 // ===== سحب تذاكر المكتب المفتوحة الجديدة (المُسنَدة لحسابه، id > العلامة) =====
@@ -196,7 +213,7 @@ export async function odooFetchOpenTickets(session: OdooSession, sinceId: number
     "fdt_id", "fat_id", "bg_field", "access_token",
     "issue_type", "type", "task_type",
   ];
-  const rows = await searchReadResilient(session, "helpdesk.ticket", domain, fields, { order: "id asc", limit: 200 });
+  const rows = await withReauth(session, () => searchReadResilient(session, "helpdesk.ticket", domain, fields, { order: "id asc", limit: 200 }));
   const out: OdooTicket[] = [];
   for (const r of rows) {
     out.push({
@@ -220,8 +237,8 @@ export async function odooFetchOpenTickets(session: OdooSession, sinceId: number
 
 // قراءة تذكرة واحدة (لمزامنة حالة بطاقةٍ قائمة: هل أُغلقت خارجيّاً؟)
 export async function odooReadTicket(session: OdooSession, ticketId: number): Promise<OdooTicket | null> {
-  const rows = await searchReadResilient(session, "helpdesk.ticket", [["id", "=", ticketId]],
-    ["id", "name", "stage_id", "user_id", "access_token", "bg_field"], { limit: 1 });
+  const rows = await withReauth(session, () => searchReadResilient(session, "helpdesk.ticket", [["id", "=", ticketId]],
+    ["id", "name", "stage_id", "user_id", "access_token", "bg_field"], { limit: 1 }));
   const r = rows[0];
   if (!r) return null;
   return {
@@ -241,33 +258,42 @@ async function portalPost(session: OdooSession, path: string, body: Record<strin
     body: JSON.stringify(body),
     dispatcher: insecureAgent,
   });
-  if (!res.ok) {
-    const t = (await res.text().catch(() => "")).slice(0, 200);
-    throw new Error(`فشل ${path} (HTTP ${res.status}) ${t}`);
+  const t = await res.text().catch(() => "");
+  if (isSessionExpired(t)) throw new Error("Session expired");
+  if (!res.ok) throw new Error(`فشل ${path} (HTTP ${res.status}) ${t.slice(0, 200)}`);
+  // مسار JSON قد يُرجِع 200 بجسم خطأ فيه "Session expired"
+  if (t.startsWith("{")) {
+    try {
+      const j = JSON.parse(t) as { error?: { message?: string; data?: { message?: string } } };
+      const m = j?.error?.data?.message || j?.error?.message;
+      if (m && isSessionExpired(m)) throw new Error("Session expired");
+    } catch (e) { if ((e as Error).message === "Session expired") throw e; }
   }
 }
 
 export async function odooReceive(session: OdooSession, ticketId: number): Promise<void> {
-  await portalPost(session, `/portal/receive/${ticketId}`, { ticket_id: String(ticketId) });
+  await withReauth(session, () => portalPost(session, `/portal/receive/${ticketId}`, { ticket_id: String(ticketId) }));
 }
 export async function odooChangeBg(session: OdooSession, ticketId: number, bg: string): Promise<void> {
-  await portalPost(session, `/portal/change_bg_field/${ticketId}`, { ticket_id: ticketId, bg_field: bg });
+  await withReauth(session, () => portalPost(session, `/portal/change_bg_field/${ticketId}`, { ticket_id: ticketId, bg_field: bg }));
 }
 export async function odooClose(session: OdooSession, ticketId: number): Promise<void> {
-  await portalPost(session, `/portal/close/${ticketId}`, { ticket_id: String(ticketId) });
+  await withReauth(session, () => portalPost(session, `/portal/close/${ticketId}`, { ticket_id: String(ticketId) }));
 }
 export async function odooCancel(session: OdooSession, ticketId: number): Promise<void> {
-  await portalPost(session, `/portal/cancel/${ticketId}`, { ticket_id: String(ticketId) });
+  await withReauth(session, () => portalPost(session, `/portal/cancel/${ticketId}`, { ticket_id: String(ticketId) }));
 }
 
 // نشر الملاحظة الإجباريّة في محادثة التذكرة (مسار أودو القياسيّ)
 export async function odooChatterPost(session: OdooSession, ticketId: number, message: string, accessToken: string | null): Promise<void> {
-  const params: Record<string, unknown> = {
-    message, res_model: "helpdesk.ticket", res_id: ticketId,
-    csrf_token: session.csrf, token: accessToken ?? false,
-    attachment_ids: [], attachment_tokens: [],
-  };
-  await rpc(session.base, session.cookie, "/mail/chatter_post", params, session.csrf);
+  await withReauth(session, () => {
+    const params: Record<string, unknown> = {
+      message, res_model: "helpdesk.ticket", res_id: ticketId,
+      csrf_token: session.csrf, token: accessToken ?? false,
+      attachment_ids: [], attachment_tokens: [],
+    };
+    return rpc(session.base, session.cookie, "/mail/chatter_post", params, session.csrf);
+  });
 }
 
 // ===== اختبار الاتصال (سحابيّ، لمرّة، عند الإعداد) — دخولٌ فقط بلا أيّ إجراء =====
