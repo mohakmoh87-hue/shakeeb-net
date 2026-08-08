@@ -190,7 +190,7 @@ export default function FieldManagementPage() {
       if (!isPageActive()) return; // مخفيّ أو متروك بلا تفاعل ٣ دقائق (حمية يقظة Azure)
       if (sel || completing || postponing || drag != null || addingTo != null) return;
       load(officeId);
-    }, 20000);
+    }, role === "technician" ? 60000 : 20000); // الفنيّ كل 60ث (طلب محمد 2026-08-08)، المدير 20ث كما هو
     // العودة للتبويب/التطبيق ⇒ تحديث فوري (لا انتظار الدورة القادمة)
     const onVisible = () => {
       if (!isPageActive()) return;
@@ -199,7 +199,7 @@ export default function FieldManagementPage() {
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVisible); };
-  }, [load, officeId, sel, completing, postponing, drag, addingTo]);
+  }, [load, officeId, sel, completing, postponing, drag, addingTo, role]);
 
   // اسم الدور الحالي (للفني: اسمه ومعرّفه) — لعرضه في الشريط السفلي وللتحويل على نفسه
   useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.name) setMyName(d.name); if (d?.technicianId != null) setMyTechId(d.technicianId); }); }, []);
