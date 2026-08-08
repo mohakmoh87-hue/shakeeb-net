@@ -25,6 +25,7 @@ GRANT SELECT, INSERT, UPDATE ON subscribers    TO agent_worker; -- المزام�
 GRANT SELECT, INSERT, UPDATE ON wa_sessions    TO agent_worker; -- upsert حالة الجلسة
 GRANT SELECT, INSERT, UPDATE ON hybrid_workers TO agent_worker; -- تسجيل الحاسبة ونبضتها
 GRANT SELECT, INSERT, UPDATE ON system_settings TO agent_worker; -- رفعات عدّاد المشتركين subStats + بصمة workerVer (سياسة RLS تحصرها بهذين المفتاحين)
+GRANT SELECT, INSERT, UPDATE ON task_boards, task_lists, task_cards TO agent_worker; -- بطاقات/أعمدة تذاكر أودو: العامل ينشئها ويحدّثها محليّاً (سياسات rls_task_* تعزلها بالوكيل تلقائياً)
 
 -- ---------- قراءة + إنشاء ----------
 GRANT SELECT, INSERT ON adjustments   TO agent_worker; -- غرامة نسيان الخروج
@@ -46,9 +47,9 @@ GRANT SELECT, DELETE ON push_subscriptions TO agent_worker; -- حذف الاشت
 GRANT SELECT ON packages, tower_info, accounts, subscription_entries, money_tx,
                 invoices, invoice_items, items, custodies, tickets, card_types,
                 sms_templates, reward_logs, salary_statements, leaves,
-                task_boards, task_lists, task_cards, card_photos,
-                maintenance_logs, loan_debts
+                card_photos, maintenance_logs, loan_debts
   TO agent_worker;
+-- ملاحظة: task_boards/task_lists/task_cards نُقلت أعلاه إلى SELECT+INSERT+UPDATE (لبطاقات أودو)
 -- loan_debts: المزامنة تقرؤها لتتجاهل أصحاب القروض (قراءة فقط؛ الكتابة خادميّة بدور المالك)
 
 -- ---------- مراجع عامة مشتركة (قراءة فقط) ----------
