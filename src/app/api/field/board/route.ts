@@ -22,7 +22,14 @@ async function buildBoard(officeId: number | null, agentId: number | null) {
   const technicians = techRows.map((t) => ({ id: t.id, name: t.name, phone: t.phone, isSupport: officeId != null && t.towerId !== officeId && t.supportTowerId === officeId }));
   // عزل المستأجر: فئات البطاقات لوكيل المستخدم فقط
   const cardTypes = await prisma.cardType.findMany({ where: { isDeleted: false, agentId: agentId ?? -1 }, orderBy: [{ position: "asc" }, { id: "asc" }] });
-  return { board, lists, cards, technicians, cardTypes };
+  // تذاكر أودو: عدد المفتوحة (غير المنجزة/الملغاة) + هل «أودو نشط» للمكتب (مفعّل أو به بطاقات مفتوحة)
+  const odooOpen = cards.filter((c) => c.viaOdoo && !c.done && !c.settled).length;
+  let odooActive = odooOpen > 0;
+  if (!odooActive && officeId != null) {
+    const tw = await prisma.tower.findUnique({ where: { id: officeId }, select: { odooEnabled: true } });
+    odooActive = tw?.odooEnabled === "1";
+  }
+  return { board, lists, cards, technicians, cardTypes, odooOpen, odooActive };
 }
 
 // لوحة "إدارة الفنيين" لمكتب واحد مع أعمدتها وبطاقاتها وفنّييه.

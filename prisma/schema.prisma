@@ -157,6 +157,15 @@ model Tower {
   // طريقة القرض للمكتب كلّه: activation = قرض كتفعيل (تمديد + دَين + رسالة)؛
   // normal = قرض عادي (تمديد ٣٠ يوماً فقط، بلا دَين ولا رسالة ولا أيّ أثر)
   loanMode    String? @default("activation")
+  // ربط تذاكر أودو (Helpdesk) — إعداد للمكتب (مدير أو مستخدم). العمليّات محليّة على العامل حصراً (لا سحابة).
+  odooEnabled String? @default("0") // 1 = تفعيل ربط أودو لهذا المكتب
+  odooUser    String? // مستخدم بوّابة أودو للمكتب — لا يُرسَل بصيغته الخام لغير مكتبه
+  odooPass    String? // كلمة مرور أودو — مشفّرة عبر secretbox (enc:v1:)
+  odooUrl     String? @default("https://odoo.supercell.iq") // أساس بوّابة أودو
+  odooUid     Int? // uid حساب المكتب في أودو (يُملأ عند أوّل دخول ناجح — لمطابقة Assigned to)
+  odooLastOk  DateTime? // آخر دخول ناجح للعامل (الشارة الديناميّة: أخضر/أحمر)
+  odooLastError String? // آخر رسالة خطأ دخول (تشخيص الشارة الحمراء)
+  odooLastTicketId Int? // العلامة المائيّة: رقم آخر تذكرة مجلوبة لهذا المكتب (id تصاعديّ)
   syncTime    String? // وقت مزامنة الاشتراكات اليومية مع SAS (HH:MM)
   reminderTime String? // وقت تذكير الانتهاء اليومي لهذا المكتب (HH:MM) — مرتبط بوقت تشغيل حاسبته؛ فارغ = وقت الوكيل العام
   lastReminderDate String? // آخر يوم (YYYY-MM-DD) أُرسل/عولج فيه تذكير الانتهاء (لمنطق الموافقة عند الدخول)
@@ -871,12 +880,19 @@ model TaskCard {
   history       String? // سجل تغييرات البطاقة JSON [{at,by,text}] (تأجيل/تحويل/نقل…)
   createdAt    DateTime  @default(now())
   isDeleted    Boolean   @default(false)
+  // ربط أودو (Helpdesk) — بطاقة مصدرها تذكرة أودو
+  odooTicketId Int? // رقم تذكرة أودو المصدر (منع تكرار + ربط الدفع العكسيّ)
+  viaOdoo      Boolean   @default(false) // وسم «عبر أودو» — لا يزول عند إسناد فئة
+  usernameRequired Boolean @default(false) // BG إلزاميّ (قيمة BG في أودو فارغة عند السحب)
+  odooBg       String? // قيمة BG (اليوزر) التي أدخلها الفنيّ — تُدفَع إلى change_bg_field
+  odooPushedAt DateTime? // وقت دفع الإنجاز/الإلغاء إلى أودو (null = لم يُدفَع بعد)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([listId])
   @@index([technicianId])
   @@index([archivedAt])
   @@index([subscriberId])
+  @@index([odooTicketId])
   @@map("task_cards")
 }
 

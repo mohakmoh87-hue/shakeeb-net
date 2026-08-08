@@ -26,6 +26,7 @@ type Card = {
   materialsInfo: string | null; techNote: string | null;
   startedAt: string | null; durationSec: number | null; postponedTo: string | null;
   history: string | null; createdAt: string | null;
+  viaOdoo?: boolean; usernameRequired?: boolean; odooTicketId?: number | null; // بطاقات أودو
 };
 // أحداث سجل تغييرات البطاقة (JSON داخل حقل history)
 type CardEvent = { at: string; by: string; text: string };
@@ -1461,6 +1462,8 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   // «التدفق الكامل» = كل الأنواع عدا التوصيل (يشمل التحويل بشروطه القديمة + الجديدة):
   // مواد متسلسلة + «المبيع» + «اشتراك»
   const fullFlow = !isDelivery;
+  const odooBgRequired = !!card.viaOdoo && !!card.usernameRequired; // بطاقة أودو تشترط اليوزر
+  const [odooBg, setOdooBg] = useState("");
   const [details, setDetails] = useState("");
   const [newUser, setNewUser] = useState("");
   const [amount, setAmount] = useState(""); // «التوصيل»: يكتبه الفني عند الباب (صفر أو أي رقم)
@@ -1571,6 +1574,10 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
       if (fullFields) {
         if (!details.trim()) { setErr("تفاصيل الصيانة مطلوبة"); return; }
       }
+      // بطاقة أودو تشترط اليوزر (BG) — بصيغة bg-x-x-x@x
+      if (odooBgRequired && !/^bg-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-?@[a-z0-9]+$/i.test(odooBg.trim())) {
+        setErr("أدخل اليوزر (BG) بصيغة bg-x-x-x@x"); return;
+      }
       // القائمة الأولى إلزامية: مادة أو «بلا مبيع»
       if (pickedRows.length === 0 && !noSale) { setErr("اختر مادة من ذمّتك أو «بلا مبيع» (إلزامي)"); return; }
       // «المبيع»: 0 جائز، وما فوقه ≥ 1000
@@ -1584,7 +1591,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
     const r = await fetch("/api/field/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        cardId: card.id, serviceDetails: details, newUser,
+        cardId: card.id, serviceDetails: details, newUser, odooBg,
         amount: isDelivery ? nAmount : undefined,
         sale: isDelivery ? undefined : nSale,
         // التوصيل يرسل الاشتراك أيضاً — لأن الفني قد يعدّله عمّا حسبته الباقة
@@ -1620,6 +1627,14 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
           <>
             <label className="mb-1 block text-xs font-semibold text-slate-500">تفاصيل الصيانة <span className="text-red-500">*</span></label>
             <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={3} placeholder="ماذا تمّ من عمل..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </>
+        )}
+
+        {/* بطاقة أودو تشترط اليوزر (BG) — يُرسَل إلى أودو (change_bg_field) عند الإنجاز */}
+        {odooBgRequired && (
+          <>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">اليوزر (BG) <span className="text-red-500">*</span></label>
+            <input value={odooBg} onChange={(e) => setOdooBg(e.target.value)} placeholder="bg-x-x-x@x" dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           </>
         )}
 

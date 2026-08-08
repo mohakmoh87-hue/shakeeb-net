@@ -46,7 +46,11 @@ const schema = z.object({
     .default([]),
   useReward: z.boolean().optional().default(false), // سحب كود مكافأة المشترك — يخصم من «المبيع» حصراً
   noSale: z.boolean().optional().default(false), // «بلا مبيع»: لا مادة مباعة (المبيع صفر) — خيار وليس مادة
+  odooBg: z.string().nullish(), // بطاقات أودو: اليوزر (BG) — إلزاميّ إن كانت usernameRequired
 });
+
+// نمط اليوزر (BG) لتذاكر أودو: bg-x-x-x@x (كلّ x رقم/حرف)
+const ODOO_BG_RE = /^bg-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-?@[a-z0-9]+$/i;
 
 // إنجاز بطاقة — بحقولها الواجبة حسب النوع:
 //  • توصيل: مبلغ معلوماتي فقط (بلا أثر مالي — يُسجَّل عند التفعيل).
@@ -60,7 +64,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
-  const { cardId, serviceDetails, amount, sale, subscription, newUser, materials: rawMaterials, useReward, noSale } = parsed.data;
+  const { cardId, serviceDetails, amount, sale, subscription, newUser, materials: rawMaterials, useReward, noSale, odooBg } = parsed.data;
   // دمج تكرار نفس المادة في أكثر من قائمة منسدلة (تُجمع الكميات)
   const merged = new Map<number, number>();
   for (const m of rawMaterials) merged.set(m.itemId, (merged.get(m.itemId) ?? 0) + m.qty);
@@ -87,6 +91,16 @@ export async function POST(request: Request) {
   const type = typeOfList ?? await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false, agentId: actor.agentId ?? -1 } });
   const isDelivery = type?.deliveryOnly ?? (cardList?.name ?? card.kind) === "توصيل";
   const isTransfer = card.kind === "تحويل";
+
+  // ===== بطاقات أودو (طلب محمد): الملاحظة إلزاميّة (تُرسَل chatter)، واليوزر BG إلزاميّ إن اشترطته أودو =====
+  if (card.viaOdoo) {
+    if (!serviceDetails?.trim()) {
+      return NextResponse.json({ error: "اكتب ملاحظة الإنجاز — تُرسَل إلى أودو" }, { status: 400 });
+    }
+    if (card.usernameRequired && !ODOO_BG_RE.test((odooBg ?? "").trim())) {
+      return NextResponse.json({ error: "أدخل اليوزر (BG) بصيغة bg-x-x-x@x" }, { status: 400 });
+    }
+  }
 
   // التوصيل مُستثنى من «بدء» واحتساب الوقت؛ ما عداه يتطلّب «بدء»
   if (!isDelivery && !card.startedAt) {
@@ -275,6 +289,7 @@ export async function POST(request: Request) {
         subAmount: subAmountVal,
         serviceDetails: (serviceDetails?.trim() || null) ? `${serviceDetails!.trim()}${rewardDiscount > 0 ? `\n(خصم مكافأة: ${rewardDiscount} د.ع)` : ""}` : (rewardDiscount > 0 ? `(خصم مكافأة: ${rewardDiscount} د.ع)` : null),
         materialsInfo: soldInfo.length ? JSON.stringify(soldInfo) : null,
+        ...(card.viaOdoo && odooBg?.trim() ? { odooBg: odooBg.trim() } : {}),
       },
     });
     // سجل الإنجاز الدائم (البطاقة تُحذف من الأرشيف بعد أسبوع — هذا يبقى):

@@ -72,12 +72,14 @@ function ensureSingleInstance(): Promise<void> {
     const { startHybridAgent } = await import("@/lib/hybridAgent");
     const { startWaRequestPoller, startWaRelayPoller } = await import("@/lib/whatsapp");
     const { startPrintAgent } = await import("@/lib/printAgent");
+    const { startOdooSync } = await import("@/lib/odooSync");
     startScheduler();
     startLocalSasServer(); // يشمل /health + لوحة SAS + عمليات SAS محلياً (المنفذ 47615)
     startHybridAgent();
     startWaRequestPoller();
     startWaRelayPoller();
     startPrintAgent(); // الطباعة الصامتة لوصولات المكتب على الطابعة الافتراضية
+    startOdooSync(); // مزامنة تذاكر أودو محليّاً (سحب/دفع) — قائد الوكيل فقط، للمكاتب المفعّلة
     startSelfUpdateWatcher(); // تحديث ذاتي: يلتقط تحديثات الكود ويعيد التشغيل عبر الغلاف
     // مراقب الإعدادات: يلتقط تبديل القاعدة المخطَّط ولو بقي الرابط القديم صالحاً
     const { startConfigWatcher } = await import("@/lib/workerSelfConfig");

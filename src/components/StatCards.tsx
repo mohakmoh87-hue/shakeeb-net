@@ -285,7 +285,7 @@ function Spark({ values }: { values: number[] }) {
 
 // ٤ · إدارة الفنيين — دونات بقوسين (لاجورد منجزة + برتقالي متبقّية)
 function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }) {
-  const [v, setV] = useState<{ done: number; rest: number } | null>(null);
+  const [v, setV] = useState<{ done: number; rest: number; odoo: number; odooActive: boolean } | null>(null);
   // 👑 متصدّر فترة الراتب — مسابقةٌ تبدأ مع الفترة وتُصفَّر مع نهايتها (طلب محمد 2026-08-05)
   const [king, setKing] = useState<{ name: string; office: string | null; cards: number; points: number; avgMin: number | null } | null>(null);
   const [rankOpen, setRankOpen] = useState(false); // نافذة الترتيب — تُفتح مكانها بلا مغادرة الشاشة
@@ -312,18 +312,19 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
             offices.map((o) => fetch(`/api/field/board?officeId=${o.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)),
           );
           if (stop) return;
-          let done = 0, rest = 0;
+          let done = 0, rest = 0, odoo = 0, odooActive = false;
           for (const b of boards) {
             if (!b?.cards) continue;
             const c = count(b.cards);
             done += c.done; rest += c.rest;
+            odoo += Number(b.odooOpen ?? 0); if (b.odooActive) odooActive = true;
           }
-          setV({ done, rest });
+          setV({ done, rest, odoo, odooActive });
         } else {
           // مكتب محدّد (مدير) أو مكتب المستخدم (يحدّده الخادم تلقائياً)
           const qs = isAdmin && officeSel !== "all" ? `?officeId=${officeSel}` : "";
           const d = await fetch(`/api/field/board${qs}`).then((r) => (r.ok ? r.json() : null));
-          if (!stop && d?.cards) setV(count(d.cards));
+          if (!stop && d?.cards) setV({ ...count(d.cards), odoo: Number(d.odooOpen ?? 0), odooActive: !!d.odooActive });
         }
       } catch { /* */ }
     })();
@@ -369,6 +370,10 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
         <div className="fnums">
           <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--navy)" }} /> منجزة</span><b>{v?.done ?? "—"}</b></div>
           <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--orange)" }} /> متبقّية</span><b>{v?.rest ?? "—"}</b></div>
+          {/* تذاكر أودو المفتوحة — يظهر فقط حين «أودو نشط» (مفعّل أو به بطاقات مفتوحة) */}
+          {v?.odooActive && (
+            <div className="fnum"><span className="lf"><i className="dot" style={{ background: "#7c3aed" }} /> تذاكر أودو</span><b>{v?.odoo ?? 0}</b></div>
+          )}
         </div>
       </div>
       {/* 👑 متصدّر الفترة: اسمٌ واحد لكل المكاتب، يبقى حتى يتجاوزه غيره أو تنتهي الفترة */}
