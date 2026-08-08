@@ -414,7 +414,7 @@ export default function ManagerAccountsPage() {
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card label="المبلغ الكلي الموجود" value={fmt(data.totalAvailable)} color="text-emerald-700" bg="bg-emerald-50" big onClick={() => setShowTotal(true)} hint="اضغط لتفكيك المعادلة" />
         <Card label="مجموع المبالغ اليومية" value={fmt(data.cumulativeDaily)} color="text-slate-700" bg="bg-slate-50" onClick={openDailyLog} hint="اضغط لعرض السجل اليومي" />
-        <Card label="ديون الكارتات" value={fmt(data.cardDebtRemaining)} color="text-red-700" bg="bg-red-50" onClick={() => setTxQ("كارتات")} hint="اضغط لتصفية السجل على حركاتها" />
+        <Card label="ديون الكارتات" value={fmt(data.cardDebtRemaining)} color={data.cardDebtRemaining <= 0 ? "text-emerald-700" : "text-red-700"} bg={data.cardDebtRemaining <= 0 ? "bg-emerald-50" : "bg-red-50"} onClick={() => setTxQ("كارتات")} hint="اضغط لتصفية السجل على حركاتها" />
         <Card label="مصروفات الإدارة" value={fmt(data.managerExpenses)} color="text-amber-700" bg="bg-amber-50" onClick={() => setTxQ("مصروف")} hint="اضغط لتصفية السجل عليها" />
         <Card label="🅜 حساب الماستر (مستقل)" value={fmt(data.masterBalance)} color="text-indigo-700" bg="bg-indigo-50" onClick={openMaster} hint="اضغط لعرض تفاصيله اليومية" />
       </div>
