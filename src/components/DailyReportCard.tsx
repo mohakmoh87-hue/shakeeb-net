@@ -36,6 +36,7 @@ export type DailyReport = {
   total: number;
 };
 type Tower = { id: number; name: string | null };
+type TowerUser = { id: number; name: string; towerId: number }; // مستخدمو مكاتب الوكيل (لتبويب المستخدمين)
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
 
@@ -44,13 +45,21 @@ const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLoc
 export default function DailyReportCard({
   isAdmin,
   towers,
+  towerUsers = [],
   initial,
 }: {
   isAdmin: boolean;
   towers: Tower[];
+  towerUsers?: TowerUser[];
   initial: DailyReport;
 }) {
   const [sel, setSel] = useState<"all" | number>("all");
+  // اختيار المستخدم (لمكتبٍ فيه مستخدمان+): «الكل» أو مستخدم محدّد — للمدير فقط
+  const [userSel, setUserSel] = useState<"all" | number>("all");
+  const officeUsers = sel !== "all" ? towerUsers.filter((u) => u.towerId === sel) : [];
+  const showUserTabs = isAdmin && sel !== "all" && officeUsers.length >= 2;
+  // معامل userId المُلحق بالجلبات — فقط حين مكتبٌ محدّد ومستخدمٌ محدّد
+  const uq = isAdmin && sel !== "all" && userSel !== "all" ? `&userId=${userSel}` : "";
   const [data, setData] = useState<DailyReport>(initial);
   const [loading, setLoading] = useState(false);
   const [drill, setDrill] = useState<Drill | null>(null);
@@ -63,28 +72,28 @@ export default function DailyReportCard({
     // التبويب الأول (الإجمالي) بياناته جاهزة من الخادم — لا نُعيد الجلب عبثاً
     if (first.current) { first.current = false; return; }
     setLoading(true);
-    fetch(`/api/reports/daily?towerId=${sel}`)
+    fetch(`/api/reports/daily?towerId=${sel}${uq}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setData(d); })
       .finally(() => setLoading(false));
-  }, [sel, isAdmin]);
+  }, [sel, isAdmin, uq]);
 
   // تحديث صامت عند أي تغيّر مالي (تفعيل/تسديد/تحصيل/حذف) وعند العودة للصفحة —
   // بلا مؤقّت دوري (قرار محمد 2026-07-29 بعد حادثة «فرق الـ35 ألفاً» بحساب المواصلات:
   // بطاقة المستخدم كانت تُحسب لحظة فتح الصفحة فقط فلا ترى عملياته اللاحقة)
   useEffect(() => {
     return onMoneyRefresh(() => {
-      fetch(`/api/reports/daily?towerId=${isAdmin ? sel : "all"}`)
+      fetch(`/api/reports/daily?towerId=${isAdmin ? sel : "all"}${uq}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => { if (d) setData(d); })
         .catch(() => {});
     });
-  }, [sel, isAdmin]);
+  }, [sel, isAdmin, uq]);
 
-  // فتح تفاصيل سطر: الحركات الفعلية وراء الرقم لليوم والمكتب المعروضين
+  // فتح تفاصيل سطر: الحركات الفعلية وراء الرقم لليوم والمكتب (والمستخدم) المعروضين
   function openDrill(kind: string) {
     setDrillBusy(true); setDrill(null);
-    fetch(`/api/reports/daily/rows?kind=${kind}&towerId=${isAdmin ? sel : "all"}`)
+    fetch(`/api/reports/daily/rows?kind=${kind}&towerId=${isAdmin ? sel : "all"}${uq}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setDrill(d); })
       .finally(() => setDrillBusy(false));
@@ -98,7 +107,7 @@ export default function DailyReportCard({
     });
     if (res.ok) {
       openDrill(drill?.kind ?? "total");
-      fetch(`/api/reports/daily?towerId=${isAdmin ? sel : "all"}`).then((x) => (x.ok ? x.json() : null)).then((d) => { if (d) setData(d); });
+      fetch(`/api/reports/daily?towerId=${isAdmin ? sel : "all"}${uq}`).then((x) => (x.ok ? x.json() : null)).then((d) => { if (d) setData(d); });
     } else {
       const d = await res.json().catch(() => ({}));
       alert(d.error ?? "تعذّر الحذف");
@@ -123,10 +132,22 @@ export default function DailyReportCard({
 
       {isAdmin && (
         <div className="rtabs">
-          <button className={`rtab ${sel === "all" ? "on" : ""}`} onClick={() => setSel("all")}>📊 الإجمالي</button>
+          <button className={`rtab ${sel === "all" ? "on" : ""}`} onClick={() => { setSel("all"); setUserSel("all"); }}>📊 الإجمالي</button>
           {towers.map((t) => (
-            <button key={t.id} className={`rtab ${sel === t.id ? "on" : ""}`} onClick={() => setSel(t.id)}>
+            <button key={t.id} className={`rtab ${sel === t.id ? "on" : ""}`} onClick={() => { setSel(t.id); setUserSel("all"); }}>
               {t.name ?? `#${t.id}`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* مكتبٌ فيه مستخدمان+ : تبويب اختيار المستخدم — يرى المدير حساب كلّ مستخدمٍ وحده */}
+      {showUserTabs && (
+        <div className="rtabs" style={{ marginTop: 2 }}>
+          <button className={`rtab ${userSel === "all" ? "on" : ""}`} onClick={() => setUserSel("all")}>👥 كل المستخدمين</button>
+          {officeUsers.map((u) => (
+            <button key={u.id} className={`rtab ${userSel === u.id ? "on" : ""}`} onClick={() => setUserSel(u.id)}>
+              👤 {u.name}
             </button>
           ))}
         </div>
@@ -152,6 +173,7 @@ export default function DailyReportCard({
         <b>{fmt(data.total)} د.ع</b>
         <span>
           المجموع{isAdmin && sel !== "all" ? ` — ${towers.find((t) => t.id === sel)?.name ?? ""}` : isAdmin ? " (كل المكاتب)" : ""}
+          {showUserTabs && userSel !== "all" ? ` — ${officeUsers.find((u) => u.id === userSel)?.name ?? ""}` : ""}
         </span>
       </div>
 

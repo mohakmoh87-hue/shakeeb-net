@@ -192,6 +192,7 @@ export async function POST(
           addPrice: delivery, // مبلغ التوصيل (للوصل والتقارير)
           moneyCarry: newCarry, moneyType: 1, month: String(months), cardType: pkg.name,
           card2: cardSerial, towerId: subscriber.towerId, createdByUser: session?.username,
+          userId: session?.userId ?? null, // للتقرير اليومي لكلّ مستخدم
           isMaster: master,
           notes: note ?? null, // ملاحظة الوصل
           nextDate, // موعد التسديد

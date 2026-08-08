@@ -3,7 +3,7 @@ import { notMaster, onlyMaster, otherIncomeOnly } from "@/lib/moneyKinds";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
-import { iraqTodayRange } from "@/lib/dailyReport";
+import { iraqTodayRange, reportUserScope } from "@/lib/dailyReport";
 import { can } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
@@ -42,9 +42,23 @@ export async function GET(request: Request) {
       : { towerId: { in: agentTowers.length ? agentTowers : [-1] } };
   }
 
+  // فلتر المستخدم (تقارير المكاتب متعدّدة المستخدمين): المدير يختاره (بتحقّق من وكيله)،
+  // ومستخدم مكتبٍ فيه مستخدمان+ يُجبَر على حركاته هو وحده
+  let userWhere: object = {};
+  if (session.isAdmin) {
+    const uParam = Number(sp.get("userId")) || 0;
+    if (uParam > 0) {
+      const u = await prisma.user.findFirst({ where: { id: uParam, agentId: session.agentId ?? -1, isDeleted: false }, select: { id: true } });
+      if (u) userWhere = { userId: u.id };
+    }
+  } else {
+    const forced = await reportUserScope(session);
+    if (forced != null) userWhere = { userId: forced };
+  }
+
   const { start, end } = iraqTodayRange();
   const dateWhere = { date: { gte: start, lte: end } };
-  const base = { isDeleted: false, ...dateWhere, ...towerWhere };
+  const base = { isDeleted: false, ...dateWhere, ...towerWhere, ...userWhere };
 
   // «المقبوضات (اليوم)» = ما ليس تفعيلاً ولا فاتورة ولا بيع مخزن ولا ماستر:
   // تسديدات الديون والحركات اليدوية. تعريفٌ صريح يمكن سرده — بخلاف الطرح القديم.

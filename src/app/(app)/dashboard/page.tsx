@@ -3,7 +3,7 @@ import StatCards from "@/components/StatCards";
 import SubscribersBoard from "@/components/SubscribersBoard";
 import { getSession } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
-import { computeDailyReport } from "@/lib/dailyReport";
+import { computeDailyReport, reportUserScope } from "@/lib/dailyReport";
 import { prisma } from "@/lib/prisma";
 
 // الشاشة الرئيسية بالطراز الجديد (ب2): بطاقات الإحصاء الأربع + جدول المشتركين
@@ -17,11 +17,20 @@ export default async function DashboardPage() {
   // عزل المستأجر: المدير يرى إجمالي مكاتب وكيله فقط؛ مستخدم المكتب يرى مكتبه
   const agentTowers = await agentTowerIds(session ?? null);
   const scope: number | number[] | null = isAdmin ? agentTowers : session?.towerId ?? null;
-  const [initialReport, towers] = await Promise.all([
-    computeDailyReport(scope),
+  // مكتبٌ فيه مستخدمان+ ⇒ التقرير الأوّلي لمستخدم المكتب = تقريره هو وحده (طلب محمد 2026-08-08)
+  const forcedUser = !isAdmin && session ? await reportUserScope(session) : undefined;
+  const [initialReport, towers, towerUsers] = await Promise.all([
+    computeDailyReport(scope, undefined, forcedUser),
     isAdmin
       ? prisma.tower.findMany({ where: { isDeleted: false, id: { in: agentTowers.length ? agentTowers : [-1] } }, select: { id: true, name: true }, orderBy: { id: "asc" } })
       : Promise.resolve([] as { id: number; name: string | null }[]),
+    // مستخدمو مكاتب الوكيل (للمدير): تبويب اختيار المستخدم لمكتبٍ فيه مستخدمان+
+    isAdmin
+      ? prisma.user.findMany({
+          where: { agentId: session?.agentId ?? -1, isDeleted: false, isActive: true, isOwner: false, towerId: { not: null } },
+          select: { id: true, fullName: true, username: true, towerId: true }, orderBy: { id: "asc" },
+        }).then((us) => us.map((u) => ({ id: u.id, name: u.fullName || u.username, towerId: u.towerId as number })))
+      : Promise.resolve([] as { id: number; name: string; towerId: number }[]),
   ]);
   const counterTowers = isAdmin ? agentTowers : session?.towerId ? [session.towerId] : [];
 
@@ -33,7 +42,7 @@ export default async function DashboardPage() {
       {/* نقطة الكسر 1051px نفسها المستعملة في طبقة التكيّف مع الارتفاع */}
       <div className="row2 max-[1050px]:!grid-cols-1">
         <SubscribersBoard />
-        <DailyReportCard isAdmin={isAdmin} towers={towers} initial={initialReport} />
+        <DailyReportCard isAdmin={isAdmin} towers={towers} towerUsers={towerUsers} initial={initialReport} />
       </div>
     </div>
   );

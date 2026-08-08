@@ -520,6 +520,7 @@ model Invoice {
   pushType     Int?
   note         String?
   user         String?
+  userId       Int? // المستخدم المُنشئ (للتقرير اليومي لكلّ مستخدم — طلب محمد 2026-08-08)
   type         String?
   subscriberId Int? // fatora_cosfk
   towerId      Int? // البرج/المكتب (لتقارير كل برج)

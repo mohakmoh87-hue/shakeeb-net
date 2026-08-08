@@ -259,7 +259,7 @@ export async function POST(request: Request) {
           totalMy: netSale, waselHim: netSale,
           note: `مبيع صيانة — تكت #${cardId} («${card.kind ?? ""}») — الفني ${tech?.name ?? ""}` +
             (rewardDiscount > 0 ? ` (مكافأة −${rewardDiscount.toLocaleString("en-US")} من ${saleGross.toLocaleString("en-US")})` : ""),
-          user: actor.name, type: "بيع صيانة", subscriberId: matchedSub?.id ?? null, towerId,
+          user: actor.name, userId: actor.userId, type: "بيع صيانة", subscriberId: matchedSub?.id ?? null, towerId,
         },
       });
       invoiceId = inv.id;

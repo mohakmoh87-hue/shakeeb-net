@@ -41,6 +41,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         subscriberId, date: now, money: amount, moneyIn: 0, moneyCarry: newCarry,
         moneyType: 2, cardType: "ديون سابقة", notes: note ?? null,
         towerId: subscriber.towerId, createdByUser: session?.username,
+        userId: session?.userId ?? null, // للتقرير اليومي لكلّ مستخدم
       },
     });
     await tx.auditLog.create({

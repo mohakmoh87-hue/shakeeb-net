@@ -195,6 +195,7 @@ export async function POST(request: Request) {
           rewardDiscount > 0 ? `(مكافأة −${rewardDiscount.toLocaleString("en-US")} من إجمالي ${total.toLocaleString("en-US")})` : "",
         ].filter(Boolean).join(" — ") || null,
         user: session?.username,
+        userId: session?.userId ?? null, // للتقرير اليومي لكلّ مستخدم
         type: master ? "ماستر" : direct ? "بيع مباشر" : "بيع",
         subscriberId: subscriber?.id ?? null,
         towerId,

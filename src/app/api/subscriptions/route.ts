@@ -158,6 +158,7 @@ export async function POST(request: Request) {
         priceDollar: pkg.priceDollar,
         notes: notes ?? null,
         createdByUser: session?.username,
+        userId: session?.userId ?? null, // للتقرير اليومي لكلّ مستخدم
       },
     }),
     prisma.subscriber.update({

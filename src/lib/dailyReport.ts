@@ -19,40 +19,52 @@ export function iraqYesterdayRange(now = new Date()): { start: Date; end: Date }
 
 const fmt = (n: number | null | undefined) => Number(n ?? 0).toLocaleString("en-US");
 
-// يحسب أرقام التقرير اليومي (اختيارياً مقيّداً بمكتب واحد أو مجموعة مكاتب وكيل، وليوم محدّد للتدارك)
-export async function computeDailyReport(towerId?: number | number[] | null, day?: Date) {
+// ===== تقارير المستخدمين في المكاتب متعدّدة المستخدمين (طلب محمد 2026-08-08) =====
+// مكتبٌ فيه مستخدمان+ ⇒ كلّ مستخدمٍ يرى تقريره اليومي وحده (يُجبَر فلتر userId على جلسته).
+// مكتبٌ بمستخدمٍ واحد ⇒ لا يتغيّر شيء (undefined = بلا فلتر). المدير لا يُجبَر (يختار بنفسه).
+export async function reportUserScope(session: { isAdmin?: boolean; userId: number; towerId: number | null }): Promise<number | undefined> {
+  if (session.isAdmin || session.towerId == null) return undefined;
+  const n = await prisma.user.count({ where: { towerId: session.towerId, isDeleted: false, isActive: true } });
+  return n >= 2 ? session.userId : undefined;
+}
+
+// يحسب أرقام التقرير اليومي (اختيارياً مقيّداً بمكتب واحد أو مجموعة مكاتب وكيل، وليوم محدّد للتدارك،
+// وبمستخدمٍ محدّد userId — لتقارير المكاتب متعدّدة المستخدمين)
+export async function computeDailyReport(towerId?: number | number[] | null, day?: Date, userId?: number) {
   const { start, end } = iraqTodayRange(day ?? new Date());
   const dateWhere = { date: { gte: start, lte: end } };
   const towerWhere =
     towerId == null ? {} : Array.isArray(towerId) ? { towerId: { in: towerId.length ? towerId : [-1] } } : { towerId };
+  // فلتر المستخدم: يمسّ كلّ الجداول الثلاثة (subscription_entries/money_tx/invoices تحمل userId)
+  const userWhere = userId != null ? { userId } : {};
 
   const [activations, todayMoney, todayInvoices, todaySales, todayMaster, todayOther] = await Promise.all([
     // تفعيلات عادية فقط (ماستر مستقل)
     prisma.subscriptionEntry.aggregate({
-      where: { isDeleted: false, isMaster: false, ...dateWhere, ...towerWhere },
+      where: { isDeleted: false, isMaster: false, ...dateWhere, ...towerWhere, ...userWhere },
       _count: true,
       _sum: { moneyIn: true },
     }),
     // حركات الصندوق العادية — باستثناء الماستر (حساب مستقل لا يُجمع مع التقرير)
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, ...dateWhere, ...towerWhere, ...notMaster },
+      where: { isDeleted: false, ...dateWhere, ...towerWhere, ...userWhere, ...notMaster },
       _sum: { moneyIn: true, moneyOut: true },
     }),
     prisma.invoice.aggregate({
       // فواتير الماستر (type="ماستر") مستبعدة — مالها بحساب الماستر المستقل لا بالتقرير.
       // الجزء النقدي من فاتورة ماستر مختلطة يدخل المجموع عبر الصندوق ويظهر ضمن «أخرى».
-      where: { isDeleted: false, NOT: { type: "ماستر" }, ...dateWhere, ...towerWhere },
+      where: { isDeleted: false, NOT: { type: "ماستر" }, ...dateWhere, ...towerWhere, ...userWhere },
       _count: true,
       _sum: { waselHim: true },
     }),
     // مبيعات المخزن (البيع المباشر + مواد الذمم) — حركات سطرها sourceType="sale"
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, sourceType: "sale", ...dateWhere, ...towerWhere },
+      where: { isDeleted: false, sourceType: "sale", ...dateWhere, ...towerWhere, ...userWhere },
       _sum: { moneyIn: true },
     }),
     // حساب الماستر — مستقل تماماً، يظهر بسطر منفصل ولا يدخل بالمجموع
     prisma.moneyTx.aggregate({
-      where: { isDeleted: false, ...onlyMaster, ...dateWhere, ...towerWhere },
+      where: { isDeleted: false, ...onlyMaster, ...dateWhere, ...towerWhere, ...userWhere },
       _sum: { moneyIn: true, moneyOut: true },
     }),
     // «المقبوضات (اليوم)»: **مجموع صريح** لما ليس تفعيلاً ولا فاتورة ولا بيع مخزن ولا
@@ -60,7 +72,7 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
     // فيبتلع مقبوضات حقيقية ولا يمكن سرد مكوّناته إطلاقاً (تدقيق 2026-08-04).
     prisma.moneyTx.aggregate({
       where: {
-        isDeleted: false, ...dateWhere, ...towerWhere,
+        isDeleted: false, ...dateWhere, ...towerWhere, ...userWhere,
         ...otherIncomeOnly, // يحمل moneyIn > 0 والاستثناءات معاً — من المصدر الموحّد
       },
       _sum: { moneyIn: true },
