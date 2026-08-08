@@ -207,11 +207,13 @@ async function withReauth<T>(s: OdooSession, fn: () => Promise<T>): Promise<T> {
 export async function odooFetchOpenTickets(session: OdooSession, sinceId: number): Promise<OdooTicket[]> {
   // المصدر = user_id == uid المكتب حصراً؛ id > العلامة (تصاعديّ). المرحلة نُصفّيها في الكود.
   const domain: unknown[] = [["user_id", "=", session.uid], ["id", ">", Math.max(0, sinceId | 0)]];
+  // أسماء الحقول الحقيقيّة — التُقطت حيّاً بـ fields_get على تذكرة #1436775 (2026-08-08):
+  // الهاتف partner_phone/partner_mobile (لا phone)، واليوزر bg (لا bg_field)، وfdt/fat أعداد مباشرة.
   const fields = [
     "id", "name", "stage_id", "user_id", "create_date",
-    "phone", "partner_name", "partner_id",
-    "fdt_id", "fat_id", "bg_field", "access_token",
-    "issue_type", "type", "task_type",
+    "partner_name", "partner_phone", "partner_mobile",
+    "bg", "fdt", "fat", "access_token",
+    "task_type", "issue_type",
   ];
   // تنازليّاً (الأحدث أوّلاً): المفتوحة حديثةٌ دائماً؛ التصاعديّ كان يجلب أقدم التذاكر (كلّها مُغلقة) ⇒ 0 بطاقة.
   const rows = await withReauth(session, () => searchReadResilient(session, "helpdesk.ticket", domain, fields, { order: "id desc", limit: 400 }));
@@ -223,14 +225,14 @@ export async function odooFetchOpenTickets(session: OdooSession, sinceId: number
       stageName: m2oLabel(r.stage_id) ?? "",
       assignedUid: m2oId(r.user_id),
       createDate: strOrNull(r.create_date),
-      phone: strOrNull(r.phone),
-      customerName: strOrNull(r.partner_name) ?? m2oLabel(r.partner_id),
-      fdt: strOrNull(r.fdt_id) ?? (m2oLabel(r.fdt_id) as string | null),
-      fat: strOrNull(r.fat_id) ?? (m2oLabel(r.fat_id) as string | null),
-      bg: strOrNull(r.bg_field),
+      phone: strOrNull(r.partner_phone) ?? strOrNull(r.partner_mobile),
+      customerName: strOrNull(r.partner_name),
+      fdt: r.fdt != null && r.fdt !== false && Number(r.fdt) > 0 ? String(r.fdt) : null,
+      fat: r.fat != null && r.fat !== false && Number(r.fat) > 0 ? String(r.fat) : null,
+      bg: strOrNull(r.bg),
       accessToken: strOrNull(r.access_token),
-      issueType: m2oLabel(r.issue_type) ?? strOrNull(r.issue_type),
-      typeName: m2oLabel(r.type) ?? strOrNull(r.type) ?? strOrNull(r.task_type),
+      issueType: strOrNull(r.issue_type),
+      typeName: strOrNull(r.task_type),
     });
   }
   return out;
@@ -239,13 +241,13 @@ export async function odooFetchOpenTickets(session: OdooSession, sinceId: number
 // قراءة تذكرة واحدة (لمزامنة حالة بطاقةٍ قائمة: هل أُغلقت خارجيّاً؟)
 export async function odooReadTicket(session: OdooSession, ticketId: number): Promise<OdooTicket | null> {
   const rows = await withReauth(session, () => searchReadResilient(session, "helpdesk.ticket", [["id", "=", ticketId]],
-    ["id", "name", "stage_id", "user_id", "access_token", "bg_field"], { limit: 1 }));
+    ["id", "name", "stage_id", "user_id", "access_token", "bg"], { limit: 1 }));
   const r = rows[0];
   if (!r) return null;
   return {
     id: Number(r.id), name: String(r.name ?? ""), stageName: m2oLabel(r.stage_id) ?? "",
     assignedUid: m2oId(r.user_id), createDate: null, phone: null, customerName: null,
-    fdt: null, fat: null, bg: strOrNull(r.bg_field), accessToken: strOrNull(r.access_token),
+    fdt: null, fat: null, bg: strOrNull(r.bg), accessToken: strOrNull(r.access_token),
     issueType: null, typeName: null,
   };
 }

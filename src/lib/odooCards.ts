@@ -32,9 +32,11 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket)
   const title = (ticket.name || `تذكرة أودو #${ticket.id}`).slice(0, 200);
   const descLines: string[] = [];
   if (ticket.customerName) descLines.push(`🧑 المشترك: ${ticket.customerName}`);
-  if (ticket.phone) descLines.push(`📱 الهاتف: ${ticket.phone}`);
+  if (ticket.phone) descLines.push(`📱 الهاتف: ${ticket.phone}`); // يظهر على وجه البطاقة (phoneOf)
+  // اليوزر من حقل bg بالتذكرة (bg-7-26-2@mu) — للخريطة والمطابقة (سطر «اليوزر:» يقرؤه المنطق القائم)
+  if (ticket.bg) descLines.push(`👤 اليوزر: ${ticket.bg}`);
   if (ticket.fdt || ticket.fat) descLines.push(`🗺️ FDT/FAT: ${ticket.fdt ?? "—"} / ${ticket.fat ?? "—"}`);
-  if (ticket.issueType) descLines.push(`🏷️ النوع: ${ticket.issueType}`);
+  if (ticket.issueType || ticket.typeName) descLines.push(`🏷️ النوع: ${ticket.issueType ?? ticket.typeName}`);
   descLines.push(`🔗 عبر أودو — تذكرة #${ticket.id}`);
   if (usernameRequired) descLines.push("⚠️ إدخال اليوزر (BG) إلزاميّ عند الإنجاز — بصيغة bg-x-x-x@x");
 
@@ -47,6 +49,23 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket)
   });
   await appendCardHistory(card.id, "أودو", `سُحبت من أودو (تذكرة #${ticket.id})${usernameRequired ? " — يوزر إلزاميّ" : ""}`);
   return { created: true, cardId: card.id };
+}
+
+// تحديث بطاقةٍ قائمةٍ من تذكرتها (مزامنة الـ10د): يُصحّح إلزاميّة اليوزر (bg صار مضبوطاً؟)
+// ويُكمل الأسطر الناقصة (اليوزر/الهاتف/FDT) — للبطاقات المسحوبة قبل إصلاح أسماء الحقول.
+export async function refreshOdooCard(cardId: number, ticket: OdooTicket): Promise<void> {
+  const card = await prisma.taskCard.findUnique({ where: { id: cardId }, select: { description: true, usernameRequired: true, done: true, settled: true } });
+  if (!card || card.done || card.settled) return;
+  const data: Record<string, unknown> = {};
+  const req = !bgIsSet(ticket.bg);
+  if (req !== card.usernameRequired) data.usernameRequired = req;
+  const desc = card.description ?? "";
+  const add: string[] = [];
+  if (ticket.phone && !/📱\s*الهاتف:/.test(desc)) add.push(`📱 الهاتف: ${ticket.phone}`);
+  if (ticket.bg && !/👤\s*اليوزر:/.test(desc)) add.push(`👤 اليوزر: ${ticket.bg}`);
+  if ((ticket.fdt || ticket.fat) && !/FDT\/FAT/.test(desc)) add.push(`🗺️ FDT/FAT: ${ticket.fdt ?? "—"} / ${ticket.fat ?? "—"}`);
+  if (add.length) data.description = (desc ? desc + "\n" : "") + add.join("\n");
+  if (Object.keys(data).length) await prisma.taskCard.update({ where: { id: cardId }, data });
 }
 
 // عدد بطاقات أودو المفتوحة (غير المنجزة وغير الملغاة) لمكتب — للعدّاد ومنطق «drain»

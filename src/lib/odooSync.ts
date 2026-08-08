@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { isLeaderNow, getWorkerAgentId } from "@/lib/hybridAgent";
 import { appendCardHistory } from "@/lib/field";
-import { upsertOdooCard, countOpenOdooCards } from "@/lib/odooCards";
+import { upsertOdooCard, refreshOdooCard, countOpenOdooCards } from "@/lib/odooCards";
 import {
   odooLogin, odooFetchOpenTickets, odooReadTicket, odooReceive, odooChangeBg, odooClose, odooCancel, odooChatterPost,
   isOpenStage, isDoneStage, type OdooSession,
@@ -82,26 +82,31 @@ async function runPull(): Promise<void> {
         // نجاح الدخول ⇒ الشارة خضراء + uid
         await prisma.tower.update({ where: { id: o.id }, data: { odooLastOk: new Date(), odooLastError: null, ...(o.odooUid == null ? { odooUid: s.uid } : {}) } });
 
-        // (١) جلب الجديد — للمفعّل فقط (المعطّل في وضع drain لا يجلب جديداً)
-        if (enabled) {
-          const since = o.odooLastTicketId ?? 0;
-          const tickets = await odooFetchOpenTickets(s, since);
-          let maxId = since;
-          for (const t of tickets) {
-            maxId = Math.max(maxId, t.id);
-            // حارس المصدر: مُسنَد لحساب المكتب حصراً
-            if (t.assignedUid != null && t.assignedUid !== s.uid) continue;
-            if (isDoneStage(t.stageName) || !isOpenStage(t.stageName)) continue; // المنجزة/المنتهية تُتجاهَل
-            // Change Team ⇒ رسيف تلقائيّ؛ In Progres ⇒ بلا رسيف (مُستلَمٌ مسبقاً)
-            if (t.stageName.trim().toLowerCase() === "change team") {
-              try { await odooReceive(s, t.id); } catch { /* لا يمنع الإنشاء */ }
-            }
-            await upsertOdooCard(o.id, t);
+        // (١) مسحٌ شامل كلّ دورة: كلّ التذاكر المفتوحة المُسنَدة للمكتب — **بلا قيد العلامة**.
+        // يلتقط الجديد، و**يعيد إنشاء بطاقةٍ حُذفت وتذكرتها ما زالت مفتوحة** (كي لا تبقى معلّقةً
+        // في أودو بلا Done/Cancel — طلب محمد)، و**يُحدّث البطاقات القائمة** (إلزاميّة اليوزر/الهاتف/bg).
+        // المعطّل (drain): تحديث القائم فقط — لا بطاقات جديدة.
+        const tickets = await odooFetchOpenTickets(s, 0);
+        const openById = new Map<number, (typeof tickets)[number]>();
+        let maxId = o.odooLastTicketId ?? 0;
+        for (const t of tickets) {
+          maxId = Math.max(maxId, t.id);
+          // حارس المصدر: مُسنَد لحساب المكتب حصراً
+          if (t.assignedUid != null && t.assignedUid !== s.uid) continue;
+          if (isDoneStage(t.stageName) || !isOpenStage(t.stageName)) continue; // المنجزة/المنتهية تُتجاهَل
+          openById.set(t.id, t);
+          const existing = await prisma.taskCard.findFirst({ where: { odooTicketId: t.id, isDeleted: false }, select: { id: true } });
+          if (existing) { await refreshOdooCard(existing.id, t); continue; } // قائمة ⇒ تحديثٌ فقط
+          if (!enabled) continue; // drain: لا إنشاء
+          // Change Team ⇒ رسيف تلقائيّ؛ In Progres ⇒ بلا رسيف (مُستلَمٌ مسبقاً)
+          if (t.stageName.trim().toLowerCase() === "change team") {
+            try { await odooReceive(s, t.id); } catch { /* لا يمنع الإنشاء */ }
           }
-          if (maxId > since) await prisma.tower.update({ where: { id: o.id }, data: { odooLastTicketId: maxId } });
+          await upsertOdooCard(o.id, t);
         }
+        if (maxId > (o.odooLastTicketId ?? 0)) await prisma.tower.update({ where: { id: o.id }, data: { odooLastTicketId: maxId } });
 
-        // (٢) مصالحة البطاقات المفتوحة: أُغلقت خارجيّاً في أودو ⇒ أغلقها عندنا (drain وغيره)
+        // (٢) مصالحة: بطاقات مفتوحة تذاكرها **ليست** ضمن المفتوح المسحوب ⇒ تحقّقٌ مباشر (أُغلقت خارجيّاً؟)
         const listIds = await listIdsOf(o.id);
         if (listIds.length) {
           const open = await prisma.taskCard.findMany({
@@ -109,6 +114,7 @@ async function runPull(): Promise<void> {
             select: { id: true, odooTicketId: true }, take: 40,
           });
           for (const c of open) {
+            if (openById.has(c.odooTicketId as number)) continue; // ما زالت مفتوحةً — حُدّثت أعلاه
             try {
               const tk = await odooReadTicket(s, c.odooTicketId as number);
               if (tk && isDoneStage(tk.stageName)) {
