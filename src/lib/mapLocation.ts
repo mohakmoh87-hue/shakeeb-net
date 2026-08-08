@@ -1,11 +1,10 @@
 import { prisma } from "@/lib/prisma";
 
 // ===== ربط يوزر المشترك بموقع العمود في الخريطة =====
-// كل اليوزرات تبدأ بـ bg. الصيغة: bg-A-B-C  ←  اسم العمود: F{A}/{B}/{منطقة}
-// **بلا تبديل** (تصحيح محمد 2026-08-08): A=FDT وB=FAT كما هما — التبديل السابق كان
-// استنتاجاً خاطئاً يُصيب عموداً حقيقيّاً غير ذي علاقة (bg-7-26 كان يُحلّ إلى F26/7 وهو
-// كابينة أخرى) بدل قول «لا يوجد له خريطة». الدليل: سلاسل الخريطة F10/1..F10/13 = كابينة
-// FDT بفروعها FAT. عمودٌ غير موجود ⇒ null (يظهر «تعذّر التحديد» + خيار إرسال الموقع).
+// كل اليوزرات تبدأ بـ bg. الصيغة: bg-A-B-C (A=FDT، B=FAT) ← اسم العمود: F{FAT}/{FDT}/{منطقة}
+// **قاعدة محمد النهائيّة (2026-08-08): «الصحيح هو fat/fdt»** — أي bg-7-26 ⇒ F26/7.
+// (يطابق أسماء الخريطة المستوردة: F26/7/MWA موجودة.) عمودٌ غير موجود ⇒ null
+// («موقع هذا اليوزر غير موجود في الخريطة» + خيار إرسال موقع العمود من الفنيّ).
 // المنطقة تُؤخذ من مكتب المشترك: المواصلات(mu)→MWA، الرسالة(res)/الشهداء(shu)→SLM.
 
 // المكتب (لاحقة اليوزر) ← رمز المنطقة
@@ -55,7 +54,7 @@ export function candidateColumnNames(netUser: string | null | undefined, areaHin
   if (areaHint) areas = [areaHint.toUpperCase()];
   else if (suf && OFFICE_AREA[suf]) areas = [OFFICE_AREA[suf]];
   else areas = [...FALLBACK_AREAS];
-  return [...new Set(areas)].map((area) => `F${ab.a}/${ab.b}/${area}`.toUpperCase());
+  return [...new Set(areas)].map((area) => `F${ab.b}/${ab.a}/${area}`.toUpperCase());
 }
 
 export type MapLoc = { name: string; lat: number; lng: number };
