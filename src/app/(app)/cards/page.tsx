@@ -19,6 +19,10 @@ export default function CardsPage() {
   const [canDelete, setCanDelete] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [availFilter, setAvailFilter] = useState<number | "">("");
+  const [canEditPrice, setCanEditPrice] = useState(false); // تصحيح سعر الكارت للمدير حصراً
+  const [fixTarget, setFixTarget] = useState<{ packageId: number; oldPrice: number; count: number } | null>(null);
+  const [fixNewPrice, setFixNewPrice] = useState("");
+  const [fixBusy, setFixBusy] = useState(false);
   // ===== بحث الكروت المستخدمة (طلب محمد 2026-08-05) =====
   // البحث في الخادم لا في المعروض: فيطال كل الكروت لا آخر ألف فقط.
   const [uq, setUq] = useState("");        // سيريال أو اسم مشترك أو ساحب الكارت
@@ -71,6 +75,26 @@ export default function CardsPage() {
   }, [view, loadAvail, loadUsed]);
 
   const availShown = availFilter ? avail.filter((c) => c.packageId === availFilter) : avail;
+  // تفصيل مبالغ الفئة المختارة حسب سعر الكارت (السعر مثبَّت لحظة الإضافة لكل كارت)
+  const breakdown = availFilter
+    ? Object.entries(availShown.reduce<Record<number, number>>((acc, c) => { const p = c.price ?? 0; acc[p] = (acc[p] ?? 0) + 1; return acc; }, {}))
+        .map(([price, count]) => ({ price: Number(price), count }))
+        .sort((a, b) => b.price - a.price)
+    : [];
+  const breakdownTotal = breakdown.reduce((sum, g) => sum + g.price * g.count, 0);
+  async function submitFixPrice() {
+    if (!fixTarget || fixBusy) return;
+    const np = Number(fixNewPrice);
+    if (!Number.isFinite(np) || np < 0) { setError("أدخل سعراً صحيحاً"); return; }
+    setFixBusy(true); setError("");
+    try {
+      const res = await fetch("/api/recharge-cards/fix-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ packageId: fixTarget.packageId, oldPrice: fixTarget.oldPrice, newPrice: np }) });
+      const d = await res.json();
+      if (!res.ok) { setError(d.error ?? "فشل التصحيح"); return; }
+      setFixTarget(null); loadAvail(); load();
+    } catch { setError("تعذّر الاتصال بالخادم"); }
+    finally { setFixBusy(false); }
+  }
   function toggle(id: number) {
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
@@ -106,6 +130,7 @@ export default function CardsPage() {
       const m: Record<number, number> = {};
       for (const p of (d.packages ?? [])) m[p.id] = p.cardCost ?? 0;
       setCostMap(m);
+      setCanEditPrice(!!d.canEdit);
     })));
   }, []);
   const cardPrice = packageId ? (costMap[packageId] ?? 0) : 0;
@@ -159,6 +184,20 @@ export default function CardsPage() {
             )}
           </div>
           {error && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
+          {availFilter && breakdown.length > 0 && (
+            <div className="mb-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h4 className="mb-2 font-bold text-slate-800">تفصيل مبالغ الفئة حسب سعر الكارت</h4>
+              <div className="space-y-1.5">
+                {breakdown.map((g) => (
+                  <div key={g.price} className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-slate-700"><b>{g.count}</b> كارت × <b>{fmt(g.price)}</b> د.ع = <b className="text-emerald-700">{fmt(g.count * g.price)}</b> د.ع</span>
+                    {canEditPrice && <button onClick={() => { setFixTarget({ packageId: availFilter as number, oldPrice: g.price, count: g.count }); setFixNewPrice(String(g.price)); setError(""); }} className="rounded bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 hover:bg-amber-100">✏️ تصحيح السعر</button>}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 border-t border-slate-100 pt-2 text-base font-extrabold text-emerald-700">المجموع: {fmt(breakdownTotal)} د.ع</div>
+            </div>
+          )}
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-right text-sm">
               <thead className="bg-slate-50 text-slate-600">
@@ -312,6 +351,23 @@ export default function CardsPage() {
         </button>
       </div>
       </>
+      )}
+
+      {/* تصحيح سعر مجموعة كروت (للمدير) — لتصحيح سعرٍ أُدخِل خطأً قبل الإضافة */}
+      {fixTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setFixTarget(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-1 text-lg font-bold text-slate-800">تصحيح سعر الكارت</h3>
+            <p className="mb-3 text-sm text-slate-500">{fixTarget.count} كارت بسعر {fmt(fixTarget.oldPrice)} د.ع — سيُصحَّح سعرها (يؤثّر في ديون الكارتات).</p>
+            <label className="mb-1 block text-sm font-medium text-slate-700">السعر الصحيح لكل كارت</label>
+            <input type="number" value={fixNewPrice} onChange={(e) => setFixNewPrice(e.target.value)} dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue" />
+            {error && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
+            <div className="flex gap-2">
+              <button onClick={() => void submitFixPrice()} disabled={fixBusy} className="flex-1 rounded-lg bg-mynet-blue py-2.5 font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">{fixBusy ? "جارٍ..." : "حفظ التصحيح"}</button>
+              <button onClick={() => setFixTarget(null)} className="rounded-lg bg-slate-100 px-4 py-2.5 text-slate-600 hover:bg-slate-200">إلغاء</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
