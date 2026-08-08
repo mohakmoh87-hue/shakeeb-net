@@ -171,13 +171,10 @@ export async function grantLoan(opts: {
     return { ok: false, reason: "has_loan", message: "لدى المشترك قرضٌ غير مسدَّد", expiration: rec.expiration };
   }
 
-  // الأهليّة: للمنتهي فقط (سوبر سيل ترفض المفعَّل أيضاً كطبقة أخيرة)
-  if (rec.expiration) {
-    const exp = new Date(rec.expiration);
-    if (!isNaN(exp.getTime()) && exp.getTime() > Date.now()) {
-      return { ok: false, reason: "not_expired", message: "المشترك مفعَّل — القرض للمنتهي فقط", expiration: rec.expiration };
-    }
-  }
+  // الأهليّة: لا نمنع المحاولة بناءً على انتهاء الاشتراك (طلب محمد 2026-08-08). قد يُمنح القرض
+  // لاشتراكٍ بقي له يومٌ واحد في بعض الحالات، وقد يكون عدّ الأيّام في برنامجنا خاطئاً (٢٠ يوماً
+  // عندنا و٠ في الساس). سوبر سيل هي المرجع الأخير: إن كان فعلاً غير مؤهَّل ترفض المنح فنُبلّغ
+  // رسالتها (reason=rejected)؛ حارسا المطابقة والقرض القائم أعلاه يبقيان كما هما.
 
   // ٣) الرمز الخاصّ بالمشترك من notify
   const prof = await fetchProfileToken(dealerToken, sasId);

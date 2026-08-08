@@ -519,8 +519,9 @@ export default function SubscribersBoard() {
                       <div className="subbar">
                         <div className="sb-row">
                           <button className="sb-act go" disabled={actChecking === s.id} onClick={() => startActivation(s)}>⚡ {actChecking === s.id ? "…" : "تفعيل"}</button>
-                          {/* قرض فزعة: يظهر للمنتهي فقط، في مكتبٍ مفعَّل، لمن يملك تفعيل الاشتراكات، وبلا قرضٍ قائم */}
-                          {!s.hasLoan && d <= 0 && can("subscriptions.manage") && officeLoanOn(s.towerId) && (
+                          {/* قرض فزعة: يُحاوَل حتى لو لم ينته الاشتراك (طلب محمد) — سوبر سيل هي المرجع الأخير.
+                              يظهر في مكتبٍ مفعَّل، لمن يملك تفعيل الاشتراكات، وبلا قرضٍ قائم. */}
+                          {!s.hasLoan && can("subscriptions.manage") && officeLoanOn(s.towerId) && (
                             <button className="sb-act loan" onClick={() => { setLoanSub(s); setLoanMsg(""); }}>💳 قرض</button>
                           )}
                           <span className="sb-sep" />
