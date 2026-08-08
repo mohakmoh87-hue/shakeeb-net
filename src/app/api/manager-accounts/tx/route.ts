@@ -50,19 +50,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, id: created.id, master: true }, { status: 201 });
   }
 
-  // منع تسديد كارتات أكثر من الدين المتبقّي — ضمن كروت/حركات الوكيل فقط
-  // (يشمل التعديلات اليدوية: card-debt-add يزيد الدين وcard-debt-sub يُنقصه)
-  if (type === "card-payment") {
-    const [cardsAgg, mgr] = await Promise.all([
-      prisma.rechargeCard.aggregate({ where: { agentId }, _sum: { price: true } }),
-      prisma.managerTx.groupBy({ by: ["type"], where: { isDeleted: false, agentId, type: { in: ["card-payment", "card-debt-add", "card-debt-sub"] } }, _sum: { amount: true } }),
-    ]);
-    const sumBy = (t: string) => mgr.find((m) => m.type === t)?._sum.amount ?? 0;
-    const remaining = (cardsAgg._sum.price ?? 0) + sumBy("card-debt-add") - sumBy("card-debt-sub") - sumBy("card-payment");
-    if (amount > remaining + 0.001) {
-      return NextResponse.json({ error: `المبلغ أكبر من ديون الكارتات المتبقّية (${remaining.toLocaleString("en-US")})` }, { status: 400 });
-    }
-  }
+  // تسديد الكارتات يجوز أن يتجاوز الدين المتبقّي (طلب محمد 2026-08-08): الفائض يُسجَّل
+  // ويجعل الدين بالسالب (رصيدٌ لك)، فيُخصَم تلقائيّاً من الكارتات الجديدة عبر معادلة ديون
+  // الكارتات (المتبقّي = كلفة الكروت + التعديلات اليدوية − المدفوعات). فلا حدّ أعلى للمبلغ.
 
   const created = await prisma.managerTx.create({
     data: { type, amount, notes: notes ?? null, userId: session?.userId, agentId, managerId, byUser: g.session.fullName ?? g.session.username },
