@@ -29,12 +29,13 @@ export async function GET(request: Request) {
       technicianId: { in: techs.map((t) => t.id) },
     },
     orderBy: { completedAt: "asc" },
-    select: { id: true, title: true, kind: true, amount: true, technicianId: true, completedAt: true },
+    select: { id: true, title: true, kind: true, amount: true, subAmount: true, technicianId: true, completedAt: true },
   });
 
   return NextResponse.json({
     completions: cards.map((c) => ({
-      id: c.id, title: c.title, kind: c.kind, amount: c.amount,
+      // المبلغ المعروض = المبيع/التوصيل + الاشتراك (كان يعرض التوصيل وحده فيظهر 1000 دائماً)
+      id: c.id, title: c.title, kind: c.kind, amount: (c.amount ?? 0) + (c.subAmount ?? 0),
       technicianName: c.technicianId ? techMap.get(c.technicianId) ?? "فني" : "فني",
       completedAt: c.completedAt,
     })),
