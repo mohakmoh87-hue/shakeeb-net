@@ -30,23 +30,9 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   const [allOffices, setAllOffices] = useState<{ id: number; name: string | null }[]>([]);
   const [extraSel, setExtraSel] = useState<Set<number>>(new Set());
   const [editHome, setEditHome] = useState<number | null>(null); // مكتب الفني الأصلي (للاستبعاد)
-  // ربط أودو (Helpdesk) — للمدير والمستخدم، لمكتبٍ محدَّد (officeId)
-  const [odoo, setOdoo] = useState<{ odooEnabled: string; hasOdooCreds: boolean; odooUser: string | null; odooUrl: string | null; odooLastOk: string | null; odooLastError: string | null } | null>(null);
-  const [odooOpen, setOdooOpen] = useState(false);
-  const [odooForm, setOdooForm] = useState({ odooUser: "", odooPass: "", odooUrl: "" });
-  const [odooEnabledForm, setOdooEnabledForm] = useState(true);
-  const [odooTest, setOdooTest] = useState("");
-  const [odooBusy, setOdooBusy] = useState(false);
   useEffect(() => {
     fetch("/api/towers").then((r) => (r.ok ? r.json() : [])).then((d) => setAllOffices(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
-  const loadOdoo = useCallback(() => {
-    if (officeId == null) { setOdoo(null); return; }
-    fetch(`/api/towers/${officeId}/odoo`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && !d.error) setOdoo(d); }).catch(() => {});
-  }, [officeId]);
-  useEffect(() => { loadOdoo(); }, [loadOdoo]);
-  // الشارة: «مفعّل» أخضر = تفعيلٌ + آخر دخولٍ ناجح؛ غير ذلك «غير مفعّل» أحمر
-  const odooOn = odoo?.odooEnabled === "1" && !!odoo?.odooLastOk;
 
   const load = useCallback(() => {
     fetch(`/api/field/technicians${officeId != null ? `?officeId=${officeId}` : ""}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setTechs(d.technicians ?? []); setIsManager(d.isManager !== false); } });
@@ -103,30 +89,6 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
     setMsg(r.ok ? `مُسحت بصمات ${d.cleared ?? 0} فني ✓ — سيسجّلون من جديد` : (d.error ?? "تعذّر المسح"));
   }
 
-  // اختبار اتصال أودو (سحابيّ، لمرّة) — لا يحفظ
-  async function testOdoo() {
-    if (officeId == null) return;
-    setOdooBusy(true); setOdooTest("جارٍ الاختبار…");
-    try {
-      const r = await fetch(`/api/towers/${officeId}/odoo-test`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(odooForm) });
-      const d = await r.json().catch(() => ({}));
-      setOdooTest(`${d.ok ? "✓" : "✗"} ${d.message ?? d.error ?? "تعذّر الاختبار"}`);
-    } catch { setOdooTest("✗ تعذّر الاتصال بالخادم"); }
-    setOdooBusy(false);
-  }
-  // حفظ إعداد أودو (يجرّب دخولاً لضبط الشارة فوراً)
-  async function saveOdoo() {
-    if (officeId == null) return;
-    setOdooBusy(true); setOdooTest("");
-    try {
-      const r = await fetch(`/api/towers/${officeId}/odoo`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...odooForm, odooEnabled: odooEnabledForm ? "1" : "0" }) });
-      const d = await r.json().catch(() => ({}));
-      setOdooBusy(false);
-      if (r.ok) { loadOdoo(); setOdooOpen(false); onChange(); }
-      else setOdooTest(`✗ ${d.error ?? "تعذّر الحفظ"}`);
-    } catch { setOdooBusy(false); setOdooTest("✗ تعذّر الاتصال بالخادم"); }
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-3" onClick={onClose}>
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-slate-50 p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
@@ -144,20 +106,6 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
         )}
         {!openForm && techs.length > 0 && (
           <button onClick={() => setTrackIds(techs.map((t) => t.id))} className="mb-4 w-full rounded-2xl bg-gradient-to-br from-sky-500 to-sky-700 py-3 text-base font-extrabold text-white shadow-md active:scale-[0.99]">📍 تتبع موقع الجميع</button>
-        )}
-
-        {/* ربط أودو (تذاكر الهيلبدسك) — للمدير والمستخدم، لمكتبٍ محدَّد. الشارة: مفعّل أخضر / غير مفعّل أحمر */}
-        {!openForm && officeId != null && (
-          <button
-            onClick={() => { setOdooForm({ odooUser: odoo?.odooUser ?? "", odooPass: "", odooUrl: odoo?.odooUrl ?? "" }); setOdooEnabledForm((odoo?.odooEnabled ?? "0") === "1"); setOdooTest(""); setOdooOpen(true); }}
-            className="mb-3 flex w-full items-center justify-between rounded-2xl border-2 bg-white px-4 py-3 text-sm font-bold shadow-sm active:scale-[0.99]"
-            style={{ borderColor: odooOn ? "#16a34a" : "#dc2626" }}
-          >
-            <span className="text-slate-700">🔗 ربط أودو</span>
-            <span className="rounded-lg px-3 py-1 text-xs font-extrabold text-white" style={{ background: odooOn ? "#16a34a" : "#dc2626" }}>
-              {odooOn ? "مفعّل" : "غير مفعّل"}
-            </span>
-          </button>
         )}
 
         {openForm && (
@@ -285,32 +233,6 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
         <TrackModal techs={techs.map((t) => ({ id: t.id, name: t.name }))} initialIds={trackIds} onClose={() => setTrackIds(null)} />
       )}
 
-      {/* نافذة إعداد ربط أودو */}
-      {odooOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => !odooBusy && setOdooOpen(false)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 text-center text-lg font-extrabold text-slate-800">🔗 ربط أودو — {officeName}</div>
-            <label className="mb-2 flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 p-2.5">
-              <input type="checkbox" checked={odooEnabledForm} onChange={(e) => setOdooEnabledForm(e.target.checked)} className="h-4 w-4 accent-emerald-600" />
-              <span className="text-sm font-bold text-slate-700">تفعيل ربط أودو لهذا المكتب</span>
-            </label>
-            <div className="space-y-2">
-              <L label="اسم المستخدم (أودو)"><I v={odooForm.odooUser} on={(v) => setOdooForm((f) => ({ ...f, odooUser: v }))} ltr /></L>
-              <L label={odoo?.hasOdooCreds ? "كلمة المرور (اتركها فارغة لإبقائها)" : "كلمة المرور"}>
-                <input type="password" value={odooForm.odooPass} onChange={(e) => setOdooForm((f) => ({ ...f, odooPass: e.target.value }))} dir="ltr" className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-mynet-blue" />
-              </L>
-              <L label="رابط أودو (اختياري)"><I v={odooForm.odooUrl} on={(v) => setOdooForm((f) => ({ ...f, odooUrl: v }))} ltr /></L>
-            </div>
-            <button onClick={testOdoo} disabled={odooBusy} className="mt-3 w-full rounded-lg border border-mynet-blue bg-blue-50 py-2 text-sm font-bold text-mynet-blue hover:bg-blue-100 disabled:opacity-60">🔌 اختبار الاتصال</button>
-            {odooTest && <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-700">{odooTest}</div>}
-            {!odooTest && odoo?.odooLastError && <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">آخر خطأ: {odoo.odooLastError}</div>}
-            <div className="mt-3 flex gap-2">
-              <button onClick={saveOdoo} disabled={odooBusy} className="flex-1 rounded-lg bg-mynet-blue py-2 font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-60">{odooBusy ? "..." : "حفظ"}</button>
-              <button onClick={() => setOdooOpen(false)} disabled={odooBusy} className="rounded-lg bg-slate-100 px-4 py-2 font-semibold text-slate-600">إغلاق</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

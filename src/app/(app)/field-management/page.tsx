@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import MapButton from "@/components/MapButton";
 import TechOpsBar from "@/components/TechOpsBar";
 import TechnicianManager from "@/components/TechnicianManager";
+import OdooConfigButton from "@/components/OdooConfigButton";
 import LeaveReview from "@/components/LeaveReview";
 import CardTypeManager from "@/components/CardTypeManager";
 import DeductionReview from "@/components/DeductionReview";
@@ -659,6 +660,10 @@ export default function FieldManagementPage() {
               <div data-app-only className="text-[11px] font-medium text-white/70">🏢 {offices.find((o) => o.id === officeId)?.name ?? `مكتب ${officeId}`}</div>
             )}
           </div>
+          {/* ربط أودو — بجانب العنوان (للمدير والمستخدم، لا للفني)؛ شارة مفعّل أخضر/غير مفعّل أحمر */}
+          {!isTech && officeId != null && (
+            <OdooConfigButton officeId={officeId} officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"} onChange={() => load(officeId)} />
+          )}
         </div>
         <div className="flex items-center gap-2">
           {canManage && <NotificationsBell />}
