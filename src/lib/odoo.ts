@@ -213,7 +213,8 @@ export async function odooFetchOpenTickets(session: OdooSession, sinceId: number
     "fdt_id", "fat_id", "bg_field", "access_token",
     "issue_type", "type", "task_type",
   ];
-  const rows = await withReauth(session, () => searchReadResilient(session, "helpdesk.ticket", domain, fields, { order: "id asc", limit: 200 }));
+  // تنازليّاً (الأحدث أوّلاً): المفتوحة حديثةٌ دائماً؛ التصاعديّ كان يجلب أقدم التذاكر (كلّها مُغلقة) ⇒ 0 بطاقة.
+  const rows = await withReauth(session, () => searchReadResilient(session, "helpdesk.ticket", domain, fields, { order: "id desc", limit: 400 }));
   const out: OdooTicket[] = [];
   for (const r of rows) {
     out.push({
