@@ -25,6 +25,7 @@ type Office = {
   debtReminderTime: string | null;
   autoAssignEnabled?: boolean;
   reminderTime: string | null;
+  reminderDays: number | null; // أيام تذكير الانتهاء — فارغ = يومان
   lat: number | null;
   lng: number | null;
   geoRadius: number | null;
@@ -229,6 +230,13 @@ export default function OfficesPage() {
                   <F label="وقت تذكير انتهاء الاشتراك (يومياً) — بحسب وقت فتح هذا المكتب">
                     <input type="time" value={form.reminderTime ?? ""} disabled={ro} onChange={(e) => set("reminderTime", e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50" />
                     <span className="mt-0.5 block text-[11px] text-slate-400">فارغ = الوقت العام (13:00). يُرسل التذكير حين تكون حاسبة هذا المكتب مشغّلة.</span>
+                  </F>
+                  {/* عدد أيام التذكير لهذا المكتب — كان يومين ثابتاً (طلب محمد 2026-08-09) */}
+                  <F label="أيام تذكير الانتهاء (يُرسَل لمن ينتهي خلالها)">
+                    <input type="number" min={1} max={60} value={form.reminderDays ?? ""} disabled={ro}
+                      onChange={(e) => set("reminderDays", e.target.value === "" ? null : Number(e.target.value))}
+                      dir="ltr" placeholder="2" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50" />
+                    <span className="mt-0.5 block text-[11px] text-slate-400">فارغ = يومان. مثال: 3 ⇒ يُذكَّر من ينتهي اشتراكه خلال ٣ أيام.</span>
                   </F>
                   <F label="منطقة الخريطة (لتحديد مواقع المشتركين)">
                     <select value={form.mapArea ?? ""} disabled={ro} onChange={(e) => set("mapArea", e.target.value || null)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50">

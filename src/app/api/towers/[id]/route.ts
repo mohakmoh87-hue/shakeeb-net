@@ -28,6 +28,7 @@ const schema = z.object({
   debtReminderTime: z.string().nullable().optional(), // وقت رسائل الديون (HH:MM) — فارغ = يتبع reminderTime
   autoAssignEnabled: z.boolean().optional(), // توزيع البطاقات تلقائياً على فنيي هذا المكتب
   reminderTime: z.string().nullable().optional(), // وقت تذكير الانتهاء الخاص بهذا المكتب (HH:MM)
+  reminderDays: z.coerce.number().int().min(1).max(60).nullable().optional(), // أيام تذكير الانتهاء — فارغ = يومان
   // موقع المكتب للبصمة الجغرافية
   lat: z.coerce.number().nullable().optional(),
   lng: z.coerce.number().nullable().optional(),

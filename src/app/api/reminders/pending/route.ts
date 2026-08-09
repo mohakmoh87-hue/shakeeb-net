@@ -20,16 +20,18 @@ export async function GET() {
       OR: [{ lastReminderDate: null }, { lastReminderDate: { not: today } }],
       ...(await agentOfficeFilter(g.session)),
     },
-    select: { id: true, name: true },
+    select: { id: true, name: true, reminderDays: true },
   });
   if (offices.length === 0) return NextResponse.json({ pending: [] });
 
   const now = new Date();
-  const limit = new Date();
-  limit.setDate(limit.getDate() + 2);
+  const { reminderDaysOf } = await import("@/lib/scheduler");
 
   const pending: { officeId: number; officeName: string | null; count: number }[] = [];
   for (const o of offices) {
+    // نافذة كلّ مكتب بأيامه هو (فارغ = يومان) — طلب محمد 2026-08-09
+    const limit = new Date();
+    limit.setDate(limit.getDate() + reminderDaysOf(o.reminderDays));
     const count = await prisma.subscriber.count({
       where: { isDeleted: false, waEnabled: true, towerId: o.id, dateTo: { not: null, gte: now, lte: limit } },
     });

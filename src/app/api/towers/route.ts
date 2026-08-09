@@ -24,6 +24,7 @@ const schema = z.object({
   silent: z.string().nullable().optional(), // 1 = إرسال صامت
   waEnabled: z.string().nullable().optional(), // 1 = تفعيل واتساب المكتب
   syncTime: z.string().nullable().optional(), // وقت مزامنة الاشتراكات اليومية (HH:MM)
+  reminderDays: z.coerce.number().int().min(1).max(60).nullable().optional(), // أيام تذكير الانتهاء — فارغ = يومان
   syncEnabled: z.string().nullable().optional(), // 1 = تفعيل المزامنة التلقائية
   debtReminderEnabled: z.string().nullable().optional(), // 1 = رسائل ديون يومية
   debtReminderTime: z.string().nullable().optional(), // وقت رسائل الديون (HH:MM) — فارغ = يتبع reminderTime

@@ -354,7 +354,7 @@ async function runOfficeSyncInner(
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
       where: { towerId: officeId, isDeleted: false, sasId: { not: null } },
-      select: { id: true, sasId: true, dateTo: true, packageId: true },
+      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
 
@@ -373,7 +373,7 @@ async function runOfficeSyncInner(
     const matcher = await matcherForOffice(officeId);
 
     const toImport: {
-      name: string | null; netUser: string | null; phone: string | null;
+      name: string | null; netUser: string | null; phone: string | null; address: string | null;
       sasId: number; towerId: number; dateTo: Date | null; createdByUser: string;
       packageId: number | null;
     }[] = [];
@@ -389,7 +389,7 @@ async function runOfficeSyncInner(
         // (كان packageId غائباً تماماً هنا فيولد كل مشتركي المزامنة بلا باقة وسعرٍ صفر —
         //  العطل الذي رصده محمد 2026-08-02، وأوضح مثاله وكيل جاكوار.)
         toImport.push({
-          name: u.name, netUser: u.username, phone: u.phone,
+          name: u.name, netUser: u.username, phone: u.phone, address: u.address,
           sasId: u.sasId, towerId: officeId, dateTo: validDate, createdByUser: "sync",
           packageId: matcher.match(u.packageName), // موجودة فقط — لا تُنشأ باقات جديدة أبداً
         });
@@ -409,6 +409,11 @@ async function runOfficeSyncInner(
         const arr = pkgFixQueue.get(sasPkgId) ?? [];
         arr.push(p.id);
         pkgFixQueue.set(sasPkgId, arr);
+      }
+
+      // «ادرس 1» من الساس (طلب محمد 2026-08-09): يُملأ/يُصحَّح عند الاختلاف — نادر التغيّر فكلفته زهيدة
+      if (u.address && u.address !== p.address) {
+        await prisma.subscriber.update({ where: { id: p.id }, data: { address: u.address } });
       }
 
       // فئته معروفة → تمديد التاريخ للأمام فقط: إن كان تاريخ الساس أبعد من تاريخ

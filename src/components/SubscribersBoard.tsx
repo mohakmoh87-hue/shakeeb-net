@@ -99,17 +99,26 @@ export default function SubscribersBoard() {
   // مدخل «ديون القروض» يظهر فقط إن وُجد مكتبٌ مفعّلٌ بطريقة «كتفعيل» (هي وحدها تُنشئ ديوناً).
   // إطفاء الميزة أو اختيار «قرض عادي» ⇒ لا ديون ⇒ يُخفى المدخل (طلب محمد 2026-08-07).
   const showLoanDebts = towers.some((t) => t.loanEnabled === "1" && (t.loanMode ?? "activation") !== "normal");
+  // خيار «القرض العادي» (طلب محمد 2026-08-09): إضافة ٧ أيّام، أو بلا إضافة أيّام (يبقى تاريخه + استثناء مزامنة)
+  const [loanVariant, setLoanVariant] = useState<"withDays" | "noDays">("withDays");
   async function confirmLoan() {
     if (!loanSub) return;
     setLoanBusy(true); setLoanMsg("");
     try {
-      const r = await fetch(`/api/subscribers/${loanSub.id}/loan`, { method: "POST" });
+      const r = await fetch(`/api/subscribers/${loanSub.id}/loan`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variant: loanVariant }), // خيار القرض العادي: withDays | noDays
+      });
       const d = await r.json().catch(() => ({}));
       setLoanBusy(false);
       if (r.ok) {
         setLoanSub(null);
-        // الأيام حسب طريقة المكتب: قرض عادي ٧ (نفس الساس)، قرض كتفعيل ٣٠ وهميّة
-        setMsg(d.mode === "normal" ? "✅ تم منح القرض بنجاح — مُدِّد ٧ أيّام" : "✅ تم منح القرض بنجاح — مُدِّد ٣٠ يوماً");
+        // الأيام حسب طريقة المكتب: قرض عادي ٧ (نفس الساس) أو بلا إضافة أيام، وقرض كتفعيل ٣٠ وهميّة
+        setMsg(d.mode === "normal"
+          ? (d.noDays
+              ? "✅ تم منح القرض — بلا إضافة أيّام؛ تاريخ الانتهاء كما هو ويُستثنى من المزامنة حتى التفعيل بكارت"
+              : "✅ تم منح القرض بنجاح — مُدِّد ٧ أيّام")
+          : "✅ تم منح القرض بنجاح — مُدِّد ٣٠ يوماً");
         load(query, showAllTowers);
         announceMoneyChanged();
       } else {
@@ -544,7 +553,7 @@ export default function SubscribersBoard() {
                           {/* قرض فزعة: يُحاوَل حتى لو لم ينته الاشتراك (طلب محمد) — سوبر سيل هي المرجع الأخير.
                               يظهر في مكتبٍ مفعَّل، لمن يملك تفعيل الاشتراكات، وبلا قرضٍ قائم. */}
                           {!s.hasLoan && can("subscriptions.manage") && officeLoanOn(s.towerId) && (
-                            <button className="sb-act loan" onClick={() => { setLoanSub(s); setLoanMsg(""); }}>💳 قرض</button>
+                            <button className="sb-act loan" onClick={() => { setLoanSub(s); setLoanMsg(""); setLoanVariant("withDays"); }}>💳 قرض</button>
                           )}
                           <span className="sb-sep" />
                           <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}>الأيام المتبقية <b>{d}</b></span>
@@ -1050,9 +1059,23 @@ export default function SubscribersBoard() {
                 ? <div>⚡ <b>قرض عادي</b> — بلا دَين ولا رسالة (تمديد فقط)</div>
                 : <div>💵 مبلغ الدَين: <b>{fmt(packages.find((p) => p.id === loanSub.packageId)?.priceDinar ?? 0)}</b> د.ع</div>}
               {officeLoanMode(loanSub.towerId) === "normal"
-                ? <div>📅 يُمدَّد <b>٧ أيّام</b> (نفس منحة الساس)</div>
+                ? <div>📅 {loanVariant === "noDays" ? <>يبقى تاريخ الانتهاء <b>كما هو</b> (بلا إضافة أيّام)</> : <>يُمدَّد <b>٧ أيّام</b> (نفس منحة الساس)</>}</div>
                 : <div>📅 يُمدَّد <b>٣٠ يوماً</b> (٧ حقيقيّة في الساس)</div>}
             </div>
+
+            {/* القرض العادي: خيارَا الأيّام (طلب محمد 2026-08-09) */}
+            {officeLoanMode(loanSub.towerId) === "normal" && (
+              <div className="mb-3 space-y-1.5">
+                <label className={`flex cursor-pointer items-start gap-2 rounded-xl border-2 px-3 py-2 text-xs ${loanVariant === "withDays" ? "border-amber-500 bg-amber-50" : "border-slate-200 bg-white"}`}>
+                  <input type="radio" name="loanVariant" checked={loanVariant === "withDays"} onChange={() => setLoanVariant("withDays")} className="mt-0.5 h-4 w-4 accent-amber-600" />
+                  <span><b className="text-slate-800">قرض وإضافة أيّام</b><span className="block text-slate-500">يصير تاريخ الانتهاء بعد ٧ أيّام في البرنامج.</span></span>
+                </label>
+                <label className={`flex cursor-pointer items-start gap-2 rounded-xl border-2 px-3 py-2 text-xs ${loanVariant === "noDays" ? "border-amber-500 bg-amber-50" : "border-slate-200 bg-white"}`}>
+                  <input type="radio" name="loanVariant" checked={loanVariant === "noDays"} onChange={() => setLoanVariant("noDays")} className="mt-0.5 h-4 w-4 accent-amber-600" />
+                  <span><b className="text-slate-800">قرض بدون إضافة أيّام</b><span className="block text-slate-500">يبقى تاريخ انتهائه كما هو، ويُستثنى من المزامنة حتى تفعيله بكارتٍ حقيقيّ.</span></span>
+                </label>
+              </div>
+            )}
             {loanMsg && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">{loanMsg}</div>}
             <button onClick={() => void confirmLoan()} disabled={loanBusy} className="mb-2 w-full rounded-xl bg-amber-600 py-3 font-bold text-white hover:bg-amber-700 disabled:opacity-50">
               {loanBusy ? "جارٍ المنح…" : "تأكيد ومنح القرض"}

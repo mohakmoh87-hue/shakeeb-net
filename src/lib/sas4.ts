@@ -69,6 +69,7 @@ export interface SasUser {
   username: string;
   name: string | null;
   phone: string | null;
+  address: string | null; // «ادرس 1» من ملفّ المشترك في SAS (مثل «902 ع 3 ش9») — طلب محمد 2026-08-09
   expiration: string | null; // تاريخ الانتهاء
   days: number; // الأيام المتبقية
   packageName: string | null;
@@ -98,6 +99,7 @@ function normalize(u: Record<string, unknown>): SasUser {
     username: String(u.username ?? ""),
     name: fullName,
     phone: (u.phone as string) || null,
+    address: ((u.address as string) || "").trim() || null,
     expiration: exp,
     days,
     packageName: profile?.name ?? null,

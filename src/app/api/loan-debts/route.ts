@@ -34,7 +34,8 @@ export async function GET(request: Request) {
   }
 
   const rows = await prisma.loanDebt.findMany({
-    where: { isDeleted: false, ...scope, ...dateWhere },
+    // noDays: «قرض بلا إضافة أيام» ليس دَيناً ماليّاً — وسمُ استثناء مزامنةٍ فقط، فلا يظهر هنا
+    where: { isDeleted: false, noDays: false, ...scope, ...dateWhere },
     orderBy: { grantDate: "desc" },
     select: {
       id: true, subscriberId: true, towerId: true, amount: true, netUser: true,

@@ -20,6 +20,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const subscriberId = Number(id);
 
+  // خيار القرض العادي (طلب محمد 2026-08-09): «withDays» = يُمدَّد ٧ أيّام كالسابق؛
+  // «noDays» = يبقى تاريخ الانتهاء كما هو ويُستثنى من المزامنة حتى تفعيلٍ بكارتٍ حقيقيّ.
+  // لا أثر له على «كتفعيل» (activation) الذي يبقى ٣٠ يوماً + دَيناً كما هو.
+  const body = (await request.json().catch(() => null)) as { variant?: unknown } | null;
+  const noDaysRequested = String(body?.variant ?? "") === "noDays";
+
   // عزل الوكيل: لا يُمنح إلا مشترك يتبع وكيل المستخدم (نفس حارس التفعيل)
   const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
   if (!subscriber || subscriber.isDeleted || !(await sameAgentTower(g.session, subscriber.towerId))) {
@@ -89,12 +95,36 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   //   • normal (قرض عادي): ٧ أيام حقيقيّة فقط — نفس ما تمنحه سوبر سيل؛ بلا دَين، فلا تتجاهله
   //     المزامنة بل تؤكّد أيّامه السبعة من الساس (لا نفخ محليّ بلا مبرّر).
   const isNormal = office.loanMode === "normal";
+  // «قرض عادي بلا إضافة أيام» — يبقى تاريخه كما هو ويُستثنى من المزامنة (خيار محمد)
+  const noDays = isNormal && noDaysRequested;
   const LOAN_DAYS = isNormal ? 7 : 30;
   const expiryVirtual = new Date(now.getTime() + LOAN_DAYS * 86400000);
   try {
     await prisma.$transaction(async (tx) => {
-      // كلا الطريقتين: تمديد ٣٠ يوماً وهميّة (المزامنة أمامها-فقط تحمي الـ٣٠ لأنها > ٧ الساس)
-      await tx.subscriber.update({ where: { id: subscriberId }, data: { dateTo: expiryVirtual } });
+      // تمديد التاريخ — إلّا في «بلا إضافة أيام» فيبقى تاريخ الانتهاء الحاليّ حرفيّاً
+      if (!noDays) {
+        await tx.subscriber.update({ where: { id: subscriberId }, data: { dateTo: expiryVirtual } });
+      }
+      if (noDays) {
+        // وسمُ استثناء المزامنة (ليس دَيناً ماليّاً: amount=0 وnoDays=true فلا يظهر في «ديون القروض»).
+        // صفُّ LoanDebt يمنح تلقائيّاً: تجاهل المزامنة + منع قرضٍ ثانٍ + محوَه عند التفعيل بكارتٍ حقيقيّ.
+        await tx.loanDebt.create({
+          data: {
+            subscriberId,
+            towerId: subscriber.towerId,
+            agentId: office.agentId,
+            amount: 0,
+            packageId,
+            netUser: subscriber.netUser,
+            sasId: subscriber.sasId,
+            grantDate: now,
+            expiryVirtual: null,
+            prevDateTo: subscriber.dateTo, // تاريخه الحاليّ (لم يُغيَّر) — للإلغاء العكسيّ
+            createdByUser: session?.username ?? null,
+            noDays: true,
+          },
+        });
+      }
       if (!isNormal) {
         // قرض كتفعيل فقط: يُسجَّل الدَين (يظهر في «ديون القروض»، يُمحى عند التفعيل، تتجاهله المزامنة)
         await tx.loanDebt.create({
@@ -120,7 +150,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           action: "GRANT_LOAN",
           entity: "subscriber",
           entityId: String(subscriberId),
-          details: `قرض فزعة (${isNormal ? "عادي" : "كتفعيل"}) — ${subscriber.netUser} — ${isNormal ? "بلا دَين" : "مبلغ " + amount} — مكتب ${office.name ?? subscriber.towerId} — ينتهي ${expiryVirtual.toISOString().slice(0, 10)}`,
+          details: `قرض فزعة (${isNormal ? (noDays ? "عادي — بلا إضافة أيام" : "عادي") : "كتفعيل"}) — ${subscriber.netUser} — ${isNormal ? "بلا دَين" : "مبلغ " + amount} — مكتب ${office.name ?? subscriber.towerId} — ${noDays ? `يبقى تاريخه ${subscriber.dateTo ? subscriber.dateTo.toISOString().slice(0, 10) : "—"} ويُستثنى من المزامنة حتى التفعيل` : `ينتهي ${expiryVirtual.toISOString().slice(0, 10)}`}`,
         },
       });
     });
@@ -161,5 +191,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
   }
 
-  return NextResponse.json({ ok: true, verifiedUser: res.verifiedUser, mode: isNormal ? "normal" : "activation", amount: isNormal ? 0 : amount, expiryVirtual });
+  return NextResponse.json({
+    ok: true, verifiedUser: res.verifiedUser, mode: isNormal ? "normal" : "activation",
+    amount: isNormal ? 0 : amount, noDays,
+    expiryVirtual: noDays ? subscriber.dateTo : expiryVirtual,
+  });
 }

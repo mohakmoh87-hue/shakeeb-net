@@ -26,25 +26,40 @@ function baghdadDateStr(d: Date): string {
 function baghdadToday(): string { return baghdadDateStr(new Date()); }
 function baghdadYesterday(): Date { return new Date(Date.now() - 24 * 60 * 60 * 1000); }
 
-// ===== تذكير المشتركين المنتهين خلال يومين — لمكاتب محدّدة (أو الكل) =====
+// ===== تذكير المشتركين المنتهين خلال «أيام التذكير» — لمكاتب محدّدة (أو الكل) =====
+// عدد الأيام لكلّ مكتب (Tower.reminderDays) — فارغ = يومان (السلوك القديم). طلب محمد 2026-08-09.
+export const DEFAULT_REMINDER_DAYS = 2;
+export const reminderDaysOf = (d: number | null | undefined): number =>
+  d != null && Number.isFinite(d) && d >= 1 ? Math.floor(d) : DEFAULT_REMINDER_DAYS;
+
 export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent: number; failed: number }> {
   const now = new Date();
-  const limit = new Date();
-  limit.setDate(limit.getDate() + 2); // خلال يومين
+  // المكاتب أوّلاً: منها نعرف أيام كلّ مكتب — نستعلم بأوسع نافذة ثم نُرشّح كلّ مشترك بأيام مكتبه
+  const offices = await prisma.tower.findMany({ select: { id: true, name: true, waEnabled: true, agentId: true, reminderDays: true } });
+  const officeMap = new Map(offices.map((o) => [o.id, o]));
+  const involved = officeIds ? offices.filter((o) => officeIds.includes(o.id)) : offices;
+  const maxDays = involved.length ? Math.max(...involved.map((o) => reminderDaysOf(o.reminderDays))) : DEFAULT_REMINDER_DAYS;
+  const maxLimit = new Date();
+  maxLimit.setDate(maxLimit.getDate() + maxDays);
+  // حدّ كلّ مكتب (نهاية يوم الحدّ) — يُحسب مرّة لكلّ مكتب
+  const officeLimit = new Map<number, number>();
+  for (const o of involved) {
+    const l = new Date();
+    l.setDate(l.getDate() + reminderDaysOf(o.reminderDays));
+    officeLimit.set(o.id, l.getTime());
+  }
 
   const recipients = await prisma.subscriber.findMany({
     where: {
       isDeleted: false,
       waEnabled: true,
-      dateTo: { not: null, gte: now, lte: limit },
+      dateTo: { not: null, gte: now, lte: maxLimit },
       ...(officeIds ? { towerId: { in: officeIds } } : {}),
     },
   });
   const packages = await prisma.package.findMany({ select: { id: true, name: true, priceDinar: true } });
   const priceMap = new Map(packages.map((p) => [p.id, p.priceDinar ?? 0]));
   const pkgNameMap = new Map(packages.map((p) => [p.id, p.name]));
-  const offices = await prisma.tower.findMany({ select: { id: true, name: true, waEnabled: true, agentId: true } });
-  const officeMap = new Map(offices.map((o) => [o.id, o]));
   // اسم النظام الافتراضي لكل وكيل (معزول) — يُقرأ بحسب وكيل مكتب كل مستلم مع تخزين مؤقت
   const { getAgentSetting } = await import("@/lib/agentSettings");
   const fallbackCache = new Map<number | null, string>();
@@ -66,6 +81,9 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
   for (const sub of recipients) {
     const office = sub.towerId ? officeMap.get(sub.towerId) : null;
     if (office?.waEnabled === "0") continue; // مكتب معطّل الواتساب
+    // ترشيح بأيام مكتب المشترك نفسه (النافذة أعلاه أوسع نافذةٍ بين المكاتب)
+    const lim = sub.towerId != null ? officeLimit.get(sub.towerId) : undefined;
+    if (lim != null && sub.dateTo && sub.dateTo.getTime() > lim) continue;
     const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null);
     if (!template) continue; // لا قالب مفعّل لوكيل هذا المكتب
     if (i++ > 0) await sleep(10000); // تأخير 10 ثوانٍ بين رسالة وأخرى
