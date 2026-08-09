@@ -13,10 +13,17 @@ type Period = { from: string | null; to: string | null };
 type Archive = { id: number; periodFrom: string; periodTo: string; net: number; daysPaid: number; createdAt: string; paidByUser: string | null };
 // تفاصيل كشف سابق: كانت محفوظة كاملةً في القاعدة ولا تصل الواجهة إطلاقاً
 // — فتقرأ «صافي كذا» بلا سبيل لمعرفة كيف تكوّن، ولا يمكن إلغاؤه (المرحلة ١٠).
-type StDetail = { date?: string; kind?: string; amount?: number; reason?: string };
 type StView = {
-  statement: { id: number; technicianName: string; periodFrom: string; periodTo: string; daysPaid: number; dailyAmount: number; baseEarned: number; overtime: number; bonuses: number; attendanceDeductions: number; confirmedDeductions: number; net: number; paidByUser: string | null };
-  details: StDetail[];
+  statement: {
+    id: number; technicianName: string; periodFrom: string; periodTo: string; daysPaid: number; dailyAmount: number;
+    baseEarned: number; overtime: number; bonuses: number; attendanceDeductions: number; confirmedDeductions: number;
+    net: number; paidByUser: string | null;
+    credits?: number; advances?: number; cleanDays?: number | null;
+  };
+  details: Item[];        // البنود كاملةً (label هو الوصف — كان يُقرأ بمفتاحٍ خاطئ فيظهر فارغاً)
+  dayDetails?: Day[];     // تفصيل الأيام (للكشوف المحفوظة بعد 2026-08-09)
+  cardCounts?: { kind: string; count: number }[];
+  accountTxs?: { id: number; date: string; moneyIn: number; moneyOut: number; notes: string | null }[];
   payment: { id: number; amount: number; deleted: boolean } | null;
   cancelled: { at: string } | null;
 };
@@ -40,6 +47,7 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   const [msg, setMsg] = useState("");
   const [choosing, setChoosing] = useState(false);
   const [expand, setExpand] = useState<string | null>(null); // الخانة المفتوحة لعرض تفاصيلها
+  const [archExpand, setArchExpand] = useState<string | null>(null); // خانة كشفٍ سابقٍ مفتوحة التفاصيل
 
   const load = useCallback(() => {
     const q = isManager ? `?technicianId=${technicianId}` : "";
@@ -125,14 +133,14 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
             ) : (
               <ul className="mb-3 space-y-1">
                 {st.items.map((it, i) => (
-                  <li key={i}
-                    onClick={() => it.txId && setTxDetail(it.txId)}
-                    title={it.txId ? "اضغط لعرض الحركة المالية وراء هذا البند" : undefined}
+                  <li key={i}
+                    onClick={() => it.txId && setTxDetail(it.txId)}
+                    title={it.txId ? "اضغط لعرض الحركة المالية وراء هذا البند" : undefined}
                     className={
                       "flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs" +
                       (it.txId ? " cursor-pointer hover:border-mynet-blue hover:bg-white" : "")
-                    }>
-                    <div className="min-w-0">
+                    }>
+                    <div className="min-w-0">
                       <span className="font-semibold text-slate-700">{it.label}{it.txId ? " ↗" : ""}</span>
                       <span className="mr-1 text-slate-400" dir="ltr"> {it.date}</span>
                       {it.reason && <div className="truncate text-[11px] text-slate-500">{it.reason}</div>}
@@ -175,15 +183,16 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
                     <li key={h.id} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs">
                       <div className="flex cursor-pointer items-center justify-between gap-2"
                         onClick={() => {
-                          if (openSt?.statement.id === h.id) { setOpenSt(null); return; }
-                          setStBusy(true);
+                          if (openSt?.statement.id === h.id) { setOpenSt(null); setArchExpand(null); return; }
+                          setStBusy(true); setArchExpand(null);
                           fetch(`/api/field/salary/statement/${h.id}`)
                             .then((r) => (r.ok ? r.json() : null))
                             .then((d) => setOpenSt(d))
                             .finally(() => setStBusy(false));
                         }}>
                         <span className="text-slate-500" dir="ltr">{h.periodFrom} → {h.periodTo}</span>
-                        <span className="font-bold text-slate-700">{num(h.net)} د.ع · {h.daysPaid} يوم <span className="text-slate-400">{openSt?.statement.id === h.id ? "▲" : "▼"}</span></span>
+                        {/* الرمز (＋) لفتح تفاصيل الشهر السابق كاملةً — طلب محمد 2026-08-09 */}
+                        <span className="font-bold text-slate-700">{num(h.net)} د.ع · {h.daysPaid} يوم <span className="text-mynet-blue">{openSt?.statement.id === h.id ? "－" : "＋"}</span></span>
                       </div>
                       {openSt?.statement.id === h.id && (
                         <div className="mt-2 border-t border-slate-100 pt-2 text-[11px] text-slate-600">
@@ -193,24 +202,71 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
                           {openSt.payment?.deleted && !openSt.cancelled && (
                             <div className="mb-1 rounded bg-amber-50 px-2 py-1 font-bold text-amber-800">⚠️ قيد الصرف محذوف — الكشف يزعم دفعاً لم يعد قائماً</div>
                           )}
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-                            <span>مبالغ الأيام ({openSt.statement.daysPaid} × {num(openSt.statement.dailyAmount)})</span><b>{num(openSt.statement.baseEarned)}</b>
-                            <span>الإضافي</span><b>{num(openSt.statement.overtime)}</b>
-                            <span>المكافآت</span><b>{num(openSt.statement.bonuses)}</b>
-                            <span>خصم الحضور</span><b className="text-red-600">−{num(openSt.statement.attendanceDeductions)}</b>
-                            <span>خصومات مؤكّدة</span><b className="text-red-600">−{num(openSt.statement.confirmedDeductions)}</b>
-                            <span className="font-bold">الصافي المدفوع</span><b className="text-emerald-700">{num(openSt.statement.net)}</b>
+                          {/* ===== تفاصيل الشهر السابق — نفس الصناديق الثمانية للفترة الحاليّة (عرضٌ فقط) ===== */}
+                          <p className="mb-1 text-center text-[11px] text-slate-400">اضغط أي خانة لعرض تفاصيلها 👇</p>
+                          <div className="mb-2 grid grid-cols-2 gap-1.5 text-xs">
+                            <Cell k="days" label={`مبالغ الأيام (${openSt.statement.daysPaid})`} value={num(openSt.statement.baseEarned)} tone="pos" expand={archExpand} setExpand={setArchExpand} />
+                            <Cell k="overtime" label="الإضافي" value={num(openSt.statement.overtime)} tone="pos" expand={archExpand} setExpand={setArchExpand} />
+                            <Cell k="bonus" label="المكافآت" value={num(openSt.statement.bonuses)} tone="pos" expand={archExpand} setExpand={setArchExpand} />
+                            <Cell k="credit" label="إضافة للحساب (قبض)" value={num(openSt.statement.credits ?? 0)} tone="pos" expand={archExpand} setExpand={setArchExpand} />
+                            <Cell k="attded" label="خصم الحضور" value={num(openSt.statement.attendanceDeductions)} tone="neg" expand={archExpand} setExpand={setArchExpand} />
+                            <Cell k="confded" label="خصومات مؤكّدة" value={num(openSt.statement.confirmedDeductions)} tone="neg" expand={archExpand} setExpand={setArchExpand} />
+                            <Cell k="advance" label="سحب من الحساب (صرف)" value={num(openSt.statement.advances ?? 0)} tone="neg" expand={archExpand} setExpand={setArchExpand} />
+                            <Cell k="clean" label="بصمات سليمة" value={openSt.statement.cleanDays != null ? String(openSt.statement.cleanDays) : "—"} tone="mut" expand={archExpand} setExpand={setArchExpand} />
                           </div>
-                          {openSt.details.length > 0 && (
-                            <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-auto border-t border-slate-100 pt-1.5">
-                              {openSt.details.map((d, i) => (
-                                <li key={i} className="flex justify-between gap-2">
-                                  <span dir="ltr" className="text-slate-400">{d.date ?? ""}</span>
-                                  <span className="flex-1">{d.kind ?? ""}{d.reason ? ` — ${d.reason}` : ""}</span>
-                                  <b>{d.amount != null ? num(d.amount) : ""}</b>
-                                </li>
-                              ))}
-                            </ul>
+                          {archExpand && (
+                            <DetailPanel
+                              cat={archExpand}
+                              st={{
+                                daysPaid: openSt.statement.daysPaid, cleanDays: openSt.statement.cleanDays ?? 0,
+                                dailyAmount: openSt.statement.dailyAmount, baseEarned: openSt.statement.baseEarned,
+                                overtime: openSt.statement.overtime, bonuses: openSt.statement.bonuses,
+                                credits: openSt.statement.credits ?? 0, attendanceDeductions: openSt.statement.attendanceDeductions,
+                                confirmedDeductions: openSt.statement.confirmedDeductions, advances: openSt.statement.advances ?? 0,
+                                net: openSt.statement.net, periodFrom: openSt.statement.periodFrom, periodTo: openSt.statement.periodTo,
+                                items: openSt.details, dayDetails: openSt.dayDetails ?? [],
+                              }}
+                              onClose={() => setArchExpand(null)}
+                            />
+                          )}
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 border-t border-slate-100 pt-1.5">
+                            <span className="font-bold">الصافي المدفوع</span><b className="text-emerald-700">{num(openSt.statement.net)}</b>
+                            {openSt.statement.paidByUser && <><span>سدّده</span><b>{openSt.statement.paidByUser}</b></>}
+                          </div>
+
+                          {/* بطاقات تلك الفترة — من السجلّ الدائم (باقٍ بعد التسديد) */}
+                          {(openSt.cardCounts?.length ?? 0) > 0 && (
+                            <div className="mt-1.5 border-t border-slate-100 pt-1.5">
+                              <div className="mb-0.5 font-bold text-slate-700">🗂️ بطاقات منجزة ({num((openSt.cardCounts ?? []).reduce((s, c) => s + c.count, 0))})</div>
+                              <div className="flex flex-wrap gap-1">
+                                {(openSt.cardCounts ?? []).map((c) => (
+                                  <span key={c.kind} className="rounded bg-slate-100 px-1.5 py-0.5">{c.kind}: <b>{c.count}</b></span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* حركات حساب الموظّف لتلك الفترة (باقيةٌ موسومةً بالكشف) — قابلة للفتح */}
+                          {(openSt.accountTxs?.length ?? 0) > 0 && (
+                            <div className="mt-1.5 border-t border-slate-100 pt-1.5">
+                              <div className="mb-0.5 font-bold text-slate-700">💵 سلف ومقبوضات الحساب</div>
+                              <ul className="max-h-32 space-y-0.5 overflow-auto">
+                                {/* الفتح للمدير فقط: مسار تفاصيل الحركة ماليٌّ (finance.view) ويرفض جلسة الفنيّ */}
+                                {(openSt.accountTxs ?? []).map((m) => (
+                                  <li key={m.id} className={`flex justify-between gap-2 rounded px-1 ${isManager ? "cursor-pointer hover:bg-slate-50" : ""}`} onClick={isManager ? () => setTxDetail(m.id) : undefined}>
+                                    <span dir="ltr" className="text-slate-400">{String(m.date).slice(0, 10)}</span>
+                                    <span className="flex-1 truncate">{m.notes ?? "—"}</span>
+                                    <b className={m.moneyOut ? "text-rose-600" : "text-emerald-600"}>{m.moneyOut ? `−${num(m.moneyOut)}` : `+${num(m.moneyIn)}`}</b>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {(openSt.dayDetails?.length ?? 0) === 0 && (
+                            <div className="mt-1.5 rounded bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
+                              ملاحظة: أوقات التبصيم الخام لهذه الفترة حُذفت لحظة التسديد — المعروض هو البنود المؤثّرة كاملةً. الكشوف من اليوم فصاعداً تحفظ تفصيل الأيام أيضاً.
+                            </div>
                           )}
                           {isManager && !openSt.cancelled && (
                             <button

@@ -12,6 +12,7 @@ import {
 type Tpl = {
   headerText: string;
   footerText: string;
+  addressText: string; // عنوان المكتب — سطرٌ أسفل التذييل
   logo: string;
   fontColor: string;
   bgColor: string;
@@ -27,7 +28,7 @@ type Tpl = {
 };
 
 const DEFAULT: Tpl = {
-  headerText: "", footerText: "شكراً لاشتراككم", logo: "",
+  headerText: "", footerText: "شكراً لاشتراككم", addressText: "", logo: "",
   fontColor: "#1e293b", bgColor: "#ffffff", headerColor: "#1e66c9",
   fontSize: 14, showLogo: true,
   paperW: 80, paperH: 0, contentW: 68,
@@ -247,6 +248,12 @@ export default function ReceiptTemplatePage() {
           <Field label="نص التذييل">
             <input value={t.footerText} onChange={(e) => set("footerText", e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue" />
           </Field>
+          {/* عنوان المكتب: سطرٌ يُطبع أسفل نصّ التذييل (أرقام الهاتف) — طلب محمد 2026-08-09 */}
+          <Field label="عنوان المكتب (يُطبع أسفل أرقام الهاتف)">
+            <input value={t.addressText} onChange={(e) => set("addressText", e.target.value)}
+              placeholder="مثال: شارع المواصلات — مقابل الجامع" className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue" />
+            <span className="mt-0.5 block text-[11px] text-slate-400">فارغ = لا يظهر. يخصّ قالب المكتب المختار أعلاه.</span>
+          </Field>
 
           {t.showLogo && (
             <Field label="الشعار (صورة)">
@@ -339,7 +346,8 @@ function PrintPreview({ t, officeName }: { t: Tpl; officeName: string }) {
           })}
           {F.footer !== false && (
             <div style={{ marginTop: "0.6em", borderTop: "2px dashed #999", paddingTop: "0.4em", textAlign: "center", fontSize: "0.8em" }}>
-              {t.footerText || "شكراً لاشتراككم"} — {officeName}
+              {t.footerText || "شكراً لاشتراككم"}{F.officeInFooter === true ? ` — ${officeName}` : ""}
+              {t.addressText && <div>{t.addressText}</div>}
             </div>
           )}
         </div>

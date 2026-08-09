@@ -59,12 +59,14 @@ export const RECEIPT_FIELDS = [
 ] as const;
 
 // حقولٌ لا تظهر إلا بتشغيل المدير صراحةً (افتراضها مُطفأ، بخلاف بقيّة الحقول الظاهرة افتراضاً)
-const OFF_BY_DEFAULT = new Set<string>(["address"]);
-
+const OFF_BY_DEFAULT = new Set<string>(["address", "officeInFooter"]);
 
 export const RECEIPT_TOGGLES = [
   { key: "subtitle", label: "سطر «وصل تفعيل / تجديد»" },
   { key: "footer", label: "سطر التذييل" },
+  // اسم المكتب أسفل الوصل — **مُطفأٌ افتراضيّاً** (طلب محمد 2026-08-09): يبقى بالترويسة أعلى
+  // الوصل، ومن أراد إظهاره في التذييل أيضاً يشغّله من هنا.
+  { key: "officeInFooter", label: "اسم المكتب في التذييل" },
 ] as const;
 
 export type ReceiptBodyKey = (typeof RECEIPT_FIELDS)[number]["key"];
@@ -114,8 +116,10 @@ export const NOTICE_FIELDS = [
 export type NoticeBodyKey = (typeof NOTICE_FIELDS)[number]["key"];
 export const NOTICE_DEFAULT_ORDER: NoticeBodyKey[] = NOTICE_FIELDS.map((f) => f.key);
 // كلّ حقول وصل المشترك ظاهرةٌ افتراضاً (العنوان منها — هو سببُ إنشائه) + مفاتيح الترويسة/التذييل
+// كلّ حقول وصل المشترك ظاهرةٌ افتراضاً — **بما فيها العنوان** (هو سببُ إنشاء هذا القالب)،
+// ويُستثنى «اسم المكتب في التذييل» وحده فيبقى مُطفأً كما في وصل الاشتراك.
 export const NOTICE_DEFAULT_FIELDS = Object.fromEntries(
-  [...NOTICE_FIELDS, ...RECEIPT_TOGGLES].map((f) => [f.key, true]),
+  [...NOTICE_FIELDS, ...RECEIPT_TOGGLES].map((f) => [f.key, f.key !== "officeInFooter"]),
 ) as Record<string, boolean>;
 
 export function resolveNoticeFields(f: Partial<Record<string, boolean>> | null | undefined): Record<string, boolean> {

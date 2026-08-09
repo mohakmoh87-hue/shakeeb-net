@@ -101,7 +101,9 @@ export default async function ReceiptPage({
 
           {tpl.fields.footer !== false && (
             <div className="mt-5 border-t-2 border-dashed border-slate-300 pt-3 text-center text-xs text-slate-400">
-              {tpl.footerText || "شكراً لاشتراككم"} — {officeName}
+              {/* اسم المكتب مُطفأٌ افتراضيّاً (officeInFooter)، وعنوان المكتب سطرٌ أسفل الهاتف */}
+              {tpl.footerText || "شكراً لاشتراككم"}{tpl.fields.officeInFooter === true ? ` — ${officeName}` : ""}
+              {tpl.addressText && <div>{tpl.addressText}</div>}
             </div>
           )}
         </div>

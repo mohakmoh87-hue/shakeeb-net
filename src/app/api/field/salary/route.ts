@@ -4,25 +4,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { statementForTechnician as statementFor } from "@/lib/salary";
+import { statementForTechnician as statementFor, cardCountsFor } from "@/lib/salary";
 
 export const dynamic = "force-dynamic";
 
-// عدد البطاقات المنجزة حسب الفئة ضمن فترة الكشف — من سجل الإنجازات الدائم
-// (البطاقات تُحذف من الأرشيف بعد أسبوع، فالعدّ من card_completions الباقية دوماً)
-async function cardCountsFor(technicianId: number, from: string, to: string): Promise<{ kind: string; count: number }[]> {
-  const rows = await prisma.cardCompletion.groupBy({
-    by: ["kind"],
-    where: {
-      technicianId,
-      completedAt: { gte: new Date(`${from}T00:00:00+03:00`), lte: new Date(`${to}T23:59:59.999+03:00`) },
-    },
-    _count: { _all: true },
-  });
-  return rows
-    .map((r) => ({ kind: r.kind ?? "غير مصنّف", count: r._count._all }))
-    .sort((a, b) => b.count - a.count);
-}
+// عدد الكشوف السابقة المعروضة — رُفع من ١٢ لتطول مراجعة الأشهر (طلب محمد 2026-08-09)
+const HISTORY_TAKE = 60;
 
 // يومَا احتساب الراتب للوكيل (من/إلى) — تُشتق منهما فترة كل فنيٍّ (مجمّدة) داخل الحساب
 async function salaryDaysOfAgent(agentId: number | null): Promise<{ fromDay: number | null; toDay: number | null }> {
@@ -38,7 +25,7 @@ export async function GET(request: Request) {
     const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { salary: true, name: true } });
     const days = await salaryDaysOfAgent(tech.agentId);
     const result = await statementFor(tech.technicianId, t?.salary ?? 0, days.fromDay, days.toDay);
-    const history = await prisma.salaryStatement.findMany({ where: { technicianId: tech.technicianId }, orderBy: { id: "desc" }, take: 12 });
+    const history = await prisma.salaryStatement.findMany({ where: { technicianId: tech.technicianId }, orderBy: { id: "desc" }, take: HISTORY_TAKE });
     const period = days.fromDay ? { from: result.periodFrom, to: result.periodTo } : null;
     const cardCounts = await cardCountsFor(tech.technicianId, result.periodFrom, result.periodTo);
     return NextResponse.json({ role: "technician", name: t?.name, salary: t?.salary ?? 0, statement: result, history, period, cardCounts });
@@ -56,7 +43,7 @@ export async function GET(request: Request) {
     const t = await prisma.technician.findUnique({ where: { id: technicianId } });
     if (!t || t.isDeleted || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
     const result = await statementFor(technicianId, t.salary ?? 0, days.fromDay, days.toDay);
-    const history = await prisma.salaryStatement.findMany({ where: { technicianId }, orderBy: { id: "desc" }, take: 12 });
+    const history = await prisma.salaryStatement.findMany({ where: { technicianId }, orderBy: { id: "desc" }, take: HISTORY_TAKE });
     const period = days.fromDay ? { from: result.periodFrom, to: result.periodTo } : null;
     const cardCounts = await cardCountsFor(technicianId, result.periodFrom, result.periodTo);
     return NextResponse.json({ role: "manager", name: t.name, salary: t.salary ?? 0, statement: result, history, period, cardCounts });
@@ -131,7 +118,14 @@ export async function POST(request: Request) {
         periodFrom: from, periodTo: to, daysPaid: result.daysPaid, dailyAmount: result.dailyAmount,
         baseEarned: result.baseEarned, overtime: result.overtime, bonuses: result.bonuses,
         attendanceDeductions: result.attendanceDeductions, confirmedDeductions: result.confirmedDeductions, net: result.net,
-        details: JSON.stringify(result.items), paidByUser: g.session.fullName ?? g.session.username, moneyTxId,
+        // لقطةٌ تفصيليّةٌ كاملة (طلب محمد 2026-08-09): البنود + **تفصيل الأيام** + المشتقّات —
+        // فسجلّ الحضور والخصومات يُحذف بعد قليل، وهذه اللقطة تصير المرجع الوحيد للأشهر السابقة.
+        // v:2 لتمييزها عن الكشوف القديمة التي حفظت مصفوفة البنود وحدها.
+        details: JSON.stringify({
+          v: 2, items: result.items, dayDetails: result.dayDetails,
+          credits: result.credits, advances: result.advances, cleanDays: result.cleanDays,
+        }),
+        paidByUser: g.session.fullName ?? g.session.username, moneyTxId,
       },
     });
     // تعليم حركات حساب الموظف (المصروفات والمقبوضات) المحتسَبة — تبقى في التقرير اليومي ولا تُعاد

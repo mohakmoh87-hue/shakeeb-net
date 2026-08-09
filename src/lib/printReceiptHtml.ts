@@ -46,6 +46,23 @@ function line(label: string, value: string, bold = false): string {
   return `<div class="line"><span class="lbl">${esc(label)}</span><span${bold ? ' class="b"' : ""}>${esc(value)}</span></div>`;
 }
 
+// تذييل الوصل (طلب محمد 2026-08-09): نصّ التذييل (أرقام الهاتف عادةً) ثمّ **عنوان المكتب**
+// سطراً أسفله، **واسم المكتب مُطفأٌ افتراضيّاً** (يبقى بالترويسة؛ يُشغَّل بمفتاح officeInFooter).
+// كلّه داخل صندوق .ftr واحد كي لا يُرسَم خطٌّ متقطّعٌ ثانٍ.
+function footerBlock(
+  tpl: { footerText: string; addressText?: string },
+  fields: Record<string, boolean>,
+  officeName: string,
+  fallbackText: string,
+): string {
+  if (fields.footer === false) return "";
+  const text = tpl.footerText || fallbackText;
+  const withOffice = fields.officeInFooter === true && officeName ? `${text} — ${officeName}` : text;
+  const addr = (tpl.addressText ?? "").trim();
+  if (!withOffice && !addr) return "";
+  return `<div class="ftr">${esc(withOffice)}${addr ? `<div>${esc(addr)}</div>` : ""}</div>`;
+}
+
 // اسم العلامة: اسم الوكيل ثم إعداد الوكيل «office» (معزول) ثم الافتراضي
 async function brandName(agentId: number | null): Promise<string> {
   const agent = agentId != null
@@ -97,7 +114,7 @@ export async function subscriptionReceiptHtml(entryId: number, agentId: number |
   };
   const rows = tpl.fieldOrder.filter((k) => F[k] !== false).map(bodyRow).join("");
 
-  const footer = F.footer ? `<div class="ftr">${esc(tpl.footerText || "شكراً لاشتراككم")} — ${esc(officeName)}</div>` : "";
+  const footer = footerBlock(tpl, F as unknown as Record<string, boolean>, officeName, "شكراً لاشتراككم");
   const body = header(tpl, officeName, "وصل تفعيل / تجديد اشتراك", F.subtitle !== false) + rows + footer;
   return wrap(body, tpl.fontSize, resolveDims(tpl as ReceiptTemplate));
 }
@@ -133,7 +150,7 @@ export async function noticeSlipHtml(subscriberId: number, agentId: number | nul
     }
   };
   const rows = (tpl.fieldOrder as unknown as NoticeBodyKey[]).filter((k) => F[k] !== false).map(bodyRow).join("");
-  const footer = F.footer && tpl.footerText ? `<div class="ftr">${esc(tpl.footerText)}</div>` : "";
+  const footer = footerBlock(tpl, F, office?.name ?? brand, "");
   const body = header(tpl, office?.name ?? brand, "وصل مشترك", F.subtitle !== false) + rows + footer;
   return wrap(body, tpl.fontSize, resolveDims(tpl as ReceiptTemplate));
 }
@@ -155,7 +172,7 @@ export async function invoiceReceiptHtml(invoiceId: number, agentId: number | nu
     `<tr><td>${esc(l.itemId ? nameMap.get(l.itemId) ?? "—" : "—")}</td><td>${fmt(l.count)}</td><td>${fmt(l.price)}</td><td class="b">${fmt((l.count ?? 0) * (l.price ?? 0))}</td></tr>`,
   ).join("");
 
-  const footer = F.footer ? `<div class="ftr">${esc(tpl.footerText || "شكراً لتعاملكم")} — ${esc(officeName)}</div>` : "";
+  const footer = footerBlock(tpl, F as unknown as Record<string, boolean>, officeName, "شكراً لتعاملكم");
   const body =
     header(tpl, officeName, "فاتورة بيع", F.subtitle !== false) +
     `<div class="line"><span>رقم الفاتورة: <b>#${invoice.number ?? invoice.id}</b></span><span>${esc(formatDate(invoice.date))}</span></div>` +

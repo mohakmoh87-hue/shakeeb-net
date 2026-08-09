@@ -243,3 +243,20 @@ export function computeSalary(
     periodFrom: period?.from ?? (sorted[0] ?? todayKey), periodTo: period?.to ?? todayKey, items, dayDetails,
   };
 }
+
+// عدد البطاقات المنجزة حسب الفئة ضمن فترةٍ ما — من سجل الإنجازات الدائم
+// (البطاقات تُحذف من الأرشيف بعد أسبوع، فالعدّ من card_completions الباقية دوماً).
+// نُقلت هنا ليستعملها كشف الفترة الحاليّة **والكشوف السابقة** معاً (طلب محمد 2026-08-09).
+export async function cardCountsFor(technicianId: number, from: string, to: string): Promise<{ kind: string; count: number }[]> {
+  const rows = await prisma.cardCompletion.groupBy({
+    by: ["kind"],
+    where: {
+      technicianId,
+      completedAt: { gte: new Date(`${from}T00:00:00+03:00`), lte: new Date(`${to}T23:59:59.999+03:00`) },
+    },
+    _count: { _all: true },
+  });
+  return rows
+    .map((r) => ({ kind: r.kind ?? "غير مصنّف", count: r._count._all }))
+    .sort((a, b) => b.count - a.count);
+}

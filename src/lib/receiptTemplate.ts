@@ -8,6 +8,7 @@ import {
 export type ReceiptTemplate = {
   headerText: string;
   footerText: string;
+  addressText: string; // عنوان المكتب — يُطبع سطراً أسفل التذييل (أرقام الهاتف). فارغ = لا يظهر
   logo: string;
   fontColor: string;
   bgColor: string;
@@ -26,6 +27,7 @@ export type ReceiptTemplate = {
 export const DEFAULT_RECEIPT: ReceiptTemplate = {
   headerText: "",
   footerText: "شكراً لاشتراككم",
+  addressText: "",
   logo: "",
   fontColor: "#1e293b",
   bgColor: "#ffffff",

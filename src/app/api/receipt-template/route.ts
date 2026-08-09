@@ -12,6 +12,7 @@ import {
 const schema = z.object({
   headerText: z.string().default(""),
   footerText: z.string().default(""),
+  addressText: z.string().default(""), // عنوان المكتب — سطرٌ أسفل التذييل (طلب محمد 2026-08-09)
   logo: z.string().default(""), // صورة data-url أو رابط
   fontColor: z.string().default("#1e293b"),
   bgColor: z.string().default("#ffffff"),
@@ -32,6 +33,7 @@ export type ReceiptTemplate = z.infer<typeof schema>;
 export const DEFAULT_RECEIPT: ReceiptTemplate = {
   headerText: "",
   footerText: "شكراً لاشتراككم",
+  addressText: "",
   logo: "",
   fontColor: "#1e293b",
   bgColor: "#ffffff",
