@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
-import { agentOwnsBoard, agentOwnsList } from "@/lib/field";
+import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
+import { agentOwnsBoard, agentOwnsList, canOperateList } from "@/lib/field";
 import { ensureCardType } from "@/lib/fieldDefaults";
 
 // إدارة الأعمدة للمدير فقط (field.manage) — إضافة/تسمية/حذف/تحديد «محسوب بالوقت».
@@ -21,16 +23,31 @@ export async function POST(request: Request) {
 }
 
 // تعديل عمود (الاسم/الترتيب/محسوب بالوقت)
+// ===== تحريك الأعمدة للمدير **وللمستخدم** (طلب محمد 2026-08-09) =====
+// كان المسار كلّه بصلاحيّة field.manage، فسحبُ مستخدم المكتب للعمود يفشل بصمت (العميل
+// يتجاهل الخطأ) ويعود الترتيب عند أوّل تحديث. الآن: **تحريك الترتيب** يجوز لمن يكتب على
+// مكتب العمود (المدير على مكاتب وكيله، ومستخدم المكتب على مكتبه — نفس قاعدة سحب البطاقات)،
+// أمّا **التسمية وخاصيّة «محسوب بالوقت»** فتبقى للمدير (field.manage) كما هي.
 export async function PATCH(request: Request) {
-  const g = await guard("field.manage");
-  if (g.error) return g.error;
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const b = await request.json().catch(() => null);
   if (!b?.id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
-  if (!(await agentOwnsList(g.session, Number(b.id)))) return NextResponse.json({ error: "العمود لا يتبع حسابك" }, { status: 403 });
+  const listId = Number(b.id);
+  // عزل الوكيل ثمّ عزل المكتب (الكتابة على مكتب العمود)
+  if (!(await agentOwnsList(s, listId))) return NextResponse.json({ error: "العمود لا يتبع حسابك" }, { status: 403 });
+  if (!(await canOperateList(s, listId))) {
+    return NextResponse.json({ error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" }, { status: 403 });
+  }
+  const wantsName = typeof b.name === "string";
+  const wantsTime = typeof b.timeTracked === "boolean";
+  if ((wantsName || wantsTime) && !can(s, "field.manage")) {
+    return NextResponse.json({ error: "تسمية الأعمدة وخصائصها للمدير — أمّا ترتيبها فمتاحٌ لك" }, { status: 403 });
+  }
   const data: { name?: string; position?: number; timeTracked?: boolean } = {};
-  if (typeof b.name === "string") data.name = b.name.trim();
+  if (wantsName) data.name = b.name.trim();
   if (typeof b.position === "number") data.position = b.position;
-  if (typeof b.timeTracked === "boolean") data.timeTracked = b.timeTracked;
+  if (wantsTime) data.timeTracked = b.timeTracked;
   const updated = await prisma.taskList.update({ where: { id: Number(b.id) }, data });
   return NextResponse.json(updated);
 }
