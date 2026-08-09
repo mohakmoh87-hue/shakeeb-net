@@ -302,6 +302,9 @@ export default function OwnerPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {!a.approved && <button onClick={() => patch(a.id, { approve: true })} className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-700">✓ موافقة وتفعيل</button>}
+                  {/* تعديل اسم الوكيل (العلامة) — للمالك حصراً؛ المدير لا يعدّله بنفسه (قرار محمد 2026-08-09).
+                      وكيلٌ كتب اسمه خطأً («صفء» بدل «صفاء») يصلّحه المالك من هنا. */}
+                  <NameEdit value={a.name} onSave={(v) => { if (v && v !== a.name) patch(a.id, { name: v }); }} />
                   <button onClick={() => setCredAgent(a)} className="rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">🔑 بيانات الدخول</button>
                   <button onClick={() => regenKey(a)} className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100" title="إعادة توليد مفتاح قاعدة بيانات الوكيل (عند الشك بتسريب)">🔐 مفتاح القاعدة</button>
                   <LimitInput label="مكاتب" value={a.officeCap} onSave={(v) => { if (v !== a.officeCap) patch(a.id, { officeCap: v }); }} />
@@ -509,6 +512,27 @@ function LimitInput({ label, value, onSave }: { label: string; value: number; on
     <label className="flex items-center gap-1 text-xs text-slate-600">{label}
       <input type="number" min={0} defaultValue={value} key={value} onBlur={(e) => onSave(Number(e.target.value))} className="w-16 rounded border border-slate-300 px-2 py-1 text-center" />
     </label>
+  );
+}
+
+// تعديل اسم الوكيل (العلامة) داخل صفّه — يظهر الحقل بالضغط على «✏️ الاسم» ويُحفظ بزرٍّ صريح
+function NameEdit({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [v, setV] = useState(value);
+  if (!open) {
+    return (
+      <button onClick={() => { setV(value); setOpen(true); }} title="تعديل اسم الوكيل (العلامة) — للمالك فقط"
+        className="rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-100">✏️ الاسم</button>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 rounded-lg bg-purple-50 px-2 py-1 text-xs">
+      <input value={v} onChange={(e) => setV(e.target.value)} autoFocus
+        onKeyDown={(e) => { if (e.key === "Enter" && v.trim()) { onSave(v.trim()); setOpen(false); } if (e.key === "Escape") setOpen(false); }}
+        className="w-40 rounded border border-purple-200 bg-white px-1.5 py-0.5 text-xs" />
+      <button onClick={() => { if (v.trim()) { onSave(v.trim()); setOpen(false); } }} disabled={!v.trim()} className="font-bold text-purple-700 disabled:opacity-40">حفظ ✓</button>
+      <button onClick={() => setOpen(false)} className="text-slate-400">✕</button>
+    </span>
   );
 }
 
