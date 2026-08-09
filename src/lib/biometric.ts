@@ -14,7 +14,8 @@ export type BioResult = "ok" | "unsupported" | "failed" | "setup" | "update" | "
 
 // جسر البصمة الأصلية (يُنفّذه android/.../BiometricNativePlugin.java داخل التطبيق فقط)
 const BiometricNative = registerPlugin<{
-  isAvailable(): Promise<{ available: boolean; code: number }>;
+  // strong/weak: نوع البصمة المتاحة على الجهاز — weak=true يعني وجهاً/ضعيفة فقط (APK v4+)
+  isAvailable(): Promise<{ available: boolean; code: number; strong?: boolean; weak?: boolean }>;
   isEnrolled(): Promise<{ enrolled: boolean }>;
   enroll(): Promise<{ publicKey: string }>;
   sign(opts: { challenge: string }): Promise<{ signature?: string; error?: string; errorCode?: number }>;

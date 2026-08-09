@@ -232,12 +232,13 @@ export default function TechOpsBar({ techName }: { techName: string }) {
             <div className="mb-1 text-base font-extrabold text-slate-800">
               {state === "none" ? "تأكيد بصمة الدخول" : "تأكيد بصمة الخروج"}
             </div>
-            <p className="mb-5 text-xs text-slate-500">المس مستشعر البصمة في هاتفك للتأكيد</p>
+            {/* بصمة إصبع أو وجه — الجهاز يعرض ما هو مُفعَّل فيه (دعم الوجه: APK v4، طلب محمد 2026-08-09) */}
+            <p className="mb-5 text-xs text-slate-500">أكّد ببصمة إصبعك أو وجهك — بحسب ما فعّلته في هاتفك</p>
             <button onClick={confirmBio} disabled={bioBusy}
               className={`mx-auto flex h-24 w-24 items-center justify-center rounded-full text-5xl text-white shadow-lg transition active:scale-95 disabled:opacity-70 ${bioBusy ? "animate-pulse bg-slate-500" : state === "none" ? "bg-gradient-to-br from-emerald-500 to-emerald-700" : "bg-gradient-to-br from-red-500 to-red-700"}`}>
               👆
             </button>
-            <div className="mt-4 text-sm font-bold text-slate-600">{bioBusy ? "بانتظار البصمة…" : "اضغط للمس المستشعر"}</div>
+            <div className="mt-4 text-sm font-bold text-slate-600">{bioBusy ? "بانتظار البصمة…" : "اضغط ثمّ أكّد بالإصبع أو الوجه"}</div>
             {bioErr && <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">{bioErr}</div>}
             {bioUpdate && (
               <a href="https://shakeebnet.com/shakeeb-net.apk" target="_blank" rel="noreferrer"
