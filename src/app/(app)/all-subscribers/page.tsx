@@ -16,7 +16,18 @@ type Row = {
   packageName: string | null; price: number; online: boolean | null;
 };
 type Office = { id: number; name: string | null };
-type Tpl = { event: string; text: string };
+// قوالب الرسائل كما يُرجعها /api/sms-templates (الحقل اسمه type لا event — كان هذا سببَ
+// ظهور القائمة فارغةً؛ بلاغ محمد 2026-08-09)
+type Tpl = { id: number; type: string; text: string | null; towerId: number | null };
+
+// الأسماء العربيّة للقوالب التلقائيّة (كما في صفحة إدارة القوالب) — وما ليس منها فهو قالبٌ حرّ
+// أنشأه المدير باسمه، فيُعرض اسمه كما هو.
+const TPL_NAMES: Record<string, string> = {
+  activation: "تفعيل الاشتراك", expiring: "تذكير قبل الانتهاء", debtPaid: "تسديد دين",
+  debts: "مطالبة بالديون", maintenance: "الصيانة/التنصيب", reward: "منح المكافأة",
+  rewardUsed: "استخدام المكافأة", subSummary: "ملخص الاشتراك (وصل)", noAnswer: "ميجاوب (لم يرد)",
+  loan: "قرض فزعة", other: "أخرى (عام)",
+};
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
 
@@ -48,9 +59,10 @@ export default function AllSubscribersPage() {
 
   useEffect(() => {
     fetch("/api/towers").then((r) => (r.ok ? r.json() : [])).then((d) => setOffices(Array.isArray(d) ? d : [])).catch(() => {});
+    // all=1 ⇒ كلّ القوالب بما فيها تخصيصات المكاتب (طلب محمد: تظهر القوالب كلّها للاختيار)
     fetch("/api/sms-templates?all=1").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      const list = Array.isArray(d) ? d : Array.isArray(d?.templates) ? d.templates : [];
-      setTpls(list.filter((x: Tpl) => x?.text));
+      const list: Tpl[] = Array.isArray(d) ? d : Array.isArray(d?.templates) ? d.templates : [];
+      setTpls(list.filter((x) => (x?.text ?? "").trim()));
     }).catch(() => {});
   }, []);
 
@@ -215,12 +227,20 @@ export default function AllSubscribersPage() {
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onClick={() => !busy && setSendOpen(false)}>
           <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 text-center text-lg font-extrabold text-slate-800">📩 إرسال رسالة لـ {checked.size} مشترك</div>
-            {tpls.length > 0 && (
-              <select onChange={(e) => { const t = tpls.find((x) => x.event === e.target.value); if (t) setText(t.text); }}
+            {tpls.length > 0 ? (
+              <select onChange={(e) => { const t = tpls.find((x) => String(x.id) === e.target.value); if (t?.text) setText(t.text); }}
                 className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                <option value="">— اختر قالباً جاهزاً (اختياري) —</option>
-                {tpls.map((t) => <option key={t.event} value={t.event}>{t.event}</option>)}
+                <option value="">— اختر قالباً جاهزاً ({tpls.length}) —</option>
+                {tpls.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {TPL_NAMES[t.type] ?? t.type}{t.towerId != null ? " — مخصّص لمكتب" : ""}
+                  </option>
+                ))}
               </select>
+            ) : (
+              <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                لا قوالب محفوظة — أنشئها من صفحة «قوالب الرسائل»، أو اكتب النصّ يدويّاً أدناه.
+              </div>
             )}
             <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} placeholder="نصّ الرسالة… يمكنك استعمال {اسم_المشترك} {اسم_المستخدم} {تاريخ_الانتهاء} {العنوان}"
               className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
