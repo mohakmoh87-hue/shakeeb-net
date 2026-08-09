@@ -566,6 +566,9 @@ export default function SubscribersBoard() {
                           {officeRewardsOn(s.towerId) && <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>}
                           {/* مبلغ الاشتراك = سعر فئة المشترك (طلب محمد) */}
                           <span className="sb-chip c-sub">مبلغ الاشتراك <b>{fmt(packages.find((p) => p.id === s.packageId)?.priceDinar ?? 0)}</b></span>
+                          {/* العنوان (ادرس 1 من الساس) — كان يُجلب ويُخزَّن ولا يُعرَض إلا داخل نموذج
+                              التعديل، فبدا كأنّ المزامنة لا تجلبه (بلاغ محمد 2026-08-09) */}
+                          {s.address && <span className="sb-chip" title="العنوان (ادرس 1 من الساس)">📍 <b>{s.address}</b></span>}
                           {/* حالة الاتصال من الساس — خلفية صلبة واضحة: أخضر للمتصل وأحمر لغير المتصل بكتابة بيضاء (طلب محمد) */}
                           {sasStatus?.id === s.id && (
                             <span className="sb-chip" title="حالة الاتصال من الساس (عند الضغط)"
