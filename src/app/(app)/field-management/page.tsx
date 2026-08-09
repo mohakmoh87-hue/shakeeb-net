@@ -166,6 +166,12 @@ export default function FieldManagementPage() {
   // مواقع أعمدة أرسلها الفنيون من الأرض — بانتظار قبول المدير
   const [mapModal, setMapModal] = useState(false);
   const [mapPending, setMapPending] = useState(0);
+  const [moveErr, setMoveErr] = useState(""); // فشل حفظ ترتيب سحبٍ (بطاقة أو عمود) — يُعلَن لا يُكتَم
+  useEffect(() => {
+    if (!moveErr) return;
+    const t = setTimeout(() => setMoveErr(""), 5000);
+    return () => clearTimeout(t);
+  }, [moveErr]);
 
   const load = useCallback((office?: number | null) => {
     const q = office != null ? `?officeId=${office}` : "";
@@ -395,6 +401,23 @@ export default function FieldManagementPage() {
   }
 
 
+  // ===== لا حفظَ صامتاً للسحب (مع فتح تحريك الأعمدة للمستخدم) =====
+  // كانت نتائج طلبات الترتيب تُرمى بـ`catch` فارغ، فلو رُدّ الطلب (٤٠٣ على مكتبٍ آخر مثلاً)
+  // بقي الترتيب الجديد على الشاشة بلا حفظ ⇒ «سحبٌ وهميّ» يعود عند أوّل تحديث بلا تفسير.
+  // الآن: يُعلَن سبب الردّ، ويُعاد تحميل اللوحة ليظهر الواقع فوراً لا بعد دقيقة.
+  async function savePositions(reqs: Promise<Response>[]) {
+    const res = await Promise.allSettled(reqs);
+    const bad = res.find((x) => x.status === "rejected" || !x.value.ok);
+    if (!bad) return;
+    let m = "تعذّر حفظ الترتيب — تحقّق من الاتصال";
+    if (bad.status === "fulfilled") {
+      const d = await bad.value.json().catch(() => null);
+      if (d?.error) m = String(d.error);
+    }
+    setMoveErr(m);
+    load(officeId); // إرجاع الترتيب الحقيقيّ من الخادم
+  }
+
   // إزاحة البطاقات لفتح المكان — بـtransform وحده: سلسٌ بلا إعادة تخطيط
   function cardShift(listId: number, visIndex: number): number {
     const d = drag;
@@ -417,11 +440,11 @@ export default function FieldManagementPage() {
       return posById.has(c.id) ? { ...c, position: posById.get(c.id)! } : c;
     }));
     if (sel?.id === d.id && d.toList !== d.fromList) setSel({ ...sel, listId: d.toList });
-    await Promise.all(arr.map((x, i) =>
+    await savePositions(arr.map((x, i) =>
       fetch("/api/field/cards", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(x.id === d.id ? { id: x.id, listId: d.toList, position: i } : { id: x.id, position: i }),
-      }).catch(() => {}),
+      }),
     ));
   }
 
@@ -436,8 +459,8 @@ export default function FieldManagementPage() {
     arr.splice(idx, 0, moved);
     const next = arr.map((x, i) => ({ ...x, position: i }));
     setLists(next);
-    await Promise.all(next.map((x) =>
-      fetch("/api/field/lists", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: x.id, position: x.position }) }).catch(() => {}),
+    await savePositions(next.map((x) =>
+      fetch("/api/field/lists", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: x.id, position: x.position }) }),
     ));
   }
 
@@ -619,6 +642,14 @@ export default function FieldManagementPage() {
         @keyframes fmLift { from { transform: scale(1) rotate(0deg) } to { transform: scale(1.05) rotate(2deg) } }
         .fm-lift { animation: fmLift .16s cubic-bezier(.2,.8,.2,1) forwards; transform-origin: 50% 50%; }
       `}</style>
+      {/* فشل حفظ ترتيب السحب — يُعلَن ولا يُكتَم (والترتيب الحقيقيّ يُعاد من الخادم) */}
+      {moveErr && (
+        <div className="pointer-events-none fixed inset-x-0 top-3 z-[96] flex justify-center px-3">
+          <div className="pointer-events-auto max-w-md rounded-lg bg-rose-600 px-3 py-2 text-center text-[13px] font-semibold text-white shadow-lg">
+            {moveErr}
+          </div>
+        </div>
+      )}
       {/* النسخة الطائرة: ما تحمله ظاهرٌ تحت إصبعك حتى تُفلته */}
       {drag && (() => {
         const c = drag.kind === "card" ? cards.find((x) => x.id === drag.id) : null;
