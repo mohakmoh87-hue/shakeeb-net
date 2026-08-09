@@ -290,6 +290,10 @@ export async function POST(request: Request) {
         serviceDetails: (serviceDetails?.trim() || null) ? `${serviceDetails!.trim()}${rewardDiscount > 0 ? `\n(خصم مكافأة: ${rewardDiscount} د.ع)` : ""}` : (rewardDiscount > 0 ? `(خصم مكافأة: ${rewardDiscount} د.ع)` : null),
         materialsInfo: soldInfo.length ? JSON.stringify(soldInfo) : null,
         ...(card.viaOdoo && odooBg?.trim() ? { odooBg: odooBg.trim() } : {}),
+        // حرسٌ ثانٍ (بلاغ محمد 2026-08-09): بطاقةٌ تُنجَز وهي موسومةٌ settled بلا أرشفة معناه أنّها
+        // كانت ملغاةً وأُعيدت للعمل — فالوسم بقيّةٌ من الإلغاء تُخرجها من «اكمال» صامتةً. إنجازُها
+        // يُعيدها إلى التحصيل قطعاً. (المحصَّلة حقّاً منجزةٌ ومؤرشفة، ولا تصل هنا لأنّ done يمنعها.)
+        ...(card.settled && card.archivedAt == null ? { settled: false } : {}),
       },
     });
     // سجل الإنجاز الدائم (البطاقة تُحذف من الأرشيف بعد أسبوع — هذا يبقى):

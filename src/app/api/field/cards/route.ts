@@ -121,8 +121,17 @@ export async function PATCH(request: Request) {
   // الحالة القديمة قبل التعديل — لتسجيل التغييرات المهمّة في سجل البطاقة
   const before = await prisma.taskCard.findUnique({
     where: { id: Number(b.id) },
-    select: { technicianId: true, assignee: true, listId: true, dueDate: true, kind: true, done: true },
+    select: { technicianId: true, assignee: true, listId: true, dueDate: true, kind: true, done: true, settled: true, archivedAt: true },
   });
+
+  // ===== بطاقةٌ أُلغيت ثمّ أُعيدت للعمل تعود إلى التحصيل (بلاغ محمد 2026-08-09) =====
+  // الإلغاء يكتب settled=true بمعنى «خارج التحصيل»، وسحبُ البطاقة من عمود «الغاء» إلى عمود عملٍ
+  // كان **لا يُصفّره** ⇒ تُنجَز وهي موسومةٌ «محصَّلة» سلفاً، فلا تظهر في «اكمال» أبداً (استعلامه
+  // يشترط settled=false) ويضيع تحصيل الفنيّ صامتاً. (بطاقة فهد #1048: ١٥ ألف مبيع + ٣٥ اشتراك.)
+  // التمييز آمن: «ملغاة» = settled && !done && !archivedAt؛ أمّا المحصَّلة فمنجزةٌ ومؤرشفة.
+  if (typeof b.listId === "number" && before && before.settled && !before.done && before.archivedAt == null && b.listId !== before.listId) {
+    data.settled = false;
+  }
 
   // تغيير الفئة ينقل البطاقة تلقائياً إلى عمود الفئة الجديدة (إن وُجد بنفس اللوحة)
   // كي لا تبقى في عمود فئتها القديمة. مطابقة الاسم بعد تطبيع المسافات، ثم بادئة (تنصيب/تنصيبات).
@@ -159,6 +168,8 @@ export async function PATCH(request: Request) {
         prisma.taskList.findUnique({ where: { id: updated.listId }, select: { name: true } }),
       ]);
       events.push(`نقل البطاقة من عمود «${fromL?.name ?? before.listId}» إلى «${toL?.name ?? updated.listId}»`);
+      // إعادةٌ من الإلغاء إلى العمل: يُعلَن أنّها رجعت إلى التحصيل كي لا يضيع رقمُها صامتاً
+      if (data.settled === false) events.push("أُعيدت إلى التحصيل (كانت ملغاة — خارج التحصيل)");
     }
     if ("dueDate" in data && String(before.dueDate ?? "") !== String(updated.dueDate ?? "")) {
       const fmt = (d: Date | null) => (d ? d.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit" }) : "بلا موعد");
