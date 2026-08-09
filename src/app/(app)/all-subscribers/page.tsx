@@ -102,18 +102,26 @@ export default function AllSubscribersPage() {
   const toggleAll = () => setChecked(allOn ? new Set() : new Set(rows.map((r) => r.id)));
   const toggle = (id: number) => setChecked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
+  // إرسالٌ صامتٌ في الخلفيّة (طلب محمد 2026-08-09): النافذة تُغلق فوراً ويتنقّل المستخدم
+  // بحرّيّة — الخادم يُكمل الإرسال مفصولاً (١٠ ثوانٍ بين رسالة وأخرى)، والنتيجة تظهر في
+  // «سجل الرسائل» رسالةً رسالةً. فلا انتظارَ دقائقَ أمام نافذةٍ مفتوحة.
   async function sendMessages() {
     if (!checked.size || !text.trim()) return;
+    const n = checked.size;
     setBusy(true); setMsg("");
     try {
       const r = await fetch("/api/messages", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel: "WHATSAPP", text, target: "list", subscriberIds: [...checked] }),
+        body: JSON.stringify({ channel: "WHATSAPP", text, target: "list", subscriberIds: [...checked], background: true }),
       });
       const d = await r.json().catch(() => ({}));
       setBusy(false);
-      setMsg(r.ok ? `✅ أُرسلت ${d.sent ?? 0} رسالة${d.failed ? ` — فشلت ${d.failed}` : ""}` : (d.error ?? "تعذّر الإرسال"));
-      if (r.ok) { setSendOpen(false); setText(""); }
+      if (r.ok) {
+        setSendOpen(false); setText("");
+        setMsg(`📨 بدأ الإرسال في الخلفيّة لـ ${d.total ?? n} مشترك — يمكنك التنقّل بحرّيّة، وتظهر النتيجة في «سجل الرسائل»`);
+      } else {
+        setMsg(d.error ?? "تعذّر الإرسال");
+      }
     } catch { setBusy(false); setMsg("تعذّر الاتصال بالخادم"); }
   }
 
@@ -257,9 +265,12 @@ export default function AllSubscribersPage() {
             )}
             <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} placeholder="نصّ الرسالة… يمكنك استعمال {اسم_المشترك} {اسم_المستخدم} {تاريخ_الانتهاء} {العنوان}"
               className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <p className="mb-3 text-[11px] text-slate-400">تُرسَل عبر واتساب مكتب كلّ مشترك، بفاصل ١٠ ثوانٍ بين رسالة وأخرى.</p>
+            <p className="mb-3 text-[11px] text-slate-400">
+              تُرسَل عبر واتساب مكتب كلّ مشترك، بفاصل ١٠ ثوانٍ بين رسالة وأخرى.
+              <b className="text-slate-500"> النافذة تُغلق فوراً والإرسال يكمل صامتاً في الخلفيّة</b> — تابعه من «سجل الرسائل».
+            </p>
             <div className="flex gap-2">
-              <button onClick={sendMessages} disabled={busy || !text.trim()} className="flex-1 rounded-lg bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{busy ? "جارٍ الإرسال…" : "إرسال"}</button>
+              <button onClick={sendMessages} disabled={busy || !text.trim()} className="flex-1 rounded-lg bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{busy ? "…" : "إرسال"}</button>
               <button onClick={() => setSendOpen(false)} disabled={busy} className="rounded-lg bg-slate-100 px-4 py-2.5 font-semibold text-slate-600">إلغاء</button>
             </div>
           </div>

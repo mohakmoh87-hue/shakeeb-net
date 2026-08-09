@@ -16,6 +16,9 @@ const schema = z.object({
   from: z.string().optional(), // تاريخ بداية (للمنتهين بين تاريخين)
   to: z.string().optional(), // تاريخ نهاية
   search: z.string().optional(), // بحث مخصّص في الاسم/اليوزر/الهاتف
+  // إرسالٌ صامتٌ في الخلفيّة (طلب محمد 2026-08-09): الردّ يعود فوراً وتُكمل الحلقة مفصولةً،
+  // فتُغلق النافذة ويتنقّل المستخدم بحرّيّة بلا انتظار ١٠ ثوانٍ × عدد المشتركين.
+  background: z.boolean().default(false),
 });
 
 // سجل الرسائل — عزل المستأجر (كان يعرض رسائل كل الوكلاء):
@@ -88,7 +91,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { channel, text, target, subscriberId, subscriberIds, expiringDays, from, to, search } = parsed.data;
+  const { channel, text, target, subscriberId, subscriberIds, expiringDays, from, to, search, background } = parsed.data;
 
   // تحديد المستلمين (مع فلترة المكتب: كل مستخدم يرسل لمشتركي مكتبه، الأدمن للكل)
   const scope = await towerScope(g.session);
@@ -154,11 +157,17 @@ export async function POST(request: Request) {
   const priceMap = new Map(packages.map((p) => [p.id, p.priceDinar ?? 0]));
   const pkgNameMap = new Map(packages.map((p) => [p.id, p.name]));
 
-  let sent = 0;
-  let failed = 0;
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const GAP_MS = 10000; // تأخير 10 ثوانٍ بين رسالة وأخرى (تجنّب الحظر)
 
+  // ===== حلقة الإرسال — قابلةٌ للتشغيل في الخلفيّة (طلب محمد 2026-08-09) =====
+  // بفاصل ١٠ ثوانٍ بين رسالة وأخرى، إرسالُ ١٠٠ مشتركٍ يستغرق ~١٧ دقيقة. كان الطلب يبقى
+  // معلّقاً كلّ هذه المدّة فتُحتجَز الواجهة (ويقطعه انتهاء مهلة البوّابة). صار الإرسال الجماعيّ
+  // يعمل **مفصولاً**: النافذة تُغلق فوراً ويتنقّل المستخدم بحرّيّة، والرسائل تُسجَّل في سجلّ
+  // الرسائل واحدةً واحدةً كما تُرسَل.
+  async function runSend(): Promise<{ sent: number; failed: number }> {
+  let sent = 0;
+  let failed = 0;
   for (let i = 0; i < recipients.length; i++) {
     const sub = recipients[i];
     const office = sub.towerId ? officeMap.get(sub.towerId) : null;
@@ -192,6 +201,7 @@ export async function POST(request: Request) {
         status: result.ok ? "SENT" : "FAILED",
         error: result.error ?? null,
         createdByUser: session?.username,
+        agentId: session?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
       },
     });
     if (result.ok) sent++;
@@ -206,6 +216,15 @@ export async function POST(request: Request) {
       details: `${channel} - ${target} - نجح ${sent} فشل ${failed}`,
     },
   });
+    return { sent, failed };
+  }
+
+  // إرسالٌ صامتٌ في الخلفيّة: نُعيد الردّ فوراً ونُكمل الحلقة مفصولةً عن الطلب
+  if (background) {
+    void runSend().catch((e) => console.error("[messages] background send:", e instanceof Error ? e.message : e));
+    return NextResponse.json({ ok: true, background: true, total: recipients.length });
+  }
+  const { sent, failed } = await runSend();
 
   return NextResponse.json({ ok: true, sent, failed, total: recipients.length });
 }
