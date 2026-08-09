@@ -264,6 +264,9 @@ CREATE POLICY rls_messages ON messages TO agent_worker
     OR (phone IS NOT NULL AND phone IN
        (SELECT s.phone FROM subscribers s JOIN towers t ON t.id = s."towerId"
          WHERE t."agentId" = current_agent_id() AND s.phone IS NOT NULL))
+    -- نفس فرع WITH CHECK: بلا مقابلٍ هنا يفشل INSERT … RETURNING الذي يولّده Prisma فيُفقَد
+    -- صفّ السجلّ صامتاً. والعزل محفوظ: الشرط هو agentId = وكيل هذه الحاسبة نفسه.
+    OR (phone IS NOT NULL AND "agentId" IS NOT NULL AND "agentId" = current_agent_id())
   )
   WITH CHECK (
     ("subscriberId" IS NOT NULL AND "subscriberId" IN
@@ -275,7 +278,7 @@ CREATE POLICY rls_messages ON messages TO agent_worker
          WHERE t."agentId" = current_agent_id() AND s.phone IS NOT NULL))
     -- 2026-08-09 (مهلة أودو): هاتف تذكرة سوبر سيل قد لا يطابق أيّ مشترك عندنا (صيغةٌ مختلفة،
     -- أو تذكرة Change Team لغير مشتركينا). فيُقبَل صفّ السجلّ إن كان **موسوماً بوكيل هذه الحاسبة
-    -- صريحاً** — والصفّ سجلٌّ بعديّ لا يُرسل شيئاً، والقراءة تبقى معزولةً بالوكيل نفسه.
+    -- صريحاً** — والصفّ سجلٌّ بعديّ لا يُرسل شيئاً، والعزل محفوظ بالشرط نفسه.
     OR (phone IS NOT NULL AND "agentId" IS NOT NULL AND "agentId" = current_agent_id())
   );
 

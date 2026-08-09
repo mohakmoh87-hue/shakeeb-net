@@ -27,14 +27,19 @@ async function buildBoard(officeId: number | null, agentId: number | null) {
   const odooOpen = cards.filter((c) => c.viaOdoo && !c.done && !c.settled).length;
   let odooActive = odooOpen > 0;
   // عتبات مهلة سوبر سيل للمكتب (الإنذار/الإرسال) — يحسب العميل العدّاد منها بلا طلبٍ كلّ ثانية
-  let odooSla: { alarmMin: number | null; sendMin: number | null; auto: boolean } = { alarmMin: null, sendMin: null, auto: false };
+  let odooSla: { alarm: boolean; alarmMin: number | null; sendMin: number | null; auto: boolean } =
+    { alarm: false, alarmMin: null, sendMin: null, auto: false };
   if (officeId != null) {
     const tw = await prisma.tower.findUnique({
       where: { id: officeId },
-      select: { odooEnabled: true, odooSlaAlarmMin: true, odooSlaSendMin: true, odooSlaAuto: true },
+      select: { odooEnabled: true, odooSlaAlarm: true, odooSlaAlarmMin: true, odooSlaSendMin: true, odooSlaAuto: true },
     });
     if (tw?.odooEnabled === "1") odooActive = true;
-    odooSla = { alarmMin: tw?.odooSlaAlarmMin ?? null, sendMin: tw?.odooSlaSendMin ?? null, auto: tw?.odooSlaAuto === "1" };
+    // الوميض والعدّاد لا يظهران إلّا بتشعيل الميزة ١ «إنذارات أودو» لهذا المكتب
+    odooSla = {
+      alarm: tw?.odooSlaAlarm === "1",
+      alarmMin: tw?.odooSlaAlarmMin ?? null, sendMin: tw?.odooSlaSendMin ?? null, auto: tw?.odooSlaAuto === "1",
+    };
   }
   return { board, lists, cards, technicians, cardTypes, odooOpen, odooActive, odooSla };
 }
@@ -45,10 +50,33 @@ export async function GET(request: Request) {
   // الفني: لوحة مكتبه الأصلي، بلا إدارة — ولا يُحرم منها أثناء الدعم المؤقت
   const tech = await getTechSession();
   if (tech) {
-    const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true, supportKind: true, extraTowerIds: true, ownCardsOnly: true } });
-    // «رؤية بطاقاته فقط»: لا يرى بطاقات زملائه **ولا غير الموجَّهة لأحد** (طلب محمد 2026-08-03)
-    const onlyMine = <T extends { cards: { technicianId: number | null }[] }>(d: T): T =>
-      me?.ownCardsOnly ? { ...d, cards: d.cards.filter((c) => c.technicianId === tech.technicianId) } : d;
+    const me = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { supportTowerId: true, supportKind: true, extraTowerIds: true, ownCardsOnly: true, seeDeliveryCards: true, canAddCards: true } });
+    // ===== ثلاث حالاتٍ لرؤية الفنيّ (طلب محمد 2026-08-09) =====
+    //   ١ بلا ownCardsOnly ⇒ يرى كلّ بطاقات اللوحة.
+    //   ٢ ownCardsOnly ⇒ ما أُسند إليه وحده (لا الزملاء **ولا غير الموجَّهة لأحد** — 2026-08-03).
+    //   ٣ ownCardsOnly + seeDeliveryCards ⇒ بطاقاته **زائداً بطاقات التوصيل** ولو لم تُسنَد إليه.
+    // «التوصيل» **بخاصيّة الفئة** (CardType.deliveryOnly) لا باسمها: عمود «جباية» موسومٌ بالتوصيل
+    // تُرى بطاقاته. ويُفحَص **عمود البطاقة وفئتها** كليهما (العمود هو مكان العمل والفئة هويّته،
+    // والاثنان قد يختلفان بعد نقل بطاقة) — والفئات معزولةٌ بالوكيل أصلاً في buildBoard.
+    const onlyMine = <T extends {
+      cards: { technicianId: number | null; listId: number; kind: string }[];
+      lists: { id: number; name: string }[];
+      cardTypes: { name: string; deliveryOnly: boolean }[];
+    }>(d: T): T => {
+      if (!me?.ownCardsOnly) return d;
+      const mine = (c: { technicianId: number | null }) => c.technicianId === tech.technicianId;
+      if (!me.seeDeliveryCards) return { ...d, cards: d.cards.filter(mine) };
+      const deliveryNames = new Set(d.cardTypes.filter((t) => t.deliveryOnly).map((t) => t.name));
+      const listName = new Map(d.lists.map((l) => [l.id, l.name]));
+      // بلا احتياطٍ نصّيّ على كلمة «توصيل»: مستخدم المكتب يستطيع ضبط kind نصّاً حرّاً، فكان
+      // يفتح لنفسه رؤيةَ أيّ بطاقةٍ بتسميتها. المعيار **خاصيّة الفئة** حصراً (وفئة «توصيل»
+      // القياسيّة تُولَد أصلاً بـdeliveryOnly=true لكلّ وكيل).
+      const isDelivery = (c: { listId: number; kind: string }) => {
+        const ln = listName.get(c.listId) ?? "";
+        return deliveryNames.has(ln) || deliveryNames.has(c.kind);
+      };
+      return { ...d, cards: d.cards.filter((c) => mine(c) || isDelivery(c)) };
+    };
 
     // دعم «يوم كامل»: تُقلب لوحته كلياً — يرى كل بطاقات المكتب الطالب للدعم،
     // ولا يرى أي بطاقة من مكتبه الأصلي، حتى ينتهي الدعم فيعود تلقائياً.
@@ -58,6 +86,7 @@ export async function GET(request: Request) {
       return NextResponse.json({
         ...data, offices: [], officeId: me.supportTowerId, isManager: false, canManage: false,
         canOperate: true, myOfficeId: me.supportTowerId, role: "technician",
+        canAddCards: me?.canAddCards !== false, // خيار المدير: إضافة البطاقات للفنيّ (افتراضه مسموح)
         supportInfo: `🤝 أنت في دعم يوم كامل لمكتب «${sOffice?.name ?? "آخر"}» — هذه لوحته، وستعود للوحة مكتبك عند إنهاء الدعم`,
       });
     }
@@ -95,6 +124,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       // offices: مبدّل المكاتب للفني متعدد المكاتب (فارغ لفني المكتب الواحد — لا مبدّل)
       ...data, offices: techOffices, officeId: viewOffice, isManager: false, canManage: false, canOperate: true, myOfficeId: tech.towerId, role: "technician",
+      canAddCards: me?.canAddCards !== false, // خيار المدير: إضافة البطاقات للفنيّ (افتراضه مسموح)
       // مكتب الدعم (إن وُجد): تحتاجه الواجهة لزر خريطة بطاقات عمود «دعم مؤقت»
       // (منطقة الخريطة تُشتق من مكتب البطاقة الحقيقي لا من مكتب الفني الأصلي)
       supportOfficeId: me?.supportTowerId ?? null,

@@ -63,19 +63,21 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket)
 export async function refreshOdooCard(cardId: number, ticket: OdooTicket): Promise<void> {
   const card = await prisma.taskCard.findUnique({
     where: { id: cardId },
-    select: { description: true, usernameRequired: true, done: true, settled: true, odooCreatedAt: true, odooFetchedAt: true, odooPhone: true },
+    select: { description: true, usernameRequired: true, done: true, settled: true, createdAt: true, odooCreatedAt: true, odooFetchedAt: true, odooPhone: true },
   });
   if (!card || card.done || card.settled) return;
   const data: Record<string, unknown> = {};
   const req = !bgIsSet(ticket.bg);
   if (req !== card.usernameRequired) data.usernameRequired = req;
   // ترقيعٌ كسول لبطاقات ما قبل ميزة المهلة: تُملأ حقول الاحتساب من التذكرة عند أوّل تحديث.
-  // odooFetchedAt لا يُلمَس إن كان موجوداً (وإلّا انفتحت مهلة الرؤية من جديد كلّ دورة).
   if (card.odooCreatedAt == null) {
     const cd = odooDateToUtc(ticket.createDate);
     if (cd) data.odooCreatedAt = cd;
   }
-  if (card.odooFetchedAt == null) data.odooFetchedAt = new Date();
+  // ⚠️ **بوّابة التسليح**: odooFetchedAt هي ما يُقارَن بلحظة التشعيل، فلو ملأناها بـ«الآن» لبدت
+  // كلّ بطاقةٍ قديمة كأنّها سُحبت بعد التشعيل ⇒ رشقةُ تأجيلٍ ورسائلَ لتذاكرَ قديمة (اصطاده تدقيقٌ
+  // عدائيّ). لذلك تُملأ بـ**تاريخ إنشاء البطاقة** لا بالآن — فتبقى خارج التسليح كما يجب.
+  if (card.odooFetchedAt == null) data.odooFetchedAt = card.createdAt;
   if (!card.odooPhone && ticket.phone) data.odooPhone = ticket.phone;
   let desc = card.description ?? "";
   // استبدال السطر القديم الملتبس «FDT/FAT: X / Y» (كان يظهر معكوساً بالـRTL) بالصيغة الملصقة

@@ -62,10 +62,27 @@ export interface OdooTicket {
   typeName: string | null;
 }
 
+// ⚠️ قائمة سماحٍ للمضيف (اصطاده تدقيقٌ عدائيّ 2026-08-09): كان `odooUrl` يُقبَل لأيّ مضيف،
+// فيستطيع **أيّ مستخدم مكتب** حفظ `https://evil.tld` ثمّ يُسجّل الخادم دخولاً هناك حاملاً
+// اسم مستخدم أودو للمكتب **وكلمة مروره** (مخزّنةً نصّاً صريحاً كي يقرأها العامل) ⇒ تسريب سرٍّ
+// محجوبٍ عنه في الواجهة، وSSRF من حاوية الإنتاج. الآن: مضيفٌ من سوبر سيل حصراً، وhttps فقط.
+export const ODOO_ALLOWED_HOSTS = ["odoo.supercell.iq", "supercell.iq"] as const;
+
+export function odooHostAllowed(u?: string | null): boolean {
+  const raw = (u ?? "").trim();
+  if (!raw) return true; // الفراغ = المضيف الافتراضيّ
+  try {
+    const host = new URL(/^https?:\/\//.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase();
+    return ODOO_ALLOWED_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  } catch { return false; }
+}
+
 function normBase(u?: string | null): string {
   let b = (u || DEFAULT_BASE).trim().replace(/\/+$/, "");
   if (!/^https?:\/\//.test(b)) b = "https://" + b;
-  return b;
+  // حرسٌ أخير عند التنفيذ: مضيفٌ غير مسموح ⇒ يُستبدل بالافتراضيّ ولا يُنادى أبداً
+  if (!odooHostAllowed(b)) return DEFAULT_BASE;
+  return b.replace(/^http:\/\//, "https://"); // لا http صريحاً (كلمة المرور تُرسَل في الجسم)
 }
 
 // دمج Set-Cookie في سلسلة Cookie (session_id يكفي؛ نحتفظ بكلّ المفاتيح)

@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ownsTower } from "@/lib/guard";
 import { decryptSecret } from "@/lib/secretbox";
-import { odooTestConnection } from "@/lib/odoo";
+import { odooTestConnection, odooHostAllowed } from "@/lib/odoo";
 
 // اختبار اتصال أودو لمكتب — **سحابيّ، لمرّة واحدة عند الإعداد** (قرار محمد: مقبول لأنّه لا يتكرّر).
 // متاحٌ للمدير (أيّ مكتب من وكيله) وللمستخدم (مكتبه فقط) عبر ownsTower — لا يخصّ المدير حصراً كالقروض.
@@ -34,6 +34,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     ? parsed.data.odooPass
     : (decryptSecret(tower?.odooPass) ?? "");
   const odooUrl = (parsed.data.odooUrl ?? tower?.odooUrl ?? "").trim() || null;
+  // مضيفٌ من سوبر سيل حصراً — وإلّا كان هذا المسار بابَ تسريبٍ لكلمة مرور أودو بطلبٍ واحد
+  if (odooUrl && !odooHostAllowed(odooUrl)) {
+    return NextResponse.json({ ok: false, message: "رابط أودو غير مسموح — يجب أن يكون على نطاق supercell.iq" });
+  }
   if (!odooUser || !odooPass) {
     return NextResponse.json({ ok: false, message: "أدخل اسم المستخدم وكلمة المرور أولاً" });
   }

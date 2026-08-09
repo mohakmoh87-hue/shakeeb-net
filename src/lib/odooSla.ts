@@ -17,7 +17,7 @@ export const SLA_FROM_HOUR = 10; // بداية نافذة الاحتساب (بغ
 export const SLA_TO_HOUR = 24; // نهايتها (منتصف الليل)
 export const SLA_ALARM_MIN_DEFAULT = 60; // إنذارٌ أحمر
 export const SLA_SEND_MIN_DEFAULT = 90; // تأجيلٌ تلقائيّ
-export const SLA_FINE_MIN = 120; // الغرامة عند سوبر سيل
+export const SLA_TECH_EVERY_MS = 15 * 60_000; // تنبيه الفنيّ كلّ ١٥ دقيقة حتى إنجاز البطاقة أو إلغائها
 export const SLA_GRACE_MS = 10 * 60_000; // مهلة رؤيةٍ بعد السحب قبل أيّ إرسال تلقائيّ (طلب محمد)
 export const SLA_SEND_CAP = 5; // سقف الإرسال لكلّ مكتب في الدورة (منع رشقة)
 export const SLA_WA_TTL_MS = 24 * 3600_000; // رسالة المشترك المؤرشفة تُلغى بعد يوم (طلب محمد)
@@ -87,11 +87,10 @@ export function slaStartOf(c: SlaCard): Date | null {
 
 export type SlaLevel = "none" | "ok" | "danger" | "over";
 export type SlaState = {
-  level: SlaLevel;
+  level: SlaLevel; // danger = تجاوزت عتبة الإنذار · over = تجاوزت عتبة الإرسال
   ageMin: number; // عمر التذكرة بدقائق النافذة
   toAlarmMin: number; // المتبقّي حتى الإنذار
-  toSendMin: number; // المتبقّي حتى الإرسال التلقائيّ
-  toFineMin: number; // المتبقّي حتى الغرامة
+  toSendMin: number; // المتبقّي حتى الإرسال التلقائيّ (هذا ما يُعرَض — لا ذكرَ لغرامةٍ في أيّ مكان)
 };
 
 /**
@@ -104,20 +103,14 @@ export function slaStateOf(
   alarmMin: number = SLA_ALARM_MIN_DEFAULT,
   sendMin: number = SLA_SEND_MIN_DEFAULT,
 ): SlaState {
-  const off: SlaState = { level: "none", ageMin: 0, toAlarmMin: 0, toSendMin: 0, toFineMin: 0 };
+  const off: SlaState = { level: "none", ageMin: 0, toAlarmMin: 0, toSendMin: 0 };
   if (!c.viaOdoo || c.done || c.settled) return off;
   if (asDate(c.slaNoteAt) || asDate(c.postponedTo)) return off; // اتُّخذ إجراء
   const start = slaStartOf(c);
   if (!start) return off;
   const ageMin = slaMinutesBetween(start, now);
-  const level: SlaLevel = ageMin >= SLA_FINE_MIN ? "over" : ageMin >= alarmMin ? "danger" : "ok";
-  return {
-    level,
-    ageMin,
-    toAlarmMin: Math.max(0, alarmMin - ageMin),
-    toSendMin: Math.max(0, sendMin - ageMin),
-    toFineMin: Math.max(0, SLA_FINE_MIN - ageMin),
-  };
+  const level: SlaLevel = ageMin >= sendMin ? "over" : ageMin >= alarmMin ? "danger" : "ok";
+  return { level, ageMin, toAlarmMin: Math.max(0, alarmMin - ageMin), toSendMin: Math.max(0, sendMin - ageMin) };
 }
 
 /** «٠:٤٧» من دقائق — للعدّاد على البطاقة والمربّع. */
@@ -135,6 +128,8 @@ export function inSlaWindow(now: Date = new Date()): boolean {
 export const SLA_NOTE_DEFAULT = "تم التأجيل بطلب من المشترك";
 export const SLA_WA_DEFAULT =
   "عزيزنا المشترك، نعتذر عن التأخير — تمّ تأجيل موعد زيارة الفنيّ، وسنتواصل معكم لتحديد موعدٍ جديد. شكراً لتفهّمكم.";
+export const SLA_TECH_DEFAULT =
+  "⏳ تذكرة أودو {التذكرة} تأخّرت — أنجزها أو ألغِها أو أجّلها الآن. {الهاتف}";
 
 /** استبدال متغيّرات نصّ المدير. */
 export function fillSlaText(tpl: string, v: { office?: string | null; ticket?: number | null; phone?: string | null; bg?: string | null }): string {

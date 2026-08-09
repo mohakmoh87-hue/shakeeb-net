@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ownsTower } from "@/lib/guard";
 import { decryptSecret } from "@/lib/secretbox";
-import { odooLogin } from "@/lib/odoo";
+import { odooLogin, odooHostAllowed } from "@/lib/odoo";
 
 // إعداد ربط أودو لمكتب — **للمدير والمستخدم** (كلٌّ لمكتبه) عبر ownsTower.
 // السرّ (odooPass) يُشفَّر؛ ولا يُكشف إطلاقاً في القراءة (فقط hasOdooCreds).
@@ -14,9 +14,11 @@ const schema = z.object({
   odooUser: z.string().nullable().optional(),
   odooPass: z.string().nullable().optional(), // فارغ = أبقِ القديم
   odooUrl: z.string().nullable().optional(),
-  // مهلة سوبر سيل (طلب محمد 2026-08-09): مفتاح الإرسال التلقائيّ + العتبتان + النصّان
-  odooSlaAuto: z.string().nullable().optional(), // "0" | "1"
+  // مهلة سوبر سيل (طلب محمد 2026-08-09) — ميزتان بمفتاحين
+  odooSlaAlarm: z.string().nullable().optional(), // الميزة ١ (إنذارات) "0" | "1"
   odooSlaAlarmMin: z.union([z.string(), z.number()]).nullable().optional(),
+  odooSlaTechText: z.string().nullable().optional(),
+  odooSlaAuto: z.string().nullable().optional(), // الميزة ٢ (إرسال) "0" | "1" — بإذن المالك
   odooSlaSendMin: z.union([z.string(), z.number()]).nullable().optional(),
   odooSlaNote: z.string().nullable().optional(),
   odooSlaWaText: z.string().nullable().optional(),
@@ -51,10 +53,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     where: { id: g.towerId! },
     select: {
       odooEnabled: true, odooUser: true, odooPass: true, odooUrl: true, odooLastOk: true, odooLastError: true,
+      odooSlaAlarm: true, odooSlaTechText: true,
       odooSlaAuto: true, odooSlaArmedAt: true, odooSlaAlarmMin: true, odooSlaSendMin: true, odooSlaNote: true, odooSlaWaText: true,
     },
   });
   if (!t) return NextResponse.json({ error: "المكتب غير موجود" }, { status: 404 });
+  // إذن مالك النظام للميزة ٢ — بلا هذا الإذن لا تُعرَض الواجهة له شيئاً منها
+  const agentRow = g.session?.agentId != null
+    ? await prisma.agent.findUnique({ where: { id: g.session.agentId }, select: { odooSlaSendAllowed: true } })
+    : null;
   return NextResponse.json({
     odooEnabled: t.odooEnabled ?? "0",
     hasOdooCreds: !!(t.odooUser && t.odooPass),
@@ -62,12 +69,21 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     odooUrl: t.odooUrl ?? null,
     odooLastOk: t.odooLastOk,
     odooLastError: t.odooLastError,
-    odooSlaAuto: t.odooSlaAuto ?? "0",
-    odooSlaArmedAt: t.odooSlaArmedAt,
+    // الميزة ١ (إنذارات) — للكلّ
+    odooSlaAlarm: t.odooSlaAlarm ?? "0",
     odooSlaAlarmMin: t.odooSlaAlarmMin,
-    odooSlaSendMin: t.odooSlaSendMin,
-    odooSlaNote: t.odooSlaNote,
-    odooSlaWaText: t.odooSlaWaText,
+    odooSlaTechText: t.odooSlaTechText,
+    // الميزة ٢ (إرسال) — لا يُعاد منها شيءٌ بلا إذن المالك
+    odooSlaSendAllowed: !!agentRow?.odooSlaSendAllowed,
+    ...(agentRow?.odooSlaSendAllowed
+      ? {
+          odooSlaAuto: t.odooSlaAuto ?? "0",
+          odooSlaArmedAt: t.odooSlaArmedAt,
+          odooSlaSendMin: t.odooSlaSendMin,
+          odooSlaNote: t.odooSlaNote,
+          odooSlaWaText: t.odooSlaWaText,
+        }
+      : {}),
   });
 }
 
@@ -83,25 +99,47 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const data: Record<string, unknown> = {};
   if (parsed.data.odooEnabled != null) data.odooEnabled = parsed.data.odooEnabled;
   if (parsed.data.odooUser != null) data.odooUser = parsed.data.odooUser.trim();
-  if (parsed.data.odooUrl != null) data.odooUrl = parsed.data.odooUrl.trim() || null;
+  // المضيف مقيَّدٌ بسوبر سيل: بلا هذا القيد يُسلّم الخادم كلمة مرور أودو لأيّ موقعٍ يكتبه المستخدم
+  if (parsed.data.odooUrl != null) {
+    const url = parsed.data.odooUrl.trim();
+    if (url && !odooHostAllowed(url)) {
+      return NextResponse.json({ error: "رابط أودو غير مسموح — يجب أن يكون على نطاق supercell.iq" }, { status: 400 });
+    }
+    data.odooUrl = url || null;
+  }
   // كلمة المرور: الفراغ لا يمحو القديم؛ وإلا تُخزَّن نصّاً صريحاً (كـSAS) ليقرأها العامل بلا مفتاح
   if (parsed.data.odooPass != null && parsed.data.odooPass !== "") data.odooPass = parsed.data.odooPass;
-  // ===== مهلة سوبر سيل =====
+  // ===== مهلة سوبر سيل — الميزة ١ (إنذارات): لكلّ الوكلاء بلا إذن =====
   const alarmMin = minutesOrNull(parsed.data.odooSlaAlarmMin);
-  const sendMin = minutesOrNull(parsed.data.odooSlaSendMin);
   if (alarmMin !== undefined) data.odooSlaAlarmMin = alarmMin;
-  if (sendMin !== undefined) data.odooSlaSendMin = sendMin;
-  if (parsed.data.odooSlaNote != null) data.odooSlaNote = parsed.data.odooSlaNote.trim() || null;
-  if (parsed.data.odooSlaWaText != null) data.odooSlaWaText = parsed.data.odooSlaWaText.trim() || null;
-  // بوّابة التسليح: **لحظة** تشعيل الإرسال التلقائيّ تُختَم، فما سُحب قبلها لا يُرسَل له تلقائيّاً
-  // أبداً. هذا وحده ما يمنع رشقةً جماعيّةً لتذاكرَ قديمةٍ لحظة تشعيل المفتاح (رسائل لا رجعة فيها).
-  if (parsed.data.odooSlaAuto != null) {
-    const want = parsed.data.odooSlaAuto === "1";
-    const cur = await prisma.tower.findUnique({ where: { id: towerId }, select: { odooSlaAuto: true, odooSlaArmedAt: true } });
-    data.odooSlaAuto = want ? "1" : "0";
-    if (want && cur?.odooSlaAuto !== "1") data.odooSlaArmedAt = new Date(); // تشعيلٌ جديد ⇒ ختمٌ جديد
-    if (!want) data.odooSlaArmedAt = null;
+  if (parsed.data.odooSlaTechText != null) data.odooSlaTechText = parsed.data.odooSlaTechText.trim() || null;
+  const alarmOn = parsed.data.odooSlaAlarm != null ? parsed.data.odooSlaAlarm === "1" : null;
+  if (alarmOn != null) data.odooSlaAlarm = alarmOn ? "1" : "0";
+
+  // ===== الميزة ٢ (إرسال): بإذن مالك النظام حصراً، ولا تعمل بلا الميزة ١ =====
+  const agentRow = g.session?.agentId != null
+    ? await prisma.agent.findUnique({ where: { id: g.session.agentId }, select: { odooSlaSendAllowed: true } })
+    : null;
+  const sendAllowed = !!agentRow?.odooSlaSendAllowed;
+  if (sendAllowed) {
+    const sendMin = minutesOrNull(parsed.data.odooSlaSendMin);
+    if (sendMin !== undefined) data.odooSlaSendMin = sendMin;
+    if (parsed.data.odooSlaNote != null) data.odooSlaNote = parsed.data.odooSlaNote.trim() || null;
+    if (parsed.data.odooSlaWaText != null) data.odooSlaWaText = parsed.data.odooSlaWaText.trim() || null;
+    // بوّابة التسليح: **لحظة** تشعيل الإرسال تُختَم، فما سُحب قبلها لا يُرسَل له تلقائيّاً أبداً.
+    // هذا وحده ما يمنع رشقةً جماعيّةً لتذاكرَ قديمةٍ لحظة التشعيل (رسائل لا رجعة فيها).
+    if (parsed.data.odooSlaAuto != null) {
+      const cur = await prisma.tower.findUnique({ where: { id: towerId }, select: { odooSlaAuto: true, odooSlaAlarm: true } });
+      // الإرسال لا يُشعَل إلّا والإنذارات مُشعَلة (المطلوب الآن أو المحفوظ سابقاً)
+      const alarmEffective = alarmOn ?? cur?.odooSlaAlarm === "1";
+      const want = parsed.data.odooSlaAuto === "1" && alarmEffective;
+      data.odooSlaAuto = want ? "1" : "0";
+      if (want && cur?.odooSlaAuto !== "1") data.odooSlaArmedAt = new Date(); // تشعيلٌ جديد ⇒ ختمٌ جديد
+      if (!want) data.odooSlaArmedAt = null;
+    }
   }
+  // إطفاء الإنذارات — أو إطفاء ربط أودو نفسه — يُطفئ الإرسال قهراً (الإرسال مبنيٌّ على حسابها)
+  if (alarmOn === false || parsed.data.odooEnabled === "0") { data.odooSlaAuto = "0"; data.odooSlaArmedAt = null; }
 
   await prisma.tower.update({ where: { id: towerId }, data });
 

@@ -18,6 +18,11 @@ const cardCols = [
   ['"odooFetchedAt"', "timestamp(3)"], // لحظة سحبها عندنا (مهلة الرؤية + بوّابة التسليح)
   ['"odooPhone"', "text"], // هاتف التذكرة عموداً صريحاً (لا استخراجاً نصّيّاً)
   ['"slaClaimedAt"', "timestamp(3)"], // حجزٌ ذرّيّ قبل الإرسال (منع الإرسال المزدوج)
+  ['"postponeNote"', "text"], // ملاحظة التأجيل اليدويّ (تُدفَع إلى أودو) — عمودٌ صريح لا regex
+  ['"postponeNoteAt"', "timestamp(3)"],
+  ['"postponePushedAt"', "timestamp(3)"],
+  ['"slaAlertAt"', "timestamp(3)"], // إشعار المدير في الجرس (مرّة واحدة)
+  ['"slaTechAt"', "timestamp(3)"], // آخر تنبيه للفنيّ (كلّ ١٥ دقيقة)
   ['"slaNoteAt"', "timestamp(3)"], // نجاح ملاحظة التأجيل في أودو ⇒ خروجٌ من المهلة
   ['"slaWaQueuedAt"', "timestamp(3)"], // رسالة المشترك في الطابور
   ['"slaWaSentAt"', "timestamp(3)"], // أُرسلت
@@ -25,7 +30,9 @@ const cardCols = [
 ];
 // (٢) إعدادات المكتب: المفتاح والتسليح والعتبتان والنصّان
 const towerCols = [
-  ['"odooSlaAuto"', "text DEFAULT '0'"],
+  ['"odooSlaAlarm"', "text DEFAULT '0'"], // الميزة ١ (إنذارات) — لكلّ الوكلاء
+  ['"odooSlaTechText"', "text"], // نصّ تنبيه الفنيّ
+  ['"odooSlaAuto"', "text DEFAULT '0'"], // الميزة ٢ (إرسال) — بإذن المالك
   ['"odooSlaArmedAt"', "timestamp(3)"],
   ['"odooSlaAlarmMin"', "integer"],
   ['"odooSlaSendMin"', "integer"],
@@ -34,6 +41,11 @@ const towerCols = [
 ];
 for (const [col, type] of cardCols) await c.query(`ALTER TABLE task_cards ADD COLUMN IF NOT EXISTS ${col} ${type}`);
 for (const [col, type] of towerCols) await c.query(`ALTER TABLE towers ADD COLUMN IF NOT EXISTS ${col} ${type}`);
+// (٢-ب) إذن مالك النظام للميزة ٢ (لكلّ وكيل) + الحالة الثالثة لرؤية الفنيّ (بطاقاته + التوصيل)
+await c.query(`ALTER TABLE agents ADD COLUMN IF NOT EXISTS "odooSlaSendAllowed" boolean NOT NULL DEFAULT false`);
+await c.query(`ALTER TABLE technicians ADD COLUMN IF NOT EXISTS "seeDeliveryCards" boolean NOT NULL DEFAULT false`);
+// إضافة البطاقات للفنيّ: **افتراضها true** فلا يتغيّر شيءٌ على الوكلاء القائمين
+await c.query(`ALTER TABLE technicians ADD COLUMN IF NOT EXISTS "canAddCards" boolean NOT NULL DEFAULT true`);
 
 // (٣) سياسة سجلّ الرسائل: هاتف تذكرة سوبر سيل قد لا يطابق أيّ مشترك عندنا (صيغةٌ مختلفة أو
 // تذكرة Change Team لغير مشتركينا)، فيُقبَل صفّ السجلّ إن كان موسوماً بوكيل الحاسبة صريحاً.
@@ -45,20 +57,23 @@ const scope = `
     OR (phone IS NOT NULL AND phone IN
        (SELECT s.phone FROM subscribers s JOIN towers t ON t.id = s."towerId"
          WHERE t."agentId" = current_agent_id() AND s.phone IS NOT NULL))`;
+// الفرع الرابع في **الاثنين**: بلا مقابلٍ في USING يفشل INSERT … RETURNING الذي يولّده Prisma
+// فيُفقَد صفّ السجلّ صامتاً. والعزل محفوظ (الشرط agentId = وكيل الحاسبة نفسه).
+const own = `${scope}\n    OR (phone IS NOT NULL AND "agentId" IS NOT NULL AND "agentId" = current_agent_id())`;
 await c.query(`DROP POLICY IF EXISTS rls_messages ON messages`);
-await c.query(`
-  CREATE POLICY rls_messages ON messages TO agent_worker
-    USING (${scope})
-    WITH CHECK (${scope}
-      OR (phone IS NOT NULL AND "agentId" IS NOT NULL AND "agentId" = current_agent_id()))`);
+await c.query(`CREATE POLICY rls_messages ON messages TO agent_worker USING (${own}) WITH CHECK (${own})`);
 
 // (٤) تحقّق
+const expected = cardCols.length + towerCols.length + 3; // +agents.odooSlaSendAllowed +technicians.seeDeliveryCards/canAddCards
 const q = await c.query(`
   SELECT table_name, column_name FROM information_schema.columns
-  WHERE (table_name = 'task_cards' AND (column_name LIKE 'sla%' OR column_name IN ('odooCreatedAt','odooFetchedAt','odooPhone')))
+  WHERE (table_name = 'task_cards' AND (column_name LIKE 'sla%' OR column_name LIKE 'postpone%' OR column_name IN ('odooCreatedAt','odooFetchedAt','odooPhone')))
      OR (table_name = 'towers' AND column_name LIKE 'odooSla%')
+     OR (table_name = 'agents' AND column_name = 'odooSlaSendAllowed')
+     OR (table_name = 'technicians' AND column_name IN ('seeDeliveryCards','canAddCards'))
   ORDER BY table_name, column_name`);
-console.log(`أعمدة مُطبَّقة: ${q.rows.length}/14`);
+// ملاحظة: task_cards.postponedTo قديمٌ ويطابق postpone% — فالمتوقّع أعلى بواحد
+console.log(`أعمدة مُطبَّقة: ${q.rows.length} (المتوقّع ${expected + 1} بحساب postponedTo القديم)`);
 for (const r of q.rows) console.log("  ", `${r.table_name}.${r.column_name}`);
 const p = await c.query(`SELECT polname FROM pg_policy WHERE polname = 'rls_messages'`);
 console.log("سياسة rls_messages:", p.rows.length ? "موجودة ✅" : "مفقودة ❌");

@@ -15,6 +15,7 @@ type Agent = {
   managerCount: number; techCount: number; subscriberCount: number;
   manager: Manager | null; expired: boolean;
   managerPhones: string[]; backupEmail: string | null;
+  odooSlaSendAllowed: boolean; // إذن «رسائل أودو التلقائيّة» (الميزة ٢) — بلا هذا الإذن لا يراها الوكيل
 };
 
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
@@ -306,6 +307,17 @@ export default function OwnerPage() {
                       وكيلٌ كتب اسمه خطأً («صفء» بدل «صفاء») يصلّحه المالك من هنا. */}
                   <NameEdit value={a.name} onSave={(v) => { if (v && v !== a.name) patch(a.id, { name: v }); }} />
                   <button onClick={() => setCredAgent(a)} className="rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">🔑 بيانات الدخول</button>
+                  {/* إذن «رسائل أودو التلقائيّة» (الميزة ٢ من مهلة أودو): بلا هذا الإذن لا يظهر للوكيل
+                      مفتاحُها إطلاقاً. والإذن يجعلها متاحةً لا مفروضة — يشعلها لكلّ مكتب كما يشاء. */}
+                  <button
+                    onClick={() => patch(a.id, { odooSlaSendAllowed: !a.odooSlaSendAllowed })}
+                    title={a.odooSlaSendAllowed
+                      ? "مسموحٌ له تشغيل إرسال رسائل أودو والمشتركين — اضغط للمنع"
+                      : "ممنوعٌ — لا يظهر له مفتاح إرسال رسائل أودو والمشتركين. اضغط للسماح"}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${a.odooSlaSendAllowed ? "bg-violet-600 text-white hover:bg-violet-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                  >
+                    📨 رسائل أودو {a.odooSlaSendAllowed ? "مسموحة" : "ممنوعة"}
+                  </button>
                   <button onClick={() => regenKey(a)} className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100" title="إعادة توليد مفتاح قاعدة بيانات الوكيل (عند الشك بتسريب)">🔐 مفتاح القاعدة</button>
                   <LimitInput label="مكاتب" value={a.officeCap} onSave={(v) => { if (v !== a.officeCap) patch(a.id, { officeCap: v }); }} />
                   <LimitInput label="مدراء" value={a.maxManagers} onSave={(v) => { if (v !== a.maxManagers) patch(a.id, { maxManagers: v }); }} />

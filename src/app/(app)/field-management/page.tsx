@@ -101,6 +101,8 @@ export default function FieldManagementPage() {
   const [lists, setLists] = useState<List[]>([]);
   const [odooActive, setOdooActive] = useState(false); // أودو نشط للمكتب المعروض (مفعّل أو به بطاقات مفتوحة) — يحكم إظهار عمود «تذاكر أودو»
   // ⏳ مهلة سوبر سيل: عتبتا المكتب + ساعةٌ تنبض كلّ ٣٠ث ليتحرّك العدّاد بلا طلبٍ للخادم
+  const [canAddCards, setCanAddCards] = useState(true); // الفنيّ: خيار المدير «إضافة بطاقات» (افتراضه مسموح)
+  const [slaOn, setSlaOn] = useState(false); // الميزة ١ «إنذارات أودو» لهذا المكتب
   const [slaAlarmMin, setSlaAlarmMin] = useState(SLA_ALARM_MIN_DEFAULT);
   const [slaSendMin, setSlaSendMin] = useState(SLA_SEND_MIN_DEFAULT);
   const [slaNow, setSlaNow] = useState(() => new Date());
@@ -187,6 +189,8 @@ export default function FieldManagementPage() {
     fetch(`/api/field/board${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (d) {
         setBoard(d.board); setLists(d.lists); setCards(d.cards); setOdooActive(!!d.odooActive);
+        setCanAddCards(d.canAddCards !== false); // المستخدم/المدير: الحقل غائب ⇒ مسموح
+        setSlaOn(!!d.odooSla?.alarm);
         setSlaAlarmMin(Number(d.odooSla?.alarmMin) || SLA_ALARM_MIN_DEFAULT);
         setSlaSendMin(Number(d.odooSla?.sendMin) || SLA_SEND_MIN_DEFAULT);
         setTechnicians(d.technicians ?? []); setOffices(d.offices ?? []);
@@ -845,7 +849,7 @@ export default function FieldManagementPage() {
                   const shift = dragged ? 0 : cardShift(l.id, visIdx);
                   // ⏳ مهلة سوبر سيل: حالةُ هذه البطاقة الآن (تُخرجها من الحساب: إنجاز/إلغاء/تأجيل)
                   const sla = slaStateOf(c as SlaCard, slaNow, slaAlarmMin, slaSendMin);
-                  const slaHot = sla.level === "danger" || sla.level === "over";
+                  const slaHot = slaOn && (sla.level === "danger" || sla.level === "over");
                   const isOdoo = !!c.viaOdoo; // بطاقة واردة من أودو
                   const odooInbox = isOdoo && l.name === "تذاكر أودو"; // غير مُصنّفة بعد (صندوق الوارد)
                   const odooColor = l.name && l.name !== "تذاكر أودو" ? catColorOf(l.name) : "#7c3aed"; // لون الفئة إن أُسندت، وإلا بنفسجيّ افتراضيّ
@@ -901,8 +905,8 @@ export default function FieldManagementPage() {
                       {!c.done && wasRestored(c.history) && <span className="rounded bg-purple-50 px-1.5 py-0.5 font-semibold text-purple-700">↩️ معادة من الأرشيف</span>}
                       {/* ⏳ عدّاد مهلة سوبر سيل: المتبقّي حتى الغرامة (أو «انتهت المهلة») */}
                       {slaHot && (
-                        <span className="rounded bg-red-600 px-1.5 py-0.5 font-extrabold text-white" title={`عمر التذكرة ${fmtMin(sla.ageMin)} من ساعتين — ضمن نافذة ١٠:٠٠←٢٤:٠٠`}>
-                          {sla.level === "over" ? "⚠️ انتهت المهلة" : `⏳ متبقٍّ ${fmtMin(sla.toFineMin)}`}
+                        <span className="rounded bg-red-600 px-1.5 py-0.5 font-extrabold text-white" title={`عمر التذكرة ${fmtMin(sla.ageMin)} — يُحتسب داخل نافذة ١٠:٠٠ص←١٢:٠٠ل فقط`}>
+                          {sla.level === "over" ? "⏳ تجاوزت المهلة" : `⏳ متبقٍّ ${fmtMin(sla.toSendMin)}`}
                         </span>
                       )}
                       {/* رسالة المشترك: مؤرشفة بانتظار فتح حاسبة المكتب، أو أُرسلت، أو تعذّرت */}
@@ -920,8 +924,9 @@ export default function FieldManagementPage() {
                 })}
               </div>
 
-              {/* إضافة بطاقة — للمكتب أو للفني (تُسنَد له تلقائياً) */}
-              {canOperate && (
+              {/* إضافة بطاقة — للمكتب أو للفني (تُسنَد له تلقائياً).
+                  الفنيّ الممنوع من الإضافة (خيار المدير) لا يرى الزرّ، والخادم يردّ نداءه أيضاً. */}
+              {canOperate && canAddCards && (
               <div className="p-2">
                 {addingTo === l.id ? (
                   <div className="space-y-1.5 rounded-lg bg-white p-2 shadow-inner">

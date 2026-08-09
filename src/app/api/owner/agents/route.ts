@@ -55,6 +55,7 @@ export async function GET() {
       id: a.id, name: a.name, officeCap: a.officeCap,
       maxManagers: a.maxManagers, maxUsers: a.maxUsers, maxTechnicians: a.maxTechnicians, maxSubscribers: a.maxSubscribers,
       planExpiry: a.planExpiry, isTrial: a.isTrial, approved: a.approved,
+      odooSlaSendAllowed: a.odooSlaSendAllowed, // إذن الميزة ٢ من مهلة أودو
       officeCount: tc.get(a.id) ?? 0, userCount: uc.get(a.id) ?? 0,
       managerCount: mc.get(a.id) ?? 0, techCount: thc.get(a.id) ?? 0,
       subscriberCount: sc.get(a.id) ?? 0,

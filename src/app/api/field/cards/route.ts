@@ -15,6 +15,15 @@ export async function POST(request: Request) {
   const auth = await resolveListActor(Number(b.listId));
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const actor = auth.actor;
+  // ===== «إضافة بطاقات» للفنيّ: خيارٌ يضبطه المدير (طلب محمد 2026-08-09) =====
+  // المنع في **الخادم** لا في الواجهة وحدها — فإخفاء زرٍّ لا يمنع نداءً مباشراً من التطبيق.
+  // مسموحٌ افتراضيّاً (العمود @default(true))، فلا يتغيّر شيءٌ على الوكلاء القائمين.
+  if (actor.isTech && actor.technicianId != null) {
+    const me = await prisma.technician.findUnique({ where: { id: actor.technicianId }, select: { canAddCards: true } });
+    if (me && !me.canAddCards) {
+      return NextResponse.json({ error: "إضافة البطاقات غير مسموحة لك — راجع مكتبك" }, { status: 403 });
+    }
+  }
   // الفني: تُسنَد البطاقة إليه حصراً (لا يختار فنياً آخر). المستخدم: حسب اختياره.
   // **عزل إلزامي**: معرّف الفني القادم من المتصفح يُتحقَّق منه (وكيل/مكتب/غير محذوف)،
   // و«اسم المنفّذ» يُشتقّ من صفّ الفني لا من العميل — كان يُقبل الاثنان بلا فحص إطلاقاً.

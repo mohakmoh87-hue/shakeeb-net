@@ -7,9 +7,11 @@ import {
   isOpenStage, isDoneStage, type OdooSession,
 } from "@/lib/odoo";
 import {
-  slaStateOf, fillSlaText, inSlaWindow, SLA_ALARM_MIN_DEFAULT, SLA_SEND_MIN_DEFAULT,
-  SLA_GRACE_MS, SLA_SEND_CAP, SLA_WA_TTL_MS, SLA_NOTE_DEFAULT, SLA_WA_DEFAULT,
+  slaStateOf, fillSlaText, inSlaWindow, fmtMin, SLA_ALARM_MIN_DEFAULT, SLA_SEND_MIN_DEFAULT,
+  SLA_GRACE_MS, SLA_SEND_CAP, SLA_WA_TTL_MS, SLA_TECH_EVERY_MS,
+  SLA_NOTE_DEFAULT, SLA_WA_DEFAULT, SLA_TECH_DEFAULT,
 } from "@/lib/odooSla";
+import { notify } from "@/lib/notify";
 
 // ===== مزامنة تذاكر أودو — تعمل على عامل حاسبة المكتب المحليّ حصراً (RUN_WORKER)، لا سحابة =====
 // سحبٌ كلّ ١٠ دقائق (تذاكر جديدة id>العلامة) + دفعٌ سريعٌ كلّ ٢٠ ثانية (إنجاز/إلغاء ← أودو، «فوريّ»).
@@ -24,9 +26,11 @@ const CLAIM_TTL_MS = 5 * 60_000; // حجزٌ عالقٌ (انقطاعٌ وسط �
 type OfficeRow = {
   id: number; name: string | null; odooUser: string | null; odooPass: string | null; odooUrl: string | null;
   odooLastTicketId: number | null; odooEnabled: string | null; odooUid: number | null;
+  odooSlaAlarm: string | null; odooSlaTechText: string | null;
   odooSlaAuto: string | null; odooSlaArmedAt: Date | null;
   odooSlaAlarmMin: number | null; odooSlaSendMin: number | null;
   odooSlaNote: string | null; odooSlaWaText: string | null;
+  agentId: number | null;
 };
 
 const sessionCache = new Map<number, { s: OdooSession; at: number }>();
@@ -51,6 +55,7 @@ async function offices(agentId: number): Promise<OfficeRow[]> {
     where: { agentId, isDeleted: false, odooUser: { not: null }, odooPass: { not: null } },
     select: {
       id: true, name: true, odooUser: true, odooPass: true, odooUrl: true, odooLastTicketId: true, odooEnabled: true, odooUid: true,
+      odooSlaAlarm: true, odooSlaTechText: true, agentId: true,
       odooSlaAuto: true, odooSlaArmedAt: true, odooSlaAlarmMin: true, odooSlaSendMin: true, odooSlaNote: true, odooSlaWaText: true,
     },
   });
@@ -75,17 +80,20 @@ function cancelNoteFromHistory(history: string | null): string | null {
   return null;
 }
 
-// آخر ملاحظة تأجيل من سجلّ البطاقة (يخزّنها مسار postpone كـ«تأجيل البطاقة إلى … — {note}»)
-function postponeNoteFromHistory(history: string | null): string | null {
-  if (!history) return null;
+// هل يُسمح لهذا الوكيل بالميزة ٢ (إرسال رسائل أودو والمشتركين)؟ إذنٌ من مالك النظام.
+// **يُفحَص عند التنفيذ** لا عند الحفظ وحده: سحبُ الإذن يجب أن يقطع الإرسال فوراً ولو بقي
+// مفتاح المكتب مشتعلاً (اصطاده تدقيقٌ عدائيّ 2026-08-09).
+const allowCache = new Map<number, { v: boolean; at: number }>();
+async function sendAllowedFor(agentId: number): Promise<boolean> {
+  const hit = allowCache.get(agentId);
+  if (hit && Date.now() - hit.at < 60_000) return hit.v;
+  let v = false;
   try {
-    const arr = JSON.parse(history) as { text?: string }[];
-    for (let i = arr.length - 1; i >= 0; i--) {
-      const m = String(arr[i]?.text ?? "").match(/تأجيل البطاقة[^—\n]*—\s*(.+)$/);
-      if (m) return m[1].trim();
-    }
-  } catch { /* تجاهل */ }
-  return null;
+    const a = await prisma.agent.findUnique({ where: { id: agentId }, select: { odooSlaSendAllowed: true } });
+    v = !!a?.odooSlaSendAllowed;
+  } catch { v = false; } // تعذّرت القراءة (صلاحية/شبكة) ⇒ **فشلٌ مغلق**: لا إرسال
+  allowCache.set(agentId, { v, at: Date.now() });
+  return v;
 }
 
 async function listIdsOf(towerId: number): Promise<number[]> {
@@ -215,6 +223,78 @@ async function runPush(): Promise<void> {
   } finally { pushing = false; }
 }
 
+// ===== الميزة ١ (إنذارات): إشعار المدير مرّةً + تنبيه الفنيّ كلّ ١٥ دقيقة =====
+// «حتى انتهاء البطاقة إنجازاً أو إلغاءً» (قرار محمد) — فالتنبيه يستمرّ بعد التأجيل التلقائيّ.
+// واستثناءٌ واحدٌ معلَن: بطاقةٌ أُجّلت **يدويّاً** إلى موعدٍ قادم يتوقّف تنبيهها حتى يحلّ موعدها،
+// وإلّا نبّهنا الفنيّ كلّ ربع ساعةٍ لأيّامٍ على موعدٍ لم يحن.
+type SlaCardRow = {
+  id: number; title: string; odooTicketId: number | null; odooCreatedAt: Date | null; odooFetchedAt: Date | null;
+  createdAt: Date; postponedTo: Date | null; odooPhone: string | null; odooBg: string | null;
+  history: string | null; technicianId: number | null; slaAlertAt: Date | null; slaTechAt: Date | null;
+};
+async function notifyManagers(o: OfficeRow, cards: SlaCardRow[], alarmMin: number, sendMin: number, now: Date): Promise<void> {
+  for (const c of cards) {
+    if (c.slaAlertAt != null) continue; // أُشعِر مرّةً — لا تكرار (الوميض يكفي بعدها)
+    if (c.postponedTo && c.postponedTo.getTime() > now.getTime()) continue; // مؤجَّلة لموعدٍ قادم
+    const st = slaStateOf({ ...c, viaOdoo: true, postponedTo: null, slaNoteAt: null }, now, alarmMin, sendMin);
+    if (st.level !== "danger" && st.level !== "over") continue;
+    const claim = await prisma.taskCard.updateMany({ where: { id: c.id, slaAlertAt: null }, data: { slaAlertAt: now } });
+    if (claim.count !== 1) continue;
+    await notify({
+      agentId: o.agentId, towerId: o.id, type: "odooSla",
+      title: "⏳ تذكرة أودو تأخّرت",
+      body: `${c.title} — مكتب ${o.name ?? o.id}${st.toSendMin > 0 ? ` · متبقٍّ ${fmtMin(st.toSendMin)}` : ""}`,
+      refType: "taskCard", refId: c.id, url: "/field-management",
+    });
+  }
+}
+
+// تنبيه الفنيّ كلّ ١٥ دقيقة — **على حاسبة مكتبه** (واتساب مكتبه محليّاً بلا مُرحِّلٍ بمهلة ١٥ث
+// داخل حلقةٍ على القائد). يستمرّ **حتى إنجاز البطاقة أو إلغائها** — أي بعد التأجيل التلقائيّ أيضاً
+// (قرار محمد)، فلا يُرشَّح هنا بـslaNoteAt خلافاً لسويب الإرسال.
+async function runTechAlerts(o: { id: number; name: string | null; agentId: number | null; odooSlaAlarm: string | null; odooSlaTechText: string | null; odooSlaAlarmMin: number | null; odooSlaSendMin: number | null }, listIds: number[], now: Date): Promise<void> {
+  if (o.odooSlaAlarm !== "1" || !inSlaWindow(now)) return;
+  const alarmMin = o.odooSlaAlarmMin ?? SLA_ALARM_MIN_DEFAULT;
+  const sendMin = o.odooSlaSendMin ?? SLA_SEND_MIN_DEFAULT;
+  const cards = await prisma.taskCard.findMany({
+    where: {
+      listId: { in: listIds }, viaOdoo: true, odooTicketId: { not: null }, technicianId: { not: null },
+      done: false, settled: false, isDeleted: false, archivedAt: null,
+    },
+    select: {
+      id: true, title: true, odooTicketId: true, odooCreatedAt: true, odooFetchedAt: true, createdAt: true,
+      postponedTo: true, odooPhone: true, odooBg: true, technicianId: true, slaTechAt: true,
+    },
+    take: 40,
+  });
+  const { sendWhatsApp } = await import("@/lib/whatsapp");
+  for (const c of cards) {
+    if (c.postponedTo && c.postponedTo.getTime() > now.getTime()) continue; // مؤجَّلة لموعدٍ قادم ⇒ صمت
+    if (c.slaTechAt != null && now.getTime() - c.slaTechAt.getTime() < SLA_TECH_EVERY_MS) continue;
+    const st = slaStateOf({ ...c, viaOdoo: true, postponedTo: null, slaNoteAt: null }, now, alarmMin, sendMin);
+    if (st.level !== "danger" && st.level !== "over") continue;
+    const tech = await prisma.technician.findFirst({
+      where: { id: c.technicianId as number, isDeleted: false, agentId: o.agentId ?? -1 }, // عزل الوكيل
+      select: { phone: true },
+    });
+    if (!tech?.phone) continue;
+    // حجزٌ ذرّيّ على الطابع السابق: حاسبتان لا تُرسلان تنبيهاً واحداً مرّتين
+    const prev = c.slaTechAt;
+    const claim = await prisma.taskCard.updateMany({
+      where: { id: c.id, slaTechAt: prev }, data: { slaTechAt: now },
+    });
+    if (claim.count !== 1) continue;
+    const text = fillSlaText((o.odooSlaTechText ?? "").trim() || SLA_TECH_DEFAULT, {
+      office: o.name, ticket: c.odooTicketId, phone: c.odooPhone, bg: c.odooBg,
+    });
+    const r = await sendWhatsApp(o.id, tech.phone, `${text}\n📋 ${c.title}`);
+    if (!r.ok) await prisma.taskCard.updateMany({ where: { id: c.id }, data: { slaTechAt: prev } }).catch(() => {});
+    else await prisma.message.create({
+      data: { channel: "WHATSAPP", phone: tech.phone, text, status: "SENT", createdByUser: "أودو-تنبيه", agentId: o.agentId },
+    }).catch(() => {});
+  }
+}
+
 // ===== مهلة سوبر سيل (كلّ دقيقة، على القائد): ملاحظة التأجيل إلى أودو =====
 // سوبر سيل تُغرّم إن مضت ساعتان بلا إجراء. المسار هنا شقّان:
 //   (أ) **تأجيلٌ يدويّ** لبطاقة أودو ⇒ تُدفَع ملاحظة الفنيّ إلى أودو (الربط الثلاثيّ المتّفق عليه:
@@ -230,17 +310,24 @@ async function runSlaSweep(): Promise<void> {
     if (!isLeaderNow()) return;
     const agentId = getWorkerAgentId();
     if (agentId == null) return;
+    const sendAllowed = await sendAllowedFor(agentId); // إذن مالك النظام — يُفحَص كلّ دورة
     for (const o of await offices(agentId)) {
       const listIds = await listIdsOf(o.id);
       if (!listIds.length) continue;
+      // الميزة ١ مطفأة ومفتاح الإرسال مطفأ ⇒ لا عمل هنا إلّا دفعُ ملاحظات التأجيل اليدويّ
+      const alarmOn = o.odooSlaAlarm === "1";
+      // لا يُرشَّح بـslaNoteAt هنا: البطاقة المؤجَّلة يدويّاً مرّةً أخرى يجب أن تُدفَع ملاحظتها
+      // الجديدة إلى أودو (الترشيح بالختم كان يُسقط كلّ تأجيلٍ بعد الأوّل — اصطاده تدقيق عدائيّ).
       const cards = await prisma.taskCard.findMany({
         where: {
           listId: { in: listIds }, viaOdoo: true, odooTicketId: { not: null },
-          done: false, settled: false, isDeleted: false, archivedAt: null, slaNoteAt: null,
+          done: false, settled: false, isDeleted: false, archivedAt: null,
         },
         select: {
-          id: true, odooTicketId: true, odooCreatedAt: true, odooFetchedAt: true, createdAt: true,
-          postponedTo: true, odooPhone: true, odooBg: true, history: true,
+          id: true, title: true, odooTicketId: true, odooCreatedAt: true, odooFetchedAt: true, createdAt: true,
+          postponedTo: true, odooPhone: true, odooBg: true, history: true, slaNoteAt: true,
+          postponeNote: true, postponeNoteAt: true, postponePushedAt: true,
+          technicianId: true, slaAlertAt: true, slaTechAt: true,
         },
         take: 60,
       });
@@ -248,19 +335,25 @@ async function runSlaSweep(): Promise<void> {
 
       const alarmMin = o.odooSlaAlarmMin ?? SLA_ALARM_MIN_DEFAULT;
       const sendMin = o.odooSlaSendMin ?? SLA_SEND_MIN_DEFAULT;
-      const armed = o.odooSlaAuto === "1" && o.odooSlaArmedAt != null;
+      // الإرسال التلقائيّ: إذن المالك + الميزة ١ + مفتاح المكتب + التسليح + ربط أودو مفعّل
+      const armed = sendAllowed && alarmOn && o.odooEnabled === "1" && o.odooSlaAuto === "1" && o.odooSlaArmedAt != null;
       const now = new Date();
+
+      // ===== الميزة ١ (على القائد): إشعار المدير في الجرس مرّةً عند العتبة =====
+      // تنبيهُ الفنيّ ليس هنا: هو واتسابٌ يجري على حاسبة مكتبه (runTechAlerts في طابور المكتب).
+      if (alarmOn) await notifyManagers(o, cards, alarmMin, sendMin, now);
 
       type Due = { id: number; ticketId: number; phone: string | null; bg: string | null; manual: boolean; note: string };
       const due: Due[] = [];
       for (const c of cards) {
         const base = { id: c.id, ticketId: c.odooTicketId as number, phone: c.odooPhone, bg: c.odooBg };
-        if (c.postponedTo) {
-          // (أ) أُجّلت يدويّاً: تُدفَع ملاحظة الفنيّ. بطاقةٌ قديمة أُجّلت بلا ملاحظة ⇒ لا شيء يُدفَع.
-          const n = postponeNoteFromHistory(c.history);
-          if (n) due.push({ ...base, manual: true, note: n });
+        // (أ) تأجيلٌ يدويّ بملاحظةٍ أحدث من آخر دفع ⇒ تُدفَع كما كتبها الفنيّ (بأسطرها)
+        if (c.postponeNote && c.postponeNoteAt && (!c.postponePushedAt || c.postponeNoteAt.getTime() > c.postponePushedAt.getTime())) {
+          due.push({ ...base, manual: true, note: c.postponeNote });
           continue;
         }
+        if (c.postponedTo) continue; // مؤجَّلة بلا ملاحظةٍ جديدة ⇒ لا تلقائيّ عليها
+        if (c.slaNoteAt) continue; // أُبلِغت أودو تلقائيّاً ⇒ خرجت من المهلة
         if (!armed) continue;
         const fetched = c.odooFetchedAt ?? c.createdAt;
         if (o.odooSlaArmedAt && fetched.getTime() < o.odooSlaArmedAt.getTime()) continue; // ما سُحب قبل التسليح
@@ -286,16 +379,19 @@ async function runSlaSweep(): Promise<void> {
       for (const d of due) {
         if (!d.manual && autoSent >= SLA_SEND_CAP) break; // السقف للتلقائيّ فقط
         // ختمٌ على مستوى **التذكرة** لا البطاقة: بطاقةٌ حُذفت فأُعيد إنشاؤها (السحب يعيدها بطلب
-        // محمد) لا تُبلَّغ مرّتين — نفحص كلّ بطاقات هذه التذكرة ولو كانت محذوفة.
-        const already = await prisma.taskCard.count({ where: { odooTicketId: d.ticketId, slaNoteAt: { not: null } } });
-        if (already > 0) {
-          await prisma.taskCard.update({ where: { id: d.id }, data: { slaNoteAt: new Date() } }).catch(() => {});
-          continue;
+        // محمد) لا تُبلَّغ **تلقائيّاً** مرّتين — نفحص كلّ بطاقات هذه التذكرة ولو كانت محذوفة.
+        // ويُقصَر الشرط على التلقائيّ: ملاحظة الفنيّ اليدويّة تُدفَع دائماً (فعلٌ قابل للتكرار في أودو).
+        if (!d.manual) {
+          const already = await prisma.taskCard.count({ where: { odooTicketId: d.ticketId, slaNoteAt: { not: null } } });
+          if (already > 0) {
+            await prisma.taskCard.update({ where: { id: d.id }, data: { slaNoteAt: new Date() } }).catch(() => {});
+            continue;
+          }
         }
         // حجزٌ ذرّيّ **قبل** أيّ نداء شبكة: يمنع إرسالاً مزدوجاً لحظة انتقال القيادة بين حاسبتين
         const claim = await prisma.taskCard.updateMany({
           where: {
-            id: d.id, slaNoteAt: null,
+            id: d.id, ...(d.manual ? {} : { slaNoteAt: null }),
             OR: [{ slaClaimedAt: null }, { slaClaimedAt: { lt: new Date(Date.now() - CLAIM_TTL_MS) } }],
           },
           data: { slaClaimedAt: new Date() },
@@ -308,7 +404,9 @@ async function runSlaSweep(): Promise<void> {
           const queueWa = !d.manual && !!d.phone;
           await prisma.taskCard.update({
             where: { id: d.id },
-            data: { slaNoteAt: new Date(), ...(queueWa ? { slaWaQueuedAt: new Date() } : {}) },
+            data: d.manual
+              ? { postponePushedAt: new Date(), slaClaimedAt: null } // اليدويّ لا يُختَم بـslaNoteAt
+              : { slaNoteAt: new Date(), ...(queueWa ? { slaWaQueuedAt: new Date() } : {}) },
           });
           await appendCardHistory(d.id, "أودو", d.manual
             ? `دُفِعت ملاحظة التأجيل إلى أودو — ${d.note}`
@@ -326,6 +424,17 @@ async function runSlaSweep(): Promise<void> {
   } finally { slaBusy = false; }
 }
 
+// «رقمنا» للتذكرة: بمطابقة يوزرها (bg-x-x-x@x) مع مشتركي المكتب — بلا تخمينٍ نصّيّ آخر
+async function ourPhoneFor(bg: string | null, towerId: number): Promise<string | null> {
+  const u = (bg ?? "").trim();
+  if (!u) return null;
+  const sub = await prisma.subscriber.findFirst({
+    where: { towerId, isDeleted: false, netUser: { equals: u, mode: "insensitive" } },
+    select: { phone: true },
+  });
+  return sub?.phone?.trim() || null;
+}
+
 // ===== طابور رسائل المشتركين (كلّ ٣٠ث، على **حاسبة المكتب نفسها** لا القائد) =====
 // جلسة الواتساب مربوطةٌ بحاسبة مكتبها، فما دامت مطفأةً تبقى الرسالة مؤرشفةً على البطاقة
 // وتُرسَل لحظة فتحها. وتُلغى بعد يومٍ كامل (قرار محمد) بشارةٍ على البطاقة.
@@ -336,12 +445,37 @@ async function runWaQueue(): Promise<void> {
     const towerId = getWorkerTowerId();
     if (agentId == null || towerId == null) return; // حاسبةٌ غير مربوطةٍ بمكتب لا تُرسل
     // عزل: المكتب يتبع وكيل هذه الحاسبة
-    const office = await prisma.tower.findFirst({ where: { id: towerId, agentId, isDeleted: false }, select: { id: true, name: true, odooSlaWaText: true } });
+    const office = await prisma.tower.findFirst({
+      where: { id: towerId, agentId, isDeleted: false },
+      select: {
+        id: true, name: true, agentId: true, odooSlaWaText: true, odooEnabled: true, odooSlaAuto: true,
+        odooSlaAlarm: true, odooSlaTechText: true, odooSlaAlarmMin: true, odooSlaSendMin: true,
+      },
+    });
     if (!office) return;
     const listIds = await listIdsOf(towerId);
     if (!listIds.length) return;
+    // تنبيه الفنيّ (الميزة ١) — من هذه الحاسبة لأنّها صاحبة جلسة واتساب مكتبها
+    await runTechAlerts(office, listIds, new Date());
+    // ===== بوّابة الطابور (اصطادها تدقيقٌ عدائيّ) =====
+    // كان الطابور يُرسل ما فيه بلا فحص أيّ مفتاح: فإطفاء الإرسال أو سحب إذن المالك أو إطفاء ربط
+    // أودو لا يمنع رسالةً مُدرَجةً من الخروج بعده. الآن: أيّ إطفاء ⇒ **يُفرَّغ الطابور** بسببٍ ظاهر.
+    const gateOn = office.odooEnabled === "1" && office.odooSlaAlarm === "1" && office.odooSlaAuto === "1"
+      && (await sendAllowedFor(agentId));
+    if (!gateOn) {
+      const stale = await prisma.taskCard.updateMany({
+        where: { listId: { in: listIds }, viaOdoo: true, slaWaQueuedAt: { not: null }, slaWaSentAt: null },
+        data: { slaWaQueuedAt: null, slaWaError: "أُلغيت — أُطفئ إرسال رسائل أودو" },
+      });
+      if (stale.count) console.log(`[odoo-sla] أُفرِغ الطابور (${stale.count}) — المفتاح مطفأ`);
+      return;
+    }
     const rows = await prisma.taskCard.findMany({
-      where: { listId: { in: listIds }, viaOdoo: true, slaWaQueuedAt: { not: null }, slaWaSentAt: null, isDeleted: false },
+      // done/settled/archivedAt: بطاقةٌ أُنجزت أو أُلغيت بعد الإدراج **لا** يُبلَّغ مشتركها بتأجيل
+      where: {
+        listId: { in: listIds }, viaOdoo: true, slaWaQueuedAt: { not: null }, slaWaSentAt: null,
+        isDeleted: false, done: false, settled: false, archivedAt: null,
+      },
       select: { id: true, odooTicketId: true, odooPhone: true, odooBg: true, slaWaQueuedAt: true },
       take: 20,
     });
@@ -357,21 +491,42 @@ async function runWaQueue(): Promise<void> {
         continue;
       }
       if (!inSlaWindow()) return; // خارج نافذة ١٠:٠٠←٢٤:٠٠ لا إرسال (لا رسالةَ الثالثة فجراً)
-      // حجزٌ ذرّيّ قبل الإرسال — الواتساب فعلٌ لا رجعة فيه
-      const claim = await prisma.taskCard.updateMany({ where: { id: c.id, slaWaSentAt: null }, data: { slaWaSentAt: new Date() } });
+      // ===== تسلسل الهاتف (قرار محمد): رقم التذكرة ← فإن كان بلا واتساب فرقمنا ← فإن عُدِما يُلغى =====
+      const ours = await ourPhoneFor(c.odooBg, towerId);
+      const targets: string[] = [];
+      for (const p of [c.odooPhone, ours]) {
+        const v = (p ?? "").trim();
+        if (v && !targets.includes(v)) targets.push(v);
+      }
+      const { sendWhatsApp, hasWhatsApp } = await import("@/lib/whatsapp");
+      let chosen: string | null = null;
+      for (const p of targets) {
+        const has = await hasWhatsApp(towerId, p); // null = تعذّر الفحص ⇒ نجرّب على أيّ حال
+        if (has !== false) { chosen = p; break; }
+      }
+      if (!chosen) {
+        await prisma.taskCard.update({ where: { id: c.id }, data: { slaWaQueuedAt: null, slaWaError: "أُلغيت — لا واتساب لرقم التذكرة ولا لرقمنا" } });
+        await appendCardHistory(c.id, "أودو", "أُلغيت رسالة المشترك — لا واتساب لرقم التذكرة ولا للرقم المسجّل عندنا").catch(() => {});
+        continue;
+      }
+      // حجزٌ ذرّيّ قبل الإرسال — الواتساب فعلٌ لا رجعة فيه. ويُعاد فحص الإنجاز/الإلغاء **داخل**
+      // الحجز: البطاقة قد تُنجَز في نفس اللحظة التي نفحص فيها (سباق) فتخرج رسالة تأجيلٍ بعد الزيارة.
+      const claim = await prisma.taskCard.updateMany({
+        where: { id: c.id, slaWaSentAt: null, done: false, settled: false, isDeleted: false, archivedAt: null },
+        data: { slaWaSentAt: new Date() },
+      });
       if (claim.count !== 1) continue;
       const text = fillSlaText((office.odooSlaWaText ?? "").trim() || SLA_WA_DEFAULT, {
-        office: office.name, ticket: c.odooTicketId, phone: c.odooPhone, bg: c.odooBg,
+        office: office.name, ticket: c.odooTicketId, phone: chosen, bg: c.odooBg,
       });
-      const { sendWhatsApp } = await import("@/lib/whatsapp");
-      const res = await sendWhatsApp(towerId, c.odooPhone, text);
+      const res = await sendWhatsApp(towerId, chosen, text);
       if (res.ok) {
         await prisma.taskCard.update({ where: { id: c.id }, data: { slaWaQueuedAt: null, slaWaError: null } });
         // سجلّ الرسائل: agentId صريحٌ للعزل (هاتف التذكرة قد لا يكون مشتركاً عندنا)
         await prisma.message.create({
-          data: { channel: "WHATSAPP", phone: c.odooPhone, text, status: "SENT", createdByUser: "أودو-مهلة", agentId },
+          data: { channel: "WHATSAPP", phone: chosen, text, status: "SENT", createdByUser: "أودو-مهلة", agentId },
         }).catch(() => {});
-        await appendCardHistory(c.id, "أودو", `أُرسلت رسالة التأجيل إلى المشترك (${c.odooPhone})`).catch(() => {});
+        await appendCardHistory(c.id, "أودو", `أُرسلت رسالة التأجيل إلى المشترك (${chosen}${chosen === c.odooPhone ? "" : " — رقمنا"})`).catch(() => {});
       } else {
         // تبقى في الطابور لتُعاد المحاولة (حتى انتهاء اليوم) — والسبب ظاهرٌ على البطاقة
         await prisma.taskCard.update({ where: { id: c.id }, data: { slaWaSentAt: null, slaWaError: String(res.error ?? "تعذّر الإرسال").slice(0, 160) } });

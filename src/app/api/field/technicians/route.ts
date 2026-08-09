@@ -27,16 +27,22 @@ export async function GET(request: Request) {
   const officeId = resolveFieldOffice(session, reqOffice ? Number(reqOffice) : null);
   // عزل المستأجر: المكتب المطلوب يجب أن يتبع وكيل المستخدم (كان يُقبل معرّف أي مكتب —
   // فتُكشف أسماء/رواتب/رموز فنيّي وكيل آخر)
-  if (officeId != null) {
-    const towers = await agentTowerIds(session);
-    if (!towers.includes(officeId)) return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+  const towers = await agentTowerIds(session);
+  if (officeId != null && !towers.includes(officeId)) {
+    return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   }
   const isManager = can(session, "field.manage");
+  // ⚠️ ثغرةٌ قديمة أصلحها تدقيقٌ عدائيّ 2026-08-09: كان العزل **مشروطاً** بـ`officeId != null`،
+  // وresolveFieldOffice تُعيد null لكلّ مدير ⇒ طلبٌ بلا officeId يجلب `towerId: null` من **كلّ
+  // الوكلاء**، ومعه plainCode مفكوكاً (رمز دخول تطبيق الفنيّ). الآن العزل **غير مشروط**: كلّ
+  // استعلامٍ مقيَّدٌ بوكيل الجلسة صريحاً بمعرّفٍ في SQL — لا بشرطٍ في الواجهة.
+  const agentId = session.agentId ?? -1;
   // فنيّو المكتب + المُعارون له «دعماً» + من مكاتبهم الإضافية تشمل هذا المكتب
   // (كلاهما يتصرّف كفنيّ المكتب: ذمم مواد، بطاقات، تحصيل)
   const candidates = await prisma.technician.findMany({
     where: {
       isDeleted: false,
+      agentId, // عزل المستأجر — غير مشروطٍ بأيّ حال
       OR: [
         { towerId: officeId ?? null },
         ...(officeId != null ? [{ supportTowerId: officeId }, { extraTowerIds: { not: null } }] : []),
@@ -57,7 +63,7 @@ export async function GET(request: Request) {
     return {
       ...base, plainCode: decryptSecret(t.plainCode), salary: t.salary, extraTowerIds: parseExtraTowers(t.extraTowerIds),
       shiftStart: t.shiftStart, shiftEnd: t.shiftEnd, entryGraceMin: t.entryGraceMin, exitGraceMin: t.exitGraceMin,
-      ownCardsOnly: t.ownCardsOnly,
+      ownCardsOnly: t.ownCardsOnly, seeDeliveryCards: t.seeDeliveryCards, canAddCards: t.canAddCards,
       lateRatePerMin: t.lateRatePerMin, overtimeRatePerMin: t.overtimeRatePerMin, paidLeavesPerMonth: t.paidLeavesPerMonth,
       missedCheckoutPenalty: t.missedCheckoutPenalty,
     };
@@ -73,6 +79,10 @@ function readFields(b: Record<string, unknown>) {
     phone: str(b.phone), salary: num(b.salary),
     shiftStart: str(b.shiftStart), shiftEnd: str(b.shiftEnd),
     ownCardsOnly: b.ownCardsOnly === true || b.ownCardsOnly === "1",
+    // «رؤية بطاقات التوصيل» لا معنى لها إلّا مع «رؤية بطاقاته فقط» — تُطفأ قهراً بدونها
+    seeDeliveryCards: (b.ownCardsOnly === true || b.ownCardsOnly === "1") && (b.seeDeliveryCards === true || b.seeDeliveryCards === "1"),
+    // «إضافة بطاقات»: مسموحٌ افتراضيّاً — الغياب عن الطلب لا يُطفئه (حمايةً للوكلاء القائمين)
+    canAddCards: b.canAddCards === undefined ? true : (b.canAddCards === true || b.canAddCards === "1"),
     entryGraceMin: num(b.entryGraceMin) ?? 0, exitGraceMin: num(b.exitGraceMin) ?? 0,
     lateRatePerMin: num(b.lateRatePerMin) ?? 0, overtimeRatePerMin: num(b.overtimeRatePerMin) ?? 0,
     paidLeavesPerMonth: num(b.paidLeavesPerMonth) ?? 0,

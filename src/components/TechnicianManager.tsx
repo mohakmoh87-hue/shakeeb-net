@@ -8,11 +8,11 @@ import TrackModal from "./TrackModal";
 type Tech = {
   id: number; name: string; phone: string | null; username: string | null; plainCode?: string | null;
   towerId?: number | null; extraTowerIds?: number[]; isSupport?: boolean; isExtra?: boolean;
-  salary?: number | null; shiftStart?: string | null; shiftEnd?: string | null; ownCardsOnly?: boolean;
+  salary?: number | null; shiftStart?: string | null; shiftEnd?: string | null; ownCardsOnly?: boolean; seeDeliveryCards?: boolean; canAddCards?: boolean;
   entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null; missedCheckoutPenalty?: number | null;
 };
 type Form = Record<string, string>;
-const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0" };
+const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", seeDeliveryCards: "", canAddCards: "1", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0" };
 
 // إدارة الفنيين للمدير: إضافة/تعديل بكل الإعدادات + حذف نهائي + بصمة خروج يدوية.
 export default function TechnicianManager({ officeId, officeName, onClose, onChange }: { officeId: number | null; officeName: string; onClose: () => void; onChange: () => void }) {
@@ -46,6 +46,8 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
     setF({
       name: t.name ?? "", username: t.username ?? "", code: "", phone: t.phone ?? "",
       salary: String(t.salary ?? ""), shiftStart: t.shiftStart ?? "", shiftEnd: t.shiftEnd ?? "", ownCardsOnly: t.ownCardsOnly ? "1" : "",
+      seeDeliveryCards: t.seeDeliveryCards ? "1" : "",
+      canAddCards: t.canAddCards === false ? "" : "1", // الغياب/القديم = مسموح
       entryGraceMin: String(t.entryGraceMin ?? 0), exitGraceMin: String(t.exitGraceMin ?? 0),
       lateRatePerMin: String(t.lateRatePerMin ?? 0), overtimeRatePerMin: String(t.overtimeRatePerMin ?? 0), paidLeavesPerMonth: String(t.paidLeavesPerMonth ?? 0),
       missedCheckoutPenalty: String(t.missedCheckoutPenalty ?? 0),
@@ -140,6 +142,41 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
               <span>
                 <span className="block text-xs font-bold text-slate-700">👁️ رؤية بطاقاته فقط</span>
                 <span className="block text-[11px] leading-5 text-slate-500">لا يرى بطاقات زملائه ولا البطاقات غير الموجَّهة لأحد — يرى ما أُسند إليه وحده.</span>
+              </span>
+            </label>
+
+            {/* الحالة الثالثة (طلب محمد 2026-08-09): بطاقاته **زائداً** بطاقات التوصيل ولو لم تُسنَد إليه.
+                تظهر تحت «رؤية بطاقاته فقط» لأنّها تخفيفٌ لها لا خيارٌ مستقلّ — ومن يرى الكلّ لا يحتاجها. */}
+            {f.ownCardsOnly === "1" && (
+              <label className={`mt-2 ms-6 flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 ${f.seeDeliveryCards === "1" ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+                <input
+                  type="checkbox" checked={f.seeDeliveryCards === "1"}
+                  onChange={(e) => set("seeDeliveryCards", e.target.checked ? "1" : "")}
+                  className="mt-0.5 h-4 w-4 accent-emerald-600"
+                />
+                <span>
+                  <span className="block text-xs font-bold text-slate-700">🚚 رؤية بطاقات التوصيل</span>
+                  <span className="block text-[11px] leading-5 text-slate-500">
+                    يرى أيضاً كلّ بطاقةٍ من فئةٍ موسومةٍ بـ«توصيل» (كعمود «جباية» إن وُضع عليه صحّ التوصيل) ولو لم تُسنَد إليه.
+                    رؤيةٌ فقط — الإسناد يبقى كما هو.
+                  </span>
+                </span>
+              </label>
+            )}
+
+            {/* «إضافة بطاقات» (طلب محمد 2026-08-09): خيارٌ مستقلٌّ عن الرؤية — مسموحٌ افتراضيّاً
+                كي لا يتأثّر عمل الوكلاء القائمين، وإطفاؤه يمنع الفنيّ من إنشاء بطاقةٍ من تطبيقه. */}
+            <label className={`mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 ${f.canAddCards === "1" ? "border-sky-300 bg-sky-50" : "border-slate-200 bg-white"}`}>
+              <input
+                type="checkbox" checked={f.canAddCards === "1"}
+                onChange={(e) => set("canAddCards", e.target.checked ? "1" : "")}
+                className="mt-0.5 h-4 w-4 accent-sky-600"
+              />
+              <span>
+                <span className="block text-xs font-bold text-slate-700">➕ إضافة بطاقات</span>
+                <span className="block text-[11px] leading-5 text-slate-500">
+                  يستطيع الفنيّ إنشاء بطاقةٍ جديدة من تطبيقه (تُسنَد إليه). بإطفائه يختفي الزرّ ويُرَدّ أيّ إنشاءٍ من الخادم.
+                </span>
               </span>
             </label>
 

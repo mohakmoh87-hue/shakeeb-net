@@ -19,6 +19,7 @@ const patchSchema = z.object({
   setExpiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "تاريخ غير صالح").optional(), // تمديد إلى تاريخ محدَّد YYYY-MM-DD
   clearExpiry: z.boolean().optional(), // إزالة تاريخ الانتهاء (بلا انتهاء)
   approve: z.boolean().optional(), // موافقة المالك على تفعيل الوكيل (التجريبي)
+  odooSlaSendAllowed: z.boolean().optional(), // إذن «رسائل أودو التلقائيّة» لهذا الوكيل (الميزة ٢)
   managerUsername: z.string().min(1).optional(), // تعديل يوزر مدير الوكيل
   managerPassword: z.string().min(4).optional(), // تعديل باسورد مدير الوكيل
 });
@@ -44,6 +45,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (d.maxTechnicians != null) data.maxTechnicians = d.maxTechnicians;
   if (d.maxSubscribers != null) data.maxSubscribers = d.maxSubscribers;
   if (d.approve) data.approved = true; // تفعيل الوكيل التجريبي
+  if (d.odooSlaSendAllowed != null) data.odooSlaSendAllowed = d.odooSlaSendAllowed;
+  // سحبُ الإذن يقطع فعلاً لا اسماً: تُطفأ مفاتيح كلّ مكاتبه ويُفرَّغ طابور رسائل المشتركين —
+  // وإلّا واصل العامل الإرسال ولم يبقَ للوكيل زرٌّ يُطفئه (اصطاده تدقيقٌ عدائيّ 2026-08-09).
+  if (d.odooSlaSendAllowed === false) {
+    const towers = await prisma.tower.findMany({ where: { agentId }, select: { id: true } });
+    await prisma.tower.updateMany({ where: { agentId }, data: { odooSlaAuto: "0", odooSlaArmedAt: null } });
+    if (towers.length) {
+      const boards = await prisma.taskBoard.findMany({
+        where: { towerId: { in: towers.map((t) => t.id) } }, select: { id: true },
+      });
+      const lists = boards.length
+        ? await prisma.taskList.findMany({ where: { boardId: { in: boards.map((b) => b.id) } }, select: { id: true } })
+        : [];
+      if (lists.length) {
+        await prisma.taskCard.updateMany({
+          where: { listId: { in: lists.map((l) => l.id) }, slaWaQueuedAt: { not: null }, slaWaSentAt: null },
+          data: { slaWaQueuedAt: null, slaWaError: "أُلغيت — سُحب إذن إرسال رسائل أودو" },
+        });
+      }
+    }
+  }
   // تاريخ الانتهاء: إزالة، أو تمديد بأشهر (من الانتهاء الحالي/الآن)، أو ضبط تاريخ محدَّد
   let renewedTo: Date | null = null;
   if (d.clearExpiry) { data.planExpiry = null; data.isTrial = false; }
