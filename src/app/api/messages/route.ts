@@ -26,17 +26,32 @@ export async function GET(request: Request) {
 
   const channel = new URL(request.url).searchParams.get("channel");
   const { agentTowerIds } = await import("@/lib/guard");
+  const agentId = g.session?.agentId ?? -1;
   const towers = new Set(await agentTowerIds(g.session));
-  const agentUsers = await prisma.user.findMany({
-    where: { agentId: g.session?.agentId ?? -1 },
-    select: { username: true, id: true },
-  });
-  // بعض المسارات تسجّل اسم المستخدم وبعضها معرّفه الرقمي في createdByUser — والمجدول "scheduler"
-  const senders = new Set<string>([...agentUsers.map((u) => u.username), ...agentUsers.map((u) => String(u.id))]);
+
+  // ===== عزل الرسائل غير المرتبطة بمشترك (تقارير المدير/المزامنة) — إصلاح تسريبٍ عبر الوكلاء =====
+  // كان الترشيح باسم المُنشئ نصّاً (createdByUser ∈ أسماء مستخدمي الوكيل + "scheduler")، فمن
+  // يُسمِّي مستخدماً «scheduler» يرى تقارير وكلاء آخرين (هواتف المدراء وأرقامهم الماليّة كاملة).
+  // الآن: الرسالة تحمل agentId ⇒ ترشيحٌ صريح. والصفوف القديمة (بلا agentId) تُقبَل فقط إن كان
+  // هاتفها أحد هواتف مدراء **مكاتب هذا الوكيل** — لا بالاسم أبداً.
+  const legacyPhones = new Set<string>();
+  {
+    const rows = await prisma.tower.findMany({
+      where: { agentId, isDeleted: false, managerPhone: { not: null } },
+      select: { managerPhone: true },
+    });
+    for (const r of rows) if (r.managerPhone) legacyPhones.add(r.managerPhone.trim());
+    const us = await prisma.user.findMany({ where: { agentId, managerPhone: { not: null } }, select: { managerPhone: true } });
+    for (const u of us) if (u.managerPhone) legacyPhones.add(u.managerPhone.trim());
+  }
 
   // لا علاقة مباشرة بين الرسالة والمشترك في المخطط — نجلب دفعة أكبر ثم نرشّح بمكاتب الوكيل
   const batch = await prisma.message.findMany({
-    where: { ...(channel ? { channel: channel as Channel } : {}) },
+    where: {
+      ...(channel ? { channel: channel as Channel } : {}),
+      // رسائل هذا الوكيل أو رسائل مشتركين (تُرشَّح بمكتب المشترك أدناه) أو صفوفٌ قديمة بلا وكيل
+      OR: [{ agentId }, { agentId: null }, { subscriberId: { not: null } }],
+    },
     orderBy: { id: "desc" },
     take: 900,
   });
@@ -51,7 +66,9 @@ export async function GET(request: Request) {
         const tid = subTower.get(m.subscriberId);
         return tid != null && towers.has(tid);
       }
-      return m.createdByUser != null && senders.has(m.createdByUser);
+      // بلا مشترك: وكيلٌ صريح، أو صفٌّ قديم هاتفه أحد هواتف مدراء هذا الوكيل
+      if (m.agentId != null) return m.agentId === agentId;
+      return !!m.phone && legacyPhones.has(m.phone.trim());
     })
     .slice(0, 300);
   return NextResponse.json(messages);

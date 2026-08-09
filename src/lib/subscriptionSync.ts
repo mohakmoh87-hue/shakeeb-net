@@ -66,12 +66,15 @@ function isCardActivation(a: SasActivation): boolean {
 // إطلاقاً (الإعادة كانت تُوصل الرسالة نفسها مرّات عدّة حين تنتهي المهلة دون أن تفشل فعلاً).
 async function sendOrQueueReport(officeId: number, phone: string, text: string): Promise<boolean> {
   const res = await sendViaProvider("WHATSAPP", phone, text, officeId);
+  // عزل: تُوسَم بوكيل المكتب — سجلّ الرسائل يُرشَّح بالوكيل لا باسم المُنشئ (تدقيق 2026-08-09)
+  const tw = await prisma.tower.findUnique({ where: { id: officeId }, select: { agentId: true } });
   await prisma.message.create({
     data: {
       channel: "WHATSAPP", phone, text,
       status: res.ok ? "SENT" : "FAILED",
       error: res.ok ? null : (res.error ?? "واتساب غير متصل"),
       createdByUser: "sync-report",
+      agentId: tw?.agentId ?? null,
     },
   });
   return res.ok;

@@ -192,7 +192,7 @@ export async function runManagerDailyReport(
       ...(officeIds ? { id: { in: officeIds } } : {}),
       ...(opts.oncePerDay ? { NOT: { lastReportDate: dayStr } } : {}),
     },
-    select: { id: true, name: true, managerPhone: true },
+    select: { id: true, name: true, managerPhone: true, agentId: true }, // agentId لوسم الرسالة (عزل)
   });
 
   let sent = 0, failed = 0;
@@ -214,6 +214,7 @@ export async function runManagerDailyReport(
         channel: "WHATSAPP", phone, text,
         status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
         createdByUser: "scheduler",
+        agentId: office.agentId ?? null, // عزل: سجلّ الرسائل يُرشَّح بالوكيل لا باسم المُنشئ
       },
     });
     // ختم اليوم لمنع تكرار الإرسال (حتى لو فشل الإرسال نمنع محاولات متكرّرة مزعجة)

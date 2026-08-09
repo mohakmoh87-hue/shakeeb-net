@@ -4,9 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 import { hashPassword } from "@/lib/auth";
 
+// أسماءٌ محجوزة للنظام: تُستعمل في createdByUser للرسائل الآليّة (تقرير المدير/المزامنة)،
+// فتسميةُ مستخدمٍ بها كانت تُستغَلّ لرؤية رسائل وكلاءٍ آخرين (تدقيق عدائيّ 2026-08-09).
+const RESERVED_USERNAMES = new Set(["scheduler", "sync-report", "sync", "system", "worker"]);
+
 const schema = z.object({
   fullName: z.string().min(1, "الاسم الكامل مطلوب"),
-  username: z.string().min(1, "اسم المستخدم مطلوب"),
+  username: z.string().min(1, "اسم المستخدم مطلوب")
+    .refine((v) => !RESERVED_USERNAMES.has(v.trim().toLowerCase()), "اسم المستخدم محجوز للنظام — اختر غيره"),
   password: z.string().min(4, "كلمة السر 4 أحرف على الأقل"),
   isAdmin: z.coerce.boolean().default(false),
   permissions: z.array(z.string()).default([]),

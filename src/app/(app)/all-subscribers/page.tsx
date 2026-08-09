@@ -16,9 +16,10 @@ type Row = {
   packageName: string | null; price: number; online: boolean | null;
 };
 type Office = { id: number; name: string | null };
-// قوالب الرسائل كما يُرجعها /api/sms-templates (الحقل اسمه type لا event — كان هذا سببَ
-// ظهور القائمة فارغةً؛ بلاغ محمد 2026-08-09)
-type Tpl = { id: number; type: string; text: string | null; towerId: number | null };
+// القوالب الفعّالة من /api/sms-templates/effective: نصّ المكتب ← الوكيل ← الافتراضيّ،
+// زائداً القوالب الحرّة. (قراءة صفوف القاعدة وحدها كانت تُظهر القائمة فارغة — بلاغ محمد.)
+type Tpl = { key: string; type: string; text: string; scope: "office" | "agent" | "default" | "custom" };
+const SCOPE_TAG: Record<string, string> = { office: " — قالب المكتب", agent: " — قالب الوكيل", default: " — افتراضيّ", custom: "" };
 
 // الأسماء العربيّة للقوالب التلقائيّة (كما في صفحة إدارة القوالب) — وما ليس منها فهو قالبٌ حرّ
 // أنشأه المدير باسمه، فيُعرض اسمه كما هو.
@@ -54,16 +55,28 @@ export default function AllSubscribersPage() {
   // إرسال رسالة
   const [sendOpen, setSendOpen] = useState(false);
   const [tpls, setTpls] = useState<Tpl[]>([]);
+  const [tplErr, setTplErr] = useState(""); // سببُ عدم ظهور القوالب (يُعرَض بدل الصمت)
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // القوالب الفعّالة — تُجلب لمكتب العرض (تخصيص المكتب يغلب قالب الوكيل)
+  const loadTpls = useCallback(() => {
+    const qs = office !== "all" ? `?officeId=${office}` : "";
+    setTplErr("");
+    fetch(`/api/sms-templates/effective${qs}`)
+      .then(async (r) => {
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error ?? `خطأ ${r.status}`); }
+        return r.json();
+      })
+      .then((d) => setTpls(Array.isArray(d?.templates) ? d.templates : []))
+      .catch((e) => { setTpls([]); setTplErr((e as Error).message || "تعذّر جلب القوالب"); });
+  }, [office]);
+  useEffect(() => { loadTpls(); }, [loadTpls]);
+
   useEffect(() => {
     fetch("/api/towers").then((r) => (r.ok ? r.json() : [])).then((d) => setOffices(Array.isArray(d) ? d : [])).catch(() => {});
-    // all=1 ⇒ كلّ القوالب بما فيها تخصيصات المكاتب (طلب محمد: تظهر القوالب كلّها للاختيار)
-    fetch("/api/sms-templates?all=1").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      const list: Tpl[] = Array.isArray(d) ? d : Array.isArray(d?.templates) ? d.templates : [];
-      setTpls(list.filter((x) => (x?.text ?? "").trim()));
-    }).catch(() => {});
+    loadTpls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const load = useCallback(() => {
@@ -228,18 +241,18 @@ export default function AllSubscribersPage() {
           <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 text-center text-lg font-extrabold text-slate-800">📩 إرسال رسالة لـ {checked.size} مشترك</div>
             {tpls.length > 0 ? (
-              <select onChange={(e) => { const t = tpls.find((x) => String(x.id) === e.target.value); if (t?.text) setText(t.text); }}
+              <select onChange={(e) => { const t = tpls.find((x) => x.key === e.target.value); if (t?.text) setText(t.text); }}
                 className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
                 <option value="">— اختر قالباً جاهزاً ({tpls.length}) —</option>
                 {tpls.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {TPL_NAMES[t.type] ?? t.type}{t.towerId != null ? " — مخصّص لمكتب" : ""}
+                  <option key={t.key} value={t.key}>
+                    {TPL_NAMES[t.type] ?? t.type}{SCOPE_TAG[t.scope] ?? ""}
                   </option>
                 ))}
               </select>
             ) : (
               <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                لا قوالب محفوظة — أنشئها من صفحة «قوالب الرسائل»، أو اكتب النصّ يدويّاً أدناه.
+                {tplErr ? `تعذّر جلب القوالب: ${tplErr}` : "لا قوالب متاحة — أنشئها من صفحة «قوالب الرسائل»، أو اكتب النصّ يدويّاً أدناه."}
               </div>
             )}
             <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} placeholder="نصّ الرسالة… يمكنك استعمال {اسم_المشترك} {اسم_المستخدم} {تاريخ_الانتهاء} {العنوان}"

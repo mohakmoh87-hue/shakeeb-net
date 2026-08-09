@@ -695,11 +695,16 @@ model Message {
   status        MessageStatus  @default(PENDING)
   error         String?
   createdByUser String?
+  // الوكيل (المستأجر) صاحب الرسالة — ضرورةُ عزل: الرسائل غير المرتبطة بمشترك (تقرير المدير
+  // اليوميّ وتقرير المزامنة) كانت تُرشَّح باسم مُنشئها نصّاً، فمن يسمّي مستخدماً «scheduler»
+  // يرى تقارير وكلاء آخرين. (تدقيق عدائيّ 2026-08-09)
+  agentId       Int?
   date          DateTime       @default(now())
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([subscriberId])
   @@index([status])
+  @@index([agentId])
   @@map("messages")
 }
 
