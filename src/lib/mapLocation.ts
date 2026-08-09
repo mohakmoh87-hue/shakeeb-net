@@ -57,11 +57,30 @@ export function candidateColumnNames(netUser: string | null | undefined, areaHin
   return [...new Set(areas)].map((area) => `F${ab.b}/${ab.a}/${area}`.toUpperCase());
 }
 
+// ===== بديلٌ عن اليوزر: FDT/FAT من نصّ البطاقة (طلب محمد 2026-08-09) =====
+// بطاقات أودو قد تصل **بلا يوزر (bg)** لكن فيها FDT وFAT صريحَين — فيُبنى اسم العمود منهما
+// بنفس القاعدة: `F{FAT}/{FDT}/{منطقة المكتب}`. يدعم صيغتَي سطر البطاقة:
+//   «🗺️ FDT: 7 · FAT: 26»  (الصيغة الحاليّة)   و   «FDT/FAT: 7 / 26» (الصيغة القديمة).
+export function extractFdtFat(text?: string | null): { fdt: string; fat: string } | null {
+  if (!text) return null;
+  let m = text.match(/FDT\s*[:：]\s*(\d+)[\s\S]{0,15}?FAT\s*[:：]\s*(\d+)/i);
+  if (m) return { fdt: m[1], fat: m[2] };
+  m = text.match(/FDT\s*\/\s*FAT\s*[:：]\s*(\d+)\s*\/\s*(\d+)/i);
+  if (m) return { fdt: m[1], fat: m[2] };
+  return null;
+}
+
+// أسماء الأعمدة المرشّحة من FDT/FAT مباشرةً — نفس قاعدة اليوزر حرفيّاً: F{FAT}/{FDT}/{المنطقة}
+export function candidateColumnNamesFromFdtFat(fdt: string, fat: string, areaHint?: string | null): string[] {
+  if (!/^\d+$/.test(fdt) || !/^\d+$/.test(fat)) return [];
+  const areas = areaHint ? [areaHint.toUpperCase()] : [...FALLBACK_AREAS];
+  return [...new Set(areas)].map((area) => `F${fat}/${fdt}/${area}`.toUpperCase());
+}
+
 export type MapLoc = { name: string; lat: number; lng: number };
 
-// موقع من يوزر (+ تلميح منطقة من المكتب) — يبحث في map_points عن أول عمود مرشّح
-export async function resolveLocation(netUser: string | null | undefined, areaHint?: string | null): Promise<MapLoc | null> {
-  const names = candidateColumnNames(netUser, areaHint);
+// موقعٌ من قائمة أسماء أعمدةٍ مرشّحة (مشتركة بين مسار اليوزر ومسار FDT/FAT)
+export async function resolveLocationByNames(names: string[]): Promise<MapLoc | null> {
   if (names.length === 0) return null;
   const rows = await prisma.mapPoint.findMany({ where: { name: { in: names } }, select: { name: true, lat: true, lng: true } });
   if (rows.length === 0) return null;
@@ -70,6 +89,11 @@ export async function resolveLocation(netUser: string | null | undefined, areaHi
     if (hit) return hit;
   }
   return rows[0];
+}
+
+// موقع من يوزر (+ تلميح منطقة من المكتب) — يبحث في map_points عن أول عمود مرشّح
+export async function resolveLocation(netUser: string | null | undefined, areaHint?: string | null): Promise<MapLoc | null> {
+  return resolveLocationByNames(candidateColumnNames(netUser, areaHint));
 }
 
 export function gmapsUrl(lat: number, lng: number): string {

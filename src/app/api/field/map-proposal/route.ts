@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower } from "@/lib/guard";
-import { candidateColumnNames, extractNetUser, areaFromTowerName } from "@/lib/mapLocation";
+import { candidateColumnNames, candidateColumnNamesFromFdtFat, extractFdtFat, extractNetUser, areaFromTowerName } from "@/lib/mapLocation";
 import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -30,10 +30,12 @@ async function resolveTargetName(params: {
     if (s) { netUser = s.netUser ?? null; towerId = towerId ?? s.towerId; }
   }
   if (!netUser && params.text) netUser = extractNetUser(params.text);
-  if (!netUser) return { ok: false, error: "لا يوجد يوزر لتحديد العمود", status: 400 };
+  // بديلٌ عن اليوزر (طلب محمد 2026-08-09): FDT/FAT من نصّ البطاقة (بطاقات أودو بلا يوزر)
+  const fdtFat = !netUser ? extractFdtFat(params.text) : null;
+  if (!netUser && !fdtFat) return { ok: false, error: "لا يوجد يوزر ولا FDT/FAT لتحديد العمود", status: 400 };
 
   // المشترك (للتوثيق والعزل) — ضمن مكاتب الوكيل حصراً
-  if (subscriberId == null) {
+  if (subscriberId == null && netUser) {
     const agentTowers = await prisma.tower.findMany({ where: { agentId: params.agentId ?? -1 }, select: { id: true } });
     const s = await prisma.subscriber.findFirst({
       where: {
@@ -52,9 +54,11 @@ async function resolveTargetName(params: {
     if (!t) return { ok: false, error: "المكتب لا يتبع حسابك", status: 403 };
     areaHint = (t.mapArea && t.mapArea.trim()) ? t.mapArea.trim() : areaFromTowerName(t.name);
   }
-  const names = candidateColumnNames(netUser, areaHint);
-  if (!names.length) return { ok: false, error: "يوزر غير قياسي — تعذّر اشتقاق اسم العمود", status: 400 };
-  return { ok: true, name: names[0], netUser, towerId, subscriberId };
+  const names = netUser
+    ? candidateColumnNames(netUser, areaHint)
+    : candidateColumnNamesFromFdtFat(fdtFat!.fdt, fdtFat!.fat, areaHint);
+  if (!names.length) return { ok: false, error: "يوزر/FDT-FAT غير قياسي — تعذّر اشتقاق اسم العمود", status: 400 };
+  return { ok: true, name: names[0], netUser: netUser ?? `FDT ${fdtFat!.fdt} / FAT ${fdtFat!.fat}`, towerId, subscriberId };
 }
 
 // POST: إرسال موقع العمود (الفني أو مستخدم المكتب)

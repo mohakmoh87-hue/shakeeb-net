@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSession, getTechSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { resolveLocation, extractNetUser, areaFromTowerName, gmapsUrl, wazeUrl } from "@/lib/mapLocation";
+import {
+  extractNetUser, areaFromTowerName, gmapsUrl, wazeUrl,
+  candidateColumnNames, candidateColumnNamesFromFdtFat, extractFdtFat, resolveLocationByNames,
+} from "@/lib/mapLocation";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +33,10 @@ export async function GET(request: Request) {
     }
   }
   if (!netUser && text) netUser = extractNetUser(text);
-  if (!netUser) return NextResponse.json({ error: "لا يوجد يوزر لتحديد الموقع" }, { status: 404 });
+  // بديلٌ عن اليوزر (طلب محمد 2026-08-09): بطاقةٌ بلا يوزر لكن فيها FDT/FAT صريحَين
+  // (بطاقات أودو) ⇒ يُبنى العمود منهما: F{FAT}/{FDT}/{منطقة المكتب}.
+  const fdtFat = !netUser ? extractFdtFat(text) : null;
+  if (!netUser && !fdtFat) return NextResponse.json({ error: "لا يوجد يوزر ولا FDT/FAT لتحديد الموقع" }, { status: 404 });
 
   // منطقة الخريطة من مكتب المشترك: الإعداد اليدوي (mapArea) هو الأساس،
   // وإلا نستنتجها من اسم المكتب (توافقاً مع المكاتب القديمة قبل ضبط الإعداد)
@@ -46,11 +52,22 @@ export async function GET(request: Request) {
     areaHint = (t?.mapArea && t.mapArea.trim()) ? t.mapArea.trim() : areaFromTowerName(t?.name);
   }
 
-  const loc = await resolveLocation(netUser, areaHint);
-  if (!loc) return NextResponse.json({ error: "موقع هذا اليوزر غير موجود في الخريطة", netUser }, { status: 404 });
+  const names = netUser
+    ? candidateColumnNames(netUser, areaHint)
+    : candidateColumnNamesFromFdtFat(fdtFat!.fdt, fdtFat!.fat, areaHint);
+  const loc = await resolveLocationByNames(names);
+  if (!loc) {
+    return NextResponse.json(
+      {
+        error: netUser ? "موقع هذا اليوزر غير موجود في الخريطة" : `العمود ${names[0] ?? ""} غير موجود في الخريطة`,
+        netUser: netUser ?? null,
+      },
+      { status: 404 },
+    );
+  }
 
   return NextResponse.json({
-    netUser,
+    netUser: netUser ?? `FDT ${fdtFat!.fdt} / FAT ${fdtFat!.fat}`,
     name: loc.name,
     lat: loc.lat,
     lng: loc.lng,
