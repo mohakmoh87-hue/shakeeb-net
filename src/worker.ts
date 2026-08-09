@@ -115,24 +115,59 @@ function reportWorkerVersion() {
 // كل 10 دقائق: git fetch ومقارنة HEAD مع origin/main. عند وجود تحديث نُغلق بنظافة
 // (حفظ جلسات الواتساب) ونخرج — غلاف التشغيل worker-loop.cmd يسحب الجديد ويعيد التشغيل.
 // النتيجة: تحديثات الكود تصل حواسيب المكاتب تلقائياً بلا أي تدخّل يدوي.
+// ===== أيّ تحديثٍ يستوجب إعادة تشغيل العامل؟ (طلب محمد 2026-08-09) =====
+// كان **أيّ** دفعةٍ إلى main تُعيد تشغيل كلّ حواسيب المكاتب — حتى تغييرُ زرٍّ في الواجهة —
+// وكلّ إعادةٍ تهدم متصفّح واتساب وتُعيد بناءه، فتُفقَد جلساتٌ (حادثة مكتب المواصلات).
+// والعامل لا يستورد إلا من src/lib (تحقُّقٌ بالجرد)، فتحديثات الصفحات/المكوّنات لا تمسّه:
+// تُسحَب بلا إعادة تشغيل، وتصل الحاسبةَ فعليّاً عند أوّل إعادة تشغيلٍ لسببٍ آخر.
+const UI_ONLY = [
+  /^src\/app\//,        // الصفحات ومسارات الـAPI — يشغّلها خادم الموقع لا العامل
+  /^src\/components\//, // مكوّنات الواجهة
+  /^public\//, /^docs\//, /^\.github\//, /^android\//, /^native\//,
+  /^prisma\/rls\//,     // سكربتات SQL مرجعيّة (تُنفَّذ يدويّاً لا وقت التشغيل)
+  /\.md$/,
+];
+function needsWorkerRestart(files: string[]): boolean {
+  const relevant = files.filter((f) => f && !UI_ONLY.some((re) => re.test(f)));
+  return relevant.length > 0; // أيّ ملفٍّ غير معروفٍ كواجهة ⇒ نُعيد التشغيل (الأحوط)
+}
+
 function startSelfUpdateWatcher() {
   const check = () => {
     try {
       execSync("git fetch --quiet", { stdio: "ignore", timeout: 60_000 });
       const local = execSync("git rev-parse HEAD", { timeout: 15_000 }).toString().trim();
       const remote = execSync("git rev-parse origin/main", { timeout: 15_000 }).toString().trim();
-      if (local && remote && local !== remote) {
-        console.log(`[worker] 🔄 تحديث جديد (${remote.slice(0, 7)}) — سحب وتثبيت ثم إعادة تشغيل...`);
-        // التحديث الكامل هنا (لا في الغلاف وحده): بعض مشغّلات الإقلاع تعيد تشغيل
-        // العامل بلا سحب فتدور حلقة عقيمة على الكود القديم (حاسبة المواصلات 2026-07-30).
-        // السحب + التثبيت + توليد Prisma كلها قبل الإغلاق — فيقلع الجديد جاهزاً مهما كان المشغّل.
+      if (!local || !remote || local === remote) return;
+
+      // ما الملفّات المتغيّرة؟ (تعذّر الحساب ⇒ نعتبره مؤثّراً ونُعيد التشغيل كالسابق)
+      let files: string[] = [];
+      let known = true;
+      try {
+        files = execSync(`git diff --name-only ${local} ${remote}`, { timeout: 30_000 })
+          .toString().split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      } catch { known = false; }
+      const restart = !known || files.length === 0 || needsWorkerRestart(files);
+
+      if (!restart) {
+        // تحديثُ واجهةٍ محض: نسحبه ونُكمل العمل — لا نهدم واتساب ولا الطباعة ولا المزامنة
         try {
           execSync("git pull --ff-only --quiet", { stdio: "ignore", timeout: 120_000 });
-          execSync("npm install --no-audit --no-fund --loglevel=error", { stdio: "ignore", timeout: 600_000 });
-          execSync("npx prisma generate", { stdio: "ignore", timeout: 300_000 });
-        } catch { /* تعذّر خطوة — الغلاف قد يكملها، وإلا فالدورة القادمة */ }
-        void gracefulShutdown("UPDATE");
+          console.log(`[worker] ⬇️ تحديث واجهة فقط (${remote.slice(0, 7)}) — سُحب بلا إعادة تشغيل (${files.length} ملفاً)`);
+        } catch { /* الدورة القادمة */ }
+        return;
       }
+
+      console.log(`[worker] 🔄 تحديث يمسّ العامل (${remote.slice(0, 7)}) — سحب وتثبيت ثم إعادة تشغيل...`);
+      // التحديث الكامل هنا (لا في الغلاف وحده): بعض مشغّلات الإقلاع تعيد تشغيل
+      // العامل بلا سحب فتدور حلقة عقيمة على الكود القديم (حاسبة المواصلات 2026-07-30).
+      // السحب + التثبيت + توليد Prisma كلها قبل الإغلاق — فيقلع الجديد جاهزاً مهما كان المشغّل.
+      try {
+        execSync("git pull --ff-only --quiet", { stdio: "ignore", timeout: 120_000 });
+        execSync("npm install --no-audit --no-fund --loglevel=error", { stdio: "ignore", timeout: 600_000 });
+        execSync("npx prisma generate", { stdio: "ignore", timeout: 300_000 });
+      } catch { /* تعذّر خطوة — الغلاف قد يكملها، وإلا فالدورة القادمة */ }
+      void gracefulShutdown("UPDATE");
     } catch { /* لا شبكة/لا git — دورة قادمة */ }
   };
   setTimeout(check, 90_000); // أول فحص بعد استقرار التشغيل
