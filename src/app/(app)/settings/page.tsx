@@ -11,22 +11,13 @@ export default function SettingsPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-  // علامة الوكيل (الاسم الظاهر بكامل البرنامج)
+  // علامة الوكيل (الاسم الظاهر بكامل البرنامج) — للعرض فقط؛ يعدّلها المالك حصراً
   const [brand, setBrand] = useState("");
-  const [brandSaving, setBrandSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings").then((r) => void (r.ok && r.json().then(setForm)));
     fetch("/api/agent").then((r) => r.ok ? r.json() : null).then((d) => { if (d?.name) setBrand(d.name); });
   }, []);
-
-  async function saveBrand() {
-    if (!brand.trim()) return;
-    setBrandSaving(true);
-    const r = await fetch("/api/agent", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: brand.trim() }) });
-    setBrandSaving(false);
-    if (r.ok) window.location.reload(); // تحديث العلامة في الشريط العلوي فوراً
-  }
 
   if (!me) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
   if (!can("settings.manage")) {
@@ -52,16 +43,11 @@ export default function SettingsPage() {
     <div className="p-6">
       <PageHeader title="الإعدادات العامة" subtitle="العملة ومواعيد التقارير — أما الواتساب وبيانات كل مكتب فمن صفحة المكاتب" />
 
-      {/* علامة الوكيل — تظهر بأعلى الشاشة وفي كامل البرنامج */}
-      <div className="mb-5 max-w-lg rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-        <label className="mb-1 block text-sm font-bold text-emerald-800">🏷️ اسم العلامة (يظهر بأعلى الشاشة وفي الوصولات)</label>
-        <p className="mb-2 text-xs text-slate-500">مثال: «قرصان نت» — سيظهر في كل مكان بدل الاسم الحالي.</p>
-        <div className="flex gap-2">
-          <input value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="اسم علامتك" className="flex-1 rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-emerald-500" />
-          <button onClick={saveBrand} disabled={brandSaving || !brand.trim()} className="rounded-lg bg-emerald-600 px-5 py-2 font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
-            {brandSaving ? "…" : "حفظ"}
-          </button>
-        </div>
+      {/* علامة الوكيل — للعرض فقط: يعدّلها مالك النظام حصراً (قرار محمد 2026-08-09) */}
+      <div className="mb-5 max-w-lg rounded-xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+        <label className="mb-1 block text-sm font-bold text-slate-700">🏷️ اسم العلامة (يظهر بأعلى الشاشة وفي الوصولات)</label>
+        <div className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-bold text-slate-800">{brand || "—"}</div>
+        <p className="mt-2 text-xs text-slate-500">🔒 يعدّله <b>مالك النظام</b> فقط — إن كان مكتوباً خطأً راجعه لتصحيحه.</p>
       </div>
 
       {/* النسخ الاحتياطي والاسترجاع لكل وكيل */}
