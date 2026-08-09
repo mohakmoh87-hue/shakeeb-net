@@ -154,6 +154,7 @@ export async function POST(request: Request) {
     const rendered = renderTemplate(text, {
       name: sub.name,
       netUser: sub.netUser,
+      address: sub.address, // «ادرس 1» من الساس — يظهر فقط إن أدخله المدير في القالب
       package: sub.packageId ? pkgNameMap.get(sub.packageId) ?? "" : "",
       phone: sub.phone,
       dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",

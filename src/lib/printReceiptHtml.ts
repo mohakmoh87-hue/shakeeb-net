@@ -90,6 +90,8 @@ export async function subscriptionReceiptHtml(entryId: number, agentId: number |
       case "moneyIn": return line("المبلغ الواصل", `${fmt(entry.moneyIn)} د.ع`);
       case "moneyCarry": return line("الدين المتبقّي", `${fmt(entry.moneyCarry)} د.ع`, true);
       case "notes": return entry.notes ? `<div class="notes">ملاحظات: ${esc(entry.notes)}</div>` : "";
+      // «ادرس 1» من الساس — يظهر فقط إن شغّله المدير في قالب الوصل ووُجد عنوانٌ للمشترك
+      case "address": return subscriber?.address ? line("العنوان", subscriber.address) : "";
       default: return "";
     }
   };

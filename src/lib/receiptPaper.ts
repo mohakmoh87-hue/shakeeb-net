@@ -54,7 +54,12 @@ export const RECEIPT_FIELDS = [
   { key: "moneyIn", label: "المبلغ الواصل" },
   { key: "moneyCarry", label: "الدين المتبقّي" },
   { key: "notes", label: "الملاحظات" },
+  // «ادرس 1» من الساس (طلب محمد 2026-08-09) — **مُطفأ افتراضيّاً**: لا يظهر إلا إن شغّله المدير
+  { key: "address", label: "العنوان (ادرس 1 من الساس)" },
 ] as const;
+
+// حقولٌ لا تظهر إلا بتشغيل المدير صراحةً (افتراضها مُطفأ، بخلاف بقيّة الحقول الظاهرة افتراضاً)
+const OFF_BY_DEFAULT = new Set<string>(["address"]);
 
 export const RECEIPT_TOGGLES = [
   { key: "subtitle", label: "سطر «وصل تفعيل / تجديد»" },
@@ -67,7 +72,7 @@ export type ReceiptFields = Record<ReceiptFieldKey, boolean>;
 
 const ALL_FIELDS = [...RECEIPT_FIELDS, ...RECEIPT_TOGGLES];
 export const DEFAULT_FIELDS: ReceiptFields = Object.fromEntries(
-  ALL_FIELDS.map((f) => [f.key, true]),
+  ALL_FIELDS.map((f) => [f.key, !OFF_BY_DEFAULT.has(f.key)]),
 ) as ReceiptFields;
 
 export const DEFAULT_ORDER: ReceiptBodyKey[] = RECEIPT_FIELDS.map((f) => f.key);
