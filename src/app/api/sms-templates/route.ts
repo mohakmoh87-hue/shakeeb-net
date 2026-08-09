@@ -21,10 +21,18 @@ export async function GET(request: Request) {
   // (طلب محمد: «تظهر لي قوالب الرسائل كلها»). وبدونها يبقى السلوك القديم:
   // قوالب الوكيل العامة فقط، لأن صفحة إدارة القوالب تُدير تخصيصات المكاتب بمبدّلها.
   const includeOffices = new URL(request.url).searchParams.get("all") === "1";
+  // عزل المكاتب داخل الوكيل (تحصين 2026-08-09): مستخدم المكتب لا يرى تخصيصات مكاتبٍ أخرى —
+  // يرى قوالب الوكيل العامّة + تخصيصات **مكتبه** فقط. المدير (أدمن/بلا مكتب) يرى الكلّ.
+  const isOfficeUser = !g.session?.isAdmin && g.session?.towerId != null;
+  const officeFilter = !includeOffices
+    ? { towerId: null }
+    : isOfficeUser
+      ? { OR: [{ towerId: null }, { towerId: g.session!.towerId! }] }
+      : {};
   const templates = await prisma.smsTemplate.findMany({
     where: {
-      agentId: g.session?.agentId ?? -1,
-      ...(includeOffices ? {} : { towerId: null }),
+      agentId: g.session?.agentId ?? -1, // عزل الوكيل (المستأجر)
+      ...officeFilter,
       NOT: { type: { startsWith: "__" } },
     },
     orderBy: { id: "asc" },
