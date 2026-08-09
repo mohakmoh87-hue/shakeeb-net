@@ -395,6 +395,11 @@ async function runOfficeSyncInner(
         });
         continue;
       }
+      // «ادرس 1» من الساس (طلب محمد 2026-08-09): **قبل كلّ حارس** — العنوان بيانُ تواصلٍ محضٌ
+      // لا يمسّ تاريخاً ولا باقةً ولا مالاً، فلا يُحجب عن صاحب قرضٍ ولا عن مشتركٍ فئتُه مجهولة.
+      if (u.address && u.address !== p.address) {
+        await prisma.subscriber.update({ where: { id: p.id }, data: { address: u.address } });
+      }
       // صاحب قرضٍ قائم ⇒ لا تلمسه المزامنة إطلاقاً (لا تاريخ ولا باقة ولا عدّ) حتى يُسدَّد
       // بالتفعيل العاديّ فيُمحى قرضه ويعود طبيعيّاً.
       if (loanSubIds.has(p.id)) continue;
@@ -409,11 +414,6 @@ async function runOfficeSyncInner(
         const arr = pkgFixQueue.get(sasPkgId) ?? [];
         arr.push(p.id);
         pkgFixQueue.set(sasPkgId, arr);
-      }
-
-      // «ادرس 1» من الساس (طلب محمد 2026-08-09): يُملأ/يُصحَّح عند الاختلاف — نادر التغيّر فكلفته زهيدة
-      if (u.address && u.address !== p.address) {
-        await prisma.subscriber.update({ where: { id: p.id }, data: { address: u.address } });
       }
 
       // فئته معروفة → تمديد التاريخ للأمام فقط: إن كان تاريخ الساس أبعد من تاريخ
