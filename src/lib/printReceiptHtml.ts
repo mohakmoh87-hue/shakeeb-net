@@ -2,8 +2,8 @@
 // صفحتَي الوصل (اشتراك/فاتورة) وهندسة ReceiptPrintStyle: عرض الورقة يدويّ والكتابة موسَّطة.
 // يُحوَّل إلى PDF عبر puppeteer ثم يُطبع بصمت على الطابعة الافتراضية.
 import { prisma } from "@/lib/prisma";
-import { getReceiptTemplate, type ReceiptTemplate } from "@/lib/receiptTemplate";
-import { resolveDims, type PaperDims, type ReceiptBodyKey } from "@/lib/receiptPaper";
+import { getReceiptTemplate, getNoticeTemplate, type ReceiptTemplate } from "@/lib/receiptTemplate";
+import { resolveDims, type PaperDims, type ReceiptBodyKey, type NoticeBodyKey } from "@/lib/receiptPaper";
 import { formatDate } from "@/lib/format";
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
@@ -99,6 +99,42 @@ export async function subscriptionReceiptHtml(entryId: number, agentId: number |
 
   const footer = F.footer ? `<div class="ftr">${esc(tpl.footerText || "شكراً لاشتراككم")} — ${esc(officeName)}</div>` : "";
   const body = header(tpl, officeName, "وصل تفعيل / تجديد اشتراك", F.subtitle !== false) + rows + footer;
+  return wrap(body, tpl.fontSize, resolveDims(tpl as ReceiptTemplate));
+}
+
+// ===== «وصل مشترك» (notice) — وصلٌ لكلّ مشترك من صفحة كلّ المشتركين (طلب محمد 2026-08-09) =====
+// قالبٌ خاصٌّ مستقلّ (getNoticeTemplate): كلّ حقولِه اختياريّة — منها «العنوان/ادرس 1».
+export async function noticeSlipHtml(subscriberId: number, agentId: number | null, jobTowerId?: number | null): Promise<string | null> {
+  const s = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
+  if (!s || s.isDeleted) return null;
+  // تحصين عزل: مكتب المشترك يجب أن يطابق مكتب أمر الطباعة (الذي كُتب بعد ownsTower)
+  if (jobTowerId != null && s.towerId !== jobTowerId) return null;
+  const tpl = await getNoticeTemplate(agentId, s.towerId);
+  const F = tpl.fields as unknown as Record<string, boolean>;
+  const [office, pkg] = await Promise.all([
+    s.towerId != null ? prisma.tower.findUnique({ where: { id: s.towerId }, select: { name: true } }) : Promise.resolve(null),
+    s.packageId != null ? prisma.package.findUnique({ where: { id: s.packageId }, select: { name: true, priceDinar: true } }) : Promise.resolve(null),
+  ]);
+  const brand = await brandName(agentId);
+
+  const bodyRow = (key: NoticeBodyKey): string => {
+    switch (key) {
+      case "date": return line("التاريخ", formatDate(new Date()));
+      case "subscriber": return line("المشترك", s.name ?? "—");
+      case "netUser": return s.netUser ? line("اسم المستخدم", s.netUser) : "";
+      case "phone": return s.phone ? line("الهاتف", s.phone) : "";
+      case "address": return s.address ? line("العنوان", s.address) : "";
+      case "package": return line("الباقة", pkg?.name ?? "—");
+      case "price": return line("قيمة الاشتراك", `${fmt(pkg?.priceDinar ?? 0)} د.ع`);
+      case "dateTo": return line("تاريخ الانتهاء", formatDate(s.dateTo), true);
+      case "carry": return line("الدين المتبقّي", `${fmt(s.carry)} د.ع`, true);
+      case "office": return line("المكتب", office?.name ?? brand);
+      default: return "";
+    }
+  };
+  const rows = (tpl.fieldOrder as unknown as NoticeBodyKey[]).filter((k) => F[k] !== false).map(bodyRow).join("");
+  const footer = F.footer && tpl.footerText ? `<div class="ftr">${esc(tpl.footerText)}</div>` : "";
+  const body = header(tpl, office?.name ?? brand, "وصل مشترك", F.subtitle !== false) + rows + footer;
   return wrap(body, tpl.fontSize, resolveDims(tpl as ReceiptTemplate));
 }
 

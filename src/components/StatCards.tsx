@@ -108,10 +108,11 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
     };
   }, [key]);
 
-  // الضغط على البطاقة ينتقل لقائمة المشتركين أسفل الشاشة (البطاقات كلها قابلة للضغط — طلب محمد)
-  const scrollToBoard = () => document.getElementById("subs-board")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  // الضغط على البطاقة يفتح صفحة «كلّ المشتركين» (طلب محمد 2026-08-09): قائمةٌ كاملة بفلاتر
+  // الانتهاء والاتصال + تحديدٌ جماعيّ لإرسال الرسائل وطباعة الوصولات. المكتب المختار يُمرَّر.
   return (
-    <div className="stat dark" role="button" onClick={scrollToBoard} title="الانتقال لقائمة المشتركين">
+    <Link href={`/all-subscribers${officeSel === "all" ? "" : `?office=${officeSel}`}`}
+      className="stat dark" style={{ textDecoration: "none", color: "inherit" }} title="فتح صفحة كلّ المشتركين">
       <div className="st-top">
         <span className="st-lb">المشتركين</span>
         {isAdmin && offices.length > 1 && (
@@ -146,7 +147,7 @@ function SubsCard({ towerIds, offices, isAdmin }: { towerIds: number[]; offices:
             ? <span title="أرقام مرفوعة من حاسبات المكاتب كل 5 دقائق — تُقرأ كل 10 دقائق">🕐 {new Date(cloudAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
             : <span title="تظهر الأرقام حين ترفعها حاسبات المكاتب (كل 5 دقائق) أو من عامل محلي">⏳ بانتظار حاسبات المكاتب</span>}
       </div>
-    </div>
+    </Link>
   );
 }
 

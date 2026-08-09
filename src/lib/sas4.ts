@@ -168,6 +168,40 @@ export async function sasFetchOnlineCount(base: string, token: string): Promise<
   return null;
 }
 
+// ===== قائمة يوزرات المتّصلين الآن (لفلتر «المتصلين» في صفحة المشتركين — طلب محمد 2026-08-09) =====
+// تُصفَّح قائمة index/online كاملةً مرّةً واحدة، ونجمع كلّ القيم النصّيّة من كلّ صفٍّ في مجموعةٍ
+// صغيرة الحروف — لأنّ شكل صفّ المتّصلين يختلف بين خوادم الساس (username تحت مفاتيح مختلفة).
+// العضويّة في المجموعة = متّصل. تعيد null عند التعذّر (فلا نجزم بعدم اتّصال أحد خطأً).
+export async function sasFetchOnlineUsernames(base: string, token: string): Promise<Set<string> | null> {
+  const candidates = onlineRouteCache.has(base) ? [onlineRouteCache.get(base)!] : ["index/online", "index/online_user"];
+  for (const route of candidates) {
+    try {
+      const out = new Set<string>();
+      let page = 1;
+      let total = Infinity;
+      let seen = 0;
+      while (seen < total && page <= 20) { // سقف 20 صفحة × 500 = 10 آلاف متّصل
+        const raw = await sasPost(base, route, { page, count: 500 }, token);
+        const j = JSON.parse(raw.text);
+        if (typeof j?.total !== "number") break;
+        onlineRouteCache.set(base, route);
+        total = j.total;
+        const rows = (j.data ?? []) as Record<string, unknown>[];
+        if (!rows.length) break;
+        seen += rows.length;
+        for (const r of rows) {
+          for (const v of Object.values(r)) {
+            if (typeof v === "string" && v.trim()) out.add(v.trim().toLowerCase());
+          }
+        }
+        page++;
+      }
+      if (seen > 0 || total === 0) return out;
+    } catch { /* جرّب المسار التالي */ }
+  }
+  return null;
+}
+
 // حالة اتصال مستخدمٍ واحد الآن (متّصل/غير متّصل): نبحث عن يوزره في قائمة المتّصلين
 // (index/online + search). ظهوره حرفيّاً = متّصل. يعيد true/false، أو null عند التعذّر
 // (خطأ/جلسة منتهية) أو حين لا يُطبّق الخادم البحث (فلا نجزم بعدم الاتصال خطأً).

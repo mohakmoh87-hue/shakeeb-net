@@ -75,9 +75,14 @@ async function printPdfSilently(file: string, printerName?: string | null): Prom
   await print(file, opts);
 }
 
-async function renderJobHtml(kind: string, refId: number, agentId: number | null): Promise<string | null> {
+async function renderJobHtml(kind: string, refId: number, agentId: number | null, towerId: number | null): Promise<string | null> {
   if (kind === "subscription") return subscriptionReceiptHtml(refId, agentId);
   if (kind === "invoice") return invoiceReceiptHtml(refId, agentId);
+  // «وصل مشترك» من صفحة كلّ المشتركين — refId = معرّف المشترك (وصلٌ لكلٍّ على حِدة)
+  if (kind === "notice") {
+    const { noticeSlipHtml } = await import("@/lib/printReceiptHtml");
+    return noticeSlipHtml(refId, agentId, towerId);
+  }
   return null;
 }
 
@@ -90,7 +95,7 @@ async function processJob(job: { id: number; kind: string; refId: number; agentI
   if (claimed.count === 0) return;
   let file: string | null = null;
   try {
-    const html = await renderJobHtml(job.kind, job.refId, job.agentId);
+    const html = await renderJobHtml(job.kind, job.refId, job.agentId, job.towerId);
     if (!html) throw new Error("الوصل غير موجود");
     // طابعة الوصل من قالب **مكتب هذا الأمر نفسه** (عزل: agentId+towerId الخاصّان بالأمر
     // فقط)؛ فارغ ⇒ الطابعة الافتراضية للحاسبة. لا يُستعمل قالب مكتبٍ/وكيلٍ آخر أبداً.

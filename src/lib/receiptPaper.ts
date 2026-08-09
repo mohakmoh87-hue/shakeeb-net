@@ -61,6 +61,7 @@ export const RECEIPT_FIELDS = [
 // حقولٌ لا تظهر إلا بتشغيل المدير صراحةً (افتراضها مُطفأ، بخلاف بقيّة الحقول الظاهرة افتراضاً)
 const OFF_BY_DEFAULT = new Set<string>(["address"]);
 
+
 export const RECEIPT_TOGGLES = [
   { key: "subtitle", label: "سطر «وصل تفعيل / تجديد»" },
   { key: "footer", label: "سطر التذييل" },
@@ -92,5 +93,41 @@ export function resolveOrder(order: string[] | null | undefined): ReceiptBodyKey
     if (valid.has(k) && !seen.has(k)) { out.push(k as ReceiptBodyKey); seen.add(k); }
   }
   for (const k of DEFAULT_ORDER) if (!seen.has(k)) out.push(k);
+  return out;
+}
+
+// ===== قالب «وصل المشترك» (وصلٌ لكلّ مشترك من صفحة كلّ المشتركين — طلب محمد 2026-08-09) =====
+// قالبٌ خاصٌّ مستقلٌّ عن وصل الاشتراك: كلّ حقولِه اختياريّة (منها العنوان/ادرس 1).
+export const NOTICE_FIELDS = [
+  { key: "date", label: "تاريخ الطبع" },
+  { key: "subscriber", label: "اسم المشترك" },
+  { key: "netUser", label: "اسم المستخدم (اليوزر)" },
+  { key: "phone", label: "رقم الهاتف" },
+  { key: "address", label: "العنوان (ادرس 1 من الساس)" },
+  { key: "package", label: "الباقة" },
+  { key: "price", label: "قيمة الاشتراك" },
+  { key: "dateTo", label: "تاريخ الانتهاء" },
+  { key: "carry", label: "الدين المتبقّي" },
+  { key: "office", label: "المكتب" },
+] as const;
+
+export type NoticeBodyKey = (typeof NOTICE_FIELDS)[number]["key"];
+export const NOTICE_DEFAULT_ORDER: NoticeBodyKey[] = NOTICE_FIELDS.map((f) => f.key);
+// كلّ حقول وصل المشترك ظاهرةٌ افتراضاً (العنوان منها — هو سببُ إنشائه) + مفاتيح الترويسة/التذييل
+export const NOTICE_DEFAULT_FIELDS = Object.fromEntries(
+  [...NOTICE_FIELDS, ...RECEIPT_TOGGLES].map((f) => [f.key, true]),
+) as Record<string, boolean>;
+
+export function resolveNoticeFields(f: Partial<Record<string, boolean>> | null | undefined): Record<string, boolean> {
+  const out: Record<string, boolean> = { ...NOTICE_DEFAULT_FIELDS };
+  for (const [k, v] of Object.entries(f ?? {})) if (typeof v === "boolean") out[k] = v;
+  return out;
+}
+export function resolveNoticeOrder(order: string[] | null | undefined): NoticeBodyKey[] {
+  const valid = new Set<string>(NOTICE_DEFAULT_ORDER);
+  const seen = new Set<string>();
+  const out: NoticeBodyKey[] = [];
+  for (const k of order ?? []) if (valid.has(k) && !seen.has(k)) { out.push(k as NoticeBodyKey); seen.add(k); }
+  for (const k of NOTICE_DEFAULT_ORDER) if (!seen.has(k)) out.push(k);
   return out;
 }

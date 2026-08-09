@@ -6,6 +6,7 @@ import { usePermission } from "@/lib/usePermission";
 import {
   resolveDims, resolveFields, resolveOrder, DEFAULT_ORDER,
   RECEIPT_FIELDS, RECEIPT_TOGGLES, PAPER_LIMITS,
+  NOTICE_FIELDS, NOTICE_DEFAULT_ORDER, resolveNoticeFields, resolveNoticeOrder,
 } from "@/lib/receiptPaper";
 
 type Tpl = {
@@ -34,7 +35,9 @@ const DEFAULT: Tpl = {
   printerName: "",
 };
 
-const FIELD_LABEL: Record<string, string> = Object.fromEntries(RECEIPT_FIELDS.map((f) => [f.key, f.label]));
+const FIELD_LABEL: Record<string, string> = Object.fromEntries(
+  [...RECEIPT_FIELDS, ...NOTICE_FIELDS].map((f) => [f.key, f.label]),
+);
 
 type Office = { id: number; name: string | null };
 
@@ -50,18 +53,26 @@ export default function ReceiptTemplatePage() {
   const [officeCustom, setOfficeCustom] = useState(false);
   // طابعات حاسبة المكتب (يبلّغ بها العامل) — للاختيار من قائمة بدل كتابة الاسم يدويّاً
   const [printers, setPrinters] = useState<string[]>([]);
+  // نوع القالب: وصل الاشتراك، أو «وصل المشترك» لطباعة وصولات صفحة كلّ المشتركين (طلب محمد 2026-08-09)
+  const [kind, setKind] = useState<"receipt" | "notice">("receipt");
+  const isNotice = kind === "notice";
 
-  const load = (office: string) => {
-    const qs = office ? `?officeId=${office}` : "";
+  const load = (office: string, k: "receipt" | "notice" = kind) => {
+    const qs = `?kind=${k}${office ? `&officeId=${office}` : ""}`;
     fetch(`/api/receipt-template${qs}`).then((r) => void (r.ok && r.json().then((d) => {
-      setT({ ...DEFAULT, ...d, fields: resolveFields(d.fields), fieldOrder: resolveOrder(d.fieldOrder) });
+      const nf = k === "notice";
+      setT({
+        ...DEFAULT, ...d,
+        fields: nf ? resolveNoticeFields(d.fields) : resolveFields(d.fields),
+        fieldOrder: nf ? resolveNoticeOrder(d.fieldOrder) : resolveOrder(d.fieldOrder),
+      });
       setOfficeCustom(!!d.officeCustom);
       setPrinters(Array.isArray(d.availablePrinters) ? d.availablePrinters : []);
       setSaved(false);
       if (d.officeId != null && String(d.officeId) !== office) setOfficeSel(String(d.officeId));
     })));
   };
-  useEffect(() => { load(officeSel); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [officeSel]);
+  useEffect(() => { load(officeSel, kind); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [officeSel, kind]);
   useEffect(() => {
     fetch("/api/towers").then((r) => void (r.ok && r.json().then((rows: Office[]) => setOffices(rows))));
   }, []);
@@ -101,7 +112,7 @@ export default function ReceiptTemplatePage() {
     setSaving(true); setSaved(false);
     const res = await fetch("/api/receipt-template", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...t, officeId: officeSel ? Number(officeSel) : null }),
+      body: JSON.stringify({ ...t, kind, officeId: officeSel ? Number(officeSel) : null }),
     });
     setSaving(false);
     if (res.ok) { setSaved(true); if (officeSel) setOfficeCustom(true); }
@@ -110,8 +121,8 @@ export default function ReceiptTemplatePage() {
   async function resetOffice() {
     if (!officeSel) return;
     if (!confirm("إزالة قالب هذا المكتب والعودة لقالب الوكيل العام؟")) return;
-    const res = await fetch(`/api/receipt-template?officeId=${officeSel}`, { method: "DELETE" });
-    if (res.ok) load(officeSel);
+    const res = await fetch(`/api/receipt-template?officeId=${officeSel}&kind=${kind}`, { method: "DELETE" });
+    if (res.ok) load(officeSel, kind);
   }
 
   if (!me) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
@@ -124,6 +135,19 @@ export default function ReceiptTemplatePage() {
   return (
     <div className="p-6">
       <PageHeader title="قالب الوصل المطبوع" subtitle="أبعاد الورق يدويّاً، وأيّ معلومةٍ تظهر وترتيبها — والمعاينة تُطابق الطباعة" />
+
+      {/* مبدّل نوع القالب (طلب محمد 2026-08-09): وصل الاشتراك · «وصل المشترك» لوصولات صفحة كلّ المشتركين */}
+      <div className="mb-3 flex max-w-5xl flex-wrap items-center gap-2">
+        <button onClick={() => setKind("receipt")}
+          className={`rounded-xl px-4 py-2 text-sm font-bold transition ${!isNotice ? "bg-mynet-blue text-white shadow" : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`}>
+          🧾 وصل الاشتراك
+        </button>
+        <button onClick={() => setKind("notice")}
+          className={`rounded-xl px-4 py-2 text-sm font-bold transition ${isNotice ? "bg-mynet-blue text-white shadow" : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`}>
+          👥 وصل المشترك (وصولات قائمة المشتركين)
+        </button>
+        {isNotice && <span className="text-[11px] text-slate-500">قالبٌ مستقلّ — كلّ حقولِه اختياريّة (منها «العنوان/ادرس 1»).</span>}
+      </div>
 
       {/* مبدّل المكتب: قالب الوصل معزول لكل مكتب — قالب المكتب يغلب قالب الوكيل العام */}
       <div className="mb-4 flex max-w-5xl flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
@@ -287,6 +311,11 @@ function PrintPreview({ t, officeName }: { t: Tpl; officeName: string }) {
     price: ["قيمة الاشتراك", "25,000 د.ع"],
     moneyIn: ["المبلغ الواصل", "20,000 د.ع"],
     moneyCarry: ["الدين المتبقّي", "5,000 د.ع", true],
+    // حقول «وصل المشترك» (وصولات قائمة المشتركين)
+    netUser: ["اسم المستخدم", "bg-5-7-11@mu"],
+    address: ["العنوان", "902 ع 3 ش9"],
+    carry: ["الدين المتبقّي", "5,000 د.ع", true],
+    office: ["المكتب", "مكتب المواصلات"],
   };
 
   return (

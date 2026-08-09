@@ -13,11 +13,58 @@ const schema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+// «وصولات المشتركين» (notice): قائمة مشتركين ⇒ أمرُ طباعةٍ لكلّ مشترك (وصلٌ منفصل لكلٍّ)
+const noticeSchema = z.object({
+  kind: z.literal("notice"),
+  ids: z.array(z.coerce.number().int().positive()).min(1).max(500),
+});
+
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
-  const parsed = schema.safeParse(await request.json().catch(() => null));
+  const raw = await request.json().catch(() => null);
+
+  // ===== مسار «وصولات المشتركين» الجماعيّة (طلب محمد 2026-08-09) =====
+  const asNotice = noticeSchema.safeParse(raw);
+  if (asNotice.success) {
+    const ids = [...new Set(asNotice.data.ids)];
+    // عزل صارم: كلّ مشترك يجب أن يتبع مكتباً يملكه المستخدم (مكتبه، أو مكاتب وكيله للمدير)
+    const subs = await prisma.subscriber.findMany({
+      where: { id: { in: ids }, isDeleted: false },
+      select: { id: true, towerId: true },
+    });
+    const allowed: { id: number; towerId: number | null }[] = [];
+    const ownCache = new Map<number, boolean>();
+    for (const s of subs) {
+      if (s.towerId == null) continue;
+      if (!ownCache.has(s.towerId)) ownCache.set(s.towerId, await ownsTower(session, s.towerId));
+      if (ownCache.get(s.towerId)) allowed.push(s);
+    }
+    if (!allowed.length) return NextResponse.json({ error: "لا مشتركين مسموحين للطباعة" }, { status: 403 });
+    // منع الازدواج: أوامر حديثة (٢٠ث) لنفس المشترك تُستثنى
+    const recent = await prisma.printJob.findMany({
+      where: { kind: "notice", refId: { in: allowed.map((s) => s.id) }, createdAt: { gte: new Date(Date.now() - 20_000) } },
+      select: { refId: true },
+    });
+    const skip = new Set(recent.map((r) => r.refId));
+    const fresh = allowed.filter((s) => !skip.has(s.id));
+    if (fresh.length) {
+      await prisma.printJob.createMany({
+        data: fresh.map((s) => ({ agentId: session.agentId, towerId: s.towerId, kind: "notice", refId: s.id })),
+      });
+    }
+    const worker = await prisma.hybridWorker.findFirst({
+      where: { agentId: session.agentId ?? -1, approved: true, blocked: false, lastSeen: { gte: new Date(Date.now() - 90_000) } },
+      select: { id: true },
+    });
+    return NextResponse.json(
+      { ok: true, queued: fresh.length, skipped: allowed.length - fresh.length, rejected: ids.length - allowed.length, workerOnline: !!worker },
+      { status: 201 },
+    );
+  }
+
+  const parsed = schema.safeParse(raw);
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
   const { kind, id } = parsed.data;
 
