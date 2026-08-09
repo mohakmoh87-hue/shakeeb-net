@@ -3,13 +3,22 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 // زرّ «ربط أودو» في ترويسة صفحة إدارة الفنيين — للمدير والمستخدم (لمكتبٍ محدَّد).
 // شارةٌ ديناميّة (مفعّل أخضر / غير مفعّل أحمر تعكس آخر دخولٍ ناجح) + نافذة إعداد (يوزر/باسورد/اختبار/حفظ).
-type OdooStatus = { odooEnabled: string; hasOdooCreds: boolean; odooUser: string | null; odooUrl: string | null; odooLastOk: string | null; odooLastError: string | null };
+type OdooStatus = {
+  odooEnabled: string; hasOdooCreds: boolean; odooUser: string | null; odooUrl: string | null;
+  odooLastOk: string | null; odooLastError: string | null;
+  // مهلة سوبر سيل
+  odooSlaAuto?: string | null; odooSlaArmedAt?: string | null;
+  odooSlaAlarmMin?: number | null; odooSlaSendMin?: number | null;
+  odooSlaNote?: string | null; odooSlaWaText?: string | null;
+};
 
 export default function OdooConfigButton({ officeId, officeName, onChange }: { officeId: number | null; officeName: string; onChange?: () => void }) {
   const [odoo, setOdoo] = useState<OdooStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ odooUser: "", odooPass: "", odooUrl: "" });
   const [enabledForm, setEnabledForm] = useState(true);
+  // مهلة سوبر سيل: مفتاح الإرسال التلقائيّ + العتبتان + النصّان
+  const [sla, setSla] = useState({ auto: false, alarmMin: "60", sendMin: "90", note: "", waText: "" });
   const [test, setTest] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -36,7 +45,15 @@ export default function OdooConfigButton({ officeId, officeName, onChange }: { o
     if (officeId == null) return;
     setBusy(true); setTest("");
     try {
-      const r = await fetch(`/api/towers/${officeId}/odoo`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, odooEnabled: enabledForm ? "1" : "0" }) });
+      const r = await fetch(`/api/towers/${officeId}/odoo`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form, odooEnabled: enabledForm ? "1" : "0",
+          odooSlaAuto: sla.auto ? "1" : "0",
+          odooSlaAlarmMin: sla.alarmMin, odooSlaSendMin: sla.sendMin,
+          odooSlaNote: sla.note, odooSlaWaText: sla.waText,
+        }),
+      });
       const d = await r.json().catch(() => ({}));
       setBusy(false);
       if (r.ok) { load(); setOpen(false); onChange?.(); }
@@ -47,7 +64,18 @@ export default function OdooConfigButton({ officeId, officeName, onChange }: { o
   return (
     <>
       <button
-        onClick={() => { setForm({ odooUser: odoo?.odooUser ?? "", odooPass: "", odooUrl: odoo?.odooUrl ?? "" }); setEnabledForm((odoo?.odooEnabled ?? "0") === "1"); setTest(""); setOpen(true); }}
+        onClick={() => {
+          setForm({ odooUser: odoo?.odooUser ?? "", odooPass: "", odooUrl: odoo?.odooUrl ?? "" });
+          setEnabledForm((odoo?.odooEnabled ?? "0") === "1");
+          setSla({
+            auto: (odoo?.odooSlaAuto ?? "0") === "1",
+            alarmMin: String(odoo?.odooSlaAlarmMin ?? 60),
+            sendMin: String(odoo?.odooSlaSendMin ?? 90),
+            note: odoo?.odooSlaNote ?? "",
+            waText: odoo?.odooSlaWaText ?? "",
+          });
+          setTest(""); setOpen(true);
+        }}
         className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold text-white shadow-sm active:scale-95"
         style={{ background: on ? "#16a34a" : "#dc2626" }}
         title={on ? "ربط أودو مفعّل — اضغط للإعداد" : "ربط أودو غير مفعّل — اضغط للإعداد"}
@@ -75,6 +103,37 @@ export default function OdooConfigButton({ officeId, officeName, onChange }: { o
               </Field>
             </div>
             <button onClick={testOdoo} disabled={busy} className="mt-3 w-full rounded-lg border border-blue-500 bg-blue-50 py-2 text-sm font-bold text-blue-600 hover:bg-blue-100 disabled:opacity-60">🔌 اختبار الاتصال</button>
+
+            {/* ===== مهلة سوبر سيل: ساعتان بلا إجراء = غرامة (طلب محمد 2026-08-09) ===== */}
+            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+              <div className="mb-2 text-center text-sm font-extrabold text-rose-700">⏳ مهلة سوبر سيل</div>
+              <p className="mb-2 text-[11px] leading-5 text-slate-600">
+                العدّاد يمشي <b>١٠:٠٠ص ← ١٢:٠٠ منتصف الليل</b> فقط، ومرجعه <b>زمن التذكرة في أودو</b>
+                (وما قبل العاشرة يُحتسب من العاشرة). الإنذار الأحمر يعمل دائماً؛ أمّا <b>الإرسال</b> فلا
+                يعمل إلّا بتشعيل المفتاح أدناه — وما سُحب قبل التشعيل لا يُرسَل له تلقائيّاً أبداً.
+              </p>
+              <label className="mb-2 flex cursor-pointer items-center gap-2 rounded-lg border border-rose-200 bg-white p-2.5">
+                <input type="checkbox" checked={sla.auto} onChange={(e) => setSla((s) => ({ ...s, auto: e.target.checked }))} className="h-4 w-4 accent-rose-600" />
+                <span className="text-xs font-bold text-slate-700">التأجيل التلقائيّ: ملاحظة إلى أودو + رسالة واتساب للمشترك</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="إنذار أحمر (دقيقة)">
+                  <input value={sla.alarmMin} onChange={(e) => setSla((s) => ({ ...s, alarmMin: e.target.value.replace(/[^\d]/g, "") }))} dir="ltr" inputMode="numeric" className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-rose-500" />
+                </Field>
+                <Field label="الإرسال التلقائيّ (دقيقة)">
+                  <input value={sla.sendMin} onChange={(e) => setSla((s) => ({ ...s, sendMin: e.target.value.replace(/[^\d]/g, "") }))} dir="ltr" inputMode="numeric" className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-rose-500" />
+                </Field>
+              </div>
+              <div className="mt-2 space-y-2">
+                <Field label="ملاحظة أودو (تُكتَب على التذكرة)">
+                  <textarea value={sla.note} onChange={(e) => setSla((s) => ({ ...s, note: e.target.value }))} rows={2} placeholder="تم التأجيل بطلب من المشترك" className="w-full resize-none rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-rose-500" />
+                </Field>
+                <Field label="رسالة واتساب المشترك">
+                  <textarea value={sla.waText} onChange={(e) => setSla((s) => ({ ...s, waText: e.target.value }))} rows={3} placeholder="عزيزنا المشترك، نعتذر عن التأخير — تمّ تأجيل موعد زيارة الفنيّ…" className="w-full resize-none rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm outline-none focus:border-rose-500" />
+                </Field>
+                <div className="text-[11px] text-slate-500">متغيّرات: {"{المكتب}"} · {"{التذكرة}"} · {"{الهاتف}"} · {"{اليوزر}"} — والفراغ يعني النصّ الافتراضيّ.</div>
+              </div>
+            </div>
             {test && <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-center text-xs font-semibold text-slate-700">{test}</div>}
             {!test && odoo?.odooLastError && <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-center text-xs font-semibold text-red-600">آخر خطأ: {odoo.odooLastError}</div>}
             <div className="mt-3 flex gap-2">

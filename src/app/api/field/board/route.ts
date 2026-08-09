@@ -26,11 +26,17 @@ async function buildBoard(officeId: number | null, agentId: number | null) {
   // تذاكر أودو: عدد المفتوحة (غير المنجزة/الملغاة) + هل «أودو نشط» للمكتب (مفعّل أو به بطاقات مفتوحة)
   const odooOpen = cards.filter((c) => c.viaOdoo && !c.done && !c.settled).length;
   let odooActive = odooOpen > 0;
-  if (!odooActive && officeId != null) {
-    const tw = await prisma.tower.findUnique({ where: { id: officeId }, select: { odooEnabled: true } });
-    odooActive = tw?.odooEnabled === "1";
+  // عتبات مهلة سوبر سيل للمكتب (الإنذار/الإرسال) — يحسب العميل العدّاد منها بلا طلبٍ كلّ ثانية
+  let odooSla: { alarmMin: number | null; sendMin: number | null; auto: boolean } = { alarmMin: null, sendMin: null, auto: false };
+  if (officeId != null) {
+    const tw = await prisma.tower.findUnique({
+      where: { id: officeId },
+      select: { odooEnabled: true, odooSlaAlarmMin: true, odooSlaSendMin: true, odooSlaAuto: true },
+    });
+    if (tw?.odooEnabled === "1") odooActive = true;
+    odooSla = { alarmMin: tw?.odooSlaAlarmMin ?? null, sendMin: tw?.odooSlaSendMin ?? null, auto: tw?.odooSlaAuto === "1" };
   }
-  return { board, lists, cards, technicians, cardTypes, odooOpen, odooActive };
+  return { board, lists, cards, technicians, cardTypes, odooOpen, odooActive, odooSla };
 }
 
 // لوحة "إدارة الفنيين" لمكتب واحد مع أعمدتها وبطاقاتها وفنّييه.

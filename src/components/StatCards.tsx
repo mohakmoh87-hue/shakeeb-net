@@ -7,6 +7,7 @@ import Link from "next/link";
 import { localSasBase } from "@/lib/localSas";
 import { onMoneyRefresh } from "@/lib/moneyRefresh";
 import { isPageActive } from "@/lib/usePolling";
+import { slaStateOf, fmtMin, SLA_ALARM_MIN_DEFAULT, SLA_SEND_MIN_DEFAULT, type SlaCard } from "@/lib/odooSla";
 
 // بطاقات الإحصاء الأربع — مطابقة حرفياً للنموذج المعتمد (أصناف .nst في globals.css):
 // المشتركين (داكنة: الفعالين والمتصلين + الكلي) · المصروفات والمقبوضات (سطران +
@@ -286,7 +287,10 @@ function Spark({ values }: { values: number[] }) {
 
 // ٤ · إدارة الفنيين — دونات بقوسين (لاجورد منجزة + برتقالي متبقّية)
 function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }) {
-  const [v, setV] = useState<{ done: number; rest: number; odoo: number; odooActive: boolean } | null>(null);
+  const [v, setV] = useState<{ done: number; rest: number; odoo: number; odooActive: boolean; slaN: number; slaSoon: number | null } | null>(null);
+  // ⏳ نبضة العدّاد: تُحدّث المتبقّي على الشاشة بلا طلبٍ للخادم (الحساب صافٍ من طوابع البطاقة)
+  const [slaTick, setSlaTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setSlaTick((x) => x + 1), 30_000); return () => clearInterval(t); }, []);
   // 👑 متصدّر فترة الراتب — مسابقةٌ تبدأ مع الفترة وتُصفَّر مع نهايتها (طلب محمد 2026-08-05)
   const [king, setKing] = useState<{ name: string; office: string | null; cards: number; points: number; avgMin: number | null } | null>(null);
   const [rankOpen, setRankOpen] = useState(false); // نافذة الترتيب — تُفتح مكانها بلا مغادرة الشاشة
@@ -305,7 +309,21 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
       const done = cards.filter((c) => c.done).length;
       return { done, rest: cards.length - done };
     };
-    (async () => {
+    // ⏳ مهلة سوبر سيل: كم بطاقة أودو تجاوزت عتبة الإنذار، وأقربها إلى الغرامة
+    const slaOf = (b: { cards?: SlaCard[]; odooSla?: { alarmMin: number | null; sendMin: number | null } | null }) => {
+      const alarm = b.odooSla?.alarmMin ?? SLA_ALARM_MIN_DEFAULT;
+      const send = b.odooSla?.sendMin ?? SLA_SEND_MIN_DEFAULT;
+      const now = new Date();
+      let n = 0; let soon: number | null = null;
+      for (const c of b.cards ?? []) {
+        const st = slaStateOf(c, now, alarm, send);
+        if (st.level !== "danger" && st.level !== "over") continue;
+        n++;
+        soon = soon == null ? st.toFineMin : Math.min(soon, st.toFineMin);
+      }
+      return { n, soon };
+    };
+    const load = async () => {
       try {
         if (isAdmin && officeSel === "all" && offices.length > 0) {
           // كل المكاتب: جمع لوحات مكاتب الوكيل كلها
@@ -313,31 +331,51 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
             offices.map((o) => fetch(`/api/field/board?officeId=${o.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)),
           );
           if (stop) return;
-          let done = 0, rest = 0, odoo = 0, odooActive = false;
+          let done = 0, rest = 0, odoo = 0, odooActive = false, slaN = 0;
+          let slaSoon: number | null = null;
           for (const b of boards) {
             if (!b?.cards) continue;
             const c = count(b.cards);
             done += c.done; rest += c.rest;
             odoo += Number(b.odooOpen ?? 0); if (b.odooActive) odooActive = true;
+            const s = slaOf(b);
+            slaN += s.n;
+            if (s.soon != null) slaSoon = slaSoon == null ? s.soon : Math.min(slaSoon, s.soon);
           }
-          setV({ done, rest, odoo, odooActive });
+          setV({ done, rest, odoo, odooActive, slaN, slaSoon });
         } else {
           // مكتب محدّد (مدير) أو مكتب المستخدم (يحدّده الخادم تلقائياً)
           const qs = isAdmin && officeSel !== "all" ? `?officeId=${officeSel}` : "";
           const d = await fetch(`/api/field/board${qs}`).then((r) => (r.ok ? r.json() : null));
-          if (!stop && d?.cards) setV({ ...count(d.cards), odoo: Number(d.odooOpen ?? 0), odooActive: !!d.odooActive });
+          if (!stop && d?.cards) {
+            const s = slaOf(d);
+            setV({ ...count(d.cards), odoo: Number(d.odooOpen ?? 0), odooActive: !!d.odooActive, slaN: s.n, slaSoon: s.soon });
+          }
         }
       } catch { /* */ }
-    })();
-    return () => { stop = true; };
-  }, [isAdmin, officeSel, offices]);
+    };
+    void load();
+    // مربّع الفنيين كان بلا تحديثٍ إطلاقاً — والإنذار لا ينفع إن لم يظهر إلّا بإعادة تحميل الصفحة
+    const poll = setInterval(() => { void load(); }, 60_000);
+    return () => { stop = true; clearInterval(poll); };
+  }, [isAdmin, officeSel, offices, slaTick]);
   const total = (v?.done ?? 0) + (v?.rest ?? 0);
   const pct = total ? v!.done / total : 0;
   const R = 28, C = 2 * Math.PI * R, GAP = 4;
   const doneLen = Math.max(0, pct * C - GAP), restLen = Math.max(0, (1 - pct) * C - GAP);
+  const slaOn = (v?.slaN ?? 0) > 0; // إنذار: تذاكر أودو تجاوزت العتبة بلا إجراء
   return (
     <>
-    <Link href="/field-management" className="stat" style={{ textDecoration: "none", color: "inherit" }} title="فتح إدارة الفنيين">
+    {/* ⏳ إنذار مهلة سوبر سيل: توهّجٌ يخفت ويشتعل على المربّع كلّه — لا يزول إلّا باتّخاذ إجراء */}
+    <style>{`
+      @keyframes slaGlow {
+        0%,100% { box-shadow: 0 0 0 2px rgba(220,38,38,.85), 0 0 14px 2px rgba(220,38,38,.35) }
+        50%     { box-shadow: 0 0 0 2px rgba(220,38,38,.35), 0 0 4px 0 rgba(220,38,38,.12) }
+      }
+      .sla-alarm { animation: slaGlow 1.4s ease-in-out infinite; border-radius: 14px }
+      @media (prefers-reduced-motion: reduce) { .sla-alarm { animation: none; box-shadow: 0 0 0 2px rgba(220,38,38,.85) } }
+    `}</style>
+    <Link href="/field-management" className={`stat${slaOn ? " sla-alarm" : ""}`} style={{ textDecoration: "none", color: "inherit" }} title={slaOn ? "تذاكر أودو تجاوزت المهلة — افتح إدارة الفنيين" : "فتح إدارة الفنيين"}>
       <div className="st-top">
         <span className="st-lb">🛠️ إدارة الفنيين</span>
         {isAdmin && offices.length > 1 && (
@@ -374,6 +412,13 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
           {/* تذاكر أودو المفتوحة — يظهر فقط حين «أودو نشط» (مفعّل أو به بطاقات مفتوحة) */}
           {v?.odooActive && (
             <div className="fnum"><span className="lf"><i className="dot" style={{ background: "#7c3aed" }} /> تذاكر أودو</span><b>{v?.odoo ?? 0}</b></div>
+          )}
+          {/* ⏳ لم تُنجَز خلال المهلة + المتبقّي حتى الغرامة (أقرب تذكرة) */}
+          {slaOn && (
+            <div className="fnum" style={{ color: "#dc2626", fontWeight: 800 }}>
+              <span className="lf"><i className="dot" style={{ background: "#dc2626" }} /> لم تُنجَز · ⏳ {v!.slaSoon != null && v!.slaSoon > 0 ? fmtMin(v!.slaSoon) : "انتهت"}</span>
+              <b>{v!.slaN}</b>
+            </div>
           )}
         </div>
       </div>

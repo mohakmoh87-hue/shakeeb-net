@@ -14,6 +14,7 @@ import DeletedCardsModal from "@/components/DeletedCardsModal";
 import AchievementsModal from "@/components/AchievementsModal";
 import NotificationsBell from "@/components/NotificationsBell";
 import { isPageActive } from "@/lib/usePolling";
+import { slaStateOf, fmtMin, SLA_ALARM_MIN_DEFAULT, SLA_SEND_MIN_DEFAULT, type SlaCard } from "@/lib/odooSla";
 import FieldAppMenu from "@/components/FieldAppMenu";
 import { FieldTrackerProvider } from "@/components/FieldTracker";
 
@@ -28,6 +29,9 @@ type Card = {
   startedAt: string | null; durationSec: number | null; postponedTo: string | null;
   history: string | null; createdAt: string | null;
   viaOdoo?: boolean; usernameRequired?: boolean; odooTicketId?: number | null; // بطاقات أودو
+  // مهلة سوبر سيل (SLA)
+  odooCreatedAt?: string | null; odooFetchedAt?: string | null; odooPhone?: string | null;
+  slaNoteAt?: string | null; slaWaQueuedAt?: string | null; slaWaSentAt?: string | null; slaWaError?: string | null;
 };
 // أحداث سجل تغييرات البطاقة (JSON داخل حقل history)
 type CardEvent = { at: string; by: string; text: string };
@@ -96,6 +100,11 @@ export default function FieldManagementPage() {
   const [board, setBoard] = useState<Board | null>(null);
   const [lists, setLists] = useState<List[]>([]);
   const [odooActive, setOdooActive] = useState(false); // أودو نشط للمكتب المعروض (مفعّل أو به بطاقات مفتوحة) — يحكم إظهار عمود «تذاكر أودو»
+  // ⏳ مهلة سوبر سيل: عتبتا المكتب + ساعةٌ تنبض كلّ ٣٠ث ليتحرّك العدّاد بلا طلبٍ للخادم
+  const [slaAlarmMin, setSlaAlarmMin] = useState(SLA_ALARM_MIN_DEFAULT);
+  const [slaSendMin, setSlaSendMin] = useState(SLA_SEND_MIN_DEFAULT);
+  const [slaNow, setSlaNow] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setSlaNow(new Date()), 30_000); return () => clearInterval(t); }, []);
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [newList, setNewList] = useState("");
@@ -178,6 +187,8 @@ export default function FieldManagementPage() {
     fetch(`/api/field/board${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (d) {
         setBoard(d.board); setLists(d.lists); setCards(d.cards); setOdooActive(!!d.odooActive);
+        setSlaAlarmMin(Number(d.odooSla?.alarmMin) || SLA_ALARM_MIN_DEFAULT);
+        setSlaSendMin(Number(d.odooSla?.sendMin) || SLA_SEND_MIN_DEFAULT);
         setTechnicians(d.technicians ?? []); setOffices(d.offices ?? []);
         setCardTypes(d.cardTypes ?? []); setOfficeId(d.officeId ?? null);
         setIsManager(!!d.isManager); setCanManage(!!d.canManage); setRole(d.role ?? "");
@@ -641,6 +652,13 @@ export default function FieldManagementPage() {
           animation: fmCollapse .16s cubic-bezier(.2,.8,.2,1) forwards; }
         @keyframes fmLift { from { transform: scale(1) rotate(0deg) } to { transform: scale(1.05) rotate(2deg) } }
         .fm-lift { animation: fmLift .16s cubic-bezier(.2,.8,.2,1) forwards; transform-origin: 50% 50%; }
+        /* ⏳ مهلة سوبر سيل: البطاقة تتوهّج وتخفت حتى يُتّخذ إجراء (إنجاز/إلغاء/تأجيل) */
+        @keyframes slaGlow {
+          0%,100% { box-shadow: 0 0 0 2px rgba(220,38,38,.9), 0 0 12px 2px rgba(220,38,38,.35) }
+          50%     { box-shadow: 0 0 0 2px rgba(220,38,38,.3), 0 0 3px 0 rgba(220,38,38,.1) }
+        }
+        .sla-card { animation: slaGlow 1.4s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) { .sla-card { animation: none; box-shadow: 0 0 0 2px rgba(220,38,38,.9) } }
       `}</style>
       {/* فشل حفظ ترتيب السحب — يُعلَن ولا يُكتَم (والترتيب الحقيقيّ يُعاد من الخادم) */}
       {moveErr && (
@@ -825,6 +843,9 @@ export default function FieldManagementPage() {
                   // ترتيب البطاقة بين الظاهرات (بعد استبعاد المسحوبة) — عليه تُحسب الإزاحة
                   const visIdx = drag?.kind === "card" && drag.fromList === l.id && cardIdx > listCards.findIndex((x) => x.id === drag.id) ? cardIdx - 1 : cardIdx;
                   const shift = dragged ? 0 : cardShift(l.id, visIdx);
+                  // ⏳ مهلة سوبر سيل: حالةُ هذه البطاقة الآن (تُخرجها من الحساب: إنجاز/إلغاء/تأجيل)
+                  const sla = slaStateOf(c as SlaCard, slaNow, slaAlarmMin, slaSendMin);
+                  const slaHot = sla.level === "danger" || sla.level === "over";
                   const isOdoo = !!c.viaOdoo; // بطاقة واردة من أودو
                   const odooInbox = isOdoo && l.name === "تذاكر أودو"; // غير مُصنّفة بعد (صندوق الوارد)
                   const odooColor = l.name && l.name !== "تذاكر أودو" ? catColorOf(l.name) : "#7c3aed"; // لون الفئة إن أُسندت، وإلا بنفسجيّ افتراضيّ
@@ -840,13 +861,13 @@ export default function FieldManagementPage() {
                       ...(shift ? { transform: `translateY(${shift}px)` } : null),
                       transition: drag ? "transform .18s cubic-bezier(.2,.8,.2,1)" : undefined,
                     }}
-                    className={`relative overflow-hidden cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md ${isOdoo ? "pl-7" : ""} ${dragged ? "fm-collapsing" : ""}`}
+                    className={`relative overflow-hidden cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md ${isOdoo ? "pl-7" : ""} ${slaHot ? "sla-card" : ""} ${dragged ? "fm-collapsing" : ""}`}
                   >
                     {/* وسم «أودو» عاموديّ على الحافّة اليسرى: كلمةٌ مُدوَّرة ككتلة (transform) فتبقى حروفها موصولة،
                         لونها لون الفئة إن أُسندت وإلا بنفسجيّ — يبقى دائماً على بطاقة أودو */}
                     {isOdoo && (
-                      <div className="absolute inset-y-0 left-0 flex w-5 items-center justify-center" style={{ background: `${odooColor}1f` }} title="بطاقة واردة من أودو">
-                        <span className="text-[11px] font-extrabold leading-none" style={{ color: odooColor, transform: "rotate(-90deg)" }}>أودو</span>
+                      <div className="absolute inset-y-0 left-0 flex w-5 items-center justify-center" style={{ background: slaHot ? "#dc26261f" : `${odooColor}1f` }} title={slaHot ? "تجاوزت مهلة سوبر سيل — أنجز أو ألغِ أو أجّل" : "بطاقة واردة من أودو"}>
+                        <span className="text-[11px] font-extrabold leading-none" style={{ color: slaHot ? "#dc2626" : odooColor, transform: "rotate(-90deg)" }}>أودو</span>
                       </div>
                     )}
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
@@ -878,6 +899,17 @@ export default function FieldManagementPage() {
                       {!c.done && !c.postponedTo && c.startedAt && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-sky-700">⏱ جارية</span>}
                       {/* شارة الإعادة من الأرشيف — يعرفها الفني فيعود إليها */}
                       {!c.done && wasRestored(c.history) && <span className="rounded bg-purple-50 px-1.5 py-0.5 font-semibold text-purple-700">↩️ معادة من الأرشيف</span>}
+                      {/* ⏳ عدّاد مهلة سوبر سيل: المتبقّي حتى الغرامة (أو «انتهت المهلة») */}
+                      {slaHot && (
+                        <span className="rounded bg-red-600 px-1.5 py-0.5 font-extrabold text-white" title={`عمر التذكرة ${fmtMin(sla.ageMin)} من ساعتين — ضمن نافذة ١٠:٠٠←٢٤:٠٠`}>
+                          {sla.level === "over" ? "⚠️ انتهت المهلة" : `⏳ متبقٍّ ${fmtMin(sla.toFineMin)}`}
+                        </span>
+                      )}
+                      {/* رسالة المشترك: مؤرشفة بانتظار فتح حاسبة المكتب، أو أُرسلت، أو تعذّرت */}
+                      {isOdoo && c.slaWaQueuedAt && !c.slaWaSentAt && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">📨 رسالة المشترك في الطابور</span>}
+                      {isOdoo && c.slaWaSentAt && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">📨 أُبلِغ المشترك</span>}
+                      {isOdoo && !c.slaWaQueuedAt && !c.slaWaSentAt && c.slaWaError && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600" title={c.slaWaError}>📵 {c.slaWaError}</span>}
+                      {isOdoo && c.slaNoteAt && <span className="rounded bg-violet-50 px-1.5 py-0.5 text-violet-700">📝 أُبلِغت أودو بالتأجيل</span>}
                     </div>
                     <div className="mt-1.5">
                       {/* بطاقة «دعم مؤقت» (listId=-1): منطقة الخريطة من مكتب الدعم لا مكتب الفني */}
@@ -1474,13 +1506,17 @@ function PostponeModal({ card, onClose, onDone }: { card: Card; onClose: () => v
   const [when, setWhen] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // بطاقة أودو: الملاحظة إلزاميّة — التأجيل عند أودو **هو** هذه الملاحظة (إنجاز=close · إلغاء=cancel · تأجيل=ملاحظة)
+  const isOdoo = !!card.viaOdoo;
+  const [note, setNote] = useState("");
   async function submit() {
     setErr("");
     if (!when) { setErr("حدّد موعد المشترك (تاريخ ووقت)"); return; }
+    if (isOdoo && !note.trim()) { setErr("اكتب ملاحظة التأجيل — تُرسَل إلى أودو"); return; }
     setBusy(true);
     const r = await fetch("/api/field/postpone", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cardId: card.id, postponeTo: new Date(when).toISOString() }),
+      body: JSON.stringify({ cardId: card.id, postponeTo: new Date(when).toISOString(), note: note.trim() }),
     });
     const d = await r.json().catch(() => null);
     setBusy(false);
@@ -1493,6 +1529,14 @@ function PostponeModal({ card, onClose, onDone }: { card: Card; onClose: () => v
         <h3 className="mb-1 text-lg font-bold text-slate-800">📅 تأجيل: {card.title}</h3>
         <p className="mb-3 text-sm text-slate-500">المشترك غير متواجد — حدّد الموعد الذي يريده.</p>
         <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} dir="ltr" className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        {isOdoo && (
+          <div className="mb-3">
+            <label className="mb-1 block text-xs font-bold text-violet-700">ملاحظة التأجيل — تُرسَل إلى أودو (إلزاميّة)</label>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="مثال: تم التأجيل بطلب من المشترك — موعد جديد يوم…"
+              className="w-full resize-none rounded-lg border border-violet-300 px-3 py-2 text-sm outline-none focus:border-violet-500" />
+            <p className="mt-1 text-[11px] text-slate-500">بلا ملاحظةٍ تبقى التذكرة بلا حركة عند سوبر سيل وتقع الغرامة.</p>
+          </div>
+        )}
         {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
         <div className="flex gap-2">
           <button onClick={submit} disabled={busy} className="flex-1 rounded-lg bg-amber-500 px-4 py-2.5 font-semibold text-white hover:bg-amber-600 disabled:opacity-50">{busy ? "جارٍ…" : "تأجيل"}</button>

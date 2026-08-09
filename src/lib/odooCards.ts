@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
 import { bgIsSet, type OdooTicket } from "@/lib/odoo";
+import { odooDateToUtc } from "@/lib/odooSla";
 
 // ===== بطاقات تذاكر أودو في لوحة إدارة الفنيين — يعيد استعمال TaskCard/TaskList القائمين =====
 export const ODOO_LIST_NAME = "تذاكر أودو"; // اسم عمود الوصول (صندوق وارد) — ليس فئة
@@ -46,6 +47,11 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket)
     data: {
       listId: list.id, title, description: descLines.join("\n"), position,
       kind: "", viaOdoo: true, odooTicketId: ticket.id, usernameRequired, // بلا فئة — الوسم الجانبيّ يميّزها
+      // مهلة سوبر سيل: مرجع العدّاد زمنُ أودو نفسه (مُطبَّعاً UTC — نصّه بلا منطقة)، ولحظة السحب
+      // لمهلة الرؤية وبوّابة التسليح، والهاتف عموداً صريحاً (لا استخراجاً بـregex من الوصف).
+      odooCreatedAt: odooDateToUtc(ticket.createDate),
+      odooFetchedAt: new Date(),
+      odooPhone: ticket.phone ?? null,
     },
   });
   await appendCardHistory(card.id, "أودو", `سُحبت من أودو (تذكرة #${ticket.id})${usernameRequired ? " — يوزر إلزاميّ" : ""}`);
@@ -55,11 +61,22 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket)
 // تحديث بطاقةٍ قائمةٍ من تذكرتها (مزامنة الـ10د): يُصحّح إلزاميّة اليوزر (bg صار مضبوطاً؟)
 // ويُكمل الأسطر الناقصة (اليوزر/الهاتف/FDT) — للبطاقات المسحوبة قبل إصلاح أسماء الحقول.
 export async function refreshOdooCard(cardId: number, ticket: OdooTicket): Promise<void> {
-  const card = await prisma.taskCard.findUnique({ where: { id: cardId }, select: { description: true, usernameRequired: true, done: true, settled: true } });
+  const card = await prisma.taskCard.findUnique({
+    where: { id: cardId },
+    select: { description: true, usernameRequired: true, done: true, settled: true, odooCreatedAt: true, odooFetchedAt: true, odooPhone: true },
+  });
   if (!card || card.done || card.settled) return;
   const data: Record<string, unknown> = {};
   const req = !bgIsSet(ticket.bg);
   if (req !== card.usernameRequired) data.usernameRequired = req;
+  // ترقيعٌ كسول لبطاقات ما قبل ميزة المهلة: تُملأ حقول الاحتساب من التذكرة عند أوّل تحديث.
+  // odooFetchedAt لا يُلمَس إن كان موجوداً (وإلّا انفتحت مهلة الرؤية من جديد كلّ دورة).
+  if (card.odooCreatedAt == null) {
+    const cd = odooDateToUtc(ticket.createDate);
+    if (cd) data.odooCreatedAt = cd;
+  }
+  if (card.odooFetchedAt == null) data.odooFetchedAt = new Date();
+  if (!card.odooPhone && ticket.phone) data.odooPhone = ticket.phone;
   let desc = card.description ?? "";
   // استبدال السطر القديم الملتبس «FDT/FAT: X / Y» (كان يظهر معكوساً بالـRTL) بالصيغة الملصقة
   if ((ticket.fdt || ticket.fat) && /🗺️\s*FDT\/FAT:/.test(desc)) {

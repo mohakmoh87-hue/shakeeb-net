@@ -273,6 +273,10 @@ CREATE POLICY rls_messages ON messages TO agent_worker
     OR (phone IS NOT NULL AND phone IN
        (SELECT s.phone FROM subscribers s JOIN towers t ON t.id = s."towerId"
          WHERE t."agentId" = current_agent_id() AND s.phone IS NOT NULL))
+    -- 2026-08-09 (مهلة أودو): هاتف تذكرة سوبر سيل قد لا يطابق أيّ مشترك عندنا (صيغةٌ مختلفة،
+    -- أو تذكرة Change Team لغير مشتركينا). فيُقبَل صفّ السجلّ إن كان **موسوماً بوكيل هذه الحاسبة
+    -- صريحاً** — والصفّ سجلٌّ بعديّ لا يُرسل شيئاً، والقراءة تبقى معزولةً بالوكيل نفسه.
+    OR (phone IS NOT NULL AND "agentId" IS NOT NULL AND "agentId" = current_agent_id())
   );
 
 -- audit_logs: إدراج فقط لصفوف بلا userId (توثيق المزامنة) — لا قراءة إطلاقاً
