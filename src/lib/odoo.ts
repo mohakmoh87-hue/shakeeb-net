@@ -150,8 +150,21 @@ const m2oLabel = (v: unknown): string | null => (Array.isArray(v) ? String((v as
 const m2oId = (v: unknown): number | null => (Array.isArray(v) ? Number((v as unknown[])[0]) : typeof v === "number" ? v : null);
 const strOrNull = (v: unknown): string | null => (v === false || v == null ? null : String(v));
 
+// تنقية بيانات الدخول من المحارف الخفيّة (حادثة مكتب حيّ السلام 2026-08-09): لصقُ اليوزر من
+// نصٍّ عربيّ يُدخل محرف اتّجاهٍ غير مرئيّ (RLM/LRM U+200F/200E وأمثاله) أو مسافةً غير فاصلة،
+// فيرفض أودو الدخول وتظهر رسالةٌ مُضلّلة «Session expired». تُطبَّق على **كلّ** مسارات الدخول
+// (الاختبار السحابيّ، والحفظ، وسحب العامل) فتُصلح القيم المخزّنة أيضاً بلا إعادة إدخال.
+function cleanCred(v: string | null | undefined): string {
+  return String(v ?? "")
+    .replace(/[‎‏؜‪-‮⁦-⁩​-‍﻿]/g, "") // اتّجاه + عرضٌ صفريّ
+    .replace(/ /g, " ") // مسافة غير فاصلة ⇒ مسافة عاديّة
+    .trim();
+}
+
 // ===== تسجيل الدخول عبر نموذج البوّابة (لا يحتاج اسم قاعدة — dbfilter الافتراضيّ) =====
-export async function odooLogin(baseUrl: string | null, user: string, pass: string): Promise<OdooSession> {
+export async function odooLogin(baseUrl: string | null, rawUser: string, rawPass: string): Promise<OdooSession> {
+  const user = cleanCred(rawUser);
+  const pass = cleanCred(rawPass);
   const base = normBase(baseUrl);
   // 1) GET /web/login → csrf + كوكي أوّليّ
   const g = await undiciFetch(base + "/web/login", { method: "GET", dispatcher: insecureAgent });
@@ -168,8 +181,17 @@ export async function odooLogin(baseUrl: string | null, user: string, pass: stri
     dispatcher: insecureAgent,
   });
   cookie = mergeCookies(cookie, getSetCookies(p));
-  // 3) هويّة الجلسة — يؤكّد نجاح الدخول ويعطي uid/الاسم
-  const info = (await rpc(base, cookie, "/web/session/get_session_info", {})) as Record<string, unknown> | null;
+  // 3) هويّة الجلسة — يؤكّد نجاح الدخول ويعطي uid/الاسم.
+  // جلسةٌ غير مصادَقة (بيانات دخول خاطئة) يرجع منها أودو خطأ «Session expired» — نترجمه
+  // إلى رسالةٍ واضحة بدل تمريره حرفيّاً (كان يُربك التشخيص — حادثة حيّ السلام 2026-08-09).
+  let info: Record<string, unknown> | null = null;
+  try {
+    info = (await rpc(base, cookie, "/web/session/get_session_info", {})) as Record<string, unknown> | null;
+  } catch (e) {
+    const m = (e as Error).message || "";
+    if (isSessionExpired(m)) throw new Error("فشل الدخول إلى أودو — تحقّق من اسم المستخدم وكلمة المرور");
+    throw e;
+  }
   const uid = Number(info?.uid ?? 0);
   if (!uid || info?.uid === false) throw new Error("فشل الدخول إلى أودو — تحقّق من اسم المستخدم وكلمة المرور");
   // 4) csrf ما بعد الدخول (للـ chatter) — من صفحة /my. **لا نُدمج كوكيها**: قد تُدوّر جلسة
