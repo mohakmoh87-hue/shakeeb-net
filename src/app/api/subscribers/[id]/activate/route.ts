@@ -112,17 +112,29 @@ export async function POST(
   // 2) بدون كارت: التاريخ اليدوي إن حُدّد، وإلا الحساب الطبيعي حسب نظام المكتب
   let dateTo: Date | null = null;
 
+  // ⚠️ **لا يُقبَل تاريخٌ منتهٍ نتيجةَ تفعيلٍ جديد** (بلاغ محمد 2026-08-10: bg-5-23-1@mu ظهر −٥ أيّام).
+  // برنامجنا لا يشحن الساس (ملفّ sas4 قراءةٌ فقط) بل يقرأ تاريخ الانتهاء منه. فإن ضُغط «تفعيل»
+  // قبل أن يُطبَّق الكارت في الساس (أو قبل أن يُثبِته الساس) قرأنا التاريخ **القديم المنتهي**
+  // وحفظناه، فيظهر المشترك سالباً بينما خدمته تعمل. الآن: نُعيد المحاولة ثلاثاً، ولا نقبل إلّا
+  // تاريخاً **مستقبليّاً**؛ وإلّا نحسبه محليّاً (والمزامنة تُصالحه مع الساس لاحقاً).
+  let sasStale = false;
   if (cardId && subscriber.sasId && tower?.loginUrl && tower.username && tower.password && !(await sasHostBlocked(tower.loginUrl))) {
-    try {
-      const base = sasBaseUrl(tower.loginUrl);
-      const token = await sasLogin(base, tower.username, tower.password);
-      const info = await sasFetchUser(base, token, subscriber.sasId);
-      if (info?.expiration) {
-        const d = new Date(info.expiration);
-        if (!isNaN(d.getTime())) dateTo = d;
+    const base = sasBaseUrl(tower.loginUrl);
+    for (let attempt = 0; attempt < 3 && !dateTo; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1500)); // مهلةٌ قصيرة ليُثبِت الساس الشحن
+      try {
+        const token = await sasLogin(base, tower.username, tower.password);
+        const info = await sasFetchUser(base, token, subscriber.sasId);
+        if (info?.expiration) {
+          const d = new Date(info.expiration);
+          if (!isNaN(d.getTime())) {
+            if (d > now) dateTo = d; // تاريخٌ مستقبليّ ⇒ الشحن ثبت في الساس
+            else sasStale = true; // ما زال منتهياً ⇒ الساس لم يُشحَن بعد
+          }
+        }
+      } catch {
+        /* تعذّر قراءة SAS — نرجع للحساب الطبيعي أدناه */
       }
-    } catch {
-      /* تعذّر قراءة SAS — نرجع للحساب الطبيعي أدناه */
     }
   }
 
@@ -253,7 +265,7 @@ export async function POST(
       await tx.auditLog.create({
         data: {
           userId: session?.userId, action: "ACTIVATE", entity: "subscriber", entityId: String(subscriberId),
-          details: `تفعيل ${pkg.name} - كارت ${cardSerial ?? "بدون"} - اشتراك ${total}${delivery > 0 ? ` - توصيل ${delivery}` : ""} - واصل ${paid} - دين ${newCarry}`,
+          details: `تفعيل ${pkg.name} - كارت ${cardSerial ?? "بدون"} - اشتراك ${total}${delivery > 0 ? ` - توصيل ${delivery}` : ""} - واصل ${paid} - دين ${newCarry}${sasStale ? " - ⚠️ الساس ما زال منتهياً عند التأكيد: تاريخ الانتهاء محسوبٌ محليّاً وتُصالحه المزامنة" : ""}`,
         },
       });
       // مسح دين القرض (إن وُجد) نهائيّاً بلا أيّ أثرٍ ماليّ — التفعيل العاديّ يُسقط القرض.
