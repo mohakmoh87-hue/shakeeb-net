@@ -15,11 +15,23 @@ function randomPassword(): string {
   return crypto.randomBytes(30).toString("base64").replace(/[^a-zA-Z0-9]/g, "").slice(0, 40).padEnd(24, "0");
 }
 
-// يبني رابط اتصال دور الوكيل من DATABASE_URL الرئيسي (يبدّل بيانات الاعتماد فقط)
+// يبني رابط اتصال دور الوكيل (يبدّل بيانات الاعتماد فقط).
+// ===== الأساس ليس DATABASE_URL بالضرورة (إصلاح 2026-08-10 — نقل Railway) =====
+// حاسبات المكاتب تتّصل عبر **الإنترنت العامّ**، أمّا DATABASE_URL على المضيف السحابيّ فقد
+// يكون رابطاً **داخليّاً** (على Railway: postgres.railway.internal) لا تصله أيّ حاسبة، وبلا
+// sslmode فيتّصل بلا تشفير. فلو أُعيد توليد مفتاح وكيلٍ من الواجهة لتسلّم المكتب رابطاً
+// ميّتاً وسقط، ولا رسالة خطأٍ تدلّ على السبب. لذا:
+//   • WORKER_DB_BASE_URL (إن ضُبط) هو الأساس — الرابط **العامّ** بما فيه sslmode.
+//   • وإن كان الأساس مضيفاً داخليّاً ولم يُضبط المتغيّر ⇒ **نرفض ونصرّح** بدل الكسر الصامت.
 function buildRoleUrl(roleName: string, password: string): string {
-  const main = process.env.DATABASE_URL;
+  const main = process.env.WORKER_DB_BASE_URL || process.env.DATABASE_URL;
   if (!main) throw new Error("DATABASE_URL غير مضبوط");
   const u = new URL(main);
+  if (/(\.internal|^localhost$|^127\.0\.0\.1$)/i.test(u.hostname) && !process.env.WORKER_DB_BASE_URL) {
+    throw new Error(
+      `رابط القاعدة الداخليّ (${u.hostname}) لا تصله حاسبات المكاتب — اضبط WORKER_DB_BASE_URL بالرابط العامّ (مع sslmode) قبل توليد مفاتيح الوكلاء`,
+    );
+  }
   u.username = roleName;
   u.password = password;
   return u.toString();

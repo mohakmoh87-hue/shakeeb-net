@@ -95,12 +95,20 @@ export async function syncWorkerConfig(): Promise<"unchanged" | "updated" | "fai
   if (!cfg) return "failed";
   if (cfg.databaseUrl === current) return "unchanged";
 
-  console.log("[self-config] وصل رابط قاعدة جديد — فحصه قبل اعتماده...");
-  if (!(await testDbUrl(cfg.databaseUrl, cfg.caB64 ?? process.env.DB_SSL_CA_B64 ?? null))) {
+  // ===== جواب الموقع هو الحُكم في الشهادة — بلا رجوعٍ إلى المزروع (إصلاح 2026-08-10) =====
+  // كان: (cfg.caB64 ?? process.env.DB_SSL_CA_B64) — فلو نُقلت القاعدة إلى مزوّدٍ **لا يحتاج
+  // شهادةً** (وهو ما حدث في النقل إلى Railway: شهادةٌ موقَّعةٌ ذاتيّاً والرابط يحمل
+  // sslmode=no-verify) أجاب الموقع null فرجعت الحاسبة إلى شهادة المزوّد **القديم** وفحصت
+  // الرابط الجديد بها مع rejectUnauthorized: true ⇒ يفشل الفحص دائماً ⇒ «أُبقي القديم» ⇒
+  // الحاسبة لا تنتقل أبداً ويلزم زيارة كلّ مكتبٍ بيدك — وهو عين ما بُنيت الميزة لتمنعه.
+  // الموقع يعرف قاعدته التي يُسلّم رابطها، فشهادته (أو خلوّها) هي الصحيحة دائماً.
+  const ca = cfg.caB64;
+  console.log(`[self-config] وصل رابط قاعدة جديد (${ca ? "بشهادة" : "بلا شهادة"}) — فحصه قبل اعتماده...`);
+  if (!(await testDbUrl(cfg.databaseUrl, ca))) {
     console.error("[self-config] ✗ الرابط الجديد لم يعمل — أُبقي القديم وأُعيد المحاولة لاحقاً");
     return "failed";
   }
-  writeEnv(cfg.databaseUrl, cfg.caB64 ?? process.env.DB_SSL_CA_B64 ?? null);
+  writeEnv(cfg.databaseUrl, ca);
   console.log("[self-config] ✓ اعتُمد الرابط الجديد (نسخة احتياطية .env.bak) — إعادة تشغيل");
   return "updated";
 }
