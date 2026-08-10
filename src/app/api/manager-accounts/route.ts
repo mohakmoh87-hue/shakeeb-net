@@ -56,7 +56,15 @@ export async function GET() {
   // الموظفون (الفنيون): الراتب المتبقي (صافي كشف الراتب) + ما سحبه للعرض
   const employees: { id: number; name: string | null; withdrawn: number; technicianId: number | null; net: number | null }[] = [];
   for (const acc of employeeAccounts) {
-    const a = await prisma.moneyTx.aggregate({ where: { isDeleted: false, accountId: acc.id }, _sum: { moneyOut: true } });
+    // ===== «المسحوب» = ما لم يُسدَّد بعد فقط (طلب محمد 2026-08-11) =====
+    // كان الجمع بلا أيّ ترشيح، فيبقى المبلغ ظاهراً على الفنيّ **إلى الأبد** وكأنّه دينٌ عليه،
+    // مع أنّ تسديد الراتب طرحه من صافيه فعلاً وعلّم صفوفه بـsalaryStatementId (فلا يُحتسب
+    // في راتبه القادم). قِيس: اسماعيل ٣٨٬٠٠٠ والمتبقّي صفر، وعلي السجاد ٣٥٬٠٠٠ والمتبقّي صفر.
+    // والتاريخ لا يُفقَد: السُلَف محفوظةٌ في لقطة كشف الراتب المؤرشَف (details.advances).
+    const a = await prisma.moneyTx.aggregate({
+      where: { isDeleted: false, accountId: acc.id, salaryStatementId: null },
+      _sum: { moneyOut: true },
+    });
     const tech = await prisma.technician.findFirst({ where: { accountId: acc.id, isDeleted: false }, select: { id: true, name: true, salary: true } });
     let net: number | null = null;
     if (tech) net = (await statementForTechnician(tech.id, tech.salary ?? 0, agent?.salaryFromDay, agent?.salaryToDay)).net;
