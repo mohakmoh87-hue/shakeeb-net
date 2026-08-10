@@ -984,7 +984,7 @@ model WaRelay {
   towerId   Int
   kind      String // chats | messages | send | logout
   params    String? // JSON: { chatId?, text?, limit? }
-  status    String   @default("pending") // pending | done | error
+  status    String   @default("pending") // pending | running | done | error
   result    String? // JSON نتيجة التنفيذ
   error     String?
   createdAt DateTime @default(now())

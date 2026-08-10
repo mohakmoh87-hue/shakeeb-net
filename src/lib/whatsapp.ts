@@ -588,8 +588,10 @@ export async function sendWhatsApp(officeId: number | null | undefined, phone: s
   if (s.state === "ready" && s.client) return sendWhatsAppLocal(officeId, phone, text);
   // هذه الحاسبة مالكة الجلسة لكنها غير جاهزة الآن ⇒ لا تُمرّر لنفسها
   if (hostsOfficeLocally(officeId)) return { ok: false, error: "واتساب المكتب غير متصل — اربطه من إدارة المكاتب" };
-  // ليست المالكة ⇒ مرّر الإرسال إلى حاسبة المكتب
-  const r = await relayRequest(officeId, "sendMsg", { phone, text }, 15000);
+  // ليست المالكة ⇒ مرّر الإرسال إلى حاسبة المكتب.
+  // المهلة ٤٥ ثانية لا ١٥: القياس على مكتب الشدن (2026-08-10) أظهر إرسالاً يستغرق ١٢–١٤ ثانية
+  // في الإرسال الجماعيّ، فكانت رسائلٌ **وصلت فعلاً** تُختَم "فاشلة" لمجرّد تجاوز المهلة.
+  const r = await relayRequest(officeId, "sendMsg", { phone, text }, 45000);
   return r.ok ? { ok: true } : { ok: false, error: r.error ?? "تعذّر الإرسال عبر حاسبة المكتب" };
 }
 
@@ -623,7 +625,12 @@ export async function relayRequest(
     if (r?.status === "done") return { ok: true, result: r.result ? JSON.parse(r.result) : null };
     if (r?.status === "error") return { ok: false, error: r.error ?? "فشل التنفيذ على الوكيل" };
   }
-  // نظّف الطلب المعلّق حتى لا يُنفَّذ متأخّراً
+  // انتهت المهلة. إن كان الطلب **قيد التنفيذ** على حاسبة المكتب فلا نلمسه ولا ندّعي فشله
+  // (كان يُختَم "error" فيُسجَّل فشلٌ لرسالةٍ وصلت فعلاً بعد ثانية). وإن لم يبدأ بعد نُلغِه.
+  const cur = await prisma.waRelay.findUnique({ where: { id: row.id }, select: { status: true } }).catch(() => null);
+  if (cur?.status === "running") {
+    return { ok: false, error: "انتهت المهلة والتنفيذ جارٍ على حاسبة المكتب — قد تكون الرسالة قد وصلت" };
+  }
   await prisma.waRelay.update({ where: { id: row.id }, data: { status: "error", error: "timeout" } }).catch(() => {});
   return { ok: false, error: "انتهت المهلة — تأكّد أن وكيل المكتب متصل" };
 }
@@ -647,7 +654,12 @@ export function startWaRelayPoller() {
   const gg = globalThis as unknown as { __waRelayPollerStarted?: boolean };
   if (gg.__waRelayPollerStarted) return;
   gg.__waRelayPollerStarted = true;
+  // دورةٌ واحدةٌ في كلّ لحظة: setInterval لا ينتظر الدورة السابقة، فكانت الدورات تتراكب
+  // على الطلبات نفسها. (جزءٌ من إصلاح تكرار الرسائل — 2026-08-10)
+  let busy = false;
   setInterval(async () => {
+    if (busy) return;
+    busy = true;
     try {
       // واتساب: هذه الحاسبة تعالج مكاتبها (مالكة الجلسة على القرص).
       // SAS: القائد يعالجها لكل مكاتب وكيله (كما هو — لا تغيير على سلوك SAS).
@@ -669,6 +681,33 @@ export function startWaRelayPoller() {
         take: 5,
       });
       for (const relayRow of pend) {
+        // ===== حَجزٌ ذرّيّ قبل التنفيذ (إصلاح تكرار الرسائل — 2026-08-10) =====
+        // كان الصفّ يبقى "pending" طولَ مدّة التنفيذ، والدورة تعمل كلّ ثانيتين، فإن استغرق
+        // الإرسال ١٢ ثانية (وهذا ما قِيس فعلاً في مكتب الشدن) التقطته دوراتٌ متعدّدة فوصلت
+        // المشتركَ نُسَخٌ من الرسالة نفسها. الآن: من يقلبه إلى "running" أوّلاً ينفّذه وحده،
+        // ومن يخسر السباق يتخطّاه. والصفوف المعلّقة أقدم من ٥ دقائق تُحذف بالتنظيف أدناه.
+        const claimed = await prisma.waRelay.updateMany({
+          where: { id: relayRow.id, status: "pending" },
+          data: { status: "running" },
+        });
+        if (claimed.count !== 1) continue;
+        // مزامنة SAS تأخذ **دقائق** لا ثواني. ومع راية busy أعلاه ستحبس الدورةَ فتتعطّل
+        // رسائل الواتساب القصيرة خلفها (وهي في أثناء بثٍّ جماعيّ = مشتركون يُتخطَّون).
+        // فنُنفّذها **مفصولةً** — وقد حُجزت ذرّيّاً أعلاه فلن تُنفَّذ مرّتين.
+        if (relayRow.kind === "sas") {
+          void (async () => {
+            try {
+              const sp = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { op?: string; page?: number; count?: number };
+              const result = await runSasOp(relayRow.towerId, sp.op ?? "", sp);
+              await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "done", result: JSON.stringify(result) } });
+            } catch (e) {
+              const detail = e instanceof Error ? (e.stack || `${e.name}: ${e.message}`) : String(e);
+              console.error(`[wa-relay] فشل sas مكتب ${relayRow.towerId}:`, detail);
+              await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "error", error: detail.slice(0, 1500) } }).catch(() => {});
+            }
+          })();
+          continue;
+        }
         try {
           const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; phone?: string; limit?: number; msgId?: string; op?: string; page?: number; count?: number };
           // تأكّد أن واتساب المكتب جاهز فعلاً قبل عمليات الواتساب (لا يلزم لعمليات SAS)
@@ -694,5 +733,6 @@ export function startWaRelayPoller() {
       // تنظيف الطلبات القديمة (منجزة أو فاشلة) الأقدم من 5 دقائق
       await prisma.waRelay.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 5 * 60_000) } } }).catch(() => {});
     } catch { /* تجاهل */ }
+    finally { busy = false; }
   }, 2000);
 }
