@@ -1,0 +1,32 @@
+# حارس اتصالات القاعدة (بلاغ محمد 2026-08-10: «الموقع لا يعمل» — TooManyConnections).
+# **سحابيٌّ بحتٌ**: لا يلمس حاسبات المكاتب ولا يُعيد تشغيلها ولا يحتاج إعداداً عندها.
+# النقطة نفسها تحرس نفسها: لا تتدخّل إلّا عند **ضغطٍ حقيقيّ** على الاتصالات (أقلّ من ٥ فتحات
+# حرّة)، ولا تُنهي اتصالاً **نشطاً** أبداً. فعلى Railway (حدُّ اتصالاتها أوسع) تبقى نائمةً
+# تلقائيّاً بلا أيّ تعديل — والاستثناء الوحيد الدائم: معاملةٌ عالقة ٥ دقائق (تسريب).
+# ⚠️ بعد النقل إلى Railway: حدِّث سرّ APP_BASE_URL في GitHub ليشير إلى العنوان الجديد.
+# الأسرار المطلوبة (موجودة): CRON_SECRET + APP_BASE_URL.
+name: db-guard
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: تحرير اتصالات القاعدة عند الضغط
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/resp -w "%{http_code}" -m 60 "$APP_BASE_URL/api/cron/db-guard" \
+                 -H "Authorization: Bearer $CRON_SECRET" || echo 000)
+          echo "الاستجابة: $code $(cat /tmp/resp)"
+          # لا نُفشل المهمة على خطأٍ عابر (القاعدة مضغوطة أصلاً) — الحارس يُعاد كل ٥ دقائق
+          test "$code" = "200" || echo "::warning::الحارس لم يستجب ($code)"
