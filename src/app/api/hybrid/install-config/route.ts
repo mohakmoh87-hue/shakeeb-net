@@ -20,6 +20,15 @@ export async function GET(request: Request) {
 
   // رابط دور الوكيل (يُنشأ إن لم يوجد بعد) — معزول بـRLS
   const databaseUrl = await ensureAgentRoleUrl(row.agentId);
+  // لا يُسلَّم رابطٌ غير مشفَّر لحاسبةٍ جديدة (تدقيق 2026-08-10) — ولا يُستهلَك الرمز حينها
+  const { workerUrlIsEncrypted } = await import("@/lib/agentDbRole");
+  if (!workerUrlIsEncrypted(databaseUrl)) {
+    console.error(`[install-config] رابط الوكيل ${row.agentId} بلا تشفير — لم يُسلَّم`);
+    return NextResponse.json(
+      { error: 'رابط القاعدة المخزَّن بلا تشفير — أضِف sslmode إلى agents."workerDbUrl"' },
+      { status: 500 },
+    );
+  }
 
   // لمرّة واحدة: علّمه مستخدَماً بعد نجاح تجهيز الرابط
   await prisma.installToken.update({ where: { token }, data: { usedAt: new Date() } });

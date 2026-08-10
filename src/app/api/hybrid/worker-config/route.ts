@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureAgentRoleUrl, acceptedUrlHashes, hashUrl } from "@/lib/agentDbRole";
+import { ensureAgentRoleUrl, acceptedUrlHashes, hashUrl, workerUrlIsEncrypted } from "@/lib/agentDbRole";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,16 @@ export async function POST(request: Request) {
 
   // الرابط الحالي (يُنشأ إن لم يوجد — لا يحدث عملياً بعد التنصيب)
   const databaseUrl = await ensureAgentRoleUrl(worker.agentId);
+  // لا يُسلَّم رابطٌ غير مشفَّر أبداً (حاسبة المكتب على الإنترنت العامّ). ولا يُعدَّل هنا:
+  // تعديله يُغيّر بصمته فيُرفض برهان الحاسبة التالي إلى الأبد. والرفض آمن — تُبقي القديم
+  // وتُعيد السؤال كلّ ٥ دقائق، فيكفي تصحيح agents."workerDbUrl".
+  if (!workerUrlIsEncrypted(databaseUrl)) {
+    console.error(`[worker-config] رابط الوكيل ${worker.agentId} بلا تشفير — لم يُسلَّم`);
+    return NextResponse.json(
+      { error: 'رابط القاعدة المخزَّن بلا تشفير — أضِف sslmode إلى agents."workerDbUrl"' },
+      { status: 500 },
+    );
+  }
   await prisma.hybridWorker.update({ where: { id: worker.id }, data: { configAt: new Date() } }).catch(() => {});
 
   return NextResponse.json({

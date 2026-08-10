@@ -32,9 +32,35 @@ function buildRoleUrl(roleName: string, password: string): string {
       `رابط القاعدة الداخليّ (${u.hostname}) لا تصله حاسبات المكاتب — اضبط WORKER_DB_BASE_URL بالرابط العامّ (مع sslmode) قبل توليد مفاتيح الوكلاء`,
     );
   }
+  // ===== فرضُ التشفير عند التوليد (تدقيق 2026-08-10) =====
+  // حاسبات المكاتب تعبر الإنترنت العامّ. ومكتبة pg لا تُشفّر إلّا إن حمل الرابط sslmode
+  // (تحقُّقٌ من pg-connection-string) ⇒ رابطٌ بلا sslmode يتّصل **نصّاً صريحاً** ومع ذلك
+  // **ينجح**، فيعتمده الفحص وتُعيد الحاسبات التشغيل وتسري كلمة سرّ الدور وبيانات المشتركين
+  // والمبالغ مكشوفةً بلا سطرٍ واحدٍ في أيّ سجلّ. ورابط Railway العامّ لا يحمل sslmode بطبعه،
+  // فسهوُ حرفٍ واحدٍ كان يكفي. والفرض هنا — لا وقت التسليم — كي يُخزَّن الرابط مطبَّعاً
+  // فتبقى بصمته (hashUrl) مطابقةً لبرهان الحاسبة، وإلّا صار كلّ برهانٍ تالٍ مرفوضاً.
+  if (u.searchParams.get("sslmode") === "disable") {
+    throw new Error("رابط حاسبات المكاتب بلا تشفير — sslmode=disable مرفوض");
+  }
+  if (!process.env.DB_SSL_CA_B64 && !u.searchParams.get("sslmode")) {
+    u.searchParams.set("sslmode", "no-verify");
+  }
   u.username = roleName;
   u.password = password;
   return u.toString();
+}
+
+// حارسُ تسليم: لا يُسلَّم للمكتب رابطٌ غير مشفَّر أبداً — ولا يُعدَّل في الطريق (التعديل
+// يُغيّر بصمته فيصير برهان الحاسبة التالي مرفوضاً 403 أبداً ⇒ زيارة مكتب).
+// الرفض آمن: الحاسبة تُبقي رابطها القديم وتُعيد السؤال كلّ ٥ دقائق، فيكفي تصحيح العمود.
+export function workerUrlIsEncrypted(url: string): boolean {
+  if (process.env.DB_SSL_CA_B64) return true; // شهادةٌ صريحة تتولّى التشفير
+  try {
+    const m = new URL(url).searchParams.get("sslmode");
+    return !!m && m !== "disable";
+  } catch {
+    return false;
+  }
 }
 
 // يقرأ رابط دور الوكيل المخزَّن (أو null) — عمود خام

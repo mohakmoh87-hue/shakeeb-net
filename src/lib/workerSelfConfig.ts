@@ -103,6 +103,16 @@ export async function syncWorkerConfig(): Promise<"unchanged" | "updated" | "fai
   // الحاسبة لا تنتقل أبداً ويلزم زيارة كلّ مكتبٍ بيدك — وهو عين ما بُنيت الميزة لتمنعه.
   // الموقع يعرف قاعدته التي يُسلّم رابطها، فشهادته (أو خلوّها) هي الصحيحة دائماً.
   const ca = cfg.caB64;
+  // بلا شهادةٍ **وبلا** sslmode ⇒ الاتصال نصٌّ صريح على الإنترنت العامّ، ومع ذلك **ينجح**
+  // فيمرّ الفحص. نرفضه هنا ولا نُعدّله (تعديل الرابط يُغيّر بصمته فيُرفض برهاننا التالي أبداً).
+  if (!ca) {
+    let mode: string | null = null;
+    try { mode = new URL(cfg.databaseUrl).searchParams.get("sslmode"); } catch { /* رابط فاسد */ }
+    if (!mode || mode === "disable") {
+      console.error("[self-config] ✗ الرابط الوارد بلا تشفير — لم يُعتمد، أُبقي القديم");
+      return "failed";
+    }
+  }
   console.log(`[self-config] وصل رابط قاعدة جديد (${ca ? "بشهادة" : "بلا شهادة"}) — فحصه قبل اعتماده...`);
   if (!(await testDbUrl(cfg.databaseUrl, ca))) {
     console.error("[self-config] ✗ الرابط الجديد لم يعمل — أُبقي القديم وأُعيد المحاولة لاحقاً");
