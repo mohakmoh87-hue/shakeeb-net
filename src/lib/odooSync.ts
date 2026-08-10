@@ -177,50 +177,112 @@ async function runPush(): Promise<void> {
     if (!isLeaderNow()) return;
     const agentId = getWorkerAgentId();
     if (agentId == null) return;
-    for (const o of await offices(agentId)) {
-      const listIds = await listIdsOf(o.id);
-      if (!listIds.length) continue;
-      const pending = await prisma.taskCard.findMany({
+    await pushAgentToOdoo(agentId);
+  } catch (e) {
+    console.error("[odoo-sync] push:", e instanceof Error ? e.message : e);
+  } finally { pushing = false; }
+}
+
+// ===== دفعٌ مشترك بين العامل والسحابة (طلب محمد 2026-08-09: بديلٌ سحابيّ عند إغلاق المكاتب) =====
+// يدفع لكلّ مكاتب الوكيل: (١) الإنجاز/الإلغاء ⇒ close/cancel، (٢) ملاحظة التأجيل اليدويّ ⇒ chatter.
+// **لا سحبَ ولا واتساب ولا إرسالاً تلقائيّاً** — هذه تبقى على العامل المحليّ حصراً (قرار الأجور).
+// وإن لم يكن هناك معلّقٌ لمكتبٍ فلا دخولَ لأودو إطلاقاً (زهيد).
+export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number; notes: number }> {
+  let pushed = 0, notes = 0;
+  for (const o of await offices(agentId)) {
+    const listIds = await listIdsOf(o.id);
+    if (!listIds.length) continue;
+    const [pending, postponed] = await Promise.all([
+      prisma.taskCard.findMany({
         where: {
           listId: { in: listIds }, viaOdoo: true, odooTicketId: { not: null }, odooPushedAt: null,
           isDeleted: false, OR: [{ done: true }, { settled: true }],
         },
         select: { id: true, odooTicketId: true, done: true, settled: true, serviceDetails: true, techNote: true, odooBg: true, history: true },
         take: 25,
-      });
-      if (!pending.length) continue; // الحالة الشائعة: لا شيء ليُدفَع ⇒ بلا دخولٍ لأودو (زهيد)
+      }),
+      // ملاحظة تأجيلٍ يدويّ أحدث من آخر دفع (تُدفَع دائماً — لا تخضع لمفاتيح الإرسال)
+      prisma.taskCard.findMany({
+        where: {
+          listId: { in: listIds }, viaOdoo: true, odooTicketId: { not: null },
+          done: false, settled: false, isDeleted: false, archivedAt: null,
+          postponeNote: { not: null }, postponeNoteAt: { not: null },
+        },
+        select: { id: true, odooTicketId: true, postponeNote: true, postponeNoteAt: true, postponePushedAt: true },
+        take: 25,
+      }),
+    ]);
+    const dueNotes = postponed.filter((c) => c.postponeNoteAt && (!c.postponePushedAt || c.postponeNoteAt.getTime() > c.postponePushedAt.getTime()));
+    if (!pending.length && !dueNotes.length) continue; // لا شيء ⇒ بلا دخولٍ لأودو
 
-      let s: OdooSession;
-      try { s = await officeSession(o); }
-      catch (e) { await prisma.tower.update({ where: { id: o.id }, data: { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) } }).catch(() => {}); continue; }
+    let s: OdooSession;
+    try { s = await officeSession(o); }
+    catch (e) {
+      sessionCache.delete(o.id);
+      await prisma.tower.update({ where: { id: o.id }, data: { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) } }).catch(() => {});
+      continue;
+    }
 
-      for (const c of pending) {
-        const ticketId = c.odooTicketId as number;
-        try {
-          const note = (c.serviceDetails && c.serviceDetails.trim()) || (c.techNote && c.techNote.trim()) || cancelNoteFromHistory(c.history) || (c.done ? "أُنجزت" : "أُلغيت");
-          const tk = await odooReadTicket(s, ticketId);
-          const accessToken = tk?.accessToken ?? null;
-          if (c.done) {
-            // إنجاز: BG (إن وُجد) ← ملاحظة ← close
-            if (c.odooBg && c.odooBg.trim()) { try { await odooChangeBg(s, ticketId, c.odooBg.trim()); } catch { /* الملاحظة والإغلاق أهمّ */ } }
-            await odooChatterPost(s, ticketId, note, accessToken);
-            await odooClose(s, ticketId);
-          } else {
-            // إلغاء: ملاحظة ← cancel
-            await odooChatterPost(s, ticketId, note, accessToken);
-            await odooCancel(s, ticketId);
-          }
-          await prisma.taskCard.update({ where: { id: c.id }, data: { odooPushedAt: new Date() } });
-          await appendCardHistory(c.id, "أودو", c.done ? "دُفِع الإنجاز إلى أودو (close)" : "دُفِع الإلغاء إلى أودو (cancel)");
-        } catch (e) {
-          // فشل الدفع: تبقى odooPushedAt=null لإعادة المحاولة (مقاومة الإطفاء/الانقطاع)
-          await appendCardHistory(c.id, "أودو", `تعذّر الدفع إلى أودو: ${String((e as Error).message ?? "").slice(0, 120)}`).catch(() => {});
+    for (const c of pending) {
+      const ticketId = c.odooTicketId as number;
+      // حجزٌ ذرّيّ قبل أيّ نداء: صار للدفع **مصدران** (العامل والسحابة)، ولحظةَ عودة حاسبةٍ
+      // أثناء دورةٍ سحابيّة قد يدفعان البطاقة نفسها ⇒ ملاحظةٌ مكرّرة في أودو وإغلاقٌ مرّتين.
+      const claimed = await prisma.taskCard.updateMany({ where: { id: c.id, odooPushedAt: null }, data: { odooPushedAt: new Date() } });
+      if (claimed.count !== 1) continue;
+      try {
+        const note = (c.serviceDetails && c.serviceDetails.trim()) || (c.techNote && c.techNote.trim()) || cancelNoteFromHistory(c.history) || (c.done ? "أُنجزت" : "أُلغيت");
+        const tk = await odooReadTicket(s, ticketId);
+        const accessToken = tk?.accessToken ?? null;
+        if (c.done) {
+          // إنجاز: BG (إن وُجد) ← ملاحظة ← close
+          if (c.odooBg && c.odooBg.trim()) { try { await odooChangeBg(s, ticketId, c.odooBg.trim()); } catch { /* الملاحظة والإغلاق أهمّ */ } }
+          await odooChatterPost(s, ticketId, note, accessToken);
+          await odooClose(s, ticketId);
+        } else {
+          // إلغاء: ملاحظة ← cancel
+          await odooChatterPost(s, ticketId, note, accessToken);
+          await odooCancel(s, ticketId);
         }
+        await appendCardHistory(c.id, "أودو", c.done ? "دُفِع الإنجاز إلى أودو (close)" : "دُفِع الإلغاء إلى أودو (cancel)");
+        pushed++;
+      } catch (e) {
+        // فشل الدفع: يُفكّ الحجز (odooPushedAt=null) فتُعاد المحاولة — مقاومة الإطفاء/الانقطاع
+        await prisma.taskCard.update({ where: { id: c.id }, data: { odooPushedAt: null } }).catch(() => {});
+        await appendCardHistory(c.id, "أودو", `تعذّر الدفع إلى أودو: ${String((e as Error).message ?? "").slice(0, 120)}`).catch(() => {});
       }
     }
-  } catch (e) {
-    console.error("[odoo-sync] push:", e instanceof Error ? e.message : e);
-  } finally { pushing = false; }
+
+    for (const c of dueNotes) {
+      const ticketId = c.odooTicketId as number;
+      const stamp = c.postponeNoteAt as Date;
+      const prev = c.postponePushedAt;
+      // حجزٌ ذرّيّ بنفس المنطق: يُختَم بطابع **الملاحظة** لا بـ«الآن»، فملاحظةٌ أحدث تبقى مستحقّة
+      const claimed = await prisma.taskCard.updateMany({
+        where: { id: c.id, ...(prev ? { postponePushedAt: prev } : { postponePushedAt: null }) },
+        data: { postponePushedAt: stamp },
+      });
+      if (claimed.count !== 1) continue;
+      try {
+        const tk = await odooReadTicket(s, ticketId);
+        await odooChatterPost(s, ticketId, c.postponeNote as string, tk?.accessToken ?? null);
+        await appendCardHistory(c.id, "أودو", `دُفِعت ملاحظة التأجيل إلى أودو — ${c.postponeNote}`);
+        notes++;
+      } catch (e) {
+        await prisma.taskCard.update({ where: { id: c.id }, data: { postponePushedAt: prev } }).catch(() => {});
+        await appendCardHistory(c.id, "أودو", `تعذّر إبلاغ أودو بالتأجيل: ${String((e as Error).message ?? "").slice(0, 120)}`).catch(() => {});
+      }
+    }
+  }
+  return { pushed, notes };
+}
+
+/** هل لهذا الوكيل عاملٌ محليٌّ نبض حديثاً؟ (البديل السحابيّ لا يعمل إلّا إن كانت الحاسبات مطفأة) */
+export async function agentHasLiveWorker(agentId: number, withinMs = 15 * 60_000): Promise<boolean> {
+  const row = await prisma.hybridWorker.findFirst({
+    where: { agentId, approved: true, lastSeen: { gte: new Date(Date.now() - withinMs) } },
+    select: { id: true },
+  });
+  return !!row;
 }
 
 // ===== الميزة ١ (إنذارات): إشعار المدير مرّةً + تنبيه الفنيّ كلّ ١٥ دقيقة =====
@@ -347,12 +409,9 @@ async function runSlaSweep(): Promise<void> {
       const due: Due[] = [];
       for (const c of cards) {
         const base = { id: c.id, ticketId: c.odooTicketId as number, phone: c.odooPhone, bg: c.odooBg };
-        // (أ) تأجيلٌ يدويّ بملاحظةٍ أحدث من آخر دفع ⇒ تُدفَع كما كتبها الفنيّ (بأسطرها)
-        if (c.postponeNote && c.postponeNoteAt && (!c.postponePushedAt || c.postponeNoteAt.getTime() > c.postponePushedAt.getTime())) {
-          due.push({ ...base, manual: true, note: c.postponeNote });
-          continue;
-        }
-        if (c.postponedTo) continue; // مؤجَّلة بلا ملاحظةٍ جديدة ⇒ لا تلقائيّ عليها
+        // ملاحظة التأجيل اليدويّ لا تُعالَج هنا: تدفعها pushAgentToOdoo (كلّ ٢٠ث على العامل،
+        // ومن السحابة عند إغلاق المكاتب) — فلا يتفرّق منطقُ الدفع في موضعين.
+        if (c.postponedTo) continue; // مؤجَّلة ⇒ لا تأجيل تلقائيّ عليها
         if (c.slaNoteAt) continue; // أُبلِغت أودو تلقائيّاً ⇒ خرجت من المهلة
         if (!armed) continue;
         const fetched = c.odooFetchedAt ?? c.createdAt;

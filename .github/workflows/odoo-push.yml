@@ -1,0 +1,31 @@
+# بديلٌ سحابيّ لدفع أودو عند إغلاق المكاتب (طلب محمد 2026-08-09).
+# أودو محليٌّ على العامل بقرار الأجور؛ لكنّ مكتباً مغلقاً كان يعني ملاحظة تأجيلٍ لا تصل أودو.
+# النقطة نفسها تحرس نفسها: لا تعمل لوكيلٍ له عاملٌ نبض خلال ١٥ دقيقة، ولا تلمس أودو إن لم يكن
+# هناك معلّق، ولا تُرسل واتساب ولا تسحب تذاكر إطلاقاً. فالتشغيل الفارغ زهيدٌ جداً.
+# النافذة: ٠٧:٠٠←٢٠:٥٩ UTC = ١٠:٠٠←٢٣:٥٩ بغداد (نافذة احتساب سوبر سيل نفسها).
+# ملاحظة: GitHub قد يؤخّر المهام المجدولة دقائق — مقبولٌ لأنّها **بديلٌ لا أصل**.
+# الأسرار المطلوبة (موجودة): CRON_SECRET + APP_BASE_URL.
+name: odoo-push-fallback
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 7-20 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: دفع ملاحظات/إنجاز أودو إن كانت حاسبات المكاتب مطفأة
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/resp -w "%{http_code}" "$APP_BASE_URL/api/cron/odoo-push" \
+                 -H "Authorization: Bearer $CRON_SECRET")
+          echo "الاستجابة: $code $(cat /tmp/resp)"
+          test "$code" = "200"

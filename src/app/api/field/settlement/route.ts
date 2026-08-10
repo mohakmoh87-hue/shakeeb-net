@@ -147,5 +147,24 @@ export async function POST(request: Request) {
       select: { id: true },
     })).id;
   }
-  return NextResponse.json({ ok: true, settledCount: ids.length, total, settlementId });
+
+  // ===== «اكمال» هو الذي يُنهي دعم البطاقات ويُرحّل الذمّة (قرار محمد 2026-08-09) =====
+  // إن صارت كلّ بطاقات دعمه منجزةً **ومحصَّلة** ⇒ ينتهي دعمه، وما بقي بذمّته من موادّ مكتب الدعم
+  // يُرحَّل إلى مخزن مكتبه ويبقى بذمّته (ينقص هناك ويزيد هنا، ويُدمَج مع ذمّةٍ قائمة لنفس المادّة).
+  let supportEnded = false;
+  try {
+    const { maybeEndCardSupport } = await import("@/lib/field");
+    const r = await maybeEndCardSupport(technicianId);
+    supportEnded = r.ended;
+    if (r.ended) {
+      const { notify } = await import("@/lib/notify");
+      void notify({
+        agentId: tech.agentId, towerId: tech.towerId, type: "checkout",
+        title: "انتهاء الدعم", body: `${tech.name} أُكملت بطاقات دعمه — عاد لمكتبه ورُحّلت ذممه إلى مخزنه`,
+        refType: "technician", refId: technicianId,
+      });
+    }
+  } catch { /* لا يُفشل التحصيل */ }
+
+  return NextResponse.json({ ok: true, settledCount: ids.length, total, settlementId, supportEnded });
 }

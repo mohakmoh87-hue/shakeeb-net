@@ -197,6 +197,34 @@ export async function getOrCreatePettyAccount(towerId: number | null) {
   return acc;
 }
 
+// ===== دعم البطاقات: متى ينتهي؟ (قرار محمد 2026-08-09) =====
+// **الإنجاز لا يُنهي الدعم ولا يُرحّل الذمّة — «اكمال» هو الذي يُنهي ويُرحّل.** فما دامت بطاقةُ دعمٍ
+// منجزةً بلا تحصيل يبقى الفنيّ على دعمه (ولا يُنجز بطاقات مكتبه). ويُسقَط من الحساب ما حُذف من
+// البطاقات أو حُوِّل لفنيٍّ آخر — فإن لم يبقَ له شيءٌ انتهى دعمه.
+// تُنادى من: التحصيل · الإنجاز (للإشعار فقط) · حذف بطاقة · تحويل بطاقة لفنيٍّ آخر.
+export async function maybeEndCardSupport(technicianId: number): Promise<{ ended: boolean; allDone: boolean }> {
+  const t = await prisma.technician.findUnique({
+    where: { id: technicianId },
+    select: { id: true, name: true, agentId: true, towerId: true, supportKind: true, supportCardIds: true, supportTowerId: true },
+  });
+  if (!t || t.supportTowerId == null || t.supportKind !== "cards" || !t.supportCardIds) return { ended: false, allDone: false };
+  let ids: number[] = [];
+  try { ids = JSON.parse(t.supportCardIds) as number[]; } catch { return { ended: false, allDone: false }; }
+  if (!Array.isArray(ids) || ids.length === 0) { await endSupport(technicianId); return { ended: true, allDone: true }; }
+  // ما زال يخصّه فعلاً: غير محذوف ومُسنَدٌ إليه (التحويل لفنيٍّ آخر يُخرج البطاقة من دعمه)
+  const cards = await prisma.taskCard.findMany({
+    where: { id: { in: ids }, isDeleted: false, technicianId },
+    select: { id: true, done: true, settled: true },
+  });
+  if (cards.length === 0) { await endSupport(technicianId); return { ended: true, allDone: true }; }
+  // «انتهت» = settled — وهي تشمل **الملغاة** (الإلغاء يكتب settled=true بلا done). كان الشرط
+  // `done && settled` يعني أنّ بطاقةً ملغاةً **تُقفل الدعم إلى الأبد**: لا تُنجَز فلا تُحصَّل، فيبقى
+  // الفنيّ ممنوعاً من مكتبه ولا تُرحَّل ذمّته (اصطاده تدقيقٌ عدائيّ 2026-08-09).
+  const unfinished = cards.filter((c) => !c.settled);
+  if (unfinished.length === 0) { await endSupport(technicianId); return { ended: true, allDone: true }; }
+  return { ended: false, allDone: unfinished.every((c) => c.done) };
+}
+
 // إنهاء دعم فني: يعيده لمكتبه الأصلي (يمسح حقول الدعم كلّها).
 // الذمم المتبقية من مواد مكتب الدعم تُرحَّل تلقائياً معه: كمية مكتب الدعم تنقص
 // (المادة غادرت مع الفني)، وتُضاف لمادة بنفس الاسم بمخزن مكتبه الأصلي (تُنشأ إن
@@ -210,12 +238,18 @@ export async function endSupport(technicianId: number) {
   const homeOffice = tech?.towerId ?? null;
   // مكتب الدعم ضمن مكاتبه الإضافية الدائمة؟ لا ترحيل — فهو باقٍ يعمل فيه كأصلي
   const stillHis = supportOffice != null && parseExtraTowers(tech?.extraTowerIds).includes(supportOffice);
+  // فشلُ الترحيل لا يُبتلَع بعد اليوم (اصطاده تدقيقٌ عدائيّ): كان الخطأ يُكتَم ثمّ تُصفَّر حقول
+  // الدعم على أيّ حال ⇒ موادّ مكتب الدعم تبقى بذمّته بلا ترحيلٍ ولا أثر، ولا محاولةَ ثانية.
+  // الآن: إن فشل شيءٌ **يبقى الدعم قائماً** فتُعاد المحاولة (بصمة الخروج/٠٠:١٥/اكمال).
+  let transferFailed = false;
   if (supportOffice != null && homeOffice != null && supportOffice !== homeOffice && !stillHis) {
     try {
       const rows = await prisma.custody.findMany({ where: { technicianId, isDeleted: false, qty: { gt: 0 } } });
       for (const c of rows) {
         const item = await prisma.item.findFirst({ where: { id: c.itemId, isDeleted: false } });
         if (!item || item.towerId !== supportOffice) continue; // ذمم مواد مكتب الدعم فقط
+        // كلّ مادّةٍ في معاملةٍ مستقلّة: فشلُ واحدةٍ لا يُسقط ما نجح، ويُعلَّم ليُعاد لاحقاً
+        try {
         await prisma.$transaction(async (tx) => {
           await tx.item.update({ where: { id: item.id }, data: { count: { decrement: c.qty } } });
           let home = await tx.item.findFirst({ where: { name: item.name, towerId: homeOffice, isDeleted: false } });
@@ -244,9 +278,19 @@ export async function endSupport(technicianId: number) {
           await tx.$executeRaw`INSERT INTO audit_logs (action, entity, "entityId", details)
             VALUES ('SUPPORT_CUSTODY_TRANSFER', 'custody', ${String(c.id)}, ${`انتهاء دعم ${tech?.name ?? technicianId}: ترحيل «${item.name}»×${c.qty} من مكتب الدعم (${supportOffice}) إلى مخزن مكتبه (${homeOffice}) — بقيت بذمّته`})`;
         });
+        } catch (e) {
+          transferFailed = true;
+          console.error(`[endSupport] تعذّر ترحيل «${item.name}»×${c.qty} للفني ${technicianId}:`, e instanceof Error ? e.message : e);
+        }
       }
-    } catch { /* أفضل جهد — لا يُعطَّل إنهاء الدعم بترحيل الذمم */ }
+    } catch (e) {
+      transferFailed = true;
+      console.error(`[endSupport] تعذّرت قراءة ذمم الفني ${technicianId}:`, e instanceof Error ? e.message : e);
+    }
   }
+  // فشلَ ترحيلٌ ما ⇒ **لا يُصفَّر الدعم**: تبقى الحالة كما هي فتُعاد المحاولة في المرّة القادمة
+  // (بصمة خروج / مهمّة ٠٠:١٥ / اكمال) بدل أن تضيع موادّ مكتب الدعم بذمّته بلا أثر.
+  if (transferFailed) return;
   await prisma.technician.update({ where: { id: technicianId }, data: { supportTowerId: null, supportKind: null, supportCardIds: null } });
 }
 

@@ -22,22 +22,32 @@ export async function GET(request: Request) {
     if (!t || t.agentId !== user!.agentId) return NextResponse.json({ materials: [] });
   }
 
+  // ===== أثناء الدعم المؤقّت: موادّ مكتب الدعم حصراً (قرار محمد 2026-08-09) =====
+  // «ذمّته من مكتبه الأصليّ لا تظهر له أبداً ويظهر له صفر ذمّة مواد» — فالبيع أثناء الدعم يكون
+  // من مخزن مكتب الدعم وحده، فيهبط نقصُ المخزن وإيرادُ الفاتورة على المكتب نفسه. والمخزن مستقلٌّ
+  // لكلّ مكتب (Item.towerId)، فالترشيح بمالك المادّة هو الترشيح الصحيح.
+  const supOffice = (await prisma.technician.findUnique({
+    where: { id: technicianId }, select: { supportTowerId: true },
+  }))?.supportTowerId ?? null;
+
   const rows = await prisma.custody.findMany({
     where: { technicianId, isDeleted: false, qty: { gt: 0 } },
     orderBy: { id: "asc" },
   });
   const items = await prisma.item.findMany({
-    where: { id: { in: rows.map((r) => r.itemId) } },
+    where: { id: { in: rows.map((r) => r.itemId) }, ...(supOffice != null ? { towerId: supOffice } : {}) },
     select: { id: true, name: true, priceSale: true },
   });
   const im = new Map(items.map((i) => [i.id, i]));
 
   return NextResponse.json({
-    materials: rows.map((r) => ({
+    // ما لا مادّةَ له في `im` = مادّةُ مكتبٍ آخر أثناء الدعم ⇒ **تُحجَب** (لا تظهر بصفر ولا باسمها)
+    materials: rows.filter((r) => im.has(r.itemId)).map((r) => ({
       itemId: r.itemId,
-      name: im.get(r.itemId)?.name ?? `مادة #${r.itemId}`,
-      priceSale: im.get(r.itemId)?.priceSale ?? 0,
+      name: im.get(r.itemId)!.name ?? `مادة #${r.itemId}`,
+      priceSale: im.get(r.itemId)!.priceSale ?? 0,
       available: r.qty,
     })),
+    supportOnly: supOffice != null, // للواجهة: هذه ذمّة مكتب الدعم وحدها
   });
 }

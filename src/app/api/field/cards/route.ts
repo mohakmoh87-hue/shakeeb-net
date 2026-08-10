@@ -162,6 +162,20 @@ export async function PATCH(request: Request) {
     if ("technicianId" in data && before.technicianId !== updated.technicianId) {
       events.push(`تغيير الفني من «${before.assignee ?? "بلا فني"}» إلى «${updated.assignee ?? "بلا فني"}»`);
     }
+    // تحويل بطاقة دعمٍ إلى فنيٍّ آخر يُخرجها من دعم الأوّل — فإن لم يبقَ له شيءٌ انتهى دعمه
+    // (قرار محمد: «أو في حالة تحويل بطاقة الدعم على فني آخر»). maybeEndCardSupport تُسقط
+    // ما لم يبقَ مُسنَداً إليه، فلا يُعلَّق الفنيّ ببطاقةٍ لم تبقَ عنده.
+    if ("technicianId" in data && before.technicianId != null && before.technicianId !== updated.technicianId) {
+      try {
+        const { maybeEndCardSupport } = await import("@/lib/field");
+        const r = await maybeEndCardSupport(before.technicianId);
+        if (r.ended) {
+          const { notify } = await import("@/lib/notify");
+          const t = await prisma.technician.findUnique({ where: { id: before.technicianId }, select: { name: true, agentId: true, towerId: true } });
+          void notify({ agentId: t?.agentId ?? null, towerId: t?.towerId ?? null, type: "checkout", title: "انتهاء الدعم", body: `${t?.name ?? "الفني"} حُوِّلت بطاقة دعمه لفنيّ آخر — عاد لمكتبه ورُحّلت ذممه`, refType: "technician", refId: before.technicianId });
+        }
+      } catch { /* لا يُفشل التعديل */ }
+    }
     if ("listId" in data && before.listId !== updated.listId) {
       const [fromL, toL] = await Promise.all([
         prisma.taskList.findUnique({ where: { id: before.listId }, select: { name: true } }),
@@ -229,10 +243,10 @@ export async function DELETE(request: Request) {
       let ids: number[] = [];
       try { ids = JSON.parse(t.supportCardIds ?? "[]") as number[]; } catch { continue; }
       if (!ids.includes(id)) continue;
-      const remaining = await prisma.taskCard.count({ where: { id: { in: ids }, done: false, isDeleted: false } });
-      if (remaining === 0) {
-        const { endSupport } = await import("@/lib/field");
-        await endSupport(t.id);
+      // نفس القاعدة الموحّدة: لا ينتهي الدعم إلّا بإنجاز **وتحصيل** ما بقي له (والمحذوف يُسقَط)
+      const { maybeEndCardSupport } = await import("@/lib/field");
+      const r = await maybeEndCardSupport(t.id);
+      if (r.ended) {
         const { notify } = await import("@/lib/notify");
         void notify({ agentId: t.agentId, towerId: t.towerId, type: "checkout", title: "انتهاء الدعم", body: `${t.name} انتهت بطاقات دعمه وعاد لمكتبه`, refType: "technician", refId: t.id });
       }

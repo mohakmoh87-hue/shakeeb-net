@@ -49,5 +49,20 @@ export async function POST(request: Request) {
   await appendCardHistory(cardId, me.name, card.technicianId == null
     ? `استلام البطاقة (كانت بلا فني) بواسطة «${me.name}»`
     : `تحويل البطاقة من «${card.assignee ?? "فني"}» إلى «${me.name}»`);
+
+  // ===== تحويلٌ بيد الفنيّين يُنهي دعم الأوّل كتحويل المكتب (اصطاده تدقيقٌ عدائيّ 2026-08-09) =====
+  // كان النداء في مسار المدير (cards PATCH) ونُسي هنا، فيبقى الفنيّ الأوّل على دعمٍ ببطاقةٍ لم تبقَ
+  // عنده: يُمنَع من كلّ بطاقات مكتبه ولا تُرحَّل ذمّته إلى أن يبصم خروجاً أو تأتي مهمّة ٠٠:١٥.
+  if (card.technicianId != null && card.technicianId !== me.id) {
+    try {
+      const { maybeEndCardSupport } = await import("@/lib/field");
+      const r = await maybeEndCardSupport(card.technicianId);
+      if (r.ended) {
+        const { notify } = await import("@/lib/notify");
+        const prev = await prisma.technician.findUnique({ where: { id: card.technicianId }, select: { name: true, agentId: true, towerId: true } });
+        void notify({ agentId: prev?.agentId ?? null, towerId: prev?.towerId ?? null, type: "checkout", title: "انتهاء الدعم", body: `${prev?.name ?? "الفني"} حُوِّلت بطاقة دعمه لفنيّ آخر — عاد لمكتبه ورُحّلت ذممه`, refType: "technician", refId: card.technicianId });
+      }
+    } catch { /* لا يُفشل التحويل */ }
+  }
   return NextResponse.json({ ok: true, card: updated });
 }

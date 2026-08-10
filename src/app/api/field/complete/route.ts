@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { appendCardHistory, endSupport, resolveCardActor } from "@/lib/field";
+import { appendCardHistory, maybeEndCardSupport, resolveCardActor } from "@/lib/field";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
@@ -159,13 +159,42 @@ export async function POST(request: Request) {
     if (e) return e;
   }
 
+  // ===== الدعم المؤقّت: العمل والبيع لمكتب الدعم حصراً (قرار محمد 2026-08-09) =====
+  // «فني الدعم لا يستطيع إنجاز أيّ بطاقة من مكتبه إلا بعد إنجاز **واكمال** بطاقات الدعم، أو في
+  // حالة تحويل بطاقة الدعم على فني آخر» — والمنع في الخادم لا في الواجهة (الفنيّ يُنادي مباشرةً).
+  // الفحص على **فنيّ البطاقة** لا على الفاعل: فحتى لو أنجزها المكتب بالنيابة عنه يبقى الحكم واحداً.
+  // المعيار **مكتب البطاقة** لا عضويّة قائمة الدعم (صحّحه تدقيقٌ عدائيّ): كان فحصُ القائمة
+  // يمنعه من بطاقةٍ عاجلةٍ **لمكتب الدعم نفسه** أُسنِدت إليه (وهو إسنادٌ مسموحٌ صريحاً)، ويفتح
+  // ثقباً معكوساً: بطاقةُ دعمٍ نُقلت إلى لوحة مكتبه تُنقص مخزن ب وتُقيَّد فاتورتها على مكتبه.
+  // الآن قاعدةٌ واحدة للنوعين: أثناء الدعم لا يُنجَز إلّا ما كان **على لوحة مكتب الدعم**.
+  const supOffice = tech?.supportTowerId ?? null;
+  if (supOffice != null && towerId !== supOffice) {
+    return NextResponse.json({
+      error: "أنت في دعم مكتب آخر — أنجِز بطاقاته وانتظر «اكمال»ها قبل بطاقات مكتبك (أو حوّل بطاقة الدعم لفنيّ آخر)",
+    }, { status: 403 });
+  }
+
   // ===== معالجة المواد (للصيانة فقط؛ التوصيل بلا مواد) =====
+  // مكاتب وكيل الفاعل — تُقرأ مرّةً واحدةً لعزل استعلام المواد (جلسة الفنيّ null فلا تصلح agentTowerIds)
+  const actorTowerIds = materials.length > 0 && !isDelivery
+    ? (await prisma.tower.findMany({ where: { agentId: actor.agentId ?? -1, isDeleted: false }, select: { id: true } })).map((t) => t.id)
+    : [];
   const soldInfo: { itemId: number; name: string; qty: number; price: number }[] = [];
   let materialsTotal = 0;
   if (!isDelivery && materials.length > 0) {
     for (const m of materials) {
-      const item = await prisma.item.findFirst({ where: { id: m.itemId, isDeleted: false } });
+      // عزل المستأجر (اصطاده تدقيقٌ عدائيّ): كان الاستعلام بلا أيّ عزل، فرسالةُ الخطأ تكشف
+      // **أسماء موادّ مخازن وكلاء آخرين** بتجريب أرقام. الآن: موادّ مكاتب وكيل الفاعل حصراً.
+      // ملاحظة: يُشتقّ الوكيل من actor.agentId لا من actor.session — فجلسة الفنيّ null.
+      const item = await prisma.item.findFirst({
+        where: { id: m.itemId, isDeleted: false, towerId: { in: actorTowerIds } },
+      });
       if (!item) return NextResponse.json({ error: `مادة #${m.itemId} غير موجودة` }, { status: 404 });
+      // أثناء الدعم: البيع من **مخزن مكتب الدعم حصراً** — فمخزن مكتبه لا يُمَسّ ولا يُعرَض له،
+      // فيهبط نقصُ المخزن وإيرادُ الفاتورة على المكتب نفسه (كان يبيع موادّ مكتبه على بطاقة الدعم).
+      if (supOffice != null && item.towerId !== supOffice) {
+        return NextResponse.json({ error: `«${item.name}» ليست من مخزن مكتب الدعم — لا تُباع أثناء الدعم` }, { status: 400 });
+      }
       const custody = await prisma.custody.findFirst({
         where: { technicianId: card.technicianId, itemId: m.itemId, isDeleted: false },
       });
@@ -341,18 +370,18 @@ export async function POST(request: Request) {
     }
   }
 
-  // ===== دعم ببطاقات محدّدة: إن أُكملت كل بطاقات الدعم ⇒ عودة تلقائية للفني لمكتبه =====
-  if (tech?.supportTowerId != null && tech.supportKind === "cards" && tech.supportCardIds) {
+  // ===== دعم ببطاقات محدّدة: **الإنجاز لا يُنهي الدعم ولا يُرحّل الذمّة** (قرار محمد 2026-08-09) =====
+  // الترحيل عند «اكمال» آخر بطاقةٍ متبقّية. فإن أنجز الكلّ ولم يُحصَّل بعد: إشعارٌ للمكتب أنّ
+  // بطاقاته جاهزةٌ للتحصيل — والفنيّ يبقى على دعمه (لا يُنجز بطاقات مكتبه) حتى يُضغَط اكمال.
+  if (tech?.supportTowerId != null && tech.supportKind === "cards") {
     try {
-      const ids = JSON.parse(tech.supportCardIds) as number[];
-      if (Array.isArray(ids) && ids.includes(cardId)) {
-        const remaining = await prisma.taskCard.count({ where: { id: { in: ids }, done: false, isDeleted: false } });
-        if (remaining === 0) {
-          await endSupport(tech.id);
-          await notify({ agentId: actor.agentId ?? null, towerId: tech.towerId, type: "checkout", title: "انتهاء الدعم", body: `${tech.name} أكمل بطاقات الدعم وعاد لمكتبه`, refType: "technician", refId: tech.id });
-        }
+      const r = await maybeEndCardSupport(tech.id); // لا تنتهي إلّا إن كانت كلّها محصَّلة
+      if (r.ended) {
+        await notify({ agentId: actor.agentId ?? null, towerId: tech.towerId, type: "checkout", title: "انتهاء الدعم", body: `${tech.name} أُكملت بطاقات دعمه وعاد لمكتبه (ورُحّلت ذممه)`, refType: "technician", refId: tech.id });
+      } else if (r.allDone) {
+        await notify({ agentId: actor.agentId ?? null, towerId: towerId, type: "cardDone", title: "بطاقات الدعم جاهزة للتحصيل", body: `${tech.name} أنجز كلّ بطاقات دعمه — اضغط «اكمال» ليعود لمكتبه وتُرحَّل ذممه`, refType: "technician", refId: tech.id });
       }
-    } catch { /* تجاهل إن كان supportCardIds غير صالح */ }
+    } catch { /* تجاهل — لا يُفشل الإنجاز */ }
   }
 
   // رسالة تأكيد استخدام المكافأة (بعد الإنجاز، أفضل جهد)
