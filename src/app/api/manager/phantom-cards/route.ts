@@ -34,6 +34,22 @@ export async function GET() {
   const ids = [...detectedAt.keys()];
   if (ids.length === 0) return NextResponse.json({ cards: [] });
 
+  // ===== كارتٌ رُبِط بمشتركه الحقيقيّ يسقط من القائمة (بلاغ محمد 2026-08-10) =====
+  // الربط يعني أنّ SAS **أثبت** أنّ السيريال مُستعمَلٌ فعلاً ⇒ الكارت ليس وهميّاً.
+  // كان يبقى معلّقاً لأنّ الربط لا يُغيّر useDate (والترشيح أدناه يعتمد useDate وحده)،
+  // فيرى المدير كارتاً حُلَّت مشكلته وكأنّه ما زال وهميّاً.
+  const links = await prisma.auditLog.findMany({
+    where: { action: "PHANTOM_CARD_LINK", createdAt: { gte: since } },
+    select: { entityId: true, createdAt: true },
+  });
+  const linkedAt = new Map<number, Date>();
+  for (const l of links) {
+    const id = Number(l.entityId);
+    if (!Number.isFinite(id)) continue;
+    const prev = linkedAt.get(id);
+    if (!prev || l.createdAt.getTime() > prev.getTime()) linkedAt.set(id, l.createdAt);
+  }
+
   // المعلَّق فقط: الكارت موجود، يتبع الوكيل، وما زال مستخدماً (لم يُرجَع/يُحذف)
   const cards = (await prisma.rechargeCard.findMany({
     where: { id: { in: ids }, agentId, useDate: { not: null } },
@@ -46,6 +62,9 @@ export async function GET() {
     //  استعملته الشهداء 18:09 لمشترك فُعِّل في SAS — فبقي الوسم بلا سبب.)
     .filter((c) => {
       const at = detectedAt.get(c.id);
+      // رُبِط بعد الاكتشاف ⇒ ثبت أنّه مُستعمَلٌ حقيقةً فلا يُعرَض
+      const lk = linkedAt.get(c.id);
+      if (lk && (!at || lk.getTime() >= at.getTime())) return false;
       return !at || !c.useDate || c.useDate.getTime() <= at.getTime();
     });
 
@@ -195,19 +214,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, affected: res.count });
   }
 
-  // حذف نهائي من المخزن — لا يمسّ الوصل ولا التقرير اليومي، **لكنه يُنقص «ديون الكارتات»**
-  // بقيمة شراء الكروت (الديون = مجموع أسعار كروت الوكيل). كان نص التدقيق يقول «بلا مساس
-  // بالمال» فيُضلّل: حُذف 266 كارتاً يوم 2026-07-27 ونزلت ملايين بلا أن يعرف أحد.
+  // ===== حذف نهائي من المخزن — **بلا أن تنقص «ديون الكارتات»** (طلب محمد 2026-08-10) =====
+  // الديون = مجموع أسعار كروت الوكيل + التعديلات اليدوية، فحذف الصفّ كان يُخرج سعره من
+  // المجموع فتنزل الديون وحدها (حُذف ٢٦٦ كارتاً يوم 2026-07-27 فنزلت ملايين بلا أن يعرف أحد،
+  // و٣ كروت يوم 2026-08-10 فنقص ١٠٣٥٠٠).
+  // والصحيح اقتصاديّاً: الكارت الوهميّ **مُشترى فعلاً** من الموزّع فالدين قائمٌ عليه، وكونه
+  // بلا تفعيل في SAS لا يُلغي ثمنه. فنُسجّل حركةً معاوِضة بقيمة المحذوف فيبقى الدين كما هو،
+  // وتظهر الحركة في سجلّ حسابات المدير موضَّحةً (قابلةٌ للحذف إن أراد المدير إنقاصه فعلاً).
   const delWhere = { id: { in: cardIds }, agentId };
   const agg = await prisma.rechargeCard.aggregate({ where: delWhere, _sum: { price: true } });
   const removedDebt = agg._sum.price ?? 0;
   const res = await prisma.rechargeCard.deleteMany({ where: delWhere });
+  let keptDebt = 0;
+  if (res.count > 0 && removedDebt > 0) {
+    await prisma.managerTx.create({
+      data: {
+        type: "card-debt-add",
+        amount: removedDebt,
+        notes: `تعويض حذف ${res.count} كارت وهمي — الدين لا ينقص بالحذف (الكروت مُشتراة من الموزّع)`,
+        userId: session?.userId,
+        agentId,
+        byUser: g.session.fullName ?? g.session.username,
+      },
+    });
+    keptDebt = removedDebt;
+  }
   await prisma.auditLog.create({
     data: {
       userId: session?.userId, action: "PHANTOM_CARD_DELETE", entity: "rechargeCard",
       entityId: cardIds.join(","),
-      details: `حذف ${res.count} كارت وهمي نهائياً من المخزن — نقصت ديون الكارتات ${removedDebt.toLocaleString("en-US")} د.ع (بلا مساس بالوصل ولا التقرير اليومي)`,
+      details: `حذف ${res.count} كارت وهمي نهائياً من المخزن — ديون الكارتات **لم تنقص** (حركة معاوِضة ${keptDebt.toLocaleString("en-US")} د.ع)، وبلا مساس بالوصل ولا التقرير اليومي`,
     },
   });
-  return NextResponse.json({ ok: true, affected: res.count, removedDebt });
+  return NextResponse.json({ ok: true, affected: res.count, removedDebt: 0, keptDebt });
 }
