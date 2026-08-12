@@ -76,17 +76,35 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!d.loginUrl || !d.username || !d.password) {
     return NextResponse.json({ error: "رابطُ الساس واسمُ المستخدم وكلمةُ المرور مطلوبةٌ للوحة" }, { status: 400 });
   }
-  const created = await prisma.sasPanel.create({
-    data: {
-      towerId: r.tower.id, agentId: r.tower.agentId,
-      label: d.label || `${r.tower.name ?? "المكتب"} ٢`,
-      sortOrder: d.sortOrder ?? 1, isPrimary: false,
-      loginUrl: d.loginUrl, username: d.username, password: d.password,
-      activationTemplate: d.activationTemplate ?? null,
-      odooEnabled: d.odooEnabled ?? "0", odooUrl: d.odooUrl || "https://odoo.supercell.iq",
-      odooUser: d.odooUser ?? null, odooPass: d.odooPass ?? null,
-    },
-    select: { id: true, label: true },
+  // 🔴 قبل إضافة اللوحة الثانية: **يُوسَم مشتركو المكتب الحاليّون بلوحته الأولى صراحةً.**
+  // فبلا وسمٍ يعملون بالسقوط إلى «أوّل لوحة» — وهو صحيحٌ اليوم، لكنّ تغييرَ الترتيب أو حذفَ
+  // الأولى يُسقطهم إلى اللوحة الجديدة ⇒ **تفعيلٌ على مُخدِّمٍ خطأ بلا أن يُنبَّه أحد**.
+  // فالوسمُ يجعل الصحّةَ بنيويّةً لا معتمدةً على ترتيب. (وهي عينُ الثغرة التي أُغلقت لصميم.)
+  const primary = await prisma.sasPanel.findFirst({
+    where: { towerId: r.tower.id, isDeleted: false },
+    orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+    select: { id: true },
+  });
+  const created = await prisma.$transaction(async (tx) => {
+    if (primary) {
+      const stamped = await tx.subscriber.updateMany({
+        where: { towerId: r.tower.id, sasPanelId: null },
+        data: { sasPanelId: primary.id },
+      });
+      if (stamped.count) console.log(`[panels] وُسم ${stamped.count} مشتركاً باللوحة الأولى #${primary.id} قبل إضافة الثانية`);
+    }
+    return tx.sasPanel.create({
+      data: {
+        towerId: r.tower.id, agentId: r.tower.agentId,
+        label: d.label || `${r.tower.name ?? "المكتب"} ٢`,
+        sortOrder: d.sortOrder ?? 1, isPrimary: false,
+        loginUrl: d.loginUrl, username: d.username, password: d.password,
+        activationTemplate: d.activationTemplate ?? null,
+        odooEnabled: d.odooEnabled ?? "0", odooUrl: d.odooUrl || "https://odoo.supercell.iq",
+        odooUser: d.odooUser ?? null, odooPass: d.odooPass ?? null,
+      },
+      select: { id: true, label: true },
+    });
   });
   await prisma.auditLog.create({
     data: {
