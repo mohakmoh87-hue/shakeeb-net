@@ -16,6 +16,8 @@ type Agent = {
   manager: Manager | null; expired: boolean;
   managerPhones: string[]; backupEmail: string | null;
   odooSlaSendAllowed: boolean; // إذن «رسائل أودو التلقائيّة» (الميزة ٢) — بلا هذا الإذن لا يراها الوكيل
+  // أ-٢٣ · حصّةُ «مكتبٌ بأكثر من لوحة ساس»: **كم مكتباً** يُسمح له. صفر = الوضعُ الحاليّ.
+  multiSasOffices?: number;
 };
 
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
@@ -324,6 +326,13 @@ export default function OwnerPage() {
                   <LimitInput label="مستخدمين" value={a.maxUsers} onSave={(v) => { if (v !== a.maxUsers) patch(a.id, { maxUsers: v }); }} />
                   <LimitInput label="فنيين" value={a.maxTechnicians} onSave={(v) => { if (v !== a.maxTechnicians) patch(a.id, { maxTechnicians: v }); }} />
                   <LimitInput label="مشتركين" value={a.maxSubscribers} onSave={(v) => { if (v !== a.maxSubscribers) patch(a.id, { maxSubscribers: v }); }} />
+                  {/* أ-٢٣ · حصّةُ «مكتبٌ بساسَين»: كم مكتباً من مكاتبه يُسمح له بأكثر من لوحة ساس.
+                      طلبُ محمد 2026-08-13: «إذا الوكيل له ٣ مكاتب فأختار كم مكتبٍ بساسَين وكم
+                      بساسٍ واحد، وأيضاً صفر ليبقى على الوضع الحالي». وصفرٌ = لا خيارَ يظهر له.
+                      وتخفيضُها تحت المستهلَك يُرفض برسالةٍ تُسمّي المكاتب — لا يُحذف شيءٌ صامتاً. */}
+                  <span title="كم مكتباً من مكاتب هذا الوكيل يُسمح له بأكثر من لوحة ساس/أودو. صفر = الوضع الحالي.">
+                    <LimitInput label="مكاتب بساسين" value={a.multiSasOffices ?? 0} onSave={(v) => { if (v !== (a.multiSasOffices ?? 0)) patch(a.id, { multiSasOffices: v }); }} />
+                  </span>
                   <button onClick={() => sendMailTo([a.id])} disabled={!a.backupEmail || mailBusy} title={a.backupEmail ? "إرسال رسالة (العنوان والنصّ من الأعلى) لهذا الوكيل" : "لا بريد لهذا الوكيل — اطلب منه ضبط بريده"} className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-40">✉️ إرسال</button>
                   <button onClick={() => patch(a.id, { addMonths: 1 })} className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">+شهر</button>
                   <button onClick={() => patch(a.id, { addMonths: 12 })} className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100">+سنة</button>

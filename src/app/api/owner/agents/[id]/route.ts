@@ -20,6 +20,9 @@ const patchSchema = z.object({
   clearExpiry: z.boolean().optional(), // إزالة تاريخ الانتهاء (بلا انتهاء)
   approve: z.boolean().optional(), // موافقة المالك على تفعيل الوكيل (التجريبي)
   odooSlaSendAllowed: z.boolean().optional(), // إذن «رسائل أودو التلقائيّة» لهذا الوكيل (الميزة ٢)
+  // أ-٢٣ · حصّةُ المالك: **كم مكتباً** من مكاتب هذا الوكيل يُسمح له بأكثر من لوحة ساس.
+  // صفر = الوضعُ الحاليّ (لا خيارَ يظهر للوكيل). طلبُ محمد 2026-08-13.
+  multiSasOffices: z.coerce.number().int().min(0).max(50).optional(),
   managerUsername: z.string().min(1).optional(), // تعديل يوزر مدير الوكيل
   managerPassword: z.string().min(4).optional(), // تعديل باسورد مدير الوكيل
 });
@@ -46,6 +49,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (d.maxSubscribers != null) data.maxSubscribers = d.maxSubscribers;
   if (d.approve) data.approved = true; // تفعيل الوكيل التجريبي
   if (d.odooSlaSendAllowed != null) data.odooSlaSendAllowed = d.odooSlaSendAllowed;
+  // ===== أ-٢٣ · الحصّة =====
+  // ⚠️ تخفيضُ الحصّة **لا يُطبَّق بحذف لوحاتٍ زائدة**، بخلاف نمط `odooSlaSendAllowed` أدناه:
+  // حذفُ لوحةٍ يُسقط مشتركيها إلى بيانات ساس المكتب ⇒ **تفعيلٌ على مُخدِّمٍ خطأ** بلا أن يُنبَّه
+  // أحد. فالتخفيضُ تحت المستهلَك **يُرفض برسالةٍ تُسمّي المكاتب**، والمالكُ يُقرّر ما يُزال.
+  if (d.multiSasOffices != null) {
+    const { multiSasQuota } = await import("@/lib/sasPanel");
+    const q = await multiSasQuota(agentId);
+    if (d.multiSasOffices < q.used) {
+      const names = await prisma.tower.findMany({
+        where: { id: { in: q.usedTowerIds } }, select: { name: true },
+      });
+      return NextResponse.json({
+        error: `لا يمكن التخفيض إلى ${d.multiSasOffices}: يستعمل الوكيلُ الحصّةَ في ${q.used} مكتباً (${names.map((n) => n.name ?? "—").join(" · ")}). أزِل اللوحةَ الثانية من مكتبٍ أوّلاً — والإزالةُ من صفحة المكاتب كي لا يُفعَّل مشتركوها على مُخدِّمٍ خطأ.`,
+      }, { status: 400 });
+    }
+    data.multiSasOffices = d.multiSasOffices;
+  }
   // سحبُ الإذن يقطع فعلاً لا اسماً: تُطفأ مفاتيح كلّ مكاتبه ويُفرَّغ طابور رسائل المشتركين —
   // وإلّا واصل العامل الإرسال ولم يبقَ للوكيل زرٌّ يُطفئه (اصطاده تدقيقٌ عدائيّ 2026-08-09).
   if (d.odooSlaSendAllowed === false) {
