@@ -1,11 +1,19 @@
-# بناء صورة النسخة التجريبية ودفعها إلى Docker Hub — يعمل تلقائياً عند كل دفعة لهذا الفرع
-# الأسرار المطلوبة في إعدادات المستودع: DOCKERHUB_USERNAME و DOCKERHUB_TOKEN
+# بناء صورة أزور ودفعها إلى Docker Hub ثمّ نشرُها — **مسارُ أزور القديم**.
+# الأسرار المطلوبة في إعدادات المستودع: DOCKERHUB_USERNAME و DOCKERHUB_TOKEN و AZURE_CREDENTIALS
+#
+# 🔴 نُزع مُشغِّلُ الدفع 2026-08-12 (بعد النقل إلى Railway). كان:
+#       push:
+#         branches: [claude/adoring-meninsky-e8db74]
+#    والخطر: أيُّ دفعةٍ لذلك الفرع تبني صورةً ثمّ تُنفّذ `az containerapp update` ⇒ **تنشر على
+#    أزور**، وأزور `DATABASE_URL` صار يُشير إلى **قاعدة Railway الحيّة**، **وتُحيا النسخةُ
+#    المُخمَدة** — فتصير نسختان حيّتان على بياناتٍ واحدة. وRailway ينشر من `main` بنفسه
+#    فلا حاجةَ إلى هذا المسار إطلاقاً.
+# ✅ بقي `workflow_dispatch` وحدَه: يُشغَّل **بيدٍ عند الطلب** لو أُريد إحياءُ أزور احتياطيّاً.
+#    ويسقط المسارُ كلُّه مع تسريح أزور (ومعه أسرارُ AZURE_CREDENTIALS و DOCKERHUB_*).
 name: build-trial-image
 
 on:
   workflow_dispatch:
-  push:
-    branches: [claude/adoring-meninsky-e8db74]
 
 permissions:
   contents: read
