@@ -30,6 +30,9 @@ export async function POST(
     ? (await prisma.taskCard.findUnique({ where: { id: maintCardId }, select: { technicianId: true } }))?.technicianId ?? null
     : null;
 
+  // ب-٠٠ · أثرُ الإرجاع على دَين المشترك — يُسجَّل صريحاً في التدقيق (انظر البند ٣ أدناه)
+  let debtBefore = 0, debtApplied = 0, clampedDebt = 0;
+
   try {
     await prisma.$transaction(async (tx) => {
      if (reverse) {
@@ -60,13 +63,26 @@ export async function POST(
       });
 
       // 3) إرجاع دين الفاتورة (المتبقّي) على المشترك
+      // ===== ب-٠٠ · الحرجة ٤: القصُّ يصير **ظاهراً** لا صامتاً =====
+      // `max(0, carry − remainder)` هو أحوطُ ما يمكن حسابُه — لكنّه يخفي حالتَين مختلفتَين تماماً:
+      //  (أ) دَينُ المشترك أكبرُ من متبقّي الفاتورة ⇒ يُطرح المتبقّي كلُّه وهذا صحيحٌ تماماً.
+      //  (ب) دَينُه **أصغر** ⇒ يُقصّ الطرحُ عند صفر. وهنا الغموض: إمّا أنّه سدّد جزءاً من هذه
+      //      الفاتورة (فالقصُّ صحيح)، أو أنّ دَينَه من فاتورةٍ **أخرى** فالقصُّ **يمحو دَينَها**.
+      // والبرنامجُ لا يتتبّع دَينَ كلّ فاتورةٍ منفصلاً فلا سبيلَ إلى التمييز حساباً — **ولا يجوز
+      // أن يمرّ فرقٌ في دَين مشتركٍ بلا أثرٍ مقروء**. فيُسجَّل المطروحُ فعلاً والمقصوصُ صريحاً،
+      // فتراه في سجلّ التدقيق وتُراجعه بنفسك. (والحلُّ الجذريّ تتبُّعُ الدَّين لكلّ فاتورة — بندٌ مستقلّ.)
       const remainder = Math.max(0, (invoice.totalMy ?? 0) - (invoice.waselHim ?? 0));
       if (remainder > 0 && invoice.subscriberId) {
         const sub = await tx.subscriber.findUnique({ where: { id: invoice.subscriberId } });
         if (sub) {
+          const before = sub.carry ?? 0;
+          const applied = Math.min(remainder, Math.max(0, before)); // المطروحُ فعلاً
+          clampedDebt = remainder - applied; // ما لم يُطرح لأنّ دَينَه لم يكفِ
+          debtBefore = before;
+          debtApplied = applied;
           await tx.subscriber.update({
             where: { id: sub.id },
-            data: { carry: Math.max(0, (sub.carry ?? 0) - remainder) },
+            data: { carry: before - applied },
           });
         }
       }
@@ -78,7 +94,13 @@ export async function POST(
       await tx.auditLog.create({
         data: {
           userId: session?.userId, action: "VOID_RECEIPT", entity: "invoice", entityId: String(invoiceId),
-          details: `حذف فاتورة مبيع ${reverse ? "عكسياً (إرجاع)" : "بلا تأثير مالي"} #${invoice.number} - إجمالي ${invoice.totalMy} - واصل ${invoice.waselHim}`,
+          details: `حذف فاتورة مبيع ${reverse ? "عكسياً (إرجاع)" : "بلا تأثير مالي"} #${invoice.number} - إجمالي ${invoice.totalMy} - واصل ${invoice.waselHim}`
+            // ب-٠٠ · أثرُ الدَّين مكتوبٌ بالأرقام: كان كذا ← طُرح كذا. والمقصوصُ يُذكَر بتحذيرٍ
+            // صريحٍ لأنّه الحالةُ التي قد يكون فيها الدَّينُ من فاتورةٍ أخرى — فتُراجعها بنفسك.
+            + (reverse && debtApplied > 0 ? ` - دَين المشترك ${debtBefore} ← طُرح ${debtApplied}` : "")
+            + (reverse && clampedDebt > 0
+              ? ` - ⚠️ لم يُطرح ${clampedDebt} لأنّ دَينه لم يكفِ (إمّا سدّده سابقاً أو دَينُه من فاتورةٍ أخرى — راجِعه)`
+              : ""),
         },
       });
     });
