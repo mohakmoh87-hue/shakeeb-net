@@ -101,7 +101,12 @@ export async function POST(request: Request) {
           data: {
             moneyIn: 0, moneyOut: paid, date: new Date(), serverDate: new Date(),
             userId: g.session.userId, towerId: t.towerId, sourceType: "salary",
-            notes: `راتب الفني ${t.name} (${from} → ${to}) — أيام ${result.daysPaid}`,
+            // أ-١٦ · يُذكَر مبلغُ التقريب في نصّ القيد نفسِه — طلبُ محمد: أن يظهر «كم تم تقريب
+            // المبلغ» **مع الوصولات** أيضاً لا في تفاصيل الراتب وحدها. فقيدُ الصرف هو ما يُرى
+            // في المصروفات والتقرير اليوميّ، ولا وصلَ مطبوعاً للراتب (أنواعُ الطباعة:
+            // invoice · notice · subscription). ويظهر **مرّةً واحدةً على المجموع** لا لكلّ يوم.
+            notes: `راتب الفني ${t.name} (${from} → ${to}) — أيام ${result.daysPaid}`
+              + (result.roundingAdd > 0 ? ` · صافي ${result.due} + تقريب ${result.roundingAdd} = ${paid}` : ""),
           },
         });
         moneyTxId = mt.id;
@@ -112,7 +117,12 @@ export async function POST(request: Request) {
             type: "salary", amount: paid, userId: g.session.userId,
             agentId: t.agentId ?? g.session.agentId ?? -1, // عزل المستأجر
             byUser: g.session.fullName ?? g.session.username, // اسم المدير الذي سدّد
-            notes: `راتب الفني ${t.name} (${from} → ${to}) — أيام ${result.daysPaid}`,
+            // أ-١٦ · يُذكَر مبلغُ التقريب في نصّ القيد نفسِه — طلبُ محمد: أن يظهر «كم تم تقريب
+            // المبلغ» **مع الوصولات** أيضاً لا في تفاصيل الراتب وحدها. فقيدُ الصرف هو ما يُرى
+            // في المصروفات والتقرير اليوميّ، ولا وصلَ مطبوعاً للراتب (أنواعُ الطباعة:
+            // invoice · notice · subscription). ويظهر **مرّةً واحدةً على المجموع** لا لكلّ يوم.
+            notes: `راتب الفني ${t.name} (${from} → ${to}) — أيام ${result.daysPaid}`
+              + (result.roundingAdd > 0 ? ` · صافي ${result.due} + تقريب ${result.roundingAdd} = ${paid}` : ""),
           },
         });
       }
