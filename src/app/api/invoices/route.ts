@@ -179,6 +179,8 @@ export async function POST(request: Request) {
       throw new Error(`MASTER_MISMATCH:${cashPart}:${masterPart}:${netTotal}`);
     }
     const remainder = master ? 0 : Math.max(0, netTotal - paid); // الدين على المشترك من هذه الفاتورة
+    // ب-٠٠ · الحرجة ٥: الزائدُ عن المستحقّ **ليس إيراداً لهذه الفاتورة** بل رصيدٌ للمشترك
+    const overpaid = master ? 0 : Math.max(0, paid - netTotal);
 
     const buyer = master ? (customerName?.trim() || "بيع ماستر") : direct ? (customerName?.trim() || "بيع مباشر") : (subscriber?.name ?? subscriber?.id ?? "");
     const inv = await tx.invoice.create({
@@ -188,7 +190,8 @@ export async function POST(request: Request) {
         itemsCount,
         totalMy: netTotal,
         // الماستر واصل بالكامل (نقدي + ماستر يغطيان المجموع — بلا دين)
-        waselHim: master ? netTotal : paid,
+        // ب-٠٠ · ومسقوفٌ بالمستحقّ: الزائدُ رصيدٌ للمشترك لا إيرادٌ لهذه الفاتورة
+        waselHim: master ? netTotal : Math.min(paid, netTotal),
         note: [
           (direct || master) && customerName?.trim() ? `الزبون: ${customerName.trim()}` : "",
           note ?? "",
@@ -238,6 +241,27 @@ export async function POST(request: Request) {
         where: { id: subscriber.id },
         data: { carry: (subscriber.carry ?? 0) + remainder },
       });
+    }
+    // ===== ب-٠٠ · الحرجة ٥: الواصلُ الزائدُ **رصيدٌ للمشترك لا إيرادُ الفاتورة** =====
+    // `waselHim` كان يأخذ `paid` بلا سقف: مَن دفع ٦٠٬٠٠٠ لفاتورةٍ بـ٥٠٬٠٠٠ تُقيَّد العشرةُ آلافٍ
+    // **إيراداً لهذه الفاتورة** ⇒ يتضخّم إيرادُ المبيع في التقرير، ويضيع حقُّ المشترك.
+    // الآن: `waselHim` مسقوفٌ بالمستحقّ (أعلاه)، والزائدُ **رصيدٌ له** (`carry` سالب) كما في
+    // الحرجة ١ — ومالُ الصندوق يبقى `paid` كاملاً فلا يختلف عمّا في الدرج.
+    if (overpaid > 0) {
+      if (subscriber) {
+        await tx.subscriber.update({
+          where: { id: subscriber.id },
+          data: { carry: { decrement: overpaid } },
+        });
+      }
+      // بيعٌ مباشرٌ بلا مشترك: لا أحدَ يُقيَّد له الرصيد ⇒ يُذكَر في التدقيق كي لا يمرّ صامتاً
+      await tx.auditLog.create({
+        data: {
+          userId: session?.userId, action: "INVOICE_OVERPAID", entity: "invoice", entityId: String(inv.id),
+          details: `فاتورة #${number}: دُفع ${paid} والمستحقّ ${netTotal} ⇒ زائدٌ ${overpaid}`
+            + (subscriber ? ` قُيّد رصيداً للمشترك ${subscriber.id}` : " — بيعٌ مباشرٌ بلا مشترك، فلم يُقيَّد لأحد. راجِعه"),
+        },
+      }).catch(() => {});
     }
 
     return inv;
