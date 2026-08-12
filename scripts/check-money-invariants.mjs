@@ -15,6 +15,26 @@ if (!url) { console.error("DATABASE_URL مفقود"); process.exit(1); }
 const c = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
 await c.connect();
 
+// ═════════════════ عزلُ الوكيل — شرطٌ لا يُتنازل عنه ═════════════════
+// تصحيحُ محمد 2026-08-12: «المكتبُ ليس تابعاً لي، فأنا وكيل شكيب وصفاءُ مسؤولٌ عن ماله».
+// وكان السكربتُ يعمل بحساب المشرف فيعرض مالَ **كلّ** الوكلاء ⇒ يُنذر محمداً بما لا يملكه ولا
+// يحقّ له إصلاحُه، ويُسرّب حالَ وكيلٍ إلى آخر. وذلك يخالف العزلَ الذي يفرضه البرنامجُ نفسه.
+//
+//   node scripts/check-money-invariants.mjs --agent=1     ← تفاصيلُ وكيلٍ واحدٍ فقط
+//   node scripts/check-money-invariants.mjs               ← ملخّصٌ بالأعداد بلا تفاصيل
+//
+// وبلا `--agent` لا تُطبع أيُّ تفصيلةٍ تخصّ وكيلاً بعينه — أعدادٌ فقط، ليعرف مالكُ النظام
+// أنّ هناك خللاً عند وكيلٍ فيُبلّغه هو، لا أن يقرأ دفاتره.
+const agentArg = process.argv.find((a) => a.startsWith("--agent="));
+const AGENT = agentArg ? Number(agentArg.split("=")[1]) : null;
+if (agentArg && !Number.isInteger(AGENT)) { console.error("--agent يحتاج رقماً"); process.exit(1); }
+const DETAILS = AGENT != null; // التفاصيلُ لا تُعرض إلّا لوكيلٍ محدَّد
+
+/** شرطُ عزلٍ على عمودِ مكتب */
+const byTower = (col) => (AGENT == null ? "TRUE" : `${col} IN (SELECT id FROM towers WHERE "agentId" = ${AGENT})`);
+/** شرطُ عزلٍ على عمودِ وكيلٍ مباشر */
+const byAgent = (col) => (AGENT == null ? "TRUE" : `${col} = ${AGENT}`);
+
 let failures = 0;
 const results = [];
 
@@ -28,11 +48,15 @@ async function invariant(name, why, sql, params = []) {
       console.log(`  ✅ ${name}`);
     } else {
       failures++;
-      results.push({ ok: false, name, why, rows: r.rows });
+      results.push({ ok: false, name, why, rows: DETAILS ? r.rows : undefined });
       console.log(`  ❌ ${name} — ${bad} خللاً`);
       console.log(`     السبب: ${why}`);
-      for (const row of r.rows.slice(0, 8)) console.log(`     · ${JSON.stringify(row)}`);
-      if (bad > 8) console.log(`     · … و${bad - 8} غيرها`);
+      if (!DETAILS) {
+        console.log("     🔒 التفاصيلُ محجوبةٌ — أعِد بـ`--agent=<رقم الوكيل>` لترى دفترَ وكيلٍ واحد");
+      } else {
+        for (const row of r.rows.slice(0, 8)) console.log(`     · ${JSON.stringify(row)}`);
+        if (bad > 8) console.log(`     · … و${bad - 8} غيرها`);
+      }
     }
   } catch (e) {
     failures++;
@@ -53,7 +77,7 @@ await invariant(
   "الكسرُ يُسقط تسديدَ الراتب، والسالبُ يعني اتجاهاً مكتوباً في الحقل الخطأ",
   `SELECT id, "towerId", "sourceType", "moneyIn", "moneyOut", date
      FROM money_tx
-    WHERE "isDeleted" = false
+    WHERE "isDeleted" = false AND ${byTower('"towerId"')}
       AND ( coalesce("moneyIn",0)  < 0 OR coalesce("moneyOut",0)  < 0
          OR coalesce("moneyIn",0)  <> floor(coalesce("moneyIn",0))
          OR coalesce("moneyOut",0) <> floor(coalesce("moneyOut",0)) )
@@ -70,7 +94,7 @@ await invariant(
 const stRows = await c.query(`
   SELECT id, "technicianName", "periodFrom", "periodTo", net, details,
          ("baseEarned" + overtime + bonuses - "attendanceDeductions" - "confirmedDeductions") AS parts
-    FROM salary_statements ORDER BY id DESC`);
+    FROM salary_statements WHERE ${byAgent('"agentId"')} ORDER BY id DESC`);
 const stBad = [];
 let stUnverifiable = 0;
 for (const r of stRows.rows) {
@@ -106,7 +130,7 @@ await invariant(
   "وصلٌ يزعم قبضاً لا يقابله مالٌ (أو حُذف القيدُ وبقي الوصل) ⇒ فرقٌ في المبلغ الكلّي",
   `SELECT e.id AS entry_id, e."towerId", e."moneyIn", e.date
      FROM subscription_entries e
-    WHERE e."isDeleted" = false AND coalesce(e."moneyIn",0) > 0
+    WHERE e."isDeleted" = false AND ${byTower('e."towerId"')} AND coalesce(e."moneyIn",0) > 0
       AND NOT EXISTS (
         SELECT 1 FROM money_tx m
          WHERE m."isDeleted" = false AND m."sourceId" = e.id
@@ -121,7 +145,7 @@ await invariant(
   "مالٌ في الصندوق بلا وصلٍ يفسّره — وهو الوجهُ المقابل لعلّة «الحذف بلا أثر ماليّ»",
   `SELECT m.id AS tx_id, m."towerId", m."moneyIn", m."sourceId", m.date
      FROM money_tx m
-    WHERE m."isDeleted" = false AND m."sourceType" = 'activation' AND m."sourceId" IS NOT NULL
+    WHERE m."isDeleted" = false AND ${byTower('m."towerId"')} AND m."sourceType" = 'activation' AND m."sourceId" IS NOT NULL
       AND NOT EXISTS (
         SELECT 1 FROM subscription_entries e
          WHERE e.id = m."sourceId" AND e."isDeleted" = false
@@ -141,7 +165,7 @@ await invariant(
    SELECT "technicianId", "technicianName", "periodFrom", "periodTo", count(*) AS n,
           string_agg(id::text, ',' ORDER BY id) AS ids
      FROM salary_statements s
-    WHERE s.id NOT IN (SELECT sid FROM cancelled)
+    WHERE s.id NOT IN (SELECT sid FROM cancelled) AND ${byAgent('s."agentId"')}
     GROUP BY 1,2,3,4 HAVING count(*) > 1 LIMIT 50`,
 );
 
