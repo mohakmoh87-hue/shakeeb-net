@@ -13,7 +13,10 @@ type OdooStatus = {
   odooSlaSendMin?: number | null; odooSlaNote?: string | null; odooSlaWaText?: string | null;
 };
 
-export default function OdooConfigButton({ officeId, officeName, onChange }: { officeId: number | null; officeName: string; onChange?: () => void }) {
+export default function OdooConfigButton({ officeId, officeName, panelId = null, onChange }: { officeId: number | null; officeName: string; panelId?: number | null; onChange?: () => void }) {
+  // أ-٢٣ · لوحةُ الساس التي يُدير هذا الزرُّ بوّابةَ أودو الخاصّة بها. فارغٌ = أعمدةُ المكتب
+  // (السلوكُ القديم بالضبط) — فمكتبُ اللوحةِ الواحدةِ لا يرى فرقاً.
+  const q = panelId != null ? `?panelId=${panelId}` : "";
   const [odoo, setOdoo] = useState<OdooStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ odooUser: "", odooPass: "", odooUrl: "" });
@@ -25,8 +28,8 @@ export default function OdooConfigButton({ officeId, officeName, onChange }: { o
 
   const load = useCallback(() => {
     if (officeId == null) { setOdoo(null); return; }
-    fetch(`/api/towers/${officeId}/odoo`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && !d.error) setOdoo(d); }).catch(() => {});
-  }, [officeId]);
+    fetch(`/api/towers/${officeId}/odoo${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && !d.error) setOdoo(d); }).catch(() => {});
+  }, [officeId, q]);
   useEffect(() => { load(); }, [load]);
 
   if (officeId == null) return null;
@@ -36,7 +39,7 @@ export default function OdooConfigButton({ officeId, officeName, onChange }: { o
     if (officeId == null) return;
     setBusy(true); setTest("جارٍ الاختبار…");
     try {
-      const r = await fetch(`/api/towers/${officeId}/odoo-test`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const r = await fetch(`/api/towers/${officeId}/odoo-test${q}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       const d = await r.json().catch(() => ({}));
       setTest(`${d.ok ? "✓" : "✗"} ${d.message ?? d.error ?? "تعذّر الاختبار"}`);
     } catch { setTest("✗ تعذّر الاتصال بالخادم"); }
@@ -46,7 +49,7 @@ export default function OdooConfigButton({ officeId, officeName, onChange }: { o
     if (officeId == null) return;
     setBusy(true); setTest("");
     try {
-      const r = await fetch(`/api/towers/${officeId}/odoo`, {
+      const r = await fetch(`/api/towers/${officeId}/odoo${q}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form, odooEnabled: enabledForm ? "1" : "0",

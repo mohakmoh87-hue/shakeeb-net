@@ -146,6 +146,23 @@ export async function GET(request: Request) {
   });
   const officeIds = new Set(offices.map((o) => o.id));
 
+  // أ-٢٣ · لوحاتُ الساس/أودو للمكتب — تُرسَل **فقط لمكتبٍ له أكثرُ من لوحة** فتُصيّر صفحةُ
+  // إدارة الفنيين زرَّ أودو لكلّ لوحةٍ جنباً إلى جنب (طلبُ محمد: «رابطان لأودو بدل واحد،
+  // الأوّلُ في مكانه الحاليّ والآخرُ بجانبه مباشرةً»). ومكتبُ اللوحةِ الواحدةِ يأتي بلا الحقل
+  // ⇒ زرٌّ واحدٌ كما هو اليوم بالضبط. ولا تُكشف بياناتُ دخولٍ: المعرّفُ والاسمُ فقط.
+  const panelRows = officeIds.size
+    ? await prisma.sasPanel.findMany({
+        where: { towerId: { in: [...officeIds] }, isDeleted: false },
+        select: { id: true, towerId: true, label: true },
+        orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const panelsByTower: Record<number, { id: number; label: string | null }[]> = {};
+  for (const p of panelRows) (panelsByTower[p.towerId] ??= []).push({ id: p.id, label: p.label });
+  const officePanels = Object.fromEntries(
+    Object.entries(panelsByTower).filter(([, list]) => list.length > 1),
+  );
+
   const reqOffice = new URL(request.url).searchParams.get("officeId");
   let officeId = resolveFieldOffice(session, reqOffice ? Number(reqOffice) : null);
   // لا يُسمح بمكتب خارج وكيل المستخدم
@@ -155,7 +172,7 @@ export async function GET(request: Request) {
 
   const data = await buildBoard(officeId, session.agentId);
   return NextResponse.json({
-    ...data, offices, officeId,
+    ...data, offices, officeId, officePanels,
     isManager: manager,
     canManage: can(session, "field.manage"),
     // الكتابة على المكتب المعروض: المدير لمكاتب وكيله، والموظف لمكتبه فقط

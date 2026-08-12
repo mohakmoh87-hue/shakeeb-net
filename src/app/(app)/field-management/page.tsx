@@ -134,6 +134,8 @@ export default function FieldManagementPage() {
   // الفنيون والمكاتب (لوحة مستقلّة لكل مكتب، والمدير يختار المكتب)
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [offices, setOffices] = useState<Office[]>([]);
+  // أ-٢٣ · لوحاتُ الساس لكلّ مكتب — يُرسلها الخادمُ **فقط لمكتبٍ له أكثرُ من لوحة**
+  const [officePanels, setOfficePanels] = useState<Record<number, { id: number; label: string | null }[]>>({});
   const [officeId, setOfficeId] = useState<number | null>(null);
   const [isManager, setIsManager] = useState(false);
   const [canManage, setCanManage] = useState(false);
@@ -193,7 +195,7 @@ export default function FieldManagementPage() {
         setSlaOn(!!d.odooSla?.alarm);
         setSlaAlarmMin(Number(d.odooSla?.alarmMin) || SLA_ALARM_MIN_DEFAULT);
         setSlaSendMin(Number(d.odooSla?.sendMin) || SLA_SEND_MIN_DEFAULT);
-        setTechnicians(d.technicians ?? []); setOffices(d.offices ?? []);
+        setTechnicians(d.technicians ?? []); setOffices(d.offices ?? []); setOfficePanels(d.officePanels ?? {});
         setCardTypes(d.cardTypes ?? []); setOfficeId(d.officeId ?? null);
         setIsManager(!!d.isManager); setCanManage(!!d.canManage); setRole(d.role ?? "");
         setCanOperate(d.canOperate !== false); setMyOfficeId(d.myOfficeId ?? null);
@@ -714,8 +716,22 @@ export default function FieldManagementPage() {
             )}
           </div>
           {/* ربط أودو — بجانب العنوان (للمدير والمستخدم، لا للفني)؛ شارة مفعّل أخضر/غير مفعّل أحمر */}
+          {/* أ-٢٣ · مكتبٌ بلوحتَي ساس ⇒ **زرُّ أودو لكلّ لوحةٍ جنباً إلى جنب** (طلبُ محمد:
+              «رابطان لأودو بدل واحد — الأوّلُ في مكانه الحاليّ والآخرُ بجانبه مباشرةً»)، ولكلٍّ
+              بوّابتُه وحسابُه وشارتُه. ومكتبُ اللوحةِ الواحدةِ ⇒ **زرٌّ واحدٌ كما هو اليوم بالضبط**
+              (فـ`officePanels` لا يأتي من الخادم إلّا لمكتبِ التعدّد). */}
           {!isTech && officeId != null && (
-            <OdooConfigButton officeId={officeId} officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"} onChange={() => load(officeId)} />
+            (officePanels[officeId]?.length ?? 0) > 1
+              ? officePanels[officeId].map((p, i) => (
+                  <OdooConfigButton
+                    key={p.id}
+                    officeId={officeId}
+                    panelId={p.id}
+                    officeName={`${offices.find((o) => o.id === officeId)?.name ?? "المكتب"} · ${p.label || `لوحة ${i + 1}`}`}
+                    onChange={() => load(officeId)}
+                  />
+                ))
+              : <OdooConfigButton officeId={officeId} officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"} onChange={() => load(officeId)} />
           )}
         </div>
         <div className="flex items-center gap-2">

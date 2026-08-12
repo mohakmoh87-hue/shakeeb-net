@@ -34,7 +34,7 @@ function minutesOrNull(v: string | number | null | undefined): number | null | u
   return n;
 }
 
-async function gate(params: Promise<{ id: string }>) {
+async function gate(params: Promise<{ id: string }>, request?: Request) {
   const session = await getSession();
   if (!session) return { error: NextResponse.json({ error: "غير مصرّح" }, { status: 401 }) };
   const { id } = await params;
@@ -42,12 +42,26 @@ async function gate(params: Promise<{ id: string }>) {
   if (!(await ownsTower(session, towerId))) {
     return { error: NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 }) };
   }
-  return { session, towerId };
+  // أ-٢٣ · `?panelId=` = بياناتُ أودو **لوحةٍ بعينها** من لوحات هذا المكتب. فارغٌ = أعمدةُ
+  // المكتب (السلوكُ القديم بالضبط).
+  // 🔒 واللوحةُ يجب أن تتبع هذا المكتب — وإلّا عُدِّلت لوحةُ مكتبٍ آخرَ بتمرير معرّف.
+  let panelId: number | null = null;
+  if (request) {
+    const raw = new URL(request.url).searchParams.get("panelId");
+    if (raw) {
+      const n = Number(raw);
+      if (!Number.isInteger(n)) return { error: NextResponse.json({ error: "لوحة غير صحيحة" }, { status: 400 }) };
+      const owned = await prisma.sasPanel.findFirst({ where: { id: n, towerId, isDeleted: false }, select: { id: true } });
+      if (!owned) return { error: NextResponse.json({ error: "اللوحة لا تتبع هذا المكتب" }, { status: 403 }) };
+      panelId = n;
+    }
+  }
+  return { session, towerId, panelId };
 }
 
 // الحالة (للشارة الديناميّة في «إدارة الفنيين») — بلا كشف السرّ
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const g = await gate(params);
+  const g = await gate(params, _request);
   if (g.error) return g.error;
   const t = await prisma.tower.findUnique({
     where: { id: g.towerId! },
@@ -62,13 +76,25 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const agentRow = g.session?.agentId != null
     ? await prisma.agent.findUnique({ where: { id: g.session.agentId }, select: { odooSlaSendAllowed: true } })
     : null;
+  // أ-٢٣ · بياناتُ الاعتماد من **اللوحة** إن طُلبت. وأمّا إعداداتُ مهلة سوبر سيل (SLA) فتبقى
+  // **على مستوى المكتب** — فهي سياسةُ تذاكرِ المكتب لا خصوصيّةَ حسابٍ في أودو، ومكتبٌ واحدٌ
+  // بلوحتَين له سياسةُ إنذارٍ واحدة.
+  const p = g.panelId != null
+    ? await prisma.sasPanel.findUnique({
+        where: { id: g.panelId },
+        select: { odooEnabled: true, odooUser: true, odooPass: true, odooUrl: true, odooLastOk: true, odooLastError: true, label: true },
+      })
+    : null;
+  const cred = p ?? t;
   return NextResponse.json({
-    odooEnabled: t.odooEnabled ?? "0",
-    hasOdooCreds: !!(t.odooUser && t.odooPass),
-    odooUser: t.odooUser ?? null, // اسم المستخدم فقط (مكتبه) — لا كلمة المرور أبداً
-    odooUrl: t.odooUrl ?? null,
-    odooLastOk: t.odooLastOk,
-    odooLastError: t.odooLastError,
+    panelId: g.panelId,
+    panelLabel: p?.label ?? null,
+    odooEnabled: cred.odooEnabled ?? "0",
+    hasOdooCreds: !!(cred.odooUser && cred.odooPass),
+    odooUser: cred.odooUser ?? null, // اسم المستخدم فقط (مكتبه) — لا كلمة المرور أبداً
+    odooUrl: cred.odooUrl ?? null,
+    odooLastOk: cred.odooLastOk,
+    odooLastError: cred.odooLastError,
     // الميزة ١ (إنذارات) — للكلّ
     odooSlaAlarm: t.odooSlaAlarm ?? "0",
     odooSlaAlarmMin: t.odooSlaAlarmMin,
@@ -89,7 +115,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
 // حفظ الإعداد. عند التفعيل بوجود بيانات ⇒ نجرّب دخولاً واحداً (سحابيّ، لمرّة) لضبط الشارة فوراً.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const g = await gate(params);
+  const g = await gate(params, request);
   if (g.error) return g.error;
   const towerId = g.towerId!;
 
@@ -141,26 +167,48 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // إطفاء الإنذارات — أو إطفاء ربط أودو نفسه — يُطفئ الإرسال قهراً (الإرسال مبنيٌّ على حسابها)
   if (alarmOn === false || parsed.data.odooEnabled === "0") { data.odooSlaAuto = "0"; data.odooSlaArmedAt = null; }
 
-  await prisma.tower.update({ where: { id: towerId }, data });
+  // ===== أ-٢٣ · فصلُ الكتابة: بياناتُ الاعتماد للوحة، وسياسةُ المهلة للمكتب =====
+  // فبياناتُ أودو خصوصيّةُ **حسابٍ** (لكلّ لوحةِ ساسٍ بوّابتُها)، وأمّا إعداداتُ المهلة (SLA)
+  // فسياسةُ **تذاكرِ المكتب** — ومكتبٌ واحدٌ بلوحتَين له سياسةُ إنذارٍ واحدة لا اثنتان.
+  const CRED = ["odooEnabled", "odooUser", "odooUrl", "odooPass"] as const;
+  const panelId = g.panelId;
+  const credData: Record<string, unknown> = {};
+  const towerData: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (panelId != null && (CRED as readonly string[]).includes(k)) credData[k] = v;
+    else towerData[k] = v;
+  }
+  if (Object.keys(towerData).length) await prisma.tower.update({ where: { id: towerId }, data: towerData });
+  if (panelId != null && Object.keys(credData).length) await prisma.sasPanel.update({ where: { id: panelId }, data: credData });
 
-  // تفعيلٌ ببيانات كاملة ⇒ دخولٌ تجريبيّ لمرّة لضبط الشارة (أخضر/أحمر) و uid فوراً
-  const after = await prisma.tower.findUnique({ where: { id: towerId }, select: { odooEnabled: true, odooUser: true, odooPass: true, odooUrl: true } });
+  // تفعيلٌ ببيانات كاملة ⇒ دخولٌ تجريبيّ لمرّة لضبط الشارة (أخضر/أحمر) و uid فوراً.
+  // 🔴 والاختبارُ يجري على **بيانات الجهة التي كُتبت** — ولولا ذلك اختبرنا حساباً واختمنا شارةَ آخر.
+  const sel = { odooEnabled: true, odooUser: true, odooPass: true, odooUrl: true } as const;
+  const after = panelId != null
+    ? await prisma.sasPanel.findUnique({ where: { id: panelId }, select: sel })
+    : await prisma.tower.findUnique({ where: { id: towerId }, select: sel });
   if (after?.odooEnabled === "1" && after.odooUser && after.odooPass) {
     const pass = decryptSecret(after.odooPass) ?? "";
+    const okData = (uid: number) => ({ odooLastOk: new Date(), odooUid: uid, odooLastError: null });
+    const errData = (m: string) => ({ odooLastOk: null, odooLastError: m.slice(0, 200) });
     try {
       const s = await odooLogin(after.odooUrl, after.odooUser, pass);
-      await prisma.tower.update({ where: { id: towerId }, data: { odooLastOk: new Date(), odooUid: s.uid, odooLastError: null } });
+      if (panelId != null) await prisma.sasPanel.update({ where: { id: panelId }, data: okData(s.uid) });
+      else await prisma.tower.update({ where: { id: towerId }, data: okData(s.uid) });
     } catch (e) {
-      await prisma.tower.update({ where: { id: towerId }, data: { odooLastOk: null, odooLastError: (e as Error).message?.slice(0, 200) ?? "فشل الدخول" } });
+      const m = (e as Error).message ?? "فشل الدخول";
+      if (panelId != null) await prisma.sasPanel.update({ where: { id: panelId }, data: errData(m) });
+      else await prisma.tower.update({ where: { id: towerId }, data: errData(m) });
     }
   }
 
-  const t = await prisma.tower.findUnique({
-    where: { id: towerId },
-    select: { odooEnabled: true, odooUser: true, odooPass: true, odooUrl: true, odooLastOk: true, odooLastError: true },
-  });
+  const selOut = { odooEnabled: true, odooUser: true, odooPass: true, odooUrl: true, odooLastOk: true, odooLastError: true } as const;
+  const t = panelId != null
+    ? await prisma.sasPanel.findUnique({ where: { id: panelId }, select: selOut })
+    : await prisma.tower.findUnique({ where: { id: towerId }, select: selOut });
   return NextResponse.json({
     ok: true,
+    panelId,
     odooEnabled: t?.odooEnabled ?? "0",
     hasOdooCreds: !!(t?.odooUser && t?.odooPass),
     odooLastOk: t?.odooLastOk ?? null,
