@@ -7,7 +7,8 @@ import { getSession } from "@/lib/auth";
 const schema = z.object({
   // card-debt-add / card-debt-sub: تعديل يدوي لديون الكارتات (زيادة/إنقاص)
   type: z.enum(["expense", "receipt", "card-payment", "master-receipt", "master-expense", "card-debt-add", "card-debt-sub"]),
-  amount: z.coerce.number().positive("المبلغ يجب أن يكون أكبر من صفر"),
+  // ب-٠٠ · جذرُ الكسر: لا كسورَ في الدينار العراقي (والكسرُ هنا يسري إلى «ما سحبه» فيُفسده)
+  amount: z.coerce.number().int("المبلغ يجب أن يكون عدداً صحيحاً — لا كسور في الدينار العراقي").positive("المبلغ يجب أن يكون أكبر من صفر"),
   notes: z.string().nullable().optional(),
   // المدير صاحب الحركة — غائب/null = من/إلى المبلغ الكلي مباشرة بلا مساس بأي مدير
   // (المصاريف العامة كالإيجار). قرار محمد 2026-08-03: مصدر مختار لكل حركة.

@@ -7,7 +7,10 @@ import { onlyMaster } from "@/lib/moneyKinds";
 
 const schema = z.object({
   type: z.enum(["in", "out"]), // قبض / صرف
-  amount: z.coerce.number().positive("المبلغ يجب أن يكون أكبر من صفر"),
+  // ب-٠٠ · جذرُ الكسر: العملةُ العراقية بلا كسور، وعمودا `moneyIn/moneyOut` من نوع `Float`
+  // فالكسرُ يُخزَّن فعلاً. وسلفةٌ بكسرٍ عشريٍّ واحدٍ كانت **تُسقط تسديدَ الراتب كلَّه** (يصير
+  // الصافي كسريّاً فلا يطابق أيَّ مبلغٍ صحيح). فالحرسُ عند المدخل، حيث المشكلةُ تبدأ.
+  amount: z.coerce.number().int("المبلغ يجب أن يكون عدداً صحيحاً — لا كسور في الدينار العراقي").positive("المبلغ يجب أن يكون أكبر من صفر"),
   accountId: z.coerce.number().nullable().optional(),
   notes: z.string().nullable().optional(),
   date: z.string().optional(),
@@ -88,19 +91,25 @@ export async function GET(request: Request) {
       }
     : await towerScope(g.session);
 
-  // فلتر مكتب واحد (تصل به بطاقة الشاشة الرئيسية) — مقيَّد بمكاتب وكيل المستخدم
+  // ===== أ-١٧ · فلتر مكتب واحد (تصل به بطاقة الشاشة الرئيسية) =====
+  // 🔴 كان **ميْتاً**: كان `...officeWhere` يُوضَع قبل `...scopeWhere` وكلاهما يحمل مفتاح
+  // `towerId`، فالسكبُ المتأخّرُ يطمس الأوّل ⇒ الترشيحُ لا يحدث أبداً (بلاغ محمد 2026-08-12).
+  // ⚠️ والإصلاحُ الساذج — نقلُ `officeWhere` بعد `scopeWhere` — يفتح **تسريباً بين مكاتب
+  // الوكيل نفسِه**: مستخدمٌ مقصورٌ على مكتبه (`session.towerId`) كان يطمس نطاقَه بمكتبٍ آخر
+  // من مكاتب وكيله فيرى مالاً ليس له. فالصواب **التقاطع لا الطمس**: يُضاف الاثنان إلى `AND`
+  // فيُضيّق المُرشِّحُ داخل النطاق ولا يخرج عنه أبداً (وطلبُ مكتبٍ خارج نطاقك يُخرج صفراً).
   const officeParam = Number(sp.get("officeId"));
   const agentTowersForFilter = await agentTowerIds(g.session);
-  const officeWhere = agentTowersForFilter.includes(officeParam) ? { towerId: officeParam } : {};
+  const officeRequested = agentTowersForFilter.includes(officeParam) ? officeParam : null;
 
   const where = {
     isDeleted: false,
-    ...officeWhere,
     AND: [
+      scopeWhere, // نطاقُ العزل — دائماً وأوّلاً، ولا يُطمَس
+      ...(officeRequested != null ? [{ towerId: officeRequested }] : []),
       ...(Object.keys(typeWhere).length ? [typeWhere] : []),
       ...(q ? [qWhere] : []),
     ],
-    ...scopeWhere,
     ...(accountId ? { accountId: Number(accountId) } : {}),
     ...(dateFilter.gte || dateFilter.lte ? { date: dateFilter } : {}),
   };

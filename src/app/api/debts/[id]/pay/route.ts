@@ -8,7 +8,8 @@ import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { getEffectiveTemplate } from "@/lib/smsTemplates";
 
 const schema = z.object({
-  amount: z.coerce.number().positive("المبلغ يجب أن يكون أكبر من صفر"),
+  // ب-٠٠ · جذرُ الكسر: لا كسورَ في الدينار العراقي، وتسديدٌ بكسرٍ يُخلّف ديناً كسريّاً لا يُسدَّد أبداً
+  amount: z.coerce.number().int("المبلغ يجب أن يكون عدداً صحيحاً — لا كسور في الدينار العراقي").positive("المبلغ يجب أن يكون أكبر من صفر"),
   master: z.boolean().optional(), // تسديد على حساب الماستر بدل الصندوق النقدي
 });
 
