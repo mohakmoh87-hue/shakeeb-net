@@ -8,9 +8,12 @@ type Day = { date: string; amount: number; note: string };
 type Statement = {
   daysPaid: number; cleanDays: number; dailyAmount: number; baseEarned: number; overtime: number; bonuses: number; credits: number;
   attendanceDeductions: number; confirmedDeductions: number; advances: number; net: number; periodFrom: string; periodTo: string; items: Item[]; dayDetails: Day[];
+  // أ-١٦ · التقريب إلى الألف: `net` يبقى مجموعَ الخانات، و`paid` هو ما يُدفع فعلاً.
+  // اختياريّةٌ كي لا تنكسر الواجهة إن استُدعيت من نسخةٍ أقدم من الـAPI.
+  paid?: number; roundingAdd?: number; roundedDue?: number; due?: number; carryIn?: number; carryOut?: number;
 };
 type Period = { from: string | null; to: string | null };
-type Archive = { id: number; periodFrom: string; periodTo: string; net: number; daysPaid: number; createdAt: string; paidByUser: string | null };
+type Archive = { id: number; periodFrom: string; periodTo: string; net: number; daysPaid: number; createdAt: string; paidByUser: string | null; paidAmount?: number | null; roundingAdd?: number | null };
 // تفاصيل كشف سابق: كانت محفوظة كاملةً في القاعدة ولا تصل الواجهة إطلاقاً
 // — فتقرأ «صافي كذا» بلا سبيل لمعرفة كيف تكوّن، ولا يمكن إلغاؤه (المرحلة ١٠).
 type StView = {
@@ -83,13 +86,26 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
           <div className="p-6 text-center text-sm text-slate-400">جاري الحساب…</div>
         ) : (
           <>
-            {/* الصافي */}
+            {/* الصافي — يُعرَض **المُقرَّب** لأنه ما يُدفع فعلاً (أ-١٦) */}
             <div className="mb-3 rounded-2xl bg-gradient-to-l from-mynet-blue to-mynet-blue-dark p-4 text-center text-white">
               <div className="text-xs opacity-80">صافي الراتب المستحقّ</div>
-              <div className="text-3xl font-extrabold">{num(st.net)} <span className="text-base font-normal">د.ع</span></div>
+              <div className="text-3xl font-extrabold">{num(st.roundedDue ?? st.net)} <span className="text-base font-normal">د.ع</span></div>
               <div className="mt-1 text-[11px] opacity-80" dir="ltr">{st.periodFrom} → {st.periodTo}</div>
               {!period?.from && <div className="mt-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">لم تُضبط فترة — يُحتسب كل السجل</div>}
             </div>
+
+            {/* أ-١٦ · سطرُ التقريب أعلى التفاصيل — طلبُ محمد حرفيّاً: «يُكتب أعلى سطر عند رؤية
+                التفاصيل: تم إضافة المبلغ هذا لتقريب الراتب». والعملة العراقية بلا دينارٍ ولا
+                مئة دينار، والتقريبُ على **المجموع النهائي وحده** لا على كل يوم، والمستفيدُ
+                دائماً الفنيّ: الموجب يُرفع والسالبُ يُنقَص دَينُه. */}
+            {(st.roundingAdd ?? 0) > 0 && (
+              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-[12px] font-bold text-amber-800">
+                تم إضافة <span className="text-sm">{num(st.roundingAdd ?? 0)}</span> د.ع لتقريب الراتب
+                <div className="mt-0.5 text-[10px] font-normal text-amber-700">
+                  الصافي المحسوب {num(st.due ?? st.net)} ← المدفوع {num(st.roundedDue ?? st.net)} (أقرب ألف لمصلحة الفنيّ)
+                </div>
+              </div>
+            )}
 
             {/* التفصيل — كل خانة قابلة للنقر لعرض تفاصيلها */}
             <p className="mb-1.5 text-center text-[11px] text-slate-400">اضغط أي خانة لعرض تفاصيلها 👇</p>
@@ -154,11 +170,11 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
             {isManager && (
               !choosing ? (
                 <button onClick={() => setChoosing(true)} disabled={busy} className="mb-4 w-full rounded-xl bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-700 disabled:opacity-60">
-                  {busy ? "..." : `💵 تسديد الراتب (${num(Math.max(0, st.net))} د.ع)`}
+                  {busy ? "..." : `💵 تسديد الراتب (${num(st.paid ?? Math.max(0, st.net))} د.ع)`}
                 </button>
               ) : (
                 <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                  <div className="mb-2 text-center text-sm font-bold text-slate-700">اختر طريقة التسديد ({num(Math.max(0, st.net))} د.ع)</div>
+                  <div className="mb-2 text-center text-sm font-bold text-slate-700">اختر طريقة التسديد ({num(st.paid ?? Math.max(0, st.net))} د.ع)</div>
                   <div className="grid gap-2">
                     <button onClick={() => settle("daily")} disabled={busy} className="rounded-xl bg-mynet-blue px-3 py-2.5 text-right font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
                       🧾 من التقرير اليومي
@@ -192,7 +208,11 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
                         }}>
                         <span className="text-slate-500" dir="ltr">{h.periodFrom} → {h.periodTo}</span>
                         {/* الرمز (＋) لفتح تفاصيل الشهر السابق كاملةً — طلب محمد 2026-08-09 */}
-                        <span className="font-bold text-slate-700">{num(h.net)} د.ع · {h.daysPaid} يوم <span className="text-mynet-blue">{openSt?.statement.id === h.id ? "－" : "＋"}</span></span>
+                        {/* أ-١٦ · يُعرَض **المدفوع فعلاً** لا الصافي الخام؛ والكشوف الأقدم من
+                            التقريب بلا `paidAmount` فتسقط إلى `net` كما كانت. */}
+                        <span className="font-bold text-slate-700">{num(h.paidAmount ?? h.net)} د.ع · {h.daysPaid} يوم
+                          {(h.roundingAdd ?? 0) > 0 && <span className="ms-1 text-[10px] font-normal text-amber-700">(+{num(h.roundingAdd ?? 0)} تقريب)</span>}
+                          <span className="text-mynet-blue"> {openSt?.statement.id === h.id ? "－" : "＋"}</span></span>
                       </div>
                       {openSt?.statement.id === h.id && (
                         <div className="mt-2 border-t border-slate-100 pt-2 text-[11px] text-slate-600">

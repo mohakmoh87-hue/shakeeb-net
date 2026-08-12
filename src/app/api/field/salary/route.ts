@@ -54,7 +54,8 @@ export async function GET(request: Request) {
   const techs = await prisma.technician.findMany({ where: { towerId: { in: towerFilter }, isDeleted: false }, select: { id: true, name: true, salary: true } });
   const list = await Promise.all(techs.map(async (t) => {
     const r = await statementFor(t.id, t.salary ?? 0, days.fromDay, days.toDay);
-    return { id: t.id, name: t.name, salary: t.salary ?? 0, net: r.net, daysPaid: r.daysPaid };
+    // أ-١٦ · يُرسَل المُقرَّبُ أيضاً كي لا تُظهر القائمةُ رقماً يخالف ما سيُدفَع في التفاصيل
+    return { id: t.id, name: t.name, salary: t.salary ?? 0, net: r.net, daysPaid: r.daysPaid, paid: r.paid, roundingAdd: r.roundingAdd };
   }));
   return NextResponse.json({ role: "manager", technicians: list, period: days.fromDay ? { from: null, to: null } : null });
 }
@@ -75,7 +76,12 @@ export async function POST(request: Request) {
 
   const days = await salaryDaysOfAgent(t.agentId ?? g.session.agentId);
   const result = await statementFor(t.id, t.salary ?? 0, days.fromDay, days.toDay);
-  const paid = Math.max(0, result.net);
+  // أ-١٦ · يُدفع **المُقرَّب** إلى الألف الأعلى لا الصافي الخام (طلب محمد 2026-08-12):
+  // «الدينار العراقي ليس فيه دينار ولا مئة دينار». والتقريب على **المجموع النهائي وحده**
+  // لا على كل يوم، و**المستفيد دائماً الفنيّ**: الموجب يُرفع (١٠٠٬٠٠١ ← ١٠١٬٠٠٠) والسالب
+  // يُنقَص دَينُه (−١٠٠٬٠٠١ ← −١٠٠٬٠٠٠) — ومعادلةُ `Math.ceil` واحدةٌ للاتجاهين.
+  // و`result.paid` = `max(0, roundedDue)`، و`result.roundingAdd` = ٠…٩٩٩ موجبٌ أبداً.
+  const paid = result.paid;
   // حدود الفترة المجمّدة الفعليّة (كما حُسبت للفني) — الحذف والتعليم ضمنها فقط؛ ما بعدها يُرحَّل
   const from = result.periodFrom, to = result.periodTo;
   const dateRange = { gte: new Date(`${from}T00:00:00+03:00`), lte: new Date(`${to}T23:59:59.999+03:00`) };
@@ -118,6 +124,10 @@ export async function POST(request: Request) {
         periodFrom: from, periodTo: to, daysPaid: result.daysPaid, dailyAmount: result.dailyAmount,
         baseEarned: result.baseEarned, overtime: result.overtime, bonuses: result.bonuses,
         attendanceDeductions: result.attendanceDeductions, confirmedDeductions: result.confirmedDeductions, net: result.net,
+        // أ-١٦ · يُحفظ المدفوعُ المُقرَّب وما أُضيف للتقريب — فالكشفُ هو مرجعُ الأشهر السابقة
+        // بعد حذف سجلّ الحضور، ولا بدّ أن يُفسّر بنفسه فرقَ `net` عن المدفوع.
+        paidAmount: paid, roundingAdd: result.roundingAdd,
+        carryIn: result.carryIn, carryOut: result.carryOut,
         // لقطةٌ تفصيليّةٌ كاملة (طلب محمد 2026-08-09): البنود + **تفصيل الأيام** + المشتقّات —
         // فسجلّ الحضور والخصومات يُحذف بعد قليل، وهذه اللقطة تصير المرجع الوحيد للأشهر السابقة.
         // v:2 لتمييزها عن الكشوف القديمة التي حفظت مصفوفة البنود وحدها.

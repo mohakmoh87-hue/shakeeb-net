@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import {
   computeSalary, roundSalaryToCash, SALARY_CASH_STEP, dailyAmountFor,
   type SalaryAttendance, type SalaryMoneyTx, type SalaryAdjustment, type SalaryLeave,
-} from "../src/lib/salary.ts";
+} from "../src/lib/salary";
 
 // ── مُعينات ─────────────────────────────────────────────────────────────────
 const day = (n: number) => `2026-08-${String(n).padStart(2, "0")}`;
