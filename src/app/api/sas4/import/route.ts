@@ -7,6 +7,8 @@ import { getSession } from "@/lib/auth";
 
 const schema = z.object({
   towerId: z.coerce.number(),
+  // أ-٢٣ · لوحةُ الساس التي جاء منها هؤلاء — فارغٌ = مكتبٌ بلوحةٍ واحدة (السلوكُ القديم)
+  panelId: z.coerce.number().int().optional().nullable(),
   users: z
     .array(
       z.object({
@@ -37,10 +39,17 @@ export async function POST(request: Request) {
     );
   }
   const { towerId, users } = parsed.data;
+  const panelId = parsed.data.panelId ?? null;
 
   // عزل المستأجر: لا يُستورَد إلا إلى مكتب يتبع وكيل المستخدم
   if (!(await ownsTower(g.session, towerId))) {
     return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
+  }
+  // 🔒 أ-٢٣ · واللوحةُ يجب أن تتبع **هذا المكتب** — وإلّا وُسم المستوردون بلوحةِ مكتبٍ آخرَ
+  // بتمرير معرّفٍ، فيُفعَّلون على مُخدِّمٍ ليس لهم. الفحصُ في المسار لا في الواجهة.
+  if (panelId != null) {
+    const owned = await prisma.sasPanel.findFirst({ where: { id: panelId, towerId, isDeleted: false }, select: { id: true } });
+    if (!owned) return NextResponse.json({ error: "لوحةُ الساس لا تتبع هذا المكتب" }, { status: 403 });
   }
 
   // المستوردون سابقاً (لتفادي التكرار)
@@ -74,6 +83,8 @@ export async function POST(request: Request) {
         netUser: u.username,
         sasId: u.sasId,
         towerId,
+        // يُوسَم بلوحته فيُفعَّل عليها لاحقاً — ولولا الوسم لسقط إلى اللوحة الأولى (مُخدِّمٌ خطأ)
+        sasPanelId: panelId,
         packageId: pkgId, // يُربط بفئة موجودة فقط
         dateTo,
         dateFrom: now,

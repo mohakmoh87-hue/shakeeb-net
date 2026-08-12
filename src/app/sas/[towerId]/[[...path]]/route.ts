@@ -7,13 +7,25 @@ import { proxyToSas } from "@/lib/sasProxy";
 const ASSET_RE = /\.(js|mjs|css|png|jpe?g|gif|svg|webp|woff2?|ttf|eot|ico|map|json|txt)$/i;
 
 // بروكسي أصول لوحة SAS4 (index.html + JS/CSS) عبر origin البرنامج
-const hostCache = new Map<number, string>();
-async function towerHost(towerId: number): Promise<string | null> {
-  if (hostCache.has(towerId)) return hostCache.get(towerId)!;
-  const tower = await prisma.tower.findUnique({ where: { id: towerId } });
-  if (!tower?.loginUrl) return null;
-  const host = tower.loginUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
-  hostCache.set(towerId, host);
+const hostCache = new Map<string, string>();
+// أ-٢٣ · مُخدِّمُ الساس: من **اللوحة** إن طُلبت (`?panel=`)، وإلّا أعمدةُ المكتب (السلوكُ القديم).
+// ومكتبٌ بلوحتَين على مُخدِّمَين مختلفَين يفتح لوحةَ كلٍّ منهما من هنا.
+async function sasHost(towerId: number, panelId: number | null): Promise<string | null> {
+  const key = `${towerId}:${panelId ?? 0}`;
+  if (hostCache.has(key)) return hostCache.get(key)!;
+  let loginUrl: string | null = null;
+  if (panelId != null) {
+    // 🔒 اللوحةُ يجب أن تتبع هذا المكتب — وإلّا فُتحت لوحةُ مكتبٍ آخرَ بتمرير معرّف
+    const p = await prisma.sasPanel.findFirst({ where: { id: panelId, towerId, isDeleted: false }, select: { loginUrl: true } });
+    loginUrl = p?.loginUrl ?? null;
+  }
+  if (!loginUrl) {
+    const tower = await prisma.tower.findUnique({ where: { id: towerId }, select: { loginUrl: true } });
+    loginUrl = tower?.loginUrl ?? null;
+  }
+  if (!loginUrl) return null;
+  const host = loginUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  hostCache.set(key, host);
   return host;
 }
 
@@ -27,8 +39,11 @@ async function handle(request: Request, towerId: string, path: string[] | undefi
   if (!ASSET_RE.test(last) && !(await ownsTower(session, Number(towerId)))) {
     return new Response("forbidden", { status: 403 });
   }
-  const host = await towerHost(Number(towerId));
+  const panelRaw = new URL(request.url).searchParams.get("panel");
+  const panelId = panelRaw && Number.isInteger(Number(panelRaw)) ? Number(panelRaw) : null;
+  const host = await sasHost(Number(towerId), panelId);
   if (!host) return new Response("tower not found", { status: 404 });
+  // البادئةُ تحمل اللوحةَ كي تبقى روابطُ الأصول النسبيّةُ داخل اللوحة نفسِها
   return proxyToSas(request, host, joined, `/sas/${towerId}/`);
 }
 

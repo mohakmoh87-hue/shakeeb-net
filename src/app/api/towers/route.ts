@@ -76,6 +76,29 @@ export async function GET() {
     if (!canManage) delete row.odooUser;
     return row;
   });
+
+  // ===== أ-٢٣ · لوحاتُ الساس لكلّ مكتب — للاستيراد وفتح لوحة الساس =====
+  // 🔑 **تُرسَل فقط لمكتبٍ له أكثرُ من لوحةٍ حيّة.** ومكتبُ اللوحةِ الواحدةِ (وهو حالُ كلّ
+  // الوكلاء إلّا مَن أذِن له المالك) لا يحمل `panels` إطلاقاً ⇒ **الواجهةُ تسلك مسارَها القديم
+  // حرفيّاً ولا يرى أحدٌ فرقاً.**
+  // ⚠️ ولا تُكشف بياناتُ دخولٍ هنا: المعرّفُ والاسمُ فقط.
+  const ids = towers.map((t) => t.id);
+  if (ids.length) {
+    const panels = await prisma.sasPanel.findMany({
+      where: { towerId: { in: ids }, isDeleted: false },
+      select: { id: true, towerId: true, label: true, isPrimary: true, sortOrder: true },
+      orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+    });
+    const byTower = new Map<number, { id: number; label: string | null }[]>();
+    for (const p of panels) {
+      if (!byTower.has(p.towerId)) byTower.set(p.towerId, []);
+      byTower.get(p.towerId)!.push({ id: p.id, label: p.label });
+    }
+    for (const row of safe) {
+      const list = byTower.get(row.id as number);
+      if (list && list.length > 1) row.panels = list;
+    }
+  }
   return NextResponse.json(safe);
 }
 

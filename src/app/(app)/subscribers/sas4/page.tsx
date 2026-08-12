@@ -7,7 +7,10 @@ import { prepareSasEmbed } from "@/lib/sasEmbed";
 import { localSasBase } from "@/lib/localSas";
 
 // hasSas: علامة آمنة من الخادم «المكتب مربوط بـSAS» — اليوزر لا يصل لغير مديري المكاتب
-type Tower = { id: number; name: string | null; loginUrl: string | null; username: string | null; hasSas?: boolean };
+type Tower = { id: number; name: string | null; loginUrl: string | null; username: string | null; hasSas?: boolean;
+  // أ-٢٣ · لا تُرسلها الواجهةُ الخلفيّة إلّا لمكتبٍ **له أكثرُ من لوحة** ⇒ بقيّةُ المكاتب
+  // تبقى بمسارها القديم حرفيّاً ولا يرى وكلاؤها فرقاً.
+  panels?: { id: number; label: string | null }[] };
 type SasUser = {
   sasId: number;
   username: string;
@@ -30,6 +33,7 @@ export default function Sas4ImportPage() {
   const router = useRouter();
   const [towers, setTowers] = useState<Tower[]>([]);
   const [towerId, setTowerId] = useState<number | "">("");
+  const [panelId, setPanelId] = useState<number | null>(null); // أ-٢٣ · اللوحةُ المختارة (فارغٌ = مكتبٌ بلوحةٍ واحدة)
   const [users, setUsers] = useState<SasUser[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -55,15 +59,15 @@ export default function Sas4ImportPage() {
     let active = true;
     // العامل المحلي: يحقن التوكن في اللوحة تلقائياً، فنحمّلها منه مباشرةً (سريع)
     if (localBase) {
-      setFrameUrl(`${localBase}/sas/${towerId}#/users/index`);
+      setFrameUrl(`${localBase}/sas/${towerId}${panelId != null ? `?panel=${panelId}` : ""}#/users/index`);
     } else {
       prepareSasEmbed(Number(towerId)).then((ok) => {
-        if (active) setFrameUrl(ok ? `/sas/${towerId}#/users/index` : directPanelUrl);
+        if (active) setFrameUrl(ok ? `/sas/${towerId}${panelId != null ? `?panel=${panelId}` : ""}#/users/index` : directPanelUrl);
       });
     }
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [towerId, localBase]);
+  }, [towerId, panelId, localBase]);
 
   // سحب المشتركين المعروضين حالياً في اللوحة
   async function showCurrent() {
@@ -95,7 +99,9 @@ export default function Sas4ImportPage() {
     try {
       const res = await fetch("/api/sas4/import", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ towerId, users: chosen }),
+        // أ-٢٣ · تُرسَل اللوحةُ فيُوسَم المستوردون بها ويُفعَّلون عليها. وفارغةٌ لمكتبِ اللوحةِ
+        // الواحدةِ ⇒ نفسُ الطلب القديم بالضبط.
+        body: JSON.stringify({ towerId, panelId, users: chosen }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "فشل الاستيراد"); return; }
@@ -121,9 +127,22 @@ export default function Sas4ImportPage() {
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="min-w-[220px]">
           <label className="mb-1 block text-sm font-medium text-slate-700">المكتب (حساب SAS4)</label>
-          <select value={towerId} onChange={(e) => setTowerId(Number(e.target.value) || "")} className="w-full rounded-lg border border-slate-300 px-3 py-2">
+          <select
+            value={panelId != null ? `${towerId}:${panelId}` : String(towerId)}
+            onChange={(e) => {
+              const [t, p] = e.target.value.split(":");
+              setTowerId(Number(t) || "");
+              setPanelId(p ? Number(p) : null);
+            }}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2">
             <option value="">— اختر المكتب —</option>
-            {towers.filter((t) => t.hasSas ?? (t.loginUrl && t.username)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {towers.filter((t) => t.hasSas ?? (t.loginUrl && t.username)).flatMap((t) => (
+              // مكتبٌ بلوحاتٍ متعدّدة ⇒ خيارٌ لكلّ لوحة باسم «المكتب · اللوحة»؛ وغيرُه خيارٌ واحدٌ
+              // باسم المكتب كما كان تماماً (نفسُ النصّ ونفسُ القيمة).
+              (t.panels && t.panels.length > 1)
+                ? t.panels.map((p) => <option key={`${t.id}:${p.id}`} value={`${t.id}:${p.id}`}>{t.name} · {p.label ?? "لوحة"}</option>)
+                : [<option key={t.id} value={String(t.id)}>{t.name}</option>]
+            ))}
           </select>
         </div>
         <button onClick={showCurrent} disabled={loading || !towerId} className="rounded-lg bg-mynet-blue px-5 py-2 font-semibold text-white shadow hover:bg-mynet-blue-dark disabled:opacity-60">
