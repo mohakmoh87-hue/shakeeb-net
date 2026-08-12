@@ -37,6 +37,9 @@ model Agent {
   // بلا هذا الإذن **لا يظهر المفتاح للوكيل إطلاقاً** ولا أثرَ للميزة. والإذن يجعلها **متاحةً لا
   // مفروضة**: المدير/المستخدم يشعلها لكلّ مكتبٍ ويطفئها كما يشاء (طلب محمد 2026-08-09).
   odooSlaSendAllowed Boolean @default(false)
+  // أ-٢٣ · إذنُ مالك النظام بلوحةِ ساسٍ ثانيةٍ لمكتب. بلا الإذن **لا يظهر الخيارُ للوكيل إطلاقاً**،
+  // والإذنُ **يُتيح لا يُشعِل** — تماماً كـ`odooSlaSendAllowed` أعلاه. يُضبَط من `owner/page.tsx`.
+  multiSasAllowed Boolean @default(false)
   // فترة احتساب رواتب الموظفين (عامة لكل مكاتب الوكيل) — يضبطها المدير ويغيّرها متى شاء
   salaryPeriodFrom String? // (مهجور) YYYY-MM-DD — بداية الفترة بالتاريخ الكامل (النموذج القديم)
   salaryPeriodTo   String? // (مهجور) YYYY-MM-DD — نهاية الفترة بالتاريخ الكامل (النموذج القديم)
@@ -272,6 +275,8 @@ model Subscriber {
   rewardBalance Int?  @default(0) // رصيد المكافأة المتراكم (يُخصم عند الاستخدام)
   rewardGrantCount Int @default(0) // عدد منح المكافأة المتراكمة منذ آخر سحب — عند 10 يتوقف المنح حتى سحبٍ (كلي/جزئي) يصفّره
   sasId        Int? // معرّف المشترك في SAS4 (للربط والتفعيل)
+  // أ-٢٣ · لوحةُ الساس التي يتبعها هذا المشترك — بها يُفعَّل. فارغٌ = أعمدةُ المكتب (السلوكُ القديم)
+  sasPanelId   Int?
   cardCode     String? // cardID
   // حقول شاشة المشترك التفصيلية
   subPassword  String? // باسورد الاشتراك
@@ -295,6 +300,7 @@ model Subscriber {
   @@index([name])
   @@index([isDeleted, towerId, name]) // يطابق فلترة+ترتيب قائمة المشتركين
   @@index([towerId, netUser]) // مطابقة اليوزر السريعة لسحب كود المكافأة
+  @@index([sasPanelId]) // أ-٢٣ · مشتركو لوحةٍ بعينها (المزامنة والتفعيل)
   @@map("subscribers")
 }
 
@@ -1254,4 +1260,44 @@ model MaintenanceLog {
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
   @@index([subscriberId])
   @@map("maintenance_logs")
+}
+
+// ===== أ-٢٣ · لوحاتُ الساس/أودو لمكتبٍ واحد (طلب محمد 2026-08-12) =====
+// المبدأ: **«المكتب» وحدةُ عمل، و«لوحةُ الساس» نقطةُ بنيةٍ تحتيّة** — والبرنامجُ كان يخلطهما
+// ١:١ في `Tower`، وحاجةُ محمد ١:عدّة (وكيلٌ يدير مكتبَين بواتساب واحدٍ وحاسبةٍ واحدةٍ ومستخدمٍ
+// واحد، ولكلّ مكتبٍ **رابطُ ساسٍ ورابطُ أودو مختلفان**).
+//
+// وقياسُ الطريقَين قبل القرار: دمجُ سلوكِ مكتبَين يمسّ `towerId` في **١٠١٠ موضعاً و٢٩٩ نداءَ عزل**؛
+// وهذا الجدولُ يمسّ **~١١٧ موضعاً وصفرَ نداءِ عزل** (فالمكتبُ يبقى واحداً). ⇒ اختار محمد هذا.
+//
+// والهجرةُ **إضافيّةٌ صافية**: تُولَّد لوحةٌ أولى لكلّ مكتبٍ من أعمدته الحاليّة، و`Subscriber.sasPanelId`
+// يبقى فارغاً للجميع ⇒ كلُّ قارئٍ يسقط إلى أعمدة المكتب كما اليوم، فلا يتغيّر سلوكُ أيّ وكيل.
+model SasPanel {
+  id                 Int      @id @default(autoincrement())
+  towerId            Int // المكتب المالك — والعزلُ يتبعه كما هو
+  agentId            Int? // نسخةٌ للعزل السريع (كما في بقيّة الجداول)
+  label              String? // «صميم١» / «صميم٢» — يُعرَض جنباً إلى جنب
+  sortOrder          Int      @default(0)
+  isPrimary          Boolean  @default(false) // اللوحةُ المولَّدة من أعمدة المكتب
+  isDeleted          Boolean  @default(false)
+  // ── الساس ──
+  loginUrl           String?
+  username           String?
+  password           String?
+  activationTemplate String?
+  // ── أودو (لكلّ لوحةٍ بوّابتُها — طلبُ محمد: «رابطان لأودو بدل واحد») ──
+  odooEnabled        String?  @default("0")
+  odooUrl            String?  @default("https://odoo.supercell.iq")
+  odooUser           String?
+  odooPass           String? // نصٌّ صريح كما في `Tower` (يقرؤها العاملُ المحليّ بلا مفتاح)
+  odooUid            Int?
+  odooLastOk         DateTime?
+  odooLastError      String?
+  odooLastTicketId   Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([towerId])
+  @@index([agentId])
+  @@map("sas_panels")
 }
