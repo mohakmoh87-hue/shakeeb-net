@@ -133,12 +133,48 @@ export async function odooOfTower(towerId: number): Promise<OdooCreds | null> {
   };
 }
 
+// ===== حصّةُ مالك النظام (طلب محمد 2026-08-13) =====
+// «إذا الوكيل له ٣ مكاتب فيمكنني اختيار **كم مكتبٍ** بساسَين وكم بساسٍ واحد، وأيضاً **صفر**
+// ليبقى على الوضع الحالي». ⇒ عددٌ لا مفتاح. والحصّةُ **تُتيح لا تُشعِل**.
+
+export type MultiSasQuota = {
+  quota: number; // كم مكتباً يُسمح له (٠ = الوضعُ الحاليّ، لا خيارَ يظهر)
+  used: number; // كم مكتباً استهلك الحصّةَ فعلاً (له أكثرُ من لوحةٍ حيّة)
+  remaining: number; // المتبقّي
+  usedTowerIds: number[]; // أيُّها — كي تُظهر الواجهةُ «هذا المكتبُ ضمن حصّتك»
+};
+
+/** حصّةُ الوكيل وما استُهلك منها — تُقرأ مرّةً وتُستعمل في الواجهة والمسار معاً. */
+export async function multiSasQuota(agentId: number | null | undefined): Promise<MultiSasQuota> {
+  if (agentId == null) return { quota: 0, used: 0, remaining: 0, usedTowerIds: [] };
+  const a = await prisma.agent.findUnique({ where: { id: agentId }, select: { multiSasOffices: true } });
+  const quota = Math.max(0, a?.multiSasOffices ?? 0);
+  // المكاتبُ المستهلِكة = مكاتبُ هذا الوكيل التي لها **أكثرُ من لوحةٍ حيّة**.
+  // (لا علاقةَ مُعلَنةً بين `SasPanel` و`Tower` في المخطّط — فالترشيحُ بمعرّفات المكاتب.)
+  const towerIds = (await prisma.tower.findMany({ where: { agentId, isDeleted: false }, select: { id: true } })).map((t) => t.id);
+  if (!towerIds.length) return { quota, used: 0, remaining: quota, usedTowerIds: [] };
+  const grouped = await prisma.sasPanel.groupBy({
+    by: ["towerId"],
+    where: { isDeleted: false, towerId: { in: towerIds } },
+    _count: { _all: true },
+  });
+  const usedTowerIds = grouped.filter((g) => g._count._all > 1).map((g) => g.towerId);
+  return { quota, used: usedTowerIds.length, remaining: Math.max(0, quota - usedTowerIds.length), usedTowerIds };
+}
+
 /**
- * هل يُسمح لهذا الوكيل بلوحةٍ ثانية؟ — **إذنُ مالك النظام** (`Agent.multiSasAllowed`).
- * وبلا الإذن لا يظهر الخيارُ إطلاقاً في الواجهة، ويُرفض الإنشاءُ في المسار (لا في الواجهة وحدها).
+ * هل يجوز إضافةُ لوحةٍ **جديدة** لهذا المكتب؟ يُستدعى في **المسار** لا في الواجهة وحدها.
+ * القاعدة: مكتبٌ استهلك الحصّةَ سلفاً (له أكثرُ من لوحة) يُسمح له بالمزيد؛ ومكتبٌ بلوحةٍ واحدةٍ
+ * لا يُسمح له إلّا إن بقي من الحصّة شيء. ⇒ الحصّةُ تحدّ **عددَ المكاتب** لا عددَ اللوحات.
  */
-export async function multiSasAllowed(agentId: number | null | undefined): Promise<boolean> {
-  if (agentId == null) return false;
-  const a = await prisma.agent.findUnique({ where: { id: agentId }, select: { multiSasAllowed: true } });
-  return a?.multiSasAllowed === true;
+export async function canAddPanel(towerId: number): Promise<{ ok: boolean; reason?: string; quota: MultiSasQuota }> {
+  const t = await prisma.tower.findUnique({ where: { id: towerId }, select: { agentId: true, isDeleted: true } });
+  if (!t || t.isDeleted) return { ok: false, reason: "المكتب غير موجود", quota: { quota: 0, used: 0, remaining: 0, usedTowerIds: [] } };
+  const q = await multiSasQuota(t.agentId);
+  if (q.quota === 0) return { ok: false, reason: "لم يسمح مالكُ النظام بأكثر من لوحةِ ساسٍ لأيّ مكتب", quota: q };
+  if (q.usedTowerIds.includes(towerId)) return { ok: true, quota: q }; // ضمن الحصّة أصلاً
+  if (q.remaining <= 0) {
+    return { ok: false, reason: `الحصّةُ مستهلكة: ${q.used} من ${q.quota} مكتباً. اطلب من المالك زيادتَها أو أزِل لوحةً من مكتبٍ آخر`, quota: q };
+  }
+  return { ok: true, quota: q };
 }

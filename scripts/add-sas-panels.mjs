@@ -68,7 +68,10 @@ const DDL = [
   `CREATE INDEX IF NOT EXISTS sas_panels_agent_idx ON sas_panels ("agentId")`,
   `ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS "sasPanelId" integer`,
   `CREATE INDEX IF NOT EXISTS subscribers_saspanel_idx ON subscribers ("sasPanelId")`,
-  `ALTER TABLE agents ADD COLUMN IF NOT EXISTS "multiSasAllowed" boolean NOT NULL DEFAULT false`,
+  // حصّةٌ بعددٍ لا مفتاحٌ ثنائيّ (طلب محمد 2026-08-13): كم مكتباً يُسمح له بأكثر من لوحة.
+  // صفر = الوضعُ الحاليّ. والعمودُ الثنائيُّ القديم أُضيف الليلةَ ولم يستعمله أحدٌ فيُسقَط.
+  `ALTER TABLE agents ADD COLUMN IF NOT EXISTS "multiSasOffices" integer NOT NULL DEFAULT 0`,
+  `ALTER TABLE agents DROP COLUMN IF EXISTS "multiSasAllowed"`,
 ];
 
 // 🔴 العزل: بلا GRANT وسياسةٍ تسقط حاسباتُ المكاتب صامتةً عند أوّل قراءةٍ للجدول الجديد.
