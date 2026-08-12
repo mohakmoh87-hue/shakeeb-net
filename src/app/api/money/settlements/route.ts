@@ -147,18 +147,30 @@ export async function POST(request: Request) {
   });
   if (!rows.length) return NextResponse.json({ error: "لا قيود غير مسدَّدة" }, { status: 400 });
 
+  // ===== ب-٠٠ · الحرجة ٢: مجموعٌ سالبٌ **يُقلَب صرفاً** لا يُرفض =====
+  // كان `total <= 0` يرفض التسديدَ بالكلّيّة. ومعنى السالب أنّ الرصيدَ **لصالح المكتب** (قبض
+  // أكثرَ من صرف) ⇒ المديرُ هو من يدفع. فالرفضُ كان يُبقي قيودَ ذلك الحساب **مفتوحةً أبداً**
+  // فلا تُسدَّد ولا تُغلَق، ويظلّ الحسابُ يُظهر ذمّةً لا سبيلَ إلى تصفيتها.
+  // ⇒ الآن: الصفرُ وحدَه يُرفض (لا شيءَ يُسدَّد)، والسالبُ يُسجَّل **صرفاً** بمقداره.
+  // ⚠️ ولا يُكتَب سالبٌ في عمودٍ أبداً: الصندوقُ عمودان (`moneyIn`/`moneyOut`) وكلٌّ موجبٌ —
+  //    وهذا جوهرُ ب-٠٠ («الصندوقُ لا يستطيع حمل سالبٍ أصلاً»).
   const total = rows.reduce((s, r) => s + (r.moneyOut ?? 0) - (r.moneyIn ?? 0), 0);
-  if (total <= 0) return NextResponse.json({ error: "المجموع المحدَّد صفر أو سالب — راجع القيود" }, { status: 400 });
+  if (total === 0) return NextResponse.json({ error: "المجموع المحدَّد صفر — لا شيءَ يُسدَّد" }, { status: 400 });
+  const settleIn = total > 0 ? total : 0; // ذمّةٌ على المكتب ⇒ يُقبَض منه
+  const settleOut = total < 0 ? -total : 0; // رصيدٌ لصالح المكتب ⇒ يُصرَف له
+  const absTotal = Math.abs(total);
 
   const now = new Date();
   const result = await prisma.$transaction(async (tx) => {
     const settle = await tx.moneyTx.create({
       data: {
-        moneyIn: total, moneyOut: 0,
+        moneyIn: settleIn, moneyOut: settleOut,
         accountId, towerId: acc.towerId,
         sourceType: SETTLE_TYPE,
         date: now, serverDate: now, userId: g.session?.userId ?? null,
-        notes: `تسديد مكتب «${acc.name ?? accountId}» — ${rows.length} قيد بمجموع ${total.toLocaleString("en-US")}`,
+        // النصُّ يُبيّن الاتّجاهَ صريحاً — فقيدُ صرفٍ في تسديدِ مكتبٍ يُربك من يقرؤه بلا تفسير
+        notes: `تسديد مكتب «${acc.name ?? accountId}» — ${rows.length} قيد بمجموع ${absTotal.toLocaleString("en-US")}`
+          + (settleOut > 0 ? " (رصيدٌ لصالح المكتب ⇒ صرفٌ له)" : ""),
       },
     });
     await tx.moneyTx.updateMany({ where: { id: { in: rows.map((r) => r.id) } }, data: { settledAt: now, settledTxId: settle.id } });
@@ -166,12 +178,13 @@ export async function POST(request: Request) {
       data: {
         userId: g.session?.userId ?? null, action: "OFFICE_SETTLE", entity: "account", entityId: String(accountId),
         details:
-          `تسديد مكتب «${acc.name ?? accountId}»: ${rows.length} قيد بمجموع ${total.toLocaleString("en-US")} د.ع` +
-          ` — قُيّد قبضاً بتاريخ اليوم فيدخل تقرير اليوم${actor ? ` — بواسطة ${actor}` : ""}`,
+          `تسديد مكتب «${acc.name ?? accountId}»: ${rows.length} قيد بمجموع ${absTotal.toLocaleString("en-US")} د.ع` +
+          // ب-٠٠ · الاتّجاهُ يُكتَب صريحاً: «قبضاً» كان مفروضاً في كلّ الحالات، والسالبُ صرفٌ
+          ` — قُيّد ${settleOut > 0 ? "صرفاً (رصيدٌ لصالح المكتب)" : "قبضاً"} بتاريخ اليوم فيدخل تقرير اليوم${actor ? ` — بواسطة ${actor}` : ""}`,
       },
     });
     return settle;
   });
 
-  return NextResponse.json({ ok: true, settled: rows.length, total, txId: result.id });
+  return NextResponse.json({ ok: true, settled: rows.length, total, amount: absTotal, direction: settleOut > 0 ? "out" : "in", txId: result.id });
 }
