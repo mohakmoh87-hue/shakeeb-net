@@ -940,7 +940,11 @@ export default function ManagerAccountsPage() {
                     ["مبيعات المخزن", "salesIn", null],
                     ["المقبوضات (اليوم)", "otherIn", null],
                     ["المصروفات (اليوم)", "expenses", null],
-                    ["🅜 حساب الماستر (مستقل)", "masterIn", null],
+                    // 🔴 ولا يُعرَض الماستر هنا (بلاغ محمد 2026-08-13): هذه النافذةُ تُفتح من
+                    // «مجموع المبالغ اليوميّة» وهو مجموعُ **الصندوق** الذي يستثني الماسترَ صريحاً
+                    // (`notMaster`)، والماسترُ حسابٌ **مستقلٌّ له بطاقتُه وسجلُّه**. فوضعُه داخلها
+                    // يخلط دفترَين — وهو عينُ اللبس الذي يُحذّر منه الكود: «مالُ الماستر يُحتسب
+                    // ماستراً في شاشةٍ ونقداً في أخرى». وسيظهر في **نافذة يوم الماستر** وحدها.
                   ] as [string, string, string | null][]).map(([label, k, ck]) => (
                     <div key={k} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-sm text-slate-600">{label}</div>
