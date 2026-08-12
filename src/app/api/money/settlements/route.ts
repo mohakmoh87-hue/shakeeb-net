@@ -108,13 +108,31 @@ export async function POST(request: Request) {
       await tx.moneyTx.updateMany({ where: { id: { in: owned.map((r) => r.id) } }, data: { settledAt: null, settledTxId: null } });
       reverted = owned.length;
       for (const [stx, amount] of byTx) {
-        const s = await tx.moneyTx.findUnique({ where: { id: stx }, select: { id: true, moneyIn: true, notes: true } });
+        const s = await tx.moneyTx.findUnique({ where: { id: stx }, select: { id: true, moneyIn: true, moneyOut: true, notes: true } });
         if (!s) continue;
-        const left = Math.max(0, (s.moneyIn ?? 0) - amount);
-        if (left <= 0) {
+
+        // ===== ب-٠٠ · الحرجة ٣: التسديدةُ تُلغى **إن خلت من القيود** لا إن بلغ رقمُها صفراً =====
+        // كان الشرطُ `left <= 0` مع `Math.max(0, …)`: فأيُّ طرحٍ يتجاوز الرقمَ يُصفّره **فتُحذف
+        // التسديدةُ كلُّها** وإن كانت ما زالت تحمل قيوداً أخرى مسدَّدةً بها ⇒ **يُمحى مالٌ يخصّ
+        // تلك القيود**. والصوابُ سؤالُ الواقع: هل بقي قيدٌ مربوطٌ بها؟
+        const stillAttached = await tx.moneyTx.count({ where: { settledTxId: stx, isDeleted: false } });
+
+        // 🔴 وعلّةٌ ثانيةٌ من إصلاح الحرجة ٢ نفسِه: التسديدةُ قد تكون **صرفاً** الآن، وهذا الكودُ
+        // كان يعرف `moneyIn` وحدَه ⇒ تسديدةُ الصرف كانت ستُحذف من أوّل إرجاع. فالحسابُ بالقيمة
+        // **الموقَّعة** ثمّ تُوزَّع على العمودَين، ولا سالبَ في عمودٍ أبداً.
+        const signed = (s.moneyIn ?? 0) - (s.moneyOut ?? 0); // موجب = قُبض · سالب = صُرف
+        const left = signed - amount;
+
+        if (stillAttached === 0) {
           await tx.moneyTx.update({ where: { id: s.id }, data: { isDeleted: true, notes: `${s.notes ?? ""} — أُلغي: أُرجعت كل قيوده إلى الدين` } });
         } else {
-          await tx.moneyTx.update({ where: { id: s.id }, data: { moneyIn: left, notes: `${s.notes ?? ""} — نقص ${amount.toLocaleString("en-US")} (إرجاع قيود)` } });
+          await tx.moneyTx.update({
+            where: { id: s.id },
+            data: {
+              moneyIn: Math.max(0, left), moneyOut: Math.max(0, -left),
+              notes: `${s.notes ?? ""} — نقص ${Math.abs(amount).toLocaleString("en-US")} (إرجاع قيود · بقي ${stillAttached} قيداً)`,
+            },
+          });
         }
       }
       await tx.auditLog.create({
