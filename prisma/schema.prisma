@@ -1303,3 +1303,21 @@ model SasPanel {
   @@index([agentId])
   @@map("sas_panels")
 }
+
+// ===== «سلامة المال» · تجاهُلُ حالةٍ فلا تُعاد أبداً (طلب محمد 2026-08-12) =====
+// «يمكنه ضغط تجاهل فلا تُعاد له مرّةً أخرى». والهويّةُ `rowKey` (مثل `tx:2541`) تجعل التجاهلَ
+// **لحالةٍ بعينها** لا لصنفٍ كامل — فلا يُخفي تجاهلُ خللٍ خللاً آخرَ من نوعه.
+// ولا حذفَ للبيانات ولا إصلاحَ صامت: التجاهلُ **إخفاءٌ من القائمة فقط**، والمالُ كما هو.
+model MoneyHealthIgnore {
+  id        Int      @id @default(autoincrement())
+  agentId   Int // عزل: لكلّ وكيلٍ تجاهلاتُه
+  checkKey  String // مفتاحُ الحقيقة (ثابتٌ في الكود)
+  rowKey    String // هويّةُ الحالة بعينها
+  note      String? // سببُ التجاهل إن كتبه
+  byUser    String?
+  createdAt DateTime @default(now())
+
+  @@unique([agentId, checkKey, rowKey])
+  @@index([agentId])
+  @@map("money_health_ignores")
+}
