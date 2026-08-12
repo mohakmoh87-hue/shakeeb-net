@@ -37,6 +37,19 @@ export async function GET(request: Request) {
     userId = await reportUserScope(session);
   }
 
-  const r = await computeDailyReport(scope, undefined, userId);
-  return NextResponse.json(r);
+  // ===== أ-٦ · تقريرُ **يومٍ سابق** (طلب محمد 2026-08-11) =====
+  // شكواه: «أُشاهد مبلغ يومٍ سابقٍ ولا أعرف من أين جاء». و`computeDailyReport` تقبل تاريخاً
+  // أصلاً، لكنّ هذا المسار كان يُمرّر `undefined` دائماً ⇒ اليومُ وحده. الآن يقبل `day`.
+  // 🔒 والعزلُ لا يُمَسّ: النطاقُ محسوبٌ أعلاه من `agentTowerIds`/مكتبِ الجلسة، و`userId` لا
+  //    يُقبل من العميل لغير المدير — فإضافةُ التاريخ لا تفتح بياناتِ أحد.
+  const dayParam = sp.get("day");
+  let day: Date | undefined;
+  if (dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam)) {
+    // منتصفُ نهارِ بغداد لذلك اليوم — تُشتقّ منه `iraqTodayRange` حدودَ اليوم بلا لبسٍ عند الحدود
+    const d = new Date(`${dayParam}T12:00:00+03:00`);
+    if (!isNaN(d.getTime())) day = d;
+  }
+
+  const r = await computeDailyReport(scope, day, userId);
+  return NextResponse.json({ ...r, day: dayParam && day ? dayParam : null });
 }

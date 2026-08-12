@@ -56,7 +56,13 @@ export async function GET(request: Request) {
     if (forced != null) userWhere = { userId: forced };
   }
 
-  const { start, end } = iraqTodayRange();
+  // أ-٦ · يومٌ سابق: بلا هذا كانت نافذةُ يومٍ ماضٍ تُفتح **بسطورِ اليوم** فيختلف التفصيلُ عن
+  // المجموع — وهو أسوأُ من ألّا يُفتح شيء. والعزلُ محسوبٌ أعلاه ولا يتأثّر بالتاريخ.
+  const dayParam = sp.get("day");
+  const dayDate = dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam)
+    ? new Date(`${dayParam}T12:00:00+03:00`)
+    : undefined;
+  const { start, end } = iraqTodayRange(dayDate && !isNaN(dayDate.getTime()) ? dayDate : undefined);
   const dateWhere = { date: { gte: start, lte: end } };
   const base = { isDeleted: false, ...dateWhere, ...towerWhere, ...userWhere };
 
