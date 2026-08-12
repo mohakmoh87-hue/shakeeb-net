@@ -81,6 +81,19 @@ export default function ManagerAccountsPage() {
   const [priceInputs, setPriceInputs] = useState<Record<number, string>>({});
   const [priceMsg, setPriceMsg] = useState("");
   const [dailyLog, setDailyLog] = useState<DailyLog | null>(null);
+  // أ-٦ · اليومُ المضغوط ⇒ نافذةُ تقريره الكاملة (طلب محمد 2026-08-11).
+  // والجلبُ في **مُعالِج الضغط** لا في `useEffect`: قاعدةُ `set-state-in-effect` محقّة، ولا
+  // حاجةَ إلى أثرٍ لحدثٍ يبدأ بنقرةٍ صريحة.
+  const [dayView, setDayView] = useState<{ day: string; towerId: number | null } | null>(null);
+  const [dayRep, setDayRep] = useState<Record<string, number> | null>(null);
+  async function openDay(day: string, towerId: number | null) {
+    setDayView({ day, towerId });
+    setDayRep(null);
+    const q = new URLSearchParams({ day, towerId: towerId == null ? "all" : String(towerId) });
+    const r = await fetch(`/api/reports/daily?${q}`).catch(() => null);
+    const d = r && r.ok ? await r.json().catch(() => null) : null;
+    setDayRep(d && !d.error ? d : null);
+  }
   const [showLog, setShowLog] = useState(false);
   const [logOffice, setLogOffice] = useState<number | "all">("all"); // المكتب المختار في السجل، all = الإجمالي
   const [masterDetail, setMasterDetail] = useState<MasterDetail | null>(null);
@@ -786,9 +799,14 @@ export default function ManagerAccountsPage() {
                       <tr><th className="p-3">التاريخ</th><th className="p-3">قبض</th><th className="p-3">صرف</th><th className="p-3">صافي اليوم</th><th className="p-3">حركات</th></tr>
                     </thead>
                     <tbody>
+                      {/* أ-٦ · صفُّ اليوم صار قابلاً للضغط ⇒ يفتح **تقرير ذلك اليوم كاملاً**
+                          (بلاغ محمد: «أُشاهد مبلغ يومٍ سابقٍ ولا أعرف من أين جاء»). والتقريرُ
+                          مقيَّدٌ **باليوم والمكتب المضغوطَين معاً** لا بكلّ مكاتب الوكيل. */}
                       {rows.map((d) => (
-                        <tr key={d.day} className="border-t border-slate-100">
-                          <td className="p-3 font-medium" dir="ltr">{d.day}</td>
+                        <tr key={d.day} onClick={() => void openDay(d.day, logOffice === "all" ? null : Number(logOffice))}
+                          title="اضغط لعرض تقرير هذا اليوم كاملاً"
+                          className="cursor-pointer border-t border-slate-100 hover:bg-indigo-50/60">
+                          <td className="p-3 font-medium" dir="ltr">{d.day} <span className="text-mynet-blue">↗</span></td>
                           <td className="p-3 text-emerald-600">{d.moneyIn ? fmt(d.moneyIn) : "—"}</td>
                           <td className="p-3 text-red-600">{d.moneyOut ? fmt(d.moneyOut) : "—"}</td>
                           <td className={`p-3 font-bold ${d.net >= 0 ? "text-slate-800" : "text-red-600"}`}>{fmt(d.net)}</td>
@@ -884,6 +902,57 @@ export default function ManagerAccountsPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== أ-٦ · نافذةُ تقرير يومٍ سابق (مواصفةُ محمد 2026-08-11) =====
+          «نافذةٌ منبثقةٌ كبيرة تعرض تقرير ذلك اليوم كاملاً بكلّ تفاصيله — لا المجموعَ وحده،
+          بكتابةٍ كبيرةٍ واضحة، فالغايةُ **المراجعة**. ولا تُغلَق بالضغط على أيّ فراغ» ⇒
+          لا `onClick` على الخلفيّة ولا إغلاقٌ بـEsc؛ الإغلاقُ بعلامة ✕ حصراً. */}
+      {dayView && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/60 sm:items-center sm:p-4">
+          <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-6 shadow-2xl sm:rounded-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-800">📅 تقرير يوم <span dir="ltr">{dayView.day}</span></h3>
+                <div className="mt-1 text-sm text-slate-500">
+                  {dayView.towerId == null ? "كلّ المكاتب" : (dailyLog?.offices.find((o) => o.id === dayView.towerId)?.name ?? "المكتب")}
+                </div>
+              </div>
+              <button onClick={() => setDayView(null)} aria-label="إغلاق"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-500 hover:bg-slate-200">✕</button>
+            </div>
+
+            {!dayRep ? (
+              <div className="p-10 text-center text-slate-400">جاري الحساب…</div>
+            ) : (
+              <>
+                <div className="mb-4 grid gap-3 sm:grid-cols-2">
+                  {([
+                    ["تفعيل اشتراكات", "activationIn", "activationCount"],
+                    ["فاتورة المبيع (المُحصَّل)", "invoiceIn", "invoiceCount"],
+                    ["مبيعات المخزن", "salesIn", null],
+                    ["المقبوضات (اليوم)", "otherIn", null],
+                    ["المصروفات (اليوم)", "expenses", null],
+                    ["🅜 حساب الماستر (مستقل)", "masterIn", null],
+                  ] as [string, string, string | null][]).map(([label, k, ck]) => (
+                    <div key={k} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-sm text-slate-600">{label}</div>
+                      <div className="text-2xl font-extrabold text-slate-800">{fmt(Number(dayRep[k] ?? 0))}</div>
+                      {ck && <div className="mt-0.5 text-xs text-slate-400">عددها {Number(dayRep[ck] ?? 0)}</div>}
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded-2xl bg-gradient-to-l from-mynet-blue to-mynet-blue-dark p-5 text-center text-white">
+                  <div className="text-sm opacity-85">صافي اليوم (بلا الماستر)</div>
+                  <div className="text-4xl font-extrabold">{fmt(Number(dayRep.total ?? 0))} <span className="text-lg font-normal">د.ع</span></div>
+                </div>
+                <p className="mt-3 text-center text-xs text-slate-400">
+                  الأرقامُ محسوبةٌ بنفس دالّة التقرير اليوميّ للشاشة الرئيسيّة — مقيَّدةً بهذا اليوم وهذا المكتب.
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}
