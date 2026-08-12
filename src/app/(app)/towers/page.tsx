@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import SasPanelsButton from "@/components/SasPanelsButton";
 import { usePermission } from "@/lib/usePermission";
 import { usePolling } from "@/lib/usePolling";
 
@@ -209,7 +210,13 @@ export default function OfficesPage() {
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="font-bold text-slate-800">{sel ? (editing ? "تعديل المكتب" : sel.name) : "مكتب جديد"}</h3>
-                  {sel && !editing && <button onClick={() => setEditing(true)} className="rounded-lg bg-slate-100 px-3 py-1 text-sm text-slate-600 hover:bg-slate-200">تعديل</button>}
+                  <div className="flex items-center gap-2">
+                    {/* أ-٢٣ · لوحاتُ الساس/أودو لهذا المكتب — والمكوّنُ **يُخفي نفسَه** إن لم يكن
+                        لهذا المكتبِ لوحتان ولا حصّةٌ متبقّية، فلا يراه وكيلٌ بلا إذنٍ ولا يظهر
+                        على مكاتبَ أُخرى بعد أن يستهلك مكتبٌ الحصّة (شرط محمد 2026-08-13). */}
+                    {sel && !editing && <SasPanelsButton towerId={sel.id} towerName={sel.name ?? "المكتب"} onChange={load} />}
+                    {sel && !editing && <button onClick={() => setEditing(true)} className="rounded-lg bg-slate-100 px-3 py-1 text-sm text-slate-600 hover:bg-slate-200">تعديل</button>}
+                  </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <F label="اسم المكتب"><I v={form.name} on={(v) => set("name", v)} ro={ro} /></F>
