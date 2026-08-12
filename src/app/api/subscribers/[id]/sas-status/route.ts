@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower } from "@/lib/guard";
 import { sasBaseUrl, sasLogin, sasFetchUserOnline } from "@/lib/sas4";
+import { credsOfSubscriber } from "@/lib/sasPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -28,16 +29,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
   if (!sub.netUser || sub.towerId == null) return NextResponse.json({ online: null }); // بلا يوزر ساس
 
-  // بيانات ساس مكتب المشترك (المكتب مُتحقَّق ملكيّته أعلاه)
-  const office = await prisma.tower.findUnique({
-    where: { id: sub.towerId },
-    select: { loginUrl: true, username: true, password: true },
-  });
-  if (!office?.loginUrl || !office.username || !office.password) {
-    return NextResponse.json({ online: null }); // إعداد ساس ناقص
-  }
-  const tid = sub.towerId;
-  const creds = { loginUrl: office.loginUrl, username: office.username, password: office.password };
+  // أ-٢٣ · بياناتُ ساس **لوحة المشترك** لا أعمدة المكتب (المكتبُ مُتحقَّقٌ ملكيّتُه أعلاه).
+  // والسقوطُ: لوحتُه ← لوحةُ المكتب الأولى ← أعمدةُ المكتب = السلوكُ القديم بالضبط.
+  const creds = await credsOfSubscriber(subId);
+  if (!creds) return NextResponse.json({ online: null }); // إعداد ساس ناقص
+  // 🔑 مفتاحُ ذاكرة الرمز يحمل **اللوحة**: لوحتان في مكتبٍ واحدٍ لكلٍّ رمزُها، وخلطُهما
+  // يُرسل رمزَ لوحةٍ إلى مُخدِّم الأخرى فيفشل الاستعلامُ صامتاً.
+  const tid = creds.panelId != null ? -creds.panelId : sub.towerId;
 
   const getToken = async (fresh: boolean) => {
     let tk = tokenCache.get(tid);

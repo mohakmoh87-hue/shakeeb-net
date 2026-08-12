@@ -9,6 +9,7 @@ import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { sasBaseUrl, sasLogin, sasFetchUser } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
+import { credsOfSubscriber } from "@/lib/sasPanel";
 import { grantReward, sendRewardGrantMessage } from "@/lib/rewards";
 import { getEffectiveTemplate } from "@/lib/smsTemplates";
 
@@ -94,13 +95,17 @@ export async function POST(
   const now = new Date();
   const start = subscriber.dateTo && subscriber.dateTo > now ? subscriber.dateTo : now;
 
-  // بيانات المكتب (نظام التفعيل + بيانات دخول SAS4)
+  // بيانات المكتب — إعداداتُه وحدَها (نظامُ التفعيل والمكافآت والقرض)
   const tower = subscriber.towerId
     ? await prisma.tower.findUnique({
         where: { id: subscriber.towerId },
-        select: { activationMode: true, loginUrl: true, username: true, password: true, rewardsEnabled: true, loanEnabled: true },
+        select: { activationMode: true, rewardsEnabled: true, loanEnabled: true },
       })
     : null;
+  // أ-٢٣ · بياناتُ دخول الساس تُؤخذ من **لوحة المشترك** لا من أعمدة المكتب — وهو نصُّ طلب محمد:
+  // «عند تفعيل مشتركٍ تابعٍ لمكتبٍ واحدٍ يكون دخولُ الساس على مكتبٍ واحد، وإن كان اثنين فيدخل
+  // على اثنَين». والسقوطُ إن لم تكن له لوحة: لوحةُ المكتب الأولى ثمّ أعمدتُه = السلوكُ القديم.
+  const sasCreds = await credsOfSubscriber(subscriberId);
 
   // نظام المكافآت: يُمنح كود عند التفعيل إن كان مفعّلاً للمكتب وللباقة مبلغ مكافأة.
   // انقطاع التجديد (اشتراك منتهٍ قبل هذا التفعيل) يُصفّر الرصيد المتراكم قبل المنح الجديد.
@@ -118,12 +123,12 @@ export async function POST(
   // وحفظناه، فيظهر المشترك سالباً بينما خدمته تعمل. الآن: نُعيد المحاولة ثلاثاً، ولا نقبل إلّا
   // تاريخاً **مستقبليّاً**؛ وإلّا نحسبه محليّاً (والمزامنة تُصالحه مع الساس لاحقاً).
   let sasStale = false;
-  if (cardId && subscriber.sasId && tower?.loginUrl && tower.username && tower.password && !(await sasHostBlocked(tower.loginUrl))) {
-    const base = sasBaseUrl(tower.loginUrl);
+  if (cardId && subscriber.sasId && sasCreds && !(await sasHostBlocked(sasCreds.loginUrl))) {
+    const base = sasBaseUrl(sasCreds.loginUrl);
     for (let attempt = 0; attempt < 3 && !dateTo; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 1500)); // مهلةٌ قصيرة ليُثبِت الساس الشحن
       try {
-        const token = await sasLogin(base, tower.username, tower.password);
+        const token = await sasLogin(base, sasCreds.username, sasCreds.password);
         const info = await sasFetchUser(base, token, subscriber.sasId);
         if (info?.expiration) {
           const d = new Date(info.expiration);
