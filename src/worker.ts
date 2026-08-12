@@ -126,6 +126,9 @@ const UI_ONLY = [
   /^public\//, /^docs\//, /^\.github\//, /^android\//, /^native\//,
   /^prisma\/rls\//,     // سكربتات SQL مرجعيّة (تُنفَّذ يدويّاً لا وقت التشغيل)
   /\.md$/,
+  // اختباراتٌ وسكربتاتُ صيانةٍ لا يستوردها العامل إطلاقاً — ولولا استثناؤها لكانت **كلُّ دفعةِ
+  // اختبارٍ تهدم جلسات واتساب في المكاتب السبعة** (وهو عينُ ما بُنيت هذه القائمة لتمنعه).
+  /^tests\//, /\.test\.ts$/, /^scripts\//,
 ];
 function needsWorkerRestart(files: string[]): boolean {
   const relevant = files.filter((f) => f && !UI_ONLY.some((re) => re.test(f)));

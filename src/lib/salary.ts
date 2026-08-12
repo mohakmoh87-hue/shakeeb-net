@@ -20,7 +20,37 @@ export type SalaryResult = {
   baseEarned: number; overtime: number; bonuses: number; credits: number;
   attendanceDeductions: number; confirmedDeductions: number; advances: number; net: number;
   periodFrom: string; periodTo: string; items: SalaryItem[]; dayDetails: SalaryDay[];
+  // ===== تقريبُ الألف والترحيل (بندا أ-١٦ و ب-٠٠ — قرارُ محمد 2026-08-11) =====
+  // `net` يبقى **مجموعَ الخانات السبع بالضبط** ولا يُمَسّ، فلا ينفرط اتّساقُ الكشف.
+  carryIn: number;     // رصيدُ الفترة السابقة (موقَّع: سالبٌ = دَينٌ على الفنيّ)
+  due: number;         // المستحقُّ الحقيقيّ = net + carryIn (يحمل السالب)
+  roundedDue: number;  // due مقرَّباً إلى الألف الأعلى
+  roundingAdd: number; // roundedDue − due ⇒ بين ٠ و٩٩٩ و**موجبٌ أبداً**
+  paid: number;        // ما يخرج من الصندوق فعلاً (صفرٌ إن كان المستحقُّ ≤ ٠)
+  carryOut: number;    // ما يُرحَّل للفترة القادمة (موقَّع)
 };
+
+// ===== قاعدةُ محمد: «تُقرَّب إلى أقرب ألفٍ زيادةً، والمستفيدُ دائماً هو الفنيّ» =====
+// «إذا له ١٠٠ ألفٍ ودينارٌ فالمجموع ١٠١ ألفاً. وإذا كان بالسالب فينقص منه هذا الدينار —
+//  يعني العمليّةُ بالعكس، فيكون المستفيدُ دائماً هو الفنيّ.»
+//
+// ولطيفةٌ رياضيّة: **مُعادلةٌ واحدةٌ تُنجز الاتجاهَين بلا أيّ فرعٍ شرطيّ** — لأنّ `ceil` يُحرّك
+// القيمةَ صعوداً على خطّ الأعداد، وذلك في مصلحة الفنيّ في الحالتَين: يزيد مستحقَّه إن كان
+// دائناً، ويُنقص دَينَه إن كان مديناً.
+//   +١٠٠٬٠٠١ ⇒ +١٠١٬٠٠٠ (زيادةُ ٩٩٩ لصالحه)   ·   −١٠٠٬٠٠١ ⇒ −١٠٠٬٠٠٠ (نقصُ دَينٍ ١)
+// ⚠️ ونتيجةٌ لازمةٌ يعلمها محمد: دَينٌ أقلُّ من ألفٍ يسقط كلّيّاً (−٥٠٠ ⇒ ٠) — وهو **مقتضى
+//    قراره**، وسقفُ الفرق ٩٩٩ ديناراً للكشف الواحد. فهو استثناءٌ مُعلَنٌ على قاعدة ب-٠٠.
+// ⚠️ ولا يُستعمل `Math.round`: فهو يُنقص أحياناً (١٠٠٬٠٠١ ⇒ ١٠٠٬٠٠٠) وذلك منهيٌّ عنه صريحاً،
+//    وهو **منحازٌ في السالب** في جافاسكربت (`Math.round(-1.5) === -1`).
+export const SALARY_CASH_STEP = 1000;
+
+/** يُقرّب مبلغَ الراتب إلى الألف الأعلى — للاتجاهَين، وفي مصلحة الفنيّ دائماً. */
+export function roundSalaryToCash(amount: number): number {
+  const r = Math.ceil(amount / SALARY_CASH_STEP) * SALARY_CASH_STEP;
+  // ⚠️ تسويةُ الصفر السالب: `Math.ceil(-0.5)` يُنتج `-0`، فيُطبع «-0» للمدير ويفشل في أيّ
+  // مقارنةٍ صارمة (`Object.is(-0, 0) === false`). اكتشفه التفكيرُ بالاختبار قبل أن يظهر للناس.
+  return r === 0 ? 0 : r;
+}
 
 // كشف راتب فنيٍّ من قاعدة البيانات (مشترك بين مسار الراتب وحسابات المدير)
 import { prisma } from "./prisma";
@@ -175,6 +205,8 @@ export function computeSalary(
   moneyTxs: SalaryMoneyTx[],
   todayKey: string,
   period?: SalaryPeriod | null,
+  // رصيدُ الفترة السابقة (`carryOut` لأحدث كشفٍ غير مُلغى). صفرٌ = سلوكُ ما قبل البند حرفيّاً.
+  carryIn: number = 0,
 ): SalaryResult {
   const items: SalaryItem[] = [];
   const dayDetails: SalaryDay[] = [];
@@ -237,10 +269,23 @@ export function computeSalary(
   const dailyAmount = daysPaid > 0 ? Math.round(baseEarned / daysPaid) : dailyAmountFor(salary, todayKey);
   items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   dayDetails.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  // ===== التقريبُ والترحيل — **نقطةٌ واحدةٌ في البرنامج كلّه** =====
+  // خمسةُ مستهلكين يقرأون من هنا (شاشةُ الفنيّ · كشفُ المدير · المصروف · الأرشفة · عمودُ
+  // «الراتب المتبقّي» في حسابات المدير) ⇒ أيُّ تقريبٍ يوضَع في مسار الصرف وحده **يشقّ الرقمَ
+  // على شاشتَين**. ولذلك يُحسَب هنا ويُقرأ هناك.
+  const due = net + carryIn;
+  const roundedDue = roundSalaryToCash(due);
+  const roundingAdd = roundedDue - due; // ٠…٩٩٩ · موجبٌ أبداً · هو نصُّ سطر «تمّ إضافة…»
+  // المستحقُّ موجبٌ ⇒ يُصرف مقرَّباً ولا يبقى شيء. سالبٌ (أو صفر) ⇒ لا صرف، ويُرحَّل بإشارته
+  // فيُخصم من راتبه القادم (خيارُ «تسديدٌ وتحويل المتبقّي»)، أو يُستوفى نقداً بخيار «تسديدٌ كلّيّ».
+  const paid = roundedDue > 0 ? roundedDue : 0;
+  const carryOut = roundedDue > 0 ? 0 : roundedDue;
+
   return {
     daysPaid, cleanDays, dailyAmount,
     baseEarned, overtime, bonuses, credits, attendanceDeductions: attDed, confirmedDeductions: confDed, advances, net,
     periodFrom: period?.from ?? (sorted[0] ?? todayKey), periodTo: period?.to ?? todayKey, items, dayDetails,
+    carryIn, due, roundedDue, roundingAdd, paid, carryOut,
   };
 }
 
