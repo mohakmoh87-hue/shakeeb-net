@@ -8,6 +8,7 @@ import { sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
+import { credsOfPanel, credsOfTower } from "@/lib/sasPanel";
 
 // ============================================================================
 // المزامنة اليومية مع SAS — نسخة مطوّرة على مرحلتين متتاليتين لكل مكتب:
@@ -88,9 +89,13 @@ const syncRunning = new Set<number>();
 // notify: يُرسل تقرير المدير فقط في المزامنة التلقائية (المجدول). المزامنة اليدوية (زر «مزامنة الآن») لا تُرسل شيئاً.
 export async function runOfficeSync(
   officeId: number,
-  opts: { forDay?: Date; notify?: boolean } = {},
+  // أ-٢٣ · `panelId` = مزامنةُ **لوحةِ ساسٍ** بعينها من لوحات المكتب. فارغٌ = السلوكُ القديم
+  // (أعمدةُ المكتب أو لوحتُه الأولى)، وحينها يُعالَج كلُّ مشتركي المكتب كما كان تماماً.
+  opts: { forDay?: Date; notify?: boolean; panelId?: number | null } = {},
 ): Promise<SyncResult> {
-  if (syncRunning.has(officeId)) {
+  // 🔒 المفتاحُ يحمل اللوحةَ: بلا ذلك تُحجب مزامنةُ اللوحة الثانية بقفل الأولى فتبقى بلا مزامنة
+  const lockKey = opts.panelId != null ? officeId * 1000000 + opts.panelId : officeId;
+  if (syncRunning.has(lockKey)) {
     return {
       office: "المكتب",
       phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0 },
@@ -99,23 +104,28 @@ export async function runOfficeSync(
       error: "مزامنة هذا المكتب قيد التنفيذ بالفعل — تم تجاهل الطلب المكرّر",
     };
   }
-  syncRunning.add(officeId);
+  syncRunning.add(lockKey);
   try {
     return await runOfficeSyncInner(officeId, opts);
   } finally {
-    syncRunning.delete(officeId);
+    syncRunning.delete(lockKey);
   }
 }
 
 async function runOfficeSyncInner(
   officeId: number,
-  { forDay, notify = true }: { forDay?: Date; notify?: boolean } = {},
+  { forDay, notify = true, panelId = null }: { forDay?: Date; notify?: boolean; panelId?: number | null } = {},
 ): Promise<SyncResult> {
   const office = await prisma.tower.findUnique({
     where: { id: officeId },
-    select: { id: true, name: true, agentId: true, loginUrl: true, username: true, password: true, managerPhone: true },
+    select: { id: true, name: true, agentId: true, managerPhone: true },
   });
-  const officeName = office?.name ?? "المكتب";
+  // أ-٢٣ · بياناتُ الساس من اللوحة المطلوبة، وإلّا لوحةُ المكتب الأولى، وإلّا أعمدتُه (السلوكُ القديم)
+  const creds = panelId != null ? await credsOfPanel(panelId) : await credsOfTower(officeId);
+  // 🔴 نطاقُ اللوحة: عند مزامنة لوحةٍ بعينها **لا تُلمَس صفوفُ لوحةٍ أخرى في المكتب نفسِه**؛
+  // وبلا لوحةٍ يبقى النطاقُ فارغاً فيُعالَج كلُّ مشتركي المكتب كما كان قبل البند حرفيّاً.
+  const panelWhere = panelId != null ? { sasPanelId: panelId } : {};
+  const officeName = (panelId != null && creds?.label ? `${office?.name ?? "المكتب"} · ${creds.label}` : office?.name) ?? "المكتب";
   const empty: SyncResult = {
     office: officeName,
     phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0 },
@@ -123,19 +133,19 @@ async function runOfficeSyncInner(
     events: [], reportSent: null,
   };
 
-  if (!office?.loginUrl || !office.username || !office.password) {
-    return { ...empty, error: "المكتب لا يحتوي بيانات SAS كاملة" };
+  if (!office || !creds) {
+    return { ...empty, error: panelId != null ? "لوحةُ الساس لا تحتوي بيانات كاملة" : "المكتب لا يحتوي بيانات SAS كاملة" };
   }
 
   // نطاق "الأمس" بتوقيت العراق
   const { start, end } = iraqYesterdayRange(forDay ?? new Date());
-  const officeUser = office.username.trim().toLowerCase();
+  const officeUser = creds.username.trim().toLowerCase();
 
   // تسجيل الدخول — عند فشل SAS: إشعار المدير وعدم الانهيار
   let base: string, token: string;
   try {
-    base = sasBaseUrl(office.loginUrl);
-    token = await sasLogin(base, office.username, office.password);
+    base = sasBaseUrl(creds.loginUrl);
+    token = await sasLogin(base, creds.username, creds.password);
   } catch (e) {
     if (notify) await notifySasDown(office.id, office.managerPhone, officeName);
     return { ...empty, error: (e as Error).message || "فشل الاتصال بـ SAS" };
@@ -174,7 +184,7 @@ async function runOfficeSyncInner(
 
   // مشتركو هذا المكتب (بالـ sasId) لمعرفة الجدد ومطابقة الكروت
   const officeSubs = await prisma.subscriber.findMany({
-    where: { towerId: officeId, isDeleted: false },
+    where: { towerId: officeId, ...panelWhere, isDeleted: false },
     select: { id: true, sasId: true, name: true, netUser: true },
   });
   const subBySasId = new Map(officeSubs.filter((s) => s.sasId).map((s) => [s.sasId as number, s]));
@@ -208,7 +218,7 @@ async function runOfficeSyncInner(
       try {
         const created = await prisma.subscriber.create({
           data: {
-            name: a.name, netUser: a.username, sasId: a.sasUserId, towerId: officeId,
+            name: a.name, netUser: a.username, sasId: a.sasUserId, towerId: officeId, sasPanelId: panelId,
             dateTo: newDate && !isNaN(newDate.getTime()) ? newDate : null, createdByUser: "sync",
           },
         });
@@ -218,7 +228,7 @@ async function runOfficeSyncInner(
       } catch {
         // القيد الفريد (towerId, sasId): مزامنة متزامنة أنشأته للتو — نجلبه بدل إنشاء نسخة مكرّرة
         const existing = await prisma.subscriber.findFirst({
-          where: { towerId: officeId, sasId: a.sasUserId, isDeleted: false },
+          where: { towerId: officeId, ...panelWhere, sasId: a.sasUserId, isDeleted: false },
           select: { id: true, sasId: true, name: true, netUser: true },
         });
         if (!existing) continue; // فشل إنشاء حقيقي — نتخطّى هذا التفعيل بلا إسقاط المزامنة
@@ -356,7 +366,7 @@ async function runOfficeSyncInner(
   try {
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
-      where: { towerId: officeId, isDeleted: false, sasId: { not: null } },
+      where: { towerId: officeId, ...panelWhere, isDeleted: false, sasId: { not: null } },
       select: { id: true, sasId: true, dateTo: true, packageId: true, address: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
@@ -365,7 +375,7 @@ async function runOfficeSyncInner(
     // الساس و30 يوماً وهميّة عندنا؛ ولو زامنّاهم لأفسدنا الأيام الوهميّة (طلب محمد 2026-08-06).
     // عزل صارم: مقيَّد بـ towerId = officeId (مكتب المزامنة وحده)، لا عموميّة.
     const loanRows = await prisma.loanDebt.findMany({
-      where: { towerId: officeId, isDeleted: false },
+      where: { towerId: officeId, ...panelWhere, isDeleted: false },
       select: { subscriberId: true },
     });
     const loanSubIds = new Set(loanRows.map((r) => r.subscriberId));
@@ -377,7 +387,7 @@ async function runOfficeSyncInner(
 
     const toImport: {
       name: string | null; netUser: string | null; phone: string | null; address: string | null;
-      sasId: number; towerId: number; dateTo: Date | null; createdByUser: string;
+      sasId: number; towerId: number; sasPanelId: number | null; dateTo: Date | null; createdByUser: string;
       packageId: number | null;
     }[] = [];
     const pkgFixQueue = new Map<number, number[]>(); // باقة ← مشتركون بلا باقة يُربطون بها
@@ -393,7 +403,7 @@ async function runOfficeSyncInner(
         //  العطل الذي رصده محمد 2026-08-02، وأوضح مثاله وكيل جاكوار.)
         toImport.push({
           name: u.name, netUser: u.username, phone: u.phone, address: u.address,
-          sasId: u.sasId, towerId: officeId, dateTo: validDate, createdByUser: "sync",
+          sasId: u.sasId, towerId: officeId, sasPanelId: panelId, dateTo: validDate, createdByUser: "sync",
           packageId: matcher.match(u.packageName), // موجودة فقط — لا تُنشأ باقات جديدة أبداً
         });
         continue;
@@ -583,15 +593,18 @@ export async function runFullCardAudit(
   };
   const office = await prisma.tower.findUnique({
     where: { id: officeId },
-    select: { id: true, name: true, agentId: true, loginUrl: true, username: true, password: true },
+    select: { id: true, name: true, agentId: true },
   });
-  if (!office?.loginUrl || !office.username || !office.password) {
+  // أ-٢٣ · لوحةُ المكتب الأولى، وإلّا أعمدتُه (السلوكُ القديم بالضبط). وجردُ الكروت يبقى على
+  // مستوى **المكتب** لا اللوحة — فالكارتُ في مخزن المكتب لا في لوحةِ ساس.
+  const creds = await credsOfTower(officeId);
+  if (!office || !creds) {
     return { ...empty, error: "المكتب لا يحتوي بيانات SAS كاملة" };
   }
   let base: string, token: string;
   try {
-    base = sasBaseUrl(office.loginUrl);
-    token = await sasLogin(base, office.username, office.password);
+    base = sasBaseUrl(creds.loginUrl);
+    token = await sasLogin(base, creds.username, creds.password);
   } catch (e) {
     return { ...empty, error: (e as Error).message || "فشل الاتصال بـ SAS" };
   }
