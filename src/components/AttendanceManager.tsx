@@ -36,7 +36,16 @@ export default function AttendanceManager({ technicianId, technicianName, onClos
     return true;
   }
 
-  const hasOpenToday = log.some((r) => r.dayKey === todayKey() && r.checkIn && !r.checkOut);
+  // ===== أ-٢٤ · أيّامٌ يمكن تصحيحُ خروجها (طلب محمد 2026-08-13) =====
+  // كان الشرطُ «بصمةُ **اليوم** وهي مفتوحة» — وكرونُ auto-checkout يُغلق المفتوحةَ عند ٠٠:١٥
+  // بغداد، فحين ينتبه المديرُ صباحاً يكون القسمُ قد اختفى. ولذلك ظنّ محمد أنّ الميزة أُزيلت.
+  // الآن: كلُّ يومٍ له دخولٌ وخروجُه **ناقصٌ أو من الكرون** قابلٌ للتصحيح؛ وبصمةُ الفنيّ
+  // الحقيقيّة (`tech`) لا تُمَسّ — فهي شهادتُه ولا يجوز للمدير طمسُها.
+  const fixable = log.filter((r) => r.dayKey && r.checkIn && (!r.checkOut || r.checkoutBy === "auto"));
+  const [fixDay, setFixDay] = useState<string>("");
+  const [fixAt, setFixAt] = useState<string>("");
+  const day = fixDay || fixable[0]?.dayKey || "";
+  const dayRec = fixable.find((r) => r.dayKey === day);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 sm:items-center sm:p-3" onClick={onClose}>
@@ -84,19 +93,48 @@ export default function AttendanceManager({ technicianId, technicianName, onClos
           )}
         </div>
 
-        {/* خروج يدوي لليوم (إن نسي الفني) */}
-        {hasOpenToday && (
+        {/* أ-٢٤ · بصمةُ خروجٍ يدويّة — لأيّ يومٍ ناقصٍ أو أغلقه الكرون، وبثلاثة خيارات */}
+        {fixable.length > 0 && (
           <>
-            <div className="mb-1 text-sm font-bold text-slate-700">خروج يدوي لليوم (نسيان الفني)</div>
-            <div className="mb-4 grid grid-cols-2 gap-2">
-              <button onClick={async () => { if (await req("PATCH", { technicianId, mode: "now" })) setMsg({ t: "ok", m: "سُجّل الخروج الآن ✓" }); }} disabled={busy}
-                className="flex flex-col items-center gap-1 rounded-xl bg-amber-50 py-3 font-bold text-amber-700 active:scale-95 disabled:opacity-60">
-                <span className="text-xl leading-none">🕐</span><span className="text-xs">خروج الآن</span>
-              </button>
-              <button onClick={async () => { if (await req("PATCH", { technicianId, mode: "scheduled" })) setMsg({ t: "ok", m: "سُجّل الخروج بوقته ✓" }); }} disabled={busy}
-                className="flex flex-col items-center gap-1 rounded-xl bg-amber-50 py-3 font-bold text-amber-700 active:scale-95 disabled:opacity-60">
-                <span className="text-xl leading-none">⏰</span><span className="text-xs">خروج بوقته</span>
-              </button>
+            <div className="mb-1 text-sm font-bold text-slate-700">بصمة خروج يدوية (نسيان الفني)</div>
+            <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50/70 p-2.5">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-800">اليوم:</span>
+                <select value={day} onChange={(e) => { setFixDay(e.target.value); setFixAt(""); }}
+                  className="min-w-0 flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-sm">
+                  {fixable.map((r) => (
+                    <option key={r.id} value={r.dayKey ?? ""}>
+                      {r.dayKey}{r.dayKey === todayKey() ? " (اليوم)" : ""} · دخول {fmtTime(r.checkIn)}
+                      {r.checkoutBy === "auto" ? ` · خروجٌ تلقائيّ ${fmtTime(r.checkOut)}` : " · بلا خروج"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {dayRec?.checkoutBy === "auto" && (
+                <div className="mb-2 text-[11px] text-amber-800">
+                  ⚠️ هذا اليوم أغلقه النظامُ تلقائياً عند منتصف الليل — والتصحيحُ يُعيد حسابَ الخصم والإضافيّ.
+                </div>
+              )}
+              <div className="mb-2 grid grid-cols-2 gap-2">
+                <button onClick={async () => { if (await req("PATCH", { technicianId, mode: "now", outDay: day })) setMsg({ t: "ok", m: "سُجّل الخروج بالوقت الحالي ✓" }); }} disabled={busy || !day}
+                  className="flex flex-col items-center gap-1 rounded-xl bg-white py-2.5 font-bold text-amber-700 shadow-sm active:scale-95 disabled:opacity-60">
+                  <span className="text-lg leading-none">🕐</span><span className="text-[11px]">الوقت الحالي</span>
+                </button>
+                <button onClick={async () => { if (await req("PATCH", { technicianId, mode: "scheduled", outDay: day })) setMsg({ t: "ok", m: "سُجّل الخروج بنهاية دوامه ✓" }); }} disabled={busy || !day}
+                  className="flex flex-col items-center gap-1 rounded-xl bg-white py-2.5 font-bold text-amber-700 shadow-sm active:scale-95 disabled:opacity-60">
+                  <span className="text-lg leading-none">⏰</span><span className="text-[11px]">نهاية دوامه</span>
+                </button>
+              </div>
+              {/* وقتُ خروجه **الفعليّ** — والخصمُ والإضافيُّ يُحسبان منه بالضبط */}
+              <div className="flex items-center gap-2">
+                <input type="time" value={fixAt} onChange={(e) => setFixAt(e.target.value)}
+                  className="w-28 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-center text-sm" />
+                <button onClick={async () => { if (await req("PATCH", { technicianId, mode: "custom", at: fixAt, outDay: day })) { setMsg({ t: "ok", m: `سُجّل خروجه الفعليّ ${fixAt} ✓` }); setFixAt(""); } }}
+                  disabled={busy || !day || !/^\d{2}:\d{2}$/.test(fixAt)}
+                  className="flex-1 rounded-xl bg-amber-600 py-2 text-sm font-bold text-white active:scale-95 disabled:opacity-50">
+                  ✍️ خروجه الفعليّ
+                </button>
+              </div>
             </div>
           </>
         )}

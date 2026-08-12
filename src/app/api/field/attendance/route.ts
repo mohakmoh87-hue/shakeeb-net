@@ -173,7 +173,10 @@ export async function PATCH(request: Request) {
   if (g.error) return g.error;
   const parsed = z.object({
     technicianId: z.coerce.number(),
-    mode: z.enum(["now", "scheduled"]).optional(),
+    // أ-٢٤ · «custom» = وقتُ الخروج الفعليّ الذي يُدخله المدير (طلب محمد 2026-08-13)
+    mode: z.enum(["now", "scheduled", "custom"]).optional(),
+    at: z.string().regex(/^\d{2}:\d{2}$/).optional(), // HH:MM بغداد — مع mode=custom
+    outDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // يومُ البصمة المُصحَّحة (فارغ = اليوم)
     addDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     excuseDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), // يوم طلب «نسيت البصمة»
     excuse: z.enum(["approve", "reject"]).optional(), // قرار المدير على الطلب
@@ -213,26 +216,48 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true, addedDay: parsed.data.addDay });
   }
 
-  // خلاف ذلك: بصمة خروج يدوية لليوم
-  const rec = await todayRecord(t.id);
-  if (!rec?.checkIn) return NextResponse.json({ error: "لا توجد بصمة دخول لليوم" }, { status: 400 });
-  if (rec.checkOut) return NextResponse.json({ error: "سُجّل الخروج مسبقاً" }, { status: 400 });
+  // ===== أ-٢٤ · بصمةُ خروجٍ يدويّة — ولأيّ يومٍ في السجل لا لليوم وحده =====
+  // 🔴 العلّةُ التي بلّغ عنها محمد («الميزةُ كانت موجودةً ولا أعلم لم لا تظهر»): كانت مقصورةً
+  // على **بصمة اليوم المفتوحة**، وكرونُ `auto-checkout` يُغلق كلَّ مفتوحةٍ عند ٠٠:١٥ بغداد
+  // بـ`checkoutBy: "auto"`. فحين ينتبه المديرُ صباحاً أنّ الفنيَّ نسي، الكرونُ قد أغلقها ⇒
+  // اختفى القسمُ من الواجهة، وردَّ الخادمُ «سُجّل الخروج مسبقاً». فالنافذةُ كانت تُغلق قبل الحاجة.
+  // ✅ الآن: يُقبل تصحيحُ أيّ يومٍ، **وتُصحَّح بصمةُ الكرون** — ولا تُمَسّ بصمةُ الفنيّ الحقيقيّة
+  //    (`checkoutBy === "tech"`) أبداً، فهي شهادةُ حضورٍ ببصمته لا يجوز للمدير طمسُها.
+  const outDay = parsed.data.outDay ?? null;
+  const rec = outDay
+    ? await prisma.attendance.findFirst({ where: { technicianId: t.id, dayKey: outDay } })
+    : await todayRecord(t.id);
+  if (!rec?.checkIn) return NextResponse.json({ error: "لا توجد بصمة دخول لهذا اليوم" }, { status: 400 });
+  if (rec.checkOut && rec.checkoutBy === "tech") {
+    return NextResponse.json({ error: "الفنيّ سجّل خروجه ببصمته — لا يُعدَّل" }, { status: 400 });
+  }
+
+  // يومُ بغداد الذي تنتمي إليه بصمةُ الدخول — أساسُ كلّ حسابٍ زمنيٍّ أدناه
+  const b = new Date(rec.checkIn.getTime() + 3 * 3600 * 1000);
+  // منتصفُ ليل بغداد لذلك اليوم بالـUTC (00:00 بغداد = 21:00 UTC اليوم السابق)
+  const bgMidnightUtc = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate(), 0, 0, 0) - 3 * 3600 * 1000;
 
   let checkoutAt = new Date();
   if (parsed.data.mode === "scheduled") {
-    // نهاية الدوام المحدّدة لهذا اليوم (بغداد) — تُحسب بلا خصم/إضافة
+    // نهايةُ الدوام المحدّدة لهذا اليوم — تُحسب بلا خصمٍ ولا إضافيّ
     const endMin = parseHHMM(t.shiftEnd);
-    if (endMin != null) {
-      const b = new Date(rec.checkIn.getTime() + 3 * 3600 * 1000); // يوم بغداد للبصمة
-      const y = b.getUTCFullYear(), mo = b.getUTCMonth(), d = b.getUTCDate();
-      // منتصف ليل بغداد لذلك اليوم بالـUTC = 00:00 بغداد = 21:00 UTC اليوم السابق
-      const bgMidnightUtc = Date.UTC(y, mo, d, 0, 0, 0) - 3 * 3600 * 1000;
-      checkoutAt = new Date(bgMidnightUtc + endMin * 60 * 1000);
-    }
+    if (endMin != null) checkoutAt = new Date(bgMidnightUtc + endMin * 60 * 1000);
+  } else if (parsed.data.mode === "custom") {
+    // وقتُ الخروج **الفعليّ** كما يعرفه المدير — ويُحسب الخصمُ/الإضافيُّ منه بالضبط
+    if (!parsed.data.at) return NextResponse.json({ error: "حدّد وقت الخروج" }, { status: 400 });
+    const [hh, mm] = parsed.data.at.split(":").map(Number);
+    let min = hh * 60 + mm;
+    // خروجٌ بعد منتصف الليل (دوامٌ ليليّ): إن كان قبل الدخول فهو من اليوم التالي
+    const inMin = Math.floor((rec.checkIn.getTime() - bgMidnightUtc) / 60000);
+    if (min < inMin) min += 1440;
+    checkoutAt = new Date(bgMidnightUtc + min * 60 * 1000);
+  }
+  if (checkoutAt.getTime() < rec.checkIn.getTime()) {
+    return NextResponse.json({ error: "وقتُ الخروج قبل وقت الدخول" }, { status: 400 });
   }
   const calc = computeAttendance(t, rec.checkIn, checkoutAt);
   await prisma.attendance.update({ where: { id: rec.id }, data: { checkOut: checkoutAt, checkoutBy: "manager", ...calc } });
-  return NextResponse.json({ ok: true, checkOut: checkoutAt, calc });
+  return NextResponse.json({ ok: true, checkOut: checkoutAt, calc, corrected: rec.checkoutBy === "auto" });
 }
 
 // DELETE (المدير فقط): مسح بصمة يومٍ للفني إن كانت خاطئة (اليوم افتراضياً) — يستطيع الفني إعادة البصمة.
