@@ -149,11 +149,26 @@ try {
   //     `wa_sessions` جلسةُ واتساب المكتب المصدر: تُحذف (المكتبُ الهدفُ له جلستُه، ولا جلستَين لمكتب)
   //     `sas_panels`  لوحاتُ المصدر: تُحذف ناعماً (بياناتُها صارت في اللوحة الجديدة)
   //     `towers`      يُعالَج أدناه
-  const SKIP = new Set(["towers", "wa_sessions", "sas_panels", "subscribers", "packages"]);
+  const SKIP = new Set(["towers", "wa_sessions", "sas_panels", "subscribers", "packages", "task_boards"]);
   for (const { الجدول: t } of moving) {
     if (SKIP.has(t)) continue;
     const r = await c.query(`UPDATE "${t}" SET "towerId" = $1 WHERE "towerId" = $2`, [INTO, FROM]);
     if (r.rowCount) console.log(`✓ ${t}: ${r.rowCount} صفّاً نُقل`);
+  }
+
+  // لوحةُ بطاقات المصدر: **الفارغةُ تُحذف ناعماً** (وإلّا صار للمكتب لوحتان فارغتان بالاسم نفسِه)،
+  // وذاتُ المحتوى **تُنقل** فلا يضيع منها شيء. والكودُ يقرأ لوحاتِ المكتب بـ`findMany` فيتحمّل أكثرَ من لوحة.
+  const boards = await q(
+    `SELECT b.id, b.name, (SELECT count(*)::int FROM task_lists l WHERE l."boardId" = b.id) AS lists
+     FROM task_boards b WHERE b."towerId" = $1 AND b."isDeleted" = false`, [FROM]);
+  for (const b of boards) {
+    if (b.lists === 0) {
+      await c.query(`UPDATE task_boards SET "isDeleted" = true WHERE id = $1`, [b.id]);
+      console.log(`✓ لوحةُ بطاقات #${b.id} «${b.name}» فارغةٌ ⇒ حذفٌ ناعم`);
+    } else {
+      await c.query(`UPDATE task_boards SET "towerId" = $1 WHERE id = $2`, [INTO, b.id]);
+      console.log(`✓ لوحةُ بطاقات #${b.id} «${b.name}» فيها ${b.lists} قائمةً ⇒ نُقلت إلى ${INTO}`);
+    }
   }
   const wa = await c.query(`DELETE FROM wa_sessions WHERE "towerId" = $1`, [FROM]);
   if (wa.rowCount) console.log(`✓ جلسةُ واتساب المصدر حُذفت (${wa.rowCount})`);

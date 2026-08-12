@@ -41,9 +41,9 @@ export async function GET(request: Request) {
     const officeId = Number(sp.get("officeId"));
     if (!officeId) return NextResponse.json({ error: "officeId مطلوب" }, { status: 400 });
   
-  const { runOfficeSync } = await import("@/lib/subscriptionSync");
+  const { runOfficeSyncAll } = await import("@/lib/subscriptionSync");
     try {
-      const sr = await runOfficeSync(officeId, { notify: false });
+      const sr = await runOfficeSyncAll(officeId, { notify: false });
       return NextResponse.json({
         ok: true, office: sr.office,
         checked: sr.phase2?.checked ?? 0, activations: sr.phase1?.activations ?? 0,
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
   // مزامنة SAS ليلية (backstop سحابي): تعمل ولو كانت حواسيب المكاتب مغلقة — لوحات SAS
   // على الإنترنت فتُنفَّذ خادمياً. notify=false: بيانات فقط بلا تقرير (يتفادى ازدواج تقرير
   // المكتب الذي يُرسله المجدول المحلي عند وقت المزامنة). قفل التزامن يمنع أي تعارض.
-  const { runOfficeSync } = await import("@/lib/subscriptionSync");
+  const { runOfficeSyncAll } = await import("@/lib/subscriptionSync");
   // خطوة daily: كل المهام الليلية عدا المزامنة — تنتهي في ثوانٍ فلا تُقطع
   if (step === "daily") {
     return NextResponse.json({ ok: true, closed: r.closed, purgedArchive: purged, backups, planWarnings });
@@ -82,7 +82,7 @@ export async function GET(request: Request) {
   const syncDetails: { office: string; checked: number; activations: number; phantom: number; verifiedReal: number; error: string | null }[] = [];
   for (const o of syncOffices) {
     try {
-      const sr = await runOfficeSync(o.id, { notify: false });
+      const sr = await runOfficeSyncAll(o.id, { notify: false });
       synced++;
       syncDetails.push({ office: sr.office, checked: sr.phase2?.checked ?? 0, activations: sr.phase1?.activations ?? 0, phantom: sr.phase1?.phantom ?? 0, verifiedReal: sr.phase1?.verifiedReal ?? 0, error: sr.error ?? null });
     } catch (e) { syncDetails.push({ office: String(o.id), checked: 0, activations: 0, phantom: 0, verifiedReal: 0, error: (e as Error).message }); }

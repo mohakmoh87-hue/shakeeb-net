@@ -295,8 +295,8 @@ export function startLocalSasServer() {
         const b = JSON.parse((await readBody(req)) || "{}");
         const t = await agentTower(Number(b.towerId));
         if (!t) { sendJson(res, 400, { error: "المكتب لا يتبع حسابك" }); return; }
-        const { runOfficeSync } = await import("@/lib/subscriptionSync");
-        sendJson(res, 200, await runOfficeSync(t.id, { notify: false }));
+        const { runOfficeSyncAll } = await import("@/lib/subscriptionSync");
+        sendJson(res, 200, await runOfficeSyncAll(t.id, { notify: false }));
         return;
       }
 

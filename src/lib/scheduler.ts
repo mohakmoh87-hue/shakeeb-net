@@ -369,8 +369,8 @@ export function startScheduler() {
       const offices = await prisma.tower.findMany({ where: { isDeleted: false, syncEnabled: "1", syncTime: { not: null }, ...(wAgent != null ? { agentId: wAgent } : {}) }, select: { id: true, syncTime: true } });
       for (const o of offices) {
         if ((o.syncTime ?? "").trim() === nowHM) {
-          const { runOfficeSync } = await import("@/lib/subscriptionSync");
-          runOfficeSync(o.id).catch((e) => console.error(`[scheduler] sync office ${o.id}:`, e));
+          const { runOfficeSyncAll } = await import("@/lib/subscriptionSync");
+          runOfficeSyncAll(o.id).catch((e) => console.error(`[scheduler] sync office ${o.id}:`, e));
         }
       }
     } catch (e) { console.error("[scheduler] sync tick:", e); }

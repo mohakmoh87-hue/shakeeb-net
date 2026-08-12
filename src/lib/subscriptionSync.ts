@@ -85,6 +85,49 @@ async function sendOrQueueReport(officeId: number, phone: string, text: string):
 // «مزامنة الآن» يُشغّل نسخاً متوازية تقرأ الحالة نفسها فتُكرّر المعالجة والإرجاع.
 const syncRunning = new Set<number>();
 
+// ===== أ-٢٣ · المدخلُ الصحيح: مزامنةُ المكتب **بكلّ لوحاته** =====
+// مكتبٌ بلوحتَي ساس = حسابان مختلفان على مُخدِّم(ات) الساس، ولكلٍّ مشتركوه. فمزامنةٌ واحدةٌ
+// بحساب اللوحة الأولى **لا تجد مشتركي الثانية** فتُسيء تفسيرَهم. ⇒ تُشغَّل مرّةً لكلّ لوحة،
+// وكلُّ دورةٍ مقصورةٌ على مشتركي لوحتها (`panelWhere` في `runOfficeSyncInner`).
+//
+// 🔑 ومكتبٌ بلوحةٍ واحدةٍ (أو بلا لوحاتٍ) يمرّ بالمسار القديم حرفيّاً — بلا `panelId` ولا تقييد
+//    ⇒ **صفرُ تغييرٍ في سلوك المكاتب التسعة الأخرى.**
+export async function runOfficeSyncAll(
+  officeId: number,
+  opts: { forDay?: Date; notify?: boolean } = {},
+): Promise<SyncResult> {
+  const { panelsOfTower } = await import("@/lib/sasPanel");
+  const panels = await panelsOfTower(officeId);
+  if (panels.length <= 1) return runOfficeSync(officeId, opts); // المسارُ القديم بالضبط
+
+  const parts: SyncResult[] = [];
+  for (const p of panels) {
+    // متتابعٌ لا متوازٍ: الساسُ حسابٌ واحدٌ لكلّ لوحةٍ لكنّ المُخدِّمَ قد يكون واحداً، والتوازي
+    // يُثقله؛ والأهمُّ أنّ سجلَّ الأحداث يبقى مرتَّباً ومفهوماً للمدير.
+    parts.push(await runOfficeSync(officeId, { ...opts, panelId: p.id }));
+  }
+  // تُجمَع النتائجُ في تقريرٍ واحدٍ — فالمكتبُ واحدٌ عند المدير وإن كانت لوحاتُه اثنتَين
+  const sum = (f: (r: SyncResult) => number) => parts.reduce((a, r) => a + f(r), 0);
+  return {
+    office: parts[0]?.office?.split(" · ")[0] ?? "المكتب",
+    phase1: {
+      activations: sum((r) => r.phase1.activations), internal: sum((r) => r.phase1.internal),
+      external: sum((r) => r.phase1.external), phantom: sum((r) => r.phase1.phantom),
+      markedUsed: sum((r) => r.phase1.markedUsed), duplicates: sum((r) => r.phase1.duplicates),
+      imported: sum((r) => r.phase1.imported), verifiedReal: sum((r) => r.phase1.verifiedReal),
+    },
+    phase2: {
+      checked: sum((r) => r.phase2.checked), dateFixed: sum((r) => r.phase2.dateFixed),
+      imported: sum((r) => r.phase2.imported), failed: parts.some((r) => r.phase2.failed),
+      skippedPkg: sum((r) => r.phase2.skippedPkg), pkgFixed: sum((r) => r.phase2.pkgFixed),
+    },
+    events: parts.flatMap((r) => r.events),
+    reportSent: parts.some((r) => r.reportSent === true) ? true : (parts.some((r) => r.reportSent === false) ? false : null),
+    // خطأُ لوحةٍ لا يُخفي نجاحَ الأخرى: تُذكَر الأخطاءُ مجموعةً باسم لوحتها
+    error: parts.filter((r) => r.error).map((r) => `${r.office}: ${r.error}`).join(" | ") || undefined,
+  };
+}
+
 // تشغيل المزامنة لمكتب واحد (مرحلتان). forDay اختياري لأغراض الاختبار؛ الافتراضي "الأمس".
 // notify: يُرسل تقرير المدير فقط في المزامنة التلقائية (المجدول). المزامنة اليدوية (زر «مزامنة الآن») لا تُرسل شيئاً.
 export async function runOfficeSync(
@@ -771,10 +814,10 @@ export async function runManualSync(officeId: number): Promise<void> {
     await setManualSyncStatus(officeId, { state: "running", step: "sync", startedAt });
 
     // إن صادفت مزامنةً مجدولةً جارية (قفل داخلي): ننتظر وندخل بعدها بدل رسالة «الطلب المكرّر»
-    let sync = await runOfficeSync(officeId, { notify: false });
+    let sync = await runOfficeSyncAll(officeId, { notify: false });
     for (let i = 0; i < 5 && sync.error?.includes("قيد التنفيذ"); i++) {
       await new Promise((r) => setTimeout(r, 25_000));
-      sync = await runOfficeSync(officeId, { notify: false });
+      sync = await runOfficeSyncAll(officeId, { notify: false });
     }
 
     if (sync.error) {

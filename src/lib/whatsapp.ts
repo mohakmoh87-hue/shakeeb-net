@@ -637,9 +637,10 @@ export async function relayRequest(
 
 // (على الوكيل) تنفيذ عملية SAS محلياً — الحاسبة في العراق قرب خادم SAS فأسرع من Vercel.
 async function runSasOp(towerId: number, op: string, p: { page?: number; count?: number }): Promise<unknown> {
-  const { runOfficeSync } = await import("@/lib/subscriptionSync");
+  const { runOfficeSyncAll } = await import("@/lib/subscriptionSync");
   const { sasBaseUrl, sasLogin, sasFetchOnePage } = await import("@/lib/sas4");
-  if (op === "sync") return runOfficeSync(towerId, { notify: false });
+  // أ-٢٣ · `…All` تُزامن كلَّ لوحات المكتب (ومكتبُ اللوحةِ الواحدةِ يمرّ بالمسار القديم حرفيّاً)
+  if (op === "sync") return runOfficeSyncAll(towerId, { notify: false });
   const tower = await prisma.tower.findUnique({ where: { id: towerId }, select: { loginUrl: true, username: true, password: true } });
   if (!tower?.loginUrl || !tower.username || !tower.password) throw new Error("بيانات SAS ناقصة لهذا المكتب");
   const base = sasBaseUrl(tower.loginUrl);
