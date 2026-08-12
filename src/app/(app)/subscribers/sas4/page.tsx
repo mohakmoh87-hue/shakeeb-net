@@ -136,12 +136,20 @@ export default function Sas4ImportPage() {
             }}
             className="w-full rounded-lg border border-slate-300 px-3 py-2">
             <option value="">— اختر المكتب —</option>
-            {towers.filter((t) => t.hasSas ?? (t.loginUrl && t.username)).flatMap((t) => (
-              // مكتبٌ بلوحاتٍ متعدّدة ⇒ خيارٌ لكلّ لوحة باسم «المكتب · اللوحة»؛ وغيرُه خيارٌ واحدٌ
-              // باسم المكتب كما كان تماماً (نفسُ النصّ ونفسُ القيمة).
+            {towers.filter((t) => t.hasSas ?? (t.loginUrl && t.username)).map((t) => (
+              // مكتبٌ بلوحاتٍ متعدّدة ⇒ **مجموعةٌ باسم المكتب** وداخلها سطرٌ لكلّ لوحةٍ باسمها
+              // الذي يختاره الوكيل (مثلاً «عباس 1» و«عباس 2»). فالمكتبُ يبقى ظاهراً بلا تكرار
+              // اسمِه في كلّ سطر — و«صميم1 · صميم1» كان قبيحاً ومُربكاً.
+              // ومكتبُ اللوحةِ الواحدةِ ⇒ سطرٌ واحدٌ باسم المكتب **كما كان حرفيّاً**.
               (t.panels && t.panels.length > 1)
-                ? t.panels.map((p) => <option key={`${t.id}:${p.id}`} value={`${t.id}:${p.id}`}>{t.name} · {p.label ?? "لوحة"}</option>)
-                : [<option key={t.id} value={String(t.id)}>{t.name}</option>]
+                ? (
+                  <optgroup key={t.id} label={t.name ?? "المكتب"}>
+                    {t.panels.map((p, i) => (
+                      <option key={`${t.id}:${p.id}`} value={`${t.id}:${p.id}`}>{p.label || `لوحة ${i + 1}`}</option>
+                    ))}
+                  </optgroup>
+                )
+                : <option key={t.id} value={String(t.id)}>{t.name}</option>
             ))}
           </select>
         </div>
