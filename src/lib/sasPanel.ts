@@ -1,4 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { decryptSecret } from "@/lib/secretbox";
+
+// كلمةُ الساس قد تكون مشفَّرةً (`enc:v1:`) وقد تكون نصّاً قديماً. و`decryptSecret` تُرجع القيمةَ
+// كما هي إن لم تكن مشفَّرة ⇒ **تطبيقُها آمنٌ دائماً**. وكان `subscribers/query` وحدَه يفكّها
+// بينما التفعيلُ والمزامنةُ يقرآن الخامَ — علّةٌ كامنةٌ لو شُفِّرت كلمةُ مكتبٍ يوماً. فتُطبَّق هنا
+// مرّةً واحدةً فينتفع كلُّ القارئين.
+const pw = (v: string | null): string | null => (v == null ? null : (decryptSecret(v) ?? v));
 
 // ===== أ-٢٣ · مُحلِّلُ لوحات الساس/أودو (طلب محمد 2026-08-12) =====
 // المبدأ: **«المكتب» وحدةُ عمل، و«لوحةُ الساس» نقطةُ بنيةٍ تحتيّة.** كان البرنامجُ يخلطهما ١:١
@@ -49,7 +56,7 @@ function credsFromPanel(p: {
   if (!p.loginUrl || !p.username || !p.password) return null;
   return {
     panelId: p.id, towerId: p.towerId, agentId: p.agentId, label: p.label,
-    loginUrl: p.loginUrl, username: p.username, password: p.password,
+    loginUrl: p.loginUrl, username: p.username, password: pw(p.password)!,
     activationTemplate: p.activationTemplate,
   };
 }
@@ -80,7 +87,7 @@ export async function credsOfTower(towerId: number): Promise<SasCreds | null> {
   if (!t?.loginUrl || !t.username || !t.password) return null;
   return {
     panelId: null, towerId: t.id, agentId: t.agentId, label: t.name,
-    loginUrl: t.loginUrl, username: t.username, password: t.password,
+    loginUrl: t.loginUrl, username: t.username, password: pw(t.password)!,
     activationTemplate: t.activationTemplate,
   };
 }
@@ -111,7 +118,7 @@ export async function odooOfPanel(panelId: number): Promise<OdooCreds | null> {
   if (!p) return null;
   return {
     panelId: p.id, towerId: p.towerId, enabled: p.odooEnabled === "1",
-    url: p.odooUrl ?? "https://odoo.supercell.iq", user: p.odooUser, pass: p.odooPass, uid: p.odooUid,
+    url: p.odooUrl ?? "https://odoo.supercell.iq", user: p.odooUser, pass: pw(p.odooPass), uid: p.odooUid,
   };
 }
 
@@ -122,14 +129,14 @@ export async function odooOfTower(towerId: number): Promise<OdooCreds | null> {
   if (p) {
     return {
       panelId: p.id, towerId: p.towerId, enabled: p.odooEnabled === "1",
-      url: p.odooUrl ?? "https://odoo.supercell.iq", user: p.odooUser, pass: p.odooPass, uid: p.odooUid,
+      url: p.odooUrl ?? "https://odoo.supercell.iq", user: p.odooUser, pass: pw(p.odooPass), uid: p.odooUid,
     };
   }
   const t = await prisma.tower.findUnique({ where: { id: towerId }, select: TOWER_SEL });
   if (!t) return null;
   return {
     panelId: null, towerId: t.id, enabled: t.odooEnabled === "1",
-    url: t.odooUrl ?? "https://odoo.supercell.iq", user: t.odooUser, pass: t.odooPass, uid: t.odooUid,
+    url: t.odooUrl ?? "https://odoo.supercell.iq", user: t.odooUser, pass: pw(t.odooPass), uid: t.odooUid,
   };
 }
 

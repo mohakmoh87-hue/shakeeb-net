@@ -4,6 +4,7 @@ import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { sasBaseUrl, sasLogin, sasFindUserByUsername, type SasUser } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
+import { credsOfSubscriber } from "@/lib/sasPanel";
 import { matcherForAgent } from "@/lib/packageMatch";
 
 export const dynamic = "force-dynamic";
@@ -21,17 +22,18 @@ async function fetchSasForSubscriber(subscriberId: number) {
   if (!sub || sub.isDeleted) return { error: "المشترك غير موجود", status: 404 as const };
   if (!sub.netUser?.trim()) return { error: "المشترك بلا يوزر — لا يمكن الاستبدال", status: 400 as const };
   if (sub.netUser.includes("#سابق")) return { error: "هذا سجل مشترك سابق — الاستبدال يكون من السجل الحامل لليوزر الحالي", status: 400 as const };
-  const tower = sub.towerId ? await prisma.tower.findUnique({ where: { id: sub.towerId } }) : null;
-  if (!tower?.loginUrl || !tower.username || !tower.password) {
+  // أ-٢٣ · بياناتُ ساس **لوحة المشترك** لا أعمدة المكتب (والسقوطُ إليها = السلوكُ القديم)
+  const sasCreds = await credsOfSubscriber(subscriberId);
+  if (!sasCreds) {
     return { error: "مكتب المشترك غير مربوط بـ SAS", status: 400 as const };
   }
-  if (await sasHostBlocked(tower.loginUrl)) return { error: "عنوان لوحة المكتب غير مسموح", status: 403 as const };
-  const base = sasBaseUrl(tower.loginUrl);
-  const token = await sasLogin(base, tower.username, tower.password);
+  if (await sasHostBlocked(sasCreds.loginUrl)) return { error: "عنوان لوحة المكتب غير مسموح", status: 403 as const };
+  const base = sasBaseUrl(sasCreds.loginUrl);
+  const token = await sasLogin(base, sasCreds.username, sasCreds.password);
   const sas = await sasFindUserByUsername(base, token, sub.netUser);
   if (!sas) return { error: `اليوزر «${sub.netUser}» غير موجود في SAS — حدّثه هناك أولاً`, status: 404 as const };
   // مطابقة باقة SAS مع باقاتنا — متسامحة مع الفراغات وحالة الأحرف وترتيب الكلمات
-  const matcher = await matcherForAgent(tower.agentId);
+  const matcher = await matcherForAgent(sasCreds.agentId);
   const pkgId = matcher.match(sas.packageName);
   const pkg = pkgId != null
     ? await prisma.package.findUnique({ where: { id: pkgId }, select: { id: true, name: true } })
@@ -92,6 +94,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         netUser: cleanUser,
         sasId: old.sasId,
         towerId: old.towerId,
+        // أ-٢٣ · البديلُ يأخذ **لوحةَ ساس السابق** — فهو على اليوزر نفسِه في المُخدِّم نفسِه.
+        // ولولا هذا لَوُلد بلا لوحةٍ فسقط إلى لوحة المكتب الأولى ⇒ **تفعيلٌ على اللوحة الخطأ**.
+        sasPanelId: old.sasPanelId,
         groupId: old.groupId,
         packageId: pkg?.id ?? old.packageId,
         dateTo: sas.expiration ? new Date(sas.expiration) : null,
