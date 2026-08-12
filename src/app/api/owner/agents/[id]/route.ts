@@ -23,6 +23,8 @@ const patchSchema = z.object({
   // أ-٢٣ · حصّةُ المالك: **كم مكتباً** من مكاتب هذا الوكيل يُسمح له بأكثر من لوحة ساس.
   // صفر = الوضعُ الحاليّ (لا خيارَ يظهر للوكيل). طلبُ محمد 2026-08-13.
   multiSasOffices: z.coerce.number().int().min(0).max(50).optional(),
+  // كلمةُ مرور المالك — إلزاميّةٌ لكلّ تغييرِ حصّةٍ (انظر أدناه)
+  ownerPassword: z.string().optional(),
   managerUsername: z.string().min(1).optional(), // تعديل يوزر مدير الوكيل
   managerPassword: z.string().min(4).optional(), // تعديل باسورد مدير الوكيل
 });
@@ -39,6 +41,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const agent = await prisma.agent.findUnique({ where: { id: agentId } });
   if (!agent || agent.isDeleted) return NextResponse.json({ error: "الوكيل غير موجود" }, { status: 404 });
+
+  // ===== 🔒 كلُّ تغييرِ حصّةٍ يستوجب كلمةَ مرور المالك (طلب محمد 2026-08-13) =====
+  // نصُّه: «عند أيّ تغييرِ حصّةٍ لأيّ وكيلٍ يمكنني تغييرُها فقط بتغيير الرقم، وممكنٌ جدّاً أن
+  // أضغط شيئاً **سهواً**، فيجب ألّا يتمّ الإجراءُ إلّا بإدخال باسورد المالك».
+  // والحصصُ كلُّها لا الجديدةُ وحدَها: نقرةٌ سهواً على «مشتركين» أخطرُ من واحدةٍ على «بساسين».
+  // ونمطُ التأكيد هو نمطُ حذفِ الوكيل ومفتاحِ القاعدة نفسُه (`confirmOwnerPassword`).
+  const QUOTA_FIELDS = ["officeCap", "maxManagers", "maxUsers", "maxTechnicians", "maxSubscribers", "multiSasOffices"] as const;
+  const touchedQuotas = QUOTA_FIELDS.filter((k) => d[k] != null && d[k] !== (agent as Record<string, unknown>)[k]);
+  if (touchedQuotas.length) {
+    if (!(await confirmOwnerPassword(g.session.userId, d.ownerPassword))) {
+      return NextResponse.json({
+        error: "تغييرُ الحصص يحتاج كلمةَ مرور المالك — أدخلها لتأكيد الإجراء",
+        needsOwnerPassword: true,
+        fields: touchedQuotas,
+      }, { status: 403 });
+    }
+  }
 
   const data: Record<string, unknown> = {};
   if (d.name != null) data.name = d.name;

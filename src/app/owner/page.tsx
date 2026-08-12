@@ -64,9 +64,27 @@ export default function OwnerPage() {
     if (r.ok) { setAdding(false); setF({ name: "", officeCap: 1, maxManagers: 1, maxUsers: 1, maxTechnicians: 3, maxSubscribers: 3000, planMonths: 0, managerFullName: "", managerUsername: "", managerPassword: "" }); load(); }
     else setMsg(d.error ?? "تعذّرت الإضافة");
   }
+  // 🔒 حصصُ الوكيل تُغيَّر بحقلٍ رقميّ — ونقرةٌ سهواً تكفي لفتح ما لا تريد أو خفضِ ما يُعطّل
+  // وكيلاً. فطلب محمد (2026-08-13) أن **لا يتمّ الإجراءُ إلّا بكلمة مرور المالك**. والخادمُ هو
+  // من يفرضها (يردّ `needsOwnerPassword`)، وهذه الواجهةُ تسألها وتُعيد الإرسالَ بها.
+  const QUOTA_KEYS = ["officeCap", "maxManagers", "maxUsers", "maxTechnicians", "maxSubscribers", "multiSasOffices"];
+
   async function patch(id: number, body: Record<string, unknown>) {
-    const r = await fetch(`/api/owner/agents/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (r.ok) load(); else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر التعديل"); }
+    const isQuota = Object.keys(body).some((k) => QUOTA_KEYS.includes(k));
+    let payload = body;
+    if (isQuota) {
+      const label = Object.keys(body).filter((k) => QUOTA_KEYS.includes(k)).join(" · ");
+      const pw = window.prompt(`تغييرُ حصّة (${label}) — أدخل كلمة مرور المالك للتأكيد:`);
+      if (!pw) return; // أُلغي: لا يُرسَل شيءٌ فلا يتغيّر شيء
+      payload = { ...body, ownerPassword: pw };
+    }
+    const r = await fetch(`/api/owner/agents/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (r.ok) load();
+    else {
+      const d = await r.json().catch(() => ({}));
+      alert(d.error ?? "تعذّر التعديل");
+      load(); // أعِد التحميل كي يرجع الحقلُ إلى قيمته الحقيقيّة ولا يبقى الرقمُ المرفوض معروضاً
+    }
   }
 
   // رسالة المالك للوكلاء بالإيميل — فرديّة (وكيل واحد) أو جماعيّة (الكل)
