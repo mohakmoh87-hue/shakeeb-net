@@ -34,6 +34,8 @@ export type DailyReport = {
   otherIn: number;
   expenses: number;
   total: number;
+  // أ-٢٣ · تفصيلُ التفعيلات على لوحات الساس — لا يأتي إلّا لمكتبٍ بأكثرَ من لوحة
+  activationsByPanel?: { panelId: number; label: string; count: number }[];
 };
 type Tower = { id: number; name: string | null };
 type TowerUser = { id: number; name: string; towerId: number }; // مستخدمو مكاتب الوكيل (لتبويب المستخدمين)
@@ -116,6 +118,12 @@ export default function DailyReportCard({
 
   const rows = [
     { cat: "تفعيل اشتراكات", count: String(data.activationCount), wasel: fmt(data.activationIn), kind: "activation" },
+    // أ-٢٣ · «كم مشتركاً مُفعَّلاً من ساس ١ وكم من ساس ٢» (طلب محمد 2026-08-13) — يظهر في
+    // التقرير الحيّ **وفي التقارير القديمة** لأنّ الاثنَين يُحسبان بـ`computeDailyReport` نفسِها.
+    // ولا يظهر لمكتبٍ بلوحةٍ واحدة إطلاقاً (الحقلُ لا يأتي من الخادم أصلاً).
+    ...((data.activationsByPanel ?? []).map((p) => ({
+      cat: `   ↳ من ${p.label}`, count: String(p.count), wasel: "", kind: "activation" as const,
+    }))),
     { cat: "فاتورة المبيع (المُحصَّل)", count: String(data.invoiceCount), wasel: fmt(data.invoiceIn), kind: "invoice" },
     { cat: "مبيعات المخزن", count: "", wasel: fmt(data.salesIn), kind: "sale" },
     { cat: "المقبوضات (اليوم)", count: "", wasel: fmt(data.otherIn), kind: "other" },

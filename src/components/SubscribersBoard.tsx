@@ -22,12 +22,14 @@ type Subscriber = {
   id: number; name: string | null; phone: string | null; address: string | null;
   packageId: number | null; towerId: number | null; carry: number | null;
   dateTo: string | null; netUser: string | null; sasId: number | null;
+  // أ-٢٣ · لوحةُ الساس التي يتبعها — يُعرَض وسمُها إن كان لمكتبه أكثرُ من لوحة
+  sasPanelId?: number | null;
   note: string | null; smsEnabled: number | null; waEnabled: boolean | null;
   transferredTo: string | null; rewardBalance: number | null; rewardCode: string | null;
   hasLoan?: boolean; // عليه دين قرضٍ قائم (للوسم والتنبيه ومنع قرضٍ ثانٍ)
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
-type Tower = { id: number; name: string | null; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null; loanMode?: string | null; rewardsEnabled?: string | null };
+type Tower = { id: number; name: string | null; panels?: { id: number; label: string | null }[]; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null; loanMode?: string | null; rewardsEnabled?: string | null };
 type Receipt = { id: number; date: string | null; dateTo: string | null; money: number | null; moneyIn: number | null; moneyCarry: number | null; cardType: string | null; month: string | null };
 type MaintLog = { id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; amount: number | null; date: string };
 type InvRow = { id: number; number: number | null; date: string | null; totalMy: number | null; waselHim: number | null; type: string | null; note: string | null; subscriberId: number | null };
@@ -213,6 +215,18 @@ export default function SubscribersBoard() {
 
   const selected = subs.find((s) => s.id === selectedId) ?? null;
   const towerName = (id: number | null | undefined) => towers.find((t) => t.id === id)?.name ?? "—";
+  // أ-٢٣ · وسمُ لوحة الساس (طلبُ محمد 2026-08-13: «يجب أن يكون هنالك وسمٌ على كلّ مشتركي
+  // الساس الثاني»). يظهر **فقط لمكتبٍ له أكثرُ من لوحة** — و`panels` لا يأتي من الخادم لغيره
+  // ⇒ مشتركو بقيّة الوكلاء بلا وسمٍ إطلاقاً، ولا يرى أحدٌ فرقاً.
+  const panelName = (towerId: number | null | undefined, panelId: number | null | undefined) => {
+    const list = towers.find((t) => t.id === towerId)?.panels;
+    if (!list || list.length < 2) return null;
+    const i = list.findIndex((p) => p.id === panelId);
+    // مشتركٌ بلا وسمٍ في مكتبٍ متعدّدِ اللوحات: يعمل بالسقوط إلى الأولى — ويُعرَض صريحاً كي
+    // لا يبدو كأنّه بلا لوحة (والوسمُ يُضاف تلقائيّاً عند إضافة لوحةٍ ثانية).
+    if (i < 0) return list[0]?.label || "لوحة ١";
+    return list[i].label || `لوحة ${i + 1}`;
+  };
 
   // الجلب: بلا بحث = آخر 100 تفعيل؛ مع بحث = المسار الأبجدي المعتاد
   const load = useCallback((q = "", all = false) => {
@@ -541,7 +555,14 @@ export default function SubscribersBoard() {
                   </td>
                   <td dir="ltr">{s.netUser ?? "—"}</td>
                   <td className="num" dir="ltr">{s.phone ?? "—"}</td>
-                  <td>{towerName(s.towerId)}</td>
+                  <td>
+                    {towerName(s.towerId)}
+                    {/* أ-٢٣ · وسمُ لوحة الساس — لا يظهر إلّا لمكتبٍ بأكثرَ من لوحة */}
+                    {(() => {
+                      const pn = panelName(s.towerId, s.sasPanelId);
+                      return pn ? <span className="ms-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700" title="لوحة الساس التي يُفعَّل عليها هذا المشترك">{pn}</span> : null;
+                    })()}
+                  </td>
                 </tr>,
                 isActive && (() => {
                   const d = daysLeft(s.dateTo);

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { notMaster, onlyMaster, otherIncomeOnly } from "@/lib/moneyKinds";
 
 // حدود يوم العراق (UTC+3)
@@ -88,6 +89,55 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
   const otherIn = todayOther._sum.moneyIn ?? 0;
   const total = todayIn - todayOut; // لا يشمل الماستر
 
+  // ===== أ-٢٣ · تفصيلُ التفعيلات على لوحات الساس (طلب محمد 2026-08-13) =====
+  // «في التقرير اليوميّ يظهر له كم مشتركاً مُفعَّلاً من ساس ١ وكم من ساس ٢، وأيضاً في صفحة
+  // المدير عند عرض التقارير القديمة يظهر نفسُه».
+  // 🔑 وهذا بعينه ما أُبقي مفتوحاً حين اختار محمد **تقريراً واحداً**: الفصلُ ممكنٌ مجّاناً
+  //    للتفعيلات لأنّ المشتركَ يحمل لوحتَه — بخلاف المال الذي لا يُنسَب إلى مشتركٍ أصلاً.
+  // 🔑 والتقاريرُ القديمةُ والحيّةُ تُحسَبان بهذه الدالّة نفسِها ⇒ تعديلٌ واحدٌ يظهر في الاثنَين.
+  // ⚠️ ولا يُحسَب شيءٌ لمكتبٍ بلوحةٍ واحدة: الحقلُ يبقى فارغاً فلا تُظهره الواجهةُ لأحدٍ غيرِ
+  //    أصحاب اللوحتَين ⇒ تقريرُ بقيّة الوكلاء كما هو حرفيّاً.
+  let byPanel: { panelId: number; label: string; count: number }[] | undefined;
+  try {
+    const scopeTowers = await prisma.sasPanel.findMany({
+      where: { isDeleted: false, ...(towerWhere as Prisma.SasPanelWhereInput) },
+      select: { id: true, towerId: true, label: true, isPrimary: true, sortOrder: true },
+      orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+    });
+    // مكاتبُ النطاق التي لها أكثرُ من لوحةٍ حيّة وحدَها تُفصَّل
+    const multi = new Map<number, typeof scopeTowers>();
+    for (const p of scopeTowers) {
+      const list = multi.get(p.towerId) ?? [];
+      list.push(p);
+      multi.set(p.towerId, list);
+    }
+    const panels = [...multi.values()].filter((l) => l.length > 1).flat();
+    if (panels.length) {
+      // تفعيلاتُ اليوم قليلةٌ (عشراتٌ) فجلبُ مشتركيها ثمّ عدُّهم بحسب لوحتهم أخفُّ وأوضحُ من
+      // استعلامٍ خامٍ بضمٍّ — ولا يعتمد على علاقةٍ مُعلَنةٍ في المخطّط.
+      const rows = await prisma.subscriptionEntry.findMany({
+        where: { isDeleted: false, isMaster: false, ...dateWhere, ...towerWhere, ...userWhere },
+        select: { subscriberId: true },
+      });
+      const subIds = [...new Set(rows.map((r) => r.subscriberId).filter((x): x is number => x != null))];
+      const subs = subIds.length
+        ? await prisma.subscriber.findMany({ where: { id: { in: subIds } }, select: { id: true, sasPanelId: true } })
+        : [];
+      const panelOf = new Map(subs.map((s) => [s.id, s.sasPanelId]));
+      const firstOf = new Map([...multi.entries()].map(([t, l]) => [t, l[0].id]));
+      const counts = new Map<number, number>();
+      for (const r of rows) {
+        if (r.subscriberId == null) continue;
+        // مشتركٌ بلا وسمٍ يُحسَب على لوحة مكتبه الأولى — وهي التي يُفعَّل عليها فعلاً بالسقوط
+        const pid = panelOf.get(r.subscriberId) ?? null;
+        const known = panels.find((p) => p.id === pid)?.id;
+        const eff = known ?? [...firstOf.values()].find((x) => panels.some((p) => p.id === x));
+        if (eff != null) counts.set(eff, (counts.get(eff) ?? 0) + 1);
+      }
+      byPanel = panels.map((p, i) => ({ panelId: p.id, label: p.label || `لوحة ${i + 1}`, count: counts.get(p.id) ?? 0 }));
+    }
+  } catch { /* التفصيلُ زينةٌ — لا يُفشل التقريرَ أبداً */ }
+
   return {
     activationCount: activations._count || 0,
     activationIn,
@@ -98,6 +148,7 @@ export async function computeDailyReport(towerId?: number | number[] | null, day
     otherIn,
     expenses: todayOut,
     total,
+    ...(byPanel ? { activationsByPanel: byPanel } : {}),
   };
 }
 

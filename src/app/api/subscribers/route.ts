@@ -106,7 +106,7 @@ export async function GET(request: Request) {
         where: { id: { in: ids }, isDeleted: false },
         select: {
           id: true, name: true, phone: true, address: true, packageId: true,
-          towerId: true, carry: true, dateTo: true, netUser: true, sasId: true,
+          towerId: true, carry: true, dateTo: true, netUser: true, sasId: true, sasPanelId: true,
           note: true, smsEnabled: true, waEnabled: true, transferredTo: true,
           rewardBalance: true, rewardCode: true,
         },
@@ -127,7 +127,7 @@ export async function GET(request: Request) {
       // نُرجع الأعمدة التي تعرضها الواجهة فقط (بدل 30+ عموداً) — أخفّ نقلاً ومعالجةً
       select: {
         id: true, name: true, phone: true, address: true, packageId: true,
-        towerId: true, carry: true, dateTo: true, netUser: true, sasId: true,
+        towerId: true, carry: true, dateTo: true, netUser: true, sasId: true, sasPanelId: true,
         note: true, smsEnabled: true, waEnabled: true, transferredTo: true,
         rewardBalance: true, rewardCode: true,
       },
