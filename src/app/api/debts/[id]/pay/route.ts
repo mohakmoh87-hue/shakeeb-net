@@ -41,8 +41,14 @@ export async function POST(
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   }
 
+  // ===== ب-٠٠ · الحرجة ١: تسديدٌ يتجاوز الدين ⇒ **رصيدٌ للمشترك لا صفر** =====
+  // كان `Math.max(0, …)` يقصّ الزائدَ: مَن عليه ٥٠٬٠٠٠ ودفع ٦٠٬٠٠٠ يصير دَينُه صفراً
+  // **والعشرةُ آلافٍ تختفي** — دخلت الصندوقَ ولا أثرَ لها عند المشترك. وهو مالُ الناس.
+  // الآن: `carry` سالبٌ = **رصيدٌ لهم** يُحتسب في تفعيلهم القادم، وهو مفهومٌ قائمٌ في البيانات
+  // أصلاً (حارسُ المال يُعدّه صنفاً طبيعيّاً: «مشتركون لهم رصيد (carry سالب)»).
   const currentCarry = subscriber.carry ?? 0;
-  const newCarry = Math.max(0, currentCarry - amount);
+  const newCarry = currentCarry - amount;
+  const overpaid = newCarry < 0 ? -newCarry : 0; // الزائدُ الذي صار رصيداً — يُذكَر في القيد والتدقيق
 
   {
     const e = requireTower(subscriber.towerId, "تسديد الدين");
@@ -57,7 +63,10 @@ export async function POST(
       data: {
         moneyIn: amount,
         moneyOut: 0,
-        notes: `تسديد دين${master ? " (ماستر)" : ""} - ${subscriber.name ?? subscriberId}`,
+        // ب-٠٠ · يُذكَر الزائدُ في نصّ القيد نفسِه — فالمصروفاتُ والتقريرُ اليوميّ هما ما يراه
+        // المدير، ولا يجوز أن يمرّ رصيدٌ لمشتركٍ بلا أثرٍ مقروء.
+        notes: `تسديد دين${master ? " (ماستر)" : ""} - ${subscriber.name ?? subscriberId}`
+          + (overpaid > 0 ? ` · زائدٌ ${overpaid} صار رصيداً للمشترك` : ""),
         date: new Date(),
         serverDate: new Date(),
         userId: session?.userId,
@@ -71,7 +80,8 @@ export async function POST(
         action: "PAY_DEBT",
         entity: "subscriber",
         entityId: String(subscriberId),
-        details: `تسديد${master ? " ماستر" : ""} ${amount} - المتبقّي ${newCarry}`,
+        details: `تسديد${master ? " ماستر" : ""} ${amount} - المتبقّي ${newCarry}`
+          + (overpaid > 0 ? ` (زائدٌ ${overpaid} صار رصيداً للمشترك)` : ""),
       },
     }),
   ]);
@@ -105,12 +115,15 @@ async function sendDebtPaidMessage(a: {
     const tpl = await getEffectiveTemplate("debtPaid", office?.agentId ?? null, a.towerId);
     if (!tpl) return; // معطَّل
 
+    // ب-٠٠ · `carry` سالبٌ = **رصيدٌ للمشترك** لا دَينٌ سالب. فالمخزَّنُ يبقى سالباً (وهو الحقُّ
+    // المحاسبيّ)، وأمّا **الرسالةُ إليه** فلا يجوز أن تقول «إجمالي ديونك −١٠٠٠٠» — تُقصَر على صفر.
+    const debtShown = Math.max(0, a.newCarry);
     const text = renderTemplate(tpl, {
       name: a.name,
       netUser: a.netUser,
       paid: a.amount, // {المبلغ_المستلم}
-      carry: a.newCarry, // {اجمالي_الديون} بعد التسديد
-      remaining: a.newCarry,
+      carry: debtShown, // {اجمالي_الديون} بعد التسديد — لا يُعرَض سالباً للمشترك
+      remaining: debtShown,
       code: a.code, balance: a.balance ?? 0, // كود/رصيد الخصم
       office: office?.name ?? "",
     });
