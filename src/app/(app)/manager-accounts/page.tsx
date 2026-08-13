@@ -99,6 +99,9 @@ export default function ManagerAccountsPage() {
   // الماستر يدمج معه حركاتِ المدير (`manager_tx`) ⇒ فيختلف المجموعُ عن التفصيل. والترشيحُ
   // من نفس المصفوفة يُبقي الرقمَين واحداً أبداً.
   const [masterFlt, setMasterFlt] = useState<"all" | "in" | "out">("all");
+  // أ-١٩ · القسمُ المفتوح. ويبدأ على «حركةٌ جديدة» لأنّه مكانُ العمل اليوميّ — فلا
+  // تُفتح الصفحةُ فارغةً، ولا تُفتح طويلةً كما كانت.
+  const [sec, setSec] = useState<string | null>("tx");
   const [dayRep, setDayRep] = useState<Record<string, number> | null>(null);
   async function openDay(day: string, towerId: number | null) {
     setDayView({ day, towerId });
@@ -335,109 +338,8 @@ export default function ManagerAccountsPage() {
         action={<a href="/hybrid" className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700">🖥️ حواسيب النظام الهجين</a>}
       />
 
-      {/* تنصيب حاسبة مكتب — تعليمات كاملة + أمر آمن برمز لمرّة واحدة */}
-      <InstallComputer />
-
-      {/* واتساب المكاتب — فتح محادثات كل مكتب والرد عليها */}
-      {waOffices.length > 0 && (
-        <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-          <h3 className="mb-2 font-bold text-slate-800">💬 واتساب المكاتب</h3>
-          <p className="mb-3 text-xs text-slate-500">اضغط على مكتب لفتح محادثات واتساب الخاصة به (عرض، قراءة، ورد على رسائل المشتركين).</p>
-          <div className="flex flex-wrap gap-2">
-            {waOffices.map((o) => (
-              <button key={o.id} onClick={() => setChatOffice(o)} className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-emerald-100">
-                <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.state === "ready" ? "bg-emerald-500" : "bg-slate-300"}`} />
-                {o.name ?? `مكتب ${o.id}`}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {chatOffice && <OfficeChat officeId={chatOffice.id} officeName={chatOffice.name ?? `مكتب ${chatOffice.id}`} state={chatOffice.state} onClose={() => setChatOffice(null)} />}
-
-      {/* كشف راتب الموظف (الفني): تفاصيل + تسديد — نفس نافذة إدارة الفنيين */}
-      {salaryTech && <SalaryModal technicianId={salaryTech.id} name={salaryTech.name} onClose={() => setSalaryTech(null)} onSettled={load} />}
-
-      {/* تحديد سعر الكارت لكل فئة (للمدير حصراً) — يُطبَّق على الكروت الجديدة فقط */}
-      {cardData?.canEdit && (
-        <div className="mb-6 max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="mb-1 font-bold text-slate-800">💳 سعر الكارت لكل فئة</h3>
-          <p className="mb-3 text-xs text-slate-500">حدّد سعر شراء الكارت الواحد لكل فئة. يُطبَّق تلقائياً عند إضافة كروت الفئة، وتغييره يشمل الكروت الجديدة فقط.</p>
-          {cardData.packages.length === 0 ? <div className="text-sm text-slate-400">لا توجد فئات بعد — أضِفها من صفحة الباقات.</div> : (
-            <div className="space-y-2">
-              {cardData.packages.map((pk) => (
-                <div key={pk.id} className="flex items-center gap-2">
-                  <div className="w-32 shrink-0 text-sm font-medium text-slate-700">{pk.name ?? `#${pk.id}`}</div>
-                  <input type="number" value={priceInputs[pk.id] ?? ""} onChange={(e) => setPriceInputs((m) => ({ ...m, [pk.id]: e.target.value }))} placeholder="سعر الكارت" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                  <button onClick={() => savePrice(pk.id)} className="shrink-0 rounded-lg bg-mynet-blue px-3 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">حفظ</button>
-                </div>
-              ))}
-            </div>
-          )}
-          {priceMsg && <div className="mt-2 text-sm text-emerald-700">{priceMsg}</div>}
-        </div>
-      )}
-
-      {/* مبلغ مكافأة التفعيل لكل باقة (للمدير) */}
-      <RewardConfig />
-
-      {/* 🔴 لوحة الكروت الوهمية: مراجعة يدوية + إرجاع للمخزن أو حذف (بلا مساس بالوصل/المال) */}
-      {phantomLoaded && !phantomDenied && (
-        <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <h3 className="font-bold text-slate-800">🔴 الكروت الوهمية {phantomCards.length > 0 && <span className="text-rose-700">({phantomCards.length})</span>}</h3>
-            <button onClick={loadPhantom} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">↻ تحديث</button>
-          </div>
-          <p className="mb-3 text-xs text-slate-500">كروت عُلِّمت «مستخدمة» في البرنامج بلا تفعيل مقابل في SAS (بعد تحقّق مباشر بالبحث). راجعها، علّم ما تشاء، ثم اختر إجراءً. لا يُمَسّ الوصل ولا المال.</p>
-          {phantomCards.length === 0 ? (
-            <div className="rounded-lg bg-white px-3 py-2 text-sm text-emerald-700">لا توجد كروت وهمية بحاجة لمراجعة ✓</div>
-          ) : (
-            <>
-              <div className="overflow-x-auto rounded-lg border border-rose-200 bg-white">
-                <table className="w-full text-right text-sm">
-                  <thead className="bg-rose-100/60 text-xs text-slate-600">
-                    <tr>
-                      <th className="p-2"><input type="checkbox" aria-label="تحديد الكل" checked={phantomSel.size === phantomCards.length && phantomCards.length > 0} onChange={(e) => setPhantomSel(e.target.checked ? new Set(phantomCards.map((c) => c.cardId)) : new Set())} /></th>
-                      <th className="p-2">السيريال</th>
-                      <th className="p-2">المشترك</th>
-                      <th className="p-2">المكتب</th>
-                      <th className="p-2">تاريخ الاستخدام</th>
-                      <th className="p-2">مبلغ الوصل</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {phantomCards.map((c) => (
-                      <tr key={c.cardId} className="border-t border-rose-100">
-                        <td className="p-2"><input type="checkbox" aria-label={`تحديد ${c.serial ?? c.cardId}`} checked={phantomSel.has(c.cardId)} onChange={(e) => setPhantomSel((s) => { const n = new Set(s); if (e.target.checked) n.add(c.cardId); else n.delete(c.cardId); return n; })} /></td>
-                        <td className="p-2 font-mono text-xs">{c.serial ?? "؟"}</td>
-                        <td className="p-2">{c.subscriber ?? "—"}</td>
-                        <td className="p-2">{c.office ?? "—"}</td>
-                        <td className="p-2 text-xs text-slate-500">{c.useDate ? fmtDate(c.useDate) : "—"}</td>
-                        <td className="p-2">{c.amount != null ? fmt(c.amount) : "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500">محدَّد: {phantomSel.size}</span>
-                <button onClick={() => phantomAction("link")} disabled={phantomBusy || phantomSel.size === 0}
-                  className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-50"
-                  title="يبحث في SAS عن مستعمل هذا الكارت فعلاً ويربطه به">🔗 ربط بمشتركه</button>
-                <button onClick={() => phantomAction("return")} disabled={phantomBusy || phantomSel.size === 0} className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">↩ إرجاع للمخزن</button>
-                <button onClick={() => phantomAction("delete")} disabled={phantomBusy || phantomSel.size === 0} className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50">🗑 حذف نهائي</button>
-              </div>
-            </>
-          )}
-          {phantomMsg && <div className="mt-2 text-sm text-slate-700">{phantomMsg}</div>}
-        </div>
-      )}
-
-      {/* لا صلاحية مالية → اكتفِ بقسم الواتساب */}
-      {denied || !data ? null : (
-      <>
-      {/* البطاقات الرئيسية */}
+      {/* البطاقاتُ الرئيسيّة — مكشوفةٌ دائماً، وكلُّها مضغوطة (أ-٦ وسلامة المال) */}
+      {!denied && data && (
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card label="المبلغ الكلي الموجود" value={fmt(data.totalAvailable)} color="text-emerald-700" bg="bg-emerald-50" big onClick={() => setShowTotal(true)} hint="اضغط لتفكيك المعادلة" />
         <Card label="مجموع المبالغ اليومية" value={fmt(data.cumulativeDaily)} color="text-slate-700" bg="bg-slate-50" onClick={openDailyLog} hint="اضغط لعرض السجل اليومي" />
@@ -449,7 +351,54 @@ export default function ManagerAccountsPage() {
             وتُخفي نفسَها إن تعذّر الفحصُ فلا تُربك الصفحةَ ببطاقةٍ فارغة. */}
         <MoneyHealthButton />
       </div>
+      )}
 
+      {/* ═══════════ أ-١٩ · «قوائمُ منسدلةٌ وأزرارٌ بدل الوضع المزري» ═══════════
+          طلبُ محمد: «أليس من ضمن البنود أن تكون صفحةُ حسابات المدير على شكل قوائمَ
+          منسدلةٍ وأزرارٍ بدل الوضع المزري الحالي؟» — والشكوى **مقيسة**: ١٠٩٨ سطراً
+          و٨١ كيلوبايت و٤٤ حالةً في ملفٍّ واحد، وتسعةُ أقسامٍ **كلُّها مفتوحةٌ فوق
+          بعضها دائماً** فيلزم تمريرُ الصفحةِ كلِّها للوصول إلى أيّ شيء.
+
+          والقاعدةُ هنا: **البطاقاتُ تبقى مكشوفةً** — هي خلاصةُ الصفحة وكلُّ واحدةٍ
+          منها تُضغَط أصلاً (ومنها «سلامة المال» الذي يجب ألّا يُخفى تحت زرّ). وما
+          دونها أقسامُ عملٍ تُطلَب عند الحاجة، **واحدٌ في كلّ مرّة** فلا يعود الطولُ.
+
+          ⚠️ ولم يُغيَّر سطرٌ واحدٌ في داخل أيّ قسم — أُعيد ترتيبُها فقط. والكروتُ
+          الوهميّةُ إنذارٌ أحمرُ لا يجوز أن يُخفى، فعددُها **على زرّه** ويصير الزرُّ
+          أحمرَ حين يكون فيها شيء، فتراه من أوّل نظرةٍ بلا فتحِ القسم. */}
+      <div className="mb-6 flex flex-wrap gap-2">
+        {([
+          ["tx", "💵", "حركةٌ جديدة · المدراء · الرواتب", !denied && !!data, 0],
+          ["wa", "💬", "واتساب المكاتب", waOffices.length > 0, 0],
+          ["phantom", "🔴", "الكروت الوهمية", phantomLoaded && !phantomDenied, phantomCards.length],
+          ["cardprice", "💳", "سعر الكارت لكل فئة", !!cardData?.canEdit, 0],
+          ["reward", "🎁", "مكافأة التفعيل", true, 0],
+          ["install", "💻", "تنصيب حاسبة مكتب", true, 0],
+        ] as [string, string, string, boolean, number][])
+          .filter((x) => x[3])
+          .map(([id, icon, label, , badge]) => {
+            const on = sec === id;
+            const alert = badge > 0;
+            return (
+              <button key={id} onClick={() => setSec(on ? null : id)}
+                className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold shadow-sm transition ${
+                  on ? "border-mynet-blue bg-mynet-blue text-white"
+                     : alert ? "border-rose-300 bg-rose-50 text-rose-700 hover:border-rose-400"
+                     : "border-slate-200 bg-white text-slate-700 hover:border-mynet-blue hover:shadow"}`}>
+                <span className="text-base">{icon}</span>
+                <span>{label}</span>
+                {alert && (
+                  <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-extrabold ${on ? "bg-white/25" : "bg-rose-600 text-white"}`}>{badge}</span>
+                )}
+                <span className={`text-[11px] ${on ? "opacity-80" : "text-slate-400"}`}>{on ? "▲" : "▼"}</span>
+              </button>
+            );
+          })}
+      </div>
+
+      {/* ══════ الأقسام — واحدٌ مفتوحٌ في كلّ مرّة ══════ */}
+      {sec === "tx" && !denied && data && (
+      <>
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         {/* نموذج حركة جديدة */}
         <div className="space-y-5">
@@ -640,6 +589,116 @@ export default function ManagerAccountsPage() {
       </div>
       </>
       )}
+
+      {sec === "wa" && (<>
+      {/* واتساب المكاتب — فتح محادثات كل مكتب والرد عليها */}
+      {waOffices.length > 0 && (
+        <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <h3 className="mb-2 font-bold text-slate-800">💬 واتساب المكاتب</h3>
+          <p className="mb-3 text-xs text-slate-500">اضغط على مكتب لفتح محادثات واتساب الخاصة به (عرض، قراءة، ورد على رسائل المشتركين).</p>
+          <div className="flex flex-wrap gap-2">
+            {waOffices.map((o) => (
+              <button key={o.id} onClick={() => setChatOffice(o)} className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-emerald-100">
+                <span className={`inline-block h-2.5 w-2.5 rounded-full ${o.state === "ready" ? "bg-emerald-500" : "bg-slate-300"}`} />
+                {o.name ?? `مكتب ${o.id}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      </>)}
+
+      {sec === "phantom" && (<>
+      {/* 🔴 لوحة الكروت الوهمية: مراجعة يدوية + إرجاع للمخزن أو حذف (بلا مساس بالوصل/المال) */}
+      {phantomLoaded && !phantomDenied && (
+        <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <h3 className="font-bold text-slate-800">🔴 الكروت الوهمية {phantomCards.length > 0 && <span className="text-rose-700">({phantomCards.length})</span>}</h3>
+            <button onClick={loadPhantom} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50">↻ تحديث</button>
+          </div>
+          <p className="mb-3 text-xs text-slate-500">كروت عُلِّمت «مستخدمة» في البرنامج بلا تفعيل مقابل في SAS (بعد تحقّق مباشر بالبحث). راجعها، علّم ما تشاء، ثم اختر إجراءً. لا يُمَسّ الوصل ولا المال.</p>
+          {phantomCards.length === 0 ? (
+            <div className="rounded-lg bg-white px-3 py-2 text-sm text-emerald-700">لا توجد كروت وهمية بحاجة لمراجعة ✓</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto rounded-lg border border-rose-200 bg-white">
+                <table className="w-full text-right text-sm">
+                  <thead className="bg-rose-100/60 text-xs text-slate-600">
+                    <tr>
+                      <th className="p-2"><input type="checkbox" aria-label="تحديد الكل" checked={phantomSel.size === phantomCards.length && phantomCards.length > 0} onChange={(e) => setPhantomSel(e.target.checked ? new Set(phantomCards.map((c) => c.cardId)) : new Set())} /></th>
+                      <th className="p-2">السيريال</th>
+                      <th className="p-2">المشترك</th>
+                      <th className="p-2">المكتب</th>
+                      <th className="p-2">تاريخ الاستخدام</th>
+                      <th className="p-2">مبلغ الوصل</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {phantomCards.map((c) => (
+                      <tr key={c.cardId} className="border-t border-rose-100">
+                        <td className="p-2"><input type="checkbox" aria-label={`تحديد ${c.serial ?? c.cardId}`} checked={phantomSel.has(c.cardId)} onChange={(e) => setPhantomSel((s) => { const n = new Set(s); if (e.target.checked) n.add(c.cardId); else n.delete(c.cardId); return n; })} /></td>
+                        <td className="p-2 font-mono text-xs">{c.serial ?? "؟"}</td>
+                        <td className="p-2">{c.subscriber ?? "—"}</td>
+                        <td className="p-2">{c.office ?? "—"}</td>
+                        <td className="p-2 text-xs text-slate-500">{c.useDate ? fmtDate(c.useDate) : "—"}</td>
+                        <td className="p-2">{c.amount != null ? fmt(c.amount) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500">محدَّد: {phantomSel.size}</span>
+                <button onClick={() => phantomAction("link")} disabled={phantomBusy || phantomSel.size === 0}
+                  className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+                  title="يبحث في SAS عن مستعمل هذا الكارت فعلاً ويربطه به">🔗 ربط بمشتركه</button>
+                <button onClick={() => phantomAction("return")} disabled={phantomBusy || phantomSel.size === 0} className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">↩ إرجاع للمخزن</button>
+                <button onClick={() => phantomAction("delete")} disabled={phantomBusy || phantomSel.size === 0} className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50">🗑 حذف نهائي</button>
+              </div>
+            </>
+          )}
+          {phantomMsg && <div className="mt-2 text-sm text-slate-700">{phantomMsg}</div>}
+        </div>
+      )}
+      </>)}
+
+      {sec === "cardprice" && (<>
+      {/* تحديد سعر الكارت لكل فئة (للمدير حصراً) — يُطبَّق على الكروت الجديدة فقط */}
+      {cardData?.canEdit && (
+        <div className="mb-6 max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="mb-1 font-bold text-slate-800">💳 سعر الكارت لكل فئة</h3>
+          <p className="mb-3 text-xs text-slate-500">حدّد سعر شراء الكارت الواحد لكل فئة. يُطبَّق تلقائياً عند إضافة كروت الفئة، وتغييره يشمل الكروت الجديدة فقط.</p>
+          {cardData.packages.length === 0 ? <div className="text-sm text-slate-400">لا توجد فئات بعد — أضِفها من صفحة الباقات.</div> : (
+            <div className="space-y-2">
+              {cardData.packages.map((pk) => (
+                <div key={pk.id} className="flex items-center gap-2">
+                  <div className="w-32 shrink-0 text-sm font-medium text-slate-700">{pk.name ?? `#${pk.id}`}</div>
+                  <input type="number" value={priceInputs[pk.id] ?? ""} onChange={(e) => setPriceInputs((m) => ({ ...m, [pk.id]: e.target.value }))} placeholder="سعر الكارت" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                  <button onClick={() => savePrice(pk.id)} className="shrink-0 rounded-lg bg-mynet-blue px-3 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark">حفظ</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {priceMsg && <div className="mt-2 text-sm text-emerald-700">{priceMsg}</div>}
+        </div>
+      )}
+      </>)}
+
+      {sec === "reward" && (<>
+      {/* مبلغ مكافأة التفعيل لكل باقة (للمدير) */}
+      <RewardConfig />
+      </>)}
+
+      {sec === "install" && (<>
+      {/* تنصيب حاسبة مكتب — تعليمات كاملة + أمر آمن برمز لمرّة واحدة */}
+      <InstallComputer />
+      </>)}
+
+      {/* النوافذُ المنبثقةُ تُصيَّر دائماً — تُفتح من داخل الأقسام ولا تتبع أيَّها */}
+      {chatOffice && <OfficeChat officeId={chatOffice.id} officeName={chatOffice.name ?? `مكتب ${chatOffice.id}`} state={chatOffice.state} onClose={() => setChatOffice(null)} />}
+      {/* كشف راتب الموظف (الفني): تفاصيل + تسديد — نفس نافذة إدارة الفنيين */}
+      {salaryTech && <SalaryModal technicianId={salaryTech.id} name={salaryTech.name} onClose={() => setSalaryTech(null)} onSettled={load} />}
+
 
       {/* تفاصيل المدير: كل حركاته من كل القنوات — بما فيها ما سجّله المستخدم
           من صفحة المصروفات والمقبوضات على حساب هذا المدير في أي مكتب */}
