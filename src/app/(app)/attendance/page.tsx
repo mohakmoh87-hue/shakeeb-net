@@ -34,6 +34,11 @@ type LogRow = {
   checkOut: string | null; checkOutActual: string | null;
   checkoutBy: string | null; lateExcuse: string | null;
   inOffice: string | null; outOffice: string | null;
+  // البند ٧ · الخصمُ وأثرُ مسحه
+  lateDeduction: number | null; earlyDeduction: number | null;
+  salaryStatementId: number | null;
+  deductionClearedBy: string | null; deductionClearedAt: string | null;
+  deductionClearReason: string | null; deductionClearedAmount: number | null;
 };
 type Office = { id: number; name: string | null };
 
@@ -85,6 +90,25 @@ export default function AttendancePage() {
   useEffect(() => {
     fetch("/api/towers").then((r) => void (r.ok && r.json().then((rows: Office[]) => setOffices(rows))));
   }, []);
+
+  // ═══ البند ٧ · مسحُ خصمٍ بسببٍ إلزاميّ («ولأيّ سبب وليس فقط البصمة») ═══
+  // ⛔ وقاعدةُ محمد: يومٌ مختومٌ بكشفِ راتبٍ **لا يُمسَح** — المسارُ يرفضه ٤٠٩، والواجهةُ
+  //    لا تُظهر الزرَّ له أصلاً فلا يُضغَط ما سيُرفَض.
+  const [clearing, setClearing] = useState<number | null>(null);
+  async function clearDeduction(row: LogRow) {
+    const reason = prompt("سببُ مسح الخصم (إلزاميّ):")?.trim();
+    if (!reason) return;
+    setClearing(row.id);
+    const r = await fetch("/api/field/attendance/clear-deduction", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attendanceId: row.id, reason }),
+    }).catch(() => null);
+    const d = await r?.json().catch(() => null);
+    setClearing(null);
+    if (!r?.ok) { alert(d?.error ?? "تعذّر مسح الخصم"); return; }
+    if (openTech) openLog(openTech); // إعادةُ قراءةٍ فيظهر أثرُ المسح فوراً
+    load();
+  }
 
   function openLog(t: Tech) {
     setOpenTech(t);
@@ -223,6 +247,7 @@ export default function AttendancePage() {
                       <th className="px-3 py-2 text-right font-semibold">اليوم</th>
                       <th className="px-3 py-2 text-center font-semibold">دخول</th>
                       <th className="px-3 py-2 text-center font-semibold">خروج</th>
+                      <th className="px-3 py-2 text-center font-semibold">الخصم</th>
                       <th className="px-3 py-2 text-right font-semibold">ملاحظات</th>
                     </tr>
                   </thead>
@@ -244,6 +269,32 @@ export default function AttendancePage() {
                             <span className="mr-1 text-[10px] text-slate-400">(فعليّ {hhmm(r.checkOutActual)})</span>
                           )}
                           {r.outOffice && <span className="mr-1 rounded bg-purple-100 px-1 py-0.5 text-[10px] text-purple-700">{r.outOffice}</span>}
+                        </td>
+                        <td className="px-3 py-2 text-center text-[12px]">
+                          {r.deductionClearedAt ? (
+                            <span className="text-emerald-600"
+                              title={`مسحه ${r.deductionClearedBy ?? "—"} · السبب: ${r.deductionClearReason ?? "—"}`}>
+                              مُسِح{r.deductionClearedAmount ? ` (${r.deductionClearedAmount.toLocaleString("en-US")})` : ""}
+                            </span>
+                          ) : ((r.lateDeduction ?? 0) + (r.earlyDeduction ?? 0)) <= 0 ? (
+                            <span className="text-slate-300">—</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1">
+                              <b className="text-red-600 tabular-nums">
+                                {((r.lateDeduction ?? 0) + (r.earlyDeduction ?? 0)).toLocaleString("en-US")}
+                              </b>
+                              {/* يومٌ مختومٌ بكشفٍ: لا زرَّ مسحٍ — «لا مسحَ بعد صرف الراتب» */}
+                              {r.salaryStatementId == null ? (
+                                <button onClick={() => void clearDeduction(r)} disabled={clearing === r.id}
+                                  className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-600 hover:bg-rose-100 disabled:opacity-50">
+                                  {clearing === r.id ? "…" : "مسح"}
+                                </button>
+                              ) : (
+                                <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-500"
+                                  title="اليومُ مختومٌ بكشف راتبٍ مصروف">مختوم</span>
+                              )}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-[12px] text-slate-500">
                           {r.checkoutBy && r.checkoutBy !== "tech" && <span className="mr-1">خروجٌ آليّ</span>}

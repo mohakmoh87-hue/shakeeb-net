@@ -132,7 +132,7 @@ export async function GET(request: Request) {
     const recs = await prisma.attendance.findMany({
       where: { technicianId: logTechId },
       orderBy: { dayKey: "desc" },
-      select: { id: true, dayKey: true, checkIn: true, checkInActual: true, checkOut: true, checkOutActual: true, checkoutBy: true, lateExcuse: true,
+      select: { id: true, dayKey: true, checkIn: true, checkInActual: true, checkOut: true, checkOutActual: true, checkoutBy: true, lateExcuse: true, lateDeduction: true, earlyDeduction: true, salaryStatementId: true, deductionClearedBy: true, deductionClearedAt: true, deductionClearReason: true, deductionClearedAmount: true,
         // أ-١٠/القاعدة ٣ · تُقرأ الآن وتُعرَض: **أين** بصم — و`towerId` **لمن** يُحتسَب
         towerId: true, checkInTowerId: true, checkOutTowerId: true },
       take: 120,

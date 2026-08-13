@@ -883,6 +883,15 @@ model Attendance {
   lateMinutes     Int? // دقائق تأخير الدخول (فوق السماحية)
   earlyMinutes    Int? // دقائق الخروج المبكّر
   overtimeMinutes Int? // دقائق الإضافي (فوق نهاية الدوام + السماحية)
+  // ═════ البند ٧ · «يمكن للمدير مسحُ أيّ خصمٍ ولأيّ سبب» (طلبُ محمد 2026-08-14) ═════
+  // والمسحُ **سجلٌّ لا محوٌ**: مَن مسح ومتى ولماذا يبقون مكتوبين — فشرطُ محمد الدائم
+  // «ألّا يضيع شيء»، وخصمٌ يختفي بلا أثرٍ يُراجَع يجعل كشفَ الراتب غيرَ قابلٍ للتفسير.
+  // 🔑 والأصلُ يُحفظ في `deductionClearedAmount`: كم كان الخصمُ قبل المسح — فبلا ذلك
+  //    لا يُعرَف ما أُعفي عنه، ولا يُمكن التراجعُ ولا التدقيق.
+  deductionClearedBy     String?   // اسمُ المدير الذي مسح
+  deductionClearedAt     DateTime?
+  deductionClearReason   String?   // السببُ — إلزاميٌّ في المسار
+  deductionClearedAmount Int?      // مجموعُ ما كان مخصوماً قبل المسح
   lateDeduction     Int? // خصم التأخير
   earlyDeduction    Int? // خصم الخروج المبكّر
   overtimeAddition  Int? // مبلغ الإضافي
