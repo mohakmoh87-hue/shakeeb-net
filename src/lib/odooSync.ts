@@ -87,7 +87,10 @@ async function offices(agentId: number): Promise<OfficeRow[]> {
   const panels = all.length
     ? await prisma.sasPanel.findMany({
         where: {
-          isDeleted: false, isPrimary: false, odooUser: { not: null }, odooPass: { not: null },
+          isDeleted: false, isPrimary: false,
+          // ⚠️ **لا يكفي `not: null`**: لوحاتُ صميم فيها `odooUser = ""` (نصٌّ فارغٌ لا NULL)
+          //   فيقبله الترشيح ⇒ وحدةٌ بمستخدمٍ فارغٍ تفشل كلَّ دورةٍ وتكتب خطأً بلا فائدة.
+          odooUser: { not: null, notIn: [""] }, odooPass: { not: null, notIn: [""] },
           towerId: { in: all.map((t) => t.id) }, // 🔒 عزلُ الوكيل: مكاتبُه وحدَها
         },
         select: {
@@ -98,7 +101,7 @@ async function offices(agentId: number): Promise<OfficeRow[]> {
     : [];
   return [
     // (١) المكاتبُ بأعمدتها — بنفس شرطها القديم حرفيّاً (لها user+pass)
-    ...all.filter((t) => t.odooUser && t.odooPass).map((t) => ({ ...t, panelId: null as number | null })),
+    ...all.filter((t) => t.odooUser?.trim() && t.odooPass?.trim()).map((t) => ({ ...t, panelId: null as number | null })),
     // (٢) واللوحاتُ غيرُ الأولى بحساباتها
     ...panels.map((p) => {
       const t = byId.get(p.towerId);
@@ -203,7 +206,7 @@ async function runPull(): Promise<void> {
           if (t.stageName.trim().toLowerCase() === "change team") {
             try { await odooReceive(s, t.id); } catch { /* لا يمنع الإنشاء */ }
           }
-          await upsertOdooCard(o.id, t);
+          await upsertOdooCard(o.id, t, o.panelId);
         }
         if (maxId > (o.odooLastTicketId ?? 0)) await saveOdooState(o, { odooLastTicketId: maxId });
 
@@ -211,7 +214,7 @@ async function runPull(): Promise<void> {
         const listIds = await listIdsOf(o.id);
         if (listIds.length) {
           const open = await prisma.taskCard.findMany({
-            where: { listId: { in: listIds }, viaOdoo: true, odooTicketId: { not: null }, done: false, settled: false, isDeleted: false, archivedAt: null },
+            where: { listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null }, done: false, settled: false, isDeleted: false, archivedAt: null },
             select: { id: true, odooTicketId: true }, take: 40,
           });
           for (const c of open) {
@@ -260,7 +263,7 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
     const [pending, postponed] = await Promise.all([
       prisma.taskCard.findMany({
         where: {
-          listId: { in: listIds }, viaOdoo: true, odooTicketId: { not: null }, odooPushedAt: null,
+          listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null }, odooPushedAt: null,
           isDeleted: false, OR: [{ done: true }, { settled: true }],
         },
         select: { id: true, odooTicketId: true, done: true, settled: true, serviceDetails: true, techNote: true, odooBg: true, history: true },
@@ -269,7 +272,7 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
       // ملاحظة تأجيلٍ يدويّ أحدث من آخر دفع (تُدفَع دائماً — لا تخضع لمفاتيح الإرسال)
       prisma.taskCard.findMany({
         where: {
-          listId: { in: listIds }, viaOdoo: true, odooTicketId: { not: null },
+          listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null },
           done: false, settled: false, isDeleted: false, archivedAt: null,
           postponeNote: { not: null }, postponeNoteAt: { not: null },
         },
@@ -447,7 +450,7 @@ async function runSlaSweep(): Promise<void> {
       // الجديدة إلى أودو (الترشيح بالختم كان يُسقط كلّ تأجيلٍ بعد الأوّل — اصطاده تدقيق عدائيّ).
       const cards = await prisma.taskCard.findMany({
         where: {
-          listId: { in: listIds }, viaOdoo: true, odooTicketId: { not: null },
+          listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null },
           done: false, settled: false, isDeleted: false, archivedAt: null,
         },
         select: {

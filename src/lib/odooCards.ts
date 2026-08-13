@@ -22,7 +22,7 @@ export async function getOrCreateOdooList(towerId: number | null) {
 
 // إنشاء بطاقة أودو إن لم توجد (منع تكرار بـ odooTicketId — نسخة أودو واحدة، id فريد عالميّاً؛
 // نبحث في كامل البطاقات فحتى التي غادرت العمود بعد إسناد فئة لا تُكرَّر). يعيد {created, cardId}.
-export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket): Promise<{ created: boolean; cardId: number }> {
+export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket, panelId: number | null = null): Promise<{ created: boolean; cardId: number }> {
   const existing = await prisma.taskCard.findFirst({ where: { odooTicketId: ticket.id, isDeleted: false }, select: { id: true } });
   if (existing) return { created: false, cardId: existing.id };
 
@@ -49,6 +49,7 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket)
       kind: "", viaOdoo: true, odooTicketId: ticket.id, usernameRequired, // بلا فئة — الوسم الجانبيّ يميّزها
       // مهلة سوبر سيل: مرجع العدّاد زمنُ أودو نفسه (مُطبَّعاً UTC — نصّه بلا منطقة)، ولحظة السحب
       // لمهلة الرؤية وبوّابة التسليح، والهاتف عموداً صريحاً (لا استخراجاً بـregex من الوصف).
+      odooPanelId: panelId, // أ-٢٣ · لوحةُ أودو التي جاءت منها — يمنع التنفيذَ المزدوج
       odooCreatedAt: odooDateToUtc(ticket.createDate),
       odooFetchedAt: new Date(),
       odooPhone: ticket.phone ?? null,
