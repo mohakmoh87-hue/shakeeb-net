@@ -56,6 +56,32 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   if (s.client && (s.state === "ready" || s.state === "authenticated" || s.state === "qr")) {
     return s.state;
   }
+
+  // ═════ لا تُستضاف جلسةٌ لا يحتاجها أحد (تدقيقُ 2026-08-13) ═════
+  // 🔴 وُجد صفُّ جلسةٍ بحالة `qr` **لمكتبٍ محذوف** (المواصلات ٣) بلا مضيفٍ إطلاقاً —
+  //   متصفّحٌ وذاكرةٌ ورمزٌ يُولَّد لمكتبٍ لم يعد موجوداً، ويُحصى «غير متصل» أبداً.
+  // 🔑 و**الشرطُ ليس `waEnabled` وحدَه**: مكتبُ الشهداء واتسابُه مُطفأٌ للمشتركين لكنّ
+  //   له **رقمَ مدير**، وتقريرُ المدير يُرسَل عبر واتساب ⇒ **يحتاج الجلسةَ بحقّ**.
+  //   فالمنعُ لمن لا يحتاجه لشيء: مُطفأٌ **ولا رقمَ مدير**. (ولولا هذا القيدُ لَقطعتُ
+  //   تقريرَ مديرِ مكتبَين — قِيسا: الشهداء ٦ والتقنيات الضوئيّة ٤٠.)
+  const office = await prisma.tower.findUnique({
+    where: { id: officeId },
+    select: { isDeleted: true, waEnabled: true, managerPhone: true },
+  }).catch(() => null);
+  if (office) {
+    const needed = office.waEnabled !== "0" || !!office.managerPhone?.trim();
+    if (office.isDeleted || !needed) {
+      s.state = "disconnected";
+      s.qr = null;
+      s.lastError = office.isDeleted ? "المكتب محذوف" : "واتساب المكتب مُطفأ ولا رقمَ مدير له";
+      // ويُنظَّف الصفُّ المنشورُ كي لا يبقى «qr» أبداً في كلّ عدٍّ وشاشة
+      await prisma.waSession.updateMany({
+        where: { towerId: officeId },
+        data: { state: "disconnected", qr: null, error: s.lastError },
+      }).catch(() => {});
+      return s.state;
+    }
+  }
   // ما زال يقلع حديثاً → دعه يكمل
   if (s.client && s.state === "starting" && s.startedAt && Date.now() - s.startedAt < STARTUP_TIMEOUT_MS) {
     return s.state;

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatDate } from "@/lib/format";
 import { onMoneyRefresh } from "@/lib/moneyRefresh";
 import TxDrillModal from "@/components/TxDrillModal";
+import WaStatusBadge from "@/components/WaStatusBadge";
 
 // «الضغط على المبلغ يفتح مكوّناته» (المرحلة ٥ · ووُسِّع 2026-08-13): الجدولُ نفسُه صار
 // `TxDrillModal` المشترك — تستعمله هذه البطاقةُ ونافذةُ يومٍ سابقٍ في حسابات المدير معاً،
@@ -105,6 +106,9 @@ export default function DailyReportCard({
     <div className="card">
       <div className="ch">
         <h2>التقرير اليومي</h2>
+        {/* مؤشِّرُ واتساب المكاتب — نُقل إلى هنا (طلبُ محمد): الزرُّ الجديد في شريط
+            المشتركين كان سيُزيحه يساراً. ويقول **لماذا** يحتاجه كلُّ مكتبٍ منقطع. */}
+        <WaStatusBadge />
         <Link className="obtn" href="/receipts" style={{ textDecoration: "none" }}>سجل الوصولات</Link>
       </div>
       <div style={{ padding: "0 16px 6px", fontSize: 11, color: "var(--muted)" }}>{formatDate(new Date())}</div>

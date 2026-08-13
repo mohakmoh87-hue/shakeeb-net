@@ -17,9 +17,22 @@ export async function GET() {
   // المكاتب التي تحتاج واتساب (لمشتركيها أو لمديرها) — مستقل عن مفتاح رسائل المشتركين
   const offices = await prisma.tower.findMany({
     where: { isDeleted: false, OR: [{ NOT: { waEnabled: "0" } }, { managerPhone: { not: null } }], ...officeFilter },
-    select: { id: true, name: true },
+    select: { id: true, name: true, waEnabled: true, managerPhone: true },
   });
   const states = await readOfficeStates(offices.map((o) => o.id));
-  const list = offices.map((o) => ({ id: o.id, name: o.name, state: states[o.id] ?? "disconnected" }));
+  // ═════ التنبيهُ يقول **لماذا** يحتاجه هذا المكتب (سؤالُ محمد 2026-08-13) ═════
+  // قال: «تظهر لي غيرُ متصلٍ في الرئيسيّة وأجدُ المكاتبَ الثلاثةَ متّصلة». والقياسُ
+  // كشف أنّ المقصودَ **مكتبُ الشهداء**: واتسابُه مُطفأٌ **للمشتركين** (`waEnabled=0`)
+  // لكنّ له **رقمَ مدير** ⇒ يُحصى بحقٍّ لأنّ **تقريرَ المدير يُرسَل عبر واتساب**.
+  // فالتنبيهُ كان صادقاً، والناقصُ **سببُه**: «غير متصل» بلا سببٍ تُقرأ عطلاً، فيفتح
+  // المديرُ بطاقاتِ المكاتب المُشتغَلة فيجدها متّصلةً فيظنّ البرنامجَ كاذباً.
+  // ⇒ يُرسَل `need` مع كلّ مكتب، وتُظهره الشاشةُ بجانب اسمه.
+  const list = offices.map((o) => ({
+    id: o.id, name: o.name,
+    state: states[o.id] ?? "disconnected",
+    // "subscribers" = رسائلُ المشتركين (وتقريرُ المدير معها إن وُجد رقمُه)
+    // "manager"     = تقريرُ المدير **فقط** — مكتبٌ أُطفئت رسائلُ مشتركيه بقصد
+    need: o.waEnabled !== "0" ? ("subscribers" as const) : ("manager" as const),
+  }));
   return NextResponse.json({ offices: list, disconnected: list.filter((o) => o.state !== "ready") });
 }

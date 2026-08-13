@@ -150,7 +150,6 @@ export default function SubscribersBoard() {
   // تنبيه واتساب + حالة واتساب المكاتب
   const [waNotice, setWaNotice] = useState<"no-phone" | "bad-phone" | "no-whatsapp" | null>(null);
   const waCheckId = useRef<number | null>(null);
-  const [waOffices, setWaOffices] = useState<{ ready: number; total: number; downNames: string[] } | null>(null);
   // نافذة عمليات 🛠️
   const [opsSub, setOpsSub] = useState<Subscriber | null>(null);
   const [opsBusy, setOpsBusy] = useState(false);
@@ -242,17 +241,7 @@ export default function SubscribersBoard() {
   useEffect(() => {
     fetch("/api/packages").then((r) => void (r.ok && r.json().then(setPackages)));
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setTowers)));
-    // حالة واتساب المكاتب (يسار الترويسة)
-    fetch("/api/whatsapp/offices-status").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d?.offices) {
-        const down = (d.disconnected ?? []) as { name: string | null }[];
-        setWaOffices({
-          ready: d.offices.filter((o: { state: string }) => o.state === "ready").length,
-          total: d.offices.length,
-          downNames: down.map((o) => o.name ?? "؟"),
-        });
-      }
-    }).catch(() => {});
+    // (حالةُ الواتساب انتقلت إلى `WaStatusBadge` في ترويسة التقرير اليوميّ)
   }, []);
 
   useEffect(() => {
@@ -497,18 +486,9 @@ export default function SubscribersBoard() {
           {can("subscribers.delete") && <button className="gbtn danger" onClick={() => setDelMenu(true)}>🗑️ حذف</button>}
           <span className="newgrp">
             <button className="obtn" onClick={() => openEdit(null)}>+ مشترك جديد</button>
-            {waOffices && (
-              <button
-                className={`wa ${waOffices.ready === waOffices.total ? "up" : "down"}`}
-                onClick={() => router.push("/towers")}
-                title={waOffices.ready === waOffices.total ? "كل مكاتب الواتساب متصلة" : `اضغط لفتح صفحة ربط QR — غير متصل: ${waOffices.downNames.join("، ")}`}
-              >
-                <span className="wa-d" />
-                {waOffices.ready === waOffices.total
-                  ? "واتساب متصل"
-                  : `واتساب غير متصل ${waOffices.total - waOffices.ready} مكتب`}
-              </button>
-            )}
+            {/* نُقل مؤشِّرُ الواتساب إلى ترويسة «التقرير اليوميّ» (طلبُ محمد 2026-08-13):
+                الزرُّ الجديد «تنصيبات خارجيّة» سيأخذ مكانَه هنا ويُزيحه يساراً.
+                والمكانُ يبقى فارغاً له. (المكوّن: `WaStatusBadge`) */}
           </span>
         </div>
       </div>
