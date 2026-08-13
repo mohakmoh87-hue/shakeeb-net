@@ -216,7 +216,11 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
 
   // الترتيب: النقاط ثم عدد البطاقات
   rows.sort((a, b) => b.points - a.points || b.cards - a.cards);
-  const leader = rows.find((r) => r.cards >= MIN_CARDS_FOR_CROWN) ?? null;
+  // 🔴 و`points > 0` شرطٌ **أضافه بندُ النقاط**: التتويجُ كان يشترط عددَ بطاقاتٍ وحدَه،
+  // فلمّا صار المديرُ يستطيع تصفيرَ فئةٍ أمكن أن يُتوَّج فنيٌّ أنجز خمسَ بطاقاتٍ **كلُّها من
+  // فئةٍ مُصفَّرة** فيظهر «👑 المتصدّر — ٠ نقطة» في الرئيسيّة. والتاجُ بلا نقطةٍ عبثٌ يُسقط
+  // ثقةَ المسابقة كلِّها. (وهو الخطرُ الرابعُ من مخاطر البند الأربعة المُسجَّلة سابقاً.)
+  const leader = rows.find((r) => r.cards >= MIN_CARDS_FOR_CROWN && r.points > 0) ?? null;
 
   // ===== حصاد كل مكتب + المجموع الكلي (طلب محمد 2026-08-05) =====
   // الفئة تُعدّ حيث **أُنجز العمل** (towerId على قيد الإنجاز) لا حيث يسكن الفني —
@@ -252,6 +256,9 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
       avgMin: Math.round(((kindAvgSec.get(k) ?? 0) / 60) * 10) / 10,
       weight: wOf(k),
     })).sort((a, b) => b.weight - a.weight),
-    weights: KIND_WEIGHTS, defaultWeight: DEFAULT_WEIGHT, minCards: MIN_CARDS_FOR_CROWN,
+    // الأوزانُ **الفعليّة** لا المبنيّةُ وحدَها — وهذا هو المسارُ الذي يُعرَض دائماً (والآخرُ
+    // لا يُصاب إلّا حين لا بطاقةَ في الفترة). فلو بقي مبنيّاً لبقيت الأسطورةُ تقول «توصيل
+    // ×٠٫٢٥» بعد تصفيره، فيكذب الشرحُ على الحساب في نفس الشاشة.
+    weights: effectiveWeights, defaultWeight: DEFAULT_WEIGHT, minCards: MIN_CARDS_FOR_CROWN,
   };
 }
