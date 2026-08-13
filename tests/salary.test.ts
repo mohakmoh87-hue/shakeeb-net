@@ -22,8 +22,11 @@ const AUG = { from: day(1), to: day(31) };
 const run = (
   salary: number,
   att: SalaryAttendance[],
-  extra: { adj?: SalaryAdjustment[]; money?: SalaryMoneyTx[]; leaves?: SalaryLeave[]; carryIn?: number } = {},
-) => computeSalary(salary, att, extra.leaves ?? [], extra.adj ?? [], extra.money ?? [], day(31), AUG, extra.carryIn ?? 0);
+  extra: {
+    adj?: SalaryAdjustment[]; money?: SalaryMoneyTx[]; leaves?: SalaryLeave[]; carryIn?: number;
+    negMode?: "carry" | "zero";
+  } = {},
+) => computeSalary(salary, att, extra.leaves ?? [], extra.adj ?? [], extra.money ?? [], day(31), AUG, extra.carryIn ?? 0, extra.negMode ?? "carry");
 
 // ═══════════════════════════════════════════════════════════════════════════
 describe("معدّلُ اليوم — الأساسُ الذي تنبع منه المئاتُ والوحدات", () => {
@@ -164,6 +167,58 @@ describe("سلامةُ البنود — ما وجده التدقيقُ صحيح�
   test("ما خارجَ الفترة لا يُحتسب", () => {
     const r = computeSalary(500_000, [present(1), present(2)], [], [], [], day(31), { from: day(2), to: day(31) });
     assert.equal(r.daysPaid, 1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// (ب) · خيارا الراتب السالب والمُرحَّل — أُصلح فيها **صفرٌ حرفيٌّ** كان يمحو الدَّين:
+// `statementForTechnician` كانت تُمرّر `carryIn = 0` دائماً، فـ`carryOut` يُخزَّن في
+// `salary_statements` **ولا يُقرَأ أبداً** ⇒ خيارُ «رحِّل» (وهو الافتراضيّ) يُضيّع دَينَ
+// الفنيّ صامتاً. وهذه المواصفةُ تحرس المعادلاتَ الأربع: due · paid · carryOut · collected.
+describe("(ب) · المُرحَّلُ وخيارا الراتب السالب", () => {
+  test("راتبٌ موجبٌ ⇒ لا مُرحَّلَ ولا استيفاء", () => {
+    const r = run(500_000, [present(1), present(2), present(3)]);
+    assert.ok(r.roundedDue > 0, "ثلاثةُ أيّامٍ حضورٍ تُنتج مستحقّاً موجباً");
+    assert.equal(r.carryOut, 0, "الموجبُ يُصرف كاملاً فلا يبقى شيءٌ للترحيل");
+    assert.equal(r.collected, 0);
+  });
+
+  test("مُرحَّلٌ سالبٌ من الفترة السابقة يُخصَم من هذه الفترة", () => {
+    const base = run(500_000, [present(1), present(2), present(3)]);
+    const withCarry = run(500_000, [present(1), present(2), present(3)], { carryIn: -20_000 });
+    assert.equal(withCarry.net, base.net, "المُرحَّلُ لا يمسّ الصافيَ المحسوب — فهو ليس من عمل الفترة");
+    assert.equal(withCarry.due, base.net - 20_000, "بل يُخصم من المستحقّ: due = net + carryIn");
+    assert.ok(withCarry.roundedDue < base.roundedDue, "فينقص المدفوع فعلاً");
+  });
+
+  test("«رحِّل» ⇒ السالبُ يُرحَّل بإشارته ولا مالَ يُقبَض", () => {
+    // يومٌ واحدٌ (١٦٬١٢٩) وسلفةٌ ١٠٠٬٠٠٠ ⇒ صافٍ سالب
+    const r = run(500_000, [present(1)], {
+      money: [{ dayKey: day(1), moneyIn: 0, moneyOut: 100_000, notes: "سلفة", txId: 1 }],
+      negMode: "carry",
+    });
+    assert.ok(r.roundedDue < 0, "الصافي سالبٌ فعلاً");
+    assert.equal(r.paid, 0, "لا يُصرف شيءٌ على السالب");
+    assert.equal(r.carryOut, r.roundedDue, "يُرحَّل بالمقدار نفسِه وبإشارته — وهذا ما كان يُمحى");
+    assert.equal(r.collected, 0, "«رحِّل» لا يقبض نقداً");
+  });
+
+  test("«صفِّر» ⇒ استيفاءٌ نقديٌّ بمقداره، لا محوٌ للدَّين", () => {
+    const r = run(500_000, [present(1)], {
+      money: [{ dayKey: day(1), moneyIn: 0, moneyOut: 100_000, notes: "سلفة", txId: 1 }],
+      negMode: "zero",
+    });
+    assert.ok(r.roundedDue < 0);
+    assert.equal(r.carryOut, 0, "لا يبقى مُرحَّلٌ بعد التصفير");
+    assert.equal(r.collected, -r.roundedDue, "ويُقبَض مقدارُه نقداً (موجبٌ أبداً) — وإلّا كان التصفيرُ إخفاءَ مالٍ قُبض");
+    assert.equal(r.paid, 0);
+  });
+
+  test("المُرحَّلُ لا يُلغي التقريبَ لمصلحة الفنيّ", () => {
+    const r = run(500_000, [present(1), present(2), present(3)], { carryIn: -1_500 });
+    assert.equal(r.roundedDue % 1000, 0, "المدفوعُ يبقى مضاعفاً للألف");
+    assert.ok(r.roundingAdd >= 0 && r.roundingAdd < 1000, "والتقريبُ موجبٌ أبداً — المستفيدُ الفنيّ");
+    assert.equal(r.roundedDue, r.due + r.roundingAdd);
   });
 });
 

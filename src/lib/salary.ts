@@ -150,7 +150,22 @@ export async function statementForTechnician(
     dayKey: baghdadDayKey(m.date ?? new Date()), moneyIn: m.moneyIn ?? 0, moneyOut: m.moneyOut ?? 0, notes: m.notes ?? "", txId: m.id,
   }));
 
-  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], moneyItems, todayKey, p, 0, negMode);
+  // ═════ (ب) · المُرحَّلُ من الفترة السابقة — كان يُمرَّر **صفراً حرفيّاً** (2026-08-13) ═════
+  // 🔴 كان `carryOut` يُحسَب ويُخزَّن في `salary_statements` **ولا يُقرَأ أبداً**، والصفرُ
+  //   هنا هو ما يمحوه. و«رحِّل المتبقّي» هو الخيارُ **الافتراضيّ** ⇒ كلُّ راتبٍ سالبٍ
+  //   يُسدَّد بالافتراضيّ كان يُضيّع دَينَ الفنيّ صامتاً، والشاشةُ تُوعِد المديرَ بعكسِه.
+  // 🔑 ويُقرَأ **أحدثُ كشفٍ غيرِ مُلغى** مهما كان `carryOut`ه — لا أحدثُ كشفٍ سالب:
+  //   فلو رشّحنا بالسالب لَعُدنا إلى دَينٍ استُوفي في كشفٍ لاحقٍ فحُسب **مرّتَين**.
+  //   و`carryOut = 0` معناه أنّ الحسابَ أُغلق (صُرف أو استُوفي نقداً بخيار «صفِّر»).
+  // 🔑 والإلغاءُ يُستثنى (`cancelledAt: null`) فيرجع مُرحَّلُ ما قبله تلقائيّاً — وهو
+  //   عينُ ما يجعل الإلغاءَ العكسيَّ صحيحاً بلا تصحيحٍ يدويّ.
+  const prevSt = await prisma.salaryStatement.findFirst({
+    where: { technicianId, cancelledAt: null },
+    orderBy: [{ periodTo: "desc" }, { id: "desc" }],
+    select: { carryOut: true },
+  });
+  const carryIn = prevSt?.carryOut ?? 0; // الكشوفُ التي سبقت البند تحمل `null` ⇒ صفر
+  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], moneyItems, todayKey, p, carryIn, negMode);
 }
 
 // أيام شهر الـ dayKey (YYYY-MM-DD)

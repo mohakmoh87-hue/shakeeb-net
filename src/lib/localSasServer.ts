@@ -150,10 +150,14 @@ async function pushStatsToCloud(): Promise<void> {
     (Object.keys(diag).length ? ` — إخفاقات: ${JSON.stringify(diag)}` : ""));
 }
 
-export function startLocalSasServer() {
+/** يُرجع وعداً يُحلَّ **عند نجاح الحجز** — فالعاملُ ينتظره ليعرف أنّه صاحبُ هذه الحاسبة
+ *  **قبل** أن يقتل متصفّحاً أو يُشغّل مُجدولاً. وعند `EADDRINUSE` لا يُحَلُّ أبداً (العمليّةُ تخرج). */
+export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<boolean> {
   const g = globalThis as unknown as { __localSasStarted?: boolean };
-  if (g.__localSasStarted) return;
+  if (g.__localSasStarted) return Promise.resolve(true); // نحن حاجزوه في هذه العمليّة
   g.__localSasStarted = true;
+  let ready: (owned: boolean) => void = () => {};
+  const started = new Promise<boolean>((res) => { ready = res; });
 
   // رفع الخلاصة للقاعدة كل 5 دقائق (وأول رفعة بعد 45 ثانية من الإقلاع) —
   // فشل الرفعة يُطبع في نافذة العامل (كان يُبلع صامتاً فتعذّر التشخيص) —
@@ -311,9 +315,38 @@ export function startLocalSasServer() {
   });
 
   server.on("error", (e: NodeJS.ErrnoException) => {
-    if (e.code !== "EADDRINUSE") console.error("[local-sas]", e.message);
+    // ═════ ب-١/الأصل ٣ · حارسُ النسخة الواحدة — إغلاقُ نافذة السباق ═════
+    // 🔴 **كان `EADDRINUSE` يُبتلَع صامتاً** فيُكمل العاملُ عملَه **بلا خادمه المحلّيّ**، وهو
+    // أسوأُ ما يمكن: عاملان على حاسبةٍ واحدةٍ ⇒ **تذكيرانِ للمشتركين · بريدا نسخةٍ احتياطيّةٍ
+    // · مزامنتا SAS**، و`killOrphanBrowsers` في الثاني **يقتل متصفّحاتِ الأوّل** فتُفقَد
+    // جلساتُ الواتساب.
+    //
+    // 🔑 وحارسُ `worker.ts:ensureSingleInstance` **لا يكفي وحدَه** ولا يُلام: يفحص المنفذَ
+    // بمِسبارٍ **ثمّ يُغلقه فوراً** — ولا بدّ من إغلاقه لأنّ هذا الخادمَ يحجز **نفسَ المنفذ**
+    // (٤٧٦١٥). فبين الفحص والحجز نافذةُ سباقٍ: عاملان يبدآن معاً فيمرّان كلاهما من المِسبار،
+    // ثمّ يحجز أحدُهما ويفشل الآخرُ **صامتاً** فيعمل معطوباً.
+    // ⇒ **فالحجزُ الفعليُّ هو القفل**: فشلُه يعني أنّ عاملاً آخرَ يملك هذه الحاسبة ⇒ نخرج.
+    //   (خروجٌ بـ0 لأنّه ليس خطأً بل تنازلٌ مقصود؛ و`worker-loop.cmd` لا يُعيده في حلقةٍ
+    //    عبثيّةٍ إلّا إن حُرّرَ المنفذُ فعلاً — وذلك هو المطلوب.)
+    // ✅ وآمنٌ لأنّ هذا الخادمَ لا يعمل إلّا حيث `RUN_WORKER=1` (حاسباتُ المكاتب) — لا في
+    //   خادم الموقع على Railway، فلا يُمَسّ الموقعُ أبداً.
+    if (e.code === "EADDRINUSE") {
+      console.error(`[local-sas] ⛔ المنفذ ${PORT} محجوزٌ — عاملُ SHAKEEB يعمل بالفعل على هذه الحاسبة.`);
+      if (onBusy === "exit") {
+        console.error("[local-sas] إيقافُ هذه النسخة لمنع تنفيذٍ مزدوج (تذكيرٌ ونسخةٌ ومزامنةٌ مرّتَين).");
+        process.exit(0);
+      }
+      // `yield`: عمليّةٌ تخدم صفحاتٍ (خادمُ Next) — لا تُقتَل، بل تتنازل عن الوظائف الخلفيّة
+      // وحدَها. فالخروجُ هنا يُسقط الموقعَ المحليَّ كلَّه بلا سبب.
+      console.error("[local-sas] تنازلٌ عن الوظائف الخلفيّة لهذه العمليّة (الصفحاتُ تبقى تعمل).");
+      ready(false);
+      return;
+    }
+    console.error("[local-sas]", e.message);
   });
   server.listen(PORT, "127.0.0.1", () => {
     console.log(`[local-sas] خادم SAS المحلي يعمل على http://127.0.0.1:${PORT}`);
+    ready(true); // ✅ حُجز المنفذُ فعلاً ⇒ هذه النسخةُ هي صاحبةُ الحاسبة
   });
+  return started;
 }

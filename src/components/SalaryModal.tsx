@@ -108,6 +108,19 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
                 التفاصيل: تم إضافة المبلغ هذا لتقريب الراتب». والعملة العراقية بلا دينارٍ ولا
                 مئة دينار، والتقريبُ على **المجموع النهائي وحده** لا على كل يوم، والمستفيدُ
                 دائماً الفنيّ: الموجب يُرفع والسالبُ يُنقَص دَينُه. */}
+            {/* (ب) · المُرحَّلُ من الفترة السابقة — لا يجوز أن يُخصَم بسببٍ لا يراه المدير.
+                كان `carryIn` يُحسَب ويُخزَّن ولا يُقرَأ (صفرٌ حرفيٌّ في `salary.ts`)، فالآن
+                يُقرَأ ⇒ فليُعرَض: رقمٌ ينقص من راتب الفنيّ سببُه فترةٌ انتهت، وسؤالُ الفنيّ
+                «لماذا نقص راتبي؟» يجب أن يجد جوابَه على الشاشة نفسِها. */}
+            {(st.carryIn ?? 0) !== 0 && (
+              <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-[12px] font-bold text-rose-800">
+                مُرحَّلٌ من الفترة السابقة: <span className="text-sm">{num(st.carryIn ?? 0)}</span> د.ع
+                <div className="mt-0.5 text-[10px] font-normal text-rose-700">
+                  بقي على الفنيّ من كشفٍ سابقٍ فيُخصم من هذه الفترة (الصافي {num(st.net)} ← المستحقّ {num(st.due ?? st.net)})
+                </div>
+              </div>
+            )}
+
             {(st.roundingAdd ?? 0) > 0 && (
               <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-[12px] font-bold text-amber-800">
                 تم إضافة <span className="text-sm">{num(st.roundingAdd ?? 0)}</span> د.ع لتقريب الراتب

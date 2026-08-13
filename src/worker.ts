@@ -2,7 +2,6 @@
 // يشغّل المجدول + واتساب + خادم الصحّة + نبضة النظام الهجين، بلا الاعتماد على مُسجِّل Next.
 // يُشغَّل على حاسبة المكتب عبر: npx tsx src/worker.ts
 import fs from "node:fs";
-import net from "node:net";
 import { execSync } from "node:child_process";
 
 // قتل متصفّحات puppeteer اليتيمة التي تستخدم مجلد جلساتنا (.wwebjs_auth) من تشغيل سابق
@@ -34,25 +33,22 @@ try {
 
 process.env.RUN_WORKER = "1";
 
-// حارس النسخة الواحدة: منفذ الوكيل (47615) يعمل قفلاً. إن كان مشغولاً فهناك عامل
-// آخر يعمل على هذه الحاسبة — نخرج فوراً لمنع تشغيل متصفّحَي واتساب على نفس الجلسة
-// (وإلا يظهر خطأ "The browser is already running for ...session-office-X").
-function ensureSingleInstance(): Promise<void> {
-  return new Promise((resolve) => {
-    const probe = net.createServer();
-    probe.once("error", (e: NodeJS.ErrnoException) => {
-      if (e.code === "EADDRINUSE") {
-        console.error("[worker] ⛔ عامل SHAKEEB يعمل بالفعل على هذه الحاسبة — تم إيقاف هذه النسخة المكرّرة.");
-        process.exit(0);
-      }
-      resolve(); // خطأ آخر غير متوقّع — نُكمل على أي حال
-    });
-    probe.listen(47615, "127.0.0.1", () => { probe.close(() => resolve()); });
-  });
-}
-
 (async () => {
-  await ensureSingleInstance();
+  // ═════ ب-١/الأصل ٣ · حارسُ النسخة الواحدة: الحجزُ **قبل** أيّ أثر (2026-08-13) ═════
+  // 🔴 كان هنا `ensureSingleInstance()`: مِسبارٌ يحجز المنفذَ ٤٧٦١٥ **ثمّ يُغلقه فوراً**،
+  //   وكان الترتيبُ: مِسبار ← **قتلُ المتصفّحات** ← **تشغيلُ المُجدول** ← ثمّ الحجزُ الفعليُّ
+  //   للمنفذ (في `startLocalSasServer`). وفيه علّتان:
+  //   ١) نافذةُ سباقٍ بين المِسبار والحجز: عاملان يبدآن معاً فيمرّان كلاهما من المِسبار،
+  //      ثمّ **يقتل الخاسرُ متصفّحاتِ الرابح** (فتُفقَد جلساتُ الواتساب — حادثةُ المواصلات)
+  //      **ويُشغّل مُجدولاً كاملاً** (تذكيرُ المشتركين · نسخةُ القاعدة · مزامنةُ SAS **مرّتَين**)
+  //      قبل أن يعرف أنّه خاسر.
+  //   ٢) وكان فشلُ الحجزِ الفعليِّ **يُبتلَع صامتاً** فيبقى الخاسرُ يعمل معطوباً إلى الأبد.
+  // ⇒ حُذف المِسبارُ وصار **الحجزُ الفعليُّ هو القفل**، وقُدّم على كلّ أثر: يُرجع وعداً
+  //   لا يُحَلُّ إلّا بنجاح `listen`، وعند `EADDRINUSE` تخرج العمليّةُ فلا يُنفَّذ سطرٌ بعده.
+  //   **فلا أثرَ قبل القفل** — ولا نافذةَ سباقٍ لأنّ الحجزَ لا يُفَكّ.
+  const { startLocalSasServer } = await import("@/lib/localSasServer");
+  await startLocalSasServer("exit"); // 🔒 القفل: منفذ ٤٧٦١٥ (يشمل /health + لوحةَ SAS وعملياتِها)
+
   killOrphanBrowsers(); // نظّف متصفّحات يتيمة من تشغيل سابق قبل بدء الواتساب
   console.log("[worker] بدء عامل SHAKEEB المستقل...");
   // الربط الذاتي (2026-08-02): قبل تشغيل أي خدمة — هل رابط القاعدة يعمل؟ إن لا، نطلب
@@ -68,13 +64,12 @@ function ensureSingleInstance(): Promise<void> {
   }
   try {
     const { startScheduler } = await import("@/lib/scheduler");
-    const { startLocalSasServer } = await import("@/lib/localSasServer");
     const { startHybridAgent } = await import("@/lib/hybridAgent");
     const { startWaRequestPoller, startWaRelayPoller } = await import("@/lib/whatsapp");
     const { startPrintAgent } = await import("@/lib/printAgent");
     const { startOdooSync } = await import("@/lib/odooSync");
     startScheduler();
-    startLocalSasServer(); // يشمل /health + لوحة SAS + عمليات SAS محلياً (المنفذ 47615)
+    // (خادمُ الساس المحليُّ — /health ولوحةُ SAS وعملياتُها — حُجز أعلاه فهو القفلُ نفسُه)
     startHybridAgent();
     startWaRequestPoller();
     startWaRelayPoller();
