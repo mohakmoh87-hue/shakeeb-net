@@ -14,6 +14,7 @@ type User = {
   isAdmin: boolean;
   permissions: string | null;
   deniedPermissions?: string | null;
+  separateAccount?: boolean;
   towerId: number | null;
   isActive: boolean;
 };
@@ -21,11 +22,12 @@ type User = {
 type Form = {
   fullName: string; username: string; password: string;
   isAdmin: boolean; permissions: Set<string>; deniedPermissions: Set<string>; towerId: number | "";
+  separateAccount: boolean;
   isActive: boolean;
 };
 const emptyForm = (): Form => ({
   fullName: "", username: "", password: "", isAdmin: false,
-  permissions: new Set(), deniedPermissions: new Set(), towerId: "", isActive: true,
+  permissions: new Set(), deniedPermissions: new Set(), towerId: "", separateAccount: false, isActive: true,
 });
 
 export default function UsersPage() {
@@ -48,6 +50,15 @@ export default function UsersPage() {
 
   const towerName = (id: number | null) => towers.find((t) => t.id === id)?.name ?? "—";
 
+  // ═════ البند ١ · «هذا المكتبُ له مستخدمٌ سلفاً» (طلبُ محمد 2026-08-13) ═════
+  // «عند اختيار مستخدمٍ ثانٍ لنفس المكتب يجب أن يظهر أنّ لهذا المكتب مستخدماً وهو
+  //  مستخدم ١ أو أيُّ اسمٍ وضعه، ويُقبَل، لكن يظهر له مربّعٌ اسمُه حسابٌ منفصل».
+  // 🔑 ويُحسَب من القائمة المحمَّلة سلفاً — بلا أيّ طلبٍ إضافيّ للخادم.
+  //   و`editId` يُستثنى: تعديلُ مستخدمٍ لا يجعله «زميلَ نفسِه».
+  const officeMates = form.towerId
+    ? users.filter((u) => u.towerId === form.towerId && u.id !== editId && !u.isAdmin)
+    : [];
+
   function openAdd() { setEditId(null); setForm(emptyForm()); setError(""); setModal(true); }
   function openEdit(u: User) {
     setEditId(u.id);
@@ -56,7 +67,7 @@ export default function UsersPage() {
       // توسيع المفاتيح القديمة (offices.manage...) إلى الجديدة — أول حفظ يكتبها نظيفة
       permissions: new Set<string>(expandLegacyPermissions((u.permissions ?? "").split(",").filter(Boolean))),
       deniedPermissions: new Set<string>((u.deniedPermissions ?? "").split(",").filter(Boolean)),
-      towerId: u.towerId ?? "", isActive: u.isActive,
+      towerId: u.towerId ?? "", separateAccount: !!u.separateAccount, isActive: u.isActive,
     });
     setError(""); setModal(true);
   }
@@ -77,6 +88,8 @@ export default function UsersPage() {
         // المنعُ يُرسَل للمدير حصراً — ومربّعاتُه لا تظهر لغيره فلا معنى لإرسالها
         deniedPermissions: form.isAdmin ? [...form.deniedPermissions] : [],
         towerId: form.towerId || null, isActive: form.isActive,
+        // البند ١ · لا معنى للفصل بلا مكتب (مَن بلا مكتبٍ يرى كلَّ مكاتب وكيله)
+        separateAccount: form.towerId ? form.separateAccount : false,
       };
       const res = await fetch(editId ? `/api/users/${editId}` : "/api/users", {
         method: editId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -142,6 +155,35 @@ export default function UsersPage() {
                   <option value="">— كل المكاتب —</option>
                   {towers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select></div>
+
+              {/* ═════ البند ١ · تنبيهُ «للمكتب مستخدمٌ سلفاً» + مربّعُ «حسابٌ منفصل» ═════
+                  طلبُ محمد: «عند اختيار مستخدمٍ ثانٍ لنفس المكتب يظهر أنّ لهذا المكتب
+                  مستخدماً وهو <اسمُه>، ويُقبَل، لكن يظهر مربّعٌ اسمُه حسابٌ منفصل.
+                  إن وضعتُ صحّاً فحسابُه وتفعيلاتُه منفصلةٌ والتقريرُ اليوميُّ يختلف؛
+                  وإن لم أضع صحّاً فالاثنان يفعلان بنفس التقرير».
+                  ⚠️ والفصلُ كان **إجباريّاً** لكلّ مكتبٍ فيه مستخدمان — فصار اختياريّاً،
+                  وردمُ الهجرة حفظ سلوكَ المكتب القائم (ams) حرفيّاً. */}
+              {!form.isAdmin && officeMates.length > 0 && (
+                <div className="col-span-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                  <div className="mb-1 text-[12px] font-bold text-amber-900">
+                    ℹ️ لهذا المكتب مستخدمٌ سلفاً: {officeMates.map((u) => u.fullName || u.username).join(" · ")}
+                  </div>
+                  <label className="flex items-start gap-2 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" className="mt-0.5" checked={form.separateAccount}
+                      onChange={(e) => setForm({ ...form, separateAccount: e.target.checked })} />
+                    <span>
+                      حساب منفصل
+                      <span className="block text-[11px] font-normal leading-5 text-slate-500">
+                        صحٌّ ⇒ تفعيلاتُه وحساباتُه <b>منفصلةٌ</b> وتقريرُه اليوميُّ يخصّه وحدَه.
+                        <br />
+                        فارغٌ ⇒ الاثنان على <b>تقريرٍ واحد</b>.
+                        <br />
+                        والمديرُ يرى الإجماليَّ في الحالتَين، ويستطيع اختيارَ تقريرِ مستخدمٍ بعينه.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
               <div className="flex items-end gap-4">
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isAdmin} onChange={(e) => setForm({ ...form, isAdmin: e.target.checked })} /> مدير كامل الصلاحيات</label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> مفعّل</label>

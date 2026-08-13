@@ -16,6 +16,8 @@ const schema = z.object({
   permissions: z.array(z.string()).default([]),
   // مديرٌ بصلاحيّاتٍ محدَّدة: قائمةُ **منعٍ** تسبق كلَّ منح (فارغةٌ = لا منع)
   deniedPermissions: z.array(z.string()).default([]),
+  // البند ١ · حسابٌ منفصلٌ لمستخدمٍ يشارك مكتباً مع غيره
+  separateAccount: z.boolean().optional(),
   towerId: z.coerce.number().nullable().optional(),
   isActive: z.coerce.boolean().default(true),
 });

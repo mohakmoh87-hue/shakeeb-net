@@ -17,6 +17,8 @@ const schema = z.object({
   permissions: z.array(z.string()).default([]),
   // مديرٌ بصلاحيّاتٍ محدَّدة: قائمةُ **منعٍ** تسبق كلَّ منح (فارغةٌ = لا منع)
   deniedPermissions: z.array(z.string()).default([]),
+  // البند ١ · حسابٌ منفصلٌ لمستخدمٍ يشارك مكتباً مع غيره
+  separateAccount: z.boolean().optional(),
   towerId: z.coerce.number().nullable().optional(),
   isActive: z.coerce.boolean().default(true),
 });
@@ -31,7 +33,7 @@ export async function GET() {
     orderBy: { id: "asc" },
     select: {
       id: true, fullName: true, username: true, isAdmin: true,
-      permissions: true, deniedPermissions: true, towerId: true, isActive: true,
+      permissions: true, deniedPermissions: true, separateAccount: true, towerId: true, isActive: true,
     },
   });
   return NextResponse.json(users);

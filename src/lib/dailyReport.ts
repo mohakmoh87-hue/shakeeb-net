@@ -25,8 +25,15 @@ const fmt = (n: number | null | undefined) => Number(n ?? 0).toLocaleString("en-
 // مكتبٌ بمستخدمٍ واحد ⇒ لا يتغيّر شيء (undefined = بلا فلتر). المدير لا يُجبَر (يختار بنفسه).
 export async function reportUserScope(session: { isAdmin?: boolean; userId: number; towerId: number | null }): Promise<number | undefined> {
   if (session.isAdmin || session.towerId == null) return undefined;
-  const n = await prisma.user.count({ where: { towerId: session.towerId, isDeleted: false, isActive: true } });
-  return n >= 2 ? session.userId : undefined;
+  // ═════ البند ١ · الفصلُ بالمربّع لا بعددِ المستخدمين (طلبُ محمد 2026-08-13) ═════
+  // كان: «مكتبٌ فيه مستخدمان ⇒ كلٌّ يرى نفسَه» — فصلٌ **إجباريٌّ بلا خيار**. وطلبُ محمد
+  // أن يكون اختياريّاً: «وإن لم أضع صحّاً على المربّع فالاثنان يفعلان بنفس التقرير».
+  // ⇒ يُقرأ `separateAccount` للمستخدم نفسِه، وردمُ الهجرة حفظ السلوكَ القائمَ حرفيّاً.
+  const me = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { separateAccount: true },
+  });
+  return me?.separateAccount ? session.userId : undefined;
 }
 
 // يحسب أرقام التقرير اليومي (اختيارياً مقيّداً بمكتب واحد أو مجموعة مكاتب وكيل، وليوم محدّد للتدارك،
