@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ownsTower } from "@/lib/guard";
 import { proxyToSas } from "@/lib/sasProxy";
+import { cookies } from "next/headers";
 
 // أصول ثابتة (JS/CSS/صور/خطوط) — غير حسّاسة، نتخطّى فحص الملكية عليها للحفاظ على سرعة تحميل اللوحة
 const ASSET_RE = /\.(js|mjs|css|png|jpe?g|gif|svg|webp|woff2?|ttf|eot|ico|map|json|txt)$/i;
@@ -39,8 +40,14 @@ async function handle(request: Request, towerId: string, path: string[] | undefi
   if (!ASSET_RE.test(last) && !(await ownsTower(session, Number(towerId)))) {
     return new Response("forbidden", { status: 403 });
   }
-  const panelRaw = new URL(request.url).searchParams.get("panel");
-  const panelId = panelRaw && Number.isInteger(Number(panelRaw)) ? Number(panelRaw) : null;
+  // 🔴 بلاغُ محمد 2026-08-13: «الاستيرادُ من الساس الثاني يُظهر مشتركي الساس الأوّل».
+  // وصفحةُ الساس **تطبيقٌ أحاديُّ الصفحة**: مستندُها يُطلَب بـ`?panel=11` لكنّ كلَّ طلباتها
+  // الداخليّة (api · أصول) تذهب إلى `/sas/<id>/...` **بلا المعامل** ⇒ فكان الوسيطُ يعود في
+  // كلّ طلبٍ تالٍ إلى أعمدة المكتب = اللوحةُ الأولى. فتُقرأ اللوحةُ من كوكيٍّ يضبطه مسارُ
+  // الرمز (`api/sas4/token`) عند فتح الإطار، ويبقى المعاملُ مُقدَّماً عليه إن وُجد.
+  const sp = new URL(request.url).searchParams;
+  const panelRaw = sp.get("panel") ?? (await cookies()).get("sas_panel")?.value ?? null;
+  const panelId = panelRaw && Number.isInteger(Number(panelRaw)) && Number(panelRaw) > 0 ? Number(panelRaw) : null;
   const host = await sasHost(Number(towerId), panelId);
   if (!host) return new Response("tower not found", { status: 404 });
   // البادئةُ تحمل اللوحةَ كي تبقى روابطُ الأصول النسبيّةُ داخل اللوحة نفسِها

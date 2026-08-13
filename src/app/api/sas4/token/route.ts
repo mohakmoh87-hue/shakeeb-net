@@ -4,8 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
 import { sasBaseUrl, sasLogin } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
+import { credsOfPanel, credsOfTower } from "@/lib/sasPanel";
 
-const schema = z.object({ towerId: z.coerce.number() });
+// أ-٢٣ · اللوحةُ المطلوبُ فتحُها. فارغةٌ = أعمدةُ المكتب (السلوكُ القديم حرفيّاً)
+const schema = z.object({ towerId: z.coerce.number(), panelId: z.coerce.number().optional() });
 
 // جلب توكن SAS4 للمكتب (لتسجيل الدخول التلقائي في الصفحة المضمّنة)
 export async function POST(request: Request) {
@@ -23,25 +25,43 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   }
 
-  const tower = await prisma.tower.findUnique({ where: { id: parsed.data.towerId } });
-  if (!tower || !tower.loginUrl || !tower.username || !tower.password) {
-    return NextResponse.json({ error: "بيانات المكتب ناقصة" }, { status: 400 });
+  // ═════ 🔴 بلاغُ محمد 2026-08-13 ═════
+  // «الاستيرادُ من الساس الأوّل يعمل، لكن عند الاستيراد من الساس الثاني يرجعه ويُظهر له
+  //  مشتركي الساس الأوّل.»
+  // **والعلّةُ هنا**: هذا المسارُ كان يقرأ `towerId` **وحدَه**، فيسجّل الدخولَ دائماً بحساب
+  // **أعمدة المكتب** — وهي حسابُ اللوحة الأولى. فمهما اختار المديرُ «صميم2» من القائمة،
+  // الرمزُ (JWT) الذي يستعمله الإطارُ هو رمزُ «صميم1» ⇒ **مشتركو اللوحة الأولى دائماً**.
+  // ⚠️ ولوحتا صميم على **نفس المُخدِّم** (`82.129.22.22`) بحسابَين مختلفَين — فالعنوانُ لم
+  // يكن ليكشف العلّةَ أبداً، **الحسابُ هو الفارق**.
+  const { towerId, panelId } = parsed.data;
+  // 🔒 واللوحةُ يجب أن تتبع هذا المكتب — وإلّا فُتح حسابُ لوحةِ مكتبٍ آخرَ بتمرير معرّف
+  if (panelId != null) {
+    const owned = await prisma.sasPanel.findFirst({ where: { id: panelId, towerId, isDeleted: false }, select: { id: true } });
+    if (!owned) return NextResponse.json({ error: "اللوحة لا تتبع هذا المكتب" }, { status: 403 });
+  }
+  const creds = panelId != null ? await credsOfPanel(panelId) : await credsOfTower(towerId);
+  if (!creds?.loginUrl || !creds.username || !creds.password) {
+    return NextResponse.json({ error: panelId != null ? "بيانات اللوحة ناقصة" : "بيانات المكتب ناقصة" }, { status: 400 });
   }
   // حماية SSRF: امنع اتصال الخادم بعنوان لوحة داخلي/محلي (يمرّ IP العام للوحات SAS)
-  if (await sasHostBlocked(tower.loginUrl)) {
+  if (await sasHostBlocked(creds.loginUrl)) {
     return NextResponse.json({ error: "عنوان لوحة المكتب غير مسموح" }, { status: 403 });
   }
 
   try {
-    const base = sasBaseUrl(tower.loginUrl);
-    const token = await sasLogin(base, tower.username, tower.password);
+    const base = sasBaseUrl(creds.loginUrl);
+    const token = await sasLogin(base, creds.username, creds.password);
     // مسار الـ API عبر البروكسي (نفس origin البرنامج)
-    const apiUrl = `/sas/${tower.id}/admin/api/index.php/api/`;
-    const host = tower.loginUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+    const apiUrl = `/sas/${towerId}/admin/api/index.php/api/`;
+    const host = creds.loginUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
     const res = NextResponse.json({ token, apiUrl });
     // كوكي المضيف والمكتب لبروكسي /admin/* والتقاط العرض
     res.cookies.set("sas_host", host, { path: "/", httpOnly: true, sameSite: "lax" });
-    res.cookies.set("sas_tower", String(tower.id), { path: "/", httpOnly: true, sameSite: "lax" });
+    res.cookies.set("sas_tower", String(towerId), { path: "/", httpOnly: true, sameSite: "lax" });
+    // 🔑 وكوكيُّ اللوحة: صفحةُ الساس تطبيقٌ أحاديُّ الصفحة، وطلباتُها الداخليّةُ تذهب إلى
+    // `/sas/<id>/...` **بلا `?panel=`** ⇒ فكان الوسيطُ يعود إلى أعمدة المكتب في كلّ طلبٍ
+    // تالٍ. فتُلتصَق اللوحةُ بكوكي، ويقرؤها الوسيطُ متى غاب المعامل.
+    res.cookies.set("sas_panel", panelId != null ? String(panelId) : "", { path: "/", httpOnly: true, sameSite: "lax" });
     return res;
   } catch (e) {
     return NextResponse.json(

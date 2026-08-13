@@ -61,9 +61,24 @@ export default function Sas4ImportPage() {
     if (localBase) {
       setFrameUrl(`${localBase}/sas/${towerId}${panelId != null ? `?panel=${panelId}` : ""}#/users/index`);
     } else {
-      prepareSasEmbed(Number(towerId)).then((ok) => {
-        if (active) setFrameUrl(ok ? `/sas/${towerId}${panelId != null ? `?panel=${panelId}` : ""}#/users/index` : directPanelUrl);
-      });
+      // 🔴 بلاغُ محمد 2026-08-13: «الاستيرادُ من الساس الثاني يُظهر مشتركي الساس الأوّل».
+      // و`prepareSasEmbed` تجلب الرمزَ بـ`towerId` وحدَه ⇒ الإطارُ يسجّل الدخولَ دائماً بحساب
+      // أعمدة المكتب = **اللوحة الأولى**، مهما اختار المديرُ من القائمة. فيُنادى المسارُ هنا
+      // مباشرةً **مع اللوحة المختارة**. (ولا تُعدَّل `sasEmbed.ts` لأنّها في `src/lib/` فتُعيد
+      // تشغيلَ العامل وتهدم جلساتِ الواتساب — والنتيجةُ هنا واحدة.)
+      void (async () => {
+        try {
+          const r = await fetch("/api/sas4/token", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ towerId: Number(towerId), ...(panelId != null ? { panelId } : {}) }),
+          });
+          if (!r.ok) { if (active) setFrameUrl(directPanelUrl); return; }
+          const d = await r.json();
+          localStorage.setItem("sas4_jwt", d.token);
+          localStorage.setItem("sas4_api_url", d.apiUrl);
+          if (active) setFrameUrl(`/sas/${towerId}${panelId != null ? `?panel=${panelId}` : ""}#/users/index`);
+        } catch { if (active) setFrameUrl(directPanelUrl); }
+      })();
     }
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
