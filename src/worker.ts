@@ -184,6 +184,19 @@ async function gracefulShutdown(sig: string) {
     const { destroyAllWhatsApp } = await import("@/lib/whatsapp");
     await destroyAllWhatsApp();
   } catch { /* تجاهل */ }
+  // ب-١/الأصل ١ · إطلاقُ إجارة القيادة عند الإغلاق النظيف — وبعد إغلاق الواتساب
+  // لا قبله: فلو أُطلقت أوّلاً لأخذها غيرُنا ونحن ما زلنا نُمسك المتصفّحات.
+  // وبلا إطلاقٍ ينتظر القائدُ الجديدُ دقيقةً كاملةً (انتهاءَ المهلة) بلا داعٍ —
+  // وهي دقيقةٌ في كلّ تحديثٍ ذاتيٍّ وكلّ إطفاءِ حاسبة.
+  try {
+    const { getWorkerAgentId, getMachineId, isLeaderNow } = await import("@/lib/hybridAgent");
+    const aid = getWorkerAgentId();
+    if (isLeaderNow() && aid != null) {
+      const { releaseLeadership } = await import("@/lib/hybridLeader");
+      await releaseLeadership(aid, getMachineId());
+      console.log("[worker] أُطلقت إجارةُ القيادة — القائدُ التالي يبدأ فوراً بلا انتظار");
+    }
+  } catch { /* تجاهل — المهلةُ تكفي حارساً */ }
   process.exit(0);
 }
 for (const sig of ["SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"] as const) {

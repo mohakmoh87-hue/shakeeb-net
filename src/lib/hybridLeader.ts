@@ -20,3 +20,46 @@ export async function computeLeaderMachineId(agentId: number | null | undefined)
 export function isOnline(lastSeen: Date): boolean {
   return Date.now() - lastSeen.getTime() <= ONLINE_WINDOW_MS;
 }
+
+// ═════ ب-١/الأصل ١ · القيادةُ صارت **إجارةً** لا استنتاجاً (2026-08-13) ═════
+// 🔴 كانت القيادةُ **مُشتقّةً** من `lastSeen`: كلُّ حاسبةٍ تحسبها لنفسها كلَّ ٢٠ ثانية.
+//   وهي متّفقةٌ في الاستقرار، لكنّ لحظةَ الانتقال (تعطُّلُ القائد ثمّ عودتُه) تسمح بأن
+//   تَرى حاسبتان نفسَيهما قائدتَين — فيُستضاف الواتساب مرّتَين على الجلسة نفسِها
+//   («The browser is already running…» ⇒ ضياعُ الجلسة)، وتُنفَّذ مهامُّ القائد مرّتَين.
+//   **والقيادةُ وحدَها لا تكفي حَجزاً**: لا شيءَ في القاعدة يمنع اثنَين من ادّعائها.
+//
+// 🔑 والتصميمُ يحفظ **أولويّةَ محمد**: الأولويّةُ تُحدّد **مَن يستحقّ** القيادة
+//   (`computeLeaderMachineId` كما هي)، والإجارةُ تُحدّد **مَن يملكها فعلاً** — صفٌّ
+//   واحدٌ بمالكٍ ومهلةٍ، يُنتزَع بمقارنةٍ-وتبديلٍ ذرّيّة. فالمستحقُّ يأخذها، ومَن
+//   لم يعد مستحقّاً **يُطلقها فوراً** فلا تتراكب إجارتان أبداً.
+//
+// والمهلةُ ٦٠ ثانيةً = نافذةُ «متصلة» نفسُها: نبضةٌ كلَّ ٢٠ث ⇒ ثلاثُ فرصٍ للتجديد،
+// وإن مات القائدُ خرج من النافذة وانتهت إجارتُه في اللحظة نفسِها فلا فراغَ ولا تراكب.
+export const LEASE_MS = ONLINE_WINDOW_MS;
+
+/** يُجدّد إجارةَ القيادة أو ينتزعها إن كانت حرّةً/منتهية. `false` = يملكها غيري الآن. */
+export async function acquireLeadership(agentId: number, machineId: string): Promise<boolean> {
+  const now = new Date();
+  const until = new Date(now.getTime() + LEASE_MS);
+  // (١) تجديدُ إجارتي — الطريقُ الشائعُ وأرخصُه
+  const renewed = await prisma.agent.updateMany({
+    where: { id: agentId, leaderMachineId: machineId },
+    data: { leaderUntil: until },
+  });
+  if (renewed.count === 1) return true;
+  // (٢) انتزاعُها: حرّةٌ أو منتهيةٌ فقط. `updateMany` ذرّيّةٌ ⇒ فائزٌ واحدٌ لا أكثر.
+  const taken = await prisma.agent.updateMany({
+    where: { id: agentId, OR: [{ leaderMachineId: null }, { leaderUntil: null }, { leaderUntil: { lt: now } }] },
+    data: { leaderMachineId: machineId, leaderUntil: until },
+  });
+  return taken.count === 1;
+}
+
+/** يُطلق الإجارةَ إن كنتُ مالكَها — عند فقدان الاستحقاق أو الإغلاق النظيف.
+ *  فبلا إطلاقٍ ينتظر القائدُ الجديدُ انتهاءَ المهلة بلا داعٍ (والقديمُ حيٌّ لا يقود). */
+export async function releaseLeadership(agentId: number, machineId: string): Promise<void> {
+  await prisma.agent.updateMany({
+    where: { id: agentId, leaderMachineId: machineId },
+    data: { leaderMachineId: null, leaderUntil: null },
+  }).catch(() => {});
+}

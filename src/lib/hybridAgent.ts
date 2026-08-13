@@ -1,7 +1,7 @@
 import os from "node:os";
 import { execFile } from "node:child_process";
 import { prisma } from "@/lib/prisma";
-import { computeLeaderMachineId } from "@/lib/hybridLeader";
+import { computeLeaderMachineId, acquireLeadership, releaseLeadership } from "@/lib/hybridLeader";
 
 // حالة القيادة على العامل المحلي: قائد الوكيل فقط يستضيف واتساب مكاتب وكيله.
 // الافتراضي false حتى تُحسم أول نبضة (لا يُصبح قائداً إلا بعد اعتماده وربطه بوكيل).
@@ -104,9 +104,19 @@ export function startHybridAgent() {
       myTowerId = row.towerId ?? null; // مكتب هذه الحاسبة المُلزِم (عزل واتساب صارم)
       // قائد وكيل هذه الحاسبة فقط (يستضيف واتساب مكاتب هذا الوكيل). غير معتمَد/بلا وكيل ⇒ ليس قائداً.
       if (row.approved && myAgentId != null) {
-        const leader = await computeLeaderMachineId(myAgentId);
-        leaderNow = leader === id;
+        // ب-١/الأصل ١ · الأولويّةُ تُحدّد **مَن يستحقّ**، والإجارةُ **مَن يملك**.
+        // فحاسبتان قد تريان نفسَيهما مستحقّتَين لحظةَ الانتقال، لكنّ الإجارةَ صفٌّ
+        // واحدٌ يُنتزَع ذرّيّاً ⇒ قائدٌ واحدٌ أبداً. ومَن فقد الاستحقاقَ **يُطلقها فوراً**
+        // فلا ينتظر القائدُ الجديدُ انتهاءَ المهلة بلا داعٍ.
+        const deserves = (await computeLeaderMachineId(myAgentId)) === id;
+        if (deserves) {
+          leaderNow = await acquireLeadership(myAgentId, id);
+        } else {
+          if (leaderNow) await releaseLeadership(myAgentId, id);
+          leaderNow = false;
+        }
       } else {
+        if (leaderNow && myAgentId != null) await releaseLeadership(myAgentId, id);
         leaderNow = false;
       }
       if (!loggedOk) { loggedOk = true; console.log(`[hybrid-agent] ✅ سُجّلت الحاسبة (${id}) name=${name} — وكيل=${myAgentId} قائد=${leaderNow}`); }
