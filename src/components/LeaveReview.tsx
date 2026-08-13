@@ -30,6 +30,11 @@ export default function LeaveReview({ officeId, officeName, onClose, onChange }:
     const d = await r.json().catch(() => ({}));
     setBusyId(null);
     if (!r.ok) { alert(d.error ?? "تعذّر"); return; }
+    // ═════ البندان ٤ و٦ · أثرُ الموافقة على الخصم **يُقال صريحاً** ═════
+    // بلا هذا يظنّ المديرُ أنّ موافقتَه لم تفعل شيئاً — وشكواه الأصليّةُ أنّه «لم ينتبه».
+    // وحالةُ «مختومٌ بكشفٍ» أهمُّ من نجاحٍ صامت: موافقتُه سُجِّلت **والخصمُ باقٍ**.
+    if (d.sealedNotice) alert(`⚠️ ${d.sealedNotice}`);
+    else if (d.clearedDeduction > 0) alert(`✅ اعتُمدت الإجازة، ومُسِح خصمُ ذلك اليوم (${Number(d.clearedDeduction).toLocaleString("en-US")}).`);
     load(); onChange();
   }
 

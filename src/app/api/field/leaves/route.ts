@@ -223,7 +223,58 @@ export async function PATCH(request: Request) {
     where: { id: leave.id },
     data: { status: parsed.data.status, decidedBy: g.session.fullName ?? g.session.username, decidedAt: new Date() },
   });
-  return NextResponse.json({ ok: true, leave: updated });
+
+  // ═════ البندان ٤ و٦ · موافقةُ المدير تمسح خصمَ ذلك اليوم (طلبُ محمد 2026-08-14) ═════
+  // بنصّه: (٤) «إذا خُصم الموظّفُ لأنّ المديرَ لم ينتبه لأنّه طالبُ إجازةٍ زمنيّة، فموافقةُ
+  // المدير **حتى لو بعد أكثرَ من يوم** ستمسح الخصمَ عن اليوم الذي خُصم به». و(٦) «موافقةُ
+  // المدير تُزيل أيَّ خصمٍ بسبب أيّ حادث مخالفةِ بصمةٍ في الوقت الذي طلبه».
+  //
+  // 🔑 وهو **للزمنيّة** (`kind: "time"`): فالخصمُ عقوبةُ تأخيرٍ أو خروجٍ مبكّر، والإجازةُ
+  //    الزمنيّةُ المعتمدةُ تُبيح ذلك الوقتَ بعينه. وإجازةُ اليوم الكامل لا بصمةَ فيها أصلاً.
+  //
+  // ⛔ **وقاعدةُ محمد الحاكمة: «إذا أُعطي الموظّفُ راتبَه فلن يُمسَح شيءٌ له بعدها».**
+  //    فيومٌ مختومٌ بكشفٍ **لا يُمسَح** — وتُعاد ملاحظةٌ صريحةٌ للواجهة (`sealedNotice`)
+  //    فيعرف المديرُ أنّ موافقتَه سُجِّلت **والخصمُ باقٍ**. والصمتُ هنا أسوأُ من الرفض.
+  let clearedAmount = 0;
+  let sealedNotice: string | null = null;
+  if (parsed.data.status === "approved" && leave.kind === "time" && leave.dayKey) {
+    const rec = await prisma.attendance.findFirst({
+      where: { technicianId: leave.technicianId, dayKey: leave.dayKey },
+      select: { id: true, lateDeduction: true, earlyDeduction: true, salaryStatementId: true, deductionClearedAt: true },
+      orderBy: { id: "desc" },
+    });
+    const total = (rec?.lateDeduction ?? 0) + (rec?.earlyDeduction ?? 0);
+    if (rec && total > 0) {
+      if (rec.salaryStatementId != null) {
+        sealedNotice = `الخصمُ (${total}) لم يُمسَح: يومُ ${leave.dayKey} مختومٌ بكشف راتبٍ مصروف.`;
+      } else {
+        // الحَجزُ قبل الأثر — وبشرطِ أنّه لم يُمسَح سلفاً ولم يُختَم بين القراءة والكتابة
+        const done = await prisma.attendance.updateMany({
+          where: { id: rec.id, deductionClearedAt: null, salaryStatementId: null },
+          data: {
+            lateDeduction: 0, earlyDeduction: 0,
+            deductionClearedBy: g.session.fullName ?? g.session.username,
+            deductionClearedAt: new Date(),
+            deductionClearReason: `موافقةُ إجازةٍ زمنيّة #${leave.id}`,
+            deductionClearedAmount: total,
+          },
+        });
+        if (done.count === 1) {
+          clearedAmount = total;
+          await prisma.auditLog.create({
+            data: {
+              userId: g.session.userId,
+              action: "CLEAR_DEDUCTION",
+              entity: "attendance",
+              entityId: String(rec.id),
+              details: `مسحُ خصمٍ ${total} بموافقة إجازةٍ زمنيّة #${leave.id} — يوم ${leave.dayKey}`,
+            },
+          }).catch(() => {});
+        }
+      }
+    }
+  }
+  return NextResponse.json({ ok: true, leave: updated, clearedDeduction: clearedAmount, sealedNotice });
 }
 
 // ═════ أ-٨ · إزالةُ إجازةٍ أُدخلت خطأً (طلبُ محمد) ═════
