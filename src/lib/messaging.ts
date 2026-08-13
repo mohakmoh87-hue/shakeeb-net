@@ -50,13 +50,15 @@ export async function sendViaProvider(
   phone: string | null,
   text: string,
   officeId?: number | null, // مكتب المشترك (لاختيار جلسة واتساب المكتب)
+  // البند ٣ · صورةُ القالب (data URI) — تُرسَل مع النصّ **تعليقاً واحداً** لا رسالتَين
+  image?: string | null,
 ): Promise<SendResult> {
   if (!phone) return { ok: false, error: "لا يوجد رقم هاتف" };
 
   // واتساب: إرسال من جلسة واتساب المكتب التابع له المشترك
   if (channel === "WHATSAPP") {
     const { sendWhatsApp } = await import("@/lib/whatsapp");
-    return sendWhatsApp(officeId, phone, text);
+    return sendWhatsApp(officeId, phone, text, image);
   }
 
   // SMS / تيليغرام: محاكاة حتى ربط مزوّد حقيقي

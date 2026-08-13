@@ -5,6 +5,11 @@ import { guard, guardAny, agentTowerIds } from "@/lib/guard";
 import { DEFAULT_TEMPLATES, EVENT_TYPES, SEED_MARK } from "@/lib/smsTemplates";
 import type { SessionPayload } from "@/lib/auth";
 
+// البند ٣ · سقفُ الصورة **على الخادم**: الواجهةُ تحرسه أيضاً، لكنّ حرسَ الواجهة يُتجاوَز
+// بطلبٍ مباشر، والصفُّ يُقرأ في **كلّ إرسال** — فسقفٌ ضائعٌ هنا يُثقل كلّ رسالةٍ للأبد.
+// ٤٠٠ ألف حرفٍ ≈ ٣٠٠ كيلوبايت ملفّاً أصليّاً بعد تضخيم base64 (٣٣٪).
+const IMAGE_MAX_CHARS = 400_000;
+
 const schema = z.object({
   templates: z.array(
     z.object({
@@ -12,6 +17,10 @@ const schema = z.object({
       text: z.string().default(""),
       enable: z.string().default("1"),
       reset: z.boolean().optional(), // مع مكتب محدّد: حذف تخصيص المكتب (العودة لقالب الوكيل العام)
+      // 🖼️ صورةُ القالب (data URI). التمييزُ مقصود: **غيابُ الحقل** = لا تمسّ الصورةَ
+      // المحفوظة، و**""** = احذفها. فلو كان الغيابُ حذفاً لَمَحا كلُّ حفظٍ من واجهةٍ
+      // قديمةٍ صورةَ محمد بلا أن يطلب ذلك أحد.
+      image: z.string().max(IMAGE_MAX_CHARS, "الصورة أكبر من المسموح (٣٠٠ كيلوبايت)").nullable().optional(),
     }),
   ),
   officeId: z.coerce.number().int().positive().nullable().optional(), // null/غياب = قوالب الوكيل العامة
@@ -60,8 +69,13 @@ export async function GET(request: Request) {
   const result = EVENT_TYPES.map((cat) => {
     const o = officeId != null ? officeMap.get(cat) : undefined;
     const a = agentMap.get(cat);
-    if (o) return { type: cat, text: o.text ?? "", enable: o.enable ?? "1", officeCustom: true };
-    return { type: cat, text: a?.text ?? DEFAULT_TEMPLATES[cat] ?? "", enable: a?.enable ?? "1", officeCustom: false };
+    // 🖼️ الصورةُ تتبع سلَّم النصّ نفسَه لكنّها تسقط **مستقلّةً** — كما في getEffectiveTemplateFull:
+    //   مكتبٌ له نصُّه وبلا صورةٍ يعرض (ويُرسل) صورةَ الوكيل. و`imageOwn` يُخبر الواجهةَ
+    //   أنّ الصورةَ المعروضةَ موروثةٌ لا مملوكة، فلا يظهر زرُّ «حذف» لِما لا تملكه.
+    const own = o ? (o.image?.trim() || null) : (a?.image?.trim() || null);
+    const shown = own ?? (o ? (a?.image?.trim() || null) : null);
+    if (o) return { type: cat, text: o.text ?? "", enable: o.enable ?? "1", officeCustom: true, image: shown, imageOwn: own != null };
+    return { type: cat, text: a?.text ?? DEFAULT_TEMPLATES[cat] ?? "", enable: a?.enable ?? "1", officeCustom: false, image: shown, imageOwn: own != null };
   });
   return NextResponse.json({ templates: result, officeId });
 }
@@ -92,9 +106,13 @@ export async function POST(request: Request) {
       where: { type: t.type, agentId: agentId ?? -1, towerId: officeId ?? null },
     });
     if (existing) {
-      await prisma.smsTemplate.update({ where: { id: existing.id }, data: { text: t.text, enable: t.enable } });
+      // `image: undefined` تعني «لا تمسّها» في Prisma — وهو عينُ ما نريد للواجهات القديمة
+      await prisma.smsTemplate.update({
+        where: { id: existing.id },
+        data: { text: t.text, enable: t.enable, ...(t.image === undefined ? {} : { image: t.image?.trim() || null }) },
+      });
     } else {
-      await prisma.smsTemplate.create({ data: { type: t.type, text: t.text, enable: t.enable, agentId, towerId: officeId ?? null } });
+      await prisma.smsTemplate.create({ data: { type: t.type, text: t.text, enable: t.enable, image: t.image?.trim() || null, agentId, towerId: officeId ?? null } });
     }
   }
   return NextResponse.json({ ok: true });

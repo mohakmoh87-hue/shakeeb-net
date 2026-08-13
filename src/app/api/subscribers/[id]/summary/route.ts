@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
-import { getEffectiveTemplate } from "@/lib/smsTemplates";
+import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -32,14 +32,14 @@ export async function POST(
     : null;
   if (office?.waEnabled === "0") return NextResponse.json({ error: "واتساب المكتب معطَّل" }, { status: 400 });
 
-  const tpl = await getEffectiveTemplate("subSummary", office?.agentId ?? session?.agentId ?? null, subscriber.towerId);
+  const tpl = await getEffectiveTemplateFull("subSummary", office?.agentId ?? session?.agentId ?? null, subscriber.towerId);
   if (!tpl) return NextResponse.json({ error: "قالب «ملخص الاشتراك» معطَّل — فعّله من قوالب الرسائل" }, { status: 400 });
 
   const pkg = subscriber.packageId
     ? await prisma.package.findUnique({ where: { id: subscriber.packageId }, select: { name: true, priceDinar: true } })
     : null;
 
-  const text = renderTemplate(tpl, {
+  const text = renderTemplate(tpl.text, {
     name: subscriber.name,
     netUser: subscriber.netUser,
     package: pkg?.name ?? "",
@@ -52,7 +52,7 @@ export async function POST(
     office: office?.name ?? "SHAKEEB",
   });
 
-  const res = await sendViaProvider("WHATSAPP", subscriber.phone, text, subscriber.towerId);
+  const res = await sendViaProvider("WHATSAPP", subscriber.phone, text, subscriber.towerId, tpl.image);
   await prisma.message.create({
     data: {
       channel: "WHATSAPP", subscriberId: subscriber.id, phone: subscriber.phone, text,

@@ -4,7 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { usePermission } from "@/lib/usePermission";
 
-type EventTpl = { type: string; text: string; enable: string; officeCustom?: boolean; reset?: boolean };
+type EventTpl = { type: string; text: string; enable: string; officeCustom?: boolean; reset?: boolean;
+  // البند ٣ · صورةٌ ترافق الرسالة (data URI). imageOwn=false ⇒ الصورةُ موروثةٌ من قالب
+  // الوكيل ولا يملكها المكتب، فلا يُعرَض له زرُّ حذفٍ لِما ليس له.
+  // imageDirty: لمسها المستخدمُ في هذه الجلسة ⇒ تُرسَل. وبدونها **لا تُرسَل أبداً** —
+  // فحفظٌ يُعيد كتابةَ صورةٍ لم تُلمَس يَنسخ صورةَ الوكيل إلى صفّ المكتب فتنفصل عنه.
+  image?: string | null; imageOwn?: boolean; imageDirty?: boolean };
+
+// سقفُ الصورة: ٣٠٠ كيلوبايت ملفّاً أصليّاً. **ولماذا سقفٌ أصلاً؟** الصورةُ تُخزَّن في
+// الصفّ base64 (تضخيمُ ٣٣٪) و**تُقرأ في كلّ إرسال** على حاسبة المكتب — فصورةُ ٥ ميغا
+// تُثقل كلَّ رسالةٍ لكلّ مشتركٍ إلى الأبد. والخادمُ يحرس السقفَ أيضاً (٤٠٠ ألف حرف).
+const IMAGE_MAX_BYTES = 300 * 1024;
 type CustomTpl = { id: number; name: string; text: string; dirty?: boolean };
 type Office = { id: number; name: string | null };
 
@@ -176,6 +186,33 @@ export default function SmsTemplatesPage() {
     if (isEvent) setEvents((m) => ({ ...m, [selType]: { ...(m[selType] ?? { type: selType, enable: "1" }), type: selType, text, enable: m[selType]?.enable ?? "1", reset: false, ...(officeSel ? { officeCustom: true } : {}) } }));
     else setCustoms((cs) => cs.map((c) => (c.id === selId ? { ...c, text, dirty: true } : c)));
   };
+  // 🖼️ تعيينُ/حذفُ صورة القالب — كالنصّ: التعديلُ تحت مكتبٍ يجعله تخصيصاً لذلك المكتب
+  const setImage = (image: string | null) => {
+    if (!isEvent) return;
+    setSaved(false);
+    setEvents((m) => ({ ...m, [selType]: { ...(m[selType] ?? { type: selType, text: "", enable: "1" }), type: selType,
+      text: m[selType]?.text ?? "", enable: m[selType]?.enable ?? "1", image, imageOwn: image != null, imageDirty: true,
+      reset: false, ...(officeSel ? { officeCustom: true } : {}) } }));
+  };
+
+  async function pickImage(file: File | null | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setErr("الملفّ ليس صورة"); return; }
+    if (file.size > IMAGE_MAX_BYTES) {
+      setErr(`الصورة ${Math.round(file.size / 1024)} كيلوبايت — والحدُّ ${IMAGE_MAX_BYTES / 1024} كيلوبايت. اختر صورةً أصغر أو اضغطها.`);
+      return;
+    }
+    setErr("");
+    const dataUri = await new Promise<string | null>((res) => {
+      const fr = new FileReader();
+      fr.onload = () => res(typeof fr.result === "string" ? fr.result : null);
+      fr.onerror = () => res(null);
+      fr.readAsDataURL(file);
+    });
+    if (!dataUri) { setErr("تعذّر قراءة الصورة"); return; }
+    setImage(dataUri);
+  }
+
   const setEnable = (on: boolean) => {
     if (!isEvent) return;
     setSaved(false);
@@ -252,7 +289,11 @@ export default function SmsTemplatesPage() {
     const templates = EVENTS
       .map((e) => {
         const t = events[e.type] ?? { type: e.type, text: "", enable: "1" };
-        return { type: e.type, text: t.text ?? "", enable: t.enable ?? "1", officeCustom: !!t.officeCustom, ...(t.reset ? { reset: true } : {}) };
+        // 🖼️ الصورةُ تُرسَل **فقط إن كان القالبُ يملكها** — فصورةٌ موروثةٌ من الوكيل لو
+        //   أُرسلت لَنُسِخت إلى صفّ المكتب، فانفصلت عن الوكيل وما تبِعت تحديثَه بعدُ أبداً.
+        return { type: e.type, text: t.text ?? "", enable: t.enable ?? "1", officeCustom: !!t.officeCustom,
+          ...(t.imageDirty ? { image: t.image ?? null } : {}), // لم تُلمَس ⇒ حقلٌ غائبٌ ⇒ الخادمُ لا يمسّها
+          ...(t.reset ? { reset: true } : {}) };
       })
       .filter((t) => !officeSel || t.officeCustom || t.reset)
       .map(({ officeCustom: _oc, ...t }) => t);
@@ -388,6 +429,50 @@ export default function SmsTemplatesPage() {
             placeholder="اكتب نص الرسالة بحرية، وأدرج الحقول من الأزرار أدناه بموضع المؤشر..."
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-mynet-blue"
           />
+
+          {/* 🖼️ البند ٣ · صورةٌ ترافق الرسالة — تُرسَل **مع النصّ تعليقاً واحداً** لا رسالتَين */}
+          {isEvent && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-slate-600">
+                  صورة مع الرسالة{" "}
+                  <span className="font-normal text-slate-400">(اختيارية — تُرسل مع النصّ برسالةٍ واحدة)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="cursor-pointer rounded-lg bg-mynet-blue px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90">
+                    {curEvent?.image ? "تغيير الصورة" : "إضافة صورة"}
+                    <input
+                      type="file" accept="image/*" className="hidden"
+                      onChange={(e) => { void pickImage(e.target.files?.[0]); e.target.value = ""; }}
+                    />
+                  </label>
+                  {curEvent?.image && curEvent?.imageOwn && (
+                    <button onClick={() => setImage(null)} className="rounded-lg bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-100">
+                      حذف الصورة
+                    </button>
+                  )}
+                </div>
+              </div>
+              {curEvent?.image ? (
+                <div className="flex items-start gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={curEvent.image} alt="صورة القالب" className="max-h-32 rounded-lg border border-slate-200 bg-white object-contain" />
+                  <div className="text-[11px] leading-relaxed text-slate-500">
+                    ≈ {Math.round((curEvent.image.length * 3) / 4 / 1024)} كيلوبايت
+                    {officeSel && !curEvent.imageOwn && (
+                      <span className="mt-1 block rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-500">
+                        موروثة من القالب العام — لتخصيص صورةٍ لهذا المكتب اضغط «تغيير الصورة»
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-400">
+                  لا صورة. الحدُّ الأعلى {IMAGE_MAX_BYTES / 1024} كيلوبايت — والصورةُ الكبيرة تُبطئ كلَّ رسالةٍ تُرسَل بهذا القالب.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* الحقول التسعة: إدراج السطر الكامل بموضع المؤشر */}
           <div className="mt-3">

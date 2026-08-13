@@ -14,9 +14,10 @@ const TZ = "Asia/Baghdad";
 
 // جلب قالب رسالة حسب التصنيف
 // قالب المكتب المخصّص أولاً ثم قالب الوكيل العام (عزل المستأجر والمكتب)
-async function getTemplate(type: string, agentId: number | null, towerId?: number | null): Promise<string | null> {
-  const { getEffectiveTemplate } = await import("@/lib/smsTemplates");
-  return getEffectiveTemplate(type, agentId, towerId); // قالب المكتب ← الوكيل ← الافتراضي؛ null إن مُعطَّل
+// البند ٣ · تُرجع النصَّ **وصورتَه** معاً — فالصورةُ تصل مع أيّ قالبٍ يختاره محمد
+async function getTemplate(type: string, agentId: number | null, towerId?: number | null): Promise<{ text: string; image: string | null } | null> {
+  const { getEffectiveTemplateFull } = await import("@/lib/smsTemplates");
+  return getEffectiveTemplateFull(type, agentId, towerId); // قالب المكتب ← الوكيل ← الافتراضي؛ null إن مُعطَّل
 }
 
 // تاريخ يوم معيّن بصيغة YYYY-MM-DD (توقيت بغداد)
@@ -95,8 +96,8 @@ export async function runExpiringReminder(
     return fallbackCache.get(aid)!;
   };
   // قالب "expiring" لكل (وكيل، مكتب) — يُجلب مرّة ويُخزَّن؛ قالب المكتب يغلب قالب الوكيل
-  const tplCache = new Map<string, string | null>();
-  async function templateFor(agentId: number | null, towerId: number | null): Promise<string | null> {
+  const tplCache = new Map<string, { text: string; image: string | null } | null>();
+  async function templateFor(agentId: number | null, towerId: number | null): Promise<{ text: string; image: string | null } | null> {
     if (agentId == null) return null;
     const key = `${agentId}:${towerId ?? 0}`;
     if (!tplCache.has(key)) tplCache.set(key, await getTemplate("expiring", agentId, towerId));
@@ -114,7 +115,7 @@ export async function runExpiringReminder(
     const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null);
     if (!template) continue; // لا قالب مفعّل لوكيل هذا المكتب
     if (i++ > 0) await sleep(10000); // تأخير 10 ثوانٍ بين رسالة وأخرى
-    const text = renderTemplate(template, {
+    const text = renderTemplate(template.text, {
       name: sub.name,
       netUser: sub.netUser,
       address: sub.address, // «ادرس 1» من الساس — يظهر فقط إن أدخله المدير في القالب
@@ -127,7 +128,7 @@ export async function runExpiringReminder(
       code: sub.rewardCode, balance: sub.rewardBalance ?? 0, // كود/رصيد الخصم (فارغ لمن لا رصيد له)
       office: office?.name ?? (await fallbackOfficeFor(office?.agentId ?? null)),
     });
-    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId); // واتساب مكتب المشترك
+    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image); // واتساب مكتب المشترك + صورةُ القالب
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
@@ -184,8 +185,8 @@ export async function runDebtReminder(
     if (!fallbackCache.has(aid)) fallbackCache.set(aid, await getAgentSetting("office", aid, "SHAKEEB"));
     return fallbackCache.get(aid)!;
   };
-  const tplCache = new Map<string, string | null>();
-  async function templateFor(agentId: number | null, towerId: number | null): Promise<string | null> {
+  const tplCache = new Map<string, { text: string; image: string | null } | null>();
+  async function templateFor(agentId: number | null, towerId: number | null): Promise<{ text: string; image: string | null } | null> {
     if (agentId == null) return null;
     const key = `${agentId}:${towerId ?? 0}`;
     if (!tplCache.has(key)) tplCache.set(key, await getTemplate("debts", agentId, towerId));
@@ -199,7 +200,7 @@ export async function runDebtReminder(
     const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null);
     if (!template) continue; // لا قالب "debts" مفعّل لوكيل هذا المكتب
     if (i++ > 0) await sleep(10000);
-    const text = renderTemplate(template, {
+    const text = renderTemplate(template.text, {
       name: sub.name, netUser: sub.netUser,
       package: sub.packageId ? pkgNameMap.get(sub.packageId) ?? "" : "",
       phone: sub.phone, dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",
@@ -208,7 +209,7 @@ export async function runDebtReminder(
       code: sub.rewardCode, balance: sub.rewardBalance ?? 0,
       office: office?.name ?? (await fallbackOfficeFor(office?.agentId ?? null)),
     });
-    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId);
+    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image);
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,

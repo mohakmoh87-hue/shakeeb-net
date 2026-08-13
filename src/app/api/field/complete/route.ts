@@ -439,15 +439,15 @@ export async function POST(request: Request) {
       }
       // رسالة واتساب للمشترك (قالب "رسالة الصيانة/التنصيب") — قالب مكتب البطاقة المخصّص
       // أولاً ثم قالب الوكيل العام (عزل المستأجر والمكتب)
-      const { getEffectiveTemplate } = await import("@/lib/smsTemplates");
-      const tplText = await getEffectiveTemplate("maintenance", actor.agentId ?? null, towerId);
+      const { getEffectiveTemplateFull } = await import("@/lib/smsTemplates");
+      const tplText = await getEffectiveTemplateFull("maintenance", actor.agentId ?? null, towerId);
       // الهاتف الإضافي المسجَّل عند رفع البطاقة (📞 هاتف إضافي) يَغلب رقم المشترك المخزون
       const altPhone = (card.description ?? "").match(/هاتف إضافي\s*[:：]\s*([^\n]+)/)?.[1]?.trim() || null;
       const toPhone = altPhone || sub.phone;
       if (toPhone && tplText) {
         const office = towerId ? await prisma.tower.findUnique({ where: { id: towerId }, select: { name: true, waEnabled: true } }) : null;
         if (office?.waEnabled !== "0") {
-          const text = renderTemplate(tplText, {
+          const text = renderTemplate(tplText.text, {
             name: sub.name, netUser: sub.netUser, kind: card.kind,
             details: serviceDetails?.trim() ?? "", date: formatDate(new Date()),
             // {amount} = المجموع المستلم؛ {المبيع}/{الاشتراك} تفصيلاً (وللتوصيل مبلغه في amount)
@@ -456,7 +456,7 @@ export async function POST(request: Request) {
             code: sub.rewardCode, balance: sub.rewardBalance ?? 0, // كود/رصيد الخصم
           });
           let res: { ok: boolean; error?: string };
-          try { res = await sendViaProvider("WHATSAPP", toPhone, text, towerId); }
+          try { res = await sendViaProvider("WHATSAPP", toPhone, text, towerId, tplText.image); }
           catch (e) { res = { ok: false, error: e instanceof Error ? e.message : "تعذّر الإرسال" }; }
           messaged = res.ok;
           await prisma.message.create({

@@ -573,13 +573,31 @@ export async function sendOfficeChat(officeId: number, chatId: string, text: str
 }
 
 // إرسال محلّي مباشر من عميل واتساب هذه الحاسبة (بلا تمرير) — تستعمله مالكة الجلسة والمُرحِّل.
-async function sendWhatsAppLocal(officeId: number, phone: string, text: string): Promise<SendResult> {
+async function sendWhatsAppLocal(officeId: number, phone: string, text: string, image?: string | null): Promise<SendResult> {
   const s = store(officeId);
   if (s.state !== "ready" || !s.client) return { ok: false, error: "واتساب المكتب غير متصل — اربطه من إدارة المكاتب" };
   const waId = toWaId(phone);
   if (!waId) return { ok: false, error: `رقم غير صالح: ${phone}` };
   const client = s.client;
   try {
+    // ═════ البند ٣ · صورةٌ مع الرسالة (طلبُ محمد 2026-08-13) ═════
+    // «أريد إمكانيةَ إضافة صورةٍ إلى قوالب رسائل الواتساب بحيث تصل مع الرسالة ولأيّ
+    //  قالبٍ أختاره». والصورةُ تُرسَل **مع النصّ تعليقاً واحداً** لا رسالتَين — فرسالتان
+    //  تُضاعفان ما يراه المشتركُ وما يُحسَب على الرقم.
+    // 🔑 وعند فشلِ الصورة **يُرسَل النصُّ وحدَه**: رسالةٌ بلا صورةٍ خيرٌ من لا رسالة.
+    if (image) {
+      try {
+        const { MessageMedia } = await import("whatsapp-web.js");
+        const m = /^data:([^;]+);base64,(.+)$/.exec(image);
+        if (m) {
+          const media = new MessageMedia(m[1], m[2]);
+          await client.sendMessage(waId, media, { caption: text });
+          return { ok: true };
+        }
+      } catch (e) {
+        console.error("[whatsapp] تعذّر إرسال الصورة — يُرسَل النصُّ وحدَه:", e instanceof Error ? e.message : e);
+      }
+    }
     await client.sendMessage(waId, text);
     return { ok: true };
   } catch (e) {
@@ -609,16 +627,16 @@ async function sendWhatsAppLocal(officeId: number, phone: string, text: string):
 
 // إرسال رسالة نصية من واتساب مكتب محدّد. إن كانت جلسة هذا المكتب على حاسبةٍ أخرى (مالكة الجلسة)
 // نُمرّر الإرسال إليها عبر المُرحِّل — فيعمل الإرسال المجدول/السحابي لكل مكتب من حاسبته.
-export async function sendWhatsApp(officeId: number | null | undefined, phone: string, text: string): Promise<SendResult> {
+export async function sendWhatsApp(officeId: number | null | undefined, phone: string, text: string, image?: string | null): Promise<SendResult> {
   if (officeId == null) return { ok: false, error: "المشترك غير مربوط بمكتب" };
   const s = store(officeId);
-  if (s.state === "ready" && s.client) return sendWhatsAppLocal(officeId, phone, text);
+  if (s.state === "ready" && s.client) return sendWhatsAppLocal(officeId, phone, text, image);
   // هذه الحاسبة مالكة الجلسة لكنها غير جاهزة الآن ⇒ لا تُمرّر لنفسها
   if (hostsOfficeLocally(officeId)) return { ok: false, error: "واتساب المكتب غير متصل — اربطه من إدارة المكاتب" };
   // ليست المالكة ⇒ مرّر الإرسال إلى حاسبة المكتب.
   // المهلة ٤٥ ثانية لا ١٥: القياس على مكتب الشدن (2026-08-10) أظهر إرسالاً يستغرق ١٢–١٤ ثانية
   // في الإرسال الجماعيّ، فكانت رسائلٌ **وصلت فعلاً** تُختَم "فاشلة" لمجرّد تجاوز المهلة.
-  const r = await relayRequest(officeId, "sendMsg", { phone, text }, 45000);
+  const r = await relayRequest(officeId, "sendMsg", { phone, text, image: image ?? null }, 45000);
   return r.ok ? { ok: true } : { ok: false, error: r.error ?? "تعذّر الإرسال عبر حاسبة المكتب" };
 }
 
@@ -737,7 +755,7 @@ export function startWaRelayPoller() {
           continue;
         }
         try {
-          const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; phone?: string; limit?: number; msgId?: string; op?: string; page?: number; count?: number };
+          const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; phone?: string; image?: string | null; limit?: number; msgId?: string; op?: string; page?: number; count?: number };
           // تأكّد أن واتساب المكتب جاهز فعلاً قبل عمليات الواتساب (لا يلزم لعمليات SAS)
           const st = store(relayRow.towerId);
           if ((relayRow.kind === "chats" || relayRow.kind === "messages" || relayRow.kind === "send" || relayRow.kind === "media" || relayRow.kind === "sendMsg") && st.state !== "ready") {
@@ -747,7 +765,7 @@ export function startWaRelayPoller() {
           if (relayRow.kind === "chats") result = await getOfficeChats(relayRow.towerId, p.limit ?? 40);
           else if (relayRow.kind === "messages") result = await getOfficeMessages(relayRow.towerId, p.chatId ?? "", p.limit ?? 40);
           else if (relayRow.kind === "send") result = await sendOfficeChat(relayRow.towerId, p.chatId ?? "", p.text ?? "");
-          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? ""); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true }; }
+          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true }; }
           else if (relayRow.kind === "media") result = await downloadOfficeMedia(relayRow.towerId, p.msgId ?? "");
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
           else if (relayRow.kind === "sas") result = await runSasOp(relayRow.towerId, p.op ?? "", p);

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { appendCardHistory, resolveCardActor, listOfficeId } from "@/lib/field";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
-import { getEffectiveTemplate } from "@/lib/smsTemplates";
+import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 
 export const dynamic = "force-dynamic";
 
@@ -43,12 +43,12 @@ export async function POST(request: Request) {
   // الرسالة (أفضل جهد): تتطلب مشتركاً بهاتف وواتساب مفعّلاً له وللمكتب وقالباً مفعّلاً
   let messaged = false;
   if (sub?.phone && sub.waEnabled !== false && office?.waEnabled !== "0") {
-    const tpl = await getEffectiveTemplate("noAnswer", office?.agentId ?? actor.agentId ?? null, towerId);
+    const tpl = await getEffectiveTemplateFull("noAnswer", office?.agentId ?? actor.agentId ?? null, towerId);
     if (tpl) {
-      const msg = renderTemplate(tpl, {
+      const msg = renderTemplate(tpl.text, {
         name: sub.name, kind: card.kind, technician: actor.name, office: office?.name ?? "SHAKEEB",
       });
-      const res = await sendViaProvider("WHATSAPP", sub.phone, msg, towerId).catch(() => ({ ok: false as const, error: "تعذّر الإرسال" }));
+      const res = await sendViaProvider("WHATSAPP", sub.phone, msg, towerId, tpl.image).catch(() => ({ ok: false as const, error: "تعذّر الإرسال" }));
       messaged = res.ok;
       await prisma.message.create({
         data: {

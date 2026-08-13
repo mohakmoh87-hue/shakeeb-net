@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getEffectiveTemplate } from "@/lib/smsTemplates";
+import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 
@@ -23,16 +23,16 @@ export async function sendLoanMessage(opts: {
     if (opts.waEnabled === false) return; // المشترك أوقف واتساب
     if (!opts.phone) return;
     if (opts.officeWaEnabled === "0") return; // واتساب المكتب مطفأ
-    const tpl = await getEffectiveTemplate("loan", opts.agentId, opts.officeId);
+    const tpl = await getEffectiveTemplateFull("loan", opts.agentId, opts.officeId);
     if (!tpl) return; // القالب معطَّل أو غائب
-    const text = renderTemplate(tpl, {
+    const text = renderTemplate(tpl.text, {
       "الاسم": opts.name ?? "",
       "اليوزر": opts.netUser ?? "",
       "المبلغ": Number(opts.amount || 0).toLocaleString("en-US"),
       "تاريخ_الانتهاء": opts.expiryVirtual ? formatDate(opts.expiryVirtual) : "",
       "المكتب": opts.officeName ?? "SHAKEEB",
     });
-    const res = await sendViaProvider("WHATSAPP", opts.phone, text, opts.officeId);
+    const res = await sendViaProvider("WHATSAPP", opts.phone, text, opts.officeId, tpl.image);
     await prisma.message.create({
       data: {
         channel: "WHATSAPP",

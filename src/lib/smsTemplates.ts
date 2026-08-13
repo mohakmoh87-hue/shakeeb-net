@@ -92,3 +92,31 @@ export async function getEffectiveTemplate(type: string, agentId: number | null,
   const text = t?.text?.trim();
   return text || DEFAULT_TEMPLATES[type] || null;
 }
+
+// ═════ البند ٣ · القالبُ الفعّالُ **بنصِّه وصورته** (طلبُ محمد 2026-08-13) ═════
+// دالّةٌ ثانيةٌ لا تعديلٌ للأولى: `getEffectiveTemplate` يناديها **أكثرُ من عشرين موضعاً**
+// وتغييرُ نوعِ رجوعها يمسّها كلَّها — والمخاطرةُ بلا مقابل. فمَن يريد الصورةَ ينادي هذه.
+//
+// 🔑 والصورةُ تتبع **نفسَ سلَّم الأولويّة** الذي يتبعه النصّ: قالبُ المكتب ← قالبُ الوكيل.
+//   لكنّها **مستقلّةٌ عن النصّ في السقوط**: مكتبٌ كتب نصّاً بلا صورةٍ يأخذ نصَّه وصورةَ
+//   الوكيل — وهو الأنفعُ عملاً (شعارُ الوكيل واحدٌ ونصُّ المكتب يخصّه).
+export async function getEffectiveTemplateFull(
+  type: string, agentId: number | null, towerId?: number | null,
+): Promise<{ text: string; image: string | null } | null> {
+  const text = await getEffectiveTemplate(type, agentId, towerId);
+  if (!text) return null; // معطَّلٌ أو غائبٌ ⇒ لا إرسالَ أصلاً
+  let image: string | null = null;
+  if (towerId != null) {
+    const o = await prisma.smsTemplate.findFirst({
+      where: { type, agentId: agentId ?? -1, towerId }, select: { image: true },
+    });
+    image = o?.image?.trim() || null;
+  }
+  if (!image) {
+    const t = await prisma.smsTemplate.findFirst({
+      where: { type, agentId: agentId ?? -1, towerId: null }, select: { image: true },
+    });
+    image = t?.image?.trim() || null;
+  }
+  return { text, image };
+}

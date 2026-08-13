@@ -11,7 +11,7 @@ import { sasBaseUrl, sasLogin, sasFetchUser } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
 import { credsOfSubscriber } from "@/lib/sasPanel";
 import { grantReward, sendRewardGrantMessage } from "@/lib/rewards";
-import { getEffectiveTemplate } from "@/lib/smsTemplates";
+import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 
 const schema = z.object({
   packageId: z.coerce.number(),
@@ -358,10 +358,10 @@ async function sendActivationMessage(a: {
     if (office?.waEnabled === "0") return;
 
     // قالب تفعيل وكيل مكتب المشترك (عزل — كان يُجلب بلا تحديد وكيل) مع النص الافتراضي عند غيابه
-    const tplText = await getEffectiveTemplate("activation", office?.agentId ?? null, a.officeId);
+    const tplText = await getEffectiveTemplateFull("activation", office?.agentId ?? null, a.officeId);
     if (!tplText) return; // معطَّل أو لا قالب
 
-    const text = renderTemplate(tplText, {
+    const text = renderTemplate(tplText.text, {
       name: a.name,
       netUser: a.netUser,
       package: a.packageName,
@@ -379,7 +379,7 @@ async function sendActivationMessage(a: {
       office: office?.name ?? "SHAKEEB",
     });
 
-    const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId); // واتساب مكتب المشترك
+    const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId, tplText.image); // واتساب مكتب المشترك
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text,

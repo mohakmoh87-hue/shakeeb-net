@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getEffectiveTemplate } from "@/lib/smsTemplates";
+import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 
 // ═════ البند ٧ · رسالةٌ للمشترك عند **رفعِ** بطاقةٍ له (طلبُ محمد 2026-08-13) ═════
@@ -37,7 +37,7 @@ export async function sendCardRaisedMessage(cardId: number): Promise<void> {
     });
     if (!office || office.waEnabled === "0") return; // واتساب المكتب مطفأ
 
-    const tpl = await getEffectiveTemplate("cardRaised", office.agentId, sub.towerId);
+    const tpl = await getEffectiveTemplateFull("cardRaised", office.agentId, sub.towerId);
     if (!tpl) return; // القالب معطَّلٌ أو غائب ⇒ لا إرسالَ ولا ختم
 
     // 🔒 الحَجزُ **قبل** الأثر: مَن كسب `count === 1` وحدَه يُرسل. ولو أُرسل ثمّ خُتم
@@ -48,7 +48,7 @@ export async function sendCardRaisedMessage(cardId: number): Promise<void> {
     });
     if (claimed.count !== 1) return; // سبقنا غيرُنا
 
-    const text = renderTemplate(tpl, {
+    const text = renderTemplate(tpl.text, {
       "الاسم": sub.name ?? "",
       "اليوزر": sub.netUser ?? "",
       "العملية": card.label ?? card.kind ?? "",
@@ -56,7 +56,7 @@ export async function sendCardRaisedMessage(cardId: number): Promise<void> {
       "المكتب": office.name ?? "SHAKEEB",
       "المصدر": card.viaOdoo ? "أودو" : "المكتب",
     });
-    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId);
+    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, tpl.image);
     await prisma.message.create({
       data: {
         channel: "WHATSAPP",

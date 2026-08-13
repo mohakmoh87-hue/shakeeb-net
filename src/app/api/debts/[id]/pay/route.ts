@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
-import { getEffectiveTemplate } from "@/lib/smsTemplates";
+import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 
 const schema = z.object({
   // ب-٠٠ · جذرُ الكسر: لا كسورَ في الدينار العراقي، وتسديدٌ بكسرٍ يُخلّف ديناً كسريّاً لا يُسدَّد أبداً
@@ -112,13 +112,13 @@ async function sendDebtPaidMessage(a: {
     const office = a.towerId ? await prisma.tower.findUnique({ where: { id: a.towerId }, select: { name: true, waEnabled: true, agentId: true } }) : null;
     if (office?.waEnabled === "0") return;
 
-    const tpl = await getEffectiveTemplate("debtPaid", office?.agentId ?? null, a.towerId);
+    const tpl = await getEffectiveTemplateFull("debtPaid", office?.agentId ?? null, a.towerId);
     if (!tpl) return; // معطَّل
 
     // ب-٠٠ · `carry` سالبٌ = **رصيدٌ للمشترك** لا دَينٌ سالب. فالمخزَّنُ يبقى سالباً (وهو الحقُّ
     // المحاسبيّ)، وأمّا **الرسالةُ إليه** فلا يجوز أن تقول «إجمالي ديونك −١٠٠٠٠» — تُقصَر على صفر.
     const debtShown = Math.max(0, a.newCarry);
-    const text = renderTemplate(tpl, {
+    const text = renderTemplate(tpl.text, {
       name: a.name,
       netUser: a.netUser,
       paid: a.amount, // {المبلغ_المستلم}
@@ -128,7 +128,7 @@ async function sendDebtPaidMessage(a: {
       office: office?.name ?? "",
     });
 
-    const res = await sendViaProvider("WHATSAPP", a.phone, text, a.towerId);
+    const res = await sendViaProvider("WHATSAPP", a.phone, text, a.towerId, tpl.image);
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text,
