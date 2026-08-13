@@ -8,7 +8,7 @@ import { sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
-import { credsOfPanel, credsOfTower } from "@/lib/sasPanel";
+import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 
 // ============================================================================
 // المزامنة اليومية مع SAS — نسخة مطوّرة على مرحلتين متتاليتين لكل مكتب:
@@ -787,6 +787,10 @@ export async function claimManualSync(officeId: number): Promise<{ claimed: bool
 // لأن تفعيله خارج ما جلبناه، والحكم عليه يكون إيجاباً كاذباً يُرجع كارتاً حقيقياً للمخزون.
 const CARD_AUDIT_DAYS = 120;
 
+/** أدنى عددٍ من الكروت المستخدمة يجب فحصُه قبل أن يُعتبَر «صفرُ مُثبَتٍ» بصمةَ عطبٍ لا حقيقة.
+ *  ثلاثةٌ: فحصُ كارتٍ أو اثنَين لا يكفي دليلاً في أيّ من الاتجاهَين، ولا يُعطَّل به اكتشافٌ صحيح. */
+const PHANTOM_MIN_VERIFIED_SAMPLE = 3;
+
 export async function runFullCardAudit(
   officeId: number,
   onProgress?: (label: string, done: number, total: number) => Promise<boolean>,
@@ -799,31 +803,44 @@ export async function runFullCardAudit(
     where: { id: officeId },
     select: { id: true, name: true, agentId: true },
   });
-  // أ-٢٣ · لوحةُ المكتب الأولى، وإلّا أعمدتُه (السلوكُ القديم بالضبط). وجردُ الكروت يبقى على
-  // مستوى **المكتب** لا اللوحة — فالكارتُ في مخزن المكتب لا في لوحةِ ساس.
-  const creds = await credsOfTower(officeId);
-  if (!office || !creds) {
-    return { ...empty, error: "المكتب لا يحتوي بيانات SAS كاملة" };
+  // ═════ 🔴 الجردُ يقرأ **كلَّ لوحات المكتب** (بلاغُ محمد 2026-08-13) ═════
+  // كان يقرأ `credsOfTower` = **اللوحةَ الأولى وحدَها**. والكارتُ في مخزن **المكتب** لا في
+  // لوحةٍ بعينها — فكارتٌ فُعِّل على اللوحة الثانية لا تفعيلَ له في قائمة الأولى، فيُحكَم
+  // عليه بالوهميّة **وهو مستخدَمٌ حقّاً**. وقِيس على الإنتاج: جردُ صميم يجلب ٢٤٩ تفعيلاً
+  // من «صميم١» بينما «صميم٢» وحدَها فيها ~١٠٠١ ⇒ ألفُ دليلٍ غائبٍ عن الحكم.
+  if (!office) return { ...empty, error: "المكتب غير موجود" };
+  const scopes: SasCreds[] = [];
+  for (const p of await panelsOfTower(officeId)) { const cc = credsFromPanel(p); if (cc) scopes.push(cc); }
+  if (!scopes.length) {
+    const fallback = await credsOfTower(officeId); // بلا لوحاتٍ: أعمدةُ المكتب — السلوكُ القديم
+    if (fallback) scopes.push(fallback);
   }
-  let base: string, token: string;
-  try {
-    base = sasBaseUrl(creds.loginUrl);
-    token = await sasLogin(base, creds.username, creds.password);
-  } catch (e) {
-    return { ...empty, error: (e as Error).message || "فشل الاتصال بـ SAS" };
-  }
+  if (!scopes.length) return { ...empty, error: "المكتب لا يحتوي بيانات SAS كاملة" };
 
   const since = new Date(Date.now() - CARD_AUDIT_DAYS * 86400 * 1000);
 
-  // 1) جلب تفعيلات SAS دفعةً واحدة (صفحات 500) مع تقدّم مرئي وإمكان الإلغاء
-  let acts: SasActivation[], complete: boolean;
-  try {
-    const r = await sasFetchActivationsSince(base, token, since, async (fetched, total) =>
-      onProgress ? onProgress("جلب تفعيلات SAS", fetched, total) : true,
-    );
-    acts = r.rows; complete = r.complete;
-  } catch (e) {
-    return { ...empty, error: (e as Error).message || "تعذّر جلب تفعيلات SAS" };
+  // 1) جلب تفعيلات كلِّ لوحةٍ ثمّ دمجُها (صفحات 500) مع تقدّم مرئي وإمكان الإلغاء
+  const acts: SasActivation[] = [];
+  let complete = true; // 🔑 ناقصةٌ من **أيّ** لوحةٍ ⇒ الغيابُ لا يُثبت شيئاً
+  for (const sc of scopes) {
+    let base: string, token: string;
+    try {
+      base = sasBaseUrl(sc.loginUrl);
+      token = await sasLogin(base, sc.username, sc.password);
+    } catch (e) {
+      // لوحةٌ تعذّر الدخولُ إليها = أدلّةٌ غائبة ⇒ لا يُحكَم بغيابِ ما لم نره
+      return { ...empty, error: `فشل الاتصال بـ SAS${sc.label ? ` (${sc.label})` : ""}: ${(e as Error).message}` };
+    }
+    try {
+      const label = scopes.length > 1 ? `جلب تفعيلات SAS — ${sc.label ?? "لوحة"}` : "جلب تفعيلات SAS";
+      const r = await sasFetchActivationsSince(base, token, since, async (fetched, total) =>
+        onProgress ? onProgress(label, fetched, total) : true,
+      );
+      acts.push(...r.rows);
+      if (!r.complete) complete = false;
+    } catch (e) {
+      return { ...empty, error: (e as Error).message || "تعذّر جلب تفعيلات SAS" };
+    }
   }
 
   // خريطة السيريال (pin) → تفعيله في SAS
@@ -870,6 +887,8 @@ export async function runFullCardAudit(
   );
 
   const res: FullCardsResult = { ...empty };
+  // مرشَّحو الوهميّة — تُجمَع ثمّ يُحكَم عليها **بعد** تقييم صلاحيّة الأدلّة (أدناه)
+  const candidates: { cardId: number; serial: string; subLabel: string; usedAt: string }[] = [];
 
   // 2) المطابقة المحلّية — بلا أي استعلام SAS إضافي
   let i = 0;
@@ -917,18 +936,54 @@ export async function runFullCardAudit(
     res.checkedUsed++;
     if (hit) { res.verifiedReal++; continue; }
 
-    await prisma.auditLog.create({
-      data: {
-        action: "SYNC_PHANTOM_VERIFIED", entity: "rechargeCard", entityId: String(c.id),
-        details: `كارت وهمي (فحص شامل بجلب تفعيلات SAS): سيريال ${serial} — مشترك ${sub.name ?? sub.netUser ?? c.subscriberId} — مكتب ${office.name ?? officeId} — استُخدم ${c.useDate ? new Date(c.useDate).toISOString() : "؟"}`,
-      },
+    // ⏳ لا يُوسَم الآن: الحكمُ يُؤجَّل حتى يُعرَف **هل الأدلّةُ صالحةٌ أصلاً** (أدناه)
+    candidates.push({
+      cardId: c.id, serial,
+      subLabel: sub.name ?? sub.netUser ?? String(c.subscriberId),
+      usedAt: c.useDate ? new Date(c.useDate).toISOString() : "؟",
     });
-    flagged.add(c.id);
-    res.phantom++;
+  }
+
+  // ═════ 🛑 «لا حكمَ بغيابِ دليلٍ لم يثبت أنّه يحضر» (بلاغُ محمد 2026-08-13) ═════
+  // البلاغ: صفحةُ الكروت الوهميّة تُرجع **كروتاً مستخدمةً حقّاً**، وضغطةُ «ربط» تربطها
+  // بمشتركيها وتزيلها — أي أنّها لم تكن وهميّةً قطّ. تكرّر لأكثرِ من وكيلٍ وحتى شكيب.
+  //
+  // 🎯 وقياسُ الإنتاج كشف بصمةً قاطعة: **١١ من ١١** تشغيلاً وسم كروتاً كان فيه «سليم ٠»
+  //   — لم يُثبِت **ولا كارتاً واحداً** أنّه حقيقيّ. وفي المقابل ٥٥ تشغيلاً أثبت كروتاً
+  //   ولم يسم شيئاً. والفصلُ تامّ. (وأكبرها: المواصلات ٨٦٧ كارتاً في تشغيلٍ واحد، ثمّ
+  //   ٢٦٦ — ومجموعُ ما وُسِم ظلماً وما زال قائماً ٥٣٦ كارتاً.)
+  //
+  // 🔑 والاستنتاج: «كلُّ كروتِ المكتب المستخدمةِ وهميّة» ليس خبراً عن الكروت بل عن
+  //   **مصدرِ الأدلّة**: قائمةُ التفعيلات لم تصل كما يجب (حسابٌ فرعيٌّ لا يرى تفعيلاتِ
+  //   غيره · صفحاتٌ ناقصة · نافذة). والغيابُ لا يُثبت العدمَ إلّا إن أثبت الحضورُ نفسَه.
+  // ⇒ فإن لم يُثبَت ولا كارتٌ واحدٌ بينما فُحصت ثلاثةٌ أو أكثر: **لا يُوسَم شيء**، ويُرفَع
+  //   خطأٌ ظاهرٌ للمدير. فخسارةُ اكتشافٍ صحيحٍ أهونُ من قائمةٍ كاذبةٍ يُنظّفها محمد بيده
+  //   — وهي كلفةٌ وقعت فعلاً ٥٣٦ مرّة.
+  const evidenceBroken = res.verifiedReal === 0 && res.checkedUsed >= PHANTOM_MIN_VERIFIED_SAMPLE;
+  if (evidenceBroken) {
+    res.errors += candidates.length;
+    res.error = `تعذّر التحقّق من الكروت: فُحص ${res.checkedUsed} كارتاً مستخدماً ولم يُثبَت أيٌّ منها في تفعيلات SAS`
+      + ` (${acts.length} تفعيلاً${scopes.length > 1 ? ` من ${scopes.length} لوحات` : ""})`
+      + ` — وهذا يدلّ على نقصٍ في قائمة التفعيلات لا على كروتٍ وهميّة، فلم يُدرَج شيء.`;
     res.events.push({
-      scenario: 1, subscriber: sub.name ?? sub.netUser ?? null, pin: serial,
-      detail: "فحص شامل: مستخدم بالبرنامج بلا تفعيل في SAS — أُدرج بالكروت الوهمية",
+      scenario: 1, subscriber: null, pin: null,
+      detail: `فحص شامل: لم يُوسَم شيء — ${candidates.length} كارتاً كانت ستُدرَج ظلماً (بلا أيّ كارتٍ مُثبَتٍ في SAS)`,
     });
+  } else {
+    for (const cand of candidates) {
+      await prisma.auditLog.create({
+        data: {
+          action: "SYNC_PHANTOM_VERIFIED", entity: "rechargeCard", entityId: String(cand.cardId),
+          details: `كارت وهمي (فحص شامل بجلب تفعيلات SAS): سيريال ${cand.serial} — مشترك ${cand.subLabel} — مكتب ${office.name ?? officeId} — استُخدم ${cand.usedAt}`,
+        },
+      });
+      flagged.add(cand.cardId);
+      res.phantom++;
+      res.events.push({
+        scenario: 1, subscriber: cand.subLabel, pin: cand.serial,
+        detail: "فحص شامل: مستخدم بالبرنامج بلا تفعيل في SAS — أُدرج بالكروت الوهمية",
+      });
+    }
   }
 
   await prisma.auditLog.create({
