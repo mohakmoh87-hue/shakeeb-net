@@ -127,6 +127,45 @@ export function resolveNoticeFields(f: Partial<Record<string, boolean>> | null |
   for (const [k, v] of Object.entries(f ?? {})) if (typeof v === "boolean") out[k] = v;
   return out;
 }
+// ===== قالبُ «وصل تسديد الدين» (البند ٦ — طلبُ محمد 2026-08-13) =====
+// «تسديدُ الدين يُطبَع له وصلٌ بقالبه الخاصّ». ورسالةُ الواتساب عند التسديد موجودةٌ
+// سلفاً (قالبُ `debtPaid`)؛ الناقصُ كان **الورقةَ المطبوعة**.
+// وقالبٌ ثالثٌ مستقلٌّ لا حقولٌ تُضاف إلى وصل الاشتراك: الوصلُ هنا لا باقةَ فيه ولا
+// أشهرَ ولا تاريخَ انتهاء — بل **المدفوعُ والمتبقّي من الدين**، وخلطُهما يُنتج وصلاً
+// بحقولٍ فارغةٍ يُحيّر المشترك.
+export const DEBT_FIELDS = [
+  { key: "receiptNo", label: "رقم الوصل" },
+  { key: "date", label: "التاريخ" },
+  { key: "subscriber", label: "اسم المشترك" },
+  { key: "netUser", label: "اسم المستخدم (اليوزر)" },
+  { key: "phone", label: "رقم الهاتف" },
+  { key: "paid", label: "المبلغ المسدَّد" },
+  { key: "debtBefore", label: "الدين قبل التسديد" },
+  { key: "debtAfter", label: "الدين المتبقّي" },
+  { key: "note", label: "ملاحظة" },
+  { key: "user", label: "المستخدم (المُحرِّر)" },
+] as const;
+export type DebtBodyKey = (typeof DEBT_FIELDS)[number]["key"];
+export const DEBT_DEFAULT_ORDER: DebtBodyKey[] = DEBT_FIELDS.map((f) => f.key);
+// كلُّها ظاهرةٌ افتراضاً إلّا «اسمُ المكتب في التذييل» (كما في النوعَين الآخرَين)
+export const DEBT_DEFAULT_FIELDS = Object.fromEntries(
+  [...DEBT_FIELDS, ...RECEIPT_TOGGLES].map((f) => [f.key, f.key !== "officeInFooter"]),
+) as Record<string, boolean>;
+
+export function resolveDebtFields(f: Partial<Record<string, boolean>> | null | undefined): Record<string, boolean> {
+  const out: Record<string, boolean> = { ...DEBT_DEFAULT_FIELDS };
+  for (const [k, v] of Object.entries(f ?? {})) if (typeof v === "boolean") out[k] = v;
+  return out;
+}
+export function resolveDebtOrder(order: string[] | null | undefined): DebtBodyKey[] {
+  const valid = new Set<string>(DEBT_DEFAULT_ORDER);
+  const seen = new Set<string>();
+  const out: DebtBodyKey[] = [];
+  for (const k of order ?? []) if (valid.has(k) && !seen.has(k)) { out.push(k as DebtBodyKey); seen.add(k); }
+  for (const k of DEBT_DEFAULT_ORDER) if (!seen.has(k)) out.push(k);
+  return out;
+}
+
 export function resolveNoticeOrder(order: string[] | null | undefined): NoticeBodyKey[] {
   const valid = new Set<string>(NOTICE_DEFAULT_ORDER);
   const seen = new Set<string>();

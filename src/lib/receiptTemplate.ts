@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import {
   resolveDims, resolveFields, resolveOrder, DEFAULT_ORDER,
   resolveNoticeFields, resolveNoticeOrder, NOTICE_DEFAULT_ORDER,
+  resolveDebtFields, resolveDebtOrder, DEBT_DEFAULT_ORDER,
   type ReceiptFields, type ReceiptBodyKey,
 } from "@/lib/receiptPaper";
 
@@ -84,6 +85,40 @@ export const DEFAULT_NOTICE: ReceiptTemplate = {
   fields: resolveNoticeFields(null) as unknown as ReceiptFields,
   fieldOrder: NOTICE_DEFAULT_ORDER as unknown as ReceiptBodyKey[],
 };
+
+// ===== البند ٦ · قالبُ «وصل تسديد الدين» (debt) — مستقلٌّ بمفتاحه وحقوله =====
+// طلبُ محمد: «تسديدُ الدين يُطبَع له وصلٌ بقالبه الخاصّ». ورسالةُ الواتساب موجودةٌ
+// سلفاً (قالبُ `debtPaid`)؛ الناقصُ كان الورقةَ المطبوعة.
+export function debtKey(agentId: number | null | undefined): string { return `debt:${agentId ?? 0}`; }
+export function debtOfficeKey(agentId: number | null | undefined, towerId: number): string { return `debt:${agentId ?? 0}:o${towerId}`; }
+
+export const DEFAULT_DEBT: ReceiptTemplate = {
+  ...DEFAULT_RECEIPT,
+  footerText: "شكراً لتعاملكم معنا", // لا «شكراً لاشتراككم» — الوصلُ تسديدُ دينٍ لا اشتراك
+  fields: resolveDebtFields(null) as unknown as ReceiptFields,
+  fieldOrder: DEBT_DEFAULT_ORDER as unknown as ReceiptBodyKey[],
+};
+
+/** قالبُ وصل تسديد الدين: قالبُ المكتب ← قالبُ الوكيل ← الافتراضي (نفسُ سلَّم النوعَين). */
+export async function getDebtTemplate(agentId?: number | null, towerId?: number | null): Promise<ReceiptTemplate> {
+  let row = agentId != null && towerId != null
+    ? await prisma.systemSetting.findFirst({ where: { type: debtOfficeKey(agentId, towerId) } })
+    : null;
+  if (!row && agentId != null) row = await prisma.systemSetting.findFirst({ where: { type: debtKey(agentId) } });
+  if (row?.text) {
+    try {
+      const raw = { ...DEFAULT_DEBT, ...JSON.parse(row.text) };
+      const d = resolveDims(raw as { paperW?: number; paperH?: number; contentW?: number; paper?: string });
+      return {
+        ...raw,
+        paperW: d.paperW, paperH: d.paperH, contentW: d.contentW,
+        fields: resolveDebtFields((raw as { fields?: Record<string, boolean> }).fields) as unknown as ReceiptFields,
+        fieldOrder: resolveDebtOrder((raw as { fieldOrder?: string[] }).fieldOrder) as unknown as ReceiptBodyKey[],
+      };
+    } catch { /* ignore */ }
+  }
+  return DEFAULT_DEBT;
+}
 
 // قراءة قالب وصل الإشعار (server-side): قالب المكتب ← قالب الوكيل ← الافتراضي
 export async function getNoticeTemplate(agentId?: number | null, towerId?: number | null): Promise<ReceiptTemplate> {

@@ -6,6 +6,7 @@ import type { SessionPayload } from "@/lib/auth";
 import {
   resolveDims, resolveFields, resolveOrder, DEFAULT_ORDER, PAPER_LIMITS,
   resolveNoticeFields, resolveNoticeOrder, NOTICE_DEFAULT_ORDER,
+  resolveDebtFields, resolveDebtOrder, DEBT_DEFAULT_ORDER,
 } from "@/lib/receiptPaper";
 
 // قالب الوصل المطبوع (#13) — يُخزَّن كـ JSON في system_settings (type=receipt)
@@ -49,8 +50,9 @@ export const DEFAULT_RECEIPT: ReceiptTemplate = {
 };
 
 // نوع القالب: وصل الاشتراك (receipt) أو «وصل المشترك» من صفحة كلّ المشتركين (notice)
-type Kind = "receipt" | "notice";
-const kindOf = (v: string | null): Kind => (v === "notice" ? "notice" : "receipt");
+// البند ٦ · و«debt» = وصلُ تسديد الدين (قالبٌ ثالثٌ مستقلٌّ — لا باقةَ فيه ولا أشهر)
+type Kind = "receipt" | "notice" | "debt";
+const kindOf = (v: string | null): Kind => (v === "notice" ? "notice" : v === "debt" ? "debt" : "receipt");
 
 // مفتاح القالب لكل وكيل (عزل المستأجر) — ومفتاح مكتبٍ محدّد يغلب مفتاح الوكيل
 function receiptKey(agentId: number | null | undefined, kind: Kind = "receipt") { return `${kind}:${agentId ?? 0}`; }
@@ -82,7 +84,10 @@ export async function GET(request: Request) {
   if (!row && kind === "receipt" && g.session?.agentId === 1) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
   const base = kind === "notice"
     ? { ...DEFAULT_RECEIPT, footerText: "", fieldOrder: NOTICE_DEFAULT_ORDER as unknown as string[] }
-    : DEFAULT_RECEIPT;
+    : kind === "debt"
+      // تذييلُه «شكراً لتعاملكم معنا» لا «شكراً لاشتراككم» — فالوصلُ تسديدُ دينٍ لا اشتراك
+      ? { ...DEFAULT_RECEIPT, footerText: "شكراً لتعاملكم معنا", fieldOrder: DEBT_DEFAULT_ORDER as unknown as string[] }
+      : DEFAULT_RECEIPT;
   let data = base;
   if (row?.text) {
     try { data = { ...base, ...JSON.parse(row.text) }; } catch { /* keep default */ }
@@ -110,8 +115,10 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ...data,
     paperW: d.paperW, paperH: d.paperH, contentW: d.contentW,
-    fields: kind === "notice" ? resolveNoticeFields(rawFields) : resolveFields(rawFields),
-    fieldOrder: kind === "notice" ? resolveNoticeOrder(rawOrder) : resolveOrder(rawOrder),
+    fields: kind === "notice" ? resolveNoticeFields(rawFields)
+      : kind === "debt" ? resolveDebtFields(rawFields) : resolveFields(rawFields),
+    fieldOrder: kind === "notice" ? resolveNoticeOrder(rawOrder)
+      : kind === "debt" ? resolveDebtOrder(rawOrder) : resolveOrder(rawOrder),
     availablePrinters,
     officeCustom: !!oRow, officeId, kind,
   });

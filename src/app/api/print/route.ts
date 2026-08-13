@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 // إنشاء أمر طباعة صامتة: يلتقطه العامل المحلي بحاسبة المكتب فيطبع الوصل فوراً
 // على الطابعة الافتراضية بلا أي نافذة — من أي جهاز (هاتف/متصفح/تطبيق).
 const schema = z.object({
-  kind: z.enum(["subscription", "invoice"]),
+  // البند ٦ · «debt» = وصلُ تسديد الدين، و`id` **قيدُ الصندوق** لا المشترك
+  kind: z.enum(["subscription", "invoice", "debt"]),
   id: z.coerce.number().int().positive(),
 });
 
@@ -74,6 +75,15 @@ export async function POST(request: Request) {
     const entry = await prisma.subscriptionEntry.findUnique({ where: { id }, select: { towerId: true } });
     if (!entry) return NextResponse.json({ error: "الوصل غير موجود" }, { status: 404 });
     towerId = entry.towerId;
+  } else if (kind === "debt") {
+    // 🔒 والنوعُ شرطٌ لا شكل: قيدٌ ليس تسديدَ دينٍ لا يُطبَع بقالب الدين — وإلّا طُبع
+    //   وصلُ «تسديد دين» لمصروفٍ أو تفعيلٍ بمجرّد تمرير رقمه في الطلب.
+    const tx = await prisma.moneyTx.findUnique({ where: { id }, select: { towerId: true, sourceType: true } });
+    if (!tx) return NextResponse.json({ error: "القيد غير موجود" }, { status: 404 });
+    if (tx.sourceType !== "debt" && tx.sourceType !== "master-debt") {
+      return NextResponse.json({ error: "هذا القيد ليس تسديد دين" }, { status: 400 });
+    }
+    towerId = tx.towerId;
   } else {
     const invoice = await prisma.invoice.findUnique({ where: { id }, select: { towerId: true } });
     if (!invoice) return NextResponse.json({ error: "الفاتورة غير موجودة" }, { status: 404 });

@@ -7,6 +7,7 @@ import {
   resolveDims, resolveFields, resolveOrder, DEFAULT_ORDER,
   RECEIPT_FIELDS, RECEIPT_TOGGLES, PAPER_LIMITS,
   NOTICE_FIELDS, NOTICE_DEFAULT_ORDER, resolveNoticeFields, resolveNoticeOrder,
+  DEBT_FIELDS, DEBT_DEFAULT_ORDER, resolveDebtFields, resolveDebtOrder,
 } from "@/lib/receiptPaper";
 
 type Tpl = {
@@ -37,7 +38,7 @@ const DEFAULT: Tpl = {
 };
 
 const FIELD_LABEL: Record<string, string> = Object.fromEntries(
-  [...RECEIPT_FIELDS, ...NOTICE_FIELDS].map((f) => [f.key, f.label]),
+  [...RECEIPT_FIELDS, ...NOTICE_FIELDS, ...DEBT_FIELDS].map((f) => [f.key, f.label]),
 );
 
 type Office = { id: number; name: string | null };
@@ -55,17 +56,19 @@ export default function ReceiptTemplatePage() {
   // طابعات حاسبة المكتب (يبلّغ بها العامل) — للاختيار من قائمة بدل كتابة الاسم يدويّاً
   const [printers, setPrinters] = useState<string[]>([]);
   // نوع القالب: وصل الاشتراك، أو «وصل المشترك» لطباعة وصولات صفحة كلّ المشتركين (طلب محمد 2026-08-09)
-  const [kind, setKind] = useState<"receipt" | "notice">("receipt");
+  // البند ٦ · و«debt» = وصلُ تسديد الدين (قالبٌ ثالثٌ مستقلّ)
+  const [kind, setKind] = useState<"receipt" | "notice" | "debt">("receipt");
   const isNotice = kind === "notice";
+  const isDebt = kind === "debt";
 
-  const load = (office: string, k: "receipt" | "notice" = kind) => {
+  const load = (office: string, k: "receipt" | "notice" | "debt" = kind) => {
     const qs = `?kind=${k}${office ? `&officeId=${office}` : ""}`;
     fetch(`/api/receipt-template${qs}`).then((r) => void (r.ok && r.json().then((d) => {
-      const nf = k === "notice";
+      const nf = k === "notice", df = k === "debt";
       setT({
         ...DEFAULT, ...d,
-        fields: nf ? resolveNoticeFields(d.fields) : resolveFields(d.fields),
-        fieldOrder: nf ? resolveNoticeOrder(d.fieldOrder) : resolveOrder(d.fieldOrder),
+        fields: nf ? resolveNoticeFields(d.fields) : df ? resolveDebtFields(d.fields) : resolveFields(d.fields),
+        fieldOrder: nf ? resolveNoticeOrder(d.fieldOrder) : df ? resolveDebtOrder(d.fieldOrder) : resolveOrder(d.fieldOrder),
       });
       setOfficeCustom(!!d.officeCustom);
       setPrinters(Array.isArray(d.availablePrinters) ? d.availablePrinters : []);
@@ -140,14 +143,20 @@ export default function ReceiptTemplatePage() {
       {/* مبدّل نوع القالب (طلب محمد 2026-08-09): وصل الاشتراك · «وصل المشترك» لوصولات صفحة كلّ المشتركين */}
       <div className="mb-3 flex max-w-5xl flex-wrap items-center gap-2">
         <button onClick={() => setKind("receipt")}
-          className={`rounded-xl px-4 py-2 text-sm font-bold transition ${!isNotice ? "bg-mynet-blue text-white shadow" : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`}>
+          className={`rounded-xl px-4 py-2 text-sm font-bold transition ${kind === "receipt" ? "bg-mynet-blue text-white shadow" : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`}>
           🧾 وصل الاشتراك
         </button>
         <button onClick={() => setKind("notice")}
           className={`rounded-xl px-4 py-2 text-sm font-bold transition ${isNotice ? "bg-mynet-blue text-white shadow" : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`}>
           👥 وصل المشترك (وصولات قائمة المشتركين)
         </button>
+        {/* البند ٦ · وصلُ تسديد الدين — قالبٌ ثالثٌ مستقلّ (لا باقةَ فيه ولا أشهرَ ولا انتهاء) */}
+        <button onClick={() => setKind("debt")}
+          className={`rounded-xl px-4 py-2 text-sm font-bold transition ${isDebt ? "bg-mynet-blue text-white shadow" : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`}>
+          💵 وصل تسديد الدين
+        </button>
         {isNotice && <span className="text-[11px] text-slate-500">قالبٌ مستقلّ — كلّ حقولِه اختياريّة (منها «العنوان/ادرس 1»).</span>}
+        {isDebt && <span className="text-[11px] text-slate-500">قالبٌ مستقلّ — يُطبَع من زرّ «تسديد وطباعة» في صفحة ديون المشتركين، وحقولُه المبلغُ المسدَّد والدينُ قبلَه وبعدَه.</span>}
       </div>
 
       {/* مبدّل المكتب: قالب الوصل معزول لكل مكتب — قالب المكتب يغلب قالب الوكيل العام */}

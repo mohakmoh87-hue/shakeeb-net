@@ -70,7 +70,9 @@ export default function DebtsPage() {
     setError("");
   }
 
-  async function pay(e: React.FormEvent) {
+  // البند ٦ · `print=true` يُصدر أمرَ طباعةٍ صامتاً لوصل هذا التسديد — بنمط نافذة
+  // التفعيل نفسِه (زرّان: «تسديد» و«تسديد وطباعة»)، فلا يتعلّم محمدُ سلوكاً جديداً.
+  async function pay(e: React.FormEvent, print = false) {
     e.preventDefault();
     if (!paying) return;
     setError("");
@@ -89,6 +91,14 @@ export default function DebtsPage() {
       if (!res.ok) {
         setError(data.error ?? "فشل التسديد");
         return;
+      }
+      // أمرُ طباعةٍ صامتٌ تلتقطه حاسبةُ مكتب المشترك — بمرجعِ **قيد الصندوق** فيُطبَع
+      // وصلُ هذا التسديد بعينه لا آخرُ تسديدٍ للمشترك. ولا يُفشل التسديدَ تعذُّرُ الطبع.
+      if (print && data?.txId) {
+        void fetch("/api/print", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "debt", id: data.txId }),
+        }).catch(() => {});
       }
       setPaying(null);
       load();
@@ -249,6 +259,11 @@ export default function DebtsPage() {
               <button type="button" onClick={() => setPaying(null)} className="rounded-lg bg-slate-100 px-4 py-2 text-slate-600 hover:bg-slate-200">إلغاء</button>
               <button type="submit" disabled={saving} className="rounded-lg bg-emerald-600 px-5 py-2 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
                 {saving ? "جاري..." : "تسديد"}
+              </button>
+              {/* البند ٦ · وصلُ تسديد الدين — قالبٌ خاصٌّ به في صفحة «قالب الوصل» */}
+              <button type="button" disabled={saving} onClick={(e) => void pay(e as unknown as React.FormEvent, true)}
+                className="rounded-lg bg-mynet-blue px-5 py-2 font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
+                {saving ? "جاري..." : "🖨 تسديد وطباعة"}
               </button>
             </div>
           </form>

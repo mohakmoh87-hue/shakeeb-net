@@ -54,7 +54,9 @@ export async function POST(
     const e = requireTower(subscriber.towerId, "تسديد الدين");
     if (e) return e;
   }
-  await prisma.$transaction([
+  // البند ٦ · يُعاد **رقمُ قيد الصندوق** كي تستطيع الواجهةُ طبعَ وصلِ هذا التسديد
+  // بعينه (لا «آخرَ تسديدٍ للمشترك» — فمَن سدّد مرّتَين في يومٍ له وصلان مختلفان).
+  const [, tx] = await prisma.$transaction([
     prisma.subscriber.update({
       where: { id: subscriberId },
       data: { carry: newCarry },
@@ -95,7 +97,7 @@ export async function POST(
     createdByUser: session?.username ?? null,
   }).catch(() => {});
 
-  return NextResponse.json({ ok: true, newCarry });
+  return NextResponse.json({ ok: true, newCarry, txId: tx.id });
 }
 
 // إرسال رسالة «تم تسديد دفعة من الديون» بقالب وكيل مكتب المشترك (أو النص الافتراضي)

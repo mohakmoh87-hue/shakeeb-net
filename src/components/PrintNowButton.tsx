@@ -6,7 +6,7 @@ import { useState } from "react";
 // حاسبة مكتب الوصل تلتقطه وتطبع على طابعتها. تغذية راجعة مصغّرة على الزر نفسه.
 export default function PrintNowButton({
   kind, id, className = "",
-}: { kind: "subscription" | "invoice"; id: number; className?: string }) {
+}: { kind: "subscription" | "invoice" | "debt"; id: number; className?: string }) {
   const [st, setSt] = useState<"idle" | "busy" | "ok" | "off" | "err">("idle");
 
   async function go(e: React.MouseEvent) {

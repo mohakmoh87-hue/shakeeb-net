@@ -83,6 +83,12 @@ async function renderJobHtml(kind: string, refId: number, agentId: number | null
     const { noticeSlipHtml } = await import("@/lib/printReceiptHtml");
     return noticeSlipHtml(refId, agentId, towerId);
   }
+  // البند ٦ · «وصل تسديد الدين» — refId = **قيدُ الصندوق** لا المشترك (فيُعاد طبعُ
+  // الوصل بعينه، ولا يُطبع «آخرُ تسديد» لمن سدّد مرّتَين في يوم)
+  if (kind === "debt") {
+    const { debtSlipHtml } = await import("@/lib/printReceiptHtml");
+    return debtSlipHtml(refId, agentId, towerId);
+  }
   return null;
 }
 

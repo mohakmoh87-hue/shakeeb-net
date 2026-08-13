@@ -2,8 +2,8 @@
 // صفحتَي الوصل (اشتراك/فاتورة) وهندسة ReceiptPrintStyle: عرض الورقة يدويّ والكتابة موسَّطة.
 // يُحوَّل إلى PDF عبر puppeteer ثم يُطبع بصمت على الطابعة الافتراضية.
 import { prisma } from "@/lib/prisma";
-import { getReceiptTemplate, getNoticeTemplate, type ReceiptTemplate } from "@/lib/receiptTemplate";
-import { resolveDims, type PaperDims, type ReceiptBodyKey, type NoticeBodyKey } from "@/lib/receiptPaper";
+import { getReceiptTemplate, getNoticeTemplate, getDebtTemplate, type ReceiptTemplate } from "@/lib/receiptTemplate";
+import { resolveDims, type PaperDims, type ReceiptBodyKey, type NoticeBodyKey, type DebtBodyKey } from "@/lib/receiptPaper";
 import { formatDate } from "@/lib/format";
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
@@ -158,6 +158,60 @@ export async function noticeSlipHtml(subscriberId: number, agentId: number | nul
   const rows = (tpl.fieldOrder as unknown as NoticeBodyKey[]).filter((k) => F[k] !== false).map(bodyRow).join("");
   const footer = footerBlock(tpl, F, office?.name ?? brand, "");
   const body = header(tpl, office?.name ?? brand, "وصل مشترك", F.subtitle !== false) + rows + footer;
+  return wrap(body, tpl.fontSize, resolveDims(tpl as ReceiptTemplate));
+}
+
+// ═════ البند ٦ · «وصل تسديد الدين» (debt) — طلبُ محمد 2026-08-13 ═════
+// المرجعُ (`refId`) **قيدُ الصندوق** (`moneyTx`) لا المشترك: التسديدُ لا يُنشئ كياناً
+// خاصّاً به، والقيدُ هو ما يحمل المبلغَ والتاريخَ والمكتبَ والمستخدم. وبه يصير الوصلُ
+// قابلاً لإعادة الطبع بعينه لا «آخرَ تسديدٍ للمشترك» — فمشتركٌ سدّد مرّتَين في يومٍ
+// يحتاج وصلَين مختلفَين، ولو رُبِط الوصلُ بالمشترك لَطُبع الأخيرُ مرّتَين.
+export async function debtSlipHtml(txId: number, agentId: number | null, jobTowerId?: number | null): Promise<string | null> {
+  const tx = await prisma.moneyTx.findUnique({ where: { id: txId } });
+  // النوعُ شرطٌ: لا يُطبَع وصلُ دينٍ لقيدٍ ليس تسديدَ دين
+  if (!tx || (tx.sourceType !== "debt" && tx.sourceType !== "master-debt")) return null;
+  // 🔒 تحصينُ عزل: مكتبُ القيد يجب أن يطابق مكتبَ أمر الطباعة (كُتب بعد ownsTower)
+  if (jobTowerId != null && tx.towerId !== jobTowerId) return null;
+  const s = tx.sourceId != null ? await prisma.subscriber.findUnique({ where: { id: tx.sourceId } }) : null;
+  // 🔒 وعزلُ الوكيل: مشتركُ القيد يجب أن يتبع مكتباً من مكاتب هذا الوكيل
+  if (s && agentId != null) {
+    const own = s.towerId != null
+      ? await prisma.tower.findFirst({ where: { id: s.towerId, agentId }, select: { id: true } })
+      : null;
+    if (!own) return null;
+  }
+  const tpl = await getDebtTemplate(agentId, tx.towerId);
+  const F = tpl.fields as unknown as Record<string, boolean>;
+  const [office, user] = await Promise.all([
+    tx.towerId != null ? prisma.tower.findUnique({ where: { id: tx.towerId }, select: { name: true } }) : Promise.resolve(null),
+    tx.userId != null ? prisma.user.findUnique({ where: { id: tx.userId }, select: { username: true } }) : Promise.resolve(null),
+  ]);
+  const brand = await brandName(agentId);
+  const paid = tx.moneyIn ?? 0;
+  // الدينُ بعد التسديد هو دينُ المشترك الحاليّ، وقبلَه = بعدَه + المسدَّد.
+  // ⚠️ وهذا صحيحٌ **لحظةَ الطبع**: لو سدّد المشتركُ مرّةً أخرى قبل الطبع، تغيّر «قبل».
+  //   ولا يُخزَّن الرقمُ في القيد اليوم، فالأصدقُ أن نطبع ما نعرفه لا أن نُلفّق دقّةً.
+  const after = s?.carry ?? 0;
+  const before = after + paid;
+
+  const bodyRow = (key: DebtBodyKey): string => {
+    switch (key) {
+      case "receiptNo": return line("رقم الوصل", String(tx.id));
+      case "date": return line("التاريخ", formatDate(tx.date ?? new Date()));
+      case "subscriber": return line("المشترك", s?.name ?? "—");
+      case "netUser": return s?.netUser ? line("اسم المستخدم", s.netUser) : "";
+      case "phone": return s?.phone ? line("الهاتف", s.phone) : "";
+      case "paid": return line("المبلغ المسدَّد", `${fmt(paid)} د.ع`, true);
+      case "debtBefore": return line("الدين قبل التسديد", `${fmt(before)} د.ع`);
+      case "debtAfter": return line("الدين المتبقّي", `${fmt(after)} د.ع`, true);
+      case "note": return tx.notes ? line("ملاحظة", tx.notes) : "";
+      case "user": return user?.username ? line("المستخدم", user.username) : "";
+      default: return "";
+    }
+  };
+  const rows = (tpl.fieldOrder as unknown as DebtBodyKey[]).filter((k) => F[k] !== false).map(bodyRow).join("");
+  const footer = footerBlock(tpl, F, office?.name ?? brand, "");
+  const body = header(tpl, office?.name ?? brand, "وصل تسديد دين", F.subtitle !== false) + rows + footer;
   return wrap(body, tpl.fontSize, resolveDims(tpl as ReceiptTemplate));
 }
 
