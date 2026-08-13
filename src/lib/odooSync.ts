@@ -31,6 +31,8 @@ type OfficeRow = {
   odooSlaAlarmMin: number | null; odooSlaSendMin: number | null;
   odooSlaNote: string | null; odooSlaWaText: string | null;
   agentId: number | null;
+  /** أ-٢٣ · وحدةُ المزامنة: لوحةٌ غيرُ أولى (فتُكتَب حالتُها في صفّها) أو `null` = المكتبُ نفسُه */
+  panelId: number | null;
 };
 
 const sessionCache = new Map<number, { s: OdooSession; at: number }>();
@@ -41,24 +43,87 @@ let waBusy = false;
 
 async function officeSession(o: OfficeRow): Promise<OdooSession> {
   const now = Date.now();
-  const c = sessionCache.get(o.id);
+  // 🔴 المفتاحُ **وحدةُ المزامنة** لا المكتب: لوحتان لمكتبٍ واحدٍ بحسابَي أودو مختلفَين كانتا
+  // ستتشاركان جلسةً واحدةً ⇒ فتعمل الثانيةُ بحساب الأولى (وهي عينُ علّة الاستيراد التي أُصلحت).
+  const ck = o.panelId ?? o.id;
+  const c = sessionCache.get(ck);
   if (c && now - c.at < SESSION_TTL) return c.s;
   const pass = o.odooPass ?? ""; // نصٌّ صريح (كـSAS) — العامل لا يملك مفتاح التشفير
   const s = await odooLogin(o.odooUrl, o.odooUser ?? "", pass);
-  sessionCache.set(o.id, { s, at: now });
+  sessionCache.set(ck, { s, at: now });
   return s;
 }
 
-// مكاتب الوكيل ذات بيانات أودو (لها user+pass)
+// ═══════════ أ-٢٣ · أودو لكلّ لوحة (طلب محمد 2026-08-13) ═══════════
+// 🔴 **كان أودو للمكتب حصراً**: هذه الدالّةُ تقرأ `towers` وحدَها، والدالّةُ `odooOfPanel`
+// معرَّفةٌ في `sasPanel.ts` **ولا يستدعيها أحد** — شفرةٌ ميّتة. فحقولُ أودو على اللوحة
+// (وهي موجودةٌ كلُّها: `odooEnabled/Url/User/Pass/Uid/LastOk/LastError/LastTicketId`)
+// **يكتبها محرِّرُ اللوحات ولا يقرؤها شيء** — وهو عينُ فخّ «يُكتَب ولا يُقرَأ».
+//
+// والآن تُرجع الدالّةُ **وحدتَي مزامنةٍ**:
+//   (١) المكتبُ بأعمدته — كما كان حرفيّاً (وهو لوحتُه الأولى)
+//   (٢) وكلُّ لوحةٍ **غيرِ أولى** لها حسابُ أودو خاصٌّ بها
+// ⚠️ و**غيرِ أولى** شرطٌ لازم: اللوحةُ الأولى هي المكتبُ نفسُه، فلو ضُمّت لعُوملت التذاكرُ
+//   **مرّتَين** (وذاك أصلُ «التنفيذ المزدوج» المسجَّل في ب-١).
+//
+// 📌 وحقولُ **المهلة (SLA)** تبقى على المكتب وتُورَّث لكلّ لوحاته: فهي **سياسةُ مكتبٍ** (دقائقُ
+// الإنذار ونصوصُه) لا خصيصةُ مُخدِّم. أمّا **الاتصالُ والمؤشِّر** (`odooLastTicketId`) فلكلّ
+// لوحةٍ وحدَها — ولولا ذلك لأكل مؤشِّرُ إحداهما تذاكرَ الأخرى.
 async function offices(agentId: number): Promise<OfficeRow[]> {
-  return prisma.tower.findMany({
-    where: { agentId, isDeleted: false, odooUser: { not: null }, odooPass: { not: null } },
+  const SLA = {
+    odooSlaAlarm: true, odooSlaTechText: true,
+    odooSlaAuto: true, odooSlaArmedAt: true, odooSlaAlarmMin: true, odooSlaSendMin: true, odooSlaNote: true, odooSlaWaText: true,
+  } as const;
+  // ⚠️ و`SasPanel` **بلا علاقةِ Prisma** إلى `Tower` (فيه `towerId` مجرَّداً) ⇒ لا ضمَّ متداخلاً،
+  //   فتُقرأ مكاتبُ الوكيل أوّلاً ومنها العزلُ وسياسةُ المهلة.
+  const all = await prisma.tower.findMany({
+    where: { agentId, isDeleted: false },
     select: {
       id: true, name: true, odooUser: true, odooPass: true, odooUrl: true, odooLastTicketId: true, odooEnabled: true, odooUid: true,
-      odooSlaAlarm: true, odooSlaTechText: true, agentId: true,
-      odooSlaAuto: true, odooSlaArmedAt: true, odooSlaAlarmMin: true, odooSlaSendMin: true, odooSlaNote: true, odooSlaWaText: true,
+      agentId: true, ...SLA,
     },
   });
+  const byId = new Map(all.map((t) => [t.id, t]));
+  const panels = all.length
+    ? await prisma.sasPanel.findMany({
+        where: {
+          isDeleted: false, isPrimary: false, odooUser: { not: null }, odooPass: { not: null },
+          towerId: { in: all.map((t) => t.id) }, // 🔒 عزلُ الوكيل: مكاتبُه وحدَها
+        },
+        select: {
+          id: true, label: true, towerId: true, odooUser: true, odooPass: true, odooUrl: true,
+          odooLastTicketId: true, odooEnabled: true, odooUid: true,
+        },
+      })
+    : [];
+  return [
+    // (١) المكاتبُ بأعمدتها — بنفس شرطها القديم حرفيّاً (لها user+pass)
+    ...all.filter((t) => t.odooUser && t.odooPass).map((t) => ({ ...t, panelId: null as number | null })),
+    // (٢) واللوحاتُ غيرُ الأولى بحساباتها
+    ...panels.map((p) => {
+      const t = byId.get(p.towerId);
+      return {
+        // `id` يبقى **معرّفَ المكتب** فكلُّ ما بُني على «تذكرةٌ لمكتبٍ» يظلّ صحيحاً،
+        // و`panelId` يُوجِّه كتابةَ الحالة والمؤشِّر إلى صفّ اللوحة لا المكتب.
+        id: p.towerId, panelId: p.id,
+        name: t?.name ? `${t.name} · ${p.label ?? "لوحة"}` : (p.label ?? null),
+        odooUser: p.odooUser, odooPass: p.odooPass, odooUrl: p.odooUrl,
+        odooLastTicketId: p.odooLastTicketId, odooEnabled: p.odooEnabled, odooUid: p.odooUid,
+        agentId: t?.agentId ?? null,
+        // سياسةُ المهلة تُورَّث من المكتب — سياسةُ مكتبٍ لا خصيصةُ مُخدِّم
+        odooSlaAlarm: t?.odooSlaAlarm ?? null, odooSlaTechText: t?.odooSlaTechText ?? null,
+        odooSlaAuto: t?.odooSlaAuto ?? null, odooSlaArmedAt: t?.odooSlaArmedAt ?? null,
+        odooSlaAlarmMin: t?.odooSlaAlarmMin ?? null, odooSlaSendMin: t?.odooSlaSendMin ?? null,
+        odooSlaNote: t?.odooSlaNote ?? null, odooSlaWaText: t?.odooSlaWaText ?? null,
+      };
+    }),
+  ];
+}
+
+/** حالةُ أودو تُكتَب في صفّ **اللوحة** إن كانت الوحدةُ لوحةً، وإلّا في صفّ المكتب. */
+async function saveOdooState(o: OfficeRow, data: Record<string, unknown>): Promise<void> {
+  if (o.panelId != null) await prisma.sasPanel.update({ where: { id: o.panelId }, data }).catch(() => {});
+  else await prisma.tower.update({ where: { id: o.id }, data }).catch(() => {});
 }
 
 // مكتب «أودو نشط»؟ = مفعّل، أو معطّل لكن به بطاقات أودو مفتوحة (drain حتى إنجاز آخرها)
@@ -116,7 +181,7 @@ async function runPull(): Promise<void> {
       try {
         const s = await officeSession(o);
         // نجاح الدخول ⇒ الشارة خضراء + uid
-        await prisma.tower.update({ where: { id: o.id }, data: { odooLastOk: new Date(), odooLastError: null, ...(o.odooUid == null ? { odooUid: s.uid } : {}) } });
+        await saveOdooState(o, { odooLastOk: new Date(), odooLastError: null, ...(o.odooUid == null ? { odooUid: s.uid } : {}) });
 
         // (١) مسحٌ شامل كلّ دورة: كلّ التذاكر المفتوحة المُسنَدة للمكتب — **بلا قيد العلامة**.
         // يلتقط الجديد، و**يعيد إنشاء بطاقةٍ حُذفت وتذكرتها ما زالت مفتوحة** (كي لا تبقى معلّقةً
@@ -140,7 +205,7 @@ async function runPull(): Promise<void> {
           }
           await upsertOdooCard(o.id, t);
         }
-        if (maxId > (o.odooLastTicketId ?? 0)) await prisma.tower.update({ where: { id: o.id }, data: { odooLastTicketId: maxId } });
+        if (maxId > (o.odooLastTicketId ?? 0)) await saveOdooState(o, { odooLastTicketId: maxId });
 
         // (٢) مصالحة: بطاقات مفتوحة تذاكرها **ليست** ضمن المفتوح المسحوب ⇒ تحقّقٌ مباشر (أُغلقت خارجيّاً؟)
         const listIds = await listIdsOf(o.id);
@@ -162,7 +227,7 @@ async function runPull(): Promise<void> {
         }
       } catch (e) {
         sessionCache.delete(o.id);
-        await prisma.tower.update({ where: { id: o.id }, data: { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) } }).catch(() => {});
+        await saveOdooState(o, { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) }).catch(() => {});
       }
     }
   } catch (e) {
@@ -219,7 +284,7 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
     try { s = await officeSession(o); }
     catch (e) {
       sessionCache.delete(o.id);
-      await prisma.tower.update({ where: { id: o.id }, data: { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) } }).catch(() => {});
+      await saveOdooState(o, { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) }).catch(() => {});
       continue;
     }
 
@@ -430,7 +495,7 @@ async function runSlaSweep(): Promise<void> {
       try { s = await officeSession(o); }
       catch (e) {
         sessionCache.delete(o.id);
-        await prisma.tower.update({ where: { id: o.id }, data: { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) } }).catch(() => {});
+        await saveOdooState(o, { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) }).catch(() => {});
         continue; // الإنذار يبقى مشتعلاً — لم يُبلَّغ أودو
       }
 

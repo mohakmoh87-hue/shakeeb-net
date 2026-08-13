@@ -179,6 +179,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     else towerData[k] = v;
   }
   if (Object.keys(towerData).length) await prisma.tower.update({ where: { id: towerId }, data: towerData });
+
+  // ═════ أ-٢٣ · مرآةُ أودو مع **اللوحة الأولى** (كمرآة الساس) ═════
+  // اللوحةُ الأولى هي المكتبُ نفسُه، ومزامنةُ أودو تقرأ **أعمدةَ المكتب** لها. فحقولُ أودو على
+  // صفّها كانت «تُكتَب ولا تُقرَأ». وتُنسَخ هنا كي يبقى الصفّان قولاً واحداً، ولئلّا يُعدّلها
+  // المديرُ من محرِّر اللوحات فيظنّها فعلت شيئاً.
+  // ⚠️ و**ما تغيّر فعلاً وحدَه** يُنسَخ: نموذجُ أودو يُرسل حقولَه كاملةً، فنسخُ كلّ مُرسَلٍ كان
+  //   يطمس ما لم يُعدَّل (وهي العلّةُ التي اصطادها التدقيقُ في مرآة الساس).
+  const OD = ["odooEnabled", "odooUrl", "odooUser", "odooPass"] as const;
+  const mirror: Record<string, unknown> = {};
+  for (const k of OD) {
+    if (!(k in towerData)) continue;
+    if (k === "odooPass" && !towerData[k]) continue; // الفارغةُ لا تُنسَخ — لا تُطمَس عاملة
+    mirror[k] = towerData[k];
+  }
+  if (Object.keys(mirror).length) {
+    await prisma.sasPanel.updateMany({
+      where: { towerId, isPrimary: true, isDeleted: false },
+      data: mirror,
+    }).catch(() => {}); // المرآةُ زينةٌ لا شرط — لا تُفشِل حفظَ المكتب أبداً
+  }
   if (panelId != null && Object.keys(credData).length) await prisma.sasPanel.update({ where: { id: panelId }, data: credData });
 
   // تفعيلٌ ببيانات كاملة ⇒ دخولٌ تجريبيّ لمرّة لضبط الشارة (أخضر/أحمر) و uid فوراً.

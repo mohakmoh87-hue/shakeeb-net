@@ -156,6 +156,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (d.username != null) back.username = d.username;
     if (d.activationTemplate != null) back.activationTemplate = d.activationTemplate;
     if (d.password) back.password = d.password; // الفارغةُ تُبقي القديمة هنا أيضاً
+    // وأودو كذلك: مزامنةُ أودو تقرأ **أعمدةَ المكتب** للّوحة الأولى، فلو عُدِّلت من محرِّر
+    // اللوحات وحدَه لبقيت المزامنةُ على القديم — وهو «يُكتَب ولا يُقرَأ» بعينه.
+    if (d.odooEnabled != null) back.odooEnabled = d.odooEnabled;
+    if (d.odooUrl != null) back.odooUrl = d.odooUrl;
+    if (d.odooUser != null) back.odooUser = d.odooUser;
+    if (d.odooPass) back.odooPass = d.odooPass; // الفارغةُ تُبقي القديمة
     if (Object.keys(back).length) {
       await prisma.tower.update({ where: { id: r.tower.id }, data: back }).catch(() => {});
     }
