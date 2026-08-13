@@ -32,7 +32,9 @@ export interface SyncResult {
     phantom: number; markedUsed: number; duplicates: number; imported: number;
     verifiedReal: number; // كروت مُستخدمة أمس أُكّد تفعيلها في SAS ببحث مباشر (ليست وهمية)
   };
-  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean; skippedPkg: number; pkgFixed: number };
+  // البند ٥ · `dupUserSkipped`: مشتركٌ في الساس **يوزرُه موجودٌ عندنا بصفٍّ آخر** فلم
+  //   يُستورَد — يُبلَّغ ولا يُسكَت عنه، فالصمتُ يُخفي حالةً تحتاج قرارَ محمد.
+  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean; skippedPkg: number; pkgFixed: number; dupUserSkipped?: number };
   events: SyncEvent[];
   reportSent: boolean | null; // true=أُرسل، false=مؤجّل (واتساب مقطوع)، null=لا تقرير
   error?: string;
@@ -466,6 +468,8 @@ async function runOfficeSyncInner(
   //  (أ) استيراد كل مشترك موجود في الساس وغير موجود في البرنامج (استيراد شامل — السيناريو 7 لكامل القاعدة).
   //  (ب) تصحيح تاريخ الانتهاء بصمت للمشتركين الموجودين عند اختلافه (السيناريوهان 4 و5).
   let checked = 0, dateFixed = 0, phase2Imported = 0, phase2Failed = false, skippedPkg = 0, pkgFixed = 0;
+  // البند ٥ · مشتركٌ في الساس يوزرُه موجودٌ عندنا بصفٍّ آخر ⇒ لم يُستورَد (منعُ التكرار)
+  let dupUserSkipped = 0;
   let phase2Error = "";
   try {
     const allUsers = await sasFetchAllUsers(base, token);
@@ -474,6 +478,23 @@ async function runOfficeSyncInner(
       select: { id: true, sasId: true, dateTo: true, packageId: true, address: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
+
+    // ═════ 🔴 البند ٥ · حرسُ تكرار اليوزر (طلبُ محمد 2026-08-13/14) ═════
+    // نصُّه: **«اليوزرُ هو الفيصلُ الأكبرُ الذي لا يُخطئ»** — لا الاسمُ ولا الهاتف.
+    // والاستيرادُ أدناه يُطابق بـ`sasId` وحدَه؛ فمشتركٌ أعادت الشركةُ تنصيبَه فتغيّر
+    // `sasId` **ويوزرُه هو نفسُه** يُستورَد **صفّاً ثانياً** ⇒ يوزرٌ واحدٌ بصفَّين.
+    // 🎯 وقِيس على الإنتاج (2026-08-14): **٥٢ يوزراً مكرَّراً** في مكاتبَ لخمسة وكلاء،
+    //    والفهرسُ `subscribers_towerId_netUser_idx` **غيرُ فريدٍ** فلا شيءَ يمنع المزيد.
+    // ⇒ فلا يُنشأ صفٌّ ليوزرٍ موجودٍ أبداً. والقرارُ في حالته (استبدالٌ كامل؟ دمج؟) بيد
+    //   محمد لا بيد المزامنة — فالمزامنةُ **تتوقّف عن الإفساد** ولا تخترع حكماً.
+    const progByUser = new Map<string, { id: number; sasId: number | null }>();
+    for (const s of await prisma.subscriber.findMany({
+      where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
+      select: { id: true, sasId: true, netUser: true },
+    })) {
+      const u = (s.netUser ?? "").trim().toLowerCase();
+      if (u && !progByUser.has(u)) progByUser.set(u, { id: s.id, sasId: s.sasId });
+    }
 
     // أصحاب القروض القائمة في هذا المكتب — المزامنة تتجاهلهم تماماً: لهم 7 أيام حقيقيّة في
     // الساس و30 يوماً وهميّة عندنا؛ ولو زامنّاهم لأفسدنا الأيام الوهميّة (طلب محمد 2026-08-06).
@@ -512,9 +533,21 @@ async function runOfficeSyncInner(
       const validDate = sasDate && !isNaN(sasDate.getTime()) ? sasDate : null;
 
       if (!p) {
+        // 🔴 البند ٥ · **حرسُ تكرار اليوزر قبل الاستيراد**: يوزرٌ موجودٌ عندنا بصفٍّ
+        //   آخرَ (بـ`sasId` مختلفٍ — أعادت الشركةُ تنصيبَه) لا يُنشأ له صفٌّ ثانٍ.
+        //   يُحصى ويُبلَّغ، والقرارُ في حالته بيد محمد لا بيد المزامنة.
+        const uKey = (u.username ?? "").trim().toLowerCase();
+        if (uKey && progByUser.has(uKey)) {
+          dupUserSkipped++;
+          continue;
+        }
         // مشترك في الساس غير موجود بالبرنامج → استيراد شامل **مع باقته وسعرها**.
         // (كان packageId غائباً تماماً هنا فيولد كل مشتركي المزامنة بلا باقة وسعرٍ صفر —
         //  العطل الذي رصده محمد 2026-08-02، وأوضح مثاله وكيل جاكوار.)
+        // 🔑 وباقةُ العروض المجهولةُ لا تمنع الاستيراد: `packageId` يصير `null` **والأيّامُ
+        //   تُؤخَذ من الساس** (`dateTo: validDate`) — وهو ما طلبه محمد في البند ٥ نقطة ١،
+        //   وقياسُ الشيفرة أثبت أنّه **يعمل سلفاً**: التخطّي (`skippedPkg`) يخصّ القائمَ
+        //   لا الجديد. فلا تُبنى ميزةٌ موجودة.
         toImport.push({
           name: u.name, netUser: u.username, phone: u.phone, address: u.address,
           sasId: u.sasId, towerId: officeId, sasPanelId: panelId, dateTo: validDate, createdByUser: "sync",
@@ -586,7 +619,7 @@ async function runOfficeSyncInner(
   const result: SyncResult = {
     office: officeName,
     phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported, verifiedReal },
-    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg, pkgFixed },
+    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg, pkgFixed, dupUserSkipped },
     events, reportSent: null,
     // السببُ يُحمَل إلى الحالة المخزَّنة فتراه الواجهةُ ويُقرأ من القاعدة عند التشخيص
     ...(phase2Error ? { error: phase2Error } : {}),
@@ -615,6 +648,8 @@ function buildReportText(r: SyncResult, day: Date, title = "تقرير المز�
   text += `تفعيلات ${formatDate(day)}: ${p1.activations} | كروت البرنامج: ${p1.internal} | خارجي: ${p1.external}\n`;
   text += `تصحيح تواريخ: ${r.phase2.dateFixed} من ${r.phase2.checked} مشترك\n`;
   if (r.phase2.pkgFixed > 0) text += `🏷️ رُبطت باقاتهم وأسعارها: ${r.phase2.pkgFixed} مشترك\n`;
+  if ((r.phase2.dupUserSkipped ?? 0) > 0) text += `
+⚠️ يوزرٌ موجودٌ سلفاً فلم يُستورَد (يحتاج قرارك): ${r.phase2.dupUserSkipped}`;
   if (r.phase2.skippedPkg > 0) text += `⏭️ تُركوا بلا تعديل (فئتهم غير مضافة بالبرنامج): ${r.phase2.skippedPkg} مشترك\n`;
   if (r.phase2.imported > 0) text += `🆕 استيراد شامل من الساس: ${r.phase2.imported} مشترك\n`;
 
