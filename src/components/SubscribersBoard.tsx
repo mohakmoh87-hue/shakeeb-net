@@ -53,6 +53,14 @@ const daysLeft = (dateTo: string | null) => {
   return Math.round((expMid - todayMid) / 86400000);
 };
 
+// البند ٥ · صفُّ «تنصيبات خارجيّة». **في نطاق الوحدة لا داخل المكوّن**: نوعٌ داخليٌّ
+// يمنع مُصرِّفَ React من حفظ تذكير `useCallback` (`preserve-manual-memoization`) فتُعاد
+// بناءُ الدالّة في كلّ تصيير، ويُعاد تشغيلُ الأثر المعتمد عليها بلا داعٍ.
+type ExtRow = {
+  id: number; name: string | null; netUser: string | null; phone: string | null;
+  dateTo: string | null; office: string | null; package: string | null; foundAt: string | null;
+};
+
 export default function SubscribersBoard() {
   const router = useRouter();
   const { can } = usePermission();
@@ -144,6 +152,24 @@ export default function SubscribersBoard() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [maintLogs, setMaintLogs] = useState<MaintLog[]>([]);
   const [invRows, setInvRows] = useState<InvRow[]>([]);
+  // البند ٥ · «تنصيبات خارجيّة» — قائمةٌ للاطّلاع فقط + عدّادٌ على الزرّ
+  const [extOpen, setExtOpen] = useState(false);
+  const [extRows, setExtRows] = useState<ExtRow[]>([]);
+  const [extSel, setExtSel] = useState<Set<number>>(new Set());
+  // دالّةٌ عاديّةٌ لا `useCallback`: المُصرِّفُ يرفض حفظَ التذكير هنا
+  // (`preserve-manual-memoization`)، والأثرُ يعمل مرّةً بـ`[]` فلا حاجةَ للتذكير أصلاً.
+  // والعدّادُ يُقرأ من `extRows.length` — حالةٌ ثانيةٌ له تكون نسخةً تتأخّر عن أصلها.
+  function loadExt() {
+    fetch("/api/subscribers/external-installs")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        setExtRows(Array.isArray(d?.rows) ? d.rows : []);
+        setExtSel(new Set());
+      })
+      .catch(() => {});
+  }
+  useEffect(() => { loadExt(); }, []);
+
   // نافذة التحرير (تعديل / مشترك جديد)
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<Partial<Subscriber>>({});
@@ -486,9 +512,16 @@ export default function SubscribersBoard() {
           {can("subscribers.delete") && <button className="gbtn danger" onClick={() => setDelMenu(true)}>🗑️ حذف</button>}
           <span className="newgrp">
             <button className="obtn" onClick={() => openEdit(null)}>+ مشترك جديد</button>
-            {/* نُقل مؤشِّرُ الواتساب إلى ترويسة «التقرير اليوميّ» (طلبُ محمد 2026-08-13):
-                الزرُّ الجديد «تنصيبات خارجيّة» سيأخذ مكانَه هنا ويُزيحه يساراً.
-                والمكانُ يبقى فارغاً له. (المكوّن: `WaStatusBadge`) */}
+            {/* ═════ البند ٥ · «تنصيبات خارجيّة» — المكانُ الذي حُفظ له سلفاً ═════
+                نُقل مؤشِّرُ الواتساب إلى ترويسة «التقرير اليوميّ» (طلبُ محمد 2026-08-13)
+                **تحضيراً لهذا الزرّ بالذات**، فأخذ مكانَه هنا كما خُطِّط.
+                🔑 وهو **للاطّلاع فقط**: يعرض ما رصدَته المزامنةُ من تنصيبات الشركة، و«تجاهل»
+                   يُخرجه من القائمة ولا يمسّ المشتركَ بشيء. */}
+            {(can("subscribers.manage") || can("subscribers.import")) && (
+              <button className="gbtn" onClick={() => setExtOpen(true)} title="مشتركون نصّبتهم الشركةُ ورصدَتهم المزامنة — للاطّلاع فقط">
+                🏗️ تنصيبات خارجية{extRows.length > 0 ? ` (${extRows.length})` : ""}
+              </button>
+            )}
           </span>
         </div>
       </div>
@@ -785,6 +818,83 @@ export default function SubscribersBoard() {
             )}
           </div>
           <button onClick={() => setLogView(null)} className="mt-3 w-full rounded-lg bg-surface-2 py-2 text-sm text-ink-2 hover:bg-line">إغلاق</button>
+        </Modal>
+      )}
+
+      {/* ═════ البند ٥ · قائمةُ «تنصيبات خارجيّة» — للاطّلاع فقط ═════
+          بنصّ محمد: «أريد معرفةَ كم مشتركاً قامت الشركةُ بتنصيبه بلا علمي، ويمكنني
+          تحديدُ ما أشاء واختيارُ **تجاهل** لمسحهم من هذه القائمة».
+          ⚠️ ولا زرَّ هنا يُغيّر مالاً ولا خدمةً — «تجاهل» وسمٌ يُخرجه من القائمة فقط. */}
+      {extOpen && (
+        <Modal onClose={() => setExtOpen(false)}>
+          <div className="mb-1 text-center text-base font-extrabold text-ink">🏗️ تنصيبات خارجية</div>
+          <div className="mb-3 text-center text-[12px] text-ink-2">
+            مشتركون رصدَتهم المزامنةُ في الساس ولم تُضِفهم أنت — <b>للاطّلاع فقط</b>.
+            و«تجاهل» يُخرجهم من هذه القائمة ولا يحذف مشتركاً ولا يمسّ ديناً.
+          </div>
+          {extRows.length === 0 ? (
+            <div className="py-6 text-center text-sm text-ink-2">
+              لا تنصيباتٍ خارجيّةً مرصودة.
+              <div className="mt-1 text-[11px] text-ink-3">
+                القائمةُ ترصد ما تكتشفه المزامنةُ **من الآن فصاعداً** — فلا تُغرَق بمشتركي الاستيراد القديم.
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px]">
+                <button className="gbtn" onClick={() => setExtSel(new Set(extRows.map((r) => r.id)))}>تحديد الكل</button>
+                <button className="gbtn" onClick={() => setExtSel(new Set())}>إلغاء التحديد</button>
+                <button className="gbtn danger" disabled={extSel.size === 0}
+                  onClick={async () => {
+                    if (!confirm(`تجاهل ${extSel.size} مشتركاً من هذه القائمة؟ (لا يُحذف أحد)`)) return;
+                    const r = await fetch("/api/subscribers/external-installs", {
+                      method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ ids: [...extSel] }),
+                    }).catch(() => null);
+                    if (!r?.ok) { alert("تعذّر التجاهل"); return; }
+                    loadExt();
+                  }}>
+                  🚫 تجاهل المحدَّد ({extSel.size})
+                </button>
+                <span className="text-ink-3">المجموع: {extRows.length}</span>
+              </div>
+              <div className="max-h-[60vh] overflow-auto">
+                <table className="w-full text-[13px]">
+                  <thead className="bg-ground text-ink-2">
+                    <tr>
+                      <th className="px-2 py-1"></th>
+                      <th className="px-2 py-1 text-right">الاسم</th>
+                      <th className="px-2 py-1 text-right">اليوزر</th>
+                      <th className="px-2 py-1 text-right">المكتب</th>
+                      <th className="px-2 py-1 text-right">الباقة</th>
+                      <th className="px-2 py-1 text-center">ينتهي</th>
+                      <th className="px-2 py-1 text-center">رُصِد</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {extRows.map((r) => (
+                      <tr key={r.id} className="border-t border-line">
+                        <td className="px-2 py-1 text-center">
+                          <input type="checkbox" checked={extSel.has(r.id)}
+                            onChange={(e) => setExtSel((s) => {
+                              const n = new Set(s);
+                              if (e.target.checked) n.add(r.id); else n.delete(r.id);
+                              return n;
+                            })} />
+                        </td>
+                        <td className="px-2 py-1 font-semibold">{r.name ?? "—"}</td>
+                        <td className="px-2 py-1" dir="ltr">{r.netUser ?? "—"}</td>
+                        <td className="px-2 py-1">{r.office ?? "—"}</td>
+                        <td className="px-2 py-1">{r.package ?? "—"}</td>
+                        <td className="px-2 py-1 text-center">{r.dateTo ? formatDate(new Date(r.dateTo)) : "—"}</td>
+                        <td className="px-2 py-1 text-center text-ink-3">{r.foundAt ? formatDate(new Date(r.foundAt)) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </Modal>
       )}
 

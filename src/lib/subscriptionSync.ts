@@ -310,6 +310,9 @@ async function runOfficeSyncInner(
           data: {
             name: a.name, netUser: a.username, sasId: a.sasUserId, towerId: officeId, sasPanelId: panelId,
             dateTo: newDate && !isNaN(newDate.getTime()) ? newDate : null, createdByUser: "sync",
+            // البند ٥ · تنصيبٌ خارجيٌّ رصدَته المزامنة (المسارُ الثاني للإنشاء — ولو
+            // وُسِم أحدُهما وحدَه لَغابت نصفُ الحالات عن القائمة بلا أن يظهر خطأ)
+            extInstallAt: new Date(),
           },
         });
         sub = { id: created.id, sasId: a.sasUserId, name: a.name, netUser: a.username };
@@ -524,6 +527,7 @@ async function runOfficeSyncInner(
       name: string | null; netUser: string | null; phone: string | null; address: string | null;
       sasId: number; towerId: number; sasPanelId: number | null; dateTo: Date | null; createdByUser: string;
       packageId: number | null;
+      extInstallAt: Date; // البند ٥ · لحظةُ رصد المزامنة له (تنصيبٌ خارجيّ)
     }[] = [];
     const pkgFixQueue = new Map<number, number[]>(); // باقة ← مشتركون بلا باقة يُربطون بها
 
@@ -551,6 +555,7 @@ async function runOfficeSyncInner(
         toImport.push({
           name: u.name, netUser: u.username, phone: u.phone, address: u.address,
           sasId: u.sasId, towerId: officeId, sasPanelId: panelId, dateTo: validDate, createdByUser: "sync",
+          extInstallAt: new Date(), // البند ٥ · تنصيبٌ خارجيٌّ رصدَته المزامنة — للاطّلاع
           packageId: matcher.match(u.packageName), // موجودة فقط — لا تُنشأ باقات جديدة أبداً
         });
         continue;
