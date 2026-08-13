@@ -118,6 +118,68 @@ describe("أ-١٠ · قرارُ النطاق الجغرافيّ", () => {
   });
 });
 
+// ═══════════════ أ-١١ · المكاتبُ الإضافيّةُ الدائمة ═══════════════
+// نصُّ محمد: «في إعدادات الفنيّ يُختار مكتبُه + مكاتبُ أخرى (صحٌّ لكلّ مكتب)، **دائمٌ ما لم
+// يُزَل الصحّ**، فيبصم في **كلّ** تلك المكاتب. وإذا تغيّر مكتبُه الأصليُّ ⇒ بصمتُه تنتقل
+// إلى المكتب الجديد.»
+//
+// والحقلُ `extraTowerIds` كان موجوداً والواجهةُ مبنيّةً والعزلُ مفروضاً في المسار — **ومسارُ
+// البصمة وحدَه لا يعرفه**، وأُكمل في أ-١٠. فهذه الاختباراتُ تُثبت أنّ الإشارةَ تُبيح البصمَ
+// فعلاً، وتحرس ألّا تعود البصمةُ عمياءَ عنها.
+describe("أ-١١ · المكاتبُ الإضافيّةُ تُبيح البصمَ فيها", () => {
+  const withExtra = (ids: number[]) =>
+    ({ towerId: A.id, supportTowerId: null, supportKind: null, extraTowerIds: JSON.stringify(ids) });
+
+  it("مكتبٌ إضافيٌّ يدخل مجموعةَ المكاتب المسموحة", () => {
+    assert.deepEqual(techEffectiveOffices({ towerId: 7, supportTowerId: null, extraTowerIds: "[5,41]" }), [7, 5, 41]);
+  });
+
+  it("🎯 واقفٌ في مكتبٍ **إضافيٍّ** ⇒ يُسمَح ويُحسَم له (وهذا لبُّ أ-١١)", () => {
+    const r = resolve(withExtra([B.id]), ALL, atB.lat, atB.lng);
+    assert.equal(r.blocked, false);
+    assert.equal(r.office, B.id, "بصم في المكتب الإضافيّ فيُسجَّل مكانُه فيه");
+  });
+
+  it("وبلا الإشارةِ يُمنَع — فالإشارةُ هي الإذن", () => {
+    const r = resolve(tech(), ALL, atB.lat, atB.lng); // بلا مكاتبَ إضافيّة
+    assert.equal(r.blocked, true, "B ليس من مكاتبه فلا يُبصَم عليه");
+  });
+
+  it("وما زال يبصم في مكتبه الأصليّ كما كان", () => {
+    const r = resolve(withExtra([B.id]), ALL, atA.lat, atA.lng);
+    assert.equal(r.office, A.id);
+  });
+
+  it("قائمةٌ فاسدةٌ أو فارغةٌ لا تكسر شيئاً", () => {
+    for (const bad of ["[]", "", "null", "لا شيء", "[\"x\"]"]) {
+      const r = resolve({ towerId: A.id, supportTowerId: null, supportKind: null, extraTowerIds: bad }, ALL, atA.lat, atA.lng);
+      assert.equal(r.office, A.id, `القيمة ${JSON.stringify(bad)} يجب أن تُهمَل بلا عطل`);
+    }
+  });
+
+  it("«إذا تغيّر مكتبُه الأصليُّ فبصمتُه تنتقل» — الافتراضيُّ يتبع مكتبَه لا قائمةً محفوظة", () => {
+    // نُقل من A إلى C: الافتراضيُّ صار C، وA بقي إضافيّاً
+    const moved = { towerId: C.id, supportTowerId: null, supportKind: null, extraTowerIds: JSON.stringify([A.id]) };
+    assert.equal(fallbackOffice(moved, moved.towerId), C.id);
+    const r = resolve(moved, ALL, atA.lat, atA.lng);
+    assert.equal(r.office, A.id, "وهو واقفٌ في A الإضافيّ فيُسجَّل مكانُه فيه");
+  });
+
+  it("🛡️ ومكتبٌ إضافيٌّ بلا موقعٍ لا يُفلِت من النطاق: الافتراضيُّ مُفعَّلٌ ⇒ المنعُ قائم", () => {
+    // C بلا موقع، ومكتبُه A مُفعَّل. فلو كان مكتبٌ بلا موقعٍ يُلغي التحقّق لبصم من بيته.
+    const r = resolve(withExtra([C.id]), ALL, far.lat, far.lng);
+    assert.equal(r.blocked, true, "لا يجوز أن يُلغيَ مكتبٌ بلا موقعٍ نطاقَ مكتبه الأصليّ");
+  });
+
+  it("ورسالةُ المنع تُرشد إلى المكتب الذي لا موقعَ له — فلا يظنّ العطلَ في هاتفه", () => {
+    const mine = ALL.filter((o) => [A.id, C.id].includes(o.id));
+    const r = decideStampOffice(mine, A.id, far.lat, far.lng);
+    assert.ok(r.error, "يُمنَع");
+    assert.ok(r.error?.includes("الشدن"), "يجب أن تُسمّى «الشدن» بلا موقعٍ محدَّد");
+    assert.ok(r.error?.includes("أبلِغ المدير"), "وأن يُقال له ما يفعل");
+  });
+});
+
 describe("أ-١٠ · العزل: لا يُبصَم على مكتبٍ ليس من مكاتبه", () => {
   it("مكتبٌ ليس في مجموعته لا يُحسَم له ولو كان واقفاً فيه", () => {
     const D: Office = { id: 99, name: "وكيلٌ آخر", geoEnabled: true, lat: 30.0, lng: 40.0, geoRadius: 50 };

@@ -193,7 +193,19 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                   {allOffices.map((o) => <option key={o.id} value={o.id}>{o.name ?? `مكتب ${o.id}`}</option>)}
                 </select>
                 {allOffices.filter((o) => o.id !== editHome).length > 0 && (<>
-                <div className="mb-1.5 text-[11px] text-slate-600">مكاتب إضافية — يشوف تكتاتها وينفذها ويأخذ ذمماً منها كأنه فني أصلي فيها (كل بطاقة تُحسب لمكتبها):</div>
+                {/* أ-١١ · صار الشرحُ يذكر **البصمة** (2026-08-13): الخانةُ كانت تعني اللوحاتَ
+                    والذممَ وحدَها، ومسارُ البصمة لا يعرفها — فأُكمل في أ-١٠. والمديرُ يجب أن يعلم
+                    أنّ إشارةً واحدةً صارت تُبيح البصمَ في المكتب أيضاً، وإلّا منح إذناً لا يقصده. */}
+                <div className="mb-1.5 text-[11px] text-slate-600">
+                  مكاتب إضافية — <b>يبصم فيها</b> ويشوف تكتاتها وينفذها ويأخذ ذمماً منها كأنه فني أصلي فيها
+                  (كل بطاقة تُحسب لمكتبها):
+                </div>
+                <div className="mb-1.5 rounded-lg bg-slate-50 px-2 py-1.5 text-[10px] leading-relaxed text-slate-500">
+                  🗓️ وحضورُه ومالُه يبقيان على <b>مكتبه الأصليّ</b> أعلاه — يبصم من أيّ مكتبٍ منها
+                  ويُحتسَب اليومُ لمكتبه، ويُسجَّل مكانُ بصمته في سجلّ حضوره.
+                  <br />📍 وإن كان مكتبٌ منها <b>بلا موقعٍ محدَّد</b> فلن يُعرَف أنّه فيه — فحدِّد موقعَه
+                  من صفحة المكاتب كي يستطيع البصمَ منه.
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {allOffices.filter((o) => o.id !== editHome).map((o) => {
                     const on = extraSel.has(o.id);
