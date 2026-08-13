@@ -286,7 +286,11 @@ export function startLocalSasServer() {
         const towerId = Number(url.searchParams.get("towerId"));
         const v = viewCache.get(towerId);
         if (!v || !v.users.length) { sendJson(res, 400, { error: "لم تُعرض أي صفحة في اللوحة بعد. تصفّح المشتركين في اللوحة ثم أعد المحاولة." }); return; }
-        const existing = await prisma.subscriber.findMany({ where: { sasId: { in: v.users.map((u) => u.sasId) } }, select: { sasId: true } });
+        // 🔴 نفسُ علّة الخادم (بلاغُ محمد 2026-08-13) **وأوسع**: كان بلا `isDeleted` وبلا
+        // `towerId` ⇒ (١) المحذوفُ ناعماً يُعَدُّ «مستورداً» فتُقفَل شاشةُ الاستيراد عليه،
+        // و(٢) `sasId` يُطابَق في **كلّ مكاتب كلّ الوكلاء** — قراءةٌ عابرةٌ للعزل تقفل
+        // استيرادَ مشتركك بمشترك وكيلٍ آخر. **والمحذوفُ ليس مستورداً — هو محذوف.**
+        const existing = await prisma.subscriber.findMany({ where: { sasId: { in: v.users.map((u) => u.sasId) }, towerId, isDeleted: false }, select: { sasId: true } });
         const ex = new Set(existing.map((e) => e.sasId));
         sendJson(res, 200, { towerId, users: v.users.map((u) => ({ ...u, alreadyImported: ex.has(u.sasId) })) });
         return;

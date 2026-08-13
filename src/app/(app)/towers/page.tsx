@@ -580,7 +580,20 @@ function OfficeSync({ officeId }: { officeId: number }) {
             {res.reportSent === true && <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-700">📨 أُرسل التقرير للمدير</span>}
             {res.reportSent === false && <span className="rounded bg-orange-100 px-2 py-1 text-orange-700">التقرير لم يُرسل (واتساب مقطوع)</span>}
           </div>
-          {res.phase2.failed && <div className="mb-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">⚠️ تعذّر إكمال تصحيح التواريخ (تعثّر SAS في المرحلة 2)</div>}
+          {/* 🔴 السببُ يُعرَض لا يُخفى (بلاغُ صميم 2026-08-13): كانت الرسالةُ «تعثّر SAS»
+              بلا سببٍ، والعلّةُ الحقيقيّةُ كانت **رابطَ لوحةٍ خطأً** — فبقي الوكيلُ يُخمّن
+              حتى حذف ٢١٧٢ مشتركاً ظنّاً أنّ البياناتَ هي العلّة. */}
+          {res.phase2.failed && (
+            <div className="mb-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">
+              ⚠️ تعذّر إكمال المرحلة 2 (تصحيحُ التواريخ والاستيرادُ الشامل)
+              {res.error && <div className="mt-1 font-mono text-[10px] text-amber-900" dir="ltr">{res.error}</div>}
+              {res.phase1.activations === 0 && res.phase2.checked === 0 && (
+                <div className="mt-1 font-semibold">
+                  ولم يُقرأ من الساس شيءٌ إطلاقاً ⇒ راجِع <b>رابطَ لوحة الساس واسمَ المستخدم وكلمةَ المرور</b> من زرّ «لوحات الساس» — لا المشتركين.
+                </div>
+              )}
+            </div>
+          )}
           {cards && (
             <div className="mb-2">
               <div className="mb-1 text-xs font-bold text-slate-600">📇 فحص الكروت الشامل (كل المخزون مقابل SAS)</div>

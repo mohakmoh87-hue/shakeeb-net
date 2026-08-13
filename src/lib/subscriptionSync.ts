@@ -406,6 +406,7 @@ async function runOfficeSyncInner(
   //  (أ) استيراد كل مشترك موجود في الساس وغير موجود في البرنامج (استيراد شامل — السيناريو 7 لكامل القاعدة).
   //  (ب) تصحيح تاريخ الانتهاء بصمت للمشتركين الموجودين عند اختلافه (السيناريوهان 4 و5).
   let checked = 0, dateFixed = 0, phase2Imported = 0, phase2Failed = false, skippedPkg = 0, pkgFixed = 0;
+  let phase2Error = "";
   try {
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
@@ -498,8 +499,14 @@ async function runOfficeSyncInner(
         pkgFixed += r.count;
       }
     }
-  } catch {
-    phase2Failed = true; // لا نُسقط نتائج المرحلة 1
+  } catch (e) {
+    // 🔴 **كان `catch {}` أعمى** (بلاغُ صميم 2026-08-13): يُرفَع `failed: true` **بلا أيّ
+    // سبب**، فيرى الوكيلُ «خطأً» لا يدلّ على شيء ولا نعرف نحن أين تعثّر. وقد وقع فعلاً:
+    // رابطُ لوحتَي صميم كان خطأً فسقط الدخولُ إلى الساس، والمزامنةُ قالت «فشل» وسكتت —
+    // فاستُهلك وقتٌ في التخمين وحُذف ٢١٧٢ مشتركاً ظنّاً أنّ البياناتَ هي العلّة.
+    // والقاعدة: **لا تُبتلَع علّةٌ يراها مستخدمٌ كخطأ** — إمّا تُعالَج أو تُروى.
+    phase2Failed = true; // ولا نُسقط نتائج المرحلة 1
+    phase2Error = e instanceof Error ? e.message : String(e);
   }
 
   // ===================== التقرير =====================
@@ -508,6 +515,8 @@ async function runOfficeSyncInner(
     phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported, verifiedReal },
     phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg, pkgFixed },
     events, reportSent: null,
+    // السببُ يُحمَل إلى الحالة المخزَّنة فتراه الواجهةُ ويُقرأ من القاعدة عند التشخيص
+    ...(phase2Error ? { error: phase2Error } : {}),
   };
 
   // التقرير يُرسل فقط في المزامنة التلقائية؛ اليدوية تعرض النتيجة في الواجهة بلا رسالة للمدير
