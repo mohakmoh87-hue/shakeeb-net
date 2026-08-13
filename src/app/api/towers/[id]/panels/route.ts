@@ -124,7 +124,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const panelId = Number(url.searchParams.get("panelId"));
   if (!Number.isInteger(panelId)) return NextResponse.json({ error: "لوحة غير صحيحة" }, { status: 400 });
   // 🔒 اللوحةُ يجب أن تتبع هذا المكتب — وإلّا صار تعديلُ لوحةِ مكتبٍ آخرَ ممكناً بتمرير معرّف
-  const panel = await prisma.sasPanel.findFirst({ where: { id: panelId, towerId: r.tower.id, isDeleted: false }, select: { id: true } });
+  const panel = await prisma.sasPanel.findFirst({ where: { id: panelId, towerId: r.tower.id, isDeleted: false }, select: { id: true, isPrimary: true } });
   if (!panel) return NextResponse.json({ error: "اللوحة لا تتبع هذا المكتب" }, { status: 403 });
 
   const parsed = panelSchema.safeParse(await request.json().catch(() => null));
@@ -143,6 +143,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (d.sortOrder != null) data.sortOrder = d.sortOrder;
   if (!Object.keys(data).length) return NextResponse.json({ error: "لا تغيير" }, { status: 400 });
   await prisma.sasPanel.update({ where: { id: panelId }, data });
+
+  // ═════ والجهةُ المقابلة: تعديلُ **اللوحة الأولى** يُحدِّث أعمدةَ المكتب معها ═════
+  // فالمزامنةُ في جهةٍ واحدةٍ لا تكفي: تعديلُ المكتب يُصلح اللوحة، ثمّ تعديلُ اللوحة يُعيد
+  // التباعد. وأعمدةُ المكتب هي **مرجعُ من لا لوحةَ له** (مشتركٌ بلا `sasPanelId`) — فبقاؤها
+  // قديمةً يعني تفعيلَ أوّلِ مشتركٍ جديدٍ على مُخدِّمٍ خطأ.
+  // ⚠️ واللوحاتُ غيرُ الأولى **لا تُنسَخ إلى المكتب أبداً**: هي مُخدِّماتٌ مستقلّةٌ برابطها،
+  // ونسخُها يُفسِد مرجعَ المكتب بلوحةٍ ليست لوحتَه.
+  if (panel.isPrimary) {
+    const back: Record<string, string> = {};
+    if (d.loginUrl != null) back.loginUrl = d.loginUrl;
+    if (d.username != null) back.username = d.username;
+    if (d.activationTemplate != null) back.activationTemplate = d.activationTemplate;
+    if (d.password) back.password = d.password; // الفارغةُ تُبقي القديمة هنا أيضاً
+    if (Object.keys(back).length) {
+      await prisma.tower.update({ where: { id: r.tower.id }, data: back }).catch(() => {});
+    }
+  }
   return NextResponse.json({ ok: true });
 }
 
