@@ -125,7 +125,8 @@ export default async function InvoiceReceipt({
             <div className="mt-5 border-t-2 border-dashed border-slate-300 pt-3 text-center text-xs text-slate-400">
               {/* اسم المكتب مُطفأٌ افتراضيّاً (officeInFooter)، وعنوان المكتب سطرٌ أسفل الهاتف */}
               {tpl.footerText || "شكراً لتعاملكم"}{tpl.fields.officeInFooter === true ? ` — ${officeName}` : ""}
-              {tpl.addressText && <div>{tpl.addressText}</div>}
+              {/* العنوانُ متعدّدُ الأسطر (طلبُ محمد) — `whitespace-pre-line` يُنزّل الأسطرَ كما كُتبت */}
+              {tpl.addressText && <div className="whitespace-pre-line">{tpl.addressText}</div>}
             </div>
           )}
         </div>

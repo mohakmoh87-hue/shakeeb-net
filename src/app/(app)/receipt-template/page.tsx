@@ -248,11 +248,19 @@ export default function ReceiptTemplatePage() {
           <Field label="نص التذييل">
             <input value={t.footerText} onChange={(e) => set("footerText", e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue" />
           </Field>
-          {/* عنوان المكتب: سطرٌ يُطبع أسفل نصّ التذييل (أرقام الهاتف) — طلب محمد 2026-08-09 */}
-          <Field label="عنوان المكتب (يُطبع أسفل أرقام الهاتف)">
-            <input value={t.addressText} onChange={(e) => set("addressText", e.target.value)}
-              placeholder="مثال: شارع المواصلات — مقابل الجامع" className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue" />
-            <span className="mt-0.5 block text-[11px] text-slate-400">فارغ = لا يظهر. يخصّ قالب المكتب المختار أعلاه.</span>
+          {/* عنوان المكتب: يُطبع أسفل نصّ التذييل (أرقام الهاتف) — طلب محمد 2026-08-09
+              ═════ وطلبُ محمد 2026-08-13: **مربّعٌ لا سطر** ═════
+              كان `<input>` سطراً واحداً، فلا يستطيع الوكيلُ كتابةَ عنوانٍ في سطرَين ولا
+              إضافةَ رقمٍ ثانٍ أو ملاحظةٍ تحته. صار `<textarea>` وEnter يُنزل سطراً جديداً،
+              **وكلُّ سطرٍ يُطبَع سطراً** في الوصل (لا يُدمَج في سطرٍ واحد). */}
+          <Field label="عنوان المكتب (يُطبع أسفل أرقام الهاتف — عدّة أسطر)">
+            <textarea value={t.addressText} onChange={(e) => set("addressText", e.target.value)}
+              rows={3}
+              placeholder={"مثال:\nشارع المواصلات — مقابل الجامع\nللاستفسار: 0770 000 0000"}
+              className="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 leading-6 outline-none focus:border-mynet-blue" />
+            <span className="mt-0.5 block text-[11px] text-slate-400">
+              فارغ = لا يظهر. اضغط Enter لسطرٍ جديد — كلُّ سطرٍ يُطبَع سطراً. يخصّ قالب المكتب المختار أعلاه.
+            </span>
           </Field>
 
           {t.showLogo && (
@@ -347,7 +355,8 @@ function PrintPreview({ t, officeName }: { t: Tpl; officeName: string }) {
           {F.footer !== false && (
             <div style={{ marginTop: "0.6em", borderTop: "2px dashed #999", paddingTop: "0.4em", textAlign: "center", fontSize: "0.8em" }}>
               {t.footerText || "شكراً لاشتراككم"}{F.officeInFooter === true ? ` — ${officeName}` : ""}
-              {t.addressText && <div>{t.addressText}</div>}
+              {/* المعاينةُ تُنزّل الأسطرَ مثلَ الطبع — وإلّا خالفت المعاينةُ الورقة */}
+              {t.addressText && <div className="whitespace-pre-line">{t.addressText}</div>}
             </div>
           )}
         </div>

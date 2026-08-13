@@ -60,7 +60,13 @@ function footerBlock(
   const withOffice = fields.officeInFooter === true && officeName ? `${text} — ${officeName}` : text;
   const addr = (tpl.addressText ?? "").trim();
   if (!withOffice && !addr) return "";
-  return `<div class="ftr">${esc(withOffice)}${addr ? `<div>${esc(addr)}</div>` : ""}</div>`;
+  // طلبُ محمد 2026-08-13: العنوانُ صار مربّعاً متعدّدَ الأسطر ⇒ **كلُّ سطرٍ يُطبَع سطراً**.
+  // و`esc` تُهرِّب المحتوى، فالأسطرُ تُبنى صفوفاً مستقلّةً لا بـ`<br>` داخل نصٍّ مُهرَّب
+  // (وإلّا طُبع «<br>» حرفيّاً). والأسطرُ الفارغةُ تُسقَط فلا يُبعثَر الوصلُ بفراغات.
+  const addrHtml = addr
+    ? addr.split(/\r?\n/).map((s) => s.trim()).filter(Boolean).map((s) => `<div>${esc(s)}</div>`).join("")
+    : "";
+  return `<div class="ftr">${esc(withOffice)}${addrHtml}</div>`;
 }
 
 // اسم العلامة: اسم الوكيل ثم إعداد الوكيل «office» (معزول) ثم الافتراضي
