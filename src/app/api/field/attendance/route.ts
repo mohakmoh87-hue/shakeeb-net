@@ -169,11 +169,26 @@ export async function GET(request: Request) {
   const techs = await prisma.technician.findMany({ where, select: { id: true, name: true, shiftStart: true, shiftEnd: true, towerId: true }, orderBy: { id: "asc" } });
   const recs = await prisma.attendance.findMany({ where: { technicianId: { in: techs.map((t) => t.id) }, dayKey: key } });
   const byTech = new Map(recs.map((r) => [r.technicianId, r]));
+  // أ-١ · واسمُ المكتب يُرجَع مع كلّ فنيّ: الشاشةُ تُظهر فنيّي **كلّ المكاتب** معاً
+  // (طلبُ محمد)، وبلا اسمِ المكتب تصير قائمةً بأسماءَ لا يُعرَف أيُّها لأيّ مكتب.
+  const oNames = new Map(
+    (await prisma.tower.findMany({
+      where: { id: { in: [...new Set(techs.map((t) => t.towerId).filter((x): x is number => x != null))] } },
+      select: { id: true, name: true },
+    })).map((o) => [o.id, o.name]),
+  );
   return NextResponse.json({
     role: "manager",
     technicians: techs.map((t) => {
       const r = byTech.get(t.id) ?? null;
-      return { id: t.id, name: t.name, shiftStart: t.shiftStart, shiftEnd: t.shiftEnd, state: stateOf(r), checkIn: r?.checkIn ?? null, checkOut: r?.checkOut ?? null };
+      return {
+        id: t.id, name: t.name, shiftStart: t.shiftStart, shiftEnd: t.shiftEnd,
+        state: stateOf(r), checkIn: r?.checkIn ?? null, checkOut: r?.checkOut ?? null,
+        towerId: t.towerId, office: t.towerId != null ? (oNames.get(t.towerId) ?? null) : null,
+        // ولحظةُ البصمة الحقيقيّةُ ومَن أخرجه — يُقرآن في الشاشة تمييزاً للخروج الآليّ
+        checkInActual: r?.checkInActual ?? null, checkOutActual: r?.checkOutActual ?? null,
+        checkoutBy: r?.checkoutBy ?? null, lateExcuse: r?.lateExcuse ?? null,
+      };
     }),
   });
 }

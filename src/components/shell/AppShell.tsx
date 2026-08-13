@@ -50,6 +50,8 @@ const NAV: NavEntry[] = [
       { label: "قالب الوصل المطبوع", href: "/receipt-template", perm: "receipt.template" },
     ],
   },
+  // أ-١ · شاشةُ بصمات الحضور: مَن بصم اليوم من كلّ المكاتب، و«سجل» لكلّ فنيٍّ وبصماته
+  { kind: "link", icon: "🕒", label: "بصمات الحضور", href: "/attendance", perm: "field.payroll" },
   {
     kind: "group", icon: "🛡️", label: "النظام",
     items: [
