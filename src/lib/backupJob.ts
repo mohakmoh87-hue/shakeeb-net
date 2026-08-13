@@ -46,11 +46,14 @@ export async function runDailyBackups(agentId?: number | null): Promise<{ total:
     //   نسخةُ اليوم»، فحاسبةٌ أخرى (أو دورةُ المُجدول التالية) تبدأ نسخةً ثانيةً كاملة:
     //   **قاعدةٌ كاملةٌ تُصدَّر وتُرسَل مرّتَين** — وهي مرشَّحُ إنفادِ اتصالات القاعدة.
     // ⇒ يُحجَز اليومُ ذرّيّاً بـ`updateMany` بشرطِ أنّه لم يُختَم: فائزٌ واحدٌ أبداً.
-    const claimed = await prisma.agent.updateMany({
-      where: { id: a.id, OR: [{ lastBackupDate: null }, { lastBackupDate: { not: todayKey } }] },
-      data: { lastBackupDate: todayKey },
-    });
-    if (claimed.count !== 1) continue; // سبقنا غيرُنا إلى نسخة اليوم
+    // ⚠️ SQL صريحٌ لا `prisma.agent.updateMany`: جدولُ `agents` فيه ٢٦ عموداً ودورُ العامل
+    // يقرأ ١٥، وبريزما (محرّكُ العميل) تقرأ الصفَّ كاملاً عند `updateMany` ⇒ `SELECT *` ⇒
+    // «permission denied for table agents». وقد كلّفت هذه العلّةُ نفسُها موتَ القيادة
+    // ساعةً وربعاً في 2026-08-13 — فالنمطُ واحدٌ في كلّ كتابةٍ على `agents` من العامل.
+    const claimed = await prisma.$executeRaw`
+      UPDATE agents SET "lastBackupDate" = ${todayKey}
+       WHERE id = ${a.id} AND ("lastBackupDate" IS NULL OR "lastBackupDate" <> ${todayKey})`;
+    if (claimed !== 1) continue; // سبقنا غيرُنا إلى نسخة اليوم
     try {
       const r = await sendAgentBackupEmail(a.id);
       if (r.ok) sent++;
@@ -58,11 +61,11 @@ export async function runDailyBackups(agentId?: number | null): Promise<{ total:
         failed++; console.warn(`[backup] فشل إرسال نسخة الوكيل ${a.id}: ${r.error}`);
         // يُفَكّ الحجزُ فتُعاد المحاولةُ في الدورة القادمة — فيومٌ بلا نسخةٍ أخطرُ من نسخةٍ
         // مكرّرةٍ تصل بريدَ محمد. والفشلُ هنا يعني أنّ خادمَ البريد **لم يقبل** الرسالة.
-        await prisma.agent.update({ where: { id: a.id }, data: { lastBackupDate: a.lastBackupDate } }).catch(() => {});
+        await prisma.$executeRaw`UPDATE agents SET "lastBackupDate" = ${a.lastBackupDate} WHERE id = ${a.id}`.then(() => {}, () => {});
       }
     } catch (e) {
       failed++; console.error(`[backup] خطأ نسخة الوكيل ${a.id}:`, e);
-      await prisma.agent.update({ where: { id: a.id }, data: { lastBackupDate: a.lastBackupDate } }).catch(() => {});
+      await prisma.$executeRaw`UPDATE agents SET "lastBackupDate" = ${a.lastBackupDate} WHERE id = ${a.id}`.then(() => {}, () => {});
     }
   }
   console.log(`[backup] النسخ اليومي: ${sent} ناجحة، ${failed} فاشلة من ${agents.length}`);

@@ -53,21 +53,39 @@ export const LEASE_MS = ONLINE_WINDOW_MS;
  *    لحظةِ انتقالٍ نادرةٍ أهونُ ألفَ مرّةٍ من توقُّفِ كلّ عملٍ خلفيٍّ في كلّ مكتب.
  */
 export async function acquireLeadership(agentId: number, machineId: string): Promise<boolean> {
-  const now = new Date();
-  const until = new Date(now.getTime() + LEASE_MS);
   try {
+    // ═════ 🔴 ولماذا SQL صريحٌ لا `prisma.agent.updateMany`؟ (قِيس، لا يُخمَّن) ═════
+    // جدولُ `agents` فيه **٢٦ عموداً** ودورُ العامل يقرأ **١٥** منها (الحصصُ وتاريخُ
+    // الخطّة ورابطُ قاعدته خارجَها بقصد). وبريزما في نسخة المشروع (محرّكُ العميل)
+    // تقرأ **الصفَّ كاملاً** عند `updateMany` ⇒ `SELECT *` ⇒ «permission denied for
+    // table agents» — وهي رسالةٌ على مستوى **الجدول** فتبدو كأنّها غيابُ صلاحيّةٍ كليّ.
+    // وأُثبت الفرقُ بالتجربة: `SELECT *` يُرفض و`SELECT id` ينجح بالدور نفسِه.
+    // ⇒ فالحلُّ ليس توسيعَ الصلاحيّة (فتنكشف الحصصُ والخطّةُ لكلّ عاملٍ بلا داعٍ)
+    //   بل نصُّ SQL يمسّ الأعمدةَ الممنوحةَ وحدَها. و`$executeRaw` يُرجع عددَ الصفوف
+    //   المتأثّرة — وهو تماماً ما تحتاجه المقارنةُ-والتبديل.
+    //
+    // 🔑 وفائدةٌ ثانيةٌ مقصودة: المهلةُ تُحسَب بـ**ساعةِ القاعدة** لا بساعةِ الحاسبة
+    //   (`NOW() AT TIME ZONE 'UTC'` في الكتابة والمقارنة معاً). فإجارةٌ موزّعةٌ تُحكَم
+    //   بساعاتٍ متعدّدةٍ تنكسر بأوّلِ انحرافِ ساعةٍ في مكتب — وحاسباتُ المكاتب لا
+    //   يضبط أحدٌ ساعاتِها. والعمودُ `timestamp without time zone` يحمل UTC (كما تكتبه
+    //   بريزما) فالتحويلُ الصريحُ يُطابقه.
+    const secs = Math.round(LEASE_MS / 1000);
     // (١) تجديدُ إجارتي — الطريقُ الشائعُ وأرخصُه
-    const renewed = await prisma.agent.updateMany({
-      where: { id: agentId, leaderMachineId: machineId },
-      data: { leaderUntil: until },
-    });
-    if (renewed.count === 1) return true;
-    // (٢) انتزاعُها: حرّةٌ أو منتهيةٌ فقط. `updateMany` ذرّيّةٌ ⇒ فائزٌ واحدٌ لا أكثر.
-    const taken = await prisma.agent.updateMany({
-      where: { id: agentId, OR: [{ leaderMachineId: null }, { leaderUntil: null }, { leaderUntil: { lt: now } }] },
-      data: { leaderMachineId: machineId, leaderUntil: until },
-    });
-    return taken.count === 1;
+    const renewed = await prisma.$executeRaw`
+      UPDATE agents
+         SET "leaderUntil" = (NOW() AT TIME ZONE 'UTC') + make_interval(secs => ${secs})
+       WHERE id = ${agentId} AND "leaderMachineId" = ${machineId}`;
+    if (renewed === 1) return true;
+    // (٢) انتزاعُها: حرّةٌ أو منتهيةٌ فقط. الجملةُ ذرّيّةٌ ⇒ فائزٌ واحدٌ لا أكثر.
+    const taken = await prisma.$executeRaw`
+      UPDATE agents
+         SET "leaderMachineId" = ${machineId},
+             "leaderUntil" = (NOW() AT TIME ZONE 'UTC') + make_interval(secs => ${secs})
+       WHERE id = ${agentId}
+         AND ("leaderMachineId" IS NULL
+              OR "leaderUntil" IS NULL
+              OR "leaderUntil" < (NOW() AT TIME ZONE 'UTC'))`;
+    return taken === 1;
   } catch (e) {
     // ليس «يملكها غيري» بل «تعذّر الحجزُ» — فالسقوطُ إلى السلوك القديم لا إلى التعطيل.
     // ويُصرَّح بالسبب في السجلّ لأنّ صمتَ هذا الموضع هو ما أخفى العلّةَ ساعةً وربعاً.
@@ -80,8 +98,9 @@ export async function acquireLeadership(agentId: number, machineId: string): Pro
 /** يُطلق الإجارةَ إن كنتُ مالكَها — عند فقدان الاستحقاق أو الإغلاق النظيف.
  *  فبلا إطلاقٍ ينتظر القائدُ الجديدُ انتهاءَ المهلة بلا داعٍ (والقديمُ حيٌّ لا يقود). */
 export async function releaseLeadership(agentId: number, machineId: string): Promise<void> {
-  await prisma.agent.updateMany({
-    where: { id: agentId, leaderMachineId: machineId },
-    data: { leaderMachineId: null, leaderUntil: null },
-  }).catch(() => {});
+  // SQL صريحٌ لنفس السبب أعلاه: `updateMany` تقرأ الصفَّ كاملاً فتُرفَض بدور العامل
+  await prisma.$executeRaw`
+    UPDATE agents SET "leaderMachineId" = NULL, "leaderUntil" = NULL
+     WHERE id = ${agentId} AND "leaderMachineId" = ${machineId}`
+    .then(() => {}, () => {});
 }
