@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import { onlyMaster } from "@/lib/moneyKinds";
+import { subjectsForTxs } from "@/app/api/_lib/txSubjects";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +17,11 @@ export async function GET() {
     where: { isDeleted: false, ...onlyMaster, towerId: { in: agentTowers.length ? agentTowers : [-1] } },
     orderBy: { date: "desc" },
     take: 500,
-    select: { id: true, moneyIn: true, moneyOut: true, notes: true, date: true, towerId: true, userId: true },
+    select: { id: true, moneyIn: true, moneyOut: true, notes: true, date: true, towerId: true, userId: true, sourceType: true, sourceId: true },
   });
+  // «وللماستر نفس الشيء» (طلب محمد 2026-08-13): صاحبُ الحركة باليوزر والاسم — من مفتاحه
+  // لا من الملاحظة. وبـ**نفس المُحلِّل** الذي يستعمله تفصيلُ الصندوق كي لا يختلف سطرٌ عن سطر.
+  const masterSubjects = await subjectsForTxs(officeTxs);
   // اسم مَن سجّل كل حركة — تدقيق حركات الماستر كان مستحيلاً بلا هذا
   const txUserIds = [...new Set(officeTxs.map((t) => t.userId).filter((x): x is number => x != null))];
   const txUsers = txUserIds.length
@@ -36,6 +40,7 @@ export async function GET() {
     ...officeTxs.map((t) => ({
       id: t.id, moneyIn: t.moneyIn, moneyOut: t.moneyOut, notes: t.notes, date: t.date,
       towerId: t.towerId, by: t.userId != null ? userName.get(t.userId) ?? null : null,
+      sourceType: t.sourceType, subject: masterSubjects.get(t.id) ?? null,
     })),
     ...mgrTxs.map((m) => ({
       id: -m.id, // معرّف سالب: تمييزها عن حركات المكاتب في القائمة
@@ -43,6 +48,9 @@ export async function GET() {
       moneyOut: m.type === "master-expense" ? m.amount : 0,
       notes: `🧾 حساب المدير — ${m.notes ?? (m.type === "master-receipt" ? "قبض ماستر" : "صرف ماستر")}`,
       date: m.date, towerId: null as number | null, by: null as string | null,
+      // حركةُ المدير ليست تفعيلَ مشتركٍ فلا صاحبَ لها — والفراغُ هنا صحيحٌ لا نقص
+      sourceType: null as string | null,
+      subject: null as { name: string | null; netUser: string | null; subscriberId: number | null } | null,
     })),
   ].sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
   const offices = await prisma.tower.findMany({ where: { id: { in: agentTowers.length ? agentTowers : [-1] } }, select: { id: true, name: true } });

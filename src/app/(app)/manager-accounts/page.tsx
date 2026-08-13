@@ -8,6 +8,7 @@ import InstallComputer from "@/components/InstallComputer";
 import RewardConfig from "@/components/RewardConfig";
 import SalaryModal from "@/components/SalaryModal";
 import { usePermission } from "@/lib/usePermission";
+import TxDrillModal, { SubjectCell, hms } from "@/components/TxDrillModal";
 
 type WaOffice = { id: number; name: string | null; state: string };
 
@@ -36,7 +37,7 @@ type Data = {
   transactions: MgrTx[];
   salaryPeriod: { fromDay: number | null; toDay: number | null; from: string | null; to: string | null } | null;
 };
-type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number; offices?: { towerId: number; name: string; net: number }[] }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string; office: string | null; by: string | null }[] };
+type MasterDetail = { balance: number; days: { day: string; in: number; out: number; net: number; count: number; offices?: { towerId: number; name: string; net: number }[] }[]; transactions: { id: number; moneyIn: number | null; moneyOut: number | null; notes: string | null; date: string; office: string | null; by: string | null; sourceType?: string | null; subject?: { name: string | null; netUser: string | null; subscriberId: number | null } | null }[] };
 // كارت وهمي: عُلِّم مستخدماً في البرنامج بلا تفعيل مقابل في SAS (بعد تحقّق مباشر)
 type PhantomCard = { cardId: number; serial: string | null; subscriber: string | null; office: string | null; useDate: string | null; amount: number | null; cardPrice: number; detectedAt: string | null };
 
@@ -86,6 +87,18 @@ export default function ManagerAccountsPage() {
   // والجلبُ في **مُعالِج الضغط** لا في `useEffect`: قاعدةُ `set-state-in-effect` محقّة، ولا
   // حاجةَ إلى أثرٍ لحدثٍ يبدأ بنقرةٍ صريحة.
   const [dayView, setDayView] = useState<{ day: string; towerId: number | null } | null>(null);
+  // أ-١٩+/١ · يومُ الماستر (بلاغ محمد 2026-08-13: «الماسترُ تقاريرُ يوميّةٌ أيضاً فيجب أن يكون
+  // مثل مجموع المبالغ اليوميّة بالضبط»). 🔑 ولا مسارَ جديد: `masterDetail.days` مُشتقّةٌ من
+  // **نفس** مصفوفة الحركات التي تُرجع في `transactions` (فُحص في `api/manager-accounts/master`)
+  // ⇒ ترشيحُ الحركات بيومٍ يُطابق دائماً الصفَّ الذي ضُغط، فلا يختلف رقمٌ عن رقم.
+  const [masterDay, setMasterDay] = useState<string | null>(null);
+  // «من أين أتت كلُّ واحدة» — الصنفُ المضغوطُ داخل نافذة اليوم، يُعرَض بالعارض المشترك
+  const [drill, setDrill] = useState<{ kind: string; day: string; towerId: number | null } | null>(null);
+  // ترشيحُ حركات يوم الماستر بضغطِ مربّعِ قبض/صرف — **ترشيحٌ في مكانه** لا نافذةٌ أخرى:
+  // ولا يجوز فتحُ `kind=master` من مسار التقرير هنا لأنّه يقرأ `money_tx` وحدَه بينما سجلُّ
+  // الماستر يدمج معه حركاتِ المدير (`manager_tx`) ⇒ فيختلف المجموعُ عن التفصيل. والترشيحُ
+  // من نفس المصفوفة يُبقي الرقمَين واحداً أبداً.
+  const [masterFlt, setMasterFlt] = useState<"all" | "in" | "out">("all");
   const [dayRep, setDayRep] = useState<Record<string, number> | null>(null);
   async function openDay(day: string, towerId: number | null) {
     setDayView({ day, towerId });
@@ -853,8 +866,10 @@ export default function ManagerAccountsPage() {
                   </thead>
                   <tbody>
                     {masterDetail.days.map((d) => (
-                      <tr key={d.day} className="border-t border-slate-100 align-top">
-                        <td className="p-3 font-medium" dir="ltr">{d.day}</td>
+                      <tr key={d.day} onClick={() => setMasterDay(d.day)}
+                        title="اضغط لعرض تفاصيل حركات هذا اليوم"
+                        className="cursor-pointer border-t border-slate-100 align-top hover:bg-indigo-50/60">
+                        <td className="p-3 font-medium" dir="ltr">{d.day} <span className="text-indigo-600">↗</span></td>
                         <td className="p-3 text-emerald-600">{d.in ? fmt(d.in) : "—"}</td>
                         <td className="p-3 text-red-600">{d.out ? fmt(d.out) : "—"}</td>
                         <td className={`p-3 font-bold ${d.net >= 0 ? "text-indigo-700" : "text-red-600"}`}>
@@ -911,6 +926,96 @@ export default function ManagerAccountsPage() {
         </div>
       )}
 
+      {/* ===== أ-١٩+/٢ · «من أين أتت كلُّ واحدة» — العارضُ المشترك =====
+          يُفتح فوق نافذة اليوم (z أعلى) ويُغلَق إليها، فلا تضيع خُطواتُك: من الشهر ← إلى
+          اليوم ← إلى حركاتِ سطرٍ فيه ← وكلُّ حركةٍ بيوزرِ صاحبها واسمِه ووقتِها بالثانية. */}
+      {drill && (
+        <TxDrillModal
+          kind={drill.kind} day={drill.day} towerId={drill.towerId ?? "all"}
+          onClose={() => setDrill(null)}
+          // حذفُ حركةٍ من التفصيل يُعيد حسابَ مربّعات اليوم فوراً — وإلّا بقي الرقمُ القديمَ
+          // معروضاً على حركةٍ لم تعد موجودة، وهو أخطرُ ما يظهر في شاشة مال.
+          onChanged={() => { if (dayView) void openDay(dayView.day, dayView.towerId); }}
+        />
+      )}
+
+      {/* ===== أ-١٩+/١ · نافذةُ يومِ الماستر — «مثل مجموع المبالغ اليوميّة بالضبط» =====
+          بلاغُ محمد 2026-08-13: «حركاتُ حساب الماستر لا تُظهر تفاصيلَ عند الضغط على مبلغ أيّ يوم».
+          ⚠️ والماسترُ حسابٌ **مستقلٌّ**: أرقامُه من `manager_tx` (master-receipt/expense) ومن
+          `money_tx` بـ`onlyMaster` — لا من `computeDailyReport` الذي يستثنيه (`notMaster`).
+          فلا تصلح إعادةُ استخدام نافذة أ-٦، وهذه نافذتُه من مصادره وحدها.
+          🔑 وبلا مسارٍ جديد: `days` و`transactions` مُشتقّتان من نفس المصفوفة في الخادم.
+          وتُغلَق بـ✕ حصراً كأختها. */}
+      {masterDay && masterDetail && (() => {
+        const rows = masterDetail.transactions.filter((t) => {
+          const d = new Date(new Date(t.date).getTime() + 3 * 60 * 60 * 1000); // يومُ بغداد
+          const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+          return key === masterDay;
+        });
+        const din = rows.reduce((s, t) => s + (t.moneyIn ?? 0), 0);
+        const dout = rows.reduce((s, t) => s + (t.moneyOut ?? 0), 0);
+        // ⚠️ المجاميعُ أعلاه من `rows` **قبل** الترشيح — فالمربّعاتُ تبقى مطابقةً للصفّ المضغوط
+        // حتى وأنت تُرشِّح، ولا تتحرّك أرقامُها تحت يدك.
+        const shown = masterFlt === "in" ? rows.filter((t) => (t.moneyIn ?? 0) > 0)
+          : masterFlt === "out" ? rows.filter((t) => (t.moneyOut ?? 0) > 0) : rows;
+        return (
+          <div className="fixed inset-0 z-[92] flex items-end justify-center bg-black/60 sm:items-center sm:p-4">
+            <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-6 shadow-2xl sm:rounded-2xl">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-extrabold text-slate-800">🅜 ماستر يوم <span dir="ltr">{masterDay}</span></h3>
+                  <div className="mt-1 text-sm text-slate-500">{rows.length} حركةً · حسابٌ مستقلٌّ لا يدخل تقرير الصندوق</div>
+                </div>
+                <button onClick={() => { setMasterDay(null); setMasterFlt("all"); }} aria-label="إغلاق"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-500 hover:bg-slate-200">✕</button>
+              </div>
+
+              {/* المربّعاتُ تُضغَط فتُرشِّح الجدولَ أسفلها — والضغطُ ثانيةً يُلغي الترشيح */}
+              <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                {([["قبض", din, "text-emerald-700", "in"], ["صرف", dout, "text-red-700", "out"], ["صافي اليوم", din - dout, "text-indigo-700", "all"]] as [string, number, string, "in" | "out" | "all"][]).map(([l, v, c, f]) => (
+                  <div key={l} onClick={() => setMasterFlt(masterFlt === f ? "all" : f)}
+                    title={f === "all" ? "إظهارُ كلّ الحركات" : `إظهارُ حركات ${l} وحدها`}
+                    className={`cursor-pointer rounded-xl border p-4 transition hover:shadow-md ${masterFlt === f && f !== "all" ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-slate-50 hover:border-indigo-300"}`}>
+                    <div className="text-sm text-slate-600">{l}</div>
+                    <div className={`text-2xl font-extrabold ${c}`}>{fmt(v)}</div>
+                    <div className="mt-0.5 text-xs text-slate-400">
+                      {masterFlt === f && f !== "all" ? <span className="font-bold text-indigo-600">مُرشَّحٌ الآن — اضغط للإلغاء</span> : <span className="text-mynet-blue">اضغط للترشيح ↗</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 🔎 كلُّ حركةٍ مفردةٍ بتفاصيلها — «كلُّ شيءٍ ولو كان صغيراً» */}
+              {shown.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  {rows.length === 0 ? "لا حركاتَ ماستر في هذا اليوم" : "لا حركاتَ بهذا الترشيح"}
+                </div>
+              ) : (
+                <table className="w-full text-right text-sm">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-600">
+                    <tr><th className="p-2.5">الوقت</th><th className="p-2.5">اليوزر / الاسم</th><th className="p-2.5">قبض</th><th className="p-2.5">صرف</th><th className="p-2.5">المكتب</th><th className="p-2.5">البيان</th><th className="p-2.5">بواسطة</th></tr>
+                  </thead>
+                  <tbody>
+                    {shown.map((t) => (
+                      <tr key={t.id} className="border-t border-slate-100 align-top hover:bg-slate-50/70">
+                        {/* بالثانية — وبلا تاريخٍ لأنّ اليومَ هو ما ضُغط أصلاً (طلبُ محمد) */}
+                        <td className="p-2.5 whitespace-nowrap font-mono text-[12px] text-slate-500" dir="ltr">{hms(t.date)}</td>
+                        <td className="p-2.5"><SubjectCell s={t.subject} /></td>
+                        <td className="p-2.5 font-bold text-emerald-600">{t.moneyIn ? fmt(t.moneyIn) : "—"}</td>
+                        <td className="p-2.5 font-bold text-red-600">{t.moneyOut ? fmt(t.moneyOut) : "—"}</td>
+                        <td className="p-2.5 text-slate-600">{t.office ?? "—"}</td>
+                        <td className="p-2.5 text-slate-700">{t.notes ?? "—"}</td>
+                        <td className="p-2.5 text-slate-400">{t.by ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ===== أ-٦ · نافذةُ تقرير يومٍ سابق (مواصفةُ محمد 2026-08-11) =====
           «نافذةٌ منبثقةٌ كبيرة تعرض تقرير ذلك اليوم كاملاً بكلّ تفاصيله — لا المجموعَ وحده،
           بكتابةٍ كبيرةٍ واضحة، فالغايةُ **المراجعة**. ولا تُغلَق بالضغط على أيّ فراغ» ⇒
@@ -933,29 +1038,39 @@ export default function ManagerAccountsPage() {
               <div className="p-10 text-center text-slate-400">جاري الحساب…</div>
             ) : (
               <>
+                {/* «كلُّ شيءٍ فيه ولو كان صغيراً يمكن ضغطُه» — كلُّ مربّعٍ يفتح حركاتَه المفردة
+                    بيوزرِ المشترك واسمه ووقتِه بالثانية. والصنفُ يُمرَّر إلى المسار نفسه الذي
+                    تستعمله بطاقةُ الرئيسيّة، **ومعه `day`** فلا يُخرِج سطورَ اليوم لتاريخٍ ماضٍ. */}
                 <div className="mb-4 grid gap-3 sm:grid-cols-2">
                   {([
-                    ["تفعيل اشتراكات", "activationIn", "activationCount"],
-                    ["فاتورة المبيع (المُحصَّل)", "invoiceIn", "invoiceCount"],
-                    ["مبيعات المخزن", "salesIn", null],
-                    ["المقبوضات (اليوم)", "otherIn", null],
-                    ["المصروفات (اليوم)", "expenses", null],
+                    ["تفعيل اشتراكات", "activationIn", "activationCount", "activation"],
+                    ["فاتورة المبيع (المُحصَّل)", "invoiceIn", "invoiceCount", "invoice"],
+                    ["مبيعات المخزن", "salesIn", null, "sale"],
+                    ["المقبوضات (اليوم)", "otherIn", null, "other"],
+                    ["المصروفات (اليوم)", "expenses", null, "expenses"],
                     // 🔴 ولا يُعرَض الماستر هنا (بلاغ محمد 2026-08-13): هذه النافذةُ تُفتح من
                     // «مجموع المبالغ اليوميّة» وهو مجموعُ **الصندوق** الذي يستثني الماسترَ صريحاً
                     // (`notMaster`)، والماسترُ حسابٌ **مستقلٌّ له بطاقتُه وسجلُّه**. فوضعُه داخلها
                     // يخلط دفترَين — وهو عينُ اللبس الذي يُحذّر منه الكود: «مالُ الماستر يُحتسب
                     // ماستراً في شاشةٍ ونقداً في أخرى». وسيظهر في **نافذة يوم الماستر** وحدها.
-                  ] as [string, string, string | null][]).map(([label, k, ck]) => (
-                    <div key={k} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  ] as [string, string, string | null, string][]).map(([label, k, ck, kind]) => (
+                    <div key={k} onClick={() => setDrill({ kind, day: dayView.day, towerId: dayView.towerId })}
+                      title="اضغط لعرض الحركات المكوّنة لهذا المبلغ"
+                      className="cursor-pointer rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-mynet-blue hover:bg-white hover:shadow-md">
                       <div className="text-sm text-slate-600">{label}</div>
                       <div className="text-2xl font-extrabold text-slate-800">{fmt(Number(dayRep[k] ?? 0))}</div>
-                      {ck && <div className="mt-0.5 text-xs text-slate-400">عددها {Number(dayRep[ck] ?? 0)}</div>}
+                      <div className="mt-0.5 text-xs text-slate-400">
+                        {ck ? `عددها ${Number(dayRep[ck] ?? 0)} · ` : ""}<span className="text-mynet-blue">التفاصيل ↗</span>
+                      </div>
                     </div>
                   ))}
                 </div>
-                <div className="rounded-2xl bg-gradient-to-l from-mynet-blue to-mynet-blue-dark p-5 text-center text-white">
+                <div onClick={() => setDrill({ kind: "total", day: dayView.day, towerId: dayView.towerId })}
+                  title="اضغط لعرض كلّ حركات هذا اليوم"
+                  className="cursor-pointer rounded-2xl bg-gradient-to-l from-mynet-blue to-mynet-blue-dark p-5 text-center text-white transition hover:brightness-110">
                   <div className="text-sm opacity-85">صافي اليوم (بلا الماستر)</div>
                   <div className="text-4xl font-extrabold">{fmt(Number(dayRep.total ?? 0))} <span className="text-lg font-normal">د.ع</span></div>
+                  <div className="mt-1 text-xs opacity-75">اضغط لكلّ الحركات ↗</div>
                 </div>
                 <p className="mt-3 text-center text-xs text-slate-400">
                   الأرقامُ محسوبةٌ بنفس دالّة التقرير اليوميّ للشاشة الرئيسيّة — مقيَّدةً بهذا اليوم وهذا المكتب.
