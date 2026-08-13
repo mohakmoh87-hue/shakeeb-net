@@ -83,6 +83,16 @@ export async function proxyToSas(
   upstreamPath: string,
   basePrefix?: string, // للـ HTML: يُعاد كتابة <base href> إلى هذه البادئة
   onJsonBody?: (text: string) => void, // التقاط جسم JSON (مثل قائمة المستخدمين)
+  // ═════ 🔴 رمزُ اللوحة يُفرَض من الخادم (بلاغُ صميم — الارتدادُ الثالث) ═════
+  // لوحةُ الساس تقرأ رمزَها من `localStorage.sas4_jwt`، و`localStorage` **لكلّ المتصفّح**
+  // والأصلُ واحدٌ لكلّ اللوحات ⇒ فتحُ اللوحة الثانية **يطمس** رمزَ الأولى، فتبويبُ الأولى
+  // المفتوحُ يُرسل رمزَ الثانية فيردّ الساسُ «Access Denied» في تبويبٍ لم يُلمَس.
+  // 🔑 ولا سبيلَ لتسمية المفتاح لكلّ لوحةٍ — فالاسمُ محفورٌ في جافاسكربت اللوحة نفسِها.
+  //   فالحسمُ من عندنا: الطلبُ يحمل لوحتَه في مساره، والخادمُ **يستبدل** الرمزَ برمزِ
+  //   تلك اللوحة قبل التمرير. فلا يهمّ ما في المتصفّح إطلاقاً.
+  // ⚠️ ولا يُفرَض إلّا حيث كان رمزٌ أصلاً: الأصولُ الثابتةُ تأتي بلا `authorization`،
+  //   ففرضُه عليها يُشعل تسجيلَ دخولٍ للساس مع كلّ صورةٍ وملفّ — كلفةٌ بلا فائدة.
+  authOverride?: () => Promise<string>,
 ): Promise<Response> {
   if (await isBlockedHost(host)) return new Response("blocked host", { status: 403 });
   const url = new URL(request.url);
@@ -90,7 +100,14 @@ export async function proxyToSas(
 
   const headers: Record<string, string> = {};
   const auth = request.headers.get("authorization");
-  if (auth) headers["authorization"] = auth;
+  if (auth) {
+    let forced: string | null = null;
+    if (authOverride) {
+      // فشلُ الاستبدال لا يُسقط الطلب: يمضي برمزِ المتصفّح كما كان قبل هذا الإصلاح
+      try { const t = await authOverride(); if (t) forced = t.startsWith("Bearer ") ? t : `Bearer ${t}`; } catch { forced = null; }
+    }
+    headers["authorization"] = forced ?? auth;
+  }
   const ct = request.headers.get("content-type");
   if (ct) headers["content-type"] = ct;
   const accept = request.headers.get("accept");

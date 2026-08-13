@@ -1,6 +1,7 @@
 import http from "node:http";
 import { prisma } from "@/lib/prisma";
 import { proxyToSas } from "@/lib/sasProxy";
+import { parseSasScope, sasScopeSegment } from "@/lib/sasScope";
 import { sasBaseUrl, sasLogin, sasFetchOnePage, sasFetchAllUsers, sasFetchOnlineCount, parseUsersList, type SasUser } from "@/lib/sas4";
 import { getWorkerAgentId } from "@/lib/hybridAgent";
 import { panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
@@ -261,9 +262,12 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
       if (p.startsWith("/health")) { sendJson(res, 200, { ok: true, agent: "shakeeb-net", agentId: getWorkerAgentId() }); return; }
 
       // بروكسي لوحة SAS: /sas/:towerId/...  (يحقن التوكن في HTML للدخول التلقائي، ويلتقط قوائم العرض)
-      const panel = p.match(/^\/sas\/(\d+)\/?(.*)$/);
+      // المقطعُ يقبل `43` و`43~p11` — والثانيةُ تحمل اللوحةَ في المسار نفسِه
+      const panel = p.match(/^\/sas\/(\d+(?:~p\d+)?)\/?(.*)$/);
       if (panel) {
-        const towerId = Number(panel[1]);
+        const seg = parseSasScope(panel[1]);
+        if (!seg) { res.writeHead(400); res.end("bad tower"); return; }
+        const towerId = seg.towerId;
         const t = await agentTower(towerId);
         if (!t) { res.writeHead(404); res.end("tower not allowed"); return; }
 
@@ -275,7 +279,9 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
         // سلفاً — فالعلّةُ في المحليِّ وحدَه، وهو ما تعمل عليه حاسباتُ المكاتب.)
         // 🔒 والعزل: `panelOfTower` تقبل اللوحةَ **إن كانت لهذا المكتب** فحسب، والمكتبُ
         //    فُحص أعلاه بـ`agentTower` (وكيلُ هذه الحاسبة) ⇒ لا لوحةَ من مكتبٍ آخر.
-        const wantPanel = Number(url.searchParams.get("panel")) || null;
+        // الأولويّة للمسار: هو ملكُ التبويب ويورَّث للطلبات النسبيّة، والمعاملُ يسقط بعد
+        // أوّل تحميلٍ فتعود اللوحةُ للخانة المشتركة (وهو ارتدادُ بلاغ صميم بعينه).
+        const wantPanel = seg.panelId ?? (Number(url.searchParams.get("panel")) || null);
         const pc = wantPanel ? await panelOfTower(towerId, wantPanel) : null;
         // بلا لوحةٍ مطلوبةٍ (أو لوحةٍ لا تتبع المكتب) ⇒ أعمدةُ المكتب: السلوكُ القديم حرفيّاً
         const creds: SasCreds = pc ?? {
@@ -290,7 +296,9 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
         const bodyBuf = req.method === "GET" || req.method === "HEAD" ? undefined : Buffer.from(await readBody(req));
         const webReq = toWebRequest(req, bodyBuf);
         let capturedJson: string | null = null;
-        const webRes = await proxyToSas(webReq, host, panel[2] || "", `/sas/${towerId}/`, (txt) => { capturedJson = txt; });
+        const scoped = sasScopeSegment(towerId, creds.panelId);
+        const webRes = await proxyToSas(webReq, host, panel[2] || "", `/sas/${scoped}/`, (txt) => { capturedJson = txt; },
+          () => scopeToken(creds)); // 🔑 رمزُ **هذه** اللوحة يُفرَض على كلّ نداءٍ محمولٍ بمسارها
         // التقاط قائمة المشتركين المعروضة
         if (capturedJson) { try { const us = parseUsersList(capturedJson); if (us.length) viewCache.set(towerId, { users: us, at: Date.now() }); } catch { /* */ } }
         const ct = webRes.headers.get("content-type") || "";
@@ -301,7 +309,10 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
           //   كان `towerToken(t)` يُسجّل بحساب اللوحة الأولى دائماً، فيرفض الساسُ
           //   العمليّةَ على مشتركِ اللوحة الثانية بـ«Access Denied».
           const token = await scopeToken(creds).catch(() => "");
-          const apiUrl = `/admin/api/index.php/api/`; // اللوحة تنادي API على /admin/* (جذر)
+          // 🔑 موسومٌ باللوحة: كان `/admin/...` جذراً فيُوجَّه بمتغيّرٍ عامٍّ واحدٍ («آخرُ لوحةٍ
+          //   فُتحت») ⇒ تبويبان مفتوحان يتقاتلان عليه فيردّ الساسُ «Access Denied» على
+          //   تبويبٍ لم يُلمَس. والآن كلُّ نداءٍ يحمل لوحتَه في مساره، فلا خانةَ مشتركة.
+          const apiUrl = `/sas/${scoped}/admin/api/index.php/api/`;
           let html = await webRes.text();
           const inject = `<script>try{localStorage.setItem('sas4_jwt',${JSON.stringify(token)});localStorage.setItem('sas4_api_url',${JSON.stringify(apiUrl)});}catch(e){}</script>`;
           html = html.replace(/<head[^>]*>/i, (m) => m + inject);

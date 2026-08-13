@@ -110,6 +110,59 @@ describe("البند ٣ · صورةُ القالب", () => {
     assert.match(api, /t\.image === undefined \? \{\} :/, "الخادمُ يكتب الصورةَ حتى عند غياب الحقل");
   });
 
+  // ═════ 🧾 «لا تُحفَظ الصورةُ في أيّ سجلٍّ» (طلبُ محمد 2026-08-13) ═════
+  // «الصورُ أحجامُها تضرّ عملي وتُغلي الفاتورة». والسجلُّ يُكتب **لكلّ رسالة** — فصورةٌ
+  // في السجلّ تعني نسخةً لكلّ مشترك، والقالبُ الواحدُ يكفيه أصلٌ واحدٌ إلى الأبد.
+  describe("الصورةُ لا تُخزَّن في أيّ سجلٍّ للرسائل", () => {
+    test("جدولُ الرسائل بلا عمودِ صورةٍ أصلاً — ولا يُضاف", () => {
+      const schema = read("prisma/schema.prisma");
+      const model = /^model Message \{([\s\S]*?)^\}/m.exec(schema)?.[1] ?? "";
+      assert.notEqual(model, "", "نموذجُ Message غيرُ موجود");
+      assert.equal(/^\s*image\b/m.test(model), false,
+        "أُضيف عمودُ صورةٍ إلى سجلّ الرسائل — نسخةٌ لكلّ رسالةٍ مُرسَلة، وهو عينُ ما رفضه محمد");
+      // ولا حقلَ وسائطَ آخرَ بالمعنى نفسِه
+      assert.equal(/^\s*(media|attachment|imageData|photo)\b/m.test(model), false, "حقلُ وسائطَ في سجلّ الرسائل");
+    });
+
+    test("النازعُ يُفرّغ ٤٠٠ ك.ب ويُبقي التشخيص — قياسٌ سلوكيٌّ لا مطابقةُ نصّ", async () => {
+      const { scrubRelayImage } = await import("../src/lib/relayScrub");
+      const img = "data:image/png;base64," + "A".repeat(400_000);
+      const before = JSON.stringify({ phone: "07701234567", text: "مرحباً", image: img });
+      const after = scrubRelayImage(before)!;
+      const o = JSON.parse(after) as Record<string, unknown>;
+      assert.equal(o.image, null, "الصورةُ باقيةٌ في الصفّ");
+      assert.ok(after.length < 200, `الصفُّ ما زال ضخماً: ${after.length} حرفاً`);
+      assert.equal(o.phone, "07701234567", "ضاع رقمُ الهاتف من التشخيص");
+      assert.equal(o.text, "مرحباً", "ضاع نصُّ الرسالة من التشخيص");
+      assert.match(String(o.imageSent), /^\d+KB$/, "لا أثرَ يُخبر أنّ صورةً أُرسلت وحجمَها");
+      // والأمانُ: لا يُتلِف ما لا يفهمه ولا ما لا صورةَ فيه
+      assert.equal(scrubRelayImage(null), null);
+      assert.equal(scrubRelayImage('{"phone":"1"}'), '{"phone":"1"}', "مُسَّ صفٌّ بلا صورة");
+      assert.equal(scrubRelayImage('{"image":"x"'), '{"image":"x"', "نصٌّ معطوبٌ أُتلِف بدل أن يُترَك");
+    });
+
+    test("صفُّ الترحيل تُنزَع منه الصورةُ لحظةَ التنفيذ لا بعد خمس دقائق", () => {
+      const wa = read("src/lib/whatsapp.ts");
+      assert.match(wa, /scrubRelayImage/, "لا نازعَ للصورة من صفّ الترحيل");
+      // والنزعُ في **مساري** النجاح والفشل كليهما — فالفاشلُ لا يُعاد تنفيذُه أصلاً
+      // نافذةٌ من نصّ كلّ نداء — ولا تُقتنَص بـ`[^}]*` فـ`where: { id }` يحمل `}` يقطعه
+      const statusWrites = [...wa.matchAll(/waRelay\.update\(/g)]
+        .map((m) => wa.slice(m.index!, m.index! + 320))
+        .filter((w) => /status:\s*"(done|error)"/.test(w));
+      assert.ok(statusWrites.length >= 5, `مواضعُ إنهاءِ الترحيل أقلُّ من المتوقَّع: ${statusWrites.length}`);
+      const unscrubbed = statusWrites.filter((w) => !/params:\s*scrubRelayImage/.test(w));
+      assert.deepEqual(unscrubbed.map((w) => w.slice(0, 90)), [], "موضعُ إنهاءِ ترحيلٍ يُبقي الصورةَ في params");
+    });
+
+    test("تبديلُ صورةِ القالب يستردّ مساحةَ القديمة فوراً", () => {
+      const api = read("src/app/api/sms-templates/bulk/route.ts");
+      assert.match(api, /VACUUM \(ANALYZE\) sms_templates/, "لا استرجاعَ للمساحة بعد تبديل الصورة");
+      assert.match(api, /if \(imageTouched\)/, "الاسترجاعُ غيرُ مشروطٍ بلمسِ صورةٍ (يُثقل كلَّ حفظٍ للنصّ)");
+      // 🔑 وأفضلُ جهدٍ لا شرطُ نجاح: VACUUM يحتاج ملكيّةَ الجدول — فسقوطُه لا يُسقط حفظَ محمد
+      assert.match(api, /VACUUM[\s\S]{0,120}\.catch\(/, "فشلُ VACUUM يُسقط الحفظَ — ودورُ العامل ليس مالكَ الجدول");
+    });
+  });
+
   test("واتساب: صورةٌ ونصٌّ رسالةٌ واحدة، وفشلُ الصورة لا يُسقط النصّ", () => {
     const wa = read("src/lib/whatsapp.ts");
     assert.match(wa, /caption:\s*text/, "الصورةُ تُرسَل بلا تعليقٍ ⇒ رسالتان للمشترك");

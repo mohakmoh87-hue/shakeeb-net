@@ -96,10 +96,13 @@ export async function POST(request: Request) {
   const officeId = await resolveOffice(g.session!, parsed.data.officeId ?? null);
   if (officeId === undefined) return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
 
+  // هل لُمست صورةٌ في هذا الحفظ؟ — يُقرّر استرجاعَ المساحة في النهاية
+  let imageTouched = false;
   for (const t of parsed.data.templates) {
     if (officeId != null && t.reset) {
-      // العودة لقالب الوكيل العام: حذف صف تخصيص المكتب
-      await prisma.smsTemplate.deleteMany({ where: { type: t.type, agentId: agentId ?? -1, towerId: officeId } });
+      // العودة لقالب الوكيل العام: حذف صف تخصيص المكتب (حذفٌ صريحٌ لا ناعم — ومعه صورتُه)
+      const gone = await prisma.smsTemplate.deleteMany({ where: { type: t.type, agentId: agentId ?? -1, towerId: officeId } });
+      if (gone.count) imageTouched = true;
       continue;
     }
     const existing = await prisma.smsTemplate.findFirst({
@@ -111,9 +114,36 @@ export async function POST(request: Request) {
         where: { id: existing.id },
         data: { text: t.text, enable: t.enable, ...(t.image === undefined ? {} : { image: t.image?.trim() || null }) },
       });
+      if (t.image !== undefined) imageTouched = true;
     } else {
       await prisma.smsTemplate.create({ data: { type: t.type, text: t.text, enable: t.enable, image: t.image?.trim() || null, agentId, towerId: officeId ?? null } });
     }
+  }
+  // ═════ 🧹 «تُحذف الصورةُ القديمة نهائياً» (طلبُ محمد 2026-08-13) ═════
+  // تبديلُ الصورة `UPDATE` يجعل القديمةَ **بلا مرجع** — لكنّها **لا تزول من القرص**:
+  // بوستغرس يُبقي الصفَّ الميّتَ وقطعَ TOAST القديمة حتى يمرّ عليها الـvacuum. فصورةٌ
+  // بُدّلت عشرَ مرّاتٍ تُخلّف عشرَ نسخٍ محجوزةً على القرص — وهي بعينها ما «تُغلي الفاتورة».
+  // ⇒ فالاسترجاعُ فوريٌّ عند لمسِ صورةٍ (والجدولُ ٧٤ صفّاً فالكلفةُ لا تُذكَر).
+  // 🔑 وهو **أفضل جهدٍ لا شرطُ نجاح**: VACUUM يحتاج ملكيّةَ الجدول، ودورُ العامل ليس
+  //   المالك — فلو فشل، القاعدةُ سليمةٌ والاسترجاعُ يتمّ بالـautovacuum لاحقاً. ولا
+  //   يجوز أن يُفشل حفظَ محمد لأجل تنظيفٍ تجميليّ.
+  if (imageTouched) {
+    await prisma.$executeRawUnsafe("VACUUM (ANALYZE) sms_templates").catch((e: unknown) => {
+      console.warn("[templates] تعذّر استرجاعُ مساحة الصور فوراً — يتولّاها autovacuum:", e instanceof Error ? e.message : e);
+    });
+  }
+  // ═════ 🧹 «تُحذف الصورةُ القديمة نهائياً» (طلبُ محمد 2026-08-13) ═════
+  // تبديلُ الصورة `UPDATE` يجعل القديمةَ **بلا مرجع** — لكنّها **لا تزول من القرص**:
+  // بوستغرس يُبقي الصفَّ الميّتَ وقطعَ TOAST القديمة حتى يمرّ عليها الـvacuum. فصورةٌ
+  // بُدّلت عشرَ مرّاتٍ تُخلّف عشرَ نسخٍ محجوزةً على القرص — وهي بعينها ما «يُغلي الفاتورة».
+  // ⇒ فالاسترجاعُ فوريٌّ عند لمسِ صورةٍ (والجدولُ ٧٤ صفّاً فالكلفةُ لا تُذكَر).
+  // 🔑 وهو **أفضل جهدٍ لا شرطُ نجاح**: VACUUM يحتاج ملكيّةَ الجدول، ودورُ العامل ليس
+  //   المالك — فلو فشل، القاعدةُ سليمةٌ والاسترجاعُ يتمّ بالـautovacuum لاحقاً. ولا
+  //   يجوز أن يُفشل حفظَ محمد لأجل تنظيفٍ تجميليّ.
+  if (imageTouched) {
+    await prisma.$executeRawUnsafe("VACUUM (ANALYZE) sms_templates").catch((e: unknown) => {
+      console.warn("[templates] تعذّر استرجاعُ مساحة الصور فوراً — يتولّاها autovacuum:", e instanceof Error ? e.message : e);
+    });
   }
   return NextResponse.json({ ok: true });
 }

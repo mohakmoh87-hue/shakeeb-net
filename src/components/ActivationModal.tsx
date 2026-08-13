@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { prepareSasEmbed } from "@/lib/sasEmbed";
+import { sasScopedPath } from "@/lib/sasScope";
 import { localSasBase } from "@/lib/localSas";
 import { computeDateTo } from "@/lib/subscription";
 import { announceMoneyChanged } from "@/lib/moneyRefresh";
@@ -40,8 +41,9 @@ function sasUrl(sub: ActSubscriber): string | null {
   if (!sub.towerId || !sub.sasId) return null;
   // 🔴 اللوحةُ في الرابط: بلاها يفتح الوسيطُ حسابَ اللوحة الأولى فيردّ الساسُ
   //   «Access Denied» على مشتركِ اللوحة الثانية (بلاغُ صميم).
-  const q = sub.sasPanelId != null ? `?panel=${sub.sasPanelId}` : "";
-  return `/sas/${sub.towerId}/${q}#/user/activate/${sub.sasId}`;
+  // 🔑 واللوحةُ في **المسار** لا في المعامل: المسارُ ملكُ التبويب ويورَّث لكلّ طلبٍ
+  //   نسبيّ، أمّا المعاملُ فيسقط بعد أوّل تحميلٍ فتعود اللوحةُ للخانة المشتركة.
+  return sasScopedPath(sub.towerId, sub.sasPanelId, `user/activate/${sub.sasId}`);
 }
 // رابط SAS4 الخارجي المباشر (لفتحه بنافذة جديدة عند الحاجة)
 function sasDirectUrl(tower: Tower | undefined, sub: ActSubscriber): string | null {
@@ -135,8 +137,7 @@ export default function ActivationModal({
     if (!subscriber.towerId || !subscriber.sasId) { setFrameSrc(directLink); return; }
     if (localBase) {
       // العاملُ المحليُّ يحقن الرمزَ بنفسه — فيجب أن يعرف **أيَّ لوحةٍ** يُسجّل بها
-      const lq = subscriber.sasPanelId != null ? `?panel=${subscriber.sasPanelId}` : "";
-      setFrameSrc(`${localBase}/sas/${subscriber.towerId}/${lq}#/user/activate/${subscriber.sasId}`);
+      setFrameSrc(localBase + sasScopedPath(subscriber.towerId, subscriber.sasPanelId, `user/activate/${subscriber.sasId}`));
       return;
     }
     const proxied = sasUrl(subscriber);

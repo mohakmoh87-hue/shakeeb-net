@@ -139,10 +139,12 @@ describe("سلسلةُ لوحةِ الساس عند التفعيل — حلقة�
   test("نافذةُ التفعيل: النوعُ يحمل `sasPanelId` والروابطُ الثلاثةُ تُمرّره", () => {
     const src = read("src/components/ActivationModal.tsx");
     assert.ok(/sasPanelId\?: number \| null;/.test(src), "نوعُ المشترك يجب أن يحمل لوحته");
-    // الرابطُ عبر وسيط الموقع
-    assert.ok(/\?panel=\$\{sub\.sasPanelId\}/.test(src), "رابطُ الوسيط السحابيّ بلا `?panel=`");
-    // الرابطُ عبر العامل المحليّ (حاسبةُ المكتب — وهو ما يعمل عليه صميم)
-    assert.ok(/\?panel=\$\{subscriber\.sasPanelId\}/.test(src), "رابطُ العامل المحليّ بلا `?panel=`");
+    // ⚠️ **حُدِّث 2026-08-13**: كان يُلزم الرابطَ بـ`?panel=` — وقد **ارتدّت العلّةُ** بعده،
+    //   لأنّ المعاملَ يسقط بعد أوّل تحميلٍ (اللوحةُ تطبيقٌ أحاديُّ الصفحة) فتعود إلى خانةٍ
+    //   مشتركةٍ بين التبويبات. فصار الشرطُ **المسارَ** (`/sas/43~p11/`): ملكُ التبويب،
+    //   يورَّث لكلّ طلبٍ نسبيّ. وتفصيلُ الحادثة في `tests/sas-two-panels.test.ts`.
+    assert.ok(/sasScopedPath\(sub\.towerId, sub\.sasPanelId/.test(src), "رابطُ الوسيط السحابيّ لا يحمل اللوحةَ في مساره");
+    assert.ok(/sasScopedPath\(subscriber\.towerId, subscriber\.sasPanelId/.test(src), "رابطُ العامل المحليّ لا يحمل اللوحةَ في مساره");
     // تجهيزُ الرمز
     assert.ok(/prepareSasEmbed\(subscriber\.towerId, subscriber\.sasPanelId\)/.test(src),
       "`prepareSasEmbed` تُنادى بلا لوحةٍ ⇒ الكعكةُ تُضبَط على اللوحة الأولى");

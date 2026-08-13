@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import { localSasBase } from "@/lib/localSas";
+import { sasScopedPath } from "@/lib/sasScope";
 
 // hasSas: علامة آمنة من الخادم «المكتب مربوط بـSAS» — اليوزر لا يصل لغير مديري المكاتب
 type Tower = { id: number; name: string | null; loginUrl: string | null; username: string | null; hasSas?: boolean;
@@ -58,7 +59,7 @@ export default function Sas4ImportPage() {
     let active = true;
     // العامل المحلي: يحقن التوكن في اللوحة تلقائياً، فنحمّلها منه مباشرةً (سريع)
     if (localBase) {
-      setFrameUrl(`${localBase}/sas/${towerId}${panelId != null ? `?panel=${panelId}` : ""}#/users/index`);
+      setFrameUrl(localBase + sasScopedPath(towerId, panelId, "users/index"));
     } else {
       // 🔴 بلاغُ محمد 2026-08-13: «الاستيرادُ من الساس الثاني يُظهر مشتركي الساس الأوّل».
       // و`prepareSasEmbed` تجلب الرمزَ بـ`towerId` وحدَه ⇒ الإطارُ يسجّل الدخولَ دائماً بحساب
@@ -75,7 +76,7 @@ export default function Sas4ImportPage() {
           const d = await r.json();
           localStorage.setItem("sas4_jwt", d.token);
           localStorage.setItem("sas4_api_url", d.apiUrl);
-          if (active) setFrameUrl(`/sas/${towerId}${panelId != null ? `?panel=${panelId}` : ""}#/users/index`);
+          if (active) setFrameUrl(sasScopedPath(towerId, panelId, "users/index"));
         } catch { if (active) setFrameUrl(directPanelUrl); }
       })();
     }

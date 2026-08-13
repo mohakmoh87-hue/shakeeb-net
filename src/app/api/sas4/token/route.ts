@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { sasScopeSegment } from "@/lib/sasScope";
 import { guard, ownsTower } from "@/lib/guard";
 import { sasBaseUrl, sasLogin } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
@@ -52,7 +53,9 @@ export async function POST(request: Request) {
     const base = sasBaseUrl(creds.loginUrl);
     const token = await sasLogin(base, creds.username, creds.password);
     // مسار الـ API عبر البروكسي (نفس origin البرنامج)
-    const apiUrl = `/sas/${towerId}/admin/api/index.php/api/`;
+    // 🔑 ومسارُ الـAPI يحمل **اللوحةَ** في مقطعه: فطلباتُ اللوحة الداخليّةُ تصل موسومةً
+    //   بلوحتها، فلا تحتاج كعكةً ولا متغيّراً عامّاً — ولا يطمسها تبويبٌ آخرُ مفتوح.
+    const apiUrl = `/sas/${sasScopeSegment(towerId, panelId)}/admin/api/index.php/api/`;
     const host = creds.loginUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
     const res = NextResponse.json({ token, apiUrl });
     // كوكي المضيف والمكتب لبروكسي /admin/* والتقاط العرض

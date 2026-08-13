@@ -662,6 +662,9 @@ export type ManualSyncStatus = {
   progress?: { label: string; done: number; total: number }; // مؤشّر تقدّم مرئي للمستخدم
   cancel?: boolean; // طلب إلغاء — تفحصه الحلقات وتتوقّف بنظافة
   startedAt: string;
+  // 💓 نبضةُ الحياة: تُحدَّث كلَّ دقيقةٍ ما دامت المزامنةُ **تعمل فعلاً**. وبها يُعرَف
+  //   الميّتُ من البطيء — ولولاها لبقيت الحالةُ «جارية» إلى الأبد إن مات صاحبُها.
+  beatAt?: string;
   finishedAt?: string;
   sync?: SyncResult;
   cards?: FullCardsResult | null;
@@ -672,7 +675,8 @@ const manualStatusKey = (officeId: number) => `manualSync:${officeId}`;
 
 export async function setManualSyncStatus(officeId: number, st: ManualSyncStatus): Promise<void> {
   const type = manualStatusKey(officeId);
-  const text = JSON.stringify(st);
+  // 💓 كلُّ كتابةٍ نبضةٌ: فمَن يكتب حالتَه حيٌّ بالتعريف
+  const text = JSON.stringify({ ...st, beatAt: st.beatAt ?? new Date().toISOString() });
   // `orderBy` صريحٌ: لا فهرسَ فريداً على `type` (وفي الإنتاج مفتاحٌ مكرَّرٌ فعلاً)، فبلاه
   // يقرأ صفّاً ويكتب آخرَ فتضيع الحالةُ بلا سبب ظاهر. وأصغرُ مُعرِّفٍ هو الصفُّ الحاكم.
   const row = await prisma.systemSetting.findFirst({ where: { type }, select: { id: true }, orderBy: { id: "asc" } });
@@ -680,12 +684,61 @@ export async function setManualSyncStatus(officeId: number, st: ManualSyncStatus
   else await prisma.systemSetting.create({ data: { type, text } });
 }
 
+/** بعد هذه المدّة بلا نبضةٍ تُعتبَر المزامنةُ **منقطعة** (مات صاحبُها) لا بطيئة. */
+export const MANUAL_SYNC_DEAD_MS = 5 * 60 * 1000;
+/** فاصلُ النبض — أقصرُ بكثيرٍ من مهلة الموت فلا تُدان مزامنةٌ حيّةٌ بتأخُّرِ نبضةٍ واحدة. */
+const MANUAL_SYNC_BEAT_MS = 60 * 1000;
+
+/** 💓 نبضةٌ جرّاحيّةٌ: تُحدّث `beatAt` **وحدَه** داخل النصّ بلا قراءةِ الحالةِ وكتابتها.
+ *  ولماذا لا نقرأ-فنكتب؟ لأنّ الحلقةَ تكتب `progress` في اللحظة نفسِها — فنبضةٌ ساذجةٌ
+ *  تطمس تقدُّمَها فيرى محمد المؤشّرَ يرتدّ إلى الوراء. و`jsonb_set` يمسّ مفتاحاً واحداً.
+ *  وتُقيَّد بـ`state='running'` كي لا تُحيي حالةً انتهت. */
+async function beatManualSync(officeId: number): Promise<void> {
+  const type = manualStatusKey(officeId);
+  // ⚠️ والصيغةُ **ISO بـ`Z` صريحة** لا `::text` الافتراضيّة: تلك تُخرج «مسافةً بلا منطقة»
+  //   (`2026-08-13 18:47:42.3`) وتُقرأ في جافاسكربت **بتوقيتٍ محلّيّ** — فبغدادُ UTC+3
+  //   تجعل النبضةَ تبدو في المستقبل بثلاث ساعات، فلا تُدان مزامنةٌ ميّتةٌ أبداً وتعود
+  //   العُقدةُ نفسُها من بابٍ آخر. (وهذا ما اصطدتُه قبل النشر لا بعده.)
+  await prisma.$executeRaw`
+    UPDATE system_settings
+       SET text = jsonb_set(text::jsonb, '{beatAt}',
+             to_jsonb(to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))::text
+     WHERE id = (SELECT id FROM system_settings WHERE type = ${type} ORDER BY id ASC LIMIT 1)
+       AND text::jsonb ->> 'state' = 'running'`;
+}
+
 export async function getManualSyncStatus(officeId: number): Promise<ManualSyncStatus | null> {
   const row = await prisma.systemSetting.findFirst({
     where: { type: manualStatusKey(officeId) }, select: { text: true }, orderBy: { id: "asc" },
   });
   if (!row?.text) return null;
-  try { return JSON.parse(row.text) as ManualSyncStatus; } catch { return null; }
+  let st: ManualSyncStatus | null = null;
+  try { st = JSON.parse(row.text) as ManualSyncStatus; } catch { return null; }
+  if (!st) return null;
+
+  // ═════ 🔴 حصادُ المزامنةِ المنقطعة (بلاغُ محمد عن صفاء 2026-08-13) ═════
+  // الحادثة: مكتبُ صفاء بقي `running` **٧٥ ساعةً** — لا تنتهي ولا تتوقّف. والسببُ
+  // بنيويٌّ لا عارض: الحالةُ تُكتب «جارية» في القاعدة، ثمّ يموت صاحبُها (نشرةٌ جديدةٌ،
+  // إعادةُ تشغيل، انهيار) — **وليس في الشيفرة شيءٌ يحصد راية**. فتبقى إلى الأبد:
+  //   • الواجهةُ تستطلع فترى «جارية» ⇒ دوّارةٌ لا تقف، وزرُّ «مزامنة الآن» **مُعطَّل**.
+  //   • وزرُّ «إيقاف» يرفع `cancel: true` — والإلغاءُ **تعاونيّ**، فلا حلقةَ حيّةً تقرؤه.
+  //   ⇒ لا تنتهي ولا تتوقّف ولا تُبدأ من جديد. عُقدةٌ مُحكَمة.
+  // 🔑 والحلُّ نبضةٌ لا مهلةٌ من البداية: `startedAt` لا يُفرّق بين مزامنةٍ طويلةٍ حيّةٍ
+  //   وأخرى ميّتة، أمّا انقطاعُ النبض فدليلُ موتٍ قاطع.
+  // وتُكتب النتيجةُ **مرّةً واحدةً** فتشفى الحالةُ ذاتيّاً لكلّ من يفتح الصفحة بعدها.
+  if (st.state === "running") {
+    const last = new Date(st.beatAt ?? st.startedAt).getTime();
+    if (Number.isFinite(last) && Date.now() - last > MANUAL_SYNC_DEAD_MS) {
+      const mins = Math.round((Date.now() - last) / 60000);
+      const dead: ManualSyncStatus = {
+        state: "error", startedAt: st.startedAt, finishedAt: new Date().toISOString(),
+        error: `انقطعت المزامنة (توقّف الخادم أو أُعيد نشرُه) — بلا أثرٍ منها منذ ${mins} دقيقة. اضغط «🔄 مزامنة الآن» لإعادتها.`,
+      };
+      await setManualSyncStatus(officeId, dead).catch(() => {});
+      return dead;
+    }
+  }
+  return st;
 }
 
 /** مهلةُ اعتبارِ المزامنةِ عالقةً — بعدها يُسمح ببدءٍ جديدٍ ولو بقيت الحالةُ «جارية». */
@@ -931,6 +984,10 @@ function buildManualReportText(sync: SyncResult, cards: FullCardsResult | null):
 // المنسّق الخلفي للمزامنة اليدوية — يُستدعى بلا انتظار من مسار الزر، والواجهة تستطلع الحالة
 export async function runManualSync(officeId: number): Promise<void> {
   const startedAt = new Date().toISOString();
+  // 💓 نبضةٌ كلَّ دقيقةٍ ما دُمنا أحياء — وهي **كلُّ الفرق** بين مزامنةٍ بطيئةٍ وأخرى ماتت.
+  //   ولا تُفكّ إلّا في `finally`: فلو انتهت الدالّةُ بأيّ طريقٍ (نجاحٍ أو رميةٍ) توقّف
+  //   النبضُ فوراً، ولو مات العمليّةُ كلُّها توقّف بموتها — وهو المطلوبُ بعينه.
+  const beat = setInterval(() => { void beatManualSync(officeId).catch(() => {}); }, MANUAL_SYNC_BEAT_MS);
   try {
     await setManualSyncStatus(officeId, { state: "running", step: "sync", startedAt });
 
@@ -943,6 +1000,18 @@ export async function runManualSync(officeId: number): Promise<void> {
 
     if (sync.error) {
       await setManualSyncStatus(officeId, { state: "done", startedAt, finishedAt: new Date().toISOString(), sync, cards: null });
+      return;
+    }
+
+    // ⏹ «ولا يمكنه إيقافها»: الإلغاءُ كان يُفحَص **داخل فحص الكروت وحدَه**، فمَن ضغط
+    //   «إيقاف» في المرحلة الأولى (وهي الأطولُ: ١٢٠ يوماً من الساس) لا يُستجاب له
+    //   إطلاقاً — بل يمضي البرنامجُ إلى فحصِ كلّ الكروت ثمّ تقريرِ واتساب. فصار الطلبُ
+    //   يُحترَم عند **أوّل حدٍّ يُمكن الوقوفُ عنده**: قبل الدخول في المرحلة الثانية.
+    const askedStop = await getManualSyncStatus(officeId);
+    if (askedStop?.cancel) {
+      await setManualSyncStatus(officeId, {
+        state: "done", startedAt, finishedAt: new Date().toISOString(), sync, cards: null,
+      });
       return;
     }
 
@@ -980,5 +1049,7 @@ export async function runManualSync(officeId: number): Promise<void> {
       state: "error", startedAt, finishedAt: new Date().toISOString(),
       error: (e as Error).message || "فشل غير متوقّع في المزامنة",
     }).catch(() => { /* حتى كتابة الحالة تعذّرت — لا شيء يُفعل */ });
+  } finally {
+    clearInterval(beat); // 💓 يتوقّف النبضُ بانتهاء العمل — بأيّ طريقٍ انتهى
   }
 }

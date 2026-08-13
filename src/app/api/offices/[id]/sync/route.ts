@@ -59,6 +59,9 @@ export async function DELETE(
   const { id } = await params;
   const g = await guardOffice(id);
   if ("error" in g) return g.error;
+  // ملاحظة: `getManualSyncStatus` يحصد المنقطعةَ ويُرجعها `error` — فالحالةُ «الجارية»
+  // هنا حيّةٌ بنبضها، والإلغاءُ التعاونيُّ صالحٌ لها. أمّا الميّتةُ فقد أُنهيت سلفاً
+  // بالقراءة، فيُجاب «لم تكن جارية» وقد انفكّ القفلُ فعلاً — لا رايةٌ تُرفَع لمن لا يقرؤها.
   const st = await getManualSyncStatus(g.towerId);
   if (!st || st.state !== "running") return NextResponse.json({ ok: true, wasRunning: false });
   await setManualSyncStatus(g.towerId, { ...st, cancel: true });

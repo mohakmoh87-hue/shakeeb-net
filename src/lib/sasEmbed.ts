@@ -1,5 +1,7 @@
 "use client";
 
+import { sasScopedPath } from "@/lib/sasScope";
+
 // تجهيز تسجيل الدخول التلقائي للوحة SAS4 المضمّنة (عبر البروكسي):
 // يجلب توكن SAS4 ويحقنه في localStorage (نفس origin البرنامج) قبل تحميل الإطار.
 export async function prepareSasEmbed(towerId: number, panelId?: number | null): Promise<boolean> {
@@ -25,6 +27,5 @@ export async function prepareSasEmbed(towerId: number, panelId?: number | null):
 
 // رابط الصفحة المضمّنة عبر البروكسي (نفس origin)
 export function sasProxyHash(towerId: number, hash: string, panelId?: number | null): string {
-  const q = panelId != null ? `?panel=${panelId}` : "";
-  return `/sas/${towerId}/${q}#/${hash.replace(/^#?\/?/, "")}`;
+  return sasScopedPath(towerId, panelId, hash); // اللوحةُ في المسار — لا خانةَ مشتركةً تُتقاتَل
 }

@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs";
 import type { Client as WAClient } from "whatsapp-web.js";
 import { prisma } from "@/lib/prisma";
+import { scrubRelayImage } from "@/lib/relayScrub"; // 🧹 نزعُ الصورة من صفّ الترحيل بعد تنفيذه
 
 // ===== خدمة واتساب ويب متعددة المكاتب (whatsapp-web.js) =====
 // عميل مستقل لكل مكتب (officeId)، يبقى حيّاً عبر إعادة تحميل الوحدات عبر globalThis.
@@ -676,7 +677,9 @@ export async function relayRequest(
   if (cur?.status === "running") {
     return { ok: false, error: "انتهت المهلة والتنفيذ جارٍ على حاسبة المكتب — قد تكون الرسالة قد وصلت" };
   }
-  await prisma.waRelay.update({ where: { id: row.id }, data: { status: "error", error: "timeout" } }).catch(() => {});
+  // 🧹 والصورةُ تُنزَع هنا أيضاً: الطلبُ **لن يُنفَّذ**، فلا معنى لبقاء ٤٠٠ كيلوبايتٍ
+  //   في الصفّ خمسَ دقائقَ إلى أن يمسحه المنظِّف.
+  await prisma.waRelay.update({ where: { id: row.id }, data: { status: "error", error: "timeout", params: scrubRelayImage(row.params) } }).catch(() => {});
   return { ok: false, error: "انتهت المهلة — تأكّد أن وكيل المكتب متصل" };
 }
 
@@ -745,11 +748,11 @@ export function startWaRelayPoller() {
             try {
               const sp = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { op?: string; page?: number; count?: number };
               const result = await runSasOp(relayRow.towerId, sp.op ?? "", sp);
-              await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "done", result: JSON.stringify(result) } });
+              await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "done", result: JSON.stringify(result), params: scrubRelayImage(relayRow.params) } });
             } catch (e) {
               const detail = e instanceof Error ? (e.stack || `${e.name}: ${e.message}`) : String(e);
               console.error(`[wa-relay] فشل sas مكتب ${relayRow.towerId}:`, detail);
-              await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "error", error: detail.slice(0, 1500) } }).catch(() => {});
+              await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "error", error: detail.slice(0, 1500), params: scrubRelayImage(relayRow.params) } }).catch(() => {});
             }
           })();
           continue;
@@ -769,11 +772,20 @@ export function startWaRelayPoller() {
           else if (relayRow.kind === "media") result = await downloadOfficeMedia(relayRow.towerId, p.msgId ?? "");
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
           else if (relayRow.kind === "sas") result = await runSasOp(relayRow.towerId, p.op ?? "", p);
-          await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "done", result: JSON.stringify(result) } });
+          // 🧹 **الصورةُ تُمسَح من صفّ الترحيل لحظةَ التنفيذ** (طلبُ محمد 2026-08-13):
+          //   الصفُّ يحمل نسخةَ base64 كاملةً لكلّ رسالة، وكان يبقى **حتى تنظيفِ الخمس
+          //   دقائق** — فآلافُ الرسائل تعني آلافَ النسخ تمرّ على القاعدة وتُغلي الفاتورة.
+          //   والصورةُ بعد الإرسال **بلا فائدةٍ إطلاقاً**: أُرسلت، والأصلُ محفوظٌ في القالب.
+          await prisma.waRelay.update({
+            where: { id: relayRow.id },
+            data: { status: "done", result: JSON.stringify(result), params: scrubRelayImage(relayRow.params) },
+          });
         } catch (e) {
           const detail = e instanceof Error ? (e.stack || `${e.name}: ${e.message}`) : (() => { try { return JSON.stringify(e); } catch { return String(e); } })();
           console.error(`[wa-relay] فشل ${relayRow.kind} مكتب ${relayRow.towerId}:`, detail);
-          await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "error", error: String(detail).slice(0, 1500) } }).catch(() => {});
+          // وتُمسَح الصورةُ عند الفشل أيضاً — فالصفُّ الفاشلُ **لا يُعاد تنفيذه** (يُنظَّف
+          // بعد خمس دقائق)، فإبقاءُ ٤٠٠ كيلوبايتٍ فيه كلفةٌ بلا مقابلٍ أصلاً.
+          await prisma.waRelay.update({ where: { id: relayRow.id }, data: { status: "error", error: String(detail).slice(0, 1500), params: scrubRelayImage(relayRow.params) } }).catch(() => {});
         }
       }
       // تنظيف الطلبات القديمة (منجزة أو فاشلة) الأقدم من 5 دقائق
