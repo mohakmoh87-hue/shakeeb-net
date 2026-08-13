@@ -67,7 +67,7 @@ import { baghdadDayKey } from "./attendance";
 async function earliestUnsettledKey(technicianId: number, accountId: number | null): Promise<string | null> {
   const [att, lv, adj, mt] = await Promise.all([
     prisma.attendance.findFirst({ where: { ...{ technicianId }, salaryStatementId: null }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
-    prisma.leave.findFirst({ where: { ...{ technicianId, status: "approved" }, salaryStatementId: null }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
+    prisma.leave.findFirst({ where: { ...{ technicianId, status: "approved" }, isDeleted: false, salaryStatementId: null }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
     prisma.adjustment.findFirst({ where: { ...{ technicianId, status: "confirmed" }, salaryStatementId: null }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
     accountId
       ? prisma.moneyTx.findFirst({ where: { accountId, isDeleted: false, salaryStatementId: null }, orderBy: { date: "asc" }, select: { date: true } })
@@ -139,7 +139,7 @@ export async function statementForTechnician(
 
   const [att, leaves, adj, money] = await Promise.all([
     prisma.attendance.findMany({ where: { technicianId, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true, lateExcuse: true } }),
-    prisma.leave.findMany({ where: { technicianId, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
+    prisma.leave.findMany({ where: { technicianId, isDeleted: false, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
     prisma.adjustment.findMany({ where: { technicianId, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
     accountId
       ? prisma.moneyTx.findMany({ where: { accountId, isDeleted: false, salaryStatementId: null, ...(dateRange ? { date: dateRange } : {}) }, select: { id: true, date: true, moneyIn: true, moneyOut: true, notes: true } })
@@ -258,10 +258,29 @@ export function computeSalary(
     dayDetails.push({ date: a.dayKey, amount: dm, note: notes.length ? notes.join("، ") : "بصمة سليمة" });
   }
 
+  // ═════ 🔴 أ-٨ · يومٌ واحدٌ لا يُدفَع مرّتَين (2026-08-13) ═════
+  // كانت حلقةُ الحضور تزيد `daysPaid` لكلّ بصمة، وحلقةُ الإجازة تزيده **ثانيةً** لإجازةٍ
+  // مدفوعةٍ في **اليوم نفسِه** — بلا أيّ تقاطعٍ بينهما. ولا شيءَ يمنع الحالةَ: البصمةُ
+  // (`field/attendance`) **خاليةٌ من أيّ فحصِ إجازة** (قِيس: صفرُ ذكرٍ للإجازة فيها)،
+  // فالفنيُّ في إجازةٍ مدفوعةٍ إن بصم أخذ **أجرَ يومَين عن يومٍ واحد**.
+  // ⇒ الحضورُ يغلب: عملٌ حقيقيٌّ يُدفَع، والإجازةُ المدفوعةُ في ذلك اليوم **تُعرَض ولا
+  //   تُحتسَب** — وتُذكَر بسببها صريحاً فلا يظنّ أحدٌ أنّ يوماً سقط سهواً.
+  // ⚠️ ولا أثرَ رجعيَّ: الراتبُ لا يقرأ إلّا الصفوفَ غيرَ المختومة بكشف
+  //   (`salaryStatementId: null`)، فالكشوفُ المُسدَّدةُ لا تتغيّر بحرف.
+  const attendedDays = new Set(
+    attendances.filter((a) => a.checkIn && a.dayKey && inPeriod(a.dayKey)).map((a) => a.dayKey),
+  );
+
   for (const l of leaves) {
     if (l.status !== "approved" || !inPeriod(l.dayKey)) continue;
     keys.push(l.dayKey);
-    if (l.kind === "day" && l.paid) {
+    if (l.kind === "day" && l.paid && attendedDays.has(l.dayKey)) {
+      // إجازةٌ مدفوعةٌ ويومُها مبصومٌ ⇒ تُعرَض بصفرٍ ويُقال السبب
+      items.push({
+        date: l.dayKey, type: "leave-paid-skipped", label: "إجازة براتب (لم تُحتسب — حضرَ في هذا اليوم)",
+        amount: 0, reason: l.reason,
+      });
+    } else if (l.kind === "day" && l.paid) {
       const dm = dailyAmountFor(salary, l.dayKey);
       baseEarned += dm; daysPaid++;
       items.push({ date: l.dayKey, type: "leave-paid", label: "إجازة براتب", amount: dm, reason: l.reason });

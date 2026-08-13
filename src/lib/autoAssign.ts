@@ -60,7 +60,7 @@ export async function eligibleTechnicians(officeId: number | null, agentTowers: 
   // الإجازات المعتمَدة اليوم: يوم كامل ⇒ مستبعَد؛ زمنية ⇒ مستبعَد أثناءها فقط
   const nowMin = baghdadMinutesOfDay(new Date());
   const leaves = await prisma.leave.findMany({
-    where: { technicianId: { in: [...present] }, status: "approved", dayKey },
+    where: { technicianId: { in: [...present] }, status: "approved", isDeleted: false, dayKey },
     select: { technicianId: true, kind: true, startMin: true, endMin: true },
   });
   const onLeave = new Set<number>();

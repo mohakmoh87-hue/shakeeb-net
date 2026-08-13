@@ -234,3 +234,51 @@ describe("ب-٠٠ · مواصفةٌ لم تُبنَ بعد (تُفعَّل بن�
   test("«ما سحبه» يطرح المقبوضات (manager-accounts:66)", { todo: "ب-٠٠ · عالية" }, () => {});
   test("`/api/money` يرفض الكسر العشريّ (`.int()`)", { todo: "ب-٠٠ · جذرُ الكسر" }, () => {});
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// أ-٨ · يومٌ واحدٌ لا يُدفَع مرّتَين — إجازةٌ مدفوعةٌ + بصمةٌ في اليوم نفسِه.
+// كانت حلقةُ الحضور تزيد `daysPaid` وحلقةُ الإجازة تزيده ثانيةً لليوم نفسِه بلا أيّ
+// تقاطع، و**البصمةُ خاليةٌ من أيّ فحصِ إجازة** ⇒ أجرُ يومَين عن يومٍ واحد.
+describe("أ-٨ · إجازةٌ مدفوعةٌ في يومٍ مبصومٍ لا تُحتسَب مرّتَين", () => {
+  const paidLeave = (n: number): SalaryLeave => ({
+    dayKey: day(n), kind: "day", paid: true, status: "approved", reason: "مرض",
+  });
+
+  test("بصمةٌ + إجازةٌ مدفوعةٌ في اليوم نفسِه ⇒ يومٌ واحدٌ لا يومان", () => {
+    const both = run(500_000, [present(1)], { leaves: [paidLeave(1)] });
+    const onlyAtt = run(500_000, [present(1)]);
+    assert.equal(both.daysPaid, 1, "يومٌ واحدٌ فقط — وكان يُحتسب يومَين");
+    assert.equal(both.baseEarned, onlyAtt.baseEarned, "والمبلغُ مبلغُ الحضور وحدَه");
+    assert.equal(both.net, onlyAtt.net);
+  });
+
+  test("والإجازةُ تُعرَض بصفرٍ وبسببِ عدمِ احتسابها — لا تُحجَب", () => {
+    const r = run(500_000, [present(1)], { leaves: [paidLeave(1)] });
+    const line = r.items.find((i) => i.type === "leave-paid-skipped");
+    assert.ok(line, "يجب أن يبقى سطرُ الإجازة ظاهراً — الحجبُ يُوهم أنّ يوماً سقط سهواً");
+    assert.equal(line!.amount, 0);
+    assert.equal(line!.reason, "مرض", "وسببُ الإجازة يبقى مكتوباً");
+    assert.ok(!r.items.some((i) => i.type === "leave-paid"), "ولا يُكتَب سطرُ احتسابٍ لها");
+  });
+
+  test("إجازةٌ مدفوعةٌ في يومٍ **غيرِ** مبصومٍ تُحتسَب كما كانت (لا انحدار)", () => {
+    const r = run(500_000, [present(1)], { leaves: [paidLeave(5)] });
+    assert.equal(r.daysPaid, 2, "يومُ حضورٍ + يومُ إجازةٍ مدفوعة");
+    assert.ok(r.items.some((i) => i.type === "leave-paid"), "وتُكتَب سطرَ احتساب");
+    assert.equal(r.dayDetails.filter((d) => d.note === "إجازة براتب").length, 1);
+  });
+
+  test("إجازةٌ **بلا راتبٍ** في يومٍ مبصومٍ لا تُمَسّ (لم تكن تُحتسَب أصلاً)", () => {
+    const unpaid: SalaryLeave = { dayKey: day(1), kind: "day", paid: false, status: "approved", reason: "خاصّ" };
+    const r = run(500_000, [present(1)], { leaves: [unpaid] });
+    assert.equal(r.daysPaid, 1);
+    assert.ok(r.items.some((i) => i.type === "leave-unpaid"));
+  });
+
+  test("إجازةٌ غيرُ معتمدةٍ لا أثرَ لها بحالٍ", () => {
+    const pending: SalaryLeave = { dayKey: day(2), kind: "day", paid: true, status: "pending", reason: "طلب" };
+    const r = run(500_000, [present(1)], { leaves: [pending] });
+    assert.equal(r.daysPaid, 1);
+    assert.equal(r.items.filter((i) => i.type.startsWith("leave")).length, 0);
+  });
+});
