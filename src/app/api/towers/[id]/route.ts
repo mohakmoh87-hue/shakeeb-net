@@ -65,6 +65,11 @@ export async function PUT(
   const before = g.session?.isAdmin
     ? await prisma.tower.findUnique({ where: { id: Number(id) }, select: { loanEnabled: true } })
     : null;
+  // 🔴 قيمُ الساس **قبل** التعديل — تلزم المرآةَ أدناه كي تنسخ ما **تغيّر فعلاً** لا ما أُرسل
+  const prevSas = await prisma.tower.findUnique({
+    where: { id: Number(id) },
+    select: { loginUrl: true, username: true, password: true, activationTemplate: true },
+  });
 
   // إعداد القرض للمدير حصراً. loanPass يُشفَّر؛ والفراغ لا يمحو القديم (يُحفظ لإعادة التفعيل).
   const data = { ...parsed.data };
@@ -93,11 +98,19 @@ export async function PUT(
   //    يُخرِّب عملَها. وتُنسَخ **الحقولُ المُرسَلةُ وحدَها** فلا يُفرَّغ ما لم يُعدَّل.
   //    وكلمةُ المرور الفارغةُ **لا تُنسَخ**: طمسُ كلمةِ لوحةٍ عاملةٍ يوقف التفعيلَ عليها،
   //    والفراغُ في نموذجٍ لم يُعَد كتابتُه أكثرُ احتمالاً من نيّةِ المحو.
+  // 🔴 **علّةٌ اصطادها تدقيقٌ عدائيٌّ في مرآةٍ أضفتُها قبل ساعة**: كانت تنسخ **كلَّ حقلٍ
+  // مُرسَلٍ** لا كلَّ حقلٍ **تغيّر**. ونموذجُ المكتب يُرسل حقولَه كاملةً في كلّ حفظ ⇒ فمَن
+  // يُعدّل اسمَ المكتب وحدَه كان **يطمس رابطَ لوحته العاملَ** بقيمة العمود القديمة.
+  // وهو عينُ ما كان سيقع لصميم: العمودُ كان يحمل رابطاً قديماً واللوحةُ الرابطَ العامل.
+  // ⇒ لا يُنسَخ إلّا ما **اختلف عن قيمته السابقة** — فحفظٌ لا يُغيّر الساسَ لا يمسّ اللوحة.
+  const changed = (k: "loginUrl" | "username" | "activationTemplate") =>
+    k in parsed.data && (parsed.data[k] ?? null) !== (prevSas?.[k] ?? null);
   const sasMirror: Record<string, string | null> = {};
-  if ("loginUrl" in parsed.data) sasMirror.loginUrl = parsed.data.loginUrl ?? null;
-  if ("username" in parsed.data) sasMirror.username = parsed.data.username ?? null;
-  if ("activationTemplate" in parsed.data) sasMirror.activationTemplate = parsed.data.activationTemplate ?? null;
-  if (parsed.data.password) sasMirror.password = parsed.data.password;
+  if (changed("loginUrl")) sasMirror.loginUrl = parsed.data.loginUrl ?? null;
+  if (changed("username")) sasMirror.username = parsed.data.username ?? null;
+  if (changed("activationTemplate")) sasMirror.activationTemplate = parsed.data.activationTemplate ?? null;
+  // وكلمةُ المرور: تُنسَخ إن أُرسلت **واختلفت** — والفارغةُ لا تُنسَخ أبداً (لا تُطمَس عاملةٌ)
+  if (parsed.data.password && parsed.data.password !== (prevSas?.password ?? null)) sasMirror.password = parsed.data.password;
   if (Object.keys(sasMirror).length) {
     // `updateMany` لا `update`: مكتبٌ بلا لوحةٍ أولى (لم تُنشأ له لوحاتٌ بعدُ) لا يُخطئ
     await prisma.sasPanel.updateMany({
