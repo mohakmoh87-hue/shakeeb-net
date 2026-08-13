@@ -1,0 +1,75 @@
+# قياسُ استخدام Railway (مزوّدُ الإنتاج) وإرسالُه للوحة المالك.
+#
+# لماذا: لوحةُ المالك كانت تعرض قياسَ **أزور** تحت عنوانِ «استخدامُ الاستضافة»، وأزور
+# صار احتياطيّاً خامداً بعد النقل ليلةَ 2026-08-12 ⇒ رقمٌ مطمئنٌّ لا علاقةَ له بما يعمل.
+#
+# ⚠️ **ولا كلفةَ بالدولار**: واجهةُ Railway (`estimatedUsage`) تُرجع وحداتٍ خامّاً ولا
+# تُرجع كلفةً — لا قيمةَ `COST` في `MetricMeasurement` (قِيس بالاستكشاف الحيّ للمخطَّط).
+# فتُرسَل الوحداتُ كما قِيست، والكلفةُ تُقرأ من لوحة Railway. رقمٌ ناقصٌ صادقٌ خيرٌ
+# من رقمٍ كاملٍ مُختلق.
+#
+# الأسرارُ المطلوبة: CRON_SECRET (موجود) · APP_BASE_URL (موجود) · **RAILWAY_TOKEN (يُضاف)**
+# وبلا `RAILWAY_TOKEN` **تفشل المهمّةُ بصوتٍ** ولا تُرسل أصفاراً — فالصفرُ الصامتُ هو
+# عينُ العلّة التي يُصلحها هذا البند.
+name: railway-usage
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "40 3 * * *" # 03:40 UTC يومياً (~06:40 بغداد) — بعد مهمّة أزور بعشرين دقيقة
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: قياسُ Railway وإرسالُه
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: 9f5bbeb9-12d4-47b3-a0d5-520d8fd12f37
+        run: |
+          set -euo pipefail
+          if [ -z "${RAILWAY_TOKEN:-}" ]; then
+            echo "⛔ السرُّ RAILWAY_TOKEN غيرُ مضبوطٍ في GitHub — لا قياس."
+            echo "   يُضاف من: Settings ← Secrets and variables ← Actions ← New repository secret"
+            exit 1
+          fi
+
+          # `estimatedUsage` = المتوقَّعُ في نهاية دورة الفوترة الحاليّة، بوحداتِ كلّ قياس
+          read -r -d '' Q <<'GQL' || true
+          query($p:String!,$m:[MetricMeasurement!]!){
+            estimatedUsage(projectId:$p, measurements:$m){ measurement estimatedValue }
+          }
+GQL
+          BODY=$(jq -nc --arg q "$Q" --arg p "$RAILWAY_PROJECT_ID" \
+            '{query:$q, variables:{p:$p, m:["CPU_USAGE","MEMORY_USAGE_GB","DISK_USAGE_GB","NETWORK_TX_GB","NETWORK_RX_GB","BACKUP_USAGE_GB"]}}')
+
+          RESP=$(curl -sS -m 45 "https://backboard.railway.com/graphql/v2" \
+                 -H "Content-Type: application/json" \
+                 -H "Project-Access-Token: $RAILWAY_TOKEN" \
+                 -d "$BODY")
+          echo "$RESP" | jq -e '.errors == null' >/dev/null || { echo "⛔ خطأٌ من Railway: $(echo "$RESP" | jq -c .errors)"; exit 1; }
+
+          # ترجمةُ أسماء القياسات إلى عربيّةٍ ووحداتٍ — ما لم يُعرَف يُمرَّر باسمه الخام
+          GAUGES=$(echo "$RESP" | jq -c '[.data.estimatedUsage[]
+            | {key: .measurement, value: .estimatedValue}
+            | . + (if   .key=="CPU_USAGE"       then {label:"المعالج",         unit:"vCPU·دقيقة"}
+                   elif .key=="MEMORY_USAGE_GB" then {label:"الذاكرة",         unit:"GB·دقيقة"}
+                   elif .key=="DISK_USAGE_GB"   then {label:"القرص",           unit:"GB·دقيقة"}
+                   elif .key=="NETWORK_TX_GB"   then {label:"صادرُ الشبكة",     unit:"GB"}
+                   elif .key=="NETWORK_RX_GB"   then {label:"واردُ الشبكة",     unit:"GB"}
+                   elif .key=="BACKUP_USAGE_GB" then {label:"النسخُ الاحتياطيّة", unit:"GB"}
+                   else {label:.key, unit:""} end)]')
+
+          PAYLOAD=$(jq -nc --argjson g "$GAUGES" --arg m "$(date -u +%Y-%m)" \
+            '{provider:"railway", month:$m, source:"railway-graphql", gauges:$g}')
+
+          code=$(curl -sS -o /tmp/resp -w "%{http_code}" -m 45 -X POST "$APP_BASE_URL/api/owner/hosting-usage" \
+                 -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" \
+                 -d "$PAYLOAD" || echo 000)
+          echo "الاستجابة: $code $(cat /tmp/resp | head -c 400)"
+          [ "$code" = "200" ] || exit 1

@@ -7,7 +7,15 @@ import { usePolling } from "@/lib/usePolling";
 type Manager = { id: number; username: string; plainPassword: string | null };
 type DbSize = { dbHost?: string; dbName?: string; usedMB: number; freeMB?: number; limitMB: number; percent: number; totalRows?: number; tableCount?: number; level: "ok" | "warn" | "danger"; connUsed?: number; connApp?: number; connMax?: number; connLevel?: "ok" | "warn" | "danger"; topTables: { table: string; mb: number; rows: number }[] };
 type Metric = { used: number; limit: number; freePct: number; remaining?: number };
-type HostUsage = { hasData: boolean; month: string; updatedAt: string | null; requests: Metric; vcpuSeconds: Metric | null; gibSeconds: Metric | null };
+// أ-٢٠ · مزوّدٌ واحدٌ لكلّ صفّ، ومعه **دورُه** — فالرقمُ بلا دورٍ كان يُقرأ على غير معناه
+type Gauge = { key: string; label: string; value: number; unit: string };
+type ProviderUsage = {
+  id: string; label: string; role: string; primary: boolean;
+  hasData: boolean; updatedAt: string | null; source: string | null;
+  gauges: Gauge[];
+  legacy: { requests: Metric; vcpuSeconds: Metric | null; gibSeconds: Metric | null } | null;
+};
+type HostUsage = { providers?: ProviderUsage[]; hasData: boolean; month: string; updatedAt: string | null; requests: Metric; vcpuSeconds: Metric | null; gibSeconds: Metric | null };
 type Agent = {
   id: number; name: string; officeCap: number; planExpiry: string | null;
   maxManagers: number; maxUsers: number; maxTechnicians: number; maxSubscribers: number;
@@ -37,7 +45,7 @@ export default function OwnerPage() {
   const [dbSize, setDbSize] = useState<DbSize | null>(null); // مؤشّر حجم قاعدة البيانات
   const [dbSizeAt, setDbSizeAt] = useState<Date | null>(null); // وقت آخر قراءة للحجم
   const [showDbDetail, setShowDbDetail] = useState(false);
-  const [host, setHost] = useState<HostUsage | null>(null); // استخدام الاستضافة (Azure)
+  const [host, setHost] = useState<HostUsage | null>(null); // استخدامُ الاستضافة لكلّ مزوّدٍ بدوره (أ-٢٠)
 
   const load = useCallback(() => {
     fetch("/api/owner/agents").then((r) => r.ok ? r.json() : { agents: [] }).then((d) => { setAgents(d.agents ?? []); setLoading(false); });
@@ -235,49 +243,93 @@ export default function OwnerPage() {
         </div>
       )}
 
-      {/* مؤشّر استخدام الاستضافة (Azure) مقابل المنحة المجانية الشهرية */}
-      {host && (
-        <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-bold text-slate-800">☁️ استخدام الاستضافة (Azure)
-              <span className="mr-2 text-[11px] font-normal text-slate-400">آخر 24 ساعة · من المنحة الشهرية المجانية</span>
-            </div>
-            <div className="text-sm font-extrabold text-emerald-600" dir="ltr">
-              {host.requests.used.toLocaleString("en-US")} / {(host.requests.limit / 1_000_000)}M طلب
-              <span className="text-slate-400"> ({host.requests.freePct}%)</span>
-            </div>
-          </div>
-          {!host.hasData && (
-            <div className="mt-1 text-[11px] text-amber-600">لم يصل قياس بعد — يُحدَّث تلقائياً يومياً من Azure.</div>
-          )}
-          {/* شريط الطلبات */}
-          <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-slate-200" dir="ltr">
-            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, Math.max(host.requests.used > 0 ? 1 : 0, host.requests.freePct))}%` }} />
-          </div>
-          {/* خانات: الطلبات المتبقية + المعالج + الذاكرة */}
-          <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-            <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
-              <div className="text-[10px] text-slate-400">الطلبات المتبقية</div>
-              <div className="text-sm font-extrabold text-slate-700" dir="ltr">{(host.requests.remaining ?? 0).toLocaleString("en-US")}</div>
-            </div>
-            <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
-              <div className="text-[10px] text-slate-400">ثواني المعالج</div>
-              <div className="text-sm font-extrabold text-slate-700" dir="ltr">
-                {host.vcpuSeconds ? `${host.vcpuSeconds.used.toLocaleString("en-US")} / ${(host.vcpuSeconds.limit / 1000)}K` : "—"}
+      {/* ═════ أ-٢٠ · استخدامُ الاستضافة — كلُّ مزوّدٍ باسمه ودوره ═════
+          كان هنا مؤشّرٌ واحدٌ عنوانُه «استخدامُ الاستضافة (Azure)» يعرض قياسَ أزور مقابل
+          منحتِه المجانيّة. والإنتاجُ انتقل إلى Railway ليلةَ 2026-08-12 وأزور صار احتياطيّاً
+          خامداً ⇒ الرقمُ صادقٌ في نفسه ومضلِّلٌ في موضعه: محمدٌ يرى «٠ من ٢ مليون» فيطمئنّ
+          إلى استضافةٍ لا تخدم أحداً، وما يعمل فعلاً **لا يُقاس إطلاقاً**.
+          فصار لكلّ مزوّدٍ صفُّه ودورُه: الإنتاجُ أوّلاً، والاحتياطيُّ موسومٌ بذلك.
+          ⚠️ ولا كلفةَ بالدولار: واجهةُ Railway تُرجع وحداتٍ ولا تُرجع كلفةً (قِيس بالاستكشاف
+          الحيّ: لا قيمةَ COST في MetricMeasurement) — فتُعرَض الوحداتُ كما قِيست. */}
+      {host?.providers?.length ? (
+        <div className="mb-5 space-y-3">
+          {host.providers.map((p) => (
+            <div key={p.id} className={`rounded-2xl border bg-white p-4 shadow-sm ${p.primary ? "border-mynet-blue/40" : "border-slate-200"}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-bold text-slate-800">
+                  ☁️ {p.label}
+                  <span className={`mr-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${p.primary ? "bg-mynet-blue/10 text-mynet-blue" : "bg-slate-100 text-slate-500"}`}>
+                    {p.role}
+                  </span>
+                </div>
+                {p.updatedAt && (
+                  <div className="text-[10px] text-slate-400">
+                    آخر قياس: {new Date(p.updatedAt).toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                )}
               </div>
+
+              {/* لا قياسَ ⇒ تُقال صريحةً. والصفرُ الصامتُ كان يُقرأ اطمئناناً */}
+              {!p.hasData && (
+                <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700">
+                  لا قياسَ لهذا الشهر بعد.
+                  {p.id === "railway" && <> يلزمه سرُّ <span dir="ltr" className="font-mono">RAILWAY_TOKEN</span> في GitHub — ومهمّةُ <span dir="ltr" className="font-mono">railway-usage</span> تفشل بصوتٍ بلاه ولا تُرسل أصفاراً.</>}
+                </div>
+              )}
+
+              {/* قياساتٌ عامّةٌ بوحداتها (Railway) */}
+              {p.gauges.length > 0 && (
+                <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                  {p.gauges.map((g) => (
+                    <div key={g.key} className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
+                      <div className="text-[10px] text-slate-400">{g.label}</div>
+                      <div className="text-sm font-extrabold text-slate-700" dir="ltr">
+                        {g.value.toLocaleString("en-US")} <span className="text-[10px] font-normal text-slate-400">{g.unit}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {p.gauges.length > 0 && (
+                <div className="mt-1.5 text-[10px] text-slate-400">
+                  متوقَّعٌ في نهاية دورة الفوترة. والكلفةُ بالدينار/الدولار تُقرأ من لوحة Railway — واجهتُها البرمجيّة لا تُرجعها.
+                </div>
+              )}
+
+              {/* أزور: منحتُه حقيقيّةٌ ومقيسةٌ فتبقى بحدودها ونسبها */}
+              {p.legacy && (
+                <>
+                  <div className="mt-2 flex items-center justify-between text-sm font-extrabold text-emerald-600" dir="ltr">
+                    <span>{p.legacy.requests.used.toLocaleString("en-US")} / {(p.legacy.requests.limit / 1_000_000)}M طلب</span>
+                    <span className="text-slate-400">({p.legacy.requests.freePct}%)</span>
+                  </div>
+                  <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-slate-200" dir="ltr">
+                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, Math.max(p.legacy.requests.used > 0 ? 1 : 0, p.legacy.requests.freePct))}%` }} />
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                    <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
+                      <div className="text-[10px] text-slate-400">الطلبات المتبقية</div>
+                      <div className="text-sm font-extrabold text-slate-700" dir="ltr">{(p.legacy.requests.remaining ?? 0).toLocaleString("en-US")}</div>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
+                      <div className="text-[10px] text-slate-400">ثواني المعالج</div>
+                      <div className="text-sm font-extrabold text-slate-700" dir="ltr">
+                        {p.legacy.vcpuSeconds ? `${p.legacy.vcpuSeconds.used.toLocaleString("en-US")} / ${(p.legacy.vcpuSeconds.limit / 1000)}K` : "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
+                      <div className="text-[10px] text-slate-400">ذاكرة (GiB·ث)</div>
+                      <div className="text-sm font-extrabold text-slate-700" dir="ltr">
+                        {p.legacy.gibSeconds ? `${p.legacy.gibSeconds.used.toLocaleString("en-US")} / ${(p.legacy.gibSeconds.limit / 1000)}K` : "—"}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-200">
-              <div className="text-[10px] text-slate-400">ذاكرة (GiB·ث)</div>
-              <div className="text-sm font-extrabold text-slate-700" dir="ltr">
-                {host.gibSeconds ? `${host.gibSeconds.used.toLocaleString("en-US")} / ${(host.gibSeconds.limit / 1000)}K` : "—"}
-              </div>
-            </div>
-          </div>
-          {host.updatedAt && (
-            <div className="mt-1 text-[10px] text-slate-400">آخر تحديث من Azure: {new Date(host.updatedAt).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
-          )}
+          ))}
         </div>
-      )}
+      ) : null}
 
       {/* رفع خريطة الأعمدة — كانت تُدخَل يدوياً على القاعدة خارج البرنامج (طلب محمد) */}
       <MapImport />
