@@ -80,6 +80,27 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
     setEf({ label: p.label ?? "", loginUrl: p.loginUrl ?? "", username: p.username ?? "", password: "", odooUser: p.odooUser ?? "", odooPass: "", loanUser: p.loanUser ?? "", loanPass: "" });
   }
 
+  /** يُشعل/يُطفئ أودو **لهذه اللوحة** وحدَها — ولا يمسّ اللوحةَ الأخرى ولا المكتب.
+   *  والمسارُ يقبله سلفاً (`PATCH` يقرأ `odooEnabled`)، فالناقصُ كان المفتاحَ وحدَه. */
+  async function toggleOdoo(p: Panel) {
+    const next = p.odooEnabled === "1" ? "0" : "1";
+    if (next === "0" && !confirm(`إطفاءُ أودو للوحة «${p.label ?? p.id}»؟\n\n`
+      + "• لا تُسحَب تذاكرُ جديدةٌ منها.\n"
+      + "• والبطاقاتُ المفتوحةُ تبقى تُدفَع حتى إنجاز آخرِها (لا تُهمَل).")) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch(`/api/towers/${towerId}/panels?panelId=${p.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ odooEnabled: next }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setMsg({ t: "err", m: d.error ?? "تعذّر التغيير" }); return; }
+      setMsg({ t: "ok", m: next === "1" ? "✓ أُشعل أودو لهذه اللوحة" : "✓ أُطفئ أودو لهذه اللوحة" });
+      load(); onChange?.();
+    } catch { setMsg({ t: "err", m: "تعذّر الاتصال بالخادم" }); }
+    finally { setBusy(false); }
+  }
+
   /** يختبر حسابَ ديلرِ **هذه اللوحة** على مشتركٍ **منها** — والنتيجةُ تُسمّي ما اختُبر. */
   async function testLoan(panelId: number) {
     setBusy(true);
@@ -166,7 +187,33 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
                       </div>
                       <div className="truncate text-[11px] text-slate-500" dir="ltr">{p.loginUrl ?? "—"} · {p.username ?? "—"}</div>
                       <div className="text-[11px] text-slate-500">
-                        مشتركوها <b>{counts[String(p.id)] ?? 0}</b> · أودو {p.odooEnabled === "1" ? "مُفعَّل" : "خامد"}
+                        مشتركوها <b>{counts[String(p.id)] ?? 0}</b>
+                        {/* ═════ 🔴 فجوةٌ اصطدتُها بالتدقيق (2026-08-13) ═════
+                            المسارُ يقبل `odooEnabled` على اللوحة إنشاءً وتعديلاً، والواجهةُ
+                            كانت **تعرضه ولا تُغيّره** ⇒ لا سبيلَ لإشعال أودو للّوحة الثانية
+                            إطلاقاً: يُضبط حسابُها فتبقى `"0"` و`isActive` تردّ false فلا تُزامَن
+                            أبداً — دون أيّة رسالة. فصار مفتاحاً حقيقيّاً.
+                            والزرُّ يُعطَّل بلا حسابِ أودو: إشعالُ لوحةٍ بلا حسابٍ يُخرجها من
+                            المُرشِّح على أيّ حال (`odooUser` غيرُ فارغ)، فمفتاحٌ يُشتَغل بلا
+                            أثرٍ كذبةٌ صريحة. */}
+                        {" · أودو "}
+                        <button
+                          onClick={() => void toggleOdoo(p)}
+                          disabled={busy || !(p.odooUser && p.hasOdooPass)}
+                          title={p.odooUser && p.hasOdooPass
+                            ? (p.odooEnabled === "1" ? "إطفاءُ أودو لهذه اللوحة" : "إشعالُ أودو لهذه اللوحة")
+                            : "اضبط مستخدمَ أودو وكلمةَ مروره لهذه اللوحة أوّلاً"}
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                            p.odooEnabled === "1"
+                              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                              : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                          }`}
+                        >
+                          {p.odooEnabled === "1" ? "مُفعَّل ✓" : "خامد"}
+                        </button>
+                        {!(p.odooUser && p.hasOdooPass) && (
+                          <span className="ms-1 text-[10px] text-amber-600">(اضبط حسابَ أودو أوّلاً)</span>
+                        )}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
