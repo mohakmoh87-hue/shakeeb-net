@@ -42,7 +42,10 @@ export function decideStampOffice(
 
   const noCoords = typeof lat !== "number" || typeof lng !== "number" || Number.isNaN(lat) || Number.isNaN(lng);
   if (noCoords) {
-    if (!fallbackFenced && fallback != null) return { office: fallback };
+    // ولا يُشترط `fallback != null`: فنيٌّ **بلا مكتبٍ أصليٍّ** وله مكاتبُ إضافيّةٌ كان يُسمَح
+    // له قبل البند بلا أيّ تحقّق (`geofenceError(null)` ترجع null فوراً) — فمنعُه هنا تضييقٌ
+    // جديدٌ يُسقط يومَه. (اصطاده تدقيقٌ عدائيّ؛ كامنٌ اليوم — صفرُ فنيّين بلا مكتب.)
+    if (!fallbackFenced) return { office: fallback };
     return { office: null, error: GPS_MISSING };
   }
 
@@ -54,7 +57,7 @@ export function decideStampOffice(
 
   // لا مكتبَ مُفعَّلاً يطابق موقعَه. وإن كان الافتراضيُّ **بلا نطاق** فلا قيدَ عليه —
   // ومنعُه هنا تشديدٌ لم يكن موجوداً.
-  if (!fallbackFenced && fallback != null) return { office: fallback };
+  if (!fallbackFenced) return { office: fallback }; // ولا شرطَ `fallback != null` — انظر أعلاه
 
   // ⚠️ أ-١١ يوسّع مصيدةً هنا: الفنيُّ بمكاتبَ إضافيّةٍ قد يكون واقفاً في **مكتبٍ مسموحٍ بلا
   // موقعٍ محدَّد** — فلا يستطيع أيُّ قياسٍ أن يضعه فيه، فيُمنَع برسالةٍ تُسمّي **مكتباً آخر**

@@ -23,6 +23,13 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ t: "ok" | "err"; m: string } | null>(null);
   const [form, setForm] = useState({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "" });
+  // 🔴 بلاغُ محمد 2026-08-13: «ظهرت لوحةُ المكتب بساسَين لصميم ولكن **لا يمكن تعديلُ
+  // الصفحتَين**، حيث يمكن فقط حذفُ الصفحة الثانية أمّا الأولى فلا تُعدَّل ولا تُمسَح.»
+  // والعلّةُ **في الواجهة وحدَها**: مسارُ `PATCH` موجودٌ وكاملٌ ويعمل لأيّ لوحةٍ بما فيها
+  // الأولى — ولم يُرسَم له نموذجٌ إطلاقاً. فصارت اللوحةُ تُنشأ ولا تُصحَّح، وخطأٌ في رابطٍ
+  // أو كلمةِ مرورٍ يعني حذفَها وإعادةَ إنشائها — وهي **لا تُحذَف إن كان لها مشتركون**.
+  const [editId, setEditId] = useState<number | null>(null);
+  const [ef, setEf] = useState({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "" });
 
   const load = useCallback(() => {
     fetch(`/api/towers/${towerId}/panels`)
@@ -61,6 +68,31 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
     setMsg({ t: "ok", m: "أُضيفت اللوحة ✓ — ووُسم مشتركو المكتب بلوحته الأولى تلقائياً" });
     setForm({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "" });
     load(); onChange?.();
+  }
+
+  function startEdit(p: Panel) {
+    setEditId(p.id); setMsg(null);
+    // كلمتا المرور تُتركان فارغتَين: الخادمُ يُبقي القديمة إن لم تُرسَل — فلا تُطمَس بالخطأ
+    setEf({ label: p.label ?? "", loginUrl: p.loginUrl ?? "", username: p.username ?? "", password: "", odooUser: p.odooUser ?? "", odooPass: "" });
+  }
+
+  async function saveEdit(panelId: number) {
+    if (!ef.loginUrl.trim() || !ef.username.trim()) {
+      setMsg({ t: "err", m: "رابطُ الساس واسمُ المستخدم لا يُفرَّغان" });
+      return;
+    }
+    setBusy(true); setMsg(null);
+    const body: Record<string, string> = { label: ef.label, loginUrl: ef.loginUrl, username: ef.username, odooUser: ef.odooUser };
+    if (ef.password) body.password = ef.password;
+    if (ef.odooPass) body.odooPass = ef.odooPass;
+    const r = await fetch(`/api/towers/${towerId}/panels?panelId=${panelId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) { setMsg({ t: "err", m: d.error ?? "تعذّر الحفظ" }); return; }
+    setMsg({ t: "ok", m: "حُفظت اللوحة ✓" });
+    setEditId(null); load(); onChange?.();
   }
 
   async function del(p: Panel) {
@@ -112,12 +144,54 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
                         مشتركوها <b>{counts[String(p.id)] ?? 0}</b> · أودو {p.odooEnabled === "1" ? "مُفعَّل" : "خامد"}
                       </div>
                     </div>
-                    {/* اللوحةُ الأولى لا تُحذف (هي لوحةُ المكتب)، وذاتُ المشتركين يرفضها الخادم */}
-                    {i > 0 && (
-                      <button onClick={() => del(p)} disabled={busy}
-                        className="rounded-lg px-2 py-1 text-xs text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50">حذف</button>
-                    )}
+                    <div className="flex shrink-0 items-center gap-1">
+                      {/* ✏️ التعديلُ متاحٌ **لكلّ لوحةٍ بما فيها الأولى** — وهي أوّلُ ما يحتاج
+                          تصحيحاً لأنّها لوحةُ المكتب الأصليّة. */}
+                      <button onClick={() => (editId === p.id ? setEditId(null) : startEdit(p))} disabled={busy}
+                        className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-50">
+                        {editId === p.id ? "إغلاق" : "✏️ تعديل"}
+                      </button>
+                      {/* اللوحةُ الأولى لا تُحذف (هي لوحةُ المكتب). وذاتُ المشتركين **يرفضها
+                          الخادم** — فكان الزرُّ يظهر ويُوعِد بما لا يقع (٨٤٠ و١٣٣٢ مشتركاً في
+                          لوحتَي صميم مثلاً). فيُعطَّل بسببٍ مكتوبٍ بدل رسالةِ خطأٍ بعد الضغط. */}
+                      {i > 0 && (
+                        (counts[String(p.id)] ?? 0) > 0 ? (
+                          <span title="لا تُحذَف ولها مشتركون — انقلهم إلى لوحةٍ أخرى أوّلاً"
+                            className="cursor-not-allowed rounded-lg bg-slate-50 px-2 py-1 text-xs text-slate-300">حذف</span>
+                        ) : (
+                          <button onClick={() => del(p)} disabled={busy}
+                            className="rounded-lg px-2 py-1 text-xs text-rose-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50">حذف</button>
+                        )
+                      )}
+                    </div>
                   </div>
+
+                  {editId === p.id && (
+                    <div className="mt-2.5 border-t border-slate-200 pt-2.5">
+                      {([
+                        ["label", "اسمُ اللوحة", false],
+                        ["loginUrl", "رابط لوحة الساس", true],
+                        ["username", "اسم مستخدم الساس", true],
+                        ["password", p.hasPassword ? "كلمة مرور الساس (اتركها فارغة لتبقى)" : "كلمة مرور الساس", true],
+                        ["odooUser", "مستخدم أودو (اختياريّ)", true],
+                        ["odooPass", p.hasOdooPass ? "كلمة مرور أودو (اتركها فارغة لتبقى)" : "كلمة مرور أودو (اختياريّ)", true],
+                      ] as [string, string, boolean][]).map(([k, ph, ltr]) => (
+                        <input key={k} value={ef[k as keyof typeof ef]} placeholder={ph}
+                          type={k.toLowerCase().includes("pass") ? "password" : "text"}
+                          dir={ltr && !k.toLowerCase().includes("pass") ? "ltr" : undefined}
+                          onChange={(e) => setEf((f) => ({ ...f, [k]: e.target.value }))}
+                          className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                      ))}
+                      <button onClick={() => void saveEdit(p.id)} disabled={busy}
+                        className="w-full rounded-xl bg-slate-700 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-60">
+                        {busy ? "..." : "حفظ التعديل"}
+                      </button>
+                      <div className="mt-1.5 text-[10px] leading-relaxed text-slate-500">
+                        ⚠️ تغييرُ الرابط أو المستخدم يُحوِّل <b>{counts[String(p.id)] ?? 0}</b> مشتركاً
+                        إلى المُخدِّم الجديد — فتأكّد قبل الحفظ. وكلمةُ المرور الفارغةُ تُبقي القديمة.
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
