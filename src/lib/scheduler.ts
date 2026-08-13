@@ -221,6 +221,126 @@ export async function runDebtReminder(
   return { sent, failed };
 }
 
+// ═════════════ البند ٤-أ · «المنتهون منذ N يوم» (طلبُ محمد 2026-08-13) ═════════════
+//
+// «أختار **بعد كم يومٍ** من الانتهاء تُرسَل ووقتَ الإرسال، وقالبٌ خاصٌّ بهم.»
+// 🔑 **والشرطُ الجوهريّ**: مَن أُرسل له وهو «منتهٍ منذ يوم» **لا يُرسَل له غداً** وهو
+//    منتهٍ منذ يومَين ⇒ فالإرسالُ لـ**الجدد في تلك الفئة** كلَّ يوم.
+//
+// وحرسان لا يُستغنى عن أحدهما:
+//  ١. **ختمٌ لكلّ مشترك** (`expiredNoticeAt`) يُكتب **قبل الإرسال ذرّيّاً** — فحاسبتان
+//     تعملان معاً لا تُرسلان مرّتَين (درسُ الشدن: ٤ نسخ). ويُزال عند التفعيل.
+//  ٢. **ونافذةٌ عُلويّةٌ للانتهاء**: لا يُرسَل لمن انتهى قبل `N + GRACE` يوماً — فمشتركٌ
+//     انتهى قبل ثلاثة أشهرَ لا يُفاجَأ برسالةٍ لأنّ ختمَه فارغ. وبلا هذه النافذة يكون
+//     **أوّلُ تشغيلٍ رشقةً لكلّ منتهٍ في القاعدة** (وهي عينُ ما نحرس منه).
+const EXPIRED_NOTICE_GRACE_DAYS = 7;
+
+export async function runExpiredNotice(
+  officeIds: number[],
+  opts?: { claimDay?: boolean },
+): Promise<{ sent: number; failed: number; stamped: number }> {
+  if (!officeIds.length) return { sent: 0, failed: 0, stamped: 0 };
+
+  // حَجزُ يومِ كلّ مكتبٍ قبل أوّل رسالة (نفسُ حرسِ تذكير الانتهاء ورسائل الديون)
+  if (opts?.claimDay) {
+    const todayK = baghdadToday();
+    const won: number[] = [];
+    for (const id of officeIds) {
+      const c = await prisma.tower.updateMany({
+        where: { id, OR: [{ lastExpiredNoticeDate: null }, { lastExpiredNoticeDate: { not: todayK } }] },
+        data: { lastExpiredNoticeDate: todayK },
+      });
+      if (c.count === 1) won.push(id);
+    }
+    if (!won.length) return { sent: 0, failed: 0, stamped: 0 };
+    officeIds = won;
+  }
+
+  const offices = await prisma.tower.findMany({
+    where: { id: { in: officeIds } },
+    select: { id: true, name: true, agentId: true, waEnabled: true, expiredNoticeDays: true },
+  });
+  // (بلا خريطةِ مكاتب: المرورُ على `offices` مباشرةً — فكلُّ مكتبٍ يُعالَج بأيّامه)
+
+  // اسمُ النظام الافتراضيُّ لكلّ وكيل (معزول) — لمكتبٍ بلا اسم
+  const { getAgentSetting } = await import("@/lib/agentSettings");
+  const fallbackCache = new Map<number | null, string>();
+  const fallbackOfficeFor = async (aid: number | null): Promise<string> => {
+    if (!fallbackCache.has(aid)) fallbackCache.set(aid, await getAgentSetting("office", aid, "SHAKEEB"));
+    return fallbackCache.get(aid)!;
+  };
+
+  const now = Date.now();
+  const dayMs = 86400_000;
+  let sent = 0, failed = 0, stamped = 0, i = 0;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // 🔑 ويُعالَج **كلُّ مكتبٍ بأيّامه**: مكتبٌ يختار يوماً وآخرُ ثلاثةً، فنافذةُ كلٍّ
+  //   تُحسَب بأيّامه لا بأيّام غيره — ولو جُمعوا في استعلامٍ واحدٍ لَغلبت أيّامُ الأوّل.
+  for (const office of offices) {
+    if (office.waEnabled === "0") continue;
+    const days = Math.max(1, office.expiredNoticeDays ?? 1);
+    // منتهٍ منذ `days` يوماً على الأقلّ، وليس أقدمَ من `days + GRACE`
+    const upper = new Date(now - days * dayMs);                                  // dateTo <= هذا
+    const lower = new Date(now - (days + EXPIRED_NOTICE_GRACE_DAYS) * dayMs);    // dateTo >= هذا
+    const subs = await prisma.subscriber.findMany({
+      where: {
+        isDeleted: false, waEnabled: true, towerId: office.id,
+        expiredNoticeAt: null, // لم يُبلَّغ عن هذا الانتهاء بعد
+        dateTo: { lte: upper, gte: lower },
+      },
+      select: {
+        id: true, name: true, netUser: true, phone: true, packageId: true,
+        carry: true, dateTo: true, towerId: true, rewardCode: true, rewardBalance: true,
+      },
+    });
+    if (!subs.length) continue;
+
+    const tpl = await getTemplate("expiredSince", office.agentId, office.id);
+    if (!tpl) continue; // القالبُ مُعطَّلٌ لهذا المكتب/الوكيل ⇒ لا إرسالَ ولا ختم
+    const pkgIds = [...new Set(subs.map((s) => s.packageId).filter((x): x is number => x != null))];
+    const pkgs = pkgIds.length
+      ? await prisma.package.findMany({ where: { id: { in: pkgIds } }, select: { id: true, name: true, priceDinar: true } })
+      : [];
+    const pkgName = new Map(pkgs.map((p) => [p.id, p.name ?? ""]));
+    const pkgPrice = new Map(pkgs.map((p) => [p.id, p.priceDinar ?? 0]));
+    const officeName = office.name ?? (await fallbackOfficeFor(office.agentId));
+
+    for (const sub of subs) {
+      // ═══ الحَجزُ قبل الأثر: الختمُ أوّلاً، وبشرطِ أنّه ما زال فارغاً ═══
+      // فمَن خسر السباقَ يجد `count === 0` فيتخطّى — ولا تُرسَل نسخةٌ ثانية.
+      const claim = await prisma.subscriber.updateMany({
+        where: { id: sub.id, expiredNoticeAt: null },
+        data: { expiredNoticeAt: new Date() },
+      });
+      if (claim.count !== 1) continue;
+      stamped++;
+      if (i++ > 0) await sleep(10000); // تأخيرٌ بين رسالةٍ وأخرى (حمايةُ الرقم من الحظر)
+      const text = renderTemplate(tpl.text, {
+        name: sub.name, netUser: sub.netUser,
+        package: sub.packageId ? pkgName.get(sub.packageId) ?? "" : "",
+        phone: sub.phone, dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",
+        carry: sub.carry ?? 0, remaining: sub.carry ?? 0,
+        price: sub.packageId ? pkgPrice.get(sub.packageId) ?? 0 : 0,
+        code: sub.rewardCode, balance: sub.rewardBalance ?? 0,
+        office: officeName,
+      });
+      const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, tpl.image);
+      await prisma.message.create({
+        data: {
+          channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
+          status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: "scheduler",
+        },
+      });
+      // ⚠️ والختمُ **يبقى** ولو فشل الإرسال: إعادةُ المحاولة كلَّ يومٍ تعني رسالةً
+      //   يوميّةً لمن لا يعمل واتسابُه ثمّ رشقةً حين يعمل — وهو ضدُّ «مرّةً واحدة».
+      //   والفشلُ مسجَّلٌ في `messages` فيُرى في سجلّ الرسائل.
+      if (res.ok) sent++; else failed++;
+    }
+  }
+  return { sent, failed, stamped };
+}
+
 // ===== التقرير اليومي لمدير كل مكتب من واتساب مكتبه (صامت) =====
 // officeIds: مكاتب محدّدة (مثلاً مكتب المستخدم عند تسجيل الخروج)، أو كلها إن أُهملت.
 // oncePerDay: يُرسل مرة واحدة فقط في اليوم لكل مكتب (يعتمد lastReportDate) — لمنع التكرار
@@ -402,6 +522,20 @@ export function startScheduler() {
       const dueDebt = debtOffs.filter((o) => (o.debtReminderTime?.trim() || o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
       if (dueDebt.length) {
         runDebtReminder(dueDebt, { claimDay: true }).catch((e) => console.error("[scheduler] debtReminder:", e));
+      }
+    }
+    // البند ٤-أ · «المنتهون منذ N يوم»: للمكاتب التي فعّلت الخانة، بوقتها الخاصّ
+    // (`expiredNoticeTime` ← وقتُ تذكير الانتهاء ← وقتُ الوكيل). وعزلٌ بـ`agentId`.
+    // 🔑 والتفعيلُ **صريحٌ لا افتراضيّ**: ميزةٌ تُرسل رسائلَ لا تُشتغل بنفسها على مكاتبَ
+    //    لم يطلبها أصحابُها — فمَن لم يُفعّلها لا يتغيّر عنده شيء.
+    {
+      const expOffs = await prisma.tower.findMany({
+        where: { isDeleted: false, expiredNoticeEnabled: "1", NOT: { waEnabled: "0" }, ...(wAgent != null ? { agentId: wAgent } : {}) },
+        select: { id: true, reminderTime: true, expiredNoticeTime: true },
+      }).catch(() => [] as { id: number; reminderTime: string | null; expiredNoticeTime: string | null }[]);
+      const dueExp = expOffs.filter((o) => (o.expiredNoticeTime?.trim() || o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
+      if (dueExp.length) {
+        runExpiredNotice(dueExp, { claimDay: true }).catch((e) => console.error("[scheduler] expiredNotice:", e));
       }
     }
     // (أُزيل تقرير المدير عبر واتساب — حلقة زائدة؛ المدير يرى تقارير كل الأيّام في «حسابات المدير».)

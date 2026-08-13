@@ -201,7 +201,12 @@ export async function POST(
       await tx.subscriber.update({
         where: { id: subscriberId },
         // التفعيل يمسح وسم التحويل (فلا يُنبَّه ولا يُحذف)
-        data: { packageId, dateTo, carry: newCarry, wasel: effPaid, month: months, transferredAt: null, transferredTo: null },
+        // ⚠️ والبند ٤-أ · **ويمسح ختمَ «انتهى منذ N يوم»**: الختمُ يعني «أُبلِغ عن هذا
+        //    الانتهاء»، فبقاؤه بعد التفعيل يمنع رسالتَه في انتهائه القادم **إلى الأبد**.
+        data: {
+          packageId, dateTo, carry: newCarry, wasel: effPaid, month: months,
+          transferredAt: null, transferredTo: null, expiredNoticeAt: null,
+        },
       });
       const entry = await tx.subscriptionEntry.create({
         data: {

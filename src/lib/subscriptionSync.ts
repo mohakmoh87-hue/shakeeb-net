@@ -532,7 +532,10 @@ async function runOfficeSyncInner(
       // البرنامج نضبطه مثل الساس؛ وإن كان تاريخ البرنامج أبعد (أو مساوياً) لا نغيّر شيئاً.
       checked++;
       if (validDate && sasDateIsLater(p.dateTo, validDate)) {
-        await prisma.subscriber.update({ where: { id: p.id }, data: { dateTo: validDate } });
+        // البند ٤-أ · وتُمسَح رايةُ «أُبلِغ بانتهائه» هنا أيضاً: هذا المسارُ هو ما يرصد
+        // **التفعيلَ من الساس** (المشتركُ فعّل بنفسه من التطبيق)، فبقاءُ الرايةِ يمنع
+        // رسالتَه في انتهائه القادم إلى الأبد — والتفعيلُ من البرنامج يمسحها في مساره.
+        await prisma.subscriber.update({ where: { id: p.id }, data: { dateTo: validDate, expiredNoticeAt: null } });
         dateFixed++;
       }
     }

@@ -27,6 +27,10 @@ type Office = {
   autoAssignEnabled?: boolean;
   reminderTime: string | null;
   reminderDays: number | null; // أيام تذكير الانتهاء — فارغ = يومان
+  // البند ٤-أ · «المنتهون منذ N يوم» — رسالةٌ واحدةٌ لكلّ انتهاء (مُطفأةٌ افتراضاً)
+  expiredNoticeEnabled: string | null;
+  expiredNoticeDays: number | null;
+  expiredNoticeTime: string | null;
   lat: number | null;
   lng: number | null;
   geoRadius: number | null;
@@ -277,6 +281,22 @@ export default function OfficesPage() {
                       <span>🕐 وقت رسائل الديون:</span>
                       <input type="time" value={form.debtReminderTime ?? ""} disabled={ro} onChange={(e) => set("debtReminderTime", e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50" />
                       <span className="text-xs text-slate-400">فارغ = يتبع وقت تذكير الانتهاء</span>
+                    </div>
+                  )}
+                  {/* البند ٤-أ · «المنتهون منذ N يوم» — قالبُ «انتهى الاشتراك» بأيّامٍ ووقتٍ خاصّين */}
+                  <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <input type="checkbox" disabled={ro} checked={form.expiredNoticeEnabled === "1"} onChange={(e) => set("expiredNoticeEnabled", e.target.checked ? "1" : "0")} className="h-4 w-4" />
+                    ⌛ إرسال رسالة للمنتهين (قالب «انتهى الاشتراك») — مرّةً واحدةً لكلّ انتهاء
+                  </label>
+                  {form.expiredNoticeEnabled === "1" && (
+                    <div className="ms-6 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                      <span>بعد كم يوم من الانتهاء:</span>
+                      <input type="number" min={1} max={60} value={form.expiredNoticeDays ?? ""} disabled={ro}
+                        onChange={(e) => set("expiredNoticeDays", e.target.value === "" ? null : Number(e.target.value))}
+                        dir="ltr" placeholder="1" className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-50" />
+                      <span>🕐 وقت الإرسال:</span>
+                      <input type="time" value={form.expiredNoticeTime ?? ""} disabled={ro} onChange={(e) => set("expiredNoticeTime", e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-50" />
+                      <span className="text-xs text-slate-400">فارغ = يومٌ واحد · ويتبع وقتَ تذكير الانتهاء</span>
                     </div>
                   )}
                   <label className="flex items-center gap-2 text-sm text-slate-600">

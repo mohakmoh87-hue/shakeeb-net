@@ -25,6 +25,10 @@ const schema = z.object({
   syncTime: z.string().nullable().optional(), // وقت مزامنة الاشتراكات اليومية (HH:MM)
   syncEnabled: z.string().nullable().optional(), // 1 = تفعيل المزامنة التلقائية
   debtReminderEnabled: z.string().nullable().optional(), // 1 = رسائل ديون يومية
+  // البند ٤-أ · «المنتهون منذ N يوم» (مُطفأةٌ افتراضاً — تُفعَّل لكلّ مكتبٍ على حِدة)
+  expiredNoticeEnabled: z.string().nullable().optional(),
+  expiredNoticeDays: z.coerce.number().int().min(1).max(60).nullable().optional(),
+  expiredNoticeTime: z.string().nullable().optional(),
   debtReminderTime: z.string().nullable().optional(), // وقت رسائل الديون (HH:MM) — فارغ = يتبع reminderTime
   autoAssignEnabled: z.boolean().optional(), // توزيع البطاقات تلقائياً على فنيي هذا المكتب
   reminderTime: z.string().nullable().optional(), // وقت تذكير الانتهاء الخاص بهذا المكتب (HH:MM)
