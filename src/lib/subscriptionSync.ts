@@ -618,15 +618,59 @@ const manualStatusKey = (officeId: number) => `manualSync:${officeId}`;
 export async function setManualSyncStatus(officeId: number, st: ManualSyncStatus): Promise<void> {
   const type = manualStatusKey(officeId);
   const text = JSON.stringify(st);
-  const row = await prisma.systemSetting.findFirst({ where: { type }, select: { id: true } });
+  // `orderBy` صريحٌ: لا فهرسَ فريداً على `type` (وفي الإنتاج مفتاحٌ مكرَّرٌ فعلاً)، فبلاه
+  // يقرأ صفّاً ويكتب آخرَ فتضيع الحالةُ بلا سبب ظاهر. وأصغرُ مُعرِّفٍ هو الصفُّ الحاكم.
+  const row = await prisma.systemSetting.findFirst({ where: { type }, select: { id: true }, orderBy: { id: "asc" } });
   if (row) await prisma.systemSetting.update({ where: { id: row.id }, data: { text } });
   else await prisma.systemSetting.create({ data: { type, text } });
 }
 
 export async function getManualSyncStatus(officeId: number): Promise<ManualSyncStatus | null> {
-  const row = await prisma.systemSetting.findFirst({ where: { type: manualStatusKey(officeId) }, select: { text: true } });
+  const row = await prisma.systemSetting.findFirst({
+    where: { type: manualStatusKey(officeId) }, select: { text: true }, orderBy: { id: "asc" },
+  });
   if (!row?.text) return null;
   try { return JSON.parse(row.text) as ManualSyncStatus; } catch { return null; }
+}
+
+/** مهلةُ اعتبارِ المزامنةِ عالقةً — بعدها يُسمح ببدءٍ جديدٍ ولو بقيت الحالةُ «جارية». */
+const MANUAL_SYNC_STALE_MS = 30 * 60 * 1000;
+
+/** ═════ ب-١/الأصل ٥ · حَجزُ المزامنة اليدويّة ذرّيّاً ═════
+ *  🔴 كان المسارُ **فحصاً ثمّ كتابة**: يقرأ الحالةَ، فإن لم تكن «جارية» يكتبها ويُطلق.
+ *    وبين القراءة والكتابة نافذةٌ: ضغطتان متقاربتان (أو مديران) ⇒ **مزامنتان** على
+ *    المكتب نفسِه: جلبُ ١٢٠ يوماً مرّتَين، **وتقريرُ واتسابٍ كاملٌ يصل المديرَ مرّتَين**.
+ *  ⇒ الحجزُ صار **مقارنةً وتبديلاً** (CAS): نُحدّث الصفَّ بشرط أنّ نصَّه لم يتغيّر عمّا
+ *    قرأناه. فمَن كتب أوّلاً يفوز، والثاني `count === 0` فينضمّ بلا إطلاق.
+ *  @returns `joined: true` ⇒ هناك مزامنةٌ جاريةٌ (منّا أو من غيرنا) فلا تُطلق ثانية. */
+export async function claimManualSync(officeId: number): Promise<{ claimed: boolean; joined: boolean }> {
+  const type = manualStatusKey(officeId);
+  const row = await prisma.systemSetting.findFirst({
+    where: { type }, select: { id: true, text: true }, orderBy: { id: "asc" },
+  });
+  let cur: ManualSyncStatus | null = null;
+  if (row?.text) { try { cur = JSON.parse(row.text) as ManualSyncStatus; } catch { cur = null; } }
+  if (cur?.state === "running" && Date.now() - new Date(cur.startedAt).getTime() < MANUAL_SYNC_STALE_MS) {
+    return { claimed: false, joined: true };
+  }
+  const next = JSON.stringify({ state: "running", step: "sync", startedAt: new Date().toISOString() } as ManualSyncStatus);
+
+  if (!row) {
+    // أوّلُ مزامنةٍ لهذا المكتب: لا صفَّ نُقارنه. ولا فهرسَ فريداً على `type` ⇒ متسابقان
+    // قد يُنشئان صفَّين. فالحسمُ بقاعدةٍ قاطعةٍ: **أصغرُ مُعرِّفٍ يفوز**، والخاسرُ يحذف صفَّه.
+    const made = await prisma.systemSetting.create({ data: { type, text: next }, select: { id: true } });
+    const all = await prisma.systemSetting.findMany({ where: { type }, select: { id: true }, orderBy: { id: "asc" } });
+    if (all[0]?.id !== made.id) {
+      await prisma.systemSetting.delete({ where: { id: made.id } }).catch(() => {});
+      return { claimed: false, joined: true };
+    }
+    return { claimed: true, joined: false };
+  }
+
+  const won = await prisma.systemSetting.updateMany({
+    where: { id: row.id, text: row.text }, data: { text: next },
+  });
+  return won.count === 1 ? { claimed: true, joined: false } : { claimed: false, joined: true };
 }
 
 // فحص كل مخزون كروت الوكيل مقابل SAS — بجلب جماعي لتفعيلات SAS ثم مطابقة محلّية.

@@ -32,8 +32,35 @@ export const DEFAULT_REMINDER_DAYS = 2;
 export const reminderDaysOf = (d: number | null | undefined): number =>
   d != null && Number.isFinite(d) && d >= 1 ? Math.floor(d) : DEFAULT_REMINDER_DAYS;
 
-export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent: number; failed: number }> {
+export async function runExpiringReminder(
+  officeIds?: number[],
+  // ب-١/الأصل ٢ · `claimDay` للمسار **التلقائيّ** حصراً (المُجدول). راجع الشرحَ أدناه.
+  opts?: { claimDay?: boolean },
+): Promise<{ sent: number; failed: number }> {
   const now = new Date();
+
+  // ═════ ب-١/الأصل ٢ · حَجزُ يومِ المكتب **قبل** الإرسال لا بعده (2026-08-13) ═════
+  // 🔴 كان ختمُ `lastReminderDate` **بعد** حلقة الإرسال كلِّها (مئاتُ رسائل واتساب،
+  //   دقائق). والمُجدولُ يُطلق على **تطابقِ الدقيقة** ولا يفحص الختمَ أصلاً ⇒ حاسبتان
+  //   للوكيل نفسِه (أو لحظةُ انتقال القيادة) تُطلقان معاً، فيصل كلَّ مشترك **تذكيرانِ**.
+  //   وهذه عينُ حادثةِ تكرار رسائل واتساب التي بلّغ عنها مكتبُ الشدن.
+  // ⇒ يُحجَز يومُ كلّ مكتبٍ ذرّيّاً **قبل** أوّل رسالة، والخاسرُ يُسقط ذلك المكتبَ.
+  // 🔑 والحجزُ للتلقائيّ وحدَه: `api/whatsapp/send-expiring` و`api/reminders/handle`
+  //   طلبانِ صريحانِ من مستخدمٍ ضغط زرّاً — ومنعُهما لأنّ اليومَ مختومٌ يكون تعطيلاً
+  //   لميزةٍ قائمةٍ لا إصلاحاً لعلّة.
+  if (opts?.claimDay && officeIds?.length) {
+    const todayK = baghdadToday();
+    const won: number[] = [];
+    for (const id of officeIds) {
+      const c = await prisma.tower.updateMany({
+        where: { id, OR: [{ lastReminderDate: null }, { lastReminderDate: { not: todayK } }] },
+        data: { lastReminderDate: todayK },
+      });
+      if (c.count === 1) won.push(id);
+    }
+    if (!won.length) return { sent: 0, failed: 0 }; // كلُّها محجوزةٌ لغيرنا اليوم
+    officeIds = won;
+  }
   // المكاتب أوّلاً: منها نعرف أيام كلّ مكتب — نستعلم بأوسع نافذة ثم نُرشّح كلّ مشترك بأيام مكتبه
   const offices = await prisma.tower.findMany({ select: { id: true, name: true, waEnabled: true, agentId: true, reminderDays: true } });
   const officeMap = new Map(offices.map((o) => [o.id, o]));
@@ -122,8 +149,26 @@ export async function runExpiringReminder(officeIds?: number[]): Promise<{ sent:
 // ===== رسائل الديون اليومية — لمكاتب فعّلت «إرسال رسائل يومية للديون» (طلب محمد) =====
 // تُرسَل لكلّ مشترك عليه دين (carry > 0) في المكاتب المعنيّة، بقالب "debts" (مطالبة بالديون).
 // عزل صارم: مقيَّدة بالمكاتب المُمرَّرة (مكاتب وكيل هذا العامل حصراً — يُحدَّد في الكرون).
-export async function runDebtReminder(officeIds: number[]): Promise<{ sent: number; failed: number }> {
+export async function runDebtReminder(
+  officeIds: number[],
+  opts?: { claimDay?: boolean }, // ب-١/الأصل ٢ — للمُجدول حصراً (اليدويُّ طلبٌ صريح)
+): Promise<{ sent: number; failed: number }> {
   if (!officeIds.length) return { sent: 0, failed: 0 };
+  // حَجزُ يومِ كلّ مكتبٍ **قبل** أوّل رسالة. ورسائلُ الديون كانت **بلا ختمٍ إطلاقاً**،
+  // والمُجدولُ يُطلقها على تطابقِ الدقيقة ⇒ حاسبتان تُرسلان لكلّ مَدينٍ مرّتَين.
+  if (opts?.claimDay) {
+    const todayK = baghdadToday();
+    const won: number[] = [];
+    for (const id of officeIds) {
+      const c = await prisma.tower.updateMany({
+        where: { id, OR: [{ lastDebtReminderDate: null }, { lastDebtReminderDate: { not: todayK } }] },
+        data: { lastDebtReminderDate: todayK },
+      });
+      if (c.count === 1) won.push(id);
+    }
+    if (!won.length) return { sent: 0, failed: 0 };
+    officeIds = won;
+  }
   const recipients = await prisma.subscriber.findMany({
     where: { isDeleted: false, waEnabled: true, carry: { gt: 0 }, towerId: { in: officeIds } },
   });
@@ -341,7 +386,8 @@ export function startScheduler() {
       }).catch(() => [] as { id: number; reminderTime: string | null }[]);
       const due = offs.filter((o) => (o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
       if (due.length) {
-        runExpiringReminder(due).catch((e) => console.error("[scheduler] expiring:", e));
+        // { claimDay } — المسارُ التلقائيُّ وحدَه يحجز يومَ المكتب قبل أوّل رسالة (ب-١/الأصل ٢)
+        runExpiringReminder(due, { claimDay: true }).catch((e) => console.error("[scheduler] expiring:", e));
       }
     }
     // رسائل الديون اليومية: لمكاتب فعّلت الخانة، بوقتها الخاص debtReminderTime (أو وقت تذكير المكتب/الوكيل).
@@ -354,7 +400,7 @@ export function startScheduler() {
       // وقتٌ خاصّ برسائل الديون إن وُجد، وإلّا يتبع وقت تذكير الانتهاء (ثمّ وقت الوكيل العام)
       const dueDebt = debtOffs.filter((o) => (o.debtReminderTime?.trim() || o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
       if (dueDebt.length) {
-        runDebtReminder(dueDebt).catch((e) => console.error("[scheduler] debtReminder:", e));
+        runDebtReminder(dueDebt, { claimDay: true }).catch((e) => console.error("[scheduler] debtReminder:", e));
       }
     }
     // (أُزيل تقرير المدير عبر واتساب — حلقة زائدة؛ المدير يرى تقارير كل الأيّام في «حسابات المدير».)

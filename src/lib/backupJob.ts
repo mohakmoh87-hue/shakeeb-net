@@ -36,17 +36,34 @@ export async function runDailyBackups(agentId?: number | null): Promise<{ total:
       OR: [{ lastBackupDate: null }, { lastBackupDate: { not: todayKey } }],
       ...(agentId != null ? { id: agentId } : {}),
     },
-    select: { id: true },
+    select: { id: true, lastBackupDate: true },
   });
   let sent = 0, failed = 0;
   for (const a of agents) {
+    // ═════ ب-١/الأصل ٢ · ختمُ اليوم **قبل** العمل لا بعده (2026-08-13) ═════
+    // 🔴 كان الختمُ (`lastBackupDate`) يُكتَب **بعد** نجاح الإرسال، والإرسالُ يُصدّر القاعدةَ
+    //   كلَّها ويُرفقها بالبريد — دقائق. فطولَ تلك الدقائق يبقى الشرطُ أعلاه يقول «لم تُرسَل
+    //   نسخةُ اليوم»، فحاسبةٌ أخرى (أو دورةُ المُجدول التالية) تبدأ نسخةً ثانيةً كاملة:
+    //   **قاعدةٌ كاملةٌ تُصدَّر وتُرسَل مرّتَين** — وهي مرشَّحُ إنفادِ اتصالات القاعدة.
+    // ⇒ يُحجَز اليومُ ذرّيّاً بـ`updateMany` بشرطِ أنّه لم يُختَم: فائزٌ واحدٌ أبداً.
+    const claimed = await prisma.agent.updateMany({
+      where: { id: a.id, OR: [{ lastBackupDate: null }, { lastBackupDate: { not: todayKey } }] },
+      data: { lastBackupDate: todayKey },
+    });
+    if (claimed.count !== 1) continue; // سبقنا غيرُنا إلى نسخة اليوم
     try {
       const r = await sendAgentBackupEmail(a.id);
-      if (r.ok) {
-        sent++;
-        await prisma.agent.update({ where: { id: a.id }, data: { lastBackupDate: todayKey } }).catch(() => {});
-      } else { failed++; console.warn(`[backup] فشل إرسال نسخة الوكيل ${a.id}: ${r.error}`); }
-    } catch (e) { failed++; console.error(`[backup] خطأ نسخة الوكيل ${a.id}:`, e); }
+      if (r.ok) sent++;
+      else {
+        failed++; console.warn(`[backup] فشل إرسال نسخة الوكيل ${a.id}: ${r.error}`);
+        // يُفَكّ الحجزُ فتُعاد المحاولةُ في الدورة القادمة — فيومٌ بلا نسخةٍ أخطرُ من نسخةٍ
+        // مكرّرةٍ تصل بريدَ محمد. والفشلُ هنا يعني أنّ خادمَ البريد **لم يقبل** الرسالة.
+        await prisma.agent.update({ where: { id: a.id }, data: { lastBackupDate: a.lastBackupDate } }).catch(() => {});
+      }
+    } catch (e) {
+      failed++; console.error(`[backup] خطأ نسخة الوكيل ${a.id}:`, e);
+      await prisma.agent.update({ where: { id: a.id }, data: { lastBackupDate: a.lastBackupDate } }).catch(() => {});
+    }
   }
   console.log(`[backup] النسخ اليومي: ${sent} ناجحة، ${failed} فاشلة من ${agents.length}`);
   return { total: agents.length, sent, failed };
@@ -63,9 +80,39 @@ export async function sendOwnerFullBackup(opts?: { skipDedup?: boolean }): Promi
   if (!to) return { ok: false, error: "لا يوجد إيميل نسخة المالك" };
 
   const todayKey = baghdadDayKey(new Date());
+  // ═════ ب-١/الأصل ٢ · حَجزُ يومِ نسخةِ المالك **قبل** تصديرها (2026-08-13) ═════
+  // 🔴 كان فحصاً ثمّ عملاً ثمّ ختماً: يقرأ العلامةَ، ثمّ **يُصدّر النظامَ كلَّه ويُرسله**
+  //   (دقائق)، ثمّ يختم. فحاسبتان — أو دورتا مُجدولٍ — تريان العلامةَ قديمةً معاً
+  //   فتُصدّران **النظامَ كلَّه مرّتَين**: ضغطٌ على القاعدة وبريدٌ مكرَّر.
+  // ⇒ الحجزُ ذرّيٌّ بمقارنةٍ-وتبديل: نكتب علامةَ اليوم بشرطِ أنّها ليست علامةَ اليوم
+  //   أصلاً، فمَن كتب أوّلاً يفوز والباقي يعود بلا عمل. و`skipDedup` (الإرسالُ الفوريُّ
+  //   بيد المالك) يتخطّى الحجزَ كما كان يتخطّى الفحص — فهو طلبٌ صريحٌ لا جدولةٌ.
+  let claimedRow: { id: number; prev: string | null } | null = null;
   if (!opts?.skipDedup) {
-    const last = await prisma.systemSetting.findFirst({ where: { type: "lastOwnerBackupDate" } });
+    const last = await prisma.systemSetting.findFirst({
+      where: { type: "lastOwnerBackupDate" }, select: { id: true, value: true }, orderBy: { id: "asc" },
+    });
     if (last?.value === todayKey) return { ok: true, error: "أُرسلت اليوم مسبقاً" };
+    if (last) {
+      const won = await prisma.systemSetting.updateMany({
+        where: { id: last.id, value: last.value }, data: { value: todayKey },
+      });
+      if (won.count !== 1) return { ok: true, error: "أُرسلت اليوم مسبقاً" };
+      claimedRow = { id: last.id, prev: last.value };
+    } else {
+      const made = await prisma.systemSetting.create({
+        data: { type: "lastOwnerBackupDate", value: todayKey }, select: { id: true },
+      });
+      // لا فهرسَ فريداً على `type` ⇒ الحسمُ بأصغرِ مُعرِّف، والخاسرُ يحذف صفَّه
+      const all = await prisma.systemSetting.findMany({
+        where: { type: "lastOwnerBackupDate" }, select: { id: true }, orderBy: { id: "asc" },
+      });
+      if (all[0]?.id !== made.id) {
+        await prisma.systemSetting.delete({ where: { id: made.id } }).catch(() => {});
+        return { ok: true, error: "أُرسلت اليوم مسبقاً" };
+      }
+      claimedRow = { id: made.id, prev: null };
+    }
   }
 
   const { gz, filename, tableCount, rowCount } = await exportFullSystemBackup();
@@ -81,10 +128,11 @@ export async function sendOwnerFullBackup(opts?: { skipDedup?: boolean }): Promi
     attachments: [{ filename, content: gz, contentType: "application/gzip" }],
   });
 
-  if (r.ok) {
-    const existing = await prisma.systemSetting.findFirst({ where: { type: "lastOwnerBackupDate" } });
-    if (existing) await prisma.systemSetting.update({ where: { id: existing.id }, data: { value: todayKey } }).catch(() => {});
-    else await prisma.systemSetting.create({ data: { type: "lastOwnerBackupDate", value: todayKey } }).catch(() => {});
+  // العلامةُ خُتمت سلفاً في الحجز (أعلاه) — فلا شيءَ يُكتَب هنا عند النجاح. وعند الفشل
+  // يُفَكّ الحجزُ فتُعاد المحاولةُ في الدورة القادمة: يومٌ بلا نسخةٍ أخطرُ من بريدٍ مكرَّر،
+  // وفشلُ `sendMail` يعني أنّ خادمَ البريد **لم يقبل** الرسالة.
+  if (!r.ok && claimedRow) {
+    await prisma.systemSetting.update({ where: { id: claimedRow.id }, data: { value: claimedRow.prev } }).catch(() => {});
   }
   return { ok: r.ok, tables: tableCount, rows: rowCount, error: r.error };
 }

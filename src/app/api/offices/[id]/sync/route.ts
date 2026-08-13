@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { guard, agentTowerIds } from "@/lib/guard";
-import { runManualSync, getManualSyncStatus, setManualSyncStatus } from "@/lib/subscriptionSync";
+import { runManualSync, getManualSyncStatus, setManualSyncStatus, claimManualSync } from "@/lib/subscriptionSync";
 
 export const dynamic = "force-dynamic";
 
@@ -29,13 +29,12 @@ export async function POST(
   if ("error" in g) return g.error;
   const { towerId } = g;
 
-  const st = await getManualSyncStatus(towerId);
-  const running = st?.state === "running"
-    && Date.now() - new Date(st.startedAt).getTime() < 30 * 60 * 1000; // أقدم من 30 دقيقة = عالقة، يُسمح بالبدء
-  if (running) return NextResponse.json({ started: true, joined: true });
-
-  // كتابة الحالة قبل الإطلاق كي يجدها أول استطلاع فوراً
-  await setManualSyncStatus(towerId, { state: "running", step: "sync", startedAt: new Date().toISOString() });
+  // ب-١/الأصل ٥ · حَجزٌ ذرّيٌّ قبل الإطلاق (2026-08-13). كان هنا **فحصٌ ثمّ كتابة**:
+  // يقرأ الحالةَ فإن لم تكن «جارية» يكتبها ويُطلق — وبينهما نافذةٌ تُمرّر ضغطتَين
+  // متقاربتَين ⇒ مزامنتان على المكتب نفسِه: جلبُ ١٢٠ يوماً مرّتَين، **وتقريرُ واتسابٍ
+  // كاملٌ يصل المديرَ مرّتَين**. والحجزُ يكتب الحالةَ نفسَها فيجدها أوّلُ استطلاعٍ فوراً.
+  const { claimed } = await claimManualSync(towerId);
+  if (!claimed) return NextResponse.json({ started: true, joined: true });
   void runManualSync(towerId); // بالخلفية — الخادم يواصل بعد الردّ
   return NextResponse.json({ started: true });
 }
