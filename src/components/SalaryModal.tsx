@@ -49,6 +49,8 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [choosing, setChoosing] = useState(false);
+  // (ب) · وضعُ الراتب السالب: يُرحَّل (افتراضيّ) أو يُصفَّر باستيفاءٍ نقديّ من الفنيّ
+  const [negMode, setNegMode] = useState<"carry" | "zero">("carry");
   const [expand, setExpand] = useState<string | null>(null); // الخانة المفتوحة لعرض تفاصيلها
   const [archExpand, setArchExpand] = useState<string | null>(null); // خانة كشفٍ سابقٍ مفتوحة التفاصيل
 
@@ -62,10 +64,18 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   useEffect(() => { load(); }, [load]);
 
   async function settle(source: "daily" | "total") {
+    // 🔑 والسالبُ لا يُسدَّد بلا اختيارٍ صريح: إمّا يُرحَّل أو يُستوفى نقداً — والفرقُ **مالٌ**
+    const isNeg = (st?.roundedDue ?? st?.net ?? 0) < 0;
     const where = source === "daily" ? "كمصروفٍ في التقرير اليومي لليوم" : "خصماً من المبلغ الكلي (دون ظهوره في التقرير اليومي)";
-    if (!confirm(`تسديد راتب «${techName}» ${where}؟\nيُصفَّر سجل الحضور والخصومات والإجازات ضمن الفترة فقط، وأي حركة بعد نهاية الفترة تُرحَّل للفترة القادمة.`)) return;
+    const neg = isNeg
+      ? (negMode === "zero"
+          ? `\n\n🔴 الرصيدُ سالبٌ (${num(st?.roundedDue ?? st?.net ?? 0)}) واخترتَ «تصفيرَ كلّ شيء»:\nسيُقيَّد **قبضُ ${num(Math.abs(st?.roundedDue ?? st?.net ?? 0))} د.ع** ${source === "daily" ? "في التقرير اليومي" : "على المبلغ الكلي"} — أي أنّك أخذتَ الفرقَ نقداً من الفنيّ. ولا يُرحَّل شيءٌ للشهر القادم.`
+          : `\n\n🔴 الرصيدُ سالبٌ (${num(st?.roundedDue ?? st?.net ?? 0)}) واخترتَ «الترحيل»:\nلا يخرج مالٌ ولا يدخل، ويُخصم المتبقّي من راتبه القادم.`)
+      : "";
+    // (أ) · لم تُعد السجلاتُ تُحذف — تُوسَم بالكشف ويُرجعها الإلغاءُ بأوقاتها الحقيقيّة
+    if (!confirm(`تسديد راتب «${techName}» ${where}؟\nتُوسَم بصماتُ الفترة وخصوماتُها وإجازاتُها بهذا الكشف فلا تُحتسَب مرّةً أخرى — **ويُرجعها إلغاءُ الكشف كاملةً**. وأيُّ حركةٍ بعد نهاية الفترة تُرحَّل للفترة القادمة.${neg}`)) return;
     setBusy(true); setMsg("");
-    const r = await fetch("/api/field/salary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId, source }) });
+    const r = await fetch("/api/field/salary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId, source, negMode }) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { setMsg(d.error ?? "تعذّر التسديد"); return; }
@@ -175,6 +185,29 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
               ) : (
                 <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
                   <div className="mb-2 text-center text-sm font-bold text-slate-700">اختر طريقة التسديد ({num(st.paid ?? Math.max(0, st.net))} د.ع)</div>
+
+                  {/* ═════ (ب) · خيارا الراتب السالب (طلب محمد 2026-08-13) =====
+                      لا يظهر إلّا إن كان الرصيدُ سالباً — فمَن رصيدُه موجبٌ لا يرى فرقاً. */}
+                  {(st.roundedDue ?? st.net) < 0 && (
+                    <div className="mb-2.5 rounded-xl border border-rose-300 bg-rose-50 p-2.5">
+                      <div className="mb-1.5 text-[12px] font-bold text-rose-800">
+                        🔴 الرصيدُ سالبٌ: {num(st.roundedDue ?? st.net)} د.ع — كيف تُسوّيه؟
+                      </div>
+                      {([
+                        ["carry", "↪️ رحِّل المتبقّي للشهر القادم", "لا مالَ يخرج ولا يدخل — ويُخصم من راتبه القادم"],
+                        ["zero", "🧾 صفِّر كلَّ شيء (أخذتُ الفرقَ نقداً)", `يُقيَّد قبضُ ${num(Math.abs(st.roundedDue ?? st.net))} د.ع فيزيد مبلغُك — ولا يُرحَّل شيء`],
+                      ] as [("carry" | "zero"), string, string][]).map(([m, t, sub]) => (
+                        <label key={m} className={`mb-1 flex cursor-pointer items-start gap-2 rounded-lg border p-2 text-right ${negMode === m ? "border-rose-500 bg-white" : "border-transparent"}`}>
+                          <input type="radio" name="negMode" checked={negMode === m} onChange={() => setNegMode(m)} className="mt-1 accent-rose-600" />
+                          <span className="min-w-0">
+                            <span className="block text-[12px] font-bold text-slate-800">{t}</span>
+                            <span className="block text-[10px] leading-relaxed text-slate-500">{sub}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="grid gap-2">
                     <button onClick={() => settle("daily")} disabled={busy} className="rounded-xl bg-mynet-blue px-3 py-2.5 text-right font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
                       🧾 من التقرير اليومي
@@ -292,7 +325,7 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
                             <button
                               disabled={stBusy}
                               onClick={async () => {
-                                if (!confirm(`إلغاء كشف ${openSt.statement.periodFrom} → ${openSt.statement.periodTo}؟\nيُعاد المبلغ ${num(openSt.statement.net)} بحذف قيد الصرف.\n\nتنبيه: سجلات الحضور والخصومات لتلك الفترة حُذفت لحظة التسديد فلا تعود.`)) return;
+                                if (!confirm(`إلغاء كشف ${openSt.statement.periodFrom} → ${openSt.statement.periodTo}؟\nيُعاد المبلغ ${num(openSt.statement.net)} بحذف قيد الصرف.\n\n✅ ويرجع كلُّ شيء: بصماتُ الحضور والخصوماتُ والإجازاتُ بأوقاتها الحقيقيّة، وتعود سحوباتُه ومقبوضاتُه للاحتساب. وإن كان التسديدُ بـ«تصفير كلّ شيء» فيُبطَل قيدُ الاستيفاء أيضاً فلا يُقبَض المالُ مرّتَين.`)) return;
                                 setStBusy(true);
                                 const r = await fetch(`/api/field/salary/statement/${openSt.statement.id}`, { method: "POST" });
                                 const d = await r.json().catch(() => ({}));

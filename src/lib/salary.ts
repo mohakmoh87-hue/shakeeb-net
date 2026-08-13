@@ -13,6 +13,9 @@ export type SalaryAdjustment = { dayKey: string; kind: string; amount: number; s
 export type SalaryMoneyTx = { dayKey: string; moneyIn: number; moneyOut: number; notes: string; txId?: number };
 export type SalaryPeriod = { from: string; to: string };
 
+/** (ب) · وضعُ التعامل مع راتبٍ سالب: `carry` يُرحّله للفترة القادمة · `zero` يُصفّره باستيفاءٍ نقديّ */
+export type NegMode = "carry" | "zero";
+
 export type SalaryItem = { date: string; type: string; label: string; amount: number; reason?: string; txId?: number };
 export type SalaryDay = { date: string; amount: number; note: string }; // تفصيل مبالغ الأيام
 export type SalaryResult = {
@@ -27,6 +30,9 @@ export type SalaryResult = {
   roundedDue: number;  // due مقرَّباً إلى الألف الأعلى
   roundingAdd: number; // roundedDue − due ⇒ بين ٠ و٩٩٩ و**موجبٌ أبداً**
   paid: number;        // ما يخرج من الصندوق فعلاً (صفرٌ إن كان المستحقُّ ≤ ٠)
+  /** (ب) · وضعُ الراتب السالب: يُرحَّل أو يُصفَّر باستيفاءٍ نقديّ */
+  collected: number;   // ما يُستوفى نقداً من الفنيّ عند التصفير (موجبٌ أبداً · صفرٌ في الترحيل)
+  negMode: NegMode;
   carryOut: number;    // ما يُرحَّل للفترة القادمة (موقَّع)
 };
 
@@ -60,9 +66,9 @@ import { baghdadDayKey } from "./attendance";
 // (السجلات المُسدَّدة تُحذَف/تُعلَّم عند التسديد، فالمتبقّي هو غير المُسدَّد.)
 async function earliestUnsettledKey(technicianId: number, accountId: number | null): Promise<string | null> {
   const [att, lv, adj, mt] = await Promise.all([
-    prisma.attendance.findFirst({ where: { technicianId }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
-    prisma.leave.findFirst({ where: { technicianId, status: "approved" }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
-    prisma.adjustment.findFirst({ where: { technicianId, status: "confirmed" }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
+    prisma.attendance.findFirst({ where: { ...{ technicianId }, salaryStatementId: null }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
+    prisma.leave.findFirst({ where: { ...{ technicianId, status: "approved" }, salaryStatementId: null }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
+    prisma.adjustment.findFirst({ where: { ...{ technicianId, status: "confirmed" }, salaryStatementId: null }, orderBy: { dayKey: "asc" }, select: { dayKey: true } }),
     accountId
       ? prisma.moneyTx.findFirst({ where: { accountId, isDeleted: false, salaryStatementId: null }, orderBy: { date: "asc" }, select: { date: true } })
       : Promise.resolve(null),
@@ -120,6 +126,8 @@ export async function statementForTechnician(
   salary: number,
   fromDay: number | null | undefined,
   toDay: number | null | undefined,
+  // (ب) · وضعُ الراتب السالب — الافتراضيُّ `carry` = السلوكُ القديم حرفيّاً
+  negMode: NegMode = "carry",
 ): Promise<SalaryResult> {
   const todayKey = baghdadDayKey(new Date());
   const tech = await prisma.technician.findUnique({ where: { id: technicianId }, select: { accountId: true } });
@@ -130,9 +138,9 @@ export async function statementForTechnician(
   const dateRange = p ? { gte: new Date(`${p.from}T00:00:00+03:00`), lte: new Date(`${p.to}T23:59:59.999+03:00`) } : undefined;
 
   const [att, leaves, adj, money] = await Promise.all([
-    prisma.attendance.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true, lateExcuse: true } }),
-    prisma.leave.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
-    prisma.adjustment.findMany({ where: { technicianId, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
+    prisma.attendance.findMany({ where: { technicianId, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true, lateExcuse: true } }),
+    prisma.leave.findMany({ where: { technicianId, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
+    prisma.adjustment.findMany({ where: { technicianId, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
     accountId
       ? prisma.moneyTx.findMany({ where: { accountId, isDeleted: false, salaryStatementId: null, ...(dateRange ? { date: dateRange } : {}) }, select: { id: true, date: true, moneyIn: true, moneyOut: true, notes: true } })
       : Promise.resolve([] as { id: number; date: Date | null; moneyIn: number | null; moneyOut: number | null; notes: string | null }[]),
@@ -142,7 +150,7 @@ export async function statementForTechnician(
     dayKey: baghdadDayKey(m.date ?? new Date()), moneyIn: m.moneyIn ?? 0, moneyOut: m.moneyOut ?? 0, notes: m.notes ?? "", txId: m.id,
   }));
 
-  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], moneyItems, todayKey, p);
+  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], moneyItems, todayKey, p, 0, negMode);
 }
 
 // أيام شهر الـ dayKey (YYYY-MM-DD)
@@ -207,6 +215,7 @@ export function computeSalary(
   period?: SalaryPeriod | null,
   // رصيدُ الفترة السابقة (`carryOut` لأحدث كشفٍ غير مُلغى). صفرٌ = سلوكُ ما قبل البند حرفيّاً.
   carryIn: number = 0,
+  negMode: NegMode = "carry",
 ): SalaryResult {
   const items: SalaryItem[] = [];
   const dayDetails: SalaryDay[] = [];
@@ -279,13 +288,21 @@ export function computeSalary(
   // المستحقُّ موجبٌ ⇒ يُصرف مقرَّباً ولا يبقى شيء. سالبٌ (أو صفر) ⇒ لا صرف، ويُرحَّل بإشارته
   // فيُخصم من راتبه القادم (خيارُ «تسديدٌ وتحويل المتبقّي»)، أو يُستوفى نقداً بخيار «تسديدٌ كلّيّ».
   const paid = roundedDue > 0 ? roundedDue : 0;
-  const carryOut = roundedDue > 0 ? 0 : roundedDue;
+  // ===== (ب) · خيارا الراتب السالب (قرارُ محمد 2026-08-13) =====
+  // «سدِّد ورحِّل المتبقّي» أو «سدِّد وصفِّر كلَّ شيء». والثاني بنصّه: «يعني أنّي قد أخذتُ فرقَ
+  //  الراتب يدويّاً من الفنيّ المعنيّ، فزاد عندي إمّا مبلغُ التقرير اليوميّ أو المبلغُ الكلّيُّ
+  //  الموجود، وحسب ما اخترتُه لتسديد الراتب.»
+  // ⇒ فالتصفيرُ **ليس محواً للدَّين بل استيفاءً نقديّاً**: `carryOut = 0` **ومعه قيدُ قبضٍ**
+  //   بمقداره يزيد المصدرَ الذي اختاره. ولولا القيدُ لكان «التصفير» إخفاءَ مالٍ قُبض فعلاً.
+  const carryOut = roundedDue > 0 ? 0 : (negMode === "zero" ? 0 : roundedDue);
+  // ما يُستوفى نقداً من الفنيّ عند التصفير (موجبٌ أبداً) — وصفرٌ في وضع الترحيل
+  const collected = roundedDue < 0 && negMode === "zero" ? -roundedDue : 0;
 
   return {
     daysPaid, cleanDays, dailyAmount,
     baseEarned, overtime, bonuses, credits, attendanceDeductions: attDed, confirmedDeductions: confDed, advances, net,
     periodFrom: period?.from ?? (sorted[0] ?? todayKey), periodTo: period?.to ?? todayKey, items, dayDetails,
-    carryIn, due, roundedDue, roundingAdd, paid, carryOut,
+    carryIn, due, roundedDue, roundingAdd, paid, carryOut, collected, negMode,
   };
 }
 

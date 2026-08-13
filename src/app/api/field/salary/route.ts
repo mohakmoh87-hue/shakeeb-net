@@ -66,16 +66,19 @@ export async function POST(request: Request) {
   const g = await guard("field.payroll");
   if (g.error) return g.error;
   const parsed = z
-    .object({ technicianId: z.coerce.number(), source: z.enum(["daily", "total"]).default("daily") })
+    .object({ technicianId: z.coerce.number(), source: z.enum(["daily", "total"]).default("daily"),
+      // (ب) · الراتبُ السالب: يُرحَّل (الافتراضيّ = السلوكُ القديم) أو يُصفَّر باستيفاءٍ نقديّ
+      negMode: z.enum(["carry", "zero"]).default("carry") })
     .safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "technicianId مطلوب" }, { status: 400 });
   const source = parsed.data.source;
+  const negMode = parsed.data.negMode;
 
   const t = await prisma.technician.findUnique({ where: { id: parsed.data.technicianId } });
   if (!t || t.isDeleted || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
 
   const days = await salaryDaysOfAgent(t.agentId ?? g.session.agentId);
-  const result = await statementFor(t.id, t.salary ?? 0, days.fromDay, days.toDay);
+  const result = await statementFor(t.id, t.salary ?? 0, days.fromDay, days.toDay, negMode);
   // أ-١٦ · يُدفع **المُقرَّب** إلى الألف الأعلى لا الصافي الخام (طلب محمد 2026-08-12):
   // «الدينار العراقي ليس فيه دينار ولا مئة دينار». والتقريب على **المجموع النهائي وحده**
   // لا على كل يوم، و**المستفيد دائماً الفنيّ**: الموجب يُرفع (١٠٠٬٠٠١ ← ١٠١٬٠٠٠) والسالب
@@ -155,11 +158,48 @@ export async function POST(request: Request) {
         data: { salaryStatementId: st.id },
       });
     }
-    // تصفير سجل الفترة فقط: الحضور وكل الخصومات (بما فيها المعلّقة — تُصفَّى بدفع الفترة) والإجازات
-    // المقرّرة ضمن [from,to]؛ ما بعدها يُرحَّل. (المعلّق يبقى بلا وقت محدّد ما لم تُدفع فترته)
-    await tx.attendance.deleteMany({ where: { technicianId: t.id, dayKey: dayRange } });
-    await tx.adjustment.deleteMany({ where: { technicianId: t.id, dayKey: dayRange } });
-    await tx.leave.deleteMany({ where: { technicianId: t.id, status: { in: ["approved", "rejected"] }, dayKey: dayRange } });
+    // ═════ (أ) · الوسمُ بدل الحذف (قرارُ محمد 2026-08-13) ═════
+    // 🔴 **كان هنا ثلاثةُ `deleteMany`** تمحو الحضورَ والخصوماتِ والإجازاتِ محواً نهائيّاً، فزرُّ
+    // «إلغاء الكشف» لا يُرجع منها شيئاً — كما وقع لأحمد عبد الرزاق: أُلغي الكشفُ ولم ترجع لا
+    // بصماتُه ولا راتبُه ولا ما سحبه. والنصُّ في مسار الإلغاء كان يُقرّ بذلك: «الإلغاءُ يُصحّح
+    // المالَ والسجلَّ لا الفترة».
+    // ⇒ يُوسَم الصفُّ بالكشف الذي احتُسب فيه فلا يُعاد احتسابُه (`computeSalary` يُرشِّح
+    //   `salaryStatementId: null`)، **ويُرجعه الإلغاءُ بفكّ الوسم — بأوقاته الحقيقيّة**.
+    //   وهو نمطُ `MoneyTx.salaryStatementId` القائمُ منذ البداية، فلا اختراعَ ولا سلوكَ ثالث.
+    await tx.attendance.updateMany({ where: { technicianId: t.id, dayKey: dayRange, salaryStatementId: null }, data: { salaryStatementId: st.id } });
+    await tx.adjustment.updateMany({ where: { technicianId: t.id, dayKey: dayRange, salaryStatementId: null }, data: { salaryStatementId: st.id } });
+    await tx.leave.updateMany({ where: { technicianId: t.id, status: { in: ["approved", "rejected"] }, dayKey: dayRange, salaryStatementId: null }, data: { salaryStatementId: st.id } });
+
+    // ═════ (ب) · «سدِّد وصفِّر كلَّ شيء» — قيدُ الاستيفاء ═════
+    // بنصّ محمد: «التصفيرُ يعني أنّي أخذتُ فرقَ الراتب يدويّاً من الفنيّ، فزاد عندي إمّا مبلغُ
+    //  التقرير اليوميّ أو المبلغُ الكلّيُّ الموجود، وحسب ما اخترتُه لتسديد الراتب.»
+    // ⇒ فالمالُ **قُبض فعلاً** ويجب أن يُقيَّد، وإلّا كان «التصفير» إخفاءَ مالٍ في اليد.
+    //   ويُقيَّد في **نفس مصدر التسديد**: التقريرُ اليوميُّ ⇒ حركةُ صندوق · الكلّيُّ ⇒ حركةُ إدارة.
+    // ⚠️ ونوعُ حركة الإدارة `receipt` لا اسمٌ جديد: التصنيفُ في `managers.ts:90` يستنبط الاتجاهَ
+    //   **من اسم النوع**، وكلُّ ما ليس في قائمة الإيداع يُحسَب **سحباً** — فنوعٌ جديدٌ كان
+    //   سيُقيَّد بالعكس ويُنقص مالَك. والوصفُ يحمل التفصيل.
+    if (result.collected > 0) {
+      const label = `استيفاءُ فرق راتب ${t.name} نقداً (${from} → ${to}) — تصفيرُ رصيدٍ سالبٍ ${result.roundedDue}`;
+      if (source === "daily") {
+        await tx.moneyTx.create({
+          data: {
+            moneyIn: result.collected, moneyOut: 0, date: new Date(), serverDate: new Date(),
+            userId: g.session.userId, towerId: t.towerId, sourceType: "salary",
+            salaryStatementId: st.id, // فيُفَكَّ وسمُه بالإلغاء كأيّ حركةٍ محتسَبة
+            notes: label,
+          },
+        });
+      } else {
+        await tx.managerTx.create({
+          data: {
+            type: "receipt", amount: result.collected, userId: g.session.userId,
+            agentId: t.agentId ?? g.session.agentId ?? -1,
+            byUser: g.session.fullName ?? g.session.username,
+            notes: `${label} · كشف #${st.id}`,
+          },
+        });
+      }
+    }
     return st;
   });
 

@@ -840,6 +840,16 @@ model Attendance {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @default(now()) @updatedAt
 
+  // ===== (أ) · الوسمُ بدل الحذف (طلب محمد 2026-08-13) =====
+  // «يلزمه أن يتوقّف التسديدُ عن الحذف النهائيّ ويُؤرشِف ما يحذف — فيُرجعه الإلغاءُ كاملاً
+  //  **بأوقاته الحقيقيّة** لا مُعاداً بالدوام. وهذا يُصلح الجذرَ لا الأثر.»
+  // 🔴 وكان التسديدُ يُنفّذ `deleteMany` على الحضور والخصومات والإجازات ⇒ فزرُّ الإلغاء
+  // «يُصحّح المالَ والسجلَّ لا الفترة» بنصّ الكود نفسِه (حادثةُ أحمد عبد الرزاق).
+  // والآن يُوسَم الصفُّ بالكشف الذي احتُسب فيه — **تماماً كنمط `MoneyTx.salaryStatementId`
+  // القائم** — فلا يُعاد احتسابُه، **ويُرجعه الإلغاءُ بفكّ الوسم بأوقاته الحقيقيّة**.
+  salaryStatementId Int?
+
+  @@index([salaryStatementId])
   @@unique([technicianId, dayKey]) // بصمة واحدة (دخول+خروج) لكل فني في اليوم — تمنع الازدواج
   @@index([technicianId])
   @@index([agentId])
@@ -867,6 +877,10 @@ model Leave {
   @@index([technicianId])
   @@index([agentId])
   @@index([dayKey])
+  // (أ) · يُوسَم بالكشف بدل الحذف — فيُرجعه الإلغاءُ كاملاً (انظر Attendance)
+  salaryStatementId Int?
+
+  @@index([salaryStatementId])
   @@map("leaves")
 }
 
@@ -1187,6 +1201,10 @@ model Adjustment {
 
   @@index([technicianId])
   @@index([agentId])
+  // (أ) · يُوسَم بالكشف بدل الحذف — فيُرجعه الإلغاءُ كاملاً (انظر Attendance)
+  salaryStatementId Int?
+
+  @@index([salaryStatementId])
   @@index([status])
   @@map("adjustments")
 }

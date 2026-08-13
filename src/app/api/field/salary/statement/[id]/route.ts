@@ -127,11 +127,44 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   });
   if (already) return NextResponse.json({ error: "أُلغي هذا الكشف مسبقاً" }, { status: 400 });
 
-  let moneyReturned = 0;
-  if (st.moneyTxId) {
-    const upd = await prisma.moneyTx.updateMany({ where: { id: st.moneyTxId, isDeleted: false }, data: { isDeleted: true } });
-    if (upd.count > 0) moneyReturned = st.net;
-  }
+  // ═════ (أ) · الإلغاءُ صار **عكسيّاً كاملاً** (قرارُ محمد 2026-08-13) ═════
+  // كان يُصحّح المالَ والسجلَّ **لا الفترة**، لأنّ التسديدَ يمحو الحضورَ والخصوماتِ والإجازاتِ
+  // محواً نهائيّاً. وقد صار التسديدُ **يَوسِمها** بمعرّف الكشف بدل حذفها ⇒ فالإلغاءُ يفكّ
+  // الوسمَ فتعود **بأوقاتها الحقيقيّة** لا مُعادةً بالدوام. كلُّه في معاملةٍ واحدة.
+  const undone = await prisma.$transaction(async (tx) => {
+    // (١) فكُّ أوسمة الفترة — الحضورُ والخصوماتُ والإجازات
+    const [att, adj, lv] = await Promise.all([
+      tx.attendance.updateMany({ where: { salaryStatementId: st.id }, data: { salaryStatementId: null } }),
+      tx.adjustment.updateMany({ where: { salaryStatementId: st.id }, data: { salaryStatementId: null } }),
+      tx.leave.updateMany({ where: { salaryStatementId: st.id }, data: { salaryStatementId: null } }),
+    ]);
+
+    // (٢) قيدُ الصرف يُبطَل فيعود المالُ إلى الصندوق
+    let moneyReturned = 0;
+    if (st.moneyTxId) {
+      const upd = await tx.moneyTx.updateMany({ where: { id: st.moneyTxId, isDeleted: false }, data: { isDeleted: true } });
+      if (upd.count > 0) moneyReturned = st.net;
+    }
+
+    // (٣) 🔴 وقيدُ **الاستيفاء** (ب) يُبطَل أيضاً: تصفيرُ رصيدٍ سالبٍ أدخل مالاً إلى الصندوق،
+    //     فإلغاءُ الكشف بلا إبطاله يُبقي مالاً قُبض على دَينٍ عاد ⇒ **قُبض مرّتَين**.
+    //     ويُعرَف بأنّه حركةُ راتبٍ موسومةٌ بالكشف وفيها **قبضٌ** لا صرف.
+    const collectVoid = await tx.moneyTx.updateMany({
+      where: { salaryStatementId: st.id, sourceType: "salary", moneyIn: { gt: 0 }, isDeleted: false },
+      data: { isDeleted: true },
+    });
+
+    // (٤) وحركاتُ حساب الموظّف (سحوباتُه ومقبوضاتُه) يُفَكُّ وسمُها فتُحتسَب في فترته القادمة
+    const acct = await tx.moneyTx.updateMany({
+      where: { salaryStatementId: st.id, isDeleted: false },
+      data: { salaryStatementId: null },
+    });
+
+    // (٥) ويُوسَم الكشفُ ملغىً في عموده — لا في سجلّ التدقيق وحدَه
+    await tx.salaryStatement.update({ where: { id: st.id }, data: { cancelledAt: new Date() } });
+
+    return { att: att.count, adj: adj.count, lv: lv.count, moneyReturned, collectVoided: collectVoid.count, acct: acct.count };
+  });
 
   await prisma.auditLog.create({
     data: {
@@ -140,13 +173,18 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       details:
         "إلغاء كشف راتب " + st.technicianName + " (" + st.periodFrom + " → " + st.periodTo + ") — " +
         "صافي " + st.net.toLocaleString("en-US") +
-        (moneyReturned ? " — أُعيد المال بحذف قيد الصرف" : " — قيد الصرف كان محذوفاً مسبقاً"),
+        " — أُعيد: " + undone.att + " بصمة · " + undone.adj + " خصم/مكافأة · " + undone.lv + " إجازة" +
+        " · فُكَّ وسمُ " + undone.acct + " حركةَ حساب" +
+        (undone.moneyReturned ? " · أُبطل قيدُ الصرف" : " · لا قيدَ صرفٍ قائم") +
+        (undone.collectVoided ? " · وأُبطل قيدُ استيفاء التصفير" : ""),
     },
   });
 
   return NextResponse.json({
     ok: true,
-    moneyReturned,
-    note: "سجلات الحضور والخصومات لتلك الفترة حُذفت لحظة التسديد فلا تعود — الإلغاء صحّح المال والسجل.",
+    moneyReturned: undone.moneyReturned,
+    restored: { attendance: undone.att, adjustments: undone.adj, leaves: undone.lv, accountTxs: undone.acct },
+    collectVoided: undone.collectVoided,
+    note: "رجعت بصمات الحضور والخصومات والإجازات بأوقاتها الحقيقية، وعادت حركات الحساب للاحتساب.",
   });
 }
