@@ -12,6 +12,8 @@ import { useCallback, useEffect, useState } from "react";
 type Panel = {
   id: number; label: string | null; loginUrl: string | null; username: string | null;
   hasPassword: boolean; odooEnabled: string | null; odooUser: string | null; hasOdooPass: boolean;
+  // القروضُ تتبع اللوحة (طلبُ محمد 2026-08-13): حسابُ الديلر على سوبر سيل
+  loanUser: string | null; hasLoanPass: boolean;
 };
 type Quota = { quota: number; used: number; remaining: number; usedTowerIds: number[] };
 
@@ -22,14 +24,16 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ t: "ok" | "err"; m: string } | null>(null);
-  const [form, setForm] = useState({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "" });
+  const [form, setForm] = useState({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "", loanUser: "", loanPass: "" });
   // 🔴 بلاغُ محمد 2026-08-13: «ظهرت لوحةُ المكتب بساسَين لصميم ولكن **لا يمكن تعديلُ
   // الصفحتَين**، حيث يمكن فقط حذفُ الصفحة الثانية أمّا الأولى فلا تُعدَّل ولا تُمسَح.»
   // والعلّةُ **في الواجهة وحدَها**: مسارُ `PATCH` موجودٌ وكاملٌ ويعمل لأيّ لوحةٍ بما فيها
   // الأولى — ولم يُرسَم له نموذجٌ إطلاقاً. فصارت اللوحةُ تُنشأ ولا تُصحَّح، وخطأٌ في رابطٍ
   // أو كلمةِ مرورٍ يعني حذفَها وإعادةَ إنشائها — وهي **لا تُحذَف إن كان لها مشتركون**.
+  // نتيجةُ اختبار قروض كلّ لوحةٍ على حدة (درسُ علّة الساس: يُسمّى ما اختُبر)
+  const [loanTest, setLoanTest] = useState<Record<number, { ok: boolean; m: string } | undefined>>({});
   const [editId, setEditId] = useState<number | null>(null);
-  const [ef, setEf] = useState({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "" });
+  const [ef, setEf] = useState({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "", loanUser: "", loanPass: "" });
 
   const load = useCallback(() => {
     fetch(`/api/towers/${towerId}/panels`)
@@ -66,14 +70,34 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
     setBusy(false);
     if (!r.ok) { setMsg({ t: "err", m: d.error ?? "تعذّر الإنشاء" }); return; }
     setMsg({ t: "ok", m: "أُضيفت اللوحة ✓ — ووُسم مشتركو المكتب بلوحته الأولى تلقائياً" });
-    setForm({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "" });
+    setForm({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "", loanUser: "", loanPass: "" });
     load(); onChange?.();
   }
 
   function startEdit(p: Panel) {
     setEditId(p.id); setMsg(null);
     // كلمتا المرور تُتركان فارغتَين: الخادمُ يُبقي القديمة إن لم تُرسَل — فلا تُطمَس بالخطأ
-    setEf({ label: p.label ?? "", loginUrl: p.loginUrl ?? "", username: p.username ?? "", password: "", odooUser: p.odooUser ?? "", odooPass: "" });
+    setEf({ label: p.label ?? "", loginUrl: p.loginUrl ?? "", username: p.username ?? "", password: "", odooUser: p.odooUser ?? "", odooPass: "", loanUser: p.loanUser ?? "", loanPass: "" });
+  }
+
+  /** يختبر حسابَ ديلرِ **هذه اللوحة** على مشتركٍ **منها** — والنتيجةُ تُسمّي ما اختُبر. */
+  async function testLoan(panelId: number) {
+    setBusy(true);
+    setLoanTest((s) => ({ ...s, [panelId]: undefined }));
+    try {
+      const r = await fetch(`/api/towers/${towerId}/loan-test`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        // الحسابُ المخزَّنُ للّوحة يُستعمَل — ولا تُرسَل كلمةُ مرورٍ من النموذج
+        // (لو أُرسلت فارغةً لَاختُبرت الفارغةُ بدل المحفوظة)
+        body: JSON.stringify({ panelId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      const head = d.ok ? "✓ يعمل" : "✗ فشل";
+      const detail = [d.message, d.testedUser ? `الحساب: ${d.testedUser}` : "", d.sampleFrom].filter(Boolean).join(" · ");
+      setLoanTest((s) => ({ ...s, [panelId]: { ok: !!d.ok, m: `${head} — ${detail}` } }));
+    } catch {
+      setLoanTest((s) => ({ ...s, [panelId]: { ok: false, m: "تعذّر الاتصال بالخادم" } }));
+    } finally { setBusy(false); }
   }
 
   async function saveEdit(panelId: number) {
@@ -82,9 +106,10 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
       return;
     }
     setBusy(true); setMsg(null);
-    const body: Record<string, string> = { label: ef.label, loginUrl: ef.loginUrl, username: ef.username, odooUser: ef.odooUser };
+    const body: Record<string, string> = { label: ef.label, loginUrl: ef.loginUrl, username: ef.username, odooUser: ef.odooUser, loanUser: ef.loanUser };
     if (ef.password) body.password = ef.password;
     if (ef.odooPass) body.odooPass = ef.odooPass;
+    if (ef.loanPass) body.loanPass = ef.loanPass; // فارغةٌ = أبقِ القديمة
     const r = await fetch(`/api/towers/${towerId}/panels?panelId=${panelId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
@@ -174,6 +199,7 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
                         ["username", "اسم مستخدم الساس", true],
                         ["password", p.hasPassword ? "كلمة مرور الساس (اتركها فارغة لتبقى)" : "كلمة مرور الساس", true],
                         ["odooUser", "مستخدم أودو (اختياريّ)", true],
+                        ["loanUser", "مستخدم قروض سوبر سيل لهذه اللوحة (اختياريّ)", true],
                         ["odooPass", p.hasOdooPass ? "كلمة مرور أودو (اتركها فارغة لتبقى)" : "كلمة مرور أودو (اختياريّ)", true],
                       ] as [string, string, boolean][]).map(([k, ph, ltr]) => (
                         <input key={k} value={ef[k as keyof typeof ef]} placeholder={ph}
@@ -186,6 +212,20 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
                         className="w-full rounded-xl bg-slate-700 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-60">
                         {busy ? "..." : "حفظ التعديل"}
                       </button>
+
+                      {/* ═════ اختبارُ حسابِ ديلرِ **هذه اللوحة** (درسُ علّة الساس) ═════
+                          بلا اختبارٍ لكلّ لوحةٍ يضبط المديرُ حساباً ولا يعرف أصحيحٌ هو إلّا
+                          حين يفشل المنحُ أمام مشترك. والاختبارُ يُسمّي **ما اختبره** صريحاً —
+                          فاختبارٌ لا يقول أيَّ حسابٍ جرّب هو ما جعل علّةَ الساس تمرّ صامتةً. */}
+                      <button onClick={() => void testLoan(p.id)} disabled={busy}
+                        className="mt-1.5 w-full rounded-xl border border-amber-300 bg-amber-50 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-60">
+                        🔌 اختبارُ قروض هذه اللوحة
+                      </button>
+                      {loanTest[p.id] && (
+                        <div className={`mt-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ${loanTest[p.id]!.ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                          {loanTest[p.id]!.m}
+                        </div>
+                      )}
                       <div className="mt-1.5 text-[10px] leading-relaxed text-slate-500">
                         ⚠️ تغييرُ الرابط أو المستخدم يُحوِّل <b>{counts[String(p.id)] ?? 0}</b> مشتركاً
                         إلى المُخدِّم الجديد — فتأكّد قبل الحفظ. وكلمةُ المرور الفارغةُ تُبقي القديمة.
@@ -205,6 +245,8 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
                   ["username", "اسم مستخدم الساس"],
                   ["password", "كلمة مرور الساس"],
                   ["odooUser", "مستخدم أودو (اختياريّ)"],
+                  ["loanUser", "مستخدم قروض سوبر سيل لهذه اللوحة (اختياريّ)"],
+                  ["loanPass", "كلمة مرور قروض هذه اللوحة (اختياريّ)"],
                   ["odooPass", "كلمة مرور أودو (اختياريّ)"],
                 ].map(([k, ph]) => (
                   <input key={k} value={form[k as keyof typeof form]} placeholder={ph}

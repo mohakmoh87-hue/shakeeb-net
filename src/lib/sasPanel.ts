@@ -47,7 +47,49 @@ const PANEL_SEL = {
   id: true, towerId: true, agentId: true, label: true,
   loginUrl: true, username: true, password: true, activationTemplate: true,
   odooEnabled: true, odooUrl: true, odooUser: true, odooPass: true, odooUid: true,
+  loanUser: true, loanPass: true,
 } as const;
+
+/** بياناتُ دخولِ حسابِ الديلر على لوحة قروض سوبر سيل. */
+export type LoanCreds = { panelId: number | null; label: string | null; loanUser: string; loanPass: string };
+
+/** ═════ القرضُ يتبع لوحةَ المشترك (طلبُ محمد 2026-08-13: «موقعَين للقروض») ═════
+ *  حسابُ القرض هو حسابُ **الديلر** على سوبر سيل، وكان على `Tower` وحدَه ⇒ مكتبٌ
+ *  بلوحتَي ساسٍ له حسابُ ديلرٍ واحد. ولكلّ مُخدِّمِ ساسٍ حسابُ ديلرٍ مستقلٌّ (قِيس على
+ *  صميم: `sameem.faaq@slm` و`Dajlat.Alsalam1@slm`) ⇒ يُقرَأ حسابُ **لوحةِ المشترك**.
+ *
+ *  والارتدادُ إلى أعمدة المكتب مقصودٌ لا نسيان: المكاتبُ الستّةُ المفعَّلةُ اليومَ
+ *  (٥ · ٦ · ٧ · ٣٨ · ٣٩ · ٤٢) بلوحةٍ واحدةٍ وحساباتُها على المكتب — فلا تتأثّر بحرف.
+ *  ولوحةٌ بلا حسابِ قرضٍ تعمل بحساب مكتبها كما كانت.
+ *
+ *  `null` = لا حسابَ مكتملاً لا على اللوحة ولا على المكتب. */
+export async function loanCredsOfSubscriber(subscriberId: number): Promise<LoanCreds | null> {
+  const s = await prisma.subscriber.findUnique({
+    where: { id: subscriberId },
+    select: { towerId: true, sasPanelId: true },
+  });
+  if (!s?.towerId) return null;
+
+  if (s.sasPanelId != null) {
+    const p = await prisma.sasPanel.findFirst({
+      // 🔒 العزل: اللوحةُ يجب أن تكون **لهذا المكتب** — والمكتبُ فُحص في المسار المنادي
+      where: { id: s.sasPanelId, towerId: s.towerId, isDeleted: false },
+      select: { id: true, label: true, loanUser: true, loanPass: true },
+    });
+    const u = (p?.loanUser ?? "").trim();
+    const w = pw(p?.loanPass ?? null) ?? "";
+    // مكتملةٌ فقط تُقبَل: لوحةٌ بيوزرٍ بلا كلمةِ مرورٍ تسقط إلى المكتب بدل أن تفشل
+    if (u && w) return { panelId: p!.id, label: p!.label, loanUser: u, loanPass: w };
+  }
+
+  const t = await prisma.tower.findUnique({
+    where: { id: s.towerId },
+    select: { name: true, loanUser: true, loanPass: true },
+  });
+  const u = (t?.loanUser ?? "").trim();
+  const w = pw(t?.loanPass ?? null) ?? "";
+  return u && w ? { panelId: null, label: t?.name ?? null, loanUser: u, loanPass: w } : null;
+}
 
 export function credsFromPanel(p: {
   id: number; towerId: number; agentId: number | null; label: string | null;

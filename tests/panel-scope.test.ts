@@ -105,8 +105,12 @@ describe("نطاقُ لوحة الساس: لا عمودَ نطاقٍ على جد
         for (const m of src.matchAll(/\b(?:prisma|tx|t)\.([a-z][A-Za-z0-9]*)\.(findMany|findFirst|findUnique|count|update|updateMany|create|createMany|upsert|delete|deleteMany|aggregate|groupBy)\s*\(/g)) {
           const model = toModel(m[1]);
           const body = argBody(src, m.index + m[0].length - 1); // جسمُ الوسيط بمطابقةِ الأقواس
-          // الذكرُ صريحاً، أو عبر النطاق العامّ الذي يحمل العمود
-          const mentions = new RegExp(`\\b${field}\\b`).test(body)
+          // ⚠️ **موضعُ المفتاح وحدَه** — لا كلُّ ذِكر. فـ`{ id: s.sasPanelId }` يقرأ لوحةَ
+          //   المشترك **قيمةً** ويُرشّح بـ`id`: استعلامٌ صحيحٌ تماماً، وأوّلُ نسخةٍ من هذا
+          //   الاختبار أنذرت عليه كذباً. والمفتاحُ يتبعه `:` ولا يسبقه `.` (فـ`x.sasPanelId`
+          //   قراءةُ خاصّيّةٍ من كائنٍ آخر لا مفتاحٌ في وسيطِ بريزما).
+          const asKey = new RegExp(`(?<![.\\w])${field}\\s*:`);
+          const mentions = asKey.test(body)
             || (field === "sasPanelId" && /\.\.\.panelWhere\b/.test(body));
           if (!mentions) continue;
           if (owners.has(model)) continue;
@@ -168,5 +172,71 @@ describe("سلسلةُ لوحةِ الساس عند التفعيل — حلقة�
     assert.ok(/sp\.get\("panel"\)/.test(src), "يقرأ المعامل");
     assert.ok(/sas_panel/.test(src),
       "ويرتدّ إلى الكعكة — فصفحةُ الساس تطبيقٌ أحاديُّ الصفحة وطلباتُها الداخليّةُ بلا معامل");
+  });
+});
+
+// ═════ الديلر/القروض يتبع اللوحةَ — بنفسِ دروسِ علّة الساس ═════
+// طلبُ محمد: «بالانتفاعِ من المشاكل التي حدثت مع الساس وأصلحتَها أريد الديلرَ بلا مشاكل».
+// والدروسُ الأربعةُ التي دفعنا ثمنَها اليومَ، مُطبَّقةً هنا كشروطٍ محروسة:
+//  ١) كلُّ موضعٍ **يُصادِق** يجب أن يحسم اللوحةَ لا المكتب (وإلّا: Access Denied).
+//  ٢) حلقةٌ واحدةٌ ناقصةٌ في السلسلة تُرجع إلى اللوحة الأولى **صامتاً** ⇒ تُحرَس السلسلةُ كلُّها.
+//  ٣) الارتدادُ إلى المكتب **مقصودٌ** لا نسيان — فالمكاتبُ ذاتُ اللوحة الواحدة لا تتأثّر.
+//  ٤) **الاختبارُ يجب أن يُشبه العمليّةَ الحقيقيّة**: اختبارُ اتصالٍ يقرأ حساباً غيرَ الذي
+//     يُستعمَل في المنح، أو يُجرّبه على مشتركِ لوحةٍ أخرى — يُطمئن كذباً. وهذا ما اصطدناه.
+describe("الديلر/القروض يتبع اللوحةَ — دروسُ علّة الساس مُطبَّقة", () => {
+  test("السكيمةُ: `SasPanel` يحمل حسابَ الديلر، و`loanEnabled/loanMode` يبقيان على المكتب", () => {
+    const src = fs.readFileSync(SCHEMA, "utf8");
+    const panel = /^model SasPanel \{([\s\S]*?)^\}/m.exec(src)?.[1] ?? "";
+    const tower = /^model Tower \{([\s\S]*?)^\}/m.exec(src)?.[1] ?? "";
+    assert.ok(/^\s{2}loanUser\s/m.test(panel), "اللوحةُ بلا `loanUser` ⇒ حسابُ ديلرٍ واحدٌ للمكتب");
+    assert.ok(/^\s{2}loanPass\s/m.test(panel), "اللوحةُ بلا `loanPass`");
+    // 🔑 والسياسةُ تبقى للمكتب: هو وحدةُ العمل، واللوحةُ نقطةُ بنيةٍ تحتيّة
+    assert.ok(!/^\s{2}loanEnabled\s/m.test(panel),
+      "`loanEnabled` على اللوحة: تلك سياسةٌ للمكتب لا بيانَ دخولٍ — إن كان بقصدٍ فحدِّث الاختبار");
+    assert.ok(/^\s{2}loanEnabled\s/m.test(tower) && /^\s{2}loanMode\s/m.test(tower),
+      "السياسةُ يجب أن تبقى على المكتب");
+  });
+
+  test("المُحلِّل: `loanCredsOfSubscriber` تقرأ لوحةَ المشترك وترتدّ إلى المكتب", () => {
+    const src = read("src/lib/sasPanel.ts");
+    assert.ok(/export async function loanCredsOfSubscriber/.test(src), "غاب المُحلِّل");
+    assert.ok(/sasPanelId: true/.test(src), "لا يقرأ لوحةَ المشترك");
+    assert.ok(/id: s\.sasPanelId, towerId: s\.towerId/.test(src),
+      "🔒 اللوحةُ يجب أن تُقيَّد بمكتب المشترك — وإلّا قُبلت لوحةُ مكتبٍ آخر");
+    assert.ok(/prisma\.tower\.findUnique/.test(src),
+      "الارتدادُ إلى أعمدة المكتب مقصود — بلاه تتوقّف المكاتبُ الستّةُ المفعَّلة");
+  });
+
+  test("المنحُ يستعمل المُحلِّلَ لا أعمدةَ المكتب", () => {
+    const src = read("src/app/api/subscribers/[id]/loan/route.ts");
+    assert.ok(/loanCredsOfSubscriber\(subscriber\.id\)/.test(src), "المنحُ لا يحسم اللوحة");
+    assert.ok(!/decryptSecret\(office\.loanPass\)/.test(src),
+      "المنحُ ما زال يقرأ كلمةَ مرور **المكتب** مباشرةً ⇒ حسابُ اللوحة الأولى دائماً");
+  });
+
+  test("🔑 اختبارُ الاتصال يختبر **حسابَ اللوحة** على **مشتركٍ منها**", () => {
+    const src = read("src/app/api/towers/[id]/loan-test/route.ts");
+    assert.ok(/panelId: z\.coerce\.number\(\)/.test(src), "الاختبارُ لا يقبل لوحةً ⇒ يختبر المكتبَ دائماً");
+    assert.ok(/prisma\.sasPanel\.findFirst/.test(src), "لا يقرأ حسابَ اللوحة المخزَّن");
+    assert.ok(/panelId != null \? \{ sasPanelId: panelId \} : \{\}/.test(src),
+      "العيّنةُ من أيّ لوحةٍ ⇒ حسابُ لوحةٍ يُختبَر على مشتركِ أخرى فيُقال «الحسابُ خطأ» وهو صحيح");
+    assert.ok(/testedUser/.test(src) && /scope/.test(src),
+      "النتيجةُ يجب أن تُسمّي ما اختُبر — الاختبارُ الصامتُ هو ما أخفى علّةَ الساس");
+  });
+
+  test("الواجهة: حقلا الحساب موجودان وزرُّ اختبارٍ **لكلّ لوحة**", () => {
+    const src = read("src/components/SasPanelsButton.tsx");
+    assert.ok(/loanUser: string \| null; hasLoanPass: boolean/.test(src), "النوعُ بلا حسابِ قرض");
+    assert.ok(/hasLoanPass/.test(src), "كلمةُ المرور لا تُعاد — تُعرَض علامةُ وجودٍ فقط");
+    assert.ok(/testLoan\(p\.id\)/.test(src),
+      "بلا زرِّ اختبارٍ لكلّ لوحةٍ يضبط المديرُ حساباً ولا يعرف أصحيحٌ هو حتى يفشل المنح");
+  });
+
+  test("المسارُ لا يُعيد كلمةَ مرور القرض أبداً", () => {
+    const src = read("src/app/api/towers/[id]/panels/route.ts");
+    assert.ok(/hasLoanPass: !!p\.loanPass/.test(src), "علامةُ الوجود غائبة");
+    assert.ok(!/loanPass: p\.loanPass/.test(src), "⛔ كلمةُ مرور الديلر تُعاد إلى الواجهة!");
+    assert.ok(/encryptSecret\(d\.loanPass\)/.test(src),
+      "كلمةُ مرور الديلر تُخزَّن صريحةً — وهي بيانُ دخولٍ لنظامٍ ماليٍّ خارجيّ");
   });
 });

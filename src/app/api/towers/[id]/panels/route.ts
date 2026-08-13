@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ownsTower } from "@/lib/guard";
 import { canAddPanel, multiSasQuota, panelsOfTower } from "@/lib/sasPanel";
+import { encryptSecret } from "@/lib/secretbox";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,9 @@ const panelSchema = z.object({
   odooUrl: z.string().trim().max(300).optional(),
   odooUser: z.string().trim().max(120).optional(),
   odooPass: z.string().max(200).optional(),
+  // القروضُ تتبع اللوحة (طلبُ محمد): حسابُ الديلر على سوبر سيل
+  loanUser: z.string().max(200).optional(),
+  loanPass: z.string().max(200).optional(),
   sortOrder: z.coerce.number().int().min(0).max(99).optional(),
 });
 
@@ -52,6 +56,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       id: p.id, label: p.label, loginUrl: p.loginUrl, username: p.username,
       hasPassword: !!p.password, activationTemplate: p.activationTemplate,
       odooEnabled: p.odooEnabled, odooUrl: p.odooUrl, odooUser: p.odooUser, hasOdooPass: !!p.odooPass,
+      // كلمةُ المرور **لا تُعاد أبداً** — تُعرَض علامةُ وجودٍ فقط (كنمط `hasPassword`)
+      loanUser: p.loanUser, hasLoanPass: !!p.loanPass,
     })),
     quota,
     // عددُ مشتركي كلّ لوحة — يُظهره الحذفُ ويُحمى به
@@ -102,6 +108,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         activationTemplate: d.activationTemplate ?? null,
         odooEnabled: d.odooEnabled ?? "0", odooUrl: d.odooUrl || "https://odoo.supercell.iq",
         odooUser: d.odooUser ?? null, odooPass: d.odooPass ?? null,
+        loanUser: d.loanUser ?? null,
+        // مشفَّرةٌ كما في `Tower.loanPass` — فهي بيانُ دخولٍ لنظامٍ ماليٍّ خارجيّ
+        loanPass: d.loanPass ? encryptSecret(d.loanPass) : null,
       },
       select: { id: true, label: true },
     });
@@ -140,6 +149,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (d.odooUrl != null) data.odooUrl = d.odooUrl;
   if (d.odooUser != null) data.odooUser = d.odooUser;
   if (d.odooPass) data.odooPass = d.odooPass; // فارغةٌ = أبقِ القديمة
+  if (d.loanUser !== undefined) data.loanUser = d.loanUser || null;
+  if (d.loanPass) data.loanPass = encryptSecret(d.loanPass); // فارغةٌ = أبقِ القديمة
   if (d.sortOrder != null) data.sortOrder = d.sortOrder;
   if (!Object.keys(data).length) return NextResponse.json({ error: "لا تغيير" }, { status: 400 });
   await prisma.sasPanel.update({ where: { id: panelId }, data });

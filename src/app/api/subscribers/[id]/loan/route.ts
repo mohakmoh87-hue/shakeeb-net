@@ -3,8 +3,8 @@ import { requireTower } from "@/lib/requireTower";
 import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
-import { decryptSecret } from "@/lib/secretbox";
 import { grantLoan } from "@/lib/supercellLoan";
+import { loanCredsOfSubscriber } from "@/lib/sasPanel";
 import { sendLoanMessage } from "@/lib/loanMessage";
 
 // منح «قرض فزعة» لمشترك — عمليّة صامتة عبر خادمنا. عزلٌ صارم:
@@ -41,11 +41,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!office || office.loanEnabled !== "1") {
     return NextResponse.json({ error: "قروض سوبر سيل غير مفعّلة لهذا المكتب" }, { status: 403 });
   }
-  const loanUser = (office.loanUser ?? "").trim();
-  const loanPass = decryptSecret(office.loanPass) ?? "";
-  if (!loanUser || !loanPass) {
-    return NextResponse.json({ error: "بيانات دخول القروض غير مكتملة لهذا المكتب" }, { status: 400 });
+  // ═════ القرضُ يتبع **لوحةَ المشترك** (طلبُ محمد 2026-08-13) ═════
+  // كان يُقرأ حسابُ الديلر من أعمدة المكتب وحدَها ⇒ مكتبٌ بلوحتَي ساسٍ له حسابٌ واحد،
+  // فيُطلَب القرضُ لمشتركِ اللوحة الثانية بحساب ديلرِ الأولى فيفشل أو يمسّ حساباً غيرَه.
+  // و`loanCredsOfSubscriber` تُرجع حسابَ لوحته، وترتدّ إلى المكتب إن لم تكن للوحة حسابٌ
+  // مكتمل — فالمكاتبُ الستّةُ المفعَّلةُ اليومَ لا تتأثّر بحرف.
+  const lc = await loanCredsOfSubscriber(subscriber.id);
+  if (!lc) {
+    return NextResponse.json({
+      error: "بيانات دخول القروض غير مكتملة — اضبطها في لوحة الساس التي يتبعها المشترك، أو في المكتب",
+    }, { status: 400 });
   }
+  const { loanUser, loanPass } = lc;
 
   // حارس المطابقة يحتاج رقم الساس واليوزر المخزَّنَين
   if (!subscriber.sasId) {
