@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { techEffectiveOffices } from "../src/lib/field";
 import { distanceMeters } from "../src/lib/attendance";
+import { decideStampOffice, fallbackOffice, type StampOffice } from "../src/app/api/_lib/stampOffice";
 
 // ===== أ-١٠ · مكتبُ البصمة يُحسم من موقعه الفعليّ =====
 // القاعدةُ الحاكمة (قرار محمد 2026-08-11): «يستطيع بصمَ دخولٍ من مكتبٍ والخروجَ من مكتبٍ آخر،
@@ -14,27 +15,18 @@ import { distanceMeters } from "../src/lib/attendance";
 // و`resolveStampOffice` في المسار تقرأ القاعدةَ فلا تُختبَر بلا قاعدة؛ فالمُختبَرُ هنا
 // **منطقُها الخالص**: مجموعةُ المكاتب المسموحة، والافتراضيُّ حسب نوع الدعم، وقرارُ النطاق.
 
-// ── مُحاكاةُ منطقِ الحلّ حرفاً بحرف (نفسُ ترتيب القرارات في المسار) ──
-type Office = { id: number; name: string; geoEnabled: boolean; lat: number | null; lng: number | null; geoRadius: number | null };
+// ── تُستدعى الدالّةُ **الحقيقيّة** لا نسخةٌ منها ──
+// (اصطاد التدقيقُ العدائيُّ أنّ الاختبارَ كان **ينسخ** المنطق: فلو انحرف المسارُ عن الاختبار
+//  لم يفشل شيءٌ، فصار الاختبارُ يوثّق ولا يحرس. ولذلك استُخرج القرارُ إلى دالّةٍ نقيّة.)
+type Office = StampOffice;
 type Tech = { towerId: number | null; supportTowerId: number | null; supportKind: string | null; extraTowerIds: string | null };
 
 function resolve(t: Tech, offices: Office[], lat?: number, lng?: number): { office: number | null; blocked: boolean } {
-  const home = t.towerId;
-  const fallback = t.supportKind === "day" && t.supportTowerId != null ? t.supportTowerId : home;
-  const allowed = techEffectiveOffices({ towerId: home, supportTowerId: t.supportTowerId, extraTowerIds: t.extraTowerIds });
-  if (!allowed.length) return { office: fallback, blocked: false };
-  const mine = offices.filter((o) => allowed.includes(o.id));
-  const fenced = mine.filter((o) => o.geoEnabled && o.lat != null && o.lng != null);
-  if (!fenced.length) return { office: fallback, blocked: false };
-  if (typeof lat !== "number" || typeof lng !== "number") return { office: null, blocked: true };
-  const measured = fenced
-    .map((o) => ({ o, dist: distanceMeters(o.lat as number, o.lng as number, lat, lng), radius: o.geoRadius ?? 200 }))
-    .sort((a, b) => a.dist - b.dist);
-  const inside = measured.filter((m) => m.dist <= m.radius);
-  if (inside.length) return { office: inside[0].o.id, blocked: false };
-  const fallbackFenced = fallback != null && fenced.some((o) => o.id === fallback);
-  if (!fallbackFenced && fallback != null) return { office: fallback, blocked: false };
-  return { office: null, blocked: true };
+  const fallback = fallbackOffice(t, t.towerId);
+  const allowed = techEffectiveOffices({ towerId: t.towerId, supportTowerId: t.supportTowerId, extraTowerIds: t.extraTowerIds });
+  const mine = offices.filter((o) => allowed.includes(o.id)); // ما يفعله الخادمُ بالترشيح
+  const r = decideStampOffice(mine, fallback, lat, lng);
+  return { office: r.office, blocked: !!r.error };
 }
 
 // مكتبان حقيقيّان من الإنتاج (نطاقٌ مُفعَّلٌ ٥٠ م) وثالثٌ بلا نطاق
@@ -105,6 +97,18 @@ describe("أ-١٠ · قرارُ النطاق الجغرافيّ", () => {
     const near2: Office = { ...B, geoRadius: 100000 };
     const r = resolve(tech({ supportTowerId: B.id, supportKind: "day" }), [near1, near2], atB.lat, atB.lng);
     assert.equal(r.office, B.id, "هو عند B فيجب أن يُحسم B لا A");
+  });
+  it("🔴 **العلّةُ التي اصطادها التدقيقُ العدائيّ**: بلا GPS ومكتبُه بلا نطاقٍ ودعمُه مُفعَّل ⇒ يُسمَح", () => {
+    // كان ترتيبُ القرارات يطلب الـGPS **قبل** بوّابة «الافتراضيُّ بلا نطاق»، فمَن مكتبُه
+    // بلا نطاقٍ ثمّ أُسند له دعمٌ في مكتبٍ مُفعَّلٍ كان **يُمنَع بلا إحداثيّات** — وهو في
+    // مكتبه الذي لا قيدَ عليه أصلاً. فيُعاد عينُ الضرر الذي وُلد البندُ لإصلاحه.
+    const r = resolve({ towerId: C.id, supportTowerId: A.id, supportKind: "cards", extraTowerIds: null }, ALL);
+    assert.equal(r.blocked, false, "طلبُ GPS هنا يُسقط يومَ راتبٍ بلا سببٍ — مكتبُه بلا نطاق");
+    assert.equal(r.office, C.id);
+  });
+  it("ويبقى المنعُ صحيحاً بلا GPS إن كان مكتبُه **هو** المُفعَّل", () => {
+    const r = resolve(tech({ supportTowerId: C.id, supportKind: "cards" }), ALL);
+    assert.equal(r.blocked, true, "مكتبُه A مُفعَّلٌ ⇒ الـGPS شرطٌ فعليّ");
   });
   it("🛡️ ولا تضييقَ جديد: بعيدٌ، ومكتبُه الافتراضيُّ **بلا نطاق** ⇒ يُسمَح (كما اليوم)", () => {
     // مكتبُه C بلا نطاق، وله دعمُ بطاقاتٍ في A المُفعَّل. الافتراضيُّ C ⇒ لا قيدَ عليه.

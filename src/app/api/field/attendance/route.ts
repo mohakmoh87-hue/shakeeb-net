@@ -3,9 +3,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { baghdadDayKey, computeAttendance, parseHHMM, distanceMeters, baghdadMinutesOfDay } from "@/lib/attendance";
+import { baghdadDayKey, computeAttendance, parseHHMM, baghdadMinutesOfDay } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
 import { endSupport, techEffectiveOffices } from "@/lib/field";
+import { decideStampOffice, fallbackOffice, type StampResult } from "@/app/api/_lib/stampOffice";
 
 export const dynamic = "force-dynamic";
 
@@ -26,46 +27,31 @@ export const dynamic = "force-dynamic";
 // والحلُّ: **لا يُلزَم بمكتبٍ، بل يُحسَم مكتبُه من موقعه** بين مكاتبه المسموحة.
 // ⚠️ ولا يُقبَل `officeId` من جسم الطلب أبداً — المجموعةُ تُبنى في الخادم من
 // `techEffectiveOffices`، وإلّا بصم أيُّ فنيٍّ على أيّ مكتب (وهي عينُ طبقة العزل).
-type StampResult = { office: number | null; error?: string };
-
 async function resolveStampOffice(
   t: { supportTowerId: number | null; supportKind: string | null; extraTowerIds: string | null },
   homeTower: number | null,
+  agentTowers: number[],
   lat: number | undefined,
   lng: number | undefined,
 ): Promise<StampResult> {
-  // المكتبُ الافتراضيُّ حين لا يحسم الموقعُ شيئاً:
-  //   دعمُ «يومٍ كامل» ينقله فعليّاً إلى مكتب الطالب ⇒ هو الافتراضيّ
-  //   دعمُ «بطاقاتٍ محدّدة» يُبقيه في مكتبه (اللوحةُ تُبقيه) ⇒ مكتبُه — **وهذا إصلاحُ أ-١٠**
-  const fallback = t.supportKind === "day" && t.supportTowerId != null ? t.supportTowerId : homeTower;
-
+  const fallback = fallbackOffice(t, homeTower);
   const allowed = techEffectiveOffices({ towerId: homeTower, supportTowerId: t.supportTowerId, extraTowerIds: t.extraTowerIds });
   if (!allowed.length) return { office: fallback };
 
+  // 🛡️ ترشيحان أضافهما التدقيقُ العدائيّ:
+  // (١) **العزل**: `techEffectiveOffices` تجمع `towerId`+`extraTowerIds`+`supportTowerId`
+  //     **بلا أيّ تحقّقٍ من الوكيل**. فلو حُشي أحدُها بمكتب وكيلٍ آخر (خطأً أو عبثاً) لبصم
+  //     الفنيُّ عليه. والعزلُ لا يكون مشروطاً بحُسن الإدخال.
+  //     ⚠️ وإن تعذّر معرفةُ مكاتب وكيله (قائمةٌ فارغة) **لا نُقصِّ إلى صفر** — فذلك يمنع
+  //     البصمةَ كلَّها ويُسقط يومَ راتبٍ لعلّةٍ في القراءة لا في الفنيّ.
+  const scoped = agentTowers.length ? allowed.filter((x) => agentTowers.includes(x)) : allowed;
   const towers = await prisma.tower.findMany({
-    where: { id: { in: allowed } },
+    // (٢) `isDeleted: false` — مكتبٌ محذوفٌ ناعماً كان يبقى في مجموعة الحسم فيسحب البصمةَ
+    //     إليه بموقعه القديم، أو يفرض نطاقاً على مكتبٍ لم يعد موجوداً.
+    where: { id: { in: scoped.length ? scoped : [-1] }, isDeleted: false },
     select: { id: true, name: true, geoEnabled: true, lat: true, lng: true, geoRadius: true },
   });
-  const fenced = towers.filter((o) => o.geoEnabled && o.lat != null && o.lng != null);
-  // لا نطاقَ على أيٍّ من مكاتبه ⇒ لا تحقّقَ أصلاً، تماماً كحاله اليوم (`geoEnabled=false`)
-  if (!fenced.length) return { office: fallback };
-
-  if (typeof lat !== "number" || typeof lng !== "number" || Number.isNaN(lat) || Number.isNaN(lng)) {
-    return { office: null, error: "تعذّر تحديد موقعك — فعّل الموقع (GPS) واسمح للتطبيق بالوصول إليه ثم أعد المحاولة" };
-  }
-  const measured = fenced
-    .map((o) => ({ o, dist: distanceMeters(o.lat as number, o.lng as number, lat, lng), radius: o.geoRadius ?? 200 }))
-    .sort((a, b) => a.dist - b.dist);
-  const inside = measured.filter((m) => m.dist <= m.radius);
-  if (inside.length) return { office: inside[0].o.id }; // الأقربُ الذي هو داخل نطاقه
-
-  // لا مكتبَ مُفعَّلَ النطاق يطابق موقعَه. وقبل المنع: هل الافتراضيُّ نفسُه **بلا نطاق**؟
-  // إن كان كذلك فلا قيدَ عليه أصلاً — ومنعُه هنا يكون تضييقاً جديداً لم يكن موجوداً.
-  const fallbackFenced = fallback != null && fenced.some((o) => o.id === fallback);
-  if (!fallbackFenced && fallback != null) return { office: fallback };
-
-  const n = measured[0];
-  return { office: null, error: `يجب أن تكون داخل «${n.o.name ?? "المكتب"}» للبصمة — تبعد عنه ~${n.dist} م (المسموح ${n.radius} م)` };
+  return decideStampOffice(towers, fallback, lat, lng);
 }
 
 // سجل حضور فني ليوم اليوم (أو ينشئه)
@@ -165,7 +151,6 @@ export async function GET(request: Request) {
       role: "manager",
       log: recs.map((r) => ({
         ...r,
-        office: r.towerId != null ? oname.get(r.towerId) ?? null : null,
         inOffice: elsewhere(r.checkInTowerId, r.towerId),
         outOffice: elsewhere(r.checkOutTowerId, r.towerId),
       })),
@@ -225,9 +210,14 @@ export async function POST(request: Request) {
 
   // أ-١٠ · البصمةُ الجغرافيّةُ **وحسمُ المكتب** صارا عمليّةً واحدة: يُقاس موقعُه على **كلّ**
   // مكاتبه المسموحة فيُعرَف في أيّها هو، بدل أن يُقاس على مكتبٍ واحدٍ أُلزم به سلفاً.
+  // مكاتبُ وكيلِ الفنيّ — سياجُ العزل على مجموعة الحسم (وجلسةُ الفنيّ ليست جلسةَ مستخدمٍ
+  // فلا تصلح لها `agentTowerIds`، فتُقرأ مباشرةً).
+  const agentTowers = tech.agentId != null
+    ? (await prisma.tower.findMany({ where: { agentId: tech.agentId, isDeleted: false }, select: { id: true } })).map((o) => o.id)
+    : [];
   const stamp = await resolveStampOffice(
     { supportTowerId: t?.supportTowerId ?? null, supportKind: t?.supportKind ?? null, extraTowerIds: t?.extraTowerIds ?? null },
-    homeTower, parsed.data.lat, parsed.data.lng,
+    homeTower, agentTowers, parsed.data.lat, parsed.data.lng,
   );
   if (stamp.error) return NextResponse.json({ error: stamp.error }, { status: 403 });
   const stampOffice = stamp.office; // **مكانُ** البصمة — للشفافيّة والتوزيع، لا للنسبة

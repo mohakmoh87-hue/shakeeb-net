@@ -8,8 +8,8 @@ const fmtTime = (d: string | null) =>
 
 type Rec = { id: number; dayKey: string | null; checkIn: string | null; checkInActual: string | null; checkOut: string | null; checkOutActual: string | null; checkoutBy: string | null; lateExcuse: string | null;
   // أ-١٠/القاعدة ٣ · **أين** بصم — يأتيان من الخادم **فقط حين يختلف** المكانُ عن مكتبه
-  // الأصليّ. و`office` اسمُ المكتب الذي يُحتسَب له اليومُ (الأصليُّ دائماً).
-  office?: string | null; inOffice?: string | null; outOffice?: string | null };
+  // الأصليّ — فالمعتادُ ألّا يختلف، وعرضُه دائماً يُغرِق السجلَّ بتكرارٍ لا يُقرأ.
+  inOffice?: string | null; outOffice?: string | null };
 
 // إدارة حضور الفني للمدير: سجل البصمات (تاريخ + دخول + خروج) مع حذف كل بصمة، خروج يدوي، وإضافة يوم كامل.
 export default function AttendanceManager({ technicianId, technicianName, onClose, onChange }: { technicianId: number; technicianName: string; onClose: () => void; onChange: () => void }) {
@@ -94,7 +94,11 @@ export default function AttendanceManager({ technicianId, technicianName, onClos
                     {r.checkOutActual && fmtTime(r.checkOutActual) !== fmtTime(r.checkOut) && (
                       <span className="block text-[9px] font-normal text-slate-400" title="وقت البصمة الحقيقي">فعلي {fmtTime(r.checkOutActual)}</span>
                     )}
-                    {r.outOffice && (
+                    {/* 🔴 ولا يُعرَض مكانٌ لخروجٍ **تلقائيّ**: `autoCheckout` يكتب مكتبَ الدعم
+                        في العمود والفنيُّ **لم يبصم أصلاً** — فعرضُه يُظهر مكاناً لبصمةٍ لم
+                        تحدث. (اصطاده تدقيقٌ عدائيّ. والعلاجُ في مصدره يمسّ `src/lib/` فيُعيد
+                        تشغيلَ العامل ويهدم جلساتَ الواتساب ⇒ يُحجَب في العرض حتى يُفصَل بند.) */}
+                    {r.outOffice && r.checkoutBy !== "auto" && (
                       <span className="block text-[9px] font-normal text-sky-600" dir="rtl" title="بصم خروجَه من هذا المكتب — واليومُ محسوبٌ لمكتبه الأصليّ">📍 {r.outOffice}</span>
                     )}
                   </span>
