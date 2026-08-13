@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { sendCardRaisedMessage } from "@/lib/cardRaisedMessage";
 import { getSession } from "@/lib/auth";
 import { agentOwnsCard, agentOwnsList, appendCardHistory, canOperateCard, canOperateList, cardOfficeId, listOfficeId, resolveListActor } from "@/lib/field";
 import { agentTowerIds } from "@/lib/guard";
@@ -72,6 +73,9 @@ export async function POST(request: Request) {
   // أول حدث في سجل التغييرات: إنشاء البطاقة (تاريخه ووقته وفاعله)
   await appendCardHistory(created.id, actor.name ?? "مستخدم", "إنشاء البطاقة");
   if (autoNote) await appendCardHistory(created.id, "النظام", autoNote);
+  // البند ٧ · رسالةٌ للمشترك عند رفعِ البطاقة — صامتةٌ ولا تُعطّل الردَّ، ومرّةً واحدةً
+  // أبداً (الختمُ داخلها حَجزٌ ذرّيّ). و`void` كنمط رسالتَي التفعيل والقرض.
+  void sendCardRaisedMessage(created.id);
   return NextResponse.json(created, { status: 201 });
 }
 

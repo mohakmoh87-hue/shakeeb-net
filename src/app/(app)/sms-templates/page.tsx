@@ -14,6 +14,7 @@ const EVENTS: { type: string; name: string; hint: string }[] = [
   { type: "expiring", name: "تذكير قبل الانتهاء", hint: "تُرسل تلقائياً للمشتركين المنتهين خلال يومين (بوقت التذكير المحدّد)" },
   { type: "debtPaid", name: "تسديد دين", hint: "تُرسل تلقائياً للمشترك عند تسديد دفعة من ديونه" },
   { type: "debts", name: "مطالبة بالديون", hint: "تُرسل من صفحة الديون بزر «رسالة مطالبة للمحدّدين»" },
+  { type: "cardRaised", name: "رفعُ بطاقةٍ للمشترك", hint: "تُرسل للمشترك لحظةَ رفعِ بطاقةٍ له — من البرنامج أو من أودو. مرّةً واحدةً لكلّ بطاقة." },
   { type: "maintenance", name: "الصيانة/التنصيب", hint: "تُرسل للمشترك عند إنجاز الفني للصيانة/التنصيب" },
   { type: "reward", name: "منح المكافأة", hint: "تُرسل عند منح مكافأة التفعيل (الكود + الرصيد)" },
   { type: "rewardUsed", name: "استخدام المكافأة", hint: "تُرسل عند خصم/استخدام كود المكافأة" },
@@ -52,6 +53,15 @@ const EXTRA_VARS: Record<string, { token: string; label: string }[]> = {
   expiring: [{ token: "{office}", label: "اسم المكتب" }, { token: "{phone}", label: "هاتف المشترك" }],
   debtPaid: [{ token: "{office}", label: "اسم المكتب" }],
   debts: [{ token: "{office}", label: "اسم المكتب" }, { token: "{phone}", label: "هاتف المشترك" }],
+  // البند ٧ · رُفعت بطاقةٌ للمشترك (من البرنامج أو أودو) — طلبُ محمد 2026-08-13
+  cardRaised: [
+    { token: "{الاسم}", label: "اسم المشترك" },
+    { token: "{اليوزر}", label: "اسم المستخدم" },
+    { token: "{العملية}", label: "نوع العملية (صيانة/توصيل/…)" },
+    { token: "{التفاصيل}", label: "عنوان البطاقة" },
+    { token: "{المكتب}", label: "اسم المكتب" },
+    { token: "{المصدر}", label: "المصدر (أودو / المكتب)" },
+  ],
   maintenance: [
     { token: "{kind}", label: "نوع العمل" },
     { token: "{details}", label: "تفاصيل الصيانة" },

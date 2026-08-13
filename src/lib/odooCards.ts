@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { sendCardRaisedMessage } from "@/lib/cardRaisedMessage";
 import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
 import { bgIsSet, type OdooTicket } from "@/lib/odoo";
 import { odooDateToUtc } from "@/lib/odooSla";
@@ -56,6 +57,9 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket,
     },
   });
   await appendCardHistory(card.id, "أودو", `سُحبت من أودو (تذكرة #${ticket.id})${usernameRequired ? " — يوزر إلزاميّ" : ""}`);
+  // البند ٧ · رسالةٌ للمشترك عند رفعِ البطاقة من أودو أيضاً — بنفس الختم الذرّيّ،
+  // وهو **ألزمُ هنا**: أودو تُعيد إنشاءَ ما حُذف وتذكرتُه مفتوحةٌ كلَّ دورة.
+  void sendCardRaisedMessage(card.id);
   return { created: true, cardId: card.id };
 }
 
