@@ -21,7 +21,10 @@ describe("أ-١ · شاشةُ بصمات الحضور", () => {
   test("الافتراضُ: مَن بصم اليوم حصراً — و«سجل» يُظهر الكلّ", () => {
     const src = read(PAGE);
     assert.match(src, /const stamped = techs\.filter\(\(t\) => t\.state !== "none"\)/, "لا ترشيحَ لمن بصم اليوم");
-    assert.match(src, /const shown = showAll \? techs : stamped/, "المعروضُ ليس المُرشَّحَ افتراضاً");
+    // ⚠️ **حُدِّث بالبند ٩**: المعروضُ افتراضاً صار **حضورَ اليوم + كلَّ يومٍ لم يُغلَق**
+    //   (طلبُ محمد: «مَن لم يبصم خروجاً حتى الآن فهو لا يزال معلَّقاً مع بصمات أمس»).
+    assert.match(src, /const shown = showAll \? techs : \[\.\.\.open, \.\.\.stamped\]/,
+      "المعلَّقُ من أمسِ لا يُعرَض مع حضور اليوم");
     assert.match(src, /useState\(false\)/, "«سجل» مفتوحٌ افتراضاً ⇒ يُخالف «حصراً»");
     assert.match(src, /سجل/, "لا زرَّ «سجل»");
   });
@@ -62,7 +65,13 @@ describe("أ-١ · شاشةُ بصمات الحضور", () => {
     //   فالزرُّ في القائمة الرئيسيّة لا يُرى من حيث يُحتاج.
     const fm = read("src/app/(app)/field-management/page.tsx");
     assert.match(fm, /href="\/attendance"/, "لا زرَّ في ترويسة إدارة الفنيين");
-    assert.match(fm, /!isTech && canManage/, "الزرُّ يظهر للفنيّ — والفنيُّ يبصم ولا يُطالع حضورَ غيره");
+    // البند ٨ · «كلمةٌ واضحةٌ لا صورة · يسارَ دعم مؤقت · وتظهر للمدير فقط»
+    assert.match(fm, /canManage && !isTech/, "الزرُّ يظهر للفنيّ — والفنيُّ يبصم ولا يُطالع حضورَ غيره");
+    assert.match(fm, />\s*حضور الفنيين\s*</, "الزرُّ ليس كلمةً واضحةً (صورةٌ وحدَها)");
+    // ويسارَ «دعم مؤقت» — أي بعده مباشرةً في نفس صفّ الأزرار
+    const supAt = fm.indexOf("🤝 دعم مؤقت");
+    const btnAt = fm.indexOf('href="/attendance"');
+    assert.ok(supAt > -1 && btnAt > supAt && btnAt - supAt < 700, "الزرُّ ليس بجانب «دعم مؤقت»");
     assert.equal(/href: "\/attendance"/.test(read("src/components/shell/AppShell.tsx")), false,
       "الزرُّ ما زال في القائمة الرئيسيّة — وقد طلب محمد نقلَه");
     const src = read(PAGE);

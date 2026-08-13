@@ -25,6 +25,8 @@ type Tech = {
   checkInActual: string | null; checkOutActual: string | null;
   checkoutBy: string | null; lateExcuse: string | null;
   towerId: number | null; office: string | null;
+  // البند ٩ · يومٌ سابقٌ لم يُغلَق: يحمل يومَه ليُعرَض «معلَّقٌ من …»
+  dayKey?: string | null;
 };
 type LogRow = {
   id: number; dayKey: string | null;
@@ -48,6 +50,7 @@ const STATE: Record<Tech["state"], { label: string; cls: string }> = {
 export default function AttendancePage() {
   const { can, me } = usePermission();
   const [techs, setTechs] = useState<Tech[]>([]);
+  const [open, setOpen] = useState<Tech[]>([]); // أيّامٌ سابقةٌ لم تُغلَق (البند ٩)
   const [offices, setOffices] = useState<Office[]>([]);
   const [officeSel, setOfficeSel] = useState<string>("");
   const [showAll, setShowAll] = useState(false); // «سجل» = كلُّ الفنيّين لا مَن بصم اليوم
@@ -67,6 +70,7 @@ export default function AttendancePage() {
         if (!r.ok) { setErr(d?.error ?? "تعذّر جلب الحضور"); return; }
         setErr("");
         setTechs(Array.isArray(d?.technicians) ? d.technicians : []);
+        setOpen(Array.isArray(d?.open) ? d.open : []);
       })
       .catch(() => setErr("تعذّر الاتصال بالخادم"))
       .finally(() => setLoading(false));
@@ -101,14 +105,16 @@ export default function AttendancePage() {
     );
   }
 
+  // البند ٩ · المعروضُ افتراضاً = **حضورُ اليوم + كلُّ يومٍ لم يُغلَق** (ولو من أمس).
+  // ومَن بُصِم خروجُه (بيد المدير أو آليّاً) يسقط من `open` في الخادم فيختفي هنا.
   const stamped = techs.filter((t) => t.state !== "none");
-  const shown = showAll ? techs : stamped;
+  const shown = showAll ? techs : [...open, ...stamped];
 
   return (
     <div className="p-6">
       <PageHeader
         title="بصمات الحضور"
-        subtitle={`فنيّو كلّ المكاتب الذين بصموا اليوم — ${stamped.length} من ${techs.length}`}
+        subtitle={`حضورُ اليوم ${stamped.length} من ${techs.length}${open.length ? ` · ومعلَّقٌ من أيّامٍ سابقة: ${open.length}` : ""}`}
       />
 
       <div className="mb-4 flex max-w-5xl flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
@@ -135,7 +141,7 @@ export default function AttendancePage() {
         <div className="text-slate-400">جاري التحميل...</div>
       ) : shown.length === 0 ? (
         <div className="max-w-5xl rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-slate-500 shadow-sm">
-          {showAll ? "لا فنيّين في هذا النطاق." : "لا بصماتَ اليوم بعد — اضغط «سجل» لرؤية كلّ الفنيّين."}
+          {showAll ? "لا فنيّين في هذا النطاق." : "لا بصماتَ اليوم ولا يومَ معلَّقاً — اضغط «سجل» لرؤية كلّ الفنيّين."}
         </div>
       ) : (
         <div className="max-w-5xl overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -153,8 +159,16 @@ export default function AttendancePage() {
             </thead>
             <tbody>
               {shown.map((t) => (
-                <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50/70">
-                  <td className="px-3 py-2 font-semibold text-slate-800">{t.name ?? `فنيّ ${t.id}`}</td>
+                <tr key={`${t.id}:${t.dayKey ?? "today"}`} className="border-t border-slate-100 hover:bg-slate-50/70">
+                  <td className="px-3 py-2 font-semibold text-slate-800">
+                    {t.name ?? `فنيّ ${t.id}`}
+                    {/* يومٌ سابقٌ لم يُغلَق — يُميَّز بيومه كي لا يُقرأ كحضورِ اليوم */}
+                    {t.dayKey && (
+                      <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                        معلَّقٌ من {t.dayKey}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-slate-600">{t.office ?? "—"}</td>
                   <td className="px-3 py-2 text-center">
                     <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${STATE[t.state].cls}`}>{STATE[t.state].label}</span>

@@ -167,8 +167,26 @@ export async function GET(request: Request) {
     ? { towerId: reqOffice, isDeleted: false }
     : { towerId: { in: agentTowers.length ? agentTowers : [-1] }, isDeleted: false };
   const techs = await prisma.technician.findMany({ where, select: { id: true, name: true, shiftStart: true, shiftEnd: true, towerId: true }, orderBy: { id: "asc" } });
-  const recs = await prisma.attendance.findMany({ where: { technicianId: { in: techs.map((t) => t.id) }, dayKey: key } });
+  const techIds = techs.map((t) => t.id);
+  const recs = await prisma.attendance.findMany({ where: { technicianId: { in: techIds }, dayKey: key } });
   const byTech = new Map(recs.map((r) => [r.technicianId, r]));
+  // ═════ البند ٩ · «مَن لم يبصم خروجاً فهو معلَّقٌ ولو من أمس» (طلبُ محمد 2026-08-14) ═════
+  // بنصّه: «يظهر سجلُّ حضور اليوم، **وأيضاً مَن لم يبصم خروجاً حتى الآن فهو لا يزال
+  // معلَّقاً مع بصمات يوم أمس. وإذا بُصِم خروجُه من المدير أو خروجٌ تلقائيّ فلا يظهر».
+  // 🔑 وصفٌّ مفتوحٌ من أمسِ **حدثٌ قائمٌ لا تاريخٌ**: يومُ عملٍ لم يُغلَق بعد، وإخفاؤه
+  //    لأنّ تاريخَه ليس اليومَ يجعل المديرَ لا يراه إلّا في السجلّ — وهو ما اشتكى منه.
+  // ونافذةُ ٧ أيّامٍ: أقدمُ من ذلك ليس «معلَّقاً» بل صفٌّ منسيٌّ يُعالَج من السجلّ.
+  const openSince = new Date(Date.now() - 7 * 86400_000);
+  const openRecs = await prisma.attendance.findMany({
+    where: {
+      technicianId: { in: techIds.length ? techIds : [-1] }, // 🔒 نفسُ نطاق العزل أعلاه
+      dayKey: { not: key },
+      checkIn: { not: null },
+      checkOut: null, // لم يُبصَم خروجُه — لا بيد المدير ولا آليّاً
+      createdAt: { gte: openSince },
+    },
+    orderBy: { dayKey: "desc" },
+  });
   // أ-١ · واسمُ المكتب يُرجَع مع كلّ فنيّ: الشاشةُ تُظهر فنيّي **كلّ المكاتب** معاً
   // (طلبُ محمد)، وبلا اسمِ المكتب تصير قائمةً بأسماءَ لا يُعرَف أيُّها لأيّ مكتب.
   const oNames = new Map(
@@ -188,6 +206,18 @@ export async function GET(request: Request) {
         // ولحظةُ البصمة الحقيقيّةُ ومَن أخرجه — يُقرآن في الشاشة تمييزاً للخروج الآليّ
         checkInActual: r?.checkInActual ?? null, checkOutActual: r?.checkOutActual ?? null,
         checkoutBy: r?.checkoutBy ?? null, lateExcuse: r?.lateExcuse ?? null,
+      };
+    }),
+    // البند ٩ · أيّامٌ سابقةٌ لم تُغلَق — تُعرَض مع حضور اليوم لا في السجلّ وحدَه
+    open: openRecs.map((r) => {
+      const t = techs.find((x) => x.id === r.technicianId);
+      return {
+        id: r.technicianId, name: t?.name ?? null, dayKey: r.dayKey,
+        shiftStart: t?.shiftStart ?? null, shiftEnd: t?.shiftEnd ?? null,
+        state: "in" as const, checkIn: r.checkIn, checkOut: null,
+        checkInActual: r.checkInActual, checkOutActual: null,
+        checkoutBy: r.checkoutBy, lateExcuse: r.lateExcuse,
+        towerId: t?.towerId ?? null, office: t?.towerId != null ? (oNames.get(t.towerId) ?? null) : null,
       };
     }),
   });

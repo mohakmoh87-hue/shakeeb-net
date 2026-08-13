@@ -737,15 +737,6 @@ export default function FieldManagementPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* أ-١ · بصماتُ الحضور — موضعُها **ترويسةُ إدارة الفنيين** (تصحيحُ محمد: كنتُ
-              وضعتُها في القائمة الرئيسيّة). وللمدير/المستخدم لا للفنيّ — فالفنيُّ يبصم
-              ولا يُطالع حضورَ غيره. */}
-          {!isTech && canManage && (
-            <a href="/attendance" title="بصمات الحضور — مَن بصم اليوم من كلّ المكاتب"
-              className="rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/30">
-              🕒 البصمات
-            </a>
-          )}
           {canManage && <NotificationsBell />}
           {isTech ? (
             <button onClick={techLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
@@ -802,6 +793,14 @@ export default function FieldManagementPage() {
           <button onClick={() => setArchiveModal(true)} className="ftb">🗂️ الأرشيف</button>
           {canOperate && !isTech && <button onClick={() => setTrashModal(true)} className="ftb">🗑️ المحذوفة</button>}
           {officeId != null && <button onClick={() => setSupportModal(true)} className="ftb">🤝 دعم مؤقت</button>}
+          {/* البند ٨ · «كلمةٌ واضحةٌ لا صورة · يسارَ دعم مؤقت · وتظهر للمدير فقط».
+              و`canManage` هي صلاحيّةُ المدير هنا (المستخدمُ العاديُّ `canOperate`) — فحضورُ
+              الفنيّين وخصوماتُهم شأنُ مديرٍ لا شأنُ مَن يُشغّل اللوحة. */}
+          {canManage && !isTech && (
+            <a href="/attendance" className="ftb" title="سجلُّ حضور الفنيين — مَن بصم اليوم ومَن لم يبصم خروجاً بعد">
+              حضور الفنيين
+            </a>
+          )}
         </div>
       )}
 
