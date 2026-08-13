@@ -101,3 +101,35 @@ describe("الفرضيّةُ التي يقوم عليها القفل", () => {
     }
   });
 });
+
+// ═════ ب-١/الأصل ١ · حارسٌ لا يُعطّل ما يحرسه ═════
+// حادثةُ 2026-08-13: أُضيفت إجارةُ القيادة فماتت القيادةُ على **كلّ** الحاسبات ساعةً
+// وربعاً. لا لأنّ المنطقَ خاطئ، بل لأنّ دورَ العامل يملك `SELECT` على أعمدةٍ بعينها
+// لا على جدول `agents`، والعمودان الجديدان خارجَها — فرمى الاستعلامُ «permission denied»،
+// والرميُ التُقط **قبل** إسنادِ `leaderNow` فبقيت `false` أبداً: لا واتساب، ولا أودو،
+// ولا مهامَّ قائد. **والصمتُ هو ما أخفاها**.
+//
+// فهذا الاختبارُ يحرس القاعدةَ نصّاً: أيُّ خطأٍ غيرِ متوقَّعٍ في الحجز يعني «لا أعرف»،
+// و«لا أعرف» تسقط إلى **السلوك القديم** لا إلى تعطيلِ النظام.
+describe("إجارةُ القيادة: العجزُ عن الحجز لا يُعطّل القيادة", () => {
+  test("acquireLeadership تُحيط استعلاماتها بـtry وتسقط إلى true", () => {
+    const src = read("src/lib/hybridLeader.ts");
+    const fn = src.slice(src.indexOf("export async function acquireLeadership"));
+    const body = fn.slice(0, fn.indexOf("\nexport ") === -1 ? fn.length : fn.indexOf("\nexport "));
+    assert.ok(body.includes("try {"), "استعلاماتُ الحجز بلا حمايةٍ — أيُّ خطأٍ يُعطّل القيادة");
+    const catchAt = body.indexOf("} catch");
+    assert.notEqual(catchAt, -1, "غاب الـcatch");
+    const tail = body.slice(catchAt);
+    assert.ok(/return true/.test(tail),
+      "الـcatch يجب أن يُرجع true (السلوكُ القديم) — فـfalse تعني تعطيلَ كلّ عملٍ خلفيّ");
+    assert.ok(/console\.error/.test(tail), "ويُصرَّح بالسبب: صمتُ هذا الموضع أخفى العلّةَ ساعةً وربعاً");
+  });
+
+  test("سكربتُ الصلاحيّات يمنح SELECT لا UPDATE وحدَه", () => {
+    const src = read("scripts/grant-agent-lease-cols.mjs");
+    assert.ok(/GRANT SELECT \("leaderMachineId", "leaderUntil", "lastBackupDate"\)/.test(src),
+      "بلا SELECT على الأعمدة الجديدة يرمي الاستعلامُ permission denied لأنّها في WHERE");
+    assert.ok(/GRANT UPDATE \("leaderMachineId", "leaderUntil", "lastBackupDate"\)/.test(src),
+      "وUPDATE محصورٌ بالأعمدة الثلاثة — لا حصصَ الوكيل ولا خطّته");
+  });
+});

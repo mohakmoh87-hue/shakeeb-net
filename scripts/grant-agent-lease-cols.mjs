@@ -23,6 +23,13 @@ if (!url) { console.error("⛔ لا DATABASE_URL"); process.exit(1); }
 const c = new Client({ connectionString: url, ...(url.includes("sslmode=no-verify") ? {} : { ssl: { rejectUnauthorized: false } }) });
 await c.connect();
 try {
+  // 🔴 **و`SELECT` قبل `UPDATE`**: دورُ العامل يملك SELECT على **أعمدةٍ بعينها** لا على
+  //   الجدول (١٢ عموداً قِيست)، فالعمودان الجديدان خارجَها — وكلُّ استعلامِ إجارةٍ يذكرهما
+  //   في `WHERE`. فبلا هذا السطر يرمي «permission denied» فتموت القيادةُ على كلّ الحاسبات
+  //   (وقع فعلاً ساعةً وربعاً في 2026-08-13). و`lastBackupDate` لم يكن مقروءاً أصلاً ⇒ نسخُ
+  //   `runDailyBackups` على العامل كانت **تفشل قبل هذا البند** والسحابةُ وحدَها تنسخ.
+  await c.query(`GRANT SELECT ("leaderMachineId", "leaderUntil", "lastBackupDate") ON agents TO agent_worker`);
+  console.log("✅ GRANT SELECT على الأعمدة الثلاثة (بلاه يرمي permission denied في WHERE)");
   await c.query(`GRANT UPDATE ("leaderMachineId", "leaderUntil", "lastBackupDate") ON agents TO agent_worker`);
   console.log("✅ GRANT UPDATE على ٣ أعمدةٍ فقط لـagent_worker");
 
