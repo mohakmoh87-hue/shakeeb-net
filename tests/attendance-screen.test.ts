@@ -56,7 +56,15 @@ describe("أ-١ · شاشةُ بصمات الحضور", () => {
   });
 
   test("الصلاحيّةُ والرابط: الزرُّ موجودٌ والشاشةُ تحرس نفسَها", () => {
-    assert.match(read("src/components/shell/AppShell.tsx"), /href: "\/attendance"/, "لا زرَّ يفتح الشاشة");
+    // ⚠️ **حُدِّث بتصحيح محمد**: كنتُ وضعتُ الزرَّ في القائمة الرئيسيّة، وموضعُه
+    //   **ترويسةُ صفحة إدارة الفنيين** — «بصمات الفنيين يجب إضافتها في صفحة إدارة
+    //   الفنيين في القائمة العلوية». وتلك الصفحةُ بلا شريطٍ جانبيّ أصلاً (`hideSide`)،
+    //   فالزرُّ في القائمة الرئيسيّة لا يُرى من حيث يُحتاج.
+    const fm = read("src/app/(app)/field-management/page.tsx");
+    assert.match(fm, /href="\/attendance"/, "لا زرَّ في ترويسة إدارة الفنيين");
+    assert.match(fm, /!isTech && canManage/, "الزرُّ يظهر للفنيّ — والفنيُّ يبصم ولا يُطالع حضورَ غيره");
+    assert.equal(/href: "\/attendance"/.test(read("src/components/shell/AppShell.tsx")), false,
+      "الزرُّ ما زال في القائمة الرئيسيّة — وقد طلب محمد نقلَه");
     const src = read(PAGE);
     // حرسُ الصفحة لا يكفيه إخفاءُ الزرّ: العنوانُ يُكتَب مباشرةً
     assert.match(src, /!can\("field\.manage"\) && !can\("field\.payroll"\)/, "الصفحةُ بلا حرسِ صلاحيّة");

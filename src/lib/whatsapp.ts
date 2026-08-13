@@ -164,7 +164,20 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   client.on("loading_screen", (percent: string, message: string) => { console.log(`[whatsapp] مكتب ${officeId} تحميل ${percent}% ${message ?? ""}`); });
   client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
   client.on("authenticated", () => { const st = store(officeId); st.qr = null; st.state = "authenticated"; publish(officeId); console.log(`[whatsapp] مكتب ${officeId} تم التوثيق — بانتظار الجهوزية`); });
-  client.on("ready", () => { const st = store(officeId); st.qr = null; st.state = "ready"; st.retries = 0; publish(officeId); console.log(`[whatsapp] ✅ مكتب ${officeId} جاهز`); });
+  client.on("ready", () => {
+    const st = store(officeId); st.qr = null; st.state = "ready"; st.retries = 0;
+    publish(officeId);
+    console.log(`[whatsapp] ✅ مكتب ${officeId} جاهز`);
+    // البند ٤-ب · تصريفُ طابور «فعّل بنفسه» لحظةَ جهوزيّة الواتساب (نصُّ الطلب:
+    // «الطابورُ يُرسَل عند اشتغال الحاسبة والواتساب»). وتأخيرٌ قصيرٌ لتستقرّ الجلسةُ
+    // قبل أوّل إرسال — فالإرسالُ على «ready» مباشرةً يفشل أحياناً والجلسةُ لم تُثبَّت.
+    setTimeout(() => {
+      void import("@/lib/selfActivatedNotice")
+        .then((m) => m.drainSelfActivatedQueue(officeId))
+        .then((r) => { if (r.sent || r.expired) console.log(`[wa-queue] مكتب ${officeId}: أُرسل ${r.sent} · مُسح ${r.expired} · فشل ${r.failed}`); })
+        .catch(() => {});
+    }, 15_000);
+  });
   client.on("auth_failure", (m: string) => { const st = store(officeId); st.state = "error"; st.lastError = `فشل المصادقة: ${m}`; publish(officeId); });
   client.on("disconnected", (reason: string) => { const st = store(officeId); st.state = "disconnected"; st.lastError = `انقطع الاتصال: ${reason}`; st.client = null; publish(officeId); });
 

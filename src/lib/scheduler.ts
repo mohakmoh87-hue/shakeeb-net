@@ -538,6 +538,21 @@ export function startScheduler() {
         runExpiredNotice(dueExp, { claimDay: true }).catch((e) => console.error("[scheduler] expiredNotice:", e));
       }
     }
+    // البند ٤-ب · تصريفُ طابور «فعّل بنفسه» كلَّ عشر دقائق.
+    // 🔑 ولا يكفي التصريفُ على حدث «ready»: لو كان الواتسابُ جاهزاً وفشل إرسالٌ عارضٌ
+    //    (شبكةٌ لحظيّة) لَبقي الصفُّ معلَّقاً ولا حدثَ جهوزيّةٍ جديدٌ يأتي — فيموت بعد
+    //    ٢٤ ساعةً بلا محاولةٍ ثانية. فالحدثُ للاستئناف السريع، والدورةُ للضمان.
+    if (Number(nowHM.slice(3)) % 10 === 0) {
+      const waOffs = await prisma.tower.findMany({
+        where: { isDeleted: false, NOT: { waEnabled: "0" }, ...(wAgent != null ? { agentId: wAgent } : {}) },
+        select: { id: true },
+      }).catch(() => [] as { id: number }[]);
+      for (const o of waOffs) {
+        import("@/lib/selfActivatedNotice")
+          .then((m) => m.drainSelfActivatedQueue(o.id))
+          .catch(() => {});
+      }
+    }
     // (أُزيل تقرير المدير عبر واتساب — حلقة زائدة؛ المدير يرى تقارير كل الأيّام في «حسابات المدير».)
     // نسخة احتياطية يومية إلى إيميل الوكيل (افتراضي 04:00 بغداد).
     // قائد كل وكيل ينفّذها لوكيله فقط بوقت وكيله (تفادي التكرار وعزل الأوقات).
