@@ -57,7 +57,7 @@ export default function MoneyTxModal({ id, onClose, onDeleted }: { id: number; o
         {can("receipts.void") && d && (
           <button
             onClick={async () => {
-              const choice = await askVoidEffect("هذه الحركة");
+              const choice = await askVoidEffect("هذه الحركة", "money"); // ب-٥-أ · قيدُ صندوق
               if (!choice) return;
               const r = await fetch("/api/money/" + id + "/void", {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }),

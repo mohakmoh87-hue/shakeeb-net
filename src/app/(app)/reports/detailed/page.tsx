@@ -72,7 +72,7 @@ export default function DetailedReport() {
 
   // حذف حركة مالية (تسديد دين/حركة يدوية). حركات التفعيل/الفواتير تُحذف من صفحاتها.
   async function voidMoney(id: number) {
-    const choice = await askVoidEffect("الحركة المالية");
+    const choice = await askVoidEffect("الحركة المالية", "money"); // ب-٥-أ · قيدُ صندوق
     if (!choice) return;
     const res = await fetch(`/api/money/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) load();
