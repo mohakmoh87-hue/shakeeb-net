@@ -255,6 +255,20 @@ async function runPush(): Promise<void> {
 // يدفع لكلّ مكاتب الوكيل: (١) الإنجاز/الإلغاء ⇒ close/cancel، (٢) ملاحظة التأجيل اليدويّ ⇒ chatter.
 // **لا سحبَ ولا واتساب ولا إرسالاً تلقائيّاً** — هذه تبقى على العامل المحليّ حصراً (قرار الأجور).
 // وإن لم يكن هناك معلّقٌ لمكتبٍ فلا دخولَ لأودو إطلاقاً (زهيد).
+/** ب-١/الأصل ٤ · ينشر الملاحظةَ في محادثة العميل **مرّةً واحدةً أبداً**.
+ *  الختمُ يُكتَب **قبل** أن نعود، فلو انقطع شيءٌ بعده لم تُنشر ثانيةً. وإن كان مختوماً
+ *  سلفاً فهذه إعادةُ محاولةٍ لخطوةٍ لاحقة (الإغلاق) — فنتخطّى النشرَ بلا صوت. */
+async function postNoteOnce(
+  cardId: number, notedAt: Date | null, s: OdooSession, ticketId: number, note: string, accessToken: string | null,
+): Promise<void> {
+  if (notedAt) return; // نُشرت في محاولةٍ سابقة — والعميلُ لا يُرسَل له مرّتَين
+  await odooChatterPost(s, ticketId, note, accessToken);
+  // ⚠️ لا `.catch()` صامتٌ هنا: لو تعذّر الختمُ لَعُدنا إلى تكرار النشر — فليُفشِل الدفعَ
+  // كلَّه بدلاً من ذلك (يُفَكّ الحجزُ وتُعاد المحاولةُ، والملاحظةُ ستُنشر ثانيةً مرّةً واحدةً
+  // على الأكثر في هذه الحالة النادرة، وهو أهونُ من تكرارٍ كلَّ دورةٍ إلى الأبد).
+  await prisma.taskCard.update({ where: { id: cardId }, data: { odooNotedAt: new Date() } });
+}
+
 export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number; notes: number }> {
   let pushed = 0, notes = 0;
   for (const o of await offices(agentId)) {
@@ -266,7 +280,7 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
           listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null }, odooPushedAt: null,
           isDeleted: false, OR: [{ done: true }, { settled: true }],
         },
-        select: { id: true, odooTicketId: true, done: true, settled: true, serviceDetails: true, techNote: true, odooBg: true, history: true },
+        select: { id: true, odooTicketId: true, done: true, settled: true, serviceDetails: true, techNote: true, odooBg: true, history: true, odooNotedAt: true },
         take: 25,
       }),
       // ملاحظة تأجيلٍ يدويّ أحدث من آخر دفع (تُدفَع دائماً — لا تخضع لمفاتيح الإرسال)
@@ -304,17 +318,23 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
         if (c.done) {
           // إنجاز: BG (إن وُجد) ← ملاحظة ← close
           if (c.odooBg && c.odooBg.trim()) { try { await odooChangeBg(s, ticketId, c.odooBg.trim()); } catch { /* الملاحظة والإغلاق أهمّ */ } }
-          await odooChatterPost(s, ticketId, note, accessToken);
+          await postNoteOnce(c.id, c.odooNotedAt, s, ticketId, note, accessToken);
           await odooClose(s, ticketId);
         } else {
           // إلغاء: ملاحظة ← cancel
-          await odooChatterPost(s, ticketId, note, accessToken);
+          await postNoteOnce(c.id, c.odooNotedAt, s, ticketId, note, accessToken);
           await odooCancel(s, ticketId);
         }
         await appendCardHistory(c.id, "أودو", c.done ? "دُفِع الإنجاز إلى أودو (close)" : "دُفِع الإلغاء إلى أودو (cancel)");
         pushed++;
       } catch (e) {
-        // فشل الدفع: يُفكّ الحجز (odooPushedAt=null) فتُعاد المحاولة — مقاومة الإطفاء/الانقطاع
+        // فشل الدفع: يُفكّ الحجز (odooPushedAt=null) فتُعاد المحاولة — مقاومة الإطفاء/الانقطاع.
+        // ═════ ب-١/الأصل ٤ (2026-08-13) ═════
+        // 🔴 وكان هذا الفكُّ **يُعيد نشرَ الملاحظة في محادثة العميل** كلَّ دورةٍ إن نجح النشرُ
+        //   وفشل ما بعده (`close` أو حتى كتابةُ السجلّ) — خرقٌ صريحٌ لقاعدة «لا يُفَكّ الحجزُ
+        //   بعد أثرٍ لا يُسترَدّ». والإغلاقُ يتحمّل التكرارَ، أمّا رسالةٌ يراها العميلُ فلا.
+        // ⇒ الحلُّ ليس منعَ الإعادة (فيبقى الإغلاقُ معلَّقاً للأبد) بل **ختمُ الأثر وحدَه**:
+        //   `odooNotedAt` لا يُفَكّ، فالإعادةُ تُكمل الإغلاقَ ولا تُعيد النشر. (`postNoteOnce`)
         await prisma.taskCard.update({ where: { id: c.id }, data: { odooPushedAt: null } }).catch(() => {});
         await appendCardHistory(c.id, "أودو", `تعذّر الدفع إلى أودو: ${String((e as Error).message ?? "").slice(0, 120)}`).catch(() => {});
       }
@@ -330,13 +350,17 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
         data: { postponePushedAt: stamp },
       });
       if (claimed.count !== 1) continue;
+      // ب-١/الأصل ٤ · هل نُشرت الملاحظةُ فعلاً قبل الفشل؟ فالحجزُ لا يُفَكّ بعد أثرٍ
+      // لا يُسترَدّ — ولو فشلت كتابةُ السجلّ وحدَها لَعادت الملاحظةُ إلى محادثة العميل.
+      let posted = false;
       try {
         const tk = await odooReadTicket(s, ticketId);
         await odooChatterPost(s, ticketId, c.postponeNote as string, tk?.accessToken ?? null);
+        posted = true; // ⇐ من هنا فصاعداً لا يجوز فكُّ الحجز
         await appendCardHistory(c.id, "أودو", `دُفِعت ملاحظة التأجيل إلى أودو — ${c.postponeNote}`);
         notes++;
       } catch (e) {
-        await prisma.taskCard.update({ where: { id: c.id }, data: { postponePushedAt: prev } }).catch(() => {});
+        if (!posted) await prisma.taskCard.update({ where: { id: c.id }, data: { postponePushedAt: prev } }).catch(() => {});
         await appendCardHistory(c.id, "أودو", `تعذّر إبلاغ أودو بالتأجيل: ${String((e as Error).message ?? "").slice(0, 120)}`).catch(() => {});
       }
     }
