@@ -31,6 +31,8 @@ type Card = {
   viaOdoo?: boolean; usernameRequired?: boolean; odooTicketId?: number | null; // بطاقات أودو
   // مهلة سوبر سيل (SLA)
   odooCreatedAt?: string | null; odooFetchedAt?: string | null; odooPhone?: string | null;
+  // اسمُ المشترك — يُعرَض على الوجه قبل فتح البطاقة (طلبُ محمد 2026-08-13)
+  subscriberName?: string | null;
   slaNoteAt?: string | null; slaWaQueuedAt?: string | null; slaWaSentAt?: string | null; slaWaError?: string | null;
 };
 // أحداث سجل تغييرات البطاقة (JSON داخل حقل history)
@@ -891,6 +893,9 @@ export default function FieldManagementPage() {
                       </div>
                     )}
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>
+                    {/* اسمُ المشترك على الوجه (طلبُ محمد 2026-08-13): كان الوجهُ يُظهر اليوزرَ
+                        والهاتفَ والملاحظةَ — والاسمُ هو ما يعرفه الفنيُّ والمشتركُ عند الباب. */}
+                    {c.subscriberName && <div className="mt-0.5 text-xs font-semibold text-slate-600">👤 {c.subscriberName}</div>}
                     {/* على الوجه: هاتف النافذة المنبثقة إن وُجد وإلا الرقم المخزون + الملاحظة — واسم المشترك يظهر بفتح البطاقة فقط */}
                     {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
                     {faceNoteOf(c.description) && <div className="mt-0.5 text-xs text-slate-500">📝 {faceNoteOf(c.description)}</div>}

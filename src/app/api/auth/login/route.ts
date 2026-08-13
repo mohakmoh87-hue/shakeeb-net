@@ -111,6 +111,8 @@ export async function POST(request: Request) {
     isOwner: user.isOwner,
     agentId: user.agentId ?? null,
     permissions: (user.permissions ?? "").split(",").filter(Boolean) as Permission[],
+    // مديرٌ بصلاحيّاتٍ محدَّدة: المنعُ يُحمَل في الجلسة فيسري على كلّ فحصٍ بلا استعلامٍ إضافيّ
+    deniedPermissions: (user.deniedPermissions ?? "").split(",").filter(Boolean),
     towerId: user.towerId ?? null,
     sessionToken,
   });

@@ -24,6 +24,8 @@ export async function GET() {
     isAdmin: session.isAdmin,
     isOwner: session.isOwner,
     permissions: session.permissions ?? [],
+    // الواجهةُ تحتاجه أيضاً: زرٌّ يظهر ثمّ يفشل أسوأُ من زرٍّ غائب
+    deniedPermissions: session.deniedPermissions ?? [],
     towerId: session.towerId,
     agentId: session.agentId,
     agentName,

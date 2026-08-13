@@ -13,18 +13,19 @@ type User = {
   username: string;
   isAdmin: boolean;
   permissions: string | null;
+  deniedPermissions?: string | null;
   towerId: number | null;
   isActive: boolean;
 };
 
 type Form = {
   fullName: string; username: string; password: string;
-  isAdmin: boolean; permissions: Set<string>; towerId: number | "";
+  isAdmin: boolean; permissions: Set<string>; deniedPermissions: Set<string>; towerId: number | "";
   isActive: boolean;
 };
 const emptyForm = (): Form => ({
   fullName: "", username: "", password: "", isAdmin: false,
-  permissions: new Set(), towerId: "", isActive: true,
+  permissions: new Set(), deniedPermissions: new Set(), towerId: "", isActive: true,
 });
 
 export default function UsersPage() {
@@ -54,12 +55,17 @@ export default function UsersPage() {
       fullName: u.fullName, username: u.username, password: "", isAdmin: u.isAdmin,
       // توسيع المفاتيح القديمة (offices.manage...) إلى الجديدة — أول حفظ يكتبها نظيفة
       permissions: new Set<string>(expandLegacyPermissions((u.permissions ?? "").split(",").filter(Boolean))),
+      deniedPermissions: new Set<string>((u.deniedPermissions ?? "").split(",").filter(Boolean)),
       towerId: u.towerId ?? "", isActive: u.isActive,
     });
     setError(""); setModal(true);
   }
   function togglePerm(key: string) {
     setForm((f) => { const n = new Set(f.permissions); n.has(key) ? n.delete(key) : n.add(key); return { ...f, permissions: n }; });
+  }
+  /** مربّعاتُ **المنع** للمدير: صحٌّ = ممنوع. مستقلّةٌ عن `permissions` تماماً. */
+  function toggleDenied(key: string) {
+    setForm((f) => { const n = new Set(f.deniedPermissions); n.has(key) ? n.delete(key) : n.add(key); return { ...f, deniedPermissions: n }; });
   }
 
   async function save(e: React.FormEvent) {
@@ -68,6 +74,8 @@ export default function UsersPage() {
       const payload = {
         fullName: form.fullName, username: form.username, password: form.password || undefined,
         isAdmin: form.isAdmin, permissions: [...form.permissions],
+        // المنعُ يُرسَل للمدير حصراً — ومربّعاتُه لا تظهر لغيره فلا معنى لإرسالها
+        deniedPermissions: form.isAdmin ? [...form.deniedPermissions] : [],
         towerId: form.towerId || null, isActive: form.isActive,
       };
       const res = await fetch(editId ? `/api/users/${editId}` : "/api/users", {
@@ -139,6 +147,37 @@ export default function UsersPage() {
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> مفعّل</label>
               </div>
             </div>
+
+            {/* ═════ مديرٌ بصلاحيّاتٍ محدَّدة (طلبُ محمد 2026-08-13) ═════
+                «مديرٌ يأخذ كلَّ ميزات المدير ويرى كلَّ المكاتب، ولكن أمنعُ عنه أيَّ صلاحيّةٍ
+                 أريد — مثل حسابات المدير أو مسحِ وصولات».
+                🔑 وهي **قائمةُ منعٍ لا سماح**: المربّعُ **مطفأٌ = مسموح** (وهو حالُ كلّ مديرٍ
+                  قائمٍ فصفرُ أثرٍ عليه)، وصحٌّ = **ممنوع**. ولو كانت سماحاً لَسلبت أوّلُ
+                  نشرةٍ كلَّ المدراء صلاحيّاتِهم. */}
+            {form.isAdmin && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50/40 p-3">
+                <div className="mb-1 text-sm font-semibold text-rose-800">🚫 صلاحيّاتٌ تُمنَع عن هذا المدير</div>
+                <div className="mb-2 text-[11px] leading-5 text-slate-500">
+                  المديرُ يملك كلَّ شيءٍ ويرى كلَّ المكاتب. ضع صحّاً على ما تريد <b>منعَه</b> عنه.
+                  {form.deniedPermissions.size > 0 && <> — ممنوعٌ الآن: <b>{form.deniedPermissions.size}</b></>}
+                </div>
+                <div className="max-h-[45vh] space-y-3 overflow-y-auto pl-1">
+                  {PERMISSION_GROUPS.map((grp) => (
+                    <div key={grp.title}>
+                      <div className="mb-1 border-b border-rose-100 pb-0.5 text-[11px] font-bold text-rose-700">{grp.title}</div>
+                      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                        {grp.items.map((p) => (
+                          <label key={p.key} className="flex items-center gap-2 text-xs">
+                            <input type="checkbox" checked={form.deniedPermissions.has(p.key)} onChange={() => toggleDenied(p.key)} />
+                            {p.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {!form.isAdmin && (
               <div className="rounded-lg border border-slate-200 p-3">

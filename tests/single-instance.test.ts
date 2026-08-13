@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import net from "node:net";
+import { can as rbacCan, LEGACY_IMPLIES } from "../src/lib/rbac";
 
 // ═════ ب-١/الأصل ٣ · حارسُ النسخة الواحدة ═════
 // حادثةُ الأصل: عاملان على حاسبةٍ واحدةٍ ⇒ تذكيرُ المشتركين ونسخةُ القاعدة ومزامنةُ SAS
@@ -131,5 +132,41 @@ describe("إجارةُ القيادة: العجزُ عن الحجز لا يُع�
       "بلا SELECT على الأعمدة الجديدة يرمي الاستعلامُ permission denied لأنّها في WHERE");
     assert.ok(/GRANT UPDATE \("leaderMachineId", "leaderUntil", "lastBackupDate"\)/.test(src),
       "وUPDATE محصورٌ بالأعمدة الثلاثة — لا حصصَ الوكيل ولا خطّته");
+  });
+});
+
+// ═════ مديرٌ بصلاحيّاتٍ محدَّدة (طلبُ محمد 2026-08-13) ═════
+// كان `rbac.can` يردّ `true` للمدير **قبل أيّ فحص** ⇒ لا سبيلَ لمنعِ صلاحيّةٍ عنه.
+// وقائمةُ المنعِ اختيرت لا قائمةَ السماح: فارغةٌ افتراضاً ⇒ **صفرُ أثرٍ على ٨ مدراءَ قائمين**
+// (قِيسوا على الإنتاج) — ولو كانت سماحاً لَسلبت أوّلُ نشرةٍ صلاحيّاتِهم كلَّها.
+describe("قائمةُ منعِ المدير", () => {
+  test("مديرٌ بلا منعٍ يملك كلَّ شيء (سلوكُ ما قبل البند حرفيّاً)", () => {
+    assert.equal(rbacCan({ isAdmin: true }, "finance.manage"), true);
+    assert.equal(rbacCan({ isAdmin: true, deniedPermissions: [] }, "receipts.void"), true);
+  });
+
+  test("المنعُ الصريحُ يغلب صفةَ المدير", () => {
+    assert.equal(rbacCan({ isAdmin: true, deniedPermissions: ["receipts.void"] }, "receipts.void"), false);
+    // وما لم يُمنَع يبقى مسموحاً — المنعُ لا يُسقط غيرَه
+    assert.equal(rbacCan({ isAdmin: true, deniedPermissions: ["receipts.void"] }, "finance.manage"), true);
+  });
+
+  test("🔒 ومنعُ مفتاحٍ قديمٍ يمنع كلَّ ما يستلزمه — وإلّا تسرّبت الصلاحيّةُ من الباب الخلفيّ", () => {
+    // أيُّ مفتاحٍ قديمٍ له استلزاماتٌ في `LEGACY_IMPLIES`: منعُه يجب أن يمنعها
+    for (const [legacy, implied] of Object.entries(LEGACY_IMPLIES)) {
+      const child = (implied as string[])[0];
+      if (!child) continue;
+      assert.equal(
+        rbacCan({ isAdmin: true, deniedPermissions: [legacy] }, child as never), false,
+        `منعُ «${legacy}» لم يمنع «${child}» الذي يستلزمه`,
+      );
+    }
+  });
+
+  test("والمنعُ يسري على غير المدير أيضاً — منحٌ صريحٌ لا يُنقض منعاً صريحاً", () => {
+    assert.equal(
+      rbacCan({ isAdmin: false, permissions: ["finance.manage"] as never, deniedPermissions: ["finance.manage"] }, "finance.manage"),
+      false,
+    );
   });
 });

@@ -32,6 +32,8 @@ export interface SessionPayload {
   isOwner: boolean; // مالك النظام (فوق المدير) — يدير الوكلاء فقط
   agentId: number | null; // الوكيل (المستأجر) الذي ينتمي إليه المستخدم
   permissions: Permission[];
+  // مديرٌ بصلاحيّاتٍ محدَّدة (طلبُ محمد): منعٌ صريحٌ **يسبق** كلَّ منح — انظر `rbac.can`
+  deniedPermissions: string[];
   towerId: number | null; // مكتب المستخدم (المكتب)
   sessionToken?: string; // جلسة واحدة: يُطابَق مع users.sessionToken؛ أي دخول جديد يُبطل القديم
 }
@@ -138,6 +140,7 @@ export async function getSession(): Promise<SessionPayload | null> {
     isOwner: user.isOwner,
     agentId: user.agentId,
     permissions: (user.permissions ?? "").split(",").filter(Boolean) as Permission[],
+    deniedPermissions: (user.deniedPermissions ?? "").split(",").filter(Boolean),
     towerId: user.towerId,
     sessionToken: user.sessionToken ?? undefined,
   };

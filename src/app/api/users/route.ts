@@ -15,6 +15,8 @@ const schema = z.object({
   password: z.string().min(4, "كلمة السر 4 أحرف على الأقل"),
   isAdmin: z.coerce.boolean().default(false),
   permissions: z.array(z.string()).default([]),
+  // مديرٌ بصلاحيّاتٍ محدَّدة: قائمةُ **منعٍ** تسبق كلَّ منح (فارغةٌ = لا منع)
+  deniedPermissions: z.array(z.string()).default([]),
   towerId: z.coerce.number().nullable().optional(),
   isActive: z.coerce.boolean().default(true),
 });
@@ -29,7 +31,7 @@ export async function GET() {
     orderBy: { id: "asc" },
     select: {
       id: true, fullName: true, username: true, isAdmin: true,
-      permissions: true, towerId: true, isActive: true,
+      permissions: true, deniedPermissions: true, towerId: true, isActive: true,
     },
   });
   return NextResponse.json(users);
@@ -56,7 +58,7 @@ export async function POST(request: Request) {
   // عزل المستأجر: المستخدم يُنشأ ضمن وكيل المدير، وأي مكتب مُسنَد يجب أن يتبع وكيله
   const agentId = g.session?.agentId ?? null;
   if (agentId == null) return NextResponse.json({ error: "لا وكيل مرتبط بحسابك" }, { status: 403 });
-  const { permissions, password, ...rest } = parsed.data;
+  const { permissions, deniedPermissions, password, ...rest } = parsed.data;
   if (rest.towerId != null) {
     const t = await prisma.tower.findFirst({ where: { id: rest.towerId, agentId, isDeleted: false }, select: { id: true } });
     if (!t) return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
@@ -77,6 +79,7 @@ export async function POST(request: Request) {
       agentId,
       password: await hashPassword(password),
       permissions: permissions.join(","),
+      deniedPermissions: deniedPermissions.join(",") || null,
     },
     select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, isActive: true },
   });

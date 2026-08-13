@@ -14,6 +14,8 @@ const schema = z.object({
   password: z.string().optional(), // فارغ = عدم التغيير
   isAdmin: z.coerce.boolean().default(false),
   permissions: z.array(z.string()).default([]),
+  // مديرٌ بصلاحيّاتٍ محدَّدة: قائمةُ **منعٍ** تسبق كلَّ منح (فارغةٌ = لا منع)
+  deniedPermissions: z.array(z.string()).default([]),
   towerId: z.coerce.number().nullable().optional(),
   isActive: z.coerce.boolean().default(true),
 });
@@ -34,7 +36,7 @@ export async function PUT(
       { status: 400 },
     );
   }
-  const { password, permissions, ...rest } = parsed.data;
+  const { password, permissions, deniedPermissions, ...rest } = parsed.data;
 
   // عزل المستأجر: لا يُعدَّل إلا مستخدم يتبع وكيل المدير (وليس مالك النظام)
   const target = await prisma.user.findUnique({ where: { id: Number(id) }, select: { agentId: true, isOwner: true } });
@@ -51,6 +53,7 @@ export async function PUT(
     data: {
       ...rest,
       permissions: permissions.join(","),
+      deniedPermissions: deniedPermissions.join(",") || null,
       ...(password && password.length >= 4 ? { password: await hashPassword(password) } : {}),
     },
     select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, isActive: true },

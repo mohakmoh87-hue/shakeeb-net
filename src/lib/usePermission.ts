@@ -3,7 +3,13 @@
 import { useEffect, useState } from "react";
 import { can as rbacCan, type Permission } from "@/lib/rbac";
 
-type Me = { isAdmin: boolean; permissions: string[]; officeCap?: number | null; officeCount?: number; agentName?: string | null };
+type Me = {
+  isAdmin: boolean; permissions: string[];
+  // مديرٌ بصلاحيّاتٍ محدَّدة (طلبُ محمد): المنعُ يصل الواجهةَ أيضاً — وإلّا ظهر زرٌّ
+  // يُفشِله الخادمُ، والمستخدمُ لا يعرف أنّ السببَ صلاحيّةٌ لا عطل.
+  deniedPermissions?: string[];
+  officeCap?: number | null; officeCount?: number; agentName?: string | null;
+};
 
 // كاش على مستوى الوحدة: يُجلب /api/me مرة واحدة ويُعاد استخدامه عبر كل الصفحات (يقلّل الطلبات عند التنقّل)
 let cache: Me | null = null;
@@ -32,6 +38,9 @@ export function usePermission() {
 
   // نفس منطق الخادم (يشمل توافق المفاتيح القديمة حتى إعادة الدخول بعد الهجرة)
   const can = (perm: string) =>
-    !!me && rbacCan({ isAdmin: me.isAdmin, permissions: me.permissions as Permission[] }, perm as Permission);
+    !!me && rbacCan(
+      { isAdmin: me.isAdmin, permissions: me.permissions as Permission[], deniedPermissions: me.deniedPermissions },
+      perm as Permission,
+    );
   return { me, can };
 }

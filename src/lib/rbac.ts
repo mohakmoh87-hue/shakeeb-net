@@ -123,7 +123,7 @@ export const PERMISSION_LIST: { key: Permission; label: string }[] =
 
 // توافق الجلسات القديمة: جلسة صادرة قبل الهجرة تحمل المفاتيح القديمة فقط —
 // المفتاح القديم يمنح مفاتيحه الجديدة حتى يعيد المستخدم الدخول (نفس خريطة هجرة القاعدة)
-const LEGACY_IMPLIES: Record<string, Permission[]> = {
+export const LEGACY_IMPLIES: Record<string, Permission[]> = {
   "offices.manage": ["offices.edit", "offices.delete", "backup.manage", "agent.settings", "rewards.config"],
   "subscribers.manage": ["subscribers.import"],
   "users.manage": ["audit.view"],
@@ -145,11 +145,25 @@ export function expandLegacyPermissions(perms: string[]): Permission[] {
 export interface SessionLike {
   isAdmin?: boolean;
   permissions?: Permission[];
+  // ═════ مديرٌ بصلاحيّاتٍ محدَّدة (طلبُ محمد 2026-08-13) ═════
+  // «أستطيع إضافةَ مديرٍ يأخذ كلَّ ميزات المدير ويرى كلَّ المكاتب، ولكن أمنعُ عنه أيَّ
+  //  صلاحيّةٍ أريد — مثل حسابات المدير أو مسحِ وصولات».
+  // 🔑 **قائمةُ منعٍ لا قائمةَ سماح**: `isAdmin` معناه «يرى كلَّ المكاتب + كلُّ الميزات».
+  //   ولو جعلناها سماحاً لَلزم تعدادُ كلّ صلاحيّةٍ لكلّ مديرٍ قائم ⇒ **أوّلُ نشرةٍ تسلب
+  //   كلَّ المدراء صلاحيّاتِهم**. والمنعُ فارغٌ افتراضاً ⇒ **صفرُ أثرٍ على القائم**.
+  deniedPermissions?: string[];
 }
 
-// المدير له كل الصلاحيات؛ غيره حسب ما مُنح (مع توافق المفاتيح القديمة)
+// المدير له كل الصلاحيات إلّا ما مُنع عنه صريحاً؛ وغيره حسب ما مُنح (مع توافق المفاتيح القديمة)
 export function can(session: SessionLike | null | undefined, permission: Permission): boolean {
   if (!session) return false;
+  // المنعُ يسبق كلَّ شيء: مديراً كان أو غيرَه، فمنعٌ صريحٌ لا يُنقَض بمنحٍ عامّ
+  const denied = session.deniedPermissions ?? [];
+  if (denied.length) {
+    if (denied.includes(permission)) return false;
+    // ومنعُ مفتاحٍ قديمٍ يمنع كلَّ ما يستلزمه (وإلّا تسرّبت الصلاحيّةُ من الباب الخلفيّ)
+    if (denied.some((d) => LEGACY_IMPLIES[d]?.includes(permission))) return false;
+  }
   if (session.isAdmin) return true;
   const held = (session.permissions ?? []) as string[];
   if (held.includes(permission)) return true;

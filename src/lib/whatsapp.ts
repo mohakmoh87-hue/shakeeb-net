@@ -64,16 +64,17 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   //   له **رقمَ مدير**، وتقريرُ المدير يُرسَل عبر واتساب ⇒ **يحتاج الجلسةَ بحقّ**.
   //   فالمنعُ لمن لا يحتاجه لشيء: مُطفأٌ **ولا رقمَ مدير**. (ولولا هذا القيدُ لَقطعتُ
   //   تقريرَ مديرِ مكتبَين — قِيسا: الشهداء ٦ والتقنيات الضوئيّة ٤٠.)
+  // ⚠️ وأُلغيَ شقُّ «مُطفأٌ ولا رقمَ مدير» بطلب محمد — يبقى حارسُ **المحذوف** وحدَه،
+  //   وهو سببُ الصفِّ اليتيم الذي وُجد فعلاً (المواصلات ٣ بحالة `qr` بلا مضيف).
   const office = await prisma.tower.findUnique({
     where: { id: officeId },
-    select: { isDeleted: true, waEnabled: true, managerPhone: true },
+    select: { isDeleted: true },
   }).catch(() => null);
   if (office) {
-    const needed = office.waEnabled !== "0" || !!office.managerPhone?.trim();
-    if (office.isDeleted || !needed) {
+    if (office.isDeleted) {
       s.state = "disconnected";
       s.qr = null;
-      s.lastError = office.isDeleted ? "المكتب محذوف" : "واتساب المكتب مُطفأ ولا رقمَ مدير له";
+      s.lastError = "المكتب محذوف";
       // ويُنظَّف الصفُّ المنشورُ كي لا يبقى «qr» أبداً في كلّ عدٍّ وشاشة
       await prisma.waSession.updateMany({
         where: { towerId: officeId },

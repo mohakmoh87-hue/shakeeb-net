@@ -15,7 +15,22 @@ async function buildBoard(officeId: number | null, agentId: number | null) {
   // المؤرشفة (بعد التحصيل) لا تظهر على اللوحة — تُعرض من نافذة الأرشيف
   const rawCards = await prisma.taskCard.findMany({ where: { listId: { in: lists.map((l) => l.id) }, isDeleted: false, archivedAt: null }, orderBy: { position: "asc" } });
   // أي بطاقة لها صورة عمل؟ (لعرض زر «عرض الصورة» دون جلب الصور الثقيلة مع اللوحة)
-  const cards = rawCards;
+  // ═════ اسمُ المشترك على وجه البطاقة (طلبُ محمد 2026-08-13) ═════
+  // الوجهُ يُظهر اليوزر (`title`) والهاتفَ والملاحظة — والناقصُ **الاسم**. و`subscriberId`
+  // موجودٌ على البطاقة، فيُجلَب اسمُ كلّ مشتركٍ **باستعلامٍ واحدٍ** لا واحدٍ لكلّ بطاقة.
+  // 🔒 والعزلُ محفوظٌ بالبناء: المُعرِّفاتُ مأخوذةٌ من بطاقاتِ **هذه اللوحة** حصراً، ولوحةُ
+  //    المكتب مفحوصةٌ سلفاً في المسار — فلا مشتركٌ من مكتبٍ آخر يمكن أن يدخل القائمة.
+  const subIds = [...new Set(rawCards.map((c) => c.subscriberId).filter((x): x is number => x != null))];
+  const subNames = subIds.length
+    ? new Map(
+        (await prisma.subscriber.findMany({ where: { id: { in: subIds } }, select: { id: true, name: true } }))
+          .map((s) => [s.id, s.name] as const),
+      )
+    : new Map<number, string | null>();
+  const cards = rawCards.map((c) => ({
+    ...c,
+    subscriberName: c.subscriberId != null ? subNames.get(c.subscriberId) ?? null : null,
+  }));
   const techRows = await prisma.technician.findMany({
     where: officeId == null ? { towerId: null, isDeleted: false } : { isDeleted: false, OR: [{ towerId: officeId }, { supportTowerId: officeId }] },
     orderBy: { id: "asc" },
@@ -117,7 +132,20 @@ export async function GET(request: Request) {
         if (template) {
           const SUPPORT_LIST_ID = -1; // عمود افتراضي (عرضٌ فقط — البطاقات تبقى فعلياً بلوحة مكتب الدعم)
           data.lists.push({ ...template, id: SUPPORT_LIST_ID, name: `🤝 دعم مؤقت — ${sOffice?.name ?? "مكتب آخر"}`, position: 9999 });
-          for (const c of sCards) data.cards.push({ ...c, listId: SUPPORT_LIST_ID });
+          // واسمُ المشترك لبطاقات الدعم أيضاً — وإلّا ظهر الوجهُ ناقصاً في عمود الدعم وحدَه
+          const sIds = [...new Set(sCards.map((c) => c.subscriberId).filter((x): x is number => x != null))];
+          const sNames = sIds.length
+            ? new Map(
+                (await prisma.subscriber.findMany({ where: { id: { in: sIds } }, select: { id: true, name: true } }))
+                  .map((s) => [s.id, s.name] as const),
+              )
+            : new Map<number, string | null>();
+          for (const c of sCards) {
+            data.cards.push({
+              ...c, listId: SUPPORT_LIST_ID,
+              subscriberName: c.subscriberId != null ? sNames.get(c.subscriberId) ?? null : null,
+            });
+          }
         }
       }
     }
