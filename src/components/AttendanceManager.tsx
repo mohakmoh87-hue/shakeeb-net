@@ -6,7 +6,10 @@ const todayKey = () => new Date(new Date().getTime() + 3 * 3600 * 1000).toISOStr
 const fmtTime = (d: string | null) =>
   d ? new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Baghdad" }) : "—";
 
-type Rec = { id: number; dayKey: string | null; checkIn: string | null; checkInActual: string | null; checkOut: string | null; checkOutActual: string | null; checkoutBy: string | null; lateExcuse: string | null };
+type Rec = { id: number; dayKey: string | null; checkIn: string | null; checkInActual: string | null; checkOut: string | null; checkOutActual: string | null; checkoutBy: string | null; lateExcuse: string | null;
+  // أ-١٠/القاعدة ٣ · **أين** بصم — يأتيان من الخادم **فقط حين يختلف** المكانُ عن مكتبه
+  // الأصليّ. و`office` اسمُ المكتب الذي يُحتسَب له اليومُ (الأصليُّ دائماً).
+  office?: string | null; inOffice?: string | null; outOffice?: string | null };
 
 // إدارة حضور الفني للمدير: سجل البصمات (تاريخ + دخول + خروج) مع حذف كل بصمة، خروج يدوي، وإضافة يوم كامل.
 export default function AttendanceManager({ technicianId, technicianName, onClose, onChange }: { technicianId: number; technicianName: string; onClose: () => void; onChange: () => void }) {
@@ -79,6 +82,10 @@ export default function AttendanceManager({ technicianId, technicianName, onClos
                     {r.checkInActual && fmtTime(r.checkInActual) !== fmtTime(r.checkIn) && (
                       <span className="block text-[9px] font-normal text-slate-400" title="وقت البصمة الحقيقي">فعلي {fmtTime(r.checkInActual)}</span>
                     )}
+                    {/* أ-١٠ · بصم من مكتبٍ آخر — واليومُ محسوبٌ لمكتبه الأصليّ (قاعدةُ محمد) */}
+                    {r.inOffice && (
+                      <span className="block text-[9px] font-normal text-sky-600" dir="rtl" title="بصم دخولَه من هذا المكتب — واليومُ محسوبٌ لمكتبه الأصليّ">📍 {r.inOffice}</span>
+                    )}
                   </span>
                   <span className="text-center font-bold leading-tight text-rose-600" dir="ltr">
                     {fmtTime(r.checkOut)}
@@ -86,6 +93,9 @@ export default function AttendanceManager({ technicianId, technicianName, onClos
                     {r.checkOut && r.checkoutBy === "tech-late" && <span className="mr-1 text-[9px] text-indigo-500" title="أغلقه الفنيّ بعد منتصف الليل — والمُحتسَبُ مقصوصٌ عند نهاية دوامه">متأخّر</span>}
                     {r.checkOutActual && fmtTime(r.checkOutActual) !== fmtTime(r.checkOut) && (
                       <span className="block text-[9px] font-normal text-slate-400" title="وقت البصمة الحقيقي">فعلي {fmtTime(r.checkOutActual)}</span>
+                    )}
+                    {r.outOffice && (
+                      <span className="block text-[9px] font-normal text-sky-600" dir="rtl" title="بصم خروجَه من هذا المكتب — واليومُ محسوبٌ لمكتبه الأصليّ">📍 {r.outOffice}</span>
                     )}
                   </span>
                   <button

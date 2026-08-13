@@ -5,22 +5,67 @@ import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { baghdadDayKey, computeAttendance, parseHHMM, distanceMeters, baghdadMinutesOfDay } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
-import { endSupport } from "@/lib/field";
+import { endSupport, techEffectiveOffices } from "@/lib/field";
 
 export const dynamic = "force-dynamic";
 
-// تحقّق البصمة الجغرافية (منع صارم): يرجع رسالة خطأ إن مُنعت البصمة، أو null إن سُمح.
-async function geofenceError(towerId: number | null, lat: number | undefined, lng: number | undefined): Promise<string | null> {
-  if (towerId == null) return null;
-  const office = await prisma.tower.findUnique({ where: { id: towerId }, select: { geoEnabled: true, lat: true, lng: true, geoRadius: true, name: true } });
-  if (!office || !office.geoEnabled || office.lat == null || office.lng == null) return null; // غير مفعّل/بلا موقع ⇒ لا تحقّق
+// ⚠️ `geofenceError` القديمةُ نُزعت هنا: كانت تفحص **مكتباً واحداً أُلزم به الفنيُّ سلفاً**،
+// وقد صار الفحصُ الجغرافيُّ وحسمُ المكتب **عمليّةً واحدةً** في `resolveStampOffice` أدناه.
+// وإبقاؤها يعني تعريفَين لقاعدةٍ جغرافيّةٍ واحدةٍ يتباعدان مع أوّل تعديل.
+
+// ═══════════════ أ-١٠ · مكتبُ البصمة يُحسم من موقعه الفعليّ ═══════════════
+// **القاعدةُ الحاكمة (قرارُ محمد 2026-08-11):** «يستطيع بصمَ دخولٍ من مكتبٍ والخروجَ من مكتبٍ
+// آخر، **وكلُّ الإجراءات ترجع إلى مكتبه الأصليّ وكأنّه بصم من مكتبه الأصليّ**.»
+//
+// 🔴 **والعلّةُ التي يُصلحها هذا البند**: كان السطرُ الواحد `t?.supportTowerId ?? tech.towerId`
+// **يتجاهل `supportKind`**. ودعمُ «بطاقاتٍ محدّدة» تُبقي اللوحةُ صاحبَه في مكتبه الأصليّ —
+// فكان يُلزَم بالبصم في مكتب الطالب، ونطاقُه الجغرافيُّ يُقاس على ذلك المكتب، **فيُمنَع من
+// البصم في مكتبه الذي هو فيه** ⇒ لا صفَّ حضورٍ ⇒ **لا يومَ راتبٍ له**. (وقياسُ الإنتاج
+// 2026-08-13: خمسةٌ من تسعةِ مكاتبَ نطاقُها مُفعَّلٌ بـ٥٠ متراً — فهناك تعضُّ العلّةُ بقوّة.)
+//
+// والحلُّ: **لا يُلزَم بمكتبٍ، بل يُحسَم مكتبُه من موقعه** بين مكاتبه المسموحة.
+// ⚠️ ولا يُقبَل `officeId` من جسم الطلب أبداً — المجموعةُ تُبنى في الخادم من
+// `techEffectiveOffices`، وإلّا بصم أيُّ فنيٍّ على أيّ مكتب (وهي عينُ طبقة العزل).
+type StampResult = { office: number | null; error?: string };
+
+async function resolveStampOffice(
+  t: { supportTowerId: number | null; supportKind: string | null; extraTowerIds: string | null },
+  homeTower: number | null,
+  lat: number | undefined,
+  lng: number | undefined,
+): Promise<StampResult> {
+  // المكتبُ الافتراضيُّ حين لا يحسم الموقعُ شيئاً:
+  //   دعمُ «يومٍ كامل» ينقله فعليّاً إلى مكتب الطالب ⇒ هو الافتراضيّ
+  //   دعمُ «بطاقاتٍ محدّدة» يُبقيه في مكتبه (اللوحةُ تُبقيه) ⇒ مكتبُه — **وهذا إصلاحُ أ-١٠**
+  const fallback = t.supportKind === "day" && t.supportTowerId != null ? t.supportTowerId : homeTower;
+
+  const allowed = techEffectiveOffices({ towerId: homeTower, supportTowerId: t.supportTowerId, extraTowerIds: t.extraTowerIds });
+  if (!allowed.length) return { office: fallback };
+
+  const towers = await prisma.tower.findMany({
+    where: { id: { in: allowed } },
+    select: { id: true, name: true, geoEnabled: true, lat: true, lng: true, geoRadius: true },
+  });
+  const fenced = towers.filter((o) => o.geoEnabled && o.lat != null && o.lng != null);
+  // لا نطاقَ على أيٍّ من مكاتبه ⇒ لا تحقّقَ أصلاً، تماماً كحاله اليوم (`geoEnabled=false`)
+  if (!fenced.length) return { office: fallback };
+
   if (typeof lat !== "number" || typeof lng !== "number" || Number.isNaN(lat) || Number.isNaN(lng)) {
-    return "تعذّر تحديد موقعك — فعّل الموقع (GPS) واسمح للتطبيق بالوصول إليه ثم أعد المحاولة";
+    return { office: null, error: "تعذّر تحديد موقعك — فعّل الموقع (GPS) واسمح للتطبيق بالوصول إليه ثم أعد المحاولة" };
   }
-  const dist = distanceMeters(office.lat, office.lng, lat, lng);
-  const radius = office.geoRadius ?? 200;
-  if (dist > radius) return `يجب أن تكون داخل «${office.name ?? "المكتب"}» للبصمة — تبعد عنه ~${dist} م (المسموح ${radius} م)`;
-  return null;
+  const measured = fenced
+    .map((o) => ({ o, dist: distanceMeters(o.lat as number, o.lng as number, lat, lng), radius: o.geoRadius ?? 200 }))
+    .sort((a, b) => a.dist - b.dist);
+  const inside = measured.filter((m) => m.dist <= m.radius);
+  if (inside.length) return { office: inside[0].o.id }; // الأقربُ الذي هو داخل نطاقه
+
+  // لا مكتبَ مُفعَّلَ النطاق يطابق موقعَه. وقبل المنع: هل الافتراضيُّ نفسُه **بلا نطاق**؟
+  // إن كان كذلك فلا قيدَ عليه أصلاً — ومنعُه هنا يكون تضييقاً جديداً لم يكن موجوداً.
+  const fallbackFenced = fallback != null && fenced.some((o) => o.id === fallback);
+  if (!fallbackFenced && fallback != null) return { office: fallback };
+
+  const n = measured[0];
+  return { office: null, error: `يجب أن تكون داخل «${n.o.name ?? "المكتب"}» للبصمة — تبعد عنه ~${n.dist} م (المسموح ${n.radius} م)` };
 }
 
 // سجل حضور فني ليوم اليوم (أو ينشئه)
@@ -101,10 +146,30 @@ export async function GET(request: Request) {
     const recs = await prisma.attendance.findMany({
       where: { technicianId: logTechId },
       orderBy: { dayKey: "desc" },
-      select: { id: true, dayKey: true, checkIn: true, checkInActual: true, checkOut: true, checkOutActual: true, checkoutBy: true, lateExcuse: true },
+      select: { id: true, dayKey: true, checkIn: true, checkInActual: true, checkOut: true, checkOutActual: true, checkoutBy: true, lateExcuse: true,
+        // أ-١٠/القاعدة ٣ · تُقرأ الآن وتُعرَض: **أين** بصم — و`towerId` **لمن** يُحتسَب
+        towerId: true, checkInTowerId: true, checkOutTowerId: true },
       take: 120,
     });
-    return NextResponse.json({ role: "manager", log: recs });
+    // أسماءُ المكاتب الظاهرة في السجلّ — **من مكاتب وكيل المستخدم حصراً** (عزل)
+    const agentT = await agentTowerIds(session);
+    const named = await prisma.tower.findMany({
+      where: { id: { in: agentT.length ? agentT : [-1] } }, select: { id: true, name: true },
+    });
+    const oname = new Map(named.map((o) => [o.id, o.name]));
+    // ولا يُعرَض اسمُ مكتبٍ إلّا حين **يختلف** عن مكتبه الأصليّ: فالمعتادُ ألّا يختلف،
+    // وعرضُه دائماً يُغرِق السجلَّ بتكرارٍ لا يُقرأ.
+    const elsewhere = (stamp: number | null, home: number | null) =>
+      stamp != null && home != null && stamp !== home ? (oname.get(stamp) ?? "مكتبٌ آخر") : null;
+    return NextResponse.json({
+      role: "manager",
+      log: recs.map((r) => ({
+        ...r,
+        office: r.towerId != null ? oname.get(r.towerId) ?? null : null,
+        inOffice: elsewhere(r.checkInTowerId, r.towerId),
+        outOffice: elsewhere(r.checkOutTowerId, r.towerId),
+      })),
+    });
   }
   const reqOffice = Number(url.searchParams.get("officeId")) || null;
   const key = baghdadDayKey(new Date());
@@ -136,8 +201,11 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "إجراء غير صحيح" }, { status: 400 });
 
   // بيانات الفني (بما فيها الدعم) — البصمة تتحوّل لمكتب الدعم إن كان الفني مُعاراً
-  const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { towerId: true, supportTowerId: true, shiftStart: true, shiftEnd: true, entryGraceMin: true, exitGraceMin: true, lateRatePerMin: true, overtimeRatePerMin: true } });
-  const stampOffice = t?.supportTowerId ?? tech.towerId; // مكتب البصمة الحالي (الدعم أو الأصلي)
+  const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { towerId: true, supportTowerId: true, supportKind: true, extraTowerIds: true, shiftStart: true, shiftEnd: true, entryGraceMin: true, exitGraceMin: true, lateRatePerMin: true, overtimeRatePerMin: true } });
+  // أ-١٠/القاعدة ٢ · **مكتبُه الأصليُّ هو مرجعُ كلّ شيء**: النسبةُ والراتبُ والتقاريرُ
+  // والإشعارات — «وكأنّه بصم من مكتبه الأصليّ». ويُقرأ من القاعدة لا من الجلسة، فالجلسةُ
+  // تبقى حاملةً المكتبَ القديم لو نقله المديرُ وهي مفتوحة.
+  const homeTower = t?.towerId ?? tech.towerId;
   const onSupport = t?.supportTowerId != null;
 
   // إجراء «نسيت البصمة»: طلب إعفاء من خصم تأخير الدخول (لا يحتاج موقعاً) — يبقى معلّقاً حتى قرار المدير
@@ -155,9 +223,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, lateExcuse: "pending" });
   }
 
-  // البصمة الجغرافية (منع صارم): يجب أن يكون الفني داخل نطاق مكتب البصمة الحالي
-  const geoErr = await geofenceError(stampOffice, parsed.data.lat, parsed.data.lng);
-  if (geoErr) return NextResponse.json({ error: geoErr }, { status: 403 });
+  // أ-١٠ · البصمةُ الجغرافيّةُ **وحسمُ المكتب** صارا عمليّةً واحدة: يُقاس موقعُه على **كلّ**
+  // مكاتبه المسموحة فيُعرَف في أيّها هو، بدل أن يُقاس على مكتبٍ واحدٍ أُلزم به سلفاً.
+  const stamp = await resolveStampOffice(
+    { supportTowerId: t?.supportTowerId ?? null, supportKind: t?.supportKind ?? null, extraTowerIds: t?.extraTowerIds ?? null },
+    homeTower, parsed.data.lat, parsed.data.lng,
+  );
+  if (stamp.error) return NextResponse.json({ error: stamp.error }, { status: 403 });
+  const stampOffice = stamp.office; // **مكانُ** البصمة — للشفافيّة والتوزيع، لا للنسبة
 
   const now = new Date();
   const key = baghdadDayKey(now);
@@ -170,11 +243,14 @@ export async function POST(request: Request) {
     const startMin = parseHHMM(t?.shiftStart);
     const effectiveIn = (startMin != null && baghdadMinutesOfDay(now) < startMin) ? bgTimeUtc(key, startMin) : now;
     const created = await prisma.attendance.create({
-      data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: stampOffice, dayKey: key, checkIn: effectiveIn, checkInActual: now, checkoutBy: null },
+      // القاعدة ٢: `towerId` = **المكتبُ الأصليّ** لا مكتبُ البصمة — فالراتبُ والتقاريرُ
+      // ترجع إليه «كأنّه بصم من مكتبه». والقاعدة ٣: `checkInTowerId` يحفظ **أين** بصم فعلاً.
+      data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: homeTower, checkInTowerId: stampOffice, dayKey: key, checkIn: effectiveIn, checkInActual: now, checkoutBy: null },
     });
     // كشف التأخّر (على الوقت المُحتسَب): دخول بعد (بدء الدوام + سماحية الدخول) ⇒ زر «هل نسيت البصمة؟»
     const isLate = startMin != null && baghdadMinutesOfDay(effectiveIn) > startMin + Math.max(0, t?.entryGraceMin ?? 0);
-    await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkin", title: "بصمة دخول", body: `${tech.name} سجّل الدخول${onSupport ? " (دعم)" : ""}${isLate ? " (متأخّر)" : ""}`, refType: "technician", refId: tech.technicianId });
+    // الإشعارُ لمكتبه الأصليّ: كان ينزح لمكتب الدعم فلا يرى مديرُ المكتب الأصليّ بصمةَ فنيّه
+    await notify({ agentId: tech.agentId, towerId: homeTower, type: "checkin", title: "بصمة دخول", body: `${tech.name} سجّل الدخول${onSupport ? " (دعم)" : ""}${isLate ? " (متأخّر)" : ""}`, refType: "technician", refId: tech.technicianId });
     // بطاقات الليل والفجر: تُرفع حين لا أحد على رأس عمله فتبقى بلا فني. نلتقطها **هنا**
     // — لحظة أول بصمة دخول — بدل مهمة خلفية دورية تُبقي الخادم مستيقظاً وتكلّف على
     // الخطة المجانية. الطلب موجود أصلاً كل صباح، فالكلفة الإضافية صفر (قرار محمد 2026-08-03).
@@ -208,14 +284,16 @@ export async function POST(request: Request) {
     : now;
   const calc = t ? computeAttendance(t, outRec.checkIn, outAt) : null;
   // دعم يومٍ طُلب بعد بصمة دخوله بمكتبه الأصلي: الدخول يبقى لمكتبه، والخروج يُنسب لمكتب الدعم
-  const outTower = stampOffice !== outRec.towerId ? stampOffice : null;
+  // القاعدة ٣ · **مكانُ** الخروج يُحفَظ دائماً لا حين يختلف فقط: كان `null` يعني «نفسَ
+  // المكتب» فلا يُعرَف يقيناً أين بصم، وكان **يُكتَب ولا يُقرَأ** أصلاً. والآن يُقرأ ويُعرَض.
+  const outTower = stampOffice;
   const updated = await prisma.attendance.update({
     where: { id: outRec.id },
     data: { checkOut: outAt, checkOutActual: now, checkoutBy: lateDay ? "tech-late" : "tech", checkOutTowerId: outTower, ...(calc ?? {}) },
   });
   const late = calc?.lateDeduction ?? 0, early = calc?.earlyDeduction ?? 0, ot = calc?.overtimeAddition ?? 0;
   const extra = late || early ? ` (خصم ${(late + early).toLocaleString("en-US")})` : ot ? ` (إضافي ${ot.toLocaleString("en-US")})` : "";
-  await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkout", title: lateDay ? "بصمة خروج متأخّرة" : "بصمة خروج", body: `${tech.name} سجّل الخروج${lateDay ? ` عن يوم ${lateDay} (بعد منتصف الليل)` : ""}${extra}`, refType: "technician", refId: tech.technicianId });
+  await notify({ agentId: tech.agentId, towerId: homeTower, type: "checkout", title: lateDay ? "بصمة خروج متأخّرة" : "بصمة خروج", body: `${tech.name} سجّل الخروج${lateDay ? ` عن يوم ${lateDay} (بعد منتصف الليل)` : ""}${extra}`, refType: "technician", refId: tech.technicianId });
 
   // إن كان على دعم: الخروج ينهي الدعم ويعيده لمكتبه الأصلي (في كل الأحوال بنهاية الدوام)
   if (onSupport) {
