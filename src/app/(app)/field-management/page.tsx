@@ -767,40 +767,38 @@ export default function FieldManagementPage() {
             </button>
           ))}
           <span className="mx-1 h-5 w-px bg-line" />
+          {/* ═════ البند ١٠ · قوائمُ منسدلةٌ بدل صفٍّ من تسعة أزرار (طلبُ محمد 2026-08-14) ═════
+              بنصّه: «كثرت الأزرارُ للقائمة العلويّة جدّاً ⇒ قوائمُ منسدلةٌ ٢ أو ٣ مجموعات
+              بحسب كلّ فئةٍ واختصاص، وعنوانُ القائمة يخصّ ما بداخلها».
+              ⇒ مجموعتان بحسب **الاختصاص**: «شؤون الفنيّين» (مَن يعمل ومتى وماله)
+                و«اللوحة والسجلّات» (إعدادُ العمل وأرشيفُه).
+              🔑 **والشاراتُ تصعد إلى عنوان المجموعة**: إجازةٌ أو خصمٌ معلَّقٌ داخل قائمةٍ
+                 مطويّةٍ = شارةٌ لا تُرى ⇒ «المديرُ لم ينتبه» — وهي بعينها شكوى محمد في
+                 بند الإجازة الزمنيّة (الحالة ٤). فمجموعُ المعلَّقات يظهر على العنوان. */}
           {(canManage || canOperate) && (
-            <button onClick={() => setTechModal(true)} className="ftb">👷 الفنيون ({technicians.length})</button>
+            <FieldMenu title="شؤون الفنيّين" badge={canManage ? leavePending + dedPending : 0}>
+              <FieldMenuItem onClick={() => setTechModal(true)}>👷 الفنيون ({technicians.length})</FieldMenuItem>
+              {canManage && (
+                <FieldMenuItem onClick={() => setLeaveModal(true)} badge={leavePending}>📅 الإجازات</FieldMenuItem>
+              )}
+              {canManage && (
+                <FieldMenuItem onClick={() => setDedModal(true)} badge={dedPending}>💠 الخصومات</FieldMenuItem>
+              )}
+              {/* إنجازات الفنيين: في شريط التطبيق أيضاً — كان في ترويسة المتصفّح وحدها فلا يراه
+                  المدير من هاتفه (تصحيح 2026-08-05) */}
+              {canManage && <FieldMenuItem onClick={() => setAchModal(true)}>🏅 إنجازات الفنيين</FieldMenuItem>}
+              {officeId != null && <FieldMenuItem onClick={() => setSupportModal(true)}>🤝 دعم مؤقت</FieldMenuItem>}
+              {/* البند ٨ · كلمةٌ واضحةٌ لا صورة — وللمدير فقط */}
+              {canManage && !isTech && (
+                <FieldMenuItem href="/attendance">حضور الفنيين</FieldMenuItem>
+              )}
+            </FieldMenu>
           )}
-          {canManage && (
-            <button onClick={() => setLeaveModal(true)} className="ftb relative">📅 الإجازات
-              {leavePending > 0 && <i className="fbadge">{leavePending}</i>}
-            </button>
-          )}
-          {canManage && (
-            <button onClick={() => setDedModal(true)} className="ftb relative">💠 الخصومات
-              {dedPending > 0 && <i className="fbadge">{dedPending}</i>}
-            </button>
-          )}
-          {/* إنجازات الفنيين: في شريط التطبيق أيضاً — كان في ترويسة المتصفّح وحدها فلا يراه
-              المدير من هاتفه (تصحيح 2026-08-05) */}
-          {canManage && <button onClick={() => setAchModal(true)} className="ftb">🏅 إنجازات الفنيين</button>}
-          {isTech && myRank && (
-            <button onClick={() => setAchModal(true)} className="ftb" title="اضغط لترتيب كل الفنيين">
-              🏅 مرتبتك {myRank.rank}/{myRank.of} · {myRank.points} نقطة
-              {myRank.avgMin != null ? ` · معدّل ${myRank.avgMin} د` : ""}
-            </button>
-          )}
-          {canManage && <button onClick={() => setTypesModal(true)} className="ftb">⏱ الأنواع والأوقات</button>}
-          <button onClick={() => setArchiveModal(true)} className="ftb">🗂️ الأرشيف</button>
-          {canOperate && !isTech && <button onClick={() => setTrashModal(true)} className="ftb">🗑️ المحذوفة</button>}
-          {officeId != null && <button onClick={() => setSupportModal(true)} className="ftb">🤝 دعم مؤقت</button>}
-          {/* البند ٨ · «كلمةٌ واضحةٌ لا صورة · يسارَ دعم مؤقت · وتظهر للمدير فقط».
-              و`canManage` هي صلاحيّةُ المدير هنا (المستخدمُ العاديُّ `canOperate`) — فحضورُ
-              الفنيّين وخصوماتُهم شأنُ مديرٍ لا شأنُ مَن يُشغّل اللوحة. */}
-          {canManage && !isTech && (
-            <a href="/attendance" className="ftb" title="سجلُّ حضور الفنيين — مَن بصم اليوم ومَن لم يبصم خروجاً بعد">
-              حضور الفنيين
-            </a>
-          )}
+          <FieldMenu title="اللوحة والسجلّات">
+            {canManage && <FieldMenuItem onClick={() => setTypesModal(true)}>⏱ الأنواع والأوقات</FieldMenuItem>}
+            <FieldMenuItem onClick={() => setArchiveModal(true)}>🗂️ الأرشيف</FieldMenuItem>
+            {canOperate && !isTech && <FieldMenuItem onClick={() => setTrashModal(true)}>🗑️ المحذوفة</FieldMenuItem>}
+          </FieldMenu>
         </div>
       )}
 
@@ -1044,6 +1042,15 @@ export default function FieldManagementPage() {
               {o.name ?? `مكتب ${o.id}`}
             </button>
           ))}
+          {/* 🎯 مرتبةُ الفنيّ — **كانت في فرعٍ لا يُصيَّر أبداً**: مكتوبةً بشرط `isTech`
+              داخل شريطٍ شرطُه `!isTech`، فلم يرها فنيٌّ قطّ. كُشفت وهي تُنقل في البند ١٠
+              (تحذيرُ «`myRank` غيرُ مستعمل» هو ما دلّ عليها)، ومكانُها الصحيحُ شريطُ الفنيّ. */}
+          {myRank && (
+            <button onClick={() => setAchModal(true)} className="rounded-lg bg-white/15 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-white/25" title="اضغط لترتيب كل الفنيين">
+              🏅 مرتبتك {myRank.rank}/{myRank.of} · {myRank.points} نقطة
+              {myRank.avgMin != null ? ` · معدّل ${myRank.avgMin} د` : ""}
+            </button>
+          )}
           {(canManage || (!isTech && canOperate)) && (
             <button onClick={() => setTechModal(true)} className="rounded-lg bg-emerald-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-emerald-600">
               👷 الفنيون ({technicians.length})
@@ -2040,4 +2047,55 @@ function ArchiveModal({ cardTypes, offices, onClose, onChanged }: { cardTypes: C
       </div>
     </div>
   );
+}
+
+// ═════ البند ١٠ · قائمةٌ منسدلةٌ لأزرار الترويسة (طلبُ محمد 2026-08-14) ═════
+// «كثرت الأزرارُ جدّاً ⇒ قوائمُ منسدلةٌ ٢ أو ٣ مجموعاتٍ بحسب الفئة والاختصاص، وعنوانُ
+//  القائمة يخصّ ما بداخلها».
+//
+// 🔑 **والشارةُ على العنوان شرطٌ لا زينة**: معلَّقٌ داخل قائمةٍ مطويّةٍ = شارةٌ لا تُرى،
+//   ومَن لا يرى لا ينتبه — وهي بعينها شكوى محمد في بند الإجازة الزمنيّة («المديرُ لم
+//   ينتبه للإشعار»). فمجموعُ معلَّقات الأبناء يظهر على العنوان **وهي مطويّة**.
+function FieldMenu({ title, badge = 0, children }: { title: string; badge?: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement | null>(null);
+  // تُغلَق بالنقر خارجها وبـEscape — فقائمةٌ عالقةٌ مفتوحةٌ تحجب اللوحةَ تحتها
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  return (
+    <div ref={box} className="relative">
+      <button onClick={() => setOpen((v) => !v)} className="ftb relative" aria-expanded={open}>
+        {title} <span className="text-[10px] opacity-70">{open ? "▲" : "▼"}</span>
+        {badge > 0 && <i className="fbadge">{badge}</i>}
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 min-w-[210px] overflow-hidden rounded-xl border border-line bg-surface py-1 shadow-xl"
+          onClick={() => setOpen(false)}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** عنصرُ قائمةٍ: زرٌّ أو رابط — وشارتُه تبقى ظاهرةً داخل القائمة أيضاً. */
+function FieldMenuItem(
+  { children, onClick, href, badge = 0 }:
+  { children: React.ReactNode; onClick?: () => void; href?: string; badge?: number },
+) {
+  const cls = "flex w-full items-center justify-between gap-3 px-3.5 py-2 text-right text-sm font-semibold text-ink-2 transition hover:bg-ground hover:text-orange-d";
+  const inner = (
+    <>
+      <span>{children}</span>
+      {badge > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{badge}</span>}
+    </>
+  );
+  if (href) return <a href={href} className={cls}>{inner}</a>;
+  return <button onClick={onClick} className={cls}>{inner}</button>;
 }
