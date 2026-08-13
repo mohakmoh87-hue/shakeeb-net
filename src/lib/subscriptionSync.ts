@@ -822,11 +822,14 @@ export async function runFullCardAudit(
   // 1) جلب تفعيلات كلِّ لوحةٍ ثمّ دمجُها (صفحات 500) مع تقدّم مرئي وإمكان الإلغاء
   const acts: SasActivation[] = [];
   let complete = true; // 🔑 ناقصةٌ من **أيّ** لوحةٍ ⇒ الغيابُ لا يُثبت شيئاً
+  // جلساتُ اللوحات تُحفَظ للتحقّق المُوجَّه بالسيريال أدناه (بحثٌ لكلّ مشتبَهٍ على حِدة)
+  const sessions: { base: string; token: string; label: string }[] = [];
   for (const sc of scopes) {
     let base: string, token: string;
     try {
       base = sasBaseUrl(sc.loginUrl);
       token = await sasLogin(base, sc.username, sc.password);
+      sessions.push({ base, token, label: sc.label ?? "لوحة" });
     } catch (e) {
       // لوحةٌ تعذّر الدخولُ إليها = أدلّةٌ غائبة ⇒ لا يُحكَم بغيابِ ما لم نره
       return { ...empty, error: `فشل الاتصال بـ SAS${sc.label ? ` (${sc.label})` : ""}: ${(e as Error).message}` };
@@ -959,10 +962,60 @@ export async function runFullCardAudit(
   // ⇒ فإن لم يُثبَت ولا كارتٌ واحدٌ بينما فُحصت ثلاثةٌ أو أكثر: **لا يُوسَم شيء**، ويُرفَع
   //   خطأٌ ظاهرٌ للمدير. فخسارةُ اكتشافٍ صحيحٍ أهونُ من قائمةٍ كاذبةٍ يُنظّفها محمد بيده
   //   — وهي كلفةٌ وقعت فعلاً ٥٣٦ مرّة.
+  // ═════ 🎯 تحقّقٌ مُوجَّهٌ بالسيريال قبل أيّ حكم (حسمُ سبب البلاغ 2026-08-13) ═════
+  // شرحُ محمد حسم المسألة: **كلُّ تفعيلٍ بكارت**، لكنّ الكارتَ يُفعَّل بثلاثة طرق:
+  //   ١. المشتركُ يُفعّل لنفسه من **تطبيق سوبر سيل** ⇒ يظهر التفعيلُ باسم موقعه
+  //      (`FDT13-MU` مثلاً) لا باسم حساب المكتب.
+  //   ٢. يأتي إلى المكتب فيُفعّل المكتبُ ⇒ يظهر باسم حساب الساس للمكتب.
+  //   ٣. وتفعيلاتُ الديلر (٩٠ يوماً).
+  // ⇒ فقائمةُ تفعيلات حساب المكتب **لا تحمل كلَّ ما استُخدم من كروته**، وهذا ليس عطباً
+  //   بل سياسةُ سوبر سيل: «موجودٌ لكن لا يمكن استخدامه».
+  //
+  // 🔑 والدواءُ كان في البرنامج سلفاً ولم يستعمله هذا الجرد: `sasSearchActivation` تبحث
+  //   **بالسيريال مباشرةً** فتجد التفعيل مهما كان تاريخُه ومَن أجراه — وهي بعينها سرُّ
+  //   نجاح زرّ «ربط» الذي كان محمد يُصلح به ما وسمناه ظلماً. والمرحلةُ الأولى تستعملها
+  //   منذ زمن؛ أمّا الجردُ الشاملُ فكان يحكم بقائمةٍ ناقصةٍ وحدَها.
+  // ⇒ فلا يُوسَم كارتٌ إلّا بعد أن يفشل **البحثُ الموجَّه عنه في كلّ لوحات مكتبه**.
+  //   وبهذا يصير الجردُ صادقاً كصدق زرّ «ربط»، ويُستغنى عن التخمين بالنسب والطرق.
+  const MAX_VERIFY = 500; // سقفُ حمايةٍ من حلقاتٍ ضخمة (نفسُ سقف المرحلة الأولى)
+  const POOL = 4;         // طلباتٌ متزامنةٌ خفيفةٌ على الساس (صفٌّ واحدٌ لكلّ بحث)
+  const toVerify = candidates.slice(0, MAX_VERIFY);
+  const overflow = candidates.slice(MAX_VERIFY); // فوق السقف: يبقى مشتبهاً ويُحكَم عليه بالبوّابة
+  const foundReal = new Array<boolean>(toVerify.length).fill(false);
+  let vNext = 0;
+  const verifyWorker = async () => {
+    for (;;) {
+      const i = vNext++;
+      if (i >= toVerify.length) break;
+      for (const s of sessions) { // 🔒 لوحاتُ **هذا** المكتب حصراً
+        const hit = await sasSearchActivation(s.base, s.token, toVerify[i].serial);
+        if (hit) { foundReal[i] = true; break; }
+      }
+    }
+  };
+  if (toVerify.length) {
+    if (onProgress) await onProgress("تحقّقٌ مباشرٌ من المشتبَه بها", 0, toVerify.length);
+    await Promise.all(Array.from({ length: Math.min(POOL, toVerify.length) }, verifyWorker));
+  }
+  const stillSuspect: typeof candidates = [...overflow];
+  for (let i = 0; i < toVerify.length; i++) {
+    if (foundReal[i]) res.verifiedReal++; // وُجد بالبحث الموجَّه ⇒ حقيقيٌّ لا وهميّ
+    else stillSuspect.push(toVerify[i]);
+  }
+  const rescued = foundReal.filter(Boolean).length; // عددُ ما أنقذه البحثُ الموجَّه
+  if (rescued > 0) {
+    res.events.push({
+      scenario: 3, subscriber: null, pin: null,
+      detail: `تحقّقٌ مباشر: ${rescued} كارتاً غائباً عن قائمة التفعيلات وُجد بالبحث بالسيريال — فليس وهميّاً`,
+    });
+  }
+  candidates.length = 0;
+  candidates.push(...stillSuspect);
+
   const evidenceBroken = res.verifiedReal === 0 && res.checkedUsed >= PHANTOM_MIN_VERIFIED_SAMPLE;
   if (evidenceBroken) {
     res.errors += candidates.length;
-    res.error = `تعذّر التحقّق من الكروت: فُحص ${res.checkedUsed} كارتاً مستخدماً ولم يُثبَت أيٌّ منها في تفعيلات SAS`
+    res.error = `تعذّر التحقّق من الكروت: فُحص ${res.checkedUsed} كارتاً مستخدماً ولم يُثبَت أيٌّ منها — لا بقائمة التفعيلات ولا بالبحث المباشر`
       + ` (${acts.length} تفعيلاً${scopes.length > 1 ? ` من ${scopes.length} لوحات` : ""})`
       + ` — وهذا يدلّ على نقصٍ في قائمة التفعيلات لا على كروتٍ وهميّة، فلم يُدرَج شيء.`;
     res.events.push({
