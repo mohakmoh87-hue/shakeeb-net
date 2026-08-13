@@ -16,7 +16,9 @@ const TOKEN_TTL = 4 * 60 * 1000;
 // آخر قائمة مشتركين عُرضت في اللوحة لكل مكتب (لاستيراد المعروض)
 const viewCache = new Map<number, { users: SasUser[]; at: number }>();
 // المكتب/المضيف للّوحة المفتوحة حالياً — تستعمله نداءات اللوحة على /admin/* (بديل الكوكيز)
-let currentPanel: { towerId: number; host: string } | null = null;
+// و`panelId` جزءٌ منه: لوحتان قد تكونان على المُخدِّم نفسِه (صميم: كلتاهما على
+// `82.129.22.22`) فالمضيفُ وحدَه لا يُميّزهما، ونداءاتُ اللوحة تحتاج **حسابَها**.
+let currentPanel: { towerId: number; host: string; panelId: number | null } | null = null;
 
 function cors(res: http.ServerResponse, origin?: string) {
   res.setHeader("Access-Control-Allow-Origin", origin || "*");
@@ -81,6 +83,14 @@ async function towerToken(t: { id: number; loginUrl: string | null; username: st
 //   ثمّ تُقرأ لوحاتُه — فلا لوحةَ من مكتبٍ لا يملكه هذا العامل.
 const scopesCache = new Map<number, { list: SasCreds[]; at: number }>();
 const SCOPES_TTL = 5 * 60 * 1000; // لوحةٌ تُضاف/تُحذف تظهر خلال ٥ دقائق بلا إعادة تشغيل
+
+/** بياناتُ لوحةٍ بعينها **إن كانت لهذا المكتب** — وإلّا `null`.
+ *  🔒 هذا هو موضعُ العزل: مُعرِّفُ اللوحة يأتي من الرابط (يملكه المستخدم)، فلا يُقبَل
+ *  إلّا بعد إثباتِ أنّه لوحةُ المكتب المفحوصِ سلفاً بـ`agentTower` (وكيلُ هذه الحاسبة). */
+async function panelOfTower(towerId: number, panelId: number): Promise<SasCreds | null> {
+  const list = await scopesOfTower(towerId);
+  return list.find((c) => c.panelId === panelId) ?? null;
+}
 
 async function scopesOfTower(towerId: number): Promise<SasCreds[]> {
   const hit = scopesCache.get(towerId);
@@ -256,8 +266,27 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
         const towerId = Number(panel[1]);
         const t = await agentTower(towerId);
         if (!t) { res.writeHead(404); res.end("tower not allowed"); return; }
-        const host = (t.loginUrl || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
-        currentPanel = { towerId, host }; // تُستعمل في نداءات /admin/*
+
+        // ═════ 🔴 بلاغُ صميم 2026-08-13: «Access Denied من الساس نفسِه» ═════
+        // كان هذا الوسيطُ **يتجاهل `?panel=` تماماً**: يقرأ أعمدةَ المكتب (`agentTower`)
+        // ويحقن رمزَها — وهي أعمدةُ **اللوحة الأولى**. فمَن فتح تفعيلَ مشتركٍ على اللوحة
+        // الثانية سُجِّل بحساب الأولى، فيضع الكارتَ ويضغط «تفعيل» فيرفض الساسُ العمليّةَ
+        // لأنّ الحسابَ المُسجَّلَ لا يملك ذلك المستخدم. (والوسيطُ السحابيُّ كان يقرأه
+        // سلفاً — فالعلّةُ في المحليِّ وحدَه، وهو ما تعمل عليه حاسباتُ المكاتب.)
+        // 🔒 والعزل: `panelOfTower` تقبل اللوحةَ **إن كانت لهذا المكتب** فحسب، والمكتبُ
+        //    فُحص أعلاه بـ`agentTower` (وكيلُ هذه الحاسبة) ⇒ لا لوحةَ من مكتبٍ آخر.
+        const wantPanel = Number(url.searchParams.get("panel")) || null;
+        const pc = wantPanel ? await panelOfTower(towerId, wantPanel) : null;
+        // بلا لوحةٍ مطلوبةٍ (أو لوحةٍ لا تتبع المكتب) ⇒ أعمدةُ المكتب: السلوكُ القديم حرفيّاً
+        const creds: SasCreds = pc ?? {
+          panelId: null, towerId: t.id, agentId: t.agentId, label: null,
+          loginUrl: t.loginUrl!, username: t.username!, password: t.password!, activationTemplate: null,
+        };
+        const host = (creds.loginUrl || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+        // ⚠️ ويُحفَظ **مُعرِّفُ اللوحة** مع المضيف: لوحتان قد تكونان على المُخدِّم نفسِه
+        //   (صميم: كلتاهما `82.129.22.22`) فالمضيفُ وحدَه لا يُميّزهما، ونداءاتُ `/admin/*`
+        //   تحتاج رمزَ اللوحة الصحيحة لا مضيفَها فقط.
+        currentPanel = { towerId, host, panelId: creds.panelId }; // تُستعمل في نداءات /admin/*
         const bodyBuf = req.method === "GET" || req.method === "HEAD" ? undefined : Buffer.from(await readBody(req));
         const webReq = toWebRequest(req, bodyBuf);
         let capturedJson: string | null = null;
@@ -268,7 +297,10 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
         let bodyText: Buffer;
         if (ct.includes("text/html")) {
           // حقن التوكن في localStorage قبل تحميل سكربتات اللوحة (دخول تلقائي)
-          const token = await towerToken(t).catch(() => "");
+          // 🔴 رمزُ **اللوحة المطلوبة** لا أعمدةِ المكتب — وهو جوهرُ إصلاح بلاغ صميم:
+          //   كان `towerToken(t)` يُسجّل بحساب اللوحة الأولى دائماً، فيرفض الساسُ
+          //   العمليّةَ على مشتركِ اللوحة الثانية بـ«Access Denied».
+          const token = await scopeToken(creds).catch(() => "");
           const apiUrl = `/admin/api/index.php/api/`; // اللوحة تنادي API على /admin/* (جذر)
           let html = await webRes.text();
           const inject = `<script>try{localStorage.setItem('sas4_jwt',${JSON.stringify(token)});localStorage.setItem('sas4_api_url',${JSON.stringify(apiUrl)});}catch(e){}</script>`;

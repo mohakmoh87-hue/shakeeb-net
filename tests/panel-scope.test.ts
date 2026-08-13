@@ -17,6 +17,8 @@ import path from "node:path";
 //   يمسح المستودعَ فيُسقط أيَّ استعلامٍ يذكره على غيره. ويكتشف الصنفَ كلَّه لا الحالةَ.
 
 const ROOT = process.cwd();
+/** قراءةُ ملفٍّ بمسارٍ نسبيٍّ من جذر المستودع. */
+const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const SCHEMA = path.join(ROOT, "prisma", "schema.prisma");
 /** العمودُ محلُّ الحادثة — ويُزاد على القائمة كلُّ عمودٍ «نطاقيٍّ» يُرَشُّ على استعلامات. */
 const SCOPED_FIELDS = ["sasPanelId", "odooPanelId"];
@@ -117,4 +119,54 @@ describe("نطاقُ لوحة الساس: لا عمودَ نطاقٍ على جد
         `استعلامٌ سيسقط وقتَ التشغيل بـ«Unknown argument \`${field}\`» (وهو ما أسقط مزامنةَ صميم):\n  ${bad.join("\n  ")}`);
     });
   }
+});
+
+// ═════ 🔴 بلاغُ صميم 2026-08-13: «Access Denied من الساس نفسِه» ═════
+// يفتح تفعيلَ مشتركٍ، فتُفتَح لوحةُ الساس، فيضع الكارتَ ويضغط «تفعيل» فيرفض **الساسُ**.
+// والسببُ أنّ رابطَ اللوحة كان بلا `?panel=` وأنّ الوسيطَ المحليَّ **يتجاهله أصلاً**،
+// فيُحقَن رمزُ **أعمدةِ المكتب** (= اللوحة الأولى) بينما المشتركُ على اللوحة الثانية:
+//   لوحة ٩ «صميم 1»  ⇒ الحساب `sameem.faaq@slm`
+//   لوحة ١١ «صميم2» ⇒ الحساب `Dajlat.Alsalam1@slm`   (قِيسا على الإنتاج)
+// فالحسابُ المُسجَّلُ لا يملك ذلك المستخدم ⇒ Access Denied.
+//
+// والاختبارُ يحرس **السلسلةَ كاملةً** نصّاً، لأنّ حلقةً واحدةً ناقصةً تُعيد العلّة:
+// النوعُ يحمل اللوحة ← الرابطُ يحملها ← المُعينُ يُمرّرها ← والوسيطُ المحليُّ **يقرؤها**.
+describe("سلسلةُ لوحةِ الساس عند التفعيل — حلقةٌ ناقصةٌ تُعيد «Access Denied»", () => {
+  test("نافذةُ التفعيل: النوعُ يحمل `sasPanelId` والروابطُ الثلاثةُ تُمرّره", () => {
+    const src = read("src/components/ActivationModal.tsx");
+    assert.ok(/sasPanelId\?: number \| null;/.test(src), "نوعُ المشترك يجب أن يحمل لوحته");
+    // الرابطُ عبر وسيط الموقع
+    assert.ok(/\?panel=\$\{sub\.sasPanelId\}/.test(src), "رابطُ الوسيط السحابيّ بلا `?panel=`");
+    // الرابطُ عبر العامل المحليّ (حاسبةُ المكتب — وهو ما يعمل عليه صميم)
+    assert.ok(/\?panel=\$\{subscriber\.sasPanelId\}/.test(src), "رابطُ العامل المحليّ بلا `?panel=`");
+    // تجهيزُ الرمز
+    assert.ok(/prepareSasEmbed\(subscriber\.towerId, subscriber\.sasPanelId\)/.test(src),
+      "`prepareSasEmbed` تُنادى بلا لوحةٍ ⇒ الكعكةُ تُضبَط على اللوحة الأولى");
+  });
+
+  test("`prepareSasEmbed` تُرسل اللوحةَ إلى مسار الرمز", () => {
+    const src = read("src/lib/sasEmbed.ts");
+    assert.ok(/panelId\?: number \| null/.test(src), "المُعينُ لا يقبل لوحةً");
+    assert.ok(/panelId != null \? \{ panelId \} : \{\}/.test(src), "اللوحةُ لا تُرسَل في جسم الطلب");
+  });
+
+  test("الوسيطُ المحليُّ (العامل) يقرأ `?panel=` ويستعمل رمزَ اللوحة", () => {
+    const src = read("src/lib/localSasServer.ts");
+    assert.ok(/searchParams\.get\("panel"\)/.test(src),
+      "العاملُ يتجاهل `?panel=` ⇒ يُسجّل بحساب اللوحة الأولى دائماً (عينُ بلاغ صميم)");
+    assert.ok(/scopeToken\(creds\)/.test(src),
+      "الرمزُ المحقونُ يجب أن يكون رمزَ **اللوحة** لا `towerToken` (أعمدةِ المكتب)");
+    assert.ok(/panelOfTower\(towerId, wantPanel\)/.test(src),
+      "🔒 اللوحةُ تُقبَل بعد إثباتِ أنّها لوحةُ هذا المكتب — المُعرِّفُ يأتي من الرابط");
+    // ونداءاتُ اللوحة تحتاج معرفةَ لوحتها: لوحتان قد تكونان على المُخدِّم نفسِه
+    assert.ok(/currentPanel: \{ towerId: number; host: string; panelId: number \| null \}/.test(src),
+      "المضيفُ وحدَه لا يُميّز لوحتَين على مُخدِّمٍ واحد (صميم: كلتاهما 82.129.22.22)");
+  });
+
+  test("الوسيطُ السحابيُّ كان سليماً — فلا يُنقَض بالإصلاح", () => {
+    const src = read("src/app/sas/[towerId]/[[...path]]/route.ts");
+    assert.ok(/sp\.get\("panel"\)/.test(src), "يقرأ المعامل");
+    assert.ok(/sas_panel/.test(src),
+      "ويرتدّ إلى الكعكة — فصفحةُ الساس تطبيقٌ أحاديُّ الصفحة وطلباتُها الداخليّةُ بلا معامل");
+  });
 });

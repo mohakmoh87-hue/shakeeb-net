@@ -26,6 +26,11 @@ export type ActSubscriber = {
   carry: number | null;
   dateTo: string | null;
   transferredTo?: string | null; // اليوزر الجديد إن كان المشترك محوّلاً (للتنبيه)
+  // 🔴 بلاغُ صميم 2026-08-13: «يفتح لوحةَ الساس ويضع الكارت ويضغط تفعيل فيظهر Access
+  //   Denied من الساس نفسِه». والسببُ أنّ هذا النوعَ كان **بلا لوحة**: فتُفتَح اللوحةُ
+  //   برمزِ **أعمدةِ المكتب** — وهي أعمدةُ اللوحة الأولى — بينما المشتركُ على اللوحة
+  //   الثانية، فيرفض الساسُ العمليّةَ لأنّ الحسابَ المُسجَّلَ لا يملك ذلك المستخدم.
+  sasPanelId?: number | null;
 };
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
@@ -33,7 +38,10 @@ const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLoc
 // رابط صفحة تفعيل المشترك عبر البروكسي (نفس origin + دخول تلقائي)
 function sasUrl(sub: ActSubscriber): string | null {
   if (!sub.towerId || !sub.sasId) return null;
-  return `/sas/${sub.towerId}#/user/activate/${sub.sasId}`;
+  // 🔴 اللوحةُ في الرابط: بلاها يفتح الوسيطُ حسابَ اللوحة الأولى فيردّ الساسُ
+  //   «Access Denied» على مشتركِ اللوحة الثانية (بلاغُ صميم).
+  const q = sub.sasPanelId != null ? `?panel=${sub.sasPanelId}` : "";
+  return `/sas/${sub.towerId}/${q}#/user/activate/${sub.sasId}`;
 }
 // رابط SAS4 الخارجي المباشر (لفتحه بنافذة جديدة عند الحاجة)
 function sasDirectUrl(tower: Tower | undefined, sub: ActSubscriber): string | null {
@@ -126,12 +134,14 @@ export default function ActivationModal({
     let active = true;
     if (!subscriber.towerId || !subscriber.sasId) { setFrameSrc(directLink); return; }
     if (localBase) {
-      setFrameSrc(`${localBase}/sas/${subscriber.towerId}#/user/activate/${subscriber.sasId}`);
+      // العاملُ المحليُّ يحقن الرمزَ بنفسه — فيجب أن يعرف **أيَّ لوحةٍ** يُسجّل بها
+      const lq = subscriber.sasPanelId != null ? `?panel=${subscriber.sasPanelId}` : "";
+      setFrameSrc(`${localBase}/sas/${subscriber.towerId}/${lq}#/user/activate/${subscriber.sasId}`);
       return;
     }
     const proxied = sasUrl(subscriber);
     if (!proxied) { setFrameSrc(directLink); return; }
-    prepareSasEmbed(subscriber.towerId).then((ok) => {
+    prepareSasEmbed(subscriber.towerId, subscriber.sasPanelId).then((ok) => {
       if (active) setFrameSrc(ok ? proxied : directLink);
     });
     return () => { active = false; };
