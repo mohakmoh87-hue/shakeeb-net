@@ -41,7 +41,54 @@ export async function GET(request: Request) {
   const take = Math.min(2000, Math.max(1, Number(sp.get("take")) || 500));
   const { towerScope } = await import("@/lib/guard");
   const scope = await towerScope(g.session);
-  const invWhere = { isDeleted: false, OR: [{ ...scope }, { towerId: null, user: g.session.username }] };
+
+  // ═════ أ-١٨ · البحثُ الحرُّ — كان **يُرسَل ولا يُقرَأ** (2026-08-13) ═════
+  // 🔴 `receipts/page.tsx` تُرسل `q` إلى هذا المسار بالنمط الصحيح (مُهدَّأً ومربوطاً
+  //   بالحالة)، وهذا المسارُ **لم يقرأه إطلاقاً** ⇒ الكتابةُ في صندوق البحث بتبويب
+  //   «الفواتير» لا تُغيّر شيئاً، بينما تبويبُ «الاشتراكات» يبحث فعلاً (`/api/subscriptions`
+  //   يقرأ `q`). فالمستخدمُ يرى ميزةً تعمل في تبويبٍ وتُهمَل في آخرَ بلا رسالة —
+  //   و`matched` يُحسَب على الكلّ فيُطمئنه كذباً بأنّ البحثَ «لم يجد شيئاً يُقصّ».
+  // ⇒ نُنفّذه بنفسِ نمطِ `/api/subscriptions` حرفيّاً ليكون سلوكُ التبويبَين واحداً:
+  //   نصٌّ يُطابَق في حقول الفاتورة النصّيّة، ورقمٌ يُطابَق في المُعرِّف والرقم والمبلغ،
+  //   واسمُ المشترك/يوزرُه عبر مطابقةٍ مسبقةٍ على `subscribers` (لا علاقةَ في السكيمة).
+  // 🔒 والعزلُ لا يُمَسّ: `qWhere` يُضاف **إلى جانب** `scope` في `AND` لا يُبدله.
+  const q = (sp.get("q") ?? "").trim();
+  let qWhere: object = {};
+  if (q) {
+    const qNum = Number(q.replace(/[,،]/g, ""));
+    // ⚠️ المطابقةُ المسبقةُ **مقيَّدةٌ بمشتركي نطاق المستخدم**: لولا التقييد لَجلبت
+    //   مُعرِّفاتَ مشتركي وكلاءَ آخرين، ثمّ لَكشف `subscriberId: { in: … }` فواتيرَهم
+    //   إن صادف أنّ مُعرِّفاً منها يقع في نطاقنا. القيدُ يمنع ذلك من أصله.
+    const matchedSubs = await prisma.subscriber.findMany({
+      where: {
+        isDeleted: false,
+        ...scope,
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { netUser: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true },
+      take: 5000,
+    });
+    qWhere = {
+      OR: [
+        { note: { contains: q, mode: "insensitive" } },
+        { user: { contains: q, mode: "insensitive" } },
+        { type: { contains: q, mode: "insensitive" } },
+        ...(matchedSubs.length ? [{ subscriberId: { in: matchedSubs.map((x) => x.id) } }] : []),
+        ...(Number.isFinite(qNum) && qNum > 0
+          ? [{ id: qNum }, { number: qNum }, { totalMy: qNum }, { waselHim: qNum }]
+          : []),
+      ],
+    };
+  }
+
+  const invWhere = {
+    isDeleted: false,
+    OR: [{ ...scope }, { towerId: null, user: g.session.username }],
+    ...(q ? { AND: [qWhere] } : {}),
+  };
   const invoices = await prisma.invoice.findMany({
     where: invWhere,
     orderBy: { id: "desc" },

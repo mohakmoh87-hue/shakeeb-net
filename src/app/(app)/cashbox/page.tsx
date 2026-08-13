@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import PageHeader from "@/components/PageHeader";
 import MoneyTxModal from "@/components/MoneyTxModal";
 import DateRangeFilter from "@/components/DateRangeFilter";
@@ -102,6 +102,11 @@ export default function CashboxPage() {
       .catch(() => {});
   }, []);
 
+  // أ-١٨ · حارسُ السباق: الجلبُ صار يُطلَق مع كلّ حرفٍ (مُهدَّأً)، فردُّ طلبٍ قديمٍ
+  // قد يصل **بعد** الجديد فيدهسه — فتُعرَض نتيجةُ بحثٍ سابقٍ فوق نصٍّ آخر. الإلغاءُ
+  // يُنهي القديمَ قبل إطلاق الجديد، فآخرُ ما يُعرَض هو آخرُ ما طُلب دائماً.
+  const inflight = useRef<AbortController | null>(null);
+
   const load = useCallback((f = "", t = "", search = "", kind = "entered", office: number | "" = "", acc: number | "" = "") => {
     const qs = new URLSearchParams();
     if (kind) qs.set("type", kind);
@@ -111,7 +116,10 @@ export default function CashboxPage() {
     if (t) qs.set("to", t);
     if (search.trim()) qs.set("q", search.trim());
     setListState("loading");
-    fetch(`/api/money${qs.toString() ? `?${qs}` : ""}`).then((r) => {
+    inflight.current?.abort();
+    const ac = new AbortController();
+    inflight.current = ac;
+    fetch(`/api/money${qs.toString() ? `?${qs}` : ""}`, { signal: ac.signal }).then((r) => {
       if (r.ok)
         r.json().then((d) => {
           setTxs(d.transactions);
@@ -120,7 +128,12 @@ export default function CashboxPage() {
           setListState("ok");
         });
       else setListState("error"); // فشل الجلب لا يُعرض قائمة فارغة موهِمة بالمسح
-    }).catch(() => setListState("error"));
+    }).catch((e: unknown) => {
+      // الإلغاءُ ليس فشلاً: طلبٌ أُلغي لأنّ المستخدمَ كتب حرفاً آخر — ولو عُدَّ خطأً
+      // لَظهرت «تعذّر الجلب» مع كلّ حرفٍ يُكتَب.
+      if ((e as { name?: string })?.name === "AbortError") return;
+      setListState("error");
+    });
   }, []);
 
   useEffect(() => {
@@ -143,6 +156,26 @@ export default function CashboxPage() {
     fetch("/api/towers").then((r) => void (r.ok && r.json().then(setTowers)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, loadSettle]);
+
+  // ═════ أ-١٨ · البحثُ مربوطٌ بالحالة لا بالحدث (بلاغُ محمد 2026-08-13) ═════
+  // 🔴 كان الجلبُ معلَّقاً بـ`Enter` وبزرِّ البحث وحدَهما، و`onChange` يُحدّث الحالةَ
+  //   **ولا يجلب**. فمَن بحث عن اسمٍ بلا نتائجَ ثمّ **مسح الحقلَ** بقيت القائمةُ فارغةً
+  //   — والقائمةُ تعرض نتيجةَ بحثٍ لم يُعد قائماً.
+  // 🔴 وأسوأُ منه: زرُّ «مسح» شرطُه `(from || to || q || accFilter !== "")` ⇒ لحظةَ يُفرَغ
+  //   الحقلُ **يختفي الزرُّ نفسُه**، فيبقى المستخدمُ أمام قائمةٍ فارغةٍ بلا أيّ طريقٍ
+  //   لإرجاعها إلّا إعادةُ تحميل الصفحة. وهو عينُ ما وصفه محمد.
+  // ⇒ الجلبُ يتبع `q` بتهدئةِ ٣٥٠ مللي (نمطُ `loan-debts` القائمُ في المستودع): كلُّ
+  //   حرفٍ يُضيّق، ومسحُ الحقلِ **يُرجع الكلَّ تلقائيّاً** فلا يُحتاج زرٌّ أصلاً.
+  // 🔑 والاعتماديّةُ على `q` وحدَها **مقصودةٌ لا سهو**: بقيّةُ المُرشِّحات (النوع ·
+  //   المكتب · الحساب · المدى) تُطلق `load` بنفسها في مُعالِج تغييرها، فإضافتُها هنا
+  //   تُنتج جلبَين لكلّ تغييرٍ منها. وأوّلُ تركيبٍ يُستثنى لأنّ الأثرَ أعلاه جلبَ سلفاً.
+  const firstSearch = useRef(true);
+  useEffect(() => {
+    if (firstSearch.current) { firstSearch.current = false; return; }
+    const t = setTimeout(() => load(from, to, q, typeFilter, officeId, accFilter), 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
   // تسديد: الكل إن لم يُحدَّد شيء، أو المحدَّد فقط. يُقيَّد قبضاً بتاريخ اليوم فيدخل تقريره.
   async function settle(accId: number, ids?: number[]) {

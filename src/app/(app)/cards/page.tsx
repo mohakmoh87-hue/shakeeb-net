@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import DateRangeFilter from "@/components/DateRangeFilter";
 import { formatDateTime } from "@/lib/format";
@@ -73,6 +73,21 @@ export default function CardsPage() {
     if (view === "available") loadAvail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, loadAvail, loadUsed]);
+
+  // ═════ أ-١٨ · البحثُ مربوطٌ بالحالة لا بالحدث ═════
+  // هذه الصفحةُ **لم يُبلَّغ عنها** وفيها العلّةُ نفسُها: التأثيرُ أعلاه يعتمد على `view`
+  // ولا على نصِّ البحث، فالكتابةُ لا تجلب — والجلبُ معلَّقٌ بـEnter وبالزرِّ وحدَهما.
+  // فمَن بحث عن سيريالٍ بلا نتائجَ ثمّ مسح الحقلَ بقيت قائمتُه فارغةً، وزرُّ «مسح»
+  // شرطُه وجودُ نصٍّ فيختفي لحظةَ الحاجة إليه. (وأوّلُ تركيبٍ يُستثنى: التأثيرُ أعلاه
+  // جلبَ سلفاً عند فتح التبويب.)
+  const firstUq = useRef(true);
+  useEffect(() => {
+    if (firstUq.current) { firstUq.current = false; return; }
+    if (view !== "used") return;
+    const t = setTimeout(() => loadUsed(uq, uDateOn ? uFrom : "", uDateOn ? uTo : ""), 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uq]);
 
   const availShown = availFilter ? avail.filter((c) => c.packageId === availFilter) : avail;
   // تفصيل مبالغ الفئة المختارة حسب سعر الكارت (السعر مثبَّت لحظة الإضافة لكل كارت)

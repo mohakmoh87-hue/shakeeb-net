@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import DateRangeFilter from "@/components/DateRangeFilter";
 import PrintNowButton from "@/components/PrintNowButton";
@@ -52,6 +52,19 @@ export default function SoldItemsReport() {
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // ═════ أ-١٨ · البحثُ مربوطٌ بالحالة لا بالحدث (بلاغُ محمد 2026-08-13) ═════
+  // كان الجلبُ معلَّقاً بـEnter وبالزرِّ وحدَهما ⇒ مَن بحث بلا نتائجَ ثمّ مسح الحقلَ
+  // بقيت قائمتُه فارغةً، وزرُّ «مسح» شرطُه وجودُ نصٍّ فيختفي لحظةَ الحاجة إليه.
+  // فالجلبُ يتبع النصَّ بتهدئةِ ٣٥٠ مللي، ومسحُ الحقلِ يُرجع الكلَّ تلقائيّاً.
+  // (والنصُّ وحدَه في الاعتماديّات مقصودٌ: المدى يُطلق الجلبَ في مُعالِجه.)
+  const firstSearch = useRef(true);
+  useEffect(() => {
+    if (firstSearch.current) { firstSearch.current = false; return; }
+    const t = setTimeout(() => load(dateOn ? from : "", dateOn ? to : "", q), 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
   // النقر على ترويسة عمود: تصاعدي ثم تنازلي عند التكرار (أرقام وتواريخ وأحرف)
   function sortBy(key: SortKey) {
