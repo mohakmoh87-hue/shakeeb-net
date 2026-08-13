@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
-import { prepareSasEmbed } from "@/lib/sasEmbed";
 import { localSasBase } from "@/lib/localSas";
 
 // hasSas: علامة آمنة من الخادم «المكتب مربوط بـSAS» — اليوزر لا يصل لغير مديري المكاتب
