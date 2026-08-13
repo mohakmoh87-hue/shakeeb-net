@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { baghdadStart, baghdadEnd } from "@/lib/dayRange";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope, agentTowerIds } from "@/lib/guard";
 
@@ -28,9 +29,12 @@ export async function GET(request: Request) {
   // مدى التاريخ على تاريخ المنح
   const dateWhere: Record<string, unknown> = {};
   if (fromStr && toStr) {
-    const from = new Date(fromStr + "T00:00:00");
-    const to = new Date(toStr + "T23:59:59");
-    if (!isNaN(from.getTime()) && !isNaN(to.getTime())) dateWhere.grantDate = { gte: from, lte: to };
+    // ب-٨ · حدودُ اليوم **بتوقيت بغداد**: كان البناءُ بلا `Z` فيُحلَّل بتوقيت العمليّة
+    //   (UTC على الخادم) ⇒ نافذةٌ مُزاحةٌ ثلاثَ ساعاتٍ تُخالف الصندوقَ والتقريرَ اليوميّ.
+    const from = baghdadStart(fromStr);
+    const to = baghdadEnd(toStr);
+    // و`null` من الدالّة يعني «تاريخٌ فاسد» ⇒ لا مدًى (كما كان فحصُ `isNaN` سابقاً)
+    if (from && to) dateWhere.grantDate = { gte: from, lte: to };
   }
 
   const rows = await prisma.loanDebt.findMany({

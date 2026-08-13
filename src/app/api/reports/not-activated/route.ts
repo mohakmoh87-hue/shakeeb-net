@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { baghdadStart, baghdadEnd } from "@/lib/dayRange";
+import { baghdadDayKey } from "@/lib/attendance";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope } from "@/lib/guard";
 
@@ -8,9 +10,11 @@ export async function GET(request: Request) {
   if (g.error) return g.error;
 
   const url = new URL(request.url);
-  const from = url.searchParams.get("from") ? new Date(url.searchParams.get("from")!) : new Date(new Date().setDate(1));
-  const to = url.searchParams.get("to") ? new Date(url.searchParams.get("to")!) : new Date();
-  to.setHours(23, 59, 59, 999);
+  // ب-٨ · حدودُ اليوم **بتوقيت بغداد** لا بتوقيت الخادم (UTC) — وإلّا صارت النافذةُ
+  //   مُزاحةً ٣ ساعاتٍ فتُخالف الصندوقَ والتقريرَ اليوميّ. والافتراضاتُ بغداديّةٌ أيضاً.
+  const bgToday = baghdadDayKey(new Date());
+  const from = baghdadStart(url.searchParams.get("from") || `${bgToday.slice(0, 7)}-01`)!;
+  const to = baghdadEnd(url.searchParams.get("to") || bgToday)!;
 
   // عزل المستأجر: مشتركو مكاتب المستخدم فقط (كان يعرض كل الوكلاء)
   const scope = await towerScope(g.session);

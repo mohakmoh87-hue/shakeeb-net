@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { baghdadStart, baghdadEnd } from "@/lib/dayRange";
+import { baghdadDayKey } from "@/lib/attendance";
 import { notMaster } from "@/lib/moneyKinds";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
@@ -17,9 +19,11 @@ export async function GET(request: Request) {
   const toStr = url.searchParams.get("to");
   // ?all=1 ⇒ كل التواريخ (لا مدى) — انظر تعليق التقرير التفصيلي
   const allDates = url.searchParams.get("all") === "1";
-  const from = fromStr ? new Date(fromStr) : new Date(new Date().setDate(1));
-  const to = toStr ? new Date(toStr) : new Date();
-  to.setHours(23, 59, 59, 999);
+  // ب-٨ · حدودُ اليوم **بتوقيت بغداد** لا بتوقيت الخادم (UTC) — وإلّا صارت النافذةُ
+  //   مُزاحةً ٣ ساعاتٍ فتُخالف الصندوقَ والتقريرَ اليوميّ. والافتراضاتُ بغداديّةٌ أيضاً.
+  const bgToday = baghdadDayKey(new Date());
+  const from = baghdadStart(fromStr || `${bgToday.slice(0, 7)}-01`)!;
+  const to = baghdadEnd(toStr || bgToday)!;
   const range = allDates ? undefined : { gte: from, lte: to };
 
   const scope = await towerScope(g.session); // فلتر المكتب (معزول بالوكيل)

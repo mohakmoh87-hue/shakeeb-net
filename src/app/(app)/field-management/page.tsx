@@ -788,9 +788,10 @@ export default function FieldManagementPage() {
                   المدير من هاتفه (تصحيح 2026-08-05) */}
               {canManage && <FieldMenuItem onClick={() => setAchModal(true)}>🏅 إنجازات الفنيين</FieldMenuItem>}
               {officeId != null && <FieldMenuItem onClick={() => setSupportModal(true)}>🤝 دعم مؤقت</FieldMenuItem>}
-              {/* البند ٨ · كلمةٌ واضحةٌ لا صورة — وللمدير فقط */}
+              {/* البند ٨ · كلمةٌ واضحةٌ (لا رمزٌ وحدَه) وللمدير فقط. ورمزٌ صغيرٌ كبقيّة
+                  العناصر بطلب محمد 2026-08-14 — فالرمزُ زيادةٌ على الكلمة لا بديلٌ عنها. */}
               {canManage && !isTech && (
-                <FieldMenuItem href="/attendance">حضور الفنيين</FieldMenuItem>
+                <FieldMenuItem href="/attendance">🕒 حضور الفنيين</FieldMenuItem>
               )}
             </FieldMenu>
           )}

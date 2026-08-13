@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { baghdadStart, baghdadEnd } from "@/lib/dayRange";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope } from "@/lib/guard";
@@ -109,9 +110,9 @@ export async function POST(request: Request) {
     where = { isDeleted: false, ...scope, dateTo: { not: null, lte: limit } };
   } else if (target === "expiringRange") {
     // المنتهون بين تاريخين
-    const fromD = from ? new Date(from) : new Date(0);
-    const toD = to ? new Date(to) : new Date();
-    toD.setHours(23, 59, 59, 999);
+    // ب-٨ · حدودُ اليوم بتوقيت بغداد (وبلا `from` يبقى «من البداية»)
+    const fromD = baghdadStart(from) ?? new Date(0);
+    const toD = baghdadEnd(to) ?? new Date();
     where = { isDeleted: false, ...scope, dateTo: { not: null, gte: fromD, lte: toD } };
   } else if (target === "search") {
     // بحث مخصّص في الاسم/اليوزر/الهاتف + نطاق تاريخ انتهاء اختياري (يُدمجان معاً)
@@ -119,8 +120,9 @@ export async function POST(request: Request) {
     let dateFilter: Record<string, unknown> = {};
     if (from || to) {
       const range: Record<string, unknown> = { not: null };
-      if (from) range.gte = new Date(from);
-      if (to) { const toD = new Date(to); toD.setHours(23, 59, 59, 999); range.lte = toD; }
+      // ب-٨ · حدودُ اليوم بتوقيت بغداد
+      { const d = baghdadStart(from); if (d) range.gte = d; }
+      { const d = baghdadEnd(to); if (d) range.lte = d; }
       dateFilter = { dateTo: range };
     }
     where = {

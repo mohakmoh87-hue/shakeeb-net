@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { baghdadStart, baghdadEnd } from "@/lib/dayRange";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope, agentTowerIds } from "@/lib/guard";
@@ -28,8 +29,9 @@ export async function GET(request: Request) {
   const q = (sp.get("q") ?? "").trim(); // بحث حر: ملاحظات / اسم الحساب / رقم الحركة / المبلغ
   // فلتر التاريخ حسب حقل date (يشمل يوم البداية ويوم النهاية كاملاً)
   const dateFilter: { gte?: Date; lte?: Date } = {};
-  if (from) { const d = new Date(from); if (!isNaN(d.getTime())) dateFilter.gte = d; }
-  if (to) { const d = new Date(to); if (!isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); dateFilter.lte = d; } }
+  // ب-٨ · بدايةُ اليوم ونهايتُه **بتوقيت بغداد** لا بتوقيت الخادم (UTC)
+  { const d = baghdadStart(from); if (d) dateFilter.gte = d; }
+  { const d = baghdadEnd(to); if (d) dateFilter.lte = d; }
 
   // البحث الحر: يطابق الملاحظات، أو حساباً اسمه يحوي النص، أو رقم الحركة/المبلغ إن كان رقماً
   let qWhere: object = {};

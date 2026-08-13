@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { baghdadDayKey } from "@/lib/attendance";
+import { baghdadStart, baghdadEnd } from "@/lib/dayRange";
 import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import { decryptSecret } from "@/lib/secretbox";
@@ -39,23 +41,23 @@ export async function GET(request: Request) {
   }
 
   const now = new Date();
-  const endOf = (d: string): Date => new Date(d + "T23:59:59");
+  // ب-٨ · حدودُ اليوم **بتوقيت بغداد** لا بتوقيت الخادم. وكان بناءُ نهاية اليوم هنا
+  //   **بلا لاحقة `Z`** ⇒ يُحلَّل بتوقيت العمليّة (UTC) فتُزاح النافذةُ ثلاثَ ساعات.
 
   // ===== شرط التاريخ حسب الفلتر =====
   let dateWhere: Record<string, unknown> = {};
   if (from && to) {
     // منتهون بين تاريخين (على تاريخ الانتهاء)
-    const f = new Date(from + "T00:00:00");
-    const t = endOf(to);
-    if (!isNaN(f.getTime()) && !isNaN(t.getTime())) dateWhere = { dateTo: { not: null, gte: f, lte: t } };
+    const f = baghdadStart(from), t = baghdadEnd(to);
+    if (f && t) dateWhere = { dateTo: { not: null, gte: f, lte: t } };
   } else if (until) {
-    const t = endOf(until);
-    if (!isNaN(t.getTime())) dateWhere = { dateTo: { not: null, gte: now, lte: t } };
+    const t = baghdadEnd(until);
+    if (t) dateWhere = { dateTo: { not: null, gte: now, lte: t } };
   } else if (days > 0) {
-    const t = new Date();
-    t.setDate(t.getDate() + days);
-    t.setHours(23, 59, 59, 999);
-    dateWhere = { dateTo: { not: null, gte: now, lte: t } };
+    // «ينتهي خلال N يوماً» ⇒ حتى **نهاية** ذلك اليوم بتوقيت بغداد
+    const t = new Date(Date.now() + days * 86_400_000);
+    const tEnd = baghdadEnd(baghdadDayKey(t))!;
+    dateWhere = { dateTo: { not: null, gte: now, lte: tEnd } };
   } else if (status === "active") {
     dateWhere = { dateTo: { not: null, gte: now } }; // فعّال = لم ينتهِ بعد
   } else if (status === "expired") {

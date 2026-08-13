@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { baghdadStart, baghdadEnd } from "@/lib/dayRange";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 
@@ -21,8 +22,9 @@ export async function GET(request: Request) {
 
   // مدى تاريخ الاستخدام (يشمل يوم البداية ويوم النهاية كاملاً)
   const useDate: { not: null; gte?: Date; lte?: Date } = { not: null };
-  if (from) { const d = new Date(from); if (!isNaN(d.getTime())) useDate.gte = d; }
-  if (to) { const d = new Date(to); if (!isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); useDate.lte = d; } }
+  // ب-٨ · بدايةُ اليوم ونهايتُه **بتوقيت بغداد** لا بتوقيت الخادم (UTC)
+  { const d = baghdadStart(from); if (d) useDate.gte = d; }
+  { const d = baghdadEnd(to); if (d) useDate.lte = d; }
 
   // البحث الحر: سيريال يحوي النص، أو مشترك اسمه يحوي النص (ضمن مكاتب الوكيل)، أو ساحب الكارت
   let qWhere: object = {};
