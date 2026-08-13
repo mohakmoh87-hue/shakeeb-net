@@ -28,6 +28,46 @@ async function todayRecord(technicianId: number) {
   const key = baghdadDayKey(new Date());
   return prisma.attendance.findFirst({ where: { technicianId, dayKey: key }, orderBy: { id: "desc" } });
 }
+
+// ═══════════════════ أ-٢٥ · الفنيُّ يُغلق سجلَّ أمسِ المفتوح ═══════════════════
+// بلاغُ محمد (عليّ السجاد 2026-08-13): «بصم خروجاً ولم يظهر لي، وفي تطبيقه بصمةُ دخولٍ خضراء».
+// والبياناتُ نفت البصمةَ ونفت معها الظنّ: **لم يبصم خروجاً**، والأخضرُ معناه «عليك بصمةُ دخول».
+// والعلّةُ بنيويّة: هذا المسار كان يقرأ **سجلَّ اليوم وحدَه**، فمَن دوامُه ينتهي ٢٣:٠٠ وتجاوز
+// منتصفَ الليل يفقد زرَّ الخروج **تماماً** فلا يستطيع إغلاقَ سجلّه أبداً. وسجلُّ عليٍّ يُثبت
+// أنّ هذا معتادُه (٢٣:٤٢ · ٢٢:٥٧) ⇒ الحادثةُ متوقّعةُ التكرار لكلّ فنيٍّ مسائيّ.
+//
+// ونافذةُ السماح **محدودةٌ بثلاث ساعاتٍ بعد نهاية دوامه** كي لا تُفتح ثغرةُ تلاعب: فلا يعود
+// أحدٌ بعد يومَين ليُغلق سجلّاً قديماً. ومَن فاتته النافذةُ يُصلَح له بأ-٢٤ (المديرُ يُسجّل
+// خروجَه الفعليَّ لأيّ يوم).
+//
+// 🔑 وفائدةٌ لم تكن مقصودة: الدوامُ الذي **يعبر منتصفَ الليل** (٢٢:٠٠ ← ٠٦:٠٠) كان يفقد زرَّه
+// في منتصف دوامه — وهذا يُصلحه أيضاً.
+const LATE_CLOSE_GRACE_HOURS = 3;
+
+/** نهايةُ دوامِ يومٍ بعينه (UTC). وتُعالِج الدوامَ الذي ينتهي قبل بدايته ⇒ نهايتُه غداً. */
+function shiftEndUtc(dayKey: string, shiftStart: string | null, shiftEnd: string | null): Date {
+  const endMin = parseHHMM(shiftEnd);
+  // بلا دوامٍ محدَّد ⇒ تُحسَب النهايةُ منتصفَ ليل ذلك اليوم (فالنافذةُ حتى ٠٣:٠٠)
+  if (endMin == null) return bgTimeUtc(dayKey, 24 * 60);
+  const startMin = parseHHMM(shiftStart);
+  const crossesMidnight = startMin != null && endMin <= startMin;
+  return bgTimeUtc(dayKey, endMin + (crossesMidnight ? 24 * 60 : 0));
+}
+
+/** سجلُّ يومٍ ماضٍ **ما زال مفتوحاً** ونافذةُ سماحه لم تنتهِ — أو `null`. */
+async function lateOpenRecord(technicianId: number, t?: { shiftStart: string | null; shiftEnd: string | null } | null) {
+  const key = baghdadDayKey(new Date());
+  const prev = await prisma.attendance.findFirst({
+    where: { technicianId, dayKey: { not: null, lt: key }, checkIn: { not: null }, checkOut: null },
+    orderBy: { dayKey: "desc" },
+  });
+  if (!prev?.dayKey || !prev.checkIn) return null;
+  const tech = t ?? await prisma.technician.findUnique({ where: { id: technicianId }, select: { shiftStart: true, shiftEnd: true } });
+  const endAt = shiftEndUtc(prev.dayKey, tech?.shiftStart ?? null, tech?.shiftEnd ?? null);
+  const deadline = endAt.getTime() + LATE_CLOSE_GRACE_HOURS * 3600 * 1000;
+  if (Date.now() > deadline) return null; // فاتت النافذة ⇒ يُصلَح بأ-٢٤ من المدير
+  return { rec: prev, dayKey: prev.dayKey, endAt };
+}
 function stateOf(rec: { checkIn: Date | null; checkOut: Date | null } | null): "none" | "in" | "done" {
   if (!rec || !rec.checkIn) return "none";
   return rec.checkOut ? "done" : "in";
@@ -38,7 +78,15 @@ export async function GET(request: Request) {
   const tech = await getTechSession();
   if (tech) {
     const rec = await todayRecord(tech.technicianId);
-    return NextResponse.json({ role: "technician", state: stateOf(rec), checkIn: rec?.checkIn ?? null, checkOut: rec?.checkOut ?? null });
+    // أ-٢٥ · لا سجلَّ لليوم؟ فلعلّه لم يُغلق سجلَّ أمس — يُعرَض عليه ليُغلقه، و`lateDay`
+    // يُخبر الشريطَ أنّ الخروجَ هذا **لأمس** فلا يظنّه خروجَ اليوم.
+    const late = rec?.checkIn ? null : await lateOpenRecord(tech.technicianId);
+    const use = rec?.checkIn ? rec : (late?.rec ?? rec);
+    return NextResponse.json({
+      role: "technician", state: stateOf(use),
+      checkIn: use?.checkIn ?? null, checkOut: use?.checkOut ?? null,
+      lateDay: rec?.checkIn ? null : (late?.dayKey ?? null),
+    });
   }
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
@@ -139,18 +187,35 @@ export async function POST(request: Request) {
   }
 
   // خروج
-  if (!rec?.checkIn) return NextResponse.json({ error: "سجّل دخولك أولاً" }, { status: 400 });
-  if (rec.checkOut) return NextResponse.json({ error: "سجّلت خروجك اليوم مسبقاً" }, { status: 400 });
-  const calc = t ? computeAttendance(t, rec.checkIn, now) : null;
+  // أ-٢٥ · لا سجلَّ لليوم ⇒ يُقبَل إغلاقُ سجلّ أمسِ المفتوح داخل نافذة السماح.
+  // ⚠️ ولا يُمَسُّ فرعُ الدخول أعلاه بهذا إطلاقاً: لو صار `rec` يعني سجلَّ أمسِ المفتوح
+  // لقال السطرُ ١١٩ للفنيّ «سجّلتَ دخولك اليوم مسبقاً» **فيُحجَب عن دخول يومه الجديد**.
+  const lateOpen = rec?.checkIn ? null : await lateOpenRecord(tech.technicianId, t);
+  const outRec = rec?.checkIn ? rec : (lateOpen?.rec ?? rec);
+  const lateDay = rec?.checkIn ? null : (lateOpen?.dayKey ?? null);
+
+  if (!outRec?.checkIn) return NextResponse.json({ error: "سجّل دخولك أولاً" }, { status: 400 });
+  if (outRec.checkOut) return NextResponse.json({ error: "سجّلت خروجك مسبقاً" }, { status: 400 });
+
+  // 🔑 وقتُ الخروج المُحتسَب: في الإغلاق المتأخّر **يُقصُّ عند نهاية الدوام** — فلا إضافيَّ
+  // على ساعاتٍ لم يعملها (وإلّا صار النسيانُ مُربِحاً)، ولا خصمَ خروجٍ مبكّرٍ ظُلماً.
+  // و`checkOutActual` يبقى **لحظةَ النقر الحقيقيّة** فيبقى الأثرُ صادقاً ويُراجَع.
+  // ومَن عمل فعلاً بعد دوامه يُصحّح له المديرُ بأ-٢٤ — ولذلك `checkoutBy = "tech-late"`
+  // لا `"tech"`: فالـPATCH يرفض تعديلَ ما وسمُه `"tech"` («شهادةُ الفنيّ لا تُمَسّ»)،
+  // ولو وسمتُه به لأغلقتُ بابَ التصحيح على المدير في نفس النَفَس الذي فتحتُه للفنيّ.
+  const outAt = lateDay && lateOpen
+    ? new Date(Math.min(now.getTime(), lateOpen.endAt.getTime()))
+    : now;
+  const calc = t ? computeAttendance(t, outRec.checkIn, outAt) : null;
   // دعم يومٍ طُلب بعد بصمة دخوله بمكتبه الأصلي: الدخول يبقى لمكتبه، والخروج يُنسب لمكتب الدعم
-  const outTower = stampOffice !== rec.towerId ? stampOffice : null;
+  const outTower = stampOffice !== outRec.towerId ? stampOffice : null;
   const updated = await prisma.attendance.update({
-    where: { id: rec.id },
-    data: { checkOut: now, checkOutActual: now, checkoutBy: "tech", checkOutTowerId: outTower, ...(calc ?? {}) },
+    where: { id: outRec.id },
+    data: { checkOut: outAt, checkOutActual: now, checkoutBy: lateDay ? "tech-late" : "tech", checkOutTowerId: outTower, ...(calc ?? {}) },
   });
   const late = calc?.lateDeduction ?? 0, early = calc?.earlyDeduction ?? 0, ot = calc?.overtimeAddition ?? 0;
   const extra = late || early ? ` (خصم ${(late + early).toLocaleString("en-US")})` : ot ? ` (إضافي ${ot.toLocaleString("en-US")})` : "";
-  await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkout", title: "بصمة خروج", body: `${tech.name} سجّل الخروج${extra}`, refType: "technician", refId: tech.technicianId });
+  await notify({ agentId: tech.agentId, towerId: stampOffice, type: "checkout", title: lateDay ? "بصمة خروج متأخّرة" : "بصمة خروج", body: `${tech.name} سجّل الخروج${lateDay ? ` عن يوم ${lateDay} (بعد منتصف الليل)` : ""}${extra}`, refType: "technician", refId: tech.technicianId });
 
   // إن كان على دعم: الخروج ينهي الدعم ويعيده لمكتبه الأصلي (في كل الأحوال بنهاية الدوام)
   if (onSupport) {

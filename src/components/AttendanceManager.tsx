@@ -41,7 +41,10 @@ export default function AttendanceManager({ technicianId, technicianName, onClos
   // بغداد، فحين ينتبه المديرُ صباحاً يكون القسمُ قد اختفى. ولذلك ظنّ محمد أنّ الميزة أُزيلت.
   // الآن: كلُّ يومٍ له دخولٌ وخروجُه **ناقصٌ أو من الكرون** قابلٌ للتصحيح؛ وبصمةُ الفنيّ
   // الحقيقيّة (`tech`) لا تُمَسّ — فهي شهادتُه ولا يجوز للمدير طمسُها.
-  const fixable = log.filter((r) => r.dayKey && r.checkIn && (!r.checkOut || r.checkoutBy === "auto"));
+  // أ-٢٥ · ويُضاف "tech-late": إغلاقُ الفنيّ لسجلّ أمسِ بعد منتصف الليل **يُقصُّ عند نهاية
+  // دوامه** فلا إضافيَّ فيه. فإن كان عمل فعلاً بعد دوامه فهذا هو مكانُ تصحيحه — ولذلك
+  // وُسِم بغير "tech": لئلّا يمنعه حارسُ «شهادةُ الفنيّ لا تُمَسّ» من التصحيح.
+  const fixable = log.filter((r) => r.dayKey && r.checkIn && (!r.checkOut || r.checkoutBy === "auto" || r.checkoutBy === "tech-late"));
   const [fixDay, setFixDay] = useState<string>("");
   const [fixAt, setFixAt] = useState<string>("");
   const day = fixDay || fixable[0]?.dayKey || "";
@@ -80,6 +83,7 @@ export default function AttendanceManager({ technicianId, technicianName, onClos
                   <span className="text-center font-bold leading-tight text-rose-600" dir="ltr">
                     {fmtTime(r.checkOut)}
                     {r.checkOut && r.checkoutBy === "auto" && <span className="mr-1 text-[9px] text-amber-500">تلقائي</span>}
+                    {r.checkOut && r.checkoutBy === "tech-late" && <span className="mr-1 text-[9px] text-indigo-500" title="أغلقه الفنيّ بعد منتصف الليل — والمُحتسَبُ مقصوصٌ عند نهاية دوامه">متأخّر</span>}
                     {r.checkOutActual && fmtTime(r.checkOutActual) !== fmtTime(r.checkOut) && (
                       <span className="block text-[9px] font-normal text-slate-400" title="وقت البصمة الحقيقي">فعلي {fmtTime(r.checkOutActual)}</span>
                     )}
@@ -105,11 +109,19 @@ export default function AttendanceManager({ technicianId, technicianName, onClos
                   {fixable.map((r) => (
                     <option key={r.id} value={r.dayKey ?? ""}>
                       {r.dayKey}{r.dayKey === todayKey() ? " (اليوم)" : ""} · دخول {fmtTime(r.checkIn)}
-                      {r.checkoutBy === "auto" ? ` · خروجٌ تلقائيّ ${fmtTime(r.checkOut)}` : " · بلا خروج"}
+                      {r.checkoutBy === "auto" ? ` · خروجٌ تلقائيّ ${fmtTime(r.checkOut)}`
+                        : r.checkoutBy === "tech-late" ? ` · أغلقه الفنيُّ متأخّراً ${fmtTime(r.checkOut)}`
+                        : " · بلا خروج"}
                     </option>
                   ))}
                 </select>
               </div>
+              {dayRec?.checkoutBy === "tech-late" && (
+                <div className="mb-2 text-[11px] text-indigo-800">
+                  ℹ️ أغلقه الفنيُّ بنفسه بعد منتصف الليل، و**المُحتسَبُ مقصوصٌ عند نهاية دوامه** (بلا إضافيّ).
+                  فإن كان عمل فعلاً إلى وقتٍ متأخّرٍ فصحّحه هنا بـ«خروجه الفعليّ».
+                </div>
+              )}
               {dayRec?.checkoutBy === "auto" && (
                 <div className="mb-2 text-[11px] text-amber-800">
                   ⚠️ هذا اليوم أغلقه النظامُ تلقائياً عند منتصف الليل — والتصحيحُ يُعيد حسابَ الخصم والإضافيّ.

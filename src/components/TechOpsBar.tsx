@@ -16,6 +16,9 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [state, setState] = useState<AttState>("none");
   const [checkIn, setCheckIn] = useState<string | null>(null);
   const [checkOut, setCheckOut] = useState<string | null>(null);
+  // أ-٢٥ · يومُ السجلّ المفتوح إن كان **أمسَ** لا اليوم — فيُخبَر الفنيُّ صريحاً أنّ هذا
+  // خروجُ أمسِه، ولا يضغطه وهو يظنّه خروجَ يومه.
+  const [lateDay, setLateDay] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [opsOpen, setOpsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false); // قائمة التطبيق السفلية (وضع التطبيق فقط)
@@ -35,7 +38,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
 
   useEffect(() => {
     fetch("/api/field/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d?.role === "technician") { setState(d.state); setCheckIn(d.checkIn); setCheckOut(d.checkOut); }
+      if (d?.role === "technician") { setState(d.state); setCheckIn(d.checkIn); setCheckOut(d.checkOut); setLateDay(d.lateDay ?? null); }
     });
   }, []);
 
@@ -129,7 +132,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
     if (!r.ok) { flash(d.error ?? "تعذّر تسجيل البصمة"); return; }
     setState(d.state);
     if (action === "in") { setCheckIn(d.checkIn); flash("تم تسجيل الدخول ✓"); if (d.canExcuse) setExcusePrompt(true); }
-    else { setCheckOut(d.checkOut); flash("تم تسجيل الخروج ✓"); }
+    else { setCheckOut(d.checkOut); setLateDay(null); flash(lateDay ? `أُغلق سجلُّ ${lateDay} ✓` : "تم تسجيل الخروج ✓"); }
   }
 
   // طلب «نسيت البصمة»: يُرسل للمدير طلب إعفاء من خصم تأخير الدخول (يبقى معلّقاً حتى قراره)
@@ -177,7 +180,10 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const btn = state === "none"
     ? { label: "بصمة دخول", cls: "bg-emerald-600 hover:bg-emerald-700", icon: "🟢" }
     : state === "in"
-      ? { label: "بصمة خروج", cls: "bg-red-600 hover:bg-red-700", icon: "🔴" }
+      // أ-٢٥ · سجلُّ أمسِ المفتوح (دوامٌ تجاوز منتصفَ الليل): الزرُّ يقول ذلك بلا لبس
+      ? lateDay
+        ? { label: "بصمة خروج (أمس)", cls: "bg-indigo-600 hover:bg-indigo-700", icon: "🌙" }
+        : { label: "بصمة خروج", cls: "bg-red-600 hover:bg-red-700", icon: "🔴" }
       : { label: "انتهى دوام اليوم", cls: "bg-slate-400 cursor-default", icon: "✓" };
 
   const ops = [

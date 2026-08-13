@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 
-type CardType = { id: number; name: string; deliveryOnly: boolean; autoAssign?: boolean; execMinutes?: number | null; overrunDeduction?: number | null };
+type CardType = { id: number; name: string; deliveryOnly: boolean; autoAssign?: boolean; execMinutes?: number | null; overrunDeduction?: number | null;
+  // نقاطُ الإنجاز: `achievementWeight` ما ضبطه المديرُ (فارغٌ = غيرُ مضبوط، 0 = لا تُحتسَب)،
+  // و`builtinWeight` الوزنُ المبنيُّ الذي يُحسَب في الخادم ويُعرَض كقيمةٍ حاليّة.
+  achievementWeight?: number | null; builtinWeight?: number };
 
 // إدارة أنواع البطاقات وأوقاتها المسموحة (للمدير): وقت الإنجاز + خصم دقيقة التجاوز.
 // التوصيل مُستثنى من الوقت (لا «بدء» ولا خصم).
@@ -76,6 +79,15 @@ export default function CardTypeManager({ types, colors, onColor, onClose, onCha
                   <NumField label="خصم دقيقة التجاوز" value={t.overrunDeduction} disabled={busyId === t.id} onSave={(v) => patch(t.id, { overrunDeduction: v })} />
                 </div>
               )}
+              {/* ===== نقاطُ الإنجاز (طلب محمد 2026-08-13) =====
+                  «يُعطي المديرُ نقاطاً لكلّ فئةٍ حسب ما يرغب، **ويمكن أن يكون صفراً**،
+                   لمتابعة إنجازات الفنيّين.»
+                  ⚠️ ويظهر **لكلّ فئةٍ بلا استثناء** — خلافاً للحقلَين أعلاه المحجوبَين عن
+                  «التوصيل»: فالتوصيلُ **هو** صاحبُ الوزن الكسريّ (٠٫٢٥) وأوّلُ ما قد يُصفَّر. */}
+              <PointsField
+                value={t.achievementWeight} builtin={t.builtinWeight ?? 1} disabled={busyId === t.id}
+                onSave={(v) => patch(t.id, { achievementWeight: v })}
+              />
             </li>
           ))}
         </ul>
@@ -97,6 +109,39 @@ export default function CardTypeManager({ types, colors, onColor, onClose, onCha
 }
 
 // حقل رقمي يحفظ عند الخروج (blur) أو Enter
+// ===== حقلُ نقاط الفئة — ولا يصلح `NumField` له =====
+// (١) `NumField` يُقرِّب بـ`Math.floor` فيمحو الكسورَ (٠٫٢٥ ← ٠) — والتوصيلُ كسرٌ أصلاً.
+// (٢) والفرقُ بين «فارغ» و«صفر» هنا **معنىً لا شكل**، فيلزم بيانُه للمدير بالنصّ لا بالفراغ:
+//     فارغٌ = المبنيُّ (يُعرَض رقمُه) · صفرٌ = لا تُحتسَب.
+function PointsField({ value, builtin, disabled, onSave }: { value: number | null | undefined; builtin: number; disabled?: boolean; onSave: (v: number | null) => void }) {
+  const [v, setV] = useState(value == null ? "" : String(value));
+  const commit = () => {
+    const raw = v.trim();
+    const parsed = raw === "" ? null : Number(raw);
+    const clean = parsed == null || !Number.isFinite(parsed) || parsed < 0 ? null : parsed;
+    if ((value ?? null) !== clean) onSave(clean);
+  };
+  const isZero = (value ?? null) === 0;
+  return (
+    <label className="mt-2 block">
+      <span className="mb-0.5 block text-[11px] font-semibold text-indigo-600">
+        🏆 نقاطُ الإنجاز لهذه الفئة
+        {isZero
+          ? <span className="mr-1 font-normal text-rose-600">— صفر: لا تُحتسَب في الترتيب</span>
+          : value == null
+            ? <span className="mr-1 font-normal text-slate-400">— غيرُ مضبوطة، تُحسَب بـ{builtin}</span>
+            : null}
+      </span>
+      <input type="number" min={0} step={0.25} value={v} disabled={disabled}
+        placeholder={String(builtin)}
+        onChange={(e) => setV(e.target.value)} onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        dir="ltr" title="اتركه فارغاً لاستعمال النقاط المبنيّة · واكتب 0 كي لا تُحتسَب هذه الفئةُ إطلاقاً"
+        className="w-full rounded-lg border border-indigo-200 px-2.5 py-1.5 text-sm outline-none focus:border-mynet-blue disabled:opacity-50" />
+    </label>
+  );
+}
+
 function NumField({ label, value, disabled, onSave }: { label: string; value: number | null | undefined; disabled?: boolean; onSave: (v: number | null) => void }) {
   const [v, setV] = useState(value == null ? "" : String(value));
   const commit = () => { const parsed = v.trim() === "" ? null : Math.max(0, Math.floor(Number(v))); if ((value ?? null) !== parsed) onSave(Number.isNaN(parsed as number) ? null : parsed); };

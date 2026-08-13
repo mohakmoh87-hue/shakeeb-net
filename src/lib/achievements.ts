@@ -14,7 +14,19 @@ import { baghdadDayKey } from "@/lib/attendance";
 //
 // الأوزان: تنصيب/سحب ٢ · تحويل ١٫٥ · إعادة ١٫٥ · صيانة ١ · توصيل ٠٫٢٥ · أي نوع جديد ١.
 
-// أوزان الصعوبة — ثابتة في الكود بقرار محمد (لا تُعدَّل من الشاشة)
+// ═══════════ تحديثٌ 2026-08-13 · النقاطُ صارت بيدِ المدير لكلّ فئة ═══════════
+// طلبُ محمد: «أن يقوم المديرُ بإعطاء **نقاطٍ لكلّ فئة** حسب ما يرغب، **ويمكن أن يكون
+// صفراً**، لمتابعة إنجازات الفنيّين.» ⇒ نُقض قرارُه السابق («ثابتةٌ في الكود لا تُعدَّل
+// من الشاشة») بطلبِه هو.
+//
+// والقيمةُ تُقرأ من `CardType.achievementWeight` **لكلّ وكيلٍ على حدة**:
+//   • فارغٌ (`null`) ⇒ الوزنُ المبنيُّ أدناه — **فلا يتغيّر شيءٌ على وكيلٍ لم يُعدِّل**
+//   • `0`          ⇒ الفئةُ **لا تُحتسَب** إطلاقاً (قرارٌ صريح)
+// ⚠️ ولذلك يُفحَص **الوجودُ** لا الصدق: `has(k)` لا `custom.get(k) || fallback` — وإلّا
+// انقلب الصفرُ إلى الوزن الافتراضيّ فصار «صفّرتُها» يعني «أعطيتُها الافتراضيّ».
+// والأوزانُ أدناه تبقى **الأساسَ والمرجعَ**: هي ما يُعرَض للمدير كقيمةٍ حاليّةٍ قبل تعديله.
+
+// أوزان الصعوبة المبنيّة — الأساسُ حين لا يُحدِّد المديرُ شيئاً
 export const KIND_WEIGHTS: { label: string; weight: number }[] = [
   { label: "تنصيب", weight: 2 },
   { label: "سحب جديد", weight: 2 }, // «هو نفسه تنصيب»
@@ -86,6 +98,23 @@ export async function currentSalaryPeriod(agentId: number | null): Promise<{ fro
 const dayStart = (key: string) => new Date(`${key}T00:00:00+03:00`);
 const dayEnd = (key: string) => new Date(`${key}T23:59:59.999+03:00`);
 
+/** أوزانُ فئات وكيلٍ بعينه كما ضبطها مديرُه — و**الوجودُ** في الخريطة هو الحُكم لا الصدق.
+ *  فالمفتاحُ الموجودُ بقيمةِ صفرٍ يعني «لا تُحتسَب»، والغائبُ يعني «استعمِل المبنيَّ». */
+export async function agentKindWeights(agentId: number | null): Promise<Map<string, number>> {
+  const m = new Map<string, number>();
+  const types = await prisma.cardType.findMany({
+    where: { agentId: agentId ?? -1, isDeleted: false },
+    select: { name: true, achievementWeight: true },
+  });
+  for (const t of types) {
+    if (t.achievementWeight == null) continue; // فارغٌ ⇒ لا يتدخّل، يبقى المبنيّ
+    const w = Number(t.achievementWeight);
+    if (!Number.isFinite(w) || w < 0) continue; // قيمةٌ فاسدةٌ لا تُطبَّق أبداً على نقاطٍ
+    m.set(norm(t.name), w);
+  }
+  return m;
+}
+
 export async function computeAchievements(agentId: number | null, fromKey: string | null, toKey: string | null): Promise<Achievements> {
   const period = fromKey && toKey ? { from: fromKey, to: toKey } : await currentSalaryPeriod(agentId);
   const where = {
@@ -93,15 +122,33 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
     ...(period ? { completedAt: { gte: dayStart(period.from), lte: dayEnd(period.to) } } : {}),
   };
 
-  const comps = await prisma.cardCompletion.findMany({
-    where,
-    select: { technicianId: true, kind: true, durationSec: true, towerId: true },
-  });
+  // أوزانُ المدير تُحمَّل مع البيانات (استعلامٌ واحدٌ لا واحدٌ لكلّ بطاقة)
+  const [comps, custom] = await Promise.all([
+    prisma.cardCompletion.findMany({
+      where,
+      select: { technicianId: true, kind: true, durationSec: true, towerId: true },
+    }),
+    agentKindWeights(agentId),
+  ]);
+  /** وزنُ الفئة الفعليُّ: ما ضبطه المديرُ إن ضبطه (ولو صفراً)، وإلّا المبنيُّ في الكود. */
+  const wOf = (k: string | null | undefined): number => {
+    const key = norm(k);
+    return custom.has(key) ? (custom.get(key) as number) : weightOfKind(key);
+  };
+  // 🔴 والأسطورةُ المعروضةُ تحت الجدول تُبنى من **الفعليّ** لا من المبنيّ وحدَه: وإلّا بقيت
+  // تقول «توصيل ×٠٫٢٥» بعد أن يُصفِّرها المديرُ — فيكذب الشرحُ على الحساب في نفس الشاشة.
+  // فتُدمَج أوزانُه فوق المبنيّة، ويُلحَق ما ضبطه لفئةٍ ليست في القائمة المبنيّة.
+  const effectiveWeights = (() => {
+    const out = KIND_WEIGHTS.map((w) => ({ label: w.label, weight: wOf(w.label) }));
+    const seen = new Set(out.map((w) => w.label));
+    for (const [label, weight] of custom) if (!seen.has(label)) out.push({ label, weight });
+    return out;
+  })();
   if (!comps.length) {
     return {
       from: period?.from ?? null, to: period?.to ?? null,
       rows: [], leader: null, kindAvg: [], byOffice: [], totals: { total: 0, kinds: [] },
-      weights: KIND_WEIGHTS, defaultWeight: DEFAULT_WEIGHT, minCards: MIN_CARDS_FOR_CROWN,
+      weights: effectiveWeights, defaultWeight: DEFAULT_WEIGHT, minCards: MIN_CARDS_FOR_CROWN,
     };
   }
 
@@ -132,7 +179,7 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
   const acc = new Map<number, Acc>();
   for (const c of comps) {
     const k = norm(c.kind) || "—";
-    const weight = weightOfKind(k);
+    const weight = wOf(k);
     const d = c.durationSec ?? 0;
     // الاحتساب = وزن الفئة فقط، بلا أيّ عامل سرعة (قرار محمد 2026-08-07).
     // `valid` لا يخصّ الاحتساب — يقتصر على تجميع الأزمنة الصالحة لعرض المتوسطات فقط،
@@ -162,7 +209,7 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
       timed: a.timedSec.length,
       avgMin: avgOf(a.timedSec),
       byKind: [...a.kinds.entries()]
-        .map(([kind, v]) => ({ kind, count: v.count, avgMin: avgOf(v.secs), weight: weightOfKind(kind) }))
+        .map(([kind, v]) => ({ kind, count: v.count, avgMin: avgOf(v.secs), weight: wOf(kind) }))
         .sort((x, y) => y.weight - x.weight || y.count - x.count),
     };
   });
@@ -186,7 +233,7 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
   }
   const kindsSorted = (m: Map<string, number>) =>
     [...m.entries()].map(([kind, count]) => ({ kind, count }))
-      .sort((a, b) => weightOfKind(b.kind) - weightOfKind(a.kind) || b.count - a.count);
+      .sort((a, b) => wOf(b.kind) - wOf(a.kind) || b.count - a.count);
   const byOffice: OfficeTally[] = [...officeMap.entries()].map(([id, m]) => ({
     towerId: id === -1 ? null : id,
     office: id === -1 ? "بلا مكتب" : towerName.get(id) ?? ("مكتب " + id),
@@ -203,7 +250,7 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
       kind: k,
       count: (kindTimes.get(k) ?? []).length,
       avgMin: Math.round(((kindAvgSec.get(k) ?? 0) / 60) * 10) / 10,
-      weight: weightOfKind(k),
+      weight: wOf(k),
     })).sort((a, b) => b.weight - a.weight),
     weights: KIND_WEIGHTS, defaultWeight: DEFAULT_WEIGHT, minCards: MIN_CARDS_FOR_CROWN,
   };
