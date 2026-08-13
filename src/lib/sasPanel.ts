@@ -49,7 +49,7 @@ const PANEL_SEL = {
   odooEnabled: true, odooUrl: true, odooUser: true, odooPass: true, odooUid: true,
 } as const;
 
-function credsFromPanel(p: {
+export function credsFromPanel(p: {
   id: number; towerId: number; agentId: number | null; label: string | null;
   loginUrl: string | null; username: string | null; password: string | null; activationTemplate: string | null;
 }): SasCreds | null {

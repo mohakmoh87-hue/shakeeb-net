@@ -455,6 +455,8 @@ type SyncRes = {
   events: SyncEvent[];
   reportSent: boolean | null;
   error?: string;
+  // سطرٌ لكلّ لوحةِ ساس — الجوابُ على «هل مرّت على الساسَين؟»
+  panels?: { panelId: number | null; label: string; ok: boolean; activations: number; imported: number; checked: number; dateFixed: number; error?: string }[];
 };
 // نتيجة فحص الكروت الشامل (كل المخزون مقابل SAS)
 type CardsRes = {
@@ -576,6 +578,41 @@ function OfficeSync({ officeId }: { officeId: number }) {
       )}
 
       {res?.error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{res.error}</div>}
+
+      {/* سؤالُ محمد: «كيف أتأكّد أنّها مرّت على الساسَين؟» — كانت النتائجُ تُجمَع في
+          رقمٍ واحدٍ ويُنزَع اسمُ اللوحة، فالنجاحُ صامتٌ: لا يُميّز «صفرٌ من الثانية»
+          عن «الثانيةُ لم تُمَسّ». فيُعرَض الآن سطرٌ لكلّ لوحةٍ باسمها — ونجاحاً وفشلاً،
+          ويُعرَض **مع الخطأ أيضاً** لأنّ لوحةً قد تنجح وأخرى تسقط. */}
+      {res?.panels && res.panels.length > 0 && (() => {
+        const okCount = res.panels.filter((p) => p.ok).length;
+        const all = res.panels.length;
+        const complete = okCount === all;
+        return (
+          <div className={`mb-3 rounded-xl border px-3 py-2 ${complete ? "border-emerald-200 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
+            <div className={`mb-1 text-xs font-extrabold ${complete ? "text-emerald-800" : "text-amber-800"}`}>
+              🖥️ لوحاتُ الساس: {okCount}/{all} {complete ? "✓ مرّت المزامنةُ على كلّ اللوحات" : "⚠️ لوحةٌ لم تُزامَن"}
+            </div>
+            <div className="space-y-1">
+              {res.panels.map((p, i) => (
+                <div key={p.panelId ?? `i${i}`} className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <span className={`font-bold ${p.ok ? "text-emerald-700" : "text-red-700"}`}>{p.ok ? "✅" : "⛔"} {p.label}</span>
+                  {p.ok ? (
+                    <>
+                      <span className="rounded bg-white px-1.5 py-0.5 text-slate-600">تفعيلات <b>{p.activations}</b></span>
+                      <span className="rounded bg-white px-1.5 py-0.5 text-slate-600">مستوردون <b>{p.imported}</b></span>
+                      <span className="rounded bg-white px-1.5 py-0.5 text-slate-600">فُحص <b>{p.checked}</b></span>
+                      <span className="rounded bg-white px-1.5 py-0.5 text-slate-600">صُحِّح <b>{p.dateFixed}</b></span>
+                    </>
+                  ) : (
+                    <span className="text-red-600">{p.error ?? "لم تُزامَن"}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+            {!complete && <div className="mt-1 text-[11px] font-semibold text-amber-800">أعِد المزامنةَ بعد إصلاح سببِ اللوحة الساقطة.</div>}
+          </div>
+        );
+      })()}
       {res && !res.error && (
         <>
           <div className="mb-2 flex flex-wrap gap-2 text-xs">

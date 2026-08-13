@@ -36,6 +36,24 @@ export interface SyncResult {
   events: SyncEvent[];
   reportSent: boolean | null; // true=أُرسل، false=مؤجّل (واتساب مقطوع)، null=لا تقرير
   error?: string;
+  // ═════ سؤالُ محمد 2026-08-13: «كيف أتأكّد أنّها مرّت على الساسَين؟» ═════
+  // كانت نتائجُ اللوحات **تُجمَع في رقمٍ واحد** ويُنزَع اسمُ اللوحة، فالنجاحُ صامتٌ
+  // تماماً: لا شيءَ يقول «مرّت على اثنتَين» ولا يُميّز «١٢ تفعيلاً من الأولى وصفرٌ من
+  // الثانية» عن «١٢ من الأولى واللوحةُ الثانيةُ لم تُمَسّ». والأخطاءُ وحدَها كانت تظهر.
+  // ⇒ سطرٌ لكلّ لوحةٍ باسمها ونتيجتها — يُعرَض في الشاشة ويُذكَر في تقرير الواتساب.
+  panels?: PanelSyncLine[];
+}
+
+/** نتيجةُ لوحةِ ساسٍ واحدةٍ داخل مزامنةِ مكتب. `panelId: null` = أعمدةُ المكتب (بلا لوحات). */
+export interface PanelSyncLine {
+  panelId: number | null;
+  label: string;      // اسمُ اللوحة كما يراه المدير (أو «المكتب» لمن لا لوحةَ له)
+  ok: boolean;        // مرّت بلا خطأ
+  activations: number;
+  imported: number;   // مستوردون (المرحلتان معاً)
+  checked: number;    // فُحصت تواريخهم في المرحلة الثانية
+  dateFixed: number;
+  error?: string;
 }
 
 // نافذة يوم يشمل تاريخاً معيّناً (لمطابقة تاريخ استخدام كارت البرنامج مع نطاق الأمس)
@@ -98,7 +116,24 @@ export async function runOfficeSyncAll(
 ): Promise<SyncResult> {
   const { panelsOfTower } = await import("@/lib/sasPanel");
   const panels = await panelsOfTower(officeId);
-  if (panels.length <= 1) return runOfficeSync(officeId, opts); // المسارُ القديم بالضبط
+  if (panels.length <= 1) {
+    // المسارُ القديم بالضبط — ويُوسَم بسطرِ لوحةٍ واحدةٍ ليكون العرضُ موحَّداً، فيُرى
+    // صريحاً «لوحةٌ واحدة» ولا يُظنّ أنّ الثانيةَ سقطت من التقرير.
+    const one = await runOfficeSync(officeId, opts);
+    const p = panels[0];
+    return {
+      ...one,
+      panels: [{
+        panelId: p?.id ?? null,
+        label: p?.label ?? one.office.split(" · ")[1] ?? "المكتب",
+        ok: !one.error,
+        activations: one.phase1.activations,
+        imported: one.phase1.imported + one.phase2.imported,
+        checked: one.phase2.checked, dateFixed: one.phase2.dateFixed,
+        ...(one.error ? { error: one.error } : {}),
+      }],
+    };
+  }
 
   const parts: SyncResult[] = [];
   for (const p of panels) {
@@ -121,6 +156,16 @@ export async function runOfficeSyncAll(
       imported: sum((r) => r.phase2.imported), failed: parts.some((r) => r.phase2.failed),
       skippedPkg: sum((r) => r.phase2.skippedPkg), pkgFixed: sum((r) => r.phase2.pkgFixed),
     },
+    // سطرٌ لكلّ لوحةٍ باسمها — الجوابُ على «هل مرّت على الساسَين؟»
+    panels: parts.map((r, i) => ({
+      panelId: panels[i]?.id ?? null,
+      label: panels[i]?.label ?? r.office.split(" · ")[1] ?? `لوحة ${i + 1}`,
+      ok: !r.error,
+      activations: r.phase1.activations,
+      imported: r.phase1.imported + r.phase2.imported,
+      checked: r.phase2.checked, dateFixed: r.phase2.dateFixed,
+      ...(r.error ? { error: r.error } : {}),
+    })),
     events: parts.flatMap((r) => r.events),
     reportSent: parts.some((r) => r.reportSent === true) ? true : (parts.some((r) => r.reportSent === false) ? false : null),
     // خطأُ لوحةٍ لا يُخفي نجاحَ الأخرى: تُذكَر الأخطاءُ مجموعةً باسم لوحتها
@@ -849,6 +894,19 @@ export async function runFullCardAudit(
 function buildManualReportText(sync: SyncResult, cards: FullCardsResult | null): string {
   const day = iraqYesterdayRange(new Date()).start;
   let text = buildReportText(sync, day, "تقرير المزامنة اليدوية");
+  // سؤالُ محمد: «هل مرّت على الساسَين؟» — يُقال صريحاً في التقرير، ونجاحاً وفشلاً.
+  // ولوحةٌ سقطت تُصدَّر بـ⛔ لا بصمتٍ: صمتُ النجاح كان يُشبه صمتَ الغياب تماماً.
+  if (sync.panels && sync.panels.length) {
+    const ok = sync.panels.filter((p) => p.ok).length;
+    const all = sync.panels.length;
+    text += `\n\n🖥️ لوحاتُ الساس: ${ok}/${all}${ok === all ? " ✓" : " ⚠️"}\n`;
+    text += sync.panels.map((p) =>
+      p.ok
+        ? `${all > 1 ? "• " : ""}${p.label}: تفعيلات ${p.activations} · مستوردون ${p.imported} · فُحص ${p.checked} · صُحِّح ${p.dateFixed}`
+        : `⛔ ${p.label}: ${p.error ?? "لم تُزامَن"}`,
+    ).join("\n");
+    if (ok < all) text += `\n⚠️ لوحةٌ لم تُزامَن — أعِد المزامنةَ بعد إصلاح سببها.`;
+  }
   if (cards) {
     text += `\n\n📇 فحص الكروت الشامل (كل المخزون):\n`;
     if (cards.error) {

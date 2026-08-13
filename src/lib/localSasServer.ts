@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { proxyToSas } from "@/lib/sasProxy";
 import { sasBaseUrl, sasLogin, sasFetchOnePage, sasFetchAllUsers, sasFetchOnlineCount, parseUsersList, type SasUser } from "@/lib/sas4";
 import { getWorkerAgentId } from "@/lib/hybridAgent";
+import { panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 
 // خادم محلي على حاسبة المكتب (المنفذ 47615): يخدم فحص الصحّة + لوحة SAS + عمليات SAS
 // مباشرةً من الحاسبة القريبة من خادم SAS — فأسرع بكثير من المرور بـVercel (فرانكفورت).
@@ -10,7 +11,7 @@ import { getWorkerAgentId } from "@/lib/hybridAgent";
 const PORT = 47615;
 
 // توكن SAS لكل مكتب (يُخزَّن دقائق لتفادي إعادة الدخول عند كل أصل من اللوحة)
-const tokenCache = new Map<number, { token: string; at: number }>();
+const tokenCache = new Map<string, { token: string; at: number }>();
 const TOKEN_TTL = 4 * 60 * 1000;
 // آخر قائمة مشتركين عُرضت في اللوحة لكل مكتب (لاستيراد المعروض)
 const viewCache = new Map<number, { users: SasUser[]; at: number }>();
@@ -46,40 +47,81 @@ async function agentTower(towerId: number) {
   });
   return t && t.agentId === aid && t.loginUrl && t.username && t.password ? t : null;
 }
+/** مفتاحُ الخزنِ لنطاقٍ واحد: لوحةٌ بعينها أو أعمدةُ المكتب (مَن لا لوحةَ له).
+ *  نصٌّ لا رقمٌ لأنّ مُعرِّفَ لوحةٍ ومُعرِّفَ مكتبٍ قد يتساويان فيتصادم مخزناهما. */
+const scopeKey = (c: { panelId: number | null; towerId: number }) =>
+  c.panelId != null ? `p${c.panelId}` : `t${c.towerId}`;
+
+async function scopeToken(c: SasCreds): Promise<string> {
+  const k = scopeKey(c);
+  const hit = tokenCache.get(k);
+  if (hit && Date.now() - hit.at < TOKEN_TTL) return hit.token;
+  const token = await sasLogin(sasBaseUrl(c.loginUrl), c.username, c.password);
+  tokenCache.set(k, { token, at: Date.now() });
+  return token;
+}
+
 async function towerToken(t: { id: number; loginUrl: string | null; username: string | null; password: string | null }): Promise<string> {
-  const c = tokenCache.get(t.id);
+  const k = `t${t.id}`;
+  const c = tokenCache.get(k);
   if (c && Date.now() - c.at < TOKEN_TTL) return c.token;
   const token = await sasLogin(sasBaseUrl(t.loginUrl!), t.username!, t.password!);
-  tokenCache.set(t.id, { token, at: Date.now() });
+  tokenCache.set(k, { token, at: Date.now() });
   return token;
+}
+
+// ═════ عدّادُ «الفعّالين والمتصلين» يجمع **كلَّ لوحات المكتب** (بلاغُ محمد 2026-08-13) ═════
+// 🔴 كان العدّادُ يمرّ على **المكاتب** ويستعمل أعمدةَ المكتب (الرابط/اليوزر/الباسورد)
+//   — وهي أعمدةُ **لوحته الأولى** بعد أ-٢٣ (تُطابَق معها). فمكتبٌ بلوحتَين يُظهر
+//   أرقامَ اللوحة الأولى وحدَها: «صميم ١» تُعَدّ و«صميم ٢» غائبةٌ تماماً — لا في
+//   الفعّالين ولا في الكلّيّ ولا في المتصلين.
+// ⇒ صار الجمعُ على **نطاقاتٍ**: لكلّ لوحةٍ نطاقُها ببياناتها وتوكنِها ومخزَنِها،
+//   وبلا لوحاتٍ يبقى نطاقٌ واحدٌ من أعمدة المكتب (السلوكُ القديمُ حرفيّاً).
+// 🔒 والعزلُ محفوظٌ: `agentTower` تُفحَص أوّلاً (المكتبُ يتبع وكيلَ هذه الحاسبة)
+//   ثمّ تُقرأ لوحاتُه — فلا لوحةَ من مكتبٍ لا يملكه هذا العامل.
+const scopesCache = new Map<number, { list: SasCreds[]; at: number }>();
+const SCOPES_TTL = 5 * 60 * 1000; // لوحةٌ تُضاف/تُحذف تظهر خلال ٥ دقائق بلا إعادة تشغيل
+
+async function scopesOfTower(towerId: number): Promise<SasCreds[]> {
+  const hit = scopesCache.get(towerId);
+  if (hit && Date.now() - hit.at < SCOPES_TTL) return hit.list;
+  const list: SasCreds[] = [];
+  const t = await agentTower(towerId); // 🔒 العزل: مكتبُ وكيلِ هذه الحاسبة حصراً
+  if (t) {
+    for (const p of await panelsOfTower(towerId)) {
+      const c = credsFromPanel(p);
+      if (c) list.push(c);
+    }
+    // بلا لوحاتٍ (أو كلُّها ناقصةُ البيانات): أعمدةُ المكتب — السلوكُ القديم
+    if (!list.length) {
+      list.push({
+        panelId: null, towerId: t.id, agentId: t.agentId, label: null,
+        loginUrl: t.loginUrl!, username: t.username!, password: t.password!, activationTemplate: null,
+      });
+    }
+  }
+  scopesCache.set(towerId, { list, at: Date.now() });
+  return list;
 }
 
 // ===== عدّاد المشتركين (أ5): فعالين/كلي محلياً بالكامل — يقرأ من SAS المكتب فقط =====
 // شرط محمد: التحديث كل 5 ثوانٍ يجب ألا يمرّ على Azure/Aiven إطلاقاً لتقليل الاستهلاك.
 // لذا بيانات المكتب (الرابط/اليوزر/الباسورد) تُقرأ من القاعدة مرة واحدة لعمر العملية
 // وتُخزَّن بالذاكرة، والأرقام تأتي من مسح مخزون SAS المخزّن مؤقتاً (تجديد كل 45 ثانية).
-type TowerCreds = { id: number; loginUrl: string; username: string; password: string };
-const credsCache = new Map<number, { t: TowerCreds | null; at: number }>();
-const CREDS_NEG_TTL = 5 * 60 * 1000; // مكتب غير تابع/ناقص: أعد المحاولة بعد 5 دقائق
-async function agentTowerCached(towerId: number): Promise<TowerCreds | null> {
-  const c = credsCache.get(towerId);
-  if (c && (c.t || Date.now() - c.at < CREDS_NEG_TTL)) return c.t;
-  const t = await agentTower(towerId); // مرور وحيد على القاعدة، ثم ذاكرة لعمر العملية
-  const v = t ? { id: t.id, loginUrl: t.loginUrl!, username: t.username!, password: t.password! } : null;
-  credsCache.set(towerId, { t: v, at: Date.now() });
-  return v;
-}
+// (حُذفت `agentTowerCached` ومخزنُها: صارت `scopesOfTower` تخزّن **قائمةَ النطاقات**
+//  فتُغني عنها — وبقاءُ دالّةٍ ميْتةٍ تقرأ أعمدةَ المكتب وحدَها يُوهم قارئاً لاحقاً
+//  بأنّ «بياناتُ المكتب» كافيةٌ للعدّ، وهي عينُ العلّة التي أخفت أرقامَ صميم ٢.)
 
-const statsCache = new Map<number, { active: number; total: number; at: number }>();
-const statsInflight = new Map<number, Promise<void>>();
+const statsCache = new Map<string, { active: number; total: number; at: number }>();
+const statsInflight = new Map<string, Promise<void>>();
 const STATS_TTL = 45_000; // مسح SAS كل 45 ثانية كحد أقصى (المتصفّح يستطلع كل 5 ثوانٍ من الكاش)
 // «المتصلين الآن»: طلب واحد خفيف (count=1) يتجدّد مع كل استطلاع (كل 5 ثوانٍ) — شبكة المكتب المحلية
-const onlineCache = new Map<number, { online: number | null; at: number }>();
+const onlineCache = new Map<string, { online: number | null; at: number }>();
 const ONLINE_TTL = 4_500;
 
-async function refreshTowerStats(t: TowerCreds): Promise<void> {
-  const base = sasBaseUrl(t.loginUrl);
-  const token = await towerToken(t);
+async function refreshScopeStats(c: SasCreds): Promise<void> {
+  const base = sasBaseUrl(c.loginUrl);
+  const token = await scopeToken(c);
   const users = await sasFetchAllUsers(base, token, 500, 700, 30);
   const now = Date.now();
   let active = 0;
@@ -87,7 +129,37 @@ async function refreshTowerStats(t: TowerCreds): Promise<void> {
   for (const u of users) {
     if (u.enabled && u.expiration && new Date(u.expiration).getTime() > now) active++;
   }
-  statsCache.set(t.id, { active, total: users.length, at: now });
+  statsCache.set(scopeKey(c), { active, total: users.length, at: now });
+}
+
+/** أرقامُ نطاقٍ واحدٍ من المخزن، ويُجدَّد إن قدُم. `null` = لم يُمسح بعد.
+ *  و`awaitFirst` للطلب الأوّل: ننتظر المسحَ مرّةً ثمّ نخدم من المخزن ونُجدّد بالخلفية. */
+async function scopeStats(c: SasCreds, awaitFirst: boolean): Promise<{ active: number; total: number; at: number } | null> {
+  const k = scopeKey(c);
+  const cached = statsCache.get(k);
+  if (!cached || Date.now() - cached.at > STATS_TTL) {
+    if (!statsInflight.has(k)) {
+      statsInflight.set(k, refreshScopeStats(c)
+        .catch(() => { tokenCache.delete(k); scopesCache.delete(c.towerId); }) // توكن/بياناتٌ فاسدة: تُجدَّد بالمحاولة التالية
+        .finally(() => statsInflight.delete(k)));
+    }
+    if (!cached && awaitFirst) { try { await statsInflight.get(k); } catch { /* يُخدَم بلا أرقامٍ لهذا النطاق */ } }
+  }
+  return statsCache.get(k) ?? null;
+}
+
+/** «المتصلون الآن» لنطاقٍ واحد — طلبٌ خفيفٌ يتجدّد كلَّ استطلاعٍ تقريباً. */
+async function scopeOnline(c: SasCreds, ttl: number): Promise<number | null> {
+  const k = scopeKey(c);
+  let oc = onlineCache.get(k);
+  if (!oc || Date.now() - oc.at > ttl) {
+    try {
+      const token = await scopeToken(c);
+      oc = { online: await sasFetchOnlineCount(sasBaseUrl(c.loginUrl), token), at: Date.now() };
+    } catch { oc = { online: oc?.online ?? null, at: Date.now() }; }
+    onlineCache.set(k, oc);
+  }
+  return oc.online;
 }
 
 // تحويل طلب Node إلى Request ويب (لإعادة استخدام proxyToSas)
@@ -110,23 +182,26 @@ async function pushStatsToCloud(): Promise<void> {
   const diag: Record<string, string> = {};
   for (const t of towers) {
     try {
-      const creds = await agentTowerCached(t.id);
-      if (!creds) { diag[t.id] = "بيانات SAS ناقصة أو المكتب غير تابع"; continue; }
-      let sc = statsCache.get(t.id);
-      if (!sc || Date.now() - sc.at > STATS_TTL) {
-        try { await refreshTowerStats(creds); sc = statsCache.get(t.id); }
-        catch (e) { diag[t.id] = `تعذّر مسح SAS: ${e instanceof Error ? e.message : String(e)}`; }
-      }
-      let oc = onlineCache.get(t.id);
-      if (!oc || Date.now() - oc.at > 60_000) {
+      // الرفعةُ تجمع على **لوحات المكتب** مثلَ العدّاد المحليّ — وإلّا لَظهرت في السحابة
+      // أرقامُ اللوحة الأولى وحدَها لمكتبٍ بلوحتَين (وهي عينُ علّة العدّاد المحليّ).
+      const scopes = await scopesOfTower(t.id);
+      if (!scopes.length) { diag[t.id] = "بيانات SAS ناقصة أو المكتب غير تابع"; continue; }
+      let active = 0, total = 0, online: number | null = null, gotAny = false;
+      const fails: string[] = [];
+      for (const c of scopes) {
         try {
-          const token = await towerToken(creds);
-          oc = { online: await sasFetchOnlineCount(sasBaseUrl(creds.loginUrl), token), at: Date.now() };
-          onlineCache.set(t.id, oc);
-        } catch { /* «المتصلين» اختياري — لا يُفشل الرفعة */ }
+          const sc = await scopeStats(c, true);
+          if (sc) { active += sc.active; total += sc.total; gotAny = true; }
+          else fails.push(`${c.label ?? scopeKey(c)}: لا مخزون إحصاء بعد`);
+        } catch (e) { fails.push(`${c.label ?? scopeKey(c)}: ${e instanceof Error ? e.message : String(e)}`); }
+        // «المتصلين» اختياريٌّ — لا يُفشل الرفعة، ومهلتُه أطولُ هنا (دقيقة) لا ٤٫٥ث
+        const on = await scopeOnline(c, 60_000).catch(() => null);
+        if (on != null) online = (online ?? 0) + on;
       }
-      if (sc) offices[t.id] = { active: sc.active, total: sc.total, online: oc?.online ?? null };
-      else if (!diag[t.id]) diag[t.id] = "لا مخزون إحصاء بعد";
+      if (gotAny) offices[t.id] = { active, total, online };
+      // التشخيصُ يُذكر **باسم اللوحة** فيُعرف أيُّ لوحةٍ فشلت لا «المكتب» مبهماً
+      if (fails.length) diag[t.id] = fails.join(" · ");
+      else if (!gotAny) diag[t.id] = "لا مخزون إحصاء بعد";
     } catch (e) { diag[t.id] = e instanceof Error ? e.message : String(e); }
   }
   // الرفعة تُكتب دائماً (حتى بلا مكاتب) — وجود السطر بحد ذاته يثبت أن كود الرفع
@@ -235,30 +310,16 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
         let active = 0, total = 0, oldest = Date.now(), any = false;
         let online = 0, onlineKnown = false;
         for (const id of ids) {
-          const t = await agentTowerCached(id);
-          if (!t) continue;
-          const cached = statsCache.get(id);
-          if (!cached || Date.now() - cached.at > STATS_TTL) {
-            if (!statsInflight.has(id)) {
-              statsInflight.set(id, refreshTowerStats(t)
-                .catch(() => { tokenCache.delete(id); credsCache.delete(id); }) // توكن/بيانات فاسدة: تُجدَّد بالمحاولة التالية
-                .finally(() => statsInflight.delete(id)));
-            }
-            // أول طلب للمكتب: ننتظر المسح؛ وبعدها نخدم من الكاش والتجديد بالخلفية
-            if (!cached) { try { await statsInflight.get(id); } catch { /* */ } }
+          // 🔴 بلاغُ محمد: مكتبٌ بلوحتَي ساس كان يُظهر أرقامَ **الأولى** وحدَها («صميم ١»)
+          //   لأنّ العدّادَ يقرأ أعمدةَ المكتب — وهي أعمدةُ لوحته الأولى. فالجمعُ الآن
+          //   على كلّ لوحاته، ولكلّ لوحةٍ توكنُها ومخزَنُها (فلوحتان بتوكنٍ واحدٍ تُرجعان
+          //   قائمةَ واحدةٍ منهما).
+          for (const c of await scopesOfTower(id)) {
+            const s = await scopeStats(c, true); // أوّلُ طلبٍ ينتظر المسحَ مرّةً
+            if (s) { active += s.active; total += s.total; oldest = Math.min(oldest, s.at); any = true; }
+            const on = await scopeOnline(c, ONLINE_TTL);
+            if (on != null) { online += on; onlineKnown = true; }
           }
-          const s = statsCache.get(id);
-          if (s) { active += s.active; total += s.total; oldest = Math.min(oldest, s.at); any = true; }
-          // المتصلون الآن — طلب خفيف يتجدّد كل استطلاع تقريباً
-          let oc = onlineCache.get(id);
-          if (!oc || Date.now() - oc.at > ONLINE_TTL) {
-            try {
-              const token = await towerToken(t);
-              oc = { online: await sasFetchOnlineCount(sasBaseUrl(t.loginUrl), token), at: Date.now() };
-            } catch { oc = { online: oc?.online ?? null, at: Date.now() }; }
-            onlineCache.set(id, oc);
-          }
-          if (oc.online != null) { online += oc.online; onlineKnown = true; }
         }
         if (!any) { sendJson(res, 404, { error: "لا مكاتب صالحة" }); return; }
         sendJson(res, 200, { active, total, online: onlineKnown ? online : null, at: oldest });
