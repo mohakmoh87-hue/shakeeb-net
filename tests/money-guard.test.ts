@@ -20,10 +20,10 @@ const BTN = "src/components/MoneyHealthButton.tsx";
 const FIG = "src/components/GuardFigure.tsx";
 
 describe("🕵️ حارسُ المال", () => {
-  test("واجباتُه صارت أربعةً وثلاثين فحصاً — لا ستّةً", () => {
+  test("واجباتُه صارت ستّةً وثلاثين فحصاً — لا ستّةً", () => {
     const src = read(HEALTH);
     const n = (src.match(/checks\.push\(\{|await add\(/g) ?? []).length;
-    assert.ok(n >= 34, `عددُ الفحوص ${n} — أقلُّ من الأربعة والثلاثين`);
+    assert.ok(n >= 36, `عددُ الفحوص ${n} — أقلُّ من السّتّة والثلاثين`);
   });
 
   test("🔴 التفعيلُ على الدَّين **ليس خطراً** — تصحيحُ محمد 2026-08-14", () => {
@@ -45,6 +45,14 @@ describe("🕵️ حارسُ المال", () => {
       assert.ok(blk.includes(`rowKey: \`${rk}`), `${key} غيرُ مجموعٍ بالفئة`);
       assert.ok(blk.includes("GROUP BY"), `${key} بلا تجميع`);
     }
+  });
+
+  test("🔴 «الحَجزُ العالق» أُسقط — فلا ضررَ ولا زرَّ فكٍّ موجودٌ أصلاً", () => {
+    const src = read(HEALTH);
+    // الفحصُ كان يُنذر عن طابعٍ يتجاوزه الكودُ بعد خمس دقائق، ويُرسل المالكَ إلى زرٍّ لا يوجد
+    assert.equal(src.includes('await add("card_stuck_reservation"'), false,
+      "أُعيد فحصُ الحَجز العالق — وهو إنذارٌ بلا ضررٍ ونصيحتُه كاذبة");
+    assert.ok(src.includes("staleBefore"), "لا يذكر السببَ (الحجزُ ينتهي بخمس دقائق) فيُعاد الخطأ");
   });
 
   test("🔒 بنيةُ القاعدة ليست في لوحةِ الوكيل بل في سكربتِ المالك", () => {
