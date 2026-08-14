@@ -161,6 +161,21 @@ export async function inspectPendingDeletedCards(
         info = "بلا سيريالٍ أو بلا وكيل — لا سبيلَ للفحص";
       } else {
         const list = await sessionsFor(row.agentId);
+        // 🔴 **ثغرةٌ كشفها سؤالُ محمد «هل قام الحارسُ فعلاً بفحص الكارت من الساس؟»**:
+        //   لو تعذّر الدخولُ إلى **كلّ** اللوحات (لوحةٌ ساقطةٌ أو كلمةُ مرورٍ تغيّرت) لبقي
+        //   `hit` فارغاً، فيصدر حكمُ «لا تفعيلَ له في الساس» — أي **يُنسَب إلى الساس نفيٌ
+        //   وهو لم يُسأل أصلاً**. وذلك أسوأُ من الصمت: يمنح ثقةً كاذبةً في كارتٍ لم يُفحَص.
+        //   فالحكمُ هنا `error` صريحاً، ويبقى الصفُّ ظاهراً بزرّ «أعِد الفحص» حتى يُفحَص حقّاً.
+        if (list.length === 0) {
+          verdict = "error";
+          info = "تعذّر الوصولُ إلى الساس (لا لوحةَ استجابت) — **لم يُفحَص الكارتُ**، أعِد الفحص";
+          await prisma.deletedCardLog.updateMany({
+            where: { id: row.id, verdict: "pending" },
+            data: { verdict, verdictAt: new Date(), sasInfo: info },
+          });
+          out.critical++;
+          continue;
+        }
         let hit: Awaited<ReturnType<typeof sasSearchActivation>> = null;
         for (const s of list) {
           hit = await sasSearchActivation(s.base, s.token, serial);

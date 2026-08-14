@@ -165,3 +165,15 @@ describe("🔔 حتّى الحذفُ الطبيعيُّ يُنبَّه عنه (�
     assert.ok(/INTERVAL '7 days'/.test(blk.slice(0, 900)), "بلا نافذةٍ زمنيّةٍ يصير سجلّاً دائماً");
   });
 });
+
+describe("🔴 لا يُنسَب إلى الساس نفيٌ وهو لم يُسأل", () => {
+  test("تعذُّرُ كلِّ اللوحات ⇒ حكمُ error لا «لا تفعيلَ في الساس»", () => {
+    const g = read("src/lib/cardDeleteGuard.ts");
+    assert.ok(g.includes("if (list.length === 0) {"), "لا فحصَ لتعذُّر كلّ اللوحات");
+    const blk = g.slice(g.indexOf("if (list.length === 0) {"), g.indexOf("if (list.length === 0) {") + 700);
+    assert.ok(/verdict = "error"/.test(blk), "يُحكَم طبيعيّاً بلا سؤال الساس");
+    assert.ok(/لم يُفحَص/.test(blk), "لا يُصرّح بأنّ الكارتَ لم يُفحَص");
+    // والصفُّ يبقى حرجاً فيُعاد فحصُه — لا يُدفَن
+    assert.ok(/out\.critical\+\+/.test(blk), "لا يُعَدُّ حالةً فيُنسى");
+  });
+});
