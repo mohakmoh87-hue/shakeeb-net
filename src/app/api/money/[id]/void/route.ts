@@ -25,6 +25,29 @@ export async function POST(
     return NextResponse.json({ error: "الحركة غير موجودة أو محذوفة مسبقاً" }, { status: 404 });
   }
 
+  // ═════ أ-٥/١ · زوجُ تحويلٍ نقديّ↔ماستر: يُحذَف الشقّان معاً دفعةً واحدة ═════
+  // العلامةُ مؤشّران متبادلان: `sourceId` كلِّ شقٍّ يحمل معرّفَ الآخر — وهي قاطعةٌ فلا
+  // تلتبس بماستر تفعيلٍ يحمل في `sourceId` رقمَ وصلٍ صادف رقمَ حركة. وحذفُ شقٍّ واحدٍ
+  // يترك نصفَ تحويلٍ (مالٌ نقص من دفترٍ ولم يدخل الآخر) — فلا يُتاح أصلاً.
+  if (tx.sourceId != null && (tx.sourceType === "transfer" || tx.sourceType === "master")) {
+    const other = await prisma.moneyTx.findUnique({ where: { id: tx.sourceId } });
+    const isPair = other && !other.isDeleted && other.sourceId === tx.id &&
+      ((tx.sourceType === "transfer" && other.sourceType === "master") ||
+       (tx.sourceType === "master" && other.sourceType === "transfer"));
+    if (isPair) {
+      await prisma.$transaction([
+        prisma.moneyTx.updateMany({ where: { id: { in: [tx.id, other.id] }, isDeleted: false }, data: { isDeleted: true } }),
+        prisma.auditLog.create({
+          data: {
+            userId: session?.userId, action: "VOID_MONEY", entity: "moneyTx", entityId: String(tx.id),
+            details: `حذف زوج تحويل نقدي↔ماستر #${tx.id}/#${other.id} — المبلغ ${(tx.moneyIn || tx.moneyOut) ?? 0} عاد إلى دفتره`,
+          },
+        }),
+      ]);
+      return NextResponse.json({ ok: true, pairDeleted: other.id });
+    }
+  }
+
   // حركة ماستر **مرتبطة بوصل** (تفعيل أو فاتورة): حذفها وحدها يمحو الجزء الماستر
   // ويترك الوصل قائماً بمبلغ لا يقابله مال — فيبقى وصلٌ يزعم قبضاً لم يعد موجوداً.
   // الحذف الصحيح من الوصل نفسه، فهو يعكس الأيام والكارت والدين والماستر معاً.

@@ -172,6 +172,7 @@ export default function DailyReportCard({
         <TxDrillModal
           kind={drill} towerId={isAdmin ? sel : "all"} userId={drillUser}
           onClose={() => setDrill(null)} onChanged={refreshCard}
+          allowTransfer // أ-٥/١ · «تحويل» يظهر في تفصيلَي المجموع والماستر لليوم الحاليّ
         />
       )}
     </div>

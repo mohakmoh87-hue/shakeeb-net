@@ -62,7 +62,7 @@ export function SubjectCell({ s }: { s?: { name: string | null; netUser: string 
 }
 
 export default function TxDrillModal({
-  kind, day, towerId, userId, onClose, onChanged, subtitle,
+  kind, day, towerId, userId, onClose, onChanged, subtitle, allowTransfer = false,
 }: {
   kind: string;
   /** يومُ بغداد YYYY-MM-DD — فارغٌ يعني اليوم الحالي */
@@ -73,10 +73,15 @@ export default function TxDrillModal({
   /** يُنادى بعد حذفِ حركةٍ ليُحدِّث الشاشةَ المُناديةَ أرقامَها */
   onChanged?: () => void;
   subtitle?: string;
+  /** أ-٥/١ · نموذجُ «تحويل نقدي↔ماستر» أسفل التفاصيل — لبطاقة التقرير اليوميّ (اليوم الحاليّ) */
+  allowTransfer?: boolean;
 }) {
   const [d, setD] = useState<Drill | null>(null);
   const [busy, setBusy] = useState(true); // يبدأ محمّلاً — فلا `setState` داخل الأثر
   const [reload, setReload] = useState(0);
+  const [tAmount, setTAmount] = useState(""); // مبلغ التحويل نقدي↔ماستر
+  const [tBusy, setTBusy] = useState(false);
+  const [tMsg, setTMsg] = useState<string | null>(null);
   const { can } = usePermission();
 
   // الجلبُ في الأثر مباشرةً، والحالةُ تُكتب في ردود الوعد لا في متنه — وإلّا صارت
@@ -115,6 +120,28 @@ export default function TxDrillModal({
   }
 
   const canVoid = can("receipts.void");
+
+  // ═════ أ-٥/١ · تحويلُ مبلغٍ بين النقديّ والماستر (طلب محمد بالحرف: «أسفلها تحويل») ═════
+  // يظهر في تفصيلَي «المجموع» و«الماستر» لليوم الحاليّ فقط — فالتحويل قيدُ لحظته لا قيدُ
+  // يومٍ ماضٍ. والاتّجاهان متاحان معاً كما طلب («والعكس»).
+  const showTransfer = allowTransfer && !day && (kind === "total" || kind === "master") && can("finance.manage");
+  async function doTransfer(toMaster: boolean) {
+    const amount = Number(tAmount);
+    if (!Number.isInteger(amount) || amount <= 0) { setTMsg("أدخل مبلغاً صحيحاً بلا كسور"); return; }
+    if (!window.confirm(`تحويل ${amount.toLocaleString("en-US")} د.ع ${toMaster ? "من النقدي إلى الماستر" : "من الماستر إلى النقدي"}؟`)) return;
+    setTBusy(true); setTMsg(null);
+    const res = await fetch("/api/money/transfer", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount, toMaster, towerId: towerId !== "all" && towerId != null ? towerId : undefined }),
+    });
+    const x = await res.json().catch(() => ({}));
+    setTBusy(false);
+    if (!res.ok) { setTMsg(x.error ?? "تعذّر التحويل"); return; }
+    setTMsg(`✓ ${x.message ?? "تمّ التحويل"}`);
+    setTAmount("");
+    reloadRows();
+    onChanged?.();
+  }
 
   return (
     // z أعلى من نافذة اليوم (‎z-90‎) كي يظهر فوقها لا تحتها
@@ -189,6 +216,34 @@ export default function TxDrillModal({
             </table>
           )}
         </div>
+
+        {/* أ-٥/١ · «تحويل» أسفل التفاصيل: نقدي↔ماستر بمبلغٍ — صفّان مزدوجان يُحذفان معاً */}
+        {showTransfer && (
+          <div className="border-t border-slate-200 bg-indigo-50/60 px-5 py-3">
+            <div className="mb-1.5 text-sm font-bold text-indigo-800">⇄ تحويل بين النقدي والماستر</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="number" inputMode="numeric" value={tAmount} onChange={(e) => setTAmount(e.target.value)}
+                placeholder="المبلغ (د.ع)" dir="ltr"
+                className="w-36 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              />
+              <button onClick={() => void doTransfer(true)} disabled={tBusy}
+                className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
+                نقدي ← ماستر 🅜
+              </button>
+              <button onClick={() => void doTransfer(false)} disabled={tBusy}
+                className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+                🅜 ماستر ← نقدي
+              </button>
+              {towerId === "all" && (
+                <span className="text-[11px] text-slate-500">💡 اختر مكتباً من التبويبات ليُنسب التحويل له</span>
+              )}
+            </div>
+            {tMsg && (
+              <div className={`mt-2 rounded-lg px-3 py-1.5 text-xs ${tMsg.startsWith("✓") ? "bg-emerald-100 text-emerald-700" : "bg-red-50 text-red-600"}`}>{tMsg}</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
