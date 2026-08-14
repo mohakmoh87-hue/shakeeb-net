@@ -277,6 +277,23 @@ export default function CashboxPage() {
   }
 
   // حذف حركة مالية — يسأل: هل يؤثر على المبالغ والتقرير (إرجاع عكسي) أم حذف فقط؟
+  // ═════ أ-٥ · الموضع ٣: تحويلُ وصلٍ قائمٍ بين الماستر والنقديّ (طلبُ محمد) ═════
+  // «أيّ وصلٍ يُحوَّل من ماستر إلى نقديّ، أو من نقديّ إلى ماستر.»
+  // 🔑 وهو **تبديلُ نوعٍ لا حركةٌ جديدة**: المجموعُ الكلّيُّ لا يتغيّر، ويتغيّر توزيعُه
+  //    بين دفترِ الماستر ودفترِ الصندوق. والتأكيدُ يُظهر الاتّجاهَ صريحاً قبل التنفيذ.
+  async function convertKind(t: Tx) {
+    const isM = String(t.sourceType ?? "").startsWith("master");
+    const dir = isM ? "من الماستر إلى النقديّ (يدخل الصندوق)" : "من النقديّ إلى الماستر (يخرج من الصندوق)";
+    if (!window.confirm(`تحويلُ هذا الوصل ${dir}؟
+
+المبلغُ لا يتغيّر — يتغيّر الدفترُ الذي يُحسَب فيه.`)) return;
+    const res = await fetch(`/api/money/${t.id}/convert`, { method: "POST" });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(j.error ?? "تعذّر التحويل"); return; }
+    setOkMsg(String(j.message ?? "تمّ التحويل").split("**").join(""));
+    load(from, to, q, typeFilter, officeId, accFilter);
+  }
+
   async function voidTx(t: Tx) {
     const label = t.sourceType === "debt" ? "تسديد الدين" : "الحركة المالية";
     const choice = await askVoidEffect(label, "money"); // ب-٥-أ · قيدُ صندوق: المبلغُ يخرج في الحالتَين
@@ -575,7 +592,15 @@ export default function CashboxPage() {
                     <td className="p-3 text-slate-600">{t.notes ?? "—"}</td>
                     {can("receipts.void") && (
                       <td className="p-3">
-                        <button onClick={(e) => { e.stopPropagation(); voidTx(t); }} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑 حذف</button>
+                        <div className="flex items-center gap-1.5">
+                          {/* أ-٥ · الموضع ٣: تحويلُ الوصل بين الماستر والنقديّ — والمبلغُ لا يتغيّر */}
+                          <button onClick={(e) => { e.stopPropagation(); void convertKind(t); }}
+                            className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-mynet-blue hover:bg-blue-100"
+                            title="تحويلٌ بين الماستر والنقديّ — المبلغُ لا يتغيّر، ويتغيّر الدفترُ الذي يُحسَب فيه">
+                            {String(t.sourceType ?? "").startsWith("master") ? "→ نقديّ" : "→ ماستر"}
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); voidTx(t); }} className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-100" title="حذف عكسي">🗑 حذف</button>
+                        </div>
                       </td>
                     )}
                   </tr>
