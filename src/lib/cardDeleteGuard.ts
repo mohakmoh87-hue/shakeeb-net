@@ -210,11 +210,56 @@ export async function inspectPendingDeletedCards(
         } else {
           info = `الساس: ${hit.username ?? "?"} · ${hit.method ?? "?"} · ${hit.createdAt ?? "?"}`;
           if (row.useDate == null) {
-            // 🔴 مُفعَّلٌ في الساس والبرنامجُ يحسبه مخزوناً ⇒ خدمةٌ بلا وصلٍ ولا دَين
-            verdict = "sold-unrecorded";
-            info = `🔴 غيرُ مستخدَمٍ في البرنامج ومُفعَّلٌ في الساس — ${info}`;
-            // ولا حاجةَ للبحث عن وصلٍ: البرنامجُ لا يعرف الاستخدامَ أصلاً فلا مشتركَ يُربَط به.
-            //   والختمُ والإبلاغُ في ذيلِ الحلقة — مسارٌ واحدٌ لكلّ الأحكام.
+            // ═════ 🔴 «العمليّةُ كاملةً لا الصفُّ بمعزل» — تصحيحُ محمد 2026-08-14 ═════
+            // كان الحكمُ يصدر هنا فوراً بحجّة «البرنامجُ لا يعرف الاستخدامَ فلا مشتركَ يُربَط
+            // به» — **وهي حجّةٌ ساقطة**: الساسُ يُخبرنا **باليوزر** في `hit.username`، ومنه
+            // نصل إلى المشترك ثمّ إلى وصله. ونصُّ بلاغ محمد: «أليس من وظيفته أن يفحص الكارت
+            // في الساس فيجده على يوزر، فيأخذ اليوزر ويفحص في البرنامج فيجده مفعَّلاً اليوم؟
+            // فهذا تطابقٌ لا ينبغي التبليغ عنه».
+            //
+            // 🎯 والحالةُ المقيسة (كارت 390725293769747): وصلُه الأوّلُ **أُبطل** فأرجع
+            //   الإبطالُ الكارتَ للمخزن (`useDate=null`)، ثمّ سُجّل وصلٌ بديلٌ بـ٣٥٬٠٠٠ مقبوضة.
+            //   فالمالُ في الصندوق والمشتركُ مفعَّلٌ مرّةً واحدة — **وصفرُ ضررٍ**، ومع ذلك
+            //   كان يُنذَر عنه بـ٣٤٬٧٥٠ ويُقترح «إرجاعُه للمخزن» وهو مستهلَكٌ في الساس
+            //   (فلا يُفعَّل ثانيةً، وتلتقطه المزامنةُ كارتاً وهميّاً — ضررٌ يصنعه العلاج).
+            //
+            // ⇒ فإن وُجد لصاحب اليوزر وصلٌ قائمٌ قربَ تفعيل الساس فالعمليّةُ مكتملةٌ ⇒ طبيعيّ.
+            const uname = (hit.username ?? "").trim();
+            const when = hit.createdAt ? new Date(hit.createdAt) : null;
+            let matched: { id: number; moneyIn: number | null; money: number | null; subName: string | null } | null = null;
+            if (uname && when && !isNaN(when.getTime()) && row.agentId != null) {
+              // 🔒 العزل: المشتركُ من مكاتب **وكيلِ الكارت** حصراً — لا يُطابَق بيوزرٍ عابرٍ للوكلاء
+              const towers = await prisma.tower.findMany({ where: { agentId: row.agentId, isDeleted: false }, select: { id: true } });
+              const sub = towers.length
+                ? await prisma.subscriber.findFirst({
+                    where: { netUser: uname, isDeleted: false, towerId: { in: towers.map((t) => t.id) } },
+                    select: { id: true, name: true },
+                  })
+                : null;
+              if (sub) {
+                const e = await prisma.subscriptionEntry.findFirst({
+                  where: {
+                    subscriberId: sub.id, isDeleted: false,
+                    date: { gte: new Date(when.getTime() - 3 * 86400_000), lte: new Date(when.getTime() + 3 * 86400_000) },
+                  },
+                  orderBy: { id: "desc" },
+                  select: { id: true, moneyIn: true, money: true },
+                });
+                if (e) matched = { ...e, subName: sub.name };
+              }
+            }
+            if (matched) {
+              // العمليّةُ مكتملة: كارتٌ استُهلك لتفعيلٍ مسجَّلٍ عندنا بمالِه — لا شيءَ يُفعَل
+              verdict = "normal";
+              const onDebt = (matched.moneyIn ?? 0) <= 0 && (matched.money ?? 0) > 0;
+              info = `✅ استُهلك لتفعيل «${matched.subName ?? uname}» — وصلٌ #${matched.id} ` +
+                     (onDebt ? `**على الدَّين** بمبلغ ${matched.money}` : `بمبلغ ${matched.moneyIn}`) +
+                     ` · العمليّةُ مكتملةٌ والمالُ مسجَّل — ${info}`;
+            } else {
+              // 🔴 لا وصلَ لصاحب اليوزر (أو لا يوزرَ أصلاً) ⇒ خدمةٌ بلا مقابلٍ مسجَّل
+              verdict = "sold-unrecorded";
+              info = `🔴 غيرُ مستخدَمٍ في البرنامج ومُفعَّلٌ في الساس${uname ? ` على «${uname}» ولا وصلَ لصاحبه عندنا` : ""} — ${info}`;
+            }
           } else {
             // وصلُ القبض: تفعيلٌ للمشترك بمبلغٍ مقبوضٍ قرب تاريخ تفعيل الساس (±٣ أيّام —
             // فتاريخُ الإدخال قد يختلف عن تاريخ الساس بيومٍ أو يومَين)

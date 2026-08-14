@@ -118,8 +118,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, already: true, cardId: clash.id });
     }
     const linked = action === "restore-linked";
-    if (linked && row.subscriberId == null) {
-      return NextResponse.json({ error: "اللقطةُ بلا مشترك — تصلح «إعادةٌ للمخزن» فقط" }, { status: 400 });
+    // ═════ اللقطةُ بلا مشترك؟ يُستخرَج من **يوزر الساس** (بلاغ محمد 2026-08-14) ═════
+    // «لو ضغطتُ ربط من الحارس يبلّغني: اللقطةُ بلا مشترك — تصلح إعادةٌ للمخزن فقط. ولكن
+    //  إذا أرجعتُه للمخزن فلن يمكن تفعيلُه مرّةً أخرى وستلتقطه المزامنة.» — وهو محقّ:
+    // الكارتُ مستهلَكٌ في الساس، فإرجاعُه مخزوناً **يصنع كارتاً وهميّاً**. والساسُ يُخبرنا
+    // باليوزر داخل `sasInfo`، ومنه يُعرَف المشترك — فيُربَط به كما يفعل زرُّ «ربط» في
+    // الكروت الوهميّة تماماً. 🔒 والعزل: المشتركُ من مكاتب هذا الوكيل حصراً.
+    let linkSubId = row.subscriberId;
+    if (linked && linkSubId == null) {
+      const uname = row.sasInfo?.match(/الساس:\s*([^\s·]+)/)?.[1]?.trim() ?? "";
+      if (uname) {
+        const towers = await prisma.tower.findMany({ where: { agentId, isDeleted: false }, select: { id: true } });
+        const sub = towers.length
+          ? await prisma.subscriber.findFirst({
+              where: { netUser: uname, isDeleted: false, towerId: { in: towers.map((t) => t.id) } },
+              select: { id: true },
+            })
+          : null;
+        if (sub) linkSubId = sub.id;
+      }
+      if (linkSubId == null) {
+        return NextResponse.json({
+          error: "اللقطةُ بلا مشترك ولا يوزرَ يُستدلّ به من الساس — تصلح «إعادةٌ للمخزن» فقط",
+        }, { status: 400 });
+      }
     }
     const created = await prisma.rechargeCard.create({
       data: {
@@ -128,7 +150,9 @@ export async function POST(request: Request) {
         // ⚠️ يُستردّ تاريخُ الإدخال الأصليّ لا تاريخُ اليوم — وإلّا انتقل الكارتُ لوجبةٍ أخرى
         addDate: row.addDate,
         userName: row.userName,
-        ...(linked ? { useDate: row.useDate, subscriberId: row.subscriberId } : {}),
+        // مربوطاً: تاريخُ الاستخدام من اللقطة، وإن غاب (كارتٌ استُهلك في الساس والبرنامجُ
+        // يحسبه مخزوناً) فوقتُ الاستعادة — فالمهمّ ألّا يعود «متاحاً» فتلتقطه المزامنة وهميّاً.
+        ...(linked ? { useDate: row.useDate ?? new Date(), subscriberId: linkSubId } : {}),
       },
       select: { id: true },
     });
@@ -163,7 +187,7 @@ export async function POST(request: Request) {
         userId: g.session?.userId, action: "CARD_GUARD_RESTORE", entity: "rechargeCard",
         entityId: String(created.id),
         details: `حارسُ المال: استعادةُ ${row.serial} (${action}) بسعر ${row.price ?? 0}` +
-                 `${linked ? ` · مربوطٌ بالمشترك ${row.subscriberId}` : ""} · الحكمُ كان ${row.verdict}`,
+                 `${linked ? ` · مربوطٌ بالمشترك ${linkSubId}${row.subscriberId == null ? " (استُدلَّ عليه من يوزر الساس)" : ""}` : ""} · الحكمُ كان ${row.verdict}`,
       },
     }).catch(() => {});
     return NextResponse.json({ ok: true, cardId: created.id, claimed: claimed.count });
