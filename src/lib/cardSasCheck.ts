@@ -63,16 +63,25 @@ export async function sweepCardSasChecks(agentId: number, limit = 20): Promise<{
     : [];
   const userOf = new Map(subs.map((s) => [s.id, s.netUser]));
 
-  // جلساتُ لوحاتِ هذا الوكيل — والبحثُ الموجَّه يجد التفعيلَ في أيّها كان
+  // جلساتُ لوحاتِ هذا الوكيل — والبحثُ الموجَّه يجد التفعيلَ في أيّها كان.
+  // 🔴 كلُّ لوحات `sas_panels` لا أعمدةُ المكاتب وحدَها (= اللوحة الأولى) — وإلّا غاب
+  //   كارتُ اللوحة الثانية عن الفحص (مكتبُ صميم بلوحتَين). ومَن بلا لوحاتٍ يبقى على أعمدته.
   const sessions: { base: string; token: string }[] = [];
-  for (const t of await prisma.tower.findMany({
+  const towers = await prisma.tower.findMany({
     where: { agentId, isDeleted: false },
-    select: { loginUrl: true, username: true, password: true },
-  })) {
-    if (!t.loginUrl || !t.username || !t.password) continue;
+    select: { id: true, loginUrl: true, username: true, password: true },
+  });
+  const panels = await prisma.sasPanel.findMany({
+    where: { towerId: { in: towers.map((t) => t.id) }, isDeleted: false },
+    select: { towerId: true, loginUrl: true, username: true, password: true },
+    orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+  });
+  const hasPanels = new Set(panels.map((p) => p.towerId));
+  for (const src of [...panels, ...towers.filter((t) => !hasPanels.has(t.id))]) {
+    if (!src.loginUrl || !src.username || !src.password) continue;
     try {
-      const base = sasBaseUrl(t.loginUrl);
-      sessions.push({ base, token: await sasLogin(base, t.username, t.password) });
+      const base = sasBaseUrl(src.loginUrl);
+      sessions.push({ base, token: await sasLogin(base, src.username, src.password) });
     } catch { /* لوحةٌ متعذّرةٌ تُتخطّى، والحكمُ يبقى بما وُجد */ }
   }
   if (!sessions.length) return out;

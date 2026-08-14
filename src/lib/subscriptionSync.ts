@@ -948,8 +948,46 @@ export async function runFullCardAudit(
   );
 
   const res: FullCardsResult = { ...empty };
+
+  // ═════ قاعدةُ محمد (2026-08-14): «مستخدَمٌ ثبت بالسيريال لا يُعاد فحصُه ولا يُوسَم أبداً» ═════
+  // الحكمُ الدائم في `card_sas_checks`: كارتٌ وجده الساسُ يوماً (match أو mismatch — كلاهما
+  // يعني أنّ الساس يعرفه فليس وهميّاً) يُحتسب مُثبَتاً فوراً بلا أيّ نداءِ ساس. فجردُ مكتبٍ
+  // قائمتُه فقيرة (المواصلات: تفعيلاتُ التطبيق لا تظهر فيها) يدفع كلفةَ البحث الموجَّه
+  // **مرّةً واحدةً في العمر** لا في كلّ مزامنة. والحذفُ من هذا الجدول لا يحدث بتغيير حالةٍ —
+  // فالكارتُ المستهلَكُ استُهلك للأبد، وتحوُّلُ مُثبَتٍ إلى وهميٍّ عطبُ فحصٍ لا حقيقة.
+  const provenReal = new Set(
+    (await prisma.cardSasCheck.findMany({
+      where: { agentId, verdict: { in: ["match", "mismatch"] } },
+      select: { serial: true },
+    })).map((x) => x.serial),
+  );
+  /** تخزينُ حكمِ «مُثبَتٌ حقيقيّ» الدائم — أفضلُ جهدٍ لا يُفشل الجرد */
+  const storeProven = async (
+    cardId: number, serial: string, subscriberId: number | null, netUser: string | null,
+    hit: SasActivation | null,
+  ) => {
+    const sasUsername = hit?.username ?? null;
+    const verdict = !sasUsername
+      ? "match" // وُجد في القائمة بلا اسمٍ مرافق — الوجودُ نفسُه هو الإثبات
+      : !netUser
+        ? "mismatch"
+        : (sasUsername.trim().toLowerCase() === netUser.trim().toLowerCase() ? "match" : "mismatch");
+    const data = {
+      agentId, serial, cardId, subscriberId,
+      sasUsername, sasName: hit?.name ?? null, sasMethod: hit?.method ?? null,
+      sasCreatedAt: hit?.createdAt ?? null, sasOldExpiry: hit?.oldExpiration ?? null,
+      sasNewExpiry: hit?.newExpiration ?? null,
+      sasPrice: typeof hit?.price === "number" ? hit.price : null,
+      verdict, checkedAt: new Date(),
+    };
+    provenReal.add(serial);
+    await prisma.cardSasCheck.upsert({
+      where: { agentId_serial: { agentId, serial } }, create: data, update: data,
+    }).catch(() => {});
+  };
+
   // مرشَّحو الوهميّة — تُجمَع ثمّ يُحكَم عليها **بعد** تقييم صلاحيّة الأدلّة (أدناه)
-  const candidates: { cardId: number; serial: string; subLabel: string; usedAt: string }[] = [];
+  const candidates: { cardId: number; serial: string; subLabel: string; usedAt: string; subscriberId: number | null; netUser: string | null }[] = [];
 
   // 2) المطابقة المحلّية — بلا أي استعلام SAS إضافي
   let i = 0;
@@ -990,18 +1028,27 @@ export async function runFullCardAudit(
     const sub = officeSubById.get(c.subscriberId);
     if (!sub || flagged.has(c.id)) continue;
 
+    // 🔑 مُثبَتٌ من جردٍ سابق (قاعدة محمد): يُحتسب سليماً فوراً — صفرُ نداءاتٍ وصفرُ احتمالِ وسم
+    if (provenReal.has(serial)) { res.checkedUsed++; res.verifiedReal++; continue; }
+
     // الحكم بالوهمية يتطلّب جلباً مكتملاً واستخداماً داخل النافذة — وإلا فالغياب لا يعني شيئاً
     if (!complete) { res.errors++; continue; }
     if (c.useDate < since) { res.skippedOld++; continue; }
 
     res.checkedUsed++;
-    if (hit) { res.verifiedReal++; continue; }
+    if (hit) {
+      res.verifiedReal++;
+      // وُجد في القائمة ⇒ يُخلَّد الإثباتُ فلا يُفحَص في أيّ جردٍ قادم
+      await storeProven(c.id, serial, c.subscriberId, sub.netUser ?? null, hit);
+      continue;
+    }
 
     // ⏳ لا يُوسَم الآن: الحكمُ يُؤجَّل حتى يُعرَف **هل الأدلّةُ صالحةٌ أصلاً** (أدناه)
     candidates.push({
       cardId: c.id, serial,
       subLabel: sub.name ?? sub.netUser ?? String(c.subscriberId),
       usedAt: c.useDate ? new Date(c.useDate).toISOString() : "؟",
+      subscriberId: c.subscriberId, netUser: sub.netUser ?? null,
     });
   }
 
@@ -1035,11 +1082,17 @@ export async function runFullCardAudit(
   //   منذ زمن؛ أمّا الجردُ الشاملُ فكان يحكم بقائمةٍ ناقصةٍ وحدَها.
   // ⇒ فلا يُوسَم كارتٌ إلّا بعد أن يفشل **البحثُ الموجَّه عنه في كلّ لوحات مكتبه**.
   //   وبهذا يصير الجردُ صادقاً كصدق زرّ «ربط»، ويُستغنى عن التخمين بالنسب والطرق.
-  const MAX_VERIFY = 500; // سقفُ حمايةٍ من حلقاتٍ ضخمة (نفسُ سقف المرحلة الأولى)
+  // ═════ قاعدةُ محمد (2026-08-14): «لا وسمَ وهميّةٍ لكارتٍ لم يُفحَص بسيريالِه — مهما كان العدد» ═════
+  // 🔴 حادثةُ اليوم بعينها: المواصلات ٦٣٦ مشتبهاً — فُحص ٥٠٠ فثبتت **كلُّها** حقيقيّةً، ثمّ
+  //   وُسم الفائضُ ١٣٦ بلا فحصٍ لأنّ السقف انقضى. فالسقفُ رُفع بما يغطّي أكبرَ مكتبٍ بأضعاف،
+  //   والفائضُ عنه — إن وُجد يوماً — **لا يُوسَم أبداً**: يُحتسب خطأً ظاهراً ويُفحَص في الجرد
+  //   القادم (والتخزينُ الدائمُ أعلاه يجعل كلَّ جردٍ يبدأ ممّا فوق المفحوص، فالطابورُ ينفد).
+  const MAX_VERIFY = 2000;
   const POOL = 4;         // طلباتٌ متزامنةٌ خفيفةٌ على الساس (صفٌّ واحدٌ لكلّ بحث)
   const toVerify = candidates.slice(0, MAX_VERIFY);
-  const overflow = candidates.slice(MAX_VERIFY); // فوق السقف: يبقى مشتبهاً ويُحكَم عليه بالبوّابة
+  const overflow = candidates.slice(MAX_VERIFY); // فوق السقف: لا يُبرَّأ ولا يُدان — يُؤجَّل
   const foundReal = new Array<boolean>(toVerify.length).fill(false);
+  const foundHit = new Array<SasActivation | null>(toVerify.length).fill(null);
   let vNext = 0;
   const verifyWorker = async () => {
     for (;;) {
@@ -1047,7 +1100,7 @@ export async function runFullCardAudit(
       if (i >= toVerify.length) break;
       for (const s of sessions) { // 🔒 لوحاتُ **هذا** المكتب حصراً
         const hit = await sasSearchActivation(s.base, s.token, toVerify[i].serial);
-        if (hit) { foundReal[i] = true; break; }
+        if (hit) { foundReal[i] = true; foundHit[i] = hit; break; }
       }
     }
   };
@@ -1055,16 +1108,27 @@ export async function runFullCardAudit(
     if (onProgress) await onProgress("تحقّقٌ مباشرٌ من المشتبَه بها", 0, toVerify.length);
     await Promise.all(Array.from({ length: Math.min(POOL, toVerify.length) }, verifyWorker));
   }
-  const stillSuspect: typeof candidates = [...overflow];
+  const stillSuspect: typeof candidates = [];
   for (let i = 0; i < toVerify.length; i++) {
-    if (foundReal[i]) res.verifiedReal++; // وُجد بالبحث الموجَّه ⇒ حقيقيٌّ لا وهميّ
-    else stillSuspect.push(toVerify[i]);
+    if (foundReal[i]) {
+      res.verifiedReal++; // وُجد بالبحث الموجَّه ⇒ حقيقيٌّ لا وهميّ
+      // ويُخلَّد الإثباتُ — فلا يُبحَث سيريالُه في أيّ جردٍ قادمٍ أبداً (قاعدة محمد)
+      const cand = toVerify[i];
+      await storeProven(cand.cardId, cand.serial, cand.subscriberId, cand.netUser, foundHit[i]);
+    } else stillSuspect.push(toVerify[i]);
+  }
+  if (overflow.length) {
+    res.errors += overflow.length;
+    res.events.push({
+      scenario: 1, subscriber: null, pin: null,
+      detail: `⏳ ${overflow.length} كارتاً فوق سقف التحقّق (${MAX_VERIFY}) — لم يُفحَص فلا يُوسَم، ويُستكمل في الجرد القادم`,
+    });
   }
   const rescued = foundReal.filter(Boolean).length; // عددُ ما أنقذه البحثُ الموجَّه
   if (rescued > 0) {
     res.events.push({
       scenario: 3, subscriber: null, pin: null,
-      detail: `تحقّقٌ مباشر: ${rescued} كارتاً غائباً عن قائمة التفعيلات وُجد بالبحث بالسيريال — فليس وهميّاً`,
+      detail: `تحقّقٌ مباشر: ${rescued} كارتاً غائباً عن قائمة التفعيلات وُجد بالبحث بالسيريال — فليس وهميّاً (وخُلِّد إثباتُه)`,
     });
   }
   candidates.length = 0;

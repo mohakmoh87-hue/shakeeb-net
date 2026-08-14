@@ -124,19 +124,33 @@ export async function inspectPendingDeletedCards(
   });
   if (!pending.length) return out;
 
-  // جلساتُ الساس **لكلّ وكيلٍ** على حِدة — 🔒 ولا يُبحَث كارتُ وكيلٍ في لوحات غيره
+  // جلساتُ الساس **لكلّ وكيلٍ** على حِدة — 🔒 ولا يُبحَث كارتُ وكيلٍ في لوحات غيره.
+  // 🔴 وكانت تُقرأ أعمدةُ المكاتب وحدَها (= اللوحةُ الأولى لكلّ مكتب) — فمكتبٌ بلوحتَين
+  //   (صميم) لا يُبحَث كارتُه في الثانية فيُحكَم «لا تفعيلَ له» ظلماً. الآن **كلُّ لوحات
+  //   `sas_panels`** لمكاتب الوكيل + أعمدةُ المكتب لمن بلا لوحاتٍ (السلوكُ القديم).
   const sessions = new Map<number, { base: string; token: string }[]>();
   const sessionsFor = async (agentId: number): Promise<{ base: string; token: string }[]> => {
     if (sessions.has(agentId)) return sessions.get(agentId)!;
     const list: { base: string; token: string }[] = [];
-    for (const t of await prisma.tower.findMany({
+    const towers = await prisma.tower.findMany({
       where: { agentId, isDeleted: false },
-      select: { loginUrl: true, username: true, password: true },
-    })) {
-      if (!t.loginUrl || !t.username || !t.password) continue;
+      select: { id: true, loginUrl: true, username: true, password: true },
+    });
+    const panels = await prisma.sasPanel.findMany({
+      where: { towerId: { in: towers.map((t) => t.id) }, isDeleted: false },
+      select: { towerId: true, loginUrl: true, username: true, password: true },
+      orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+    });
+    const hasPanels = new Set(panels.map((p) => p.towerId));
+    const sources = [
+      ...panels,
+      ...towers.filter((t) => !hasPanels.has(t.id)),
+    ];
+    for (const src of sources) {
+      if (!src.loginUrl || !src.username || !src.password) continue;
       try {
-        const base = sasBaseUrl(t.loginUrl);
-        list.push({ base, token: await sasLogin(base, t.username, t.password) });
+        const base = sasBaseUrl(src.loginUrl);
+        list.push({ base, token: await sasLogin(base, src.username, src.password) });
       } catch { /* لوحةٌ متعذّرةٌ — تُتخطّى، والحكمُ يبقى بما وُجد */ }
     }
     sessions.set(agentId, list);
