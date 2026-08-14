@@ -560,6 +560,15 @@ export function startScheduler() {
     if (nowHM === backupTime) {
       import("@/lib/backupJob").then((m) => m.runDailyBackups(wAgent)).catch((e) => console.error("[scheduler] dailyBackup:", e));
     }
+    // 🛡️ حارسُ المال · شبكةُ أمانٍ كلَّ عشر دقائق.
+    // 🔑 والفحصُ الأساسيُّ **فوريٌّ عند الحذف** (طلبُ محمد)، وهذه الدورةُ لِما لا يُدركه
+    //    الفوريّ: دفعةٌ كبيرةٌ تجاوزت GUARD_INLINE_MAX، أو ساسٌ ساقطٌ لحظةَ الحذف، أو
+    //    عمليّةٌ انتهت قبل أن يُكمل فحصُ الخلفيّة. فلا يبقى صفٌّ pending أبداً.
+    if (Number(nowHM.slice(3)) % 10 === 0) {
+      import("@/lib/cardDeleteGuard")
+        .then((m) => m.inspectPendingDeletedCards(30, wAgent))
+        .catch(() => {});
+    }
     // مزامنة اشتراكات كل مكتب حسب وقته المضبوط (مرحلتان: كروت الأمس ثم تصحيح التواريخ)
     try {
       const offices = await prisma.tower.findMany({ where: { isDeleted: false, syncEnabled: "1", syncTime: { not: null }, ...(wAgent != null ? { agentId: wAgent } : {}) }, select: { id: true, syncTime: true } });

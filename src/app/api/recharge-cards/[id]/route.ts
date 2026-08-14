@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { captureCardsBeforeDelete, inspectPendingDeletedCards, GUARD_INLINE_MAX } from "@/lib/cardDeleteGuard";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
@@ -52,6 +53,8 @@ export async function DELETE(
   // سجل تدقيق قبل الحذف (المرحلة ٨): الحذف فيزيائي لا رجعة فيه، وكان يقع بلا أي أثر
   // — فينقص «ديون الكارتات» بلا وصل يشرح السبب (حادثة 266 كارتاً 2026-07-27).
   const full = await prisma.rechargeCard.findUnique({ where: { id: Number(id) }, select: { serial: true, price: true } });
+  // 🛡️ حارسُ المال · لقطةٌ قبل الحذف — لا مرورَ لكارتٍ بلا فحص
+  const captured = await captureCardsBeforeDelete([Number(id)], g.session?.agentId ?? null, g.session?.fullName ?? g.session?.username ?? null, "single");
   await prisma.rechargeCard.delete({ where: { id: Number(id) } });
   await prisma.auditLog.create({
     data: {
@@ -62,5 +65,13 @@ export async function DELETE(
         " — ينقص ديون الكارتات " + (full?.price ?? 0).toLocaleString("en-US"),
     },
   });
+  // ⚡ **يتصرّف الحارسُ فورَ الحذف** (طلبُ محمد 2026-08-14): حذفُ كارتٍ أو خمسة يُفحَص **قبل الردّ**
+  //   فيصل الإشعارُ في ثوانٍ. وما فوق GUARD_INLINE_MAX يُفحَص بالخلفيّة ثمّ بالمسح الدوريّ
+  //   — فبحثُ الساس ~١.٥ث للكارت، وحبسُ المستخدم دقائقَ ليس فحصاً صامتاً.
+  if (captured > 0 && captured <= GUARD_INLINE_MAX) {
+    await inspectPendingDeletedCards(captured).catch(() => {});
+  } else if (captured > 0) {
+    void inspectPendingDeletedCards(Math.min(captured, 200)).catch(() => {});
+  }
   return NextResponse.json({ ok: true, removedDebt: full?.price ?? 0 });
 }

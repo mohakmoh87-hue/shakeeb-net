@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { captureCardsBeforeDelete, inspectPendingDeletedCards, GUARD_INLINE_MAX } from "@/lib/cardDeleteGuard";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
@@ -224,6 +225,11 @@ export async function POST(request: Request) {
   const delWhere = { id: { in: cardIds }, agentId };
   const agg = await prisma.rechargeCard.aggregate({ where: delWhere, _sum: { price: true } });
   const removedDebt = agg._sum.price ?? 0;
+  // 🛡️ حارسُ المال · **لقطةٌ قبل الحذف — لا مرورَ لكارتٍ بلا فحص** (طلبُ محمد 2026-08-14)
+  //   وهذا المسارُ بعينه هو الذي حذف ٧٤ كارتاً حقيقيّاً (٩ آب) وتعذّر إثباتُها لأنّ
+  //   السجلَّ كتب المُعرِّفات لا السيريالات. فاللقطةُ تحفظ الصفَّ كاملاً، والفحصُ الصامتُ
+  //   في الساس يجري دوريّاً ويُبلّغ عن كلّ حالةٍ غيرِ طبيعيّة.
+  const captured = await captureCardsBeforeDelete(cardIds, agentId, g.session.fullName ?? g.session.username, "phantom");
   const res = await prisma.rechargeCard.deleteMany({ where: delWhere });
   let keptDebt = 0;
   if (res.count > 0 && removedDebt > 0) {
@@ -246,5 +252,13 @@ export async function POST(request: Request) {
       details: `حذف ${res.count} كارت وهمي نهائياً من المخزن — ديون الكارتات **لم تنقص** (حركة معاوِضة ${keptDebt.toLocaleString("en-US")} د.ع)، وبلا مساس بالوصل ولا التقرير اليومي`,
     },
   });
+  // ⚡ **يتصرّف الحارسُ فورَ الحذف** (طلبُ محمد 2026-08-14): حذفُ كارتٍ أو خمسة يُفحَص **قبل الردّ**
+  //   فيصل الإشعارُ في ثوانٍ. وما فوق GUARD_INLINE_MAX يُفحَص بالخلفيّة ثمّ بالمسح الدوريّ
+  //   — فبحثُ الساس ~١.٥ث للكارت، وحبسُ المستخدم دقائقَ ليس فحصاً صامتاً.
+  if (captured > 0 && captured <= GUARD_INLINE_MAX) {
+    await inspectPendingDeletedCards(captured).catch(() => {});
+  } else if (captured > 0) {
+    void inspectPendingDeletedCards(Math.min(captured, 200)).catch(() => {});
+  }
   return NextResponse.json({ ok: true, affected: res.count, removedDebt: 0, keptDebt });
 }
