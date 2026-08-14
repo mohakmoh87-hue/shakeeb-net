@@ -110,3 +110,31 @@ describe("🛡️ و-٣ · حذفُ مشتركٍ عليه دَينٌ أو تفع
     assert.equal(/useState[^\n]*ownerPassword|localStorage[^\n]*ownerPassword/.test(src), false, "الكلمةُ مُخزَّنة");
   });
 });
+
+describe("🛡️ و-٢ · لا حذفَ لمالٍ بلا لقطةٍ ولا احترامِ كشفٍ مُسدَّد", () => {
+  test("🔴 خصمُ الفنيِّ أو مكافأتُه: لقطةٌ في التدقيق قبل الحذف", () => {
+    const src = read("src/app/api/field/adjustments/route.ts");
+    const del = src.lastIndexOf("prisma.adjustment.delete(");
+    const log = src.lastIndexOf("DELETE_ADJUSTMENT");
+    assert.ok(log > 0, "الحذفُ بلا سجلٍّ — مالٌ على راتبِ فنيٍّ يذهب بصفرِ أثر");
+    assert.ok(log < del, "السجلُّ بعد الحذف — والصفُّ لا يُقرَأ بعده");
+    // واللقطةُ تحمل ما يلزم لإعادته يدويّاً
+    for (const f of ["adj.amount", "adj.technicianId", "adj.dayKey", "adj.reason"]) {
+      assert.ok(src.includes(f), `اللقطةُ لا تحفظ: ${f}`);
+    }
+  });
+
+  test("⚖️ «إذا أُعطي الموظّفُ راتبَه فلن يُمسَح شيءٌ له بعدها» — قاعدةُ محمد مُنفَّذة", () => {
+    const src = read("src/app/api/field/adjustments/route.ts");
+    assert.ok(/adj\.salaryStatementId != null/.test(src), "خصمٌ في كشفٍ مُسدَّدٍ يُحذَف — فيتغيّر راتبٌ أُعطي");
+    assert.ok(/status: 409/.test(src), "المنعُ ليس صريحاً برمزِ حالة");
+    assert.ok(/فلن يُمسَح شيءٌ له بعدها/.test(src), "لا تُذكَر القاعدةُ في الرسالة فتُنسى");
+  });
+
+  test("🔴 والقرضُ مالٌ: إسقاطُ القروض عند إعادة التفعيل يُسجَّل بمقدارِه وأصحابه", () => {
+    const src = read("src/app/api/towers/[id]/route.ts");
+    assert.ok(src.includes("PURGE_SETTLED_LOANS"), "قروضٌ تُحذَف في حلقةٍ بلا أيّ أثر");
+    assert.ok(/amount: true, netUser: true/.test(src), "المبلغُ والصاحبُ غيرُ مجلوبَين فلا يُكتَبان");
+    assert.ok(/purged\.reduce/.test(src), "المجموعُ غيرُ محسوبٍ في السجلّ");
+  });
+});

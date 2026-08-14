@@ -129,14 +129,35 @@ export async function PUT(
   if (g.session?.isAdmin && data.loanEnabled === "1" && before?.loanEnabled !== "1") {
     const debts = await prisma.loanDebt.findMany({
       where: { towerId: Number(id), isDeleted: false },
-      select: { id: true, subscriberId: true, grantDate: true },
+      // و-٢ · والمبلغُ واليوزرُ يُجلبان **ليُكتبا في السجلّ** — فقرضٌ يزول بلا مقدارٍ
+      //   ولا صاحبٍ لا يُراجَع لاحقاً
+      select: { id: true, subscriberId: true, grantDate: true, amount: true, netUser: true },
     });
+    const purged: { id: number; amount: number; netUser: string | null; subscriberId: number }[] = [];
     for (const d of debts) {
       const activated = await prisma.subscriptionEntry.findFirst({
         where: { subscriberId: d.subscriberId, isDeleted: false, moneyType: 1, date: { gt: d.grantDate } },
         select: { id: true },
       });
-      if (activated) await prisma.loanDebt.delete({ where: { id: d.id } });
+      if (activated) {
+        purged.push({ id: d.id, amount: d.amount ?? 0, netUser: d.netUser, subscriberId: d.subscriberId });
+        await prisma.loanDebt.delete({ where: { id: d.id } });
+      }
+    }
+    // 🔴 **والقرضُ مالٌ فلا يُحذَف بصفرِ أثر**: كانت الحلقةُ تحذف قروضاً بلا سجلٍّ، فدَينٌ
+    //   يزول ولا يُعرَف مقدارُه ولا صاحبُه ولا مَن أزاله. والحذفُ هنا **مشروعٌ** (قرضٌ
+    //   فعّل صاحبُه بعد منحه فسقط سببُه) — لكنّ الأثرَ يبقى مقروءاً بسجلٍّ واحدٍ مجموع.
+    if (purged.length) {
+      await prisma.auditLog.create({
+        data: {
+          userId: g.session?.userId, action: "PURGE_SETTLED_LOANS", entity: "loanDebt",
+          entityId: purged.map((x) => x.id).join(",").slice(0, 200),
+          details: `إسقاطُ ${purged.length} قرضاً بمجموع ${purged.reduce((t, x) => t + x.amount, 0)} د.ع ` +
+                   `عند إعادةِ تفعيل القرض للمكتب #${id} — فعّل أصحابُها بعد المنح: ` +
+                   purged.slice(0, 8).map((x) => `${x.netUser ?? x.subscriberId} (${x.amount})`).join(" · ") +
+                   (purged.length > 8 ? ` …و${purged.length - 8} غيرها` : ""),
+        },
+      }).catch(() => {});
     }
   }
   // تعقيم الردّ كـ GET: بيانات القرض للمدير حصراً — يراها مفكوكةً؛ غيره لا يراها إطلاقاً.

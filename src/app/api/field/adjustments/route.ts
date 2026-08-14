@@ -113,6 +113,38 @@ export async function DELETE(request: Request) {
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
   const adj = await prisma.adjustment.findUnique({ where: { id } });
   if (!adj || !(await ownsTower(g.session, adj.towerId))) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+
+  // ═════ و-٢ · لقطةٌ قبل الحذف + احترامُ الكشف المُسدَّد (2026-08-14) ═════
+  //
+  // 🔴 **الفجوةُ التي كانت**: خصمُ الفنيِّ أو مكافأتُه تُحذَف **فيزيائيّاً بصفرِ أثر** —
+  //   لا سجلَّ تدقيقٍ ولا لقطة. فمبلغٌ على راتبِ فنيٍّ يذهب ولا يُعرَف مَن حذفه ولا كم
+  //   كان ولا لماذا. وهي نفسُ علّةِ الكروت التي كلّفت ٧٤ كارتاً: **الحذفُ بلا لقطةٍ
+  //   يمحو الدليلَ لا الخطأَ فقط**.
+  //
+  // ⚖️ **وقاعدةُ محمد الصريحة**: «إذا أُعطي الموظّفُ راتبَه **فلن يُمسَح شيءٌ له بعدها**».
+  //   فصفٌّ يحمل `salaryStatementId` صار جزءاً من كشفٍ مُسدَّد ⇒ حذفُه يُغيّر ماضياً
+  //   مدفوعاً، فيُمنَع بـ409 ببيانِ الكشف لا يُحذَف صامتاً.
+  if (adj.salaryStatementId != null) {
+    return NextResponse.json({
+      error: `⛔ هذا ${adj.kind === "bonus" ? "المكافأةُ" : "الخصمُ"} (${adj.amount.toLocaleString("en-US")} د.ع) ` +
+             `محسوبٌ في كشفِ راتبٍ **مُسدَّدٍ سابقاً** (كشف #${adj.salaryStatementId}). ` +
+             `وحذفُه يُغيّر راتباً أُعطي فعلاً — وقاعدتُك: «إذا أُعطي الموظّفُ راتبَه فلن يُمسَح شيءٌ له بعدها». ` +
+             `فإن كان خطأً فصحّحه بخصمٍ أو مكافأةٍ **جديدةٍ**، فيبقى الأثرُ مقروءاً.`,
+      sealed: true, salaryStatementId: adj.salaryStatementId,
+    }, { status: 409 });
+  }
+
+  // واللقطةُ في سجلّ التدقيق: كلُّ ما يلزم لإعادته يدويّاً إن كان الحذفُ سهواً
+  await prisma.auditLog.create({
+    data: {
+      userId: g.session?.userId, action: "DELETE_ADJUSTMENT", entity: "adjustment", entityId: String(id),
+      details: `حذفُ ${adj.kind === "bonus" ? "مكافأة" : "خصم"} ${adj.amount} د.ع — الفنيّ #${adj.technicianId}` +
+               ` — يوم ${adj.dayKey} — الحالة ${adj.status} — المصدر ${adj.source}` +
+               ` — السبب «${adj.reason}»${adj.cardId ? ` — بطاقة #${adj.cardId}` : ""}` +
+               `${adj.decidedBy ? ` — أقرّه ${adj.decidedBy}` : ""}`,
+    },
+  }).catch(() => {});
+
   await prisma.adjustment.delete({ where: { id } });
   return NextResponse.json({ ok: true, deleted: id });
 }
