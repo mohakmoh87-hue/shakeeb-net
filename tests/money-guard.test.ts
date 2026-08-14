@@ -228,3 +228,23 @@ describe("⚖️ الحارسُ يقيس الأثرَ الباقي لا لحظة
       `حذفُ فاتورةٍ بلا إرجاعِ بضاعةٍ — نفسُ علّةِ ٢٠٢٦-٠٨-١٤:\n  - ${offenders.join("\n  - ")}`);
   });
 });
+
+describe("⚖️ العمليّةُ تُقاس لا الصفُّ (وصل #٣٠٧٥ · ليث ستار)", () => {
+  test("🔴 تفعيلٌ كُتب وصلَين في يومٍ واحدٍ والمالُ على أحدهما — سليمٌ فلا يُبلَّغ", () => {
+    const src = read(HEALTH);
+    const blk = src.slice(src.indexOf('add("entry_days_no_money"'), src.indexOf('add("entry_double_minute"'));
+    // شرطُ التوأم: وصلٌ أخٌ لنفس المشترك في نفس اليوم يحمل مالاً أو دَيناً
+    assert.ok(/z\."subscriberId" = e\."subscriberId"/.test(blk), "لا فحصَ للوصل الأخ");
+    assert.ok(/z\.date::date = e\.date::date/.test(blk), "التوأمُ غيرُ محدودٍ بنفس اليوم");
+    assert.ok(/coalesce\(z\."moneyIn",0\) > 0 OR coalesce\(z\.money,0\) > 0/.test(blk),
+      "لا يُقبَل الدَّينُ على التوأم — والدَّينُ ليس خطراً");
+  });
+
+  test("🔑 والفحوصُ التي تقرأ صفّاً واحداً تُعلَن صريحةً — فلا تتكرّر العلّةُ صامتة", () => {
+    const src = read(HEALTH);
+    // ثلاثةُ فحوصٍ صار لها شرطُ «الأثرِ الباقي» أو «العمليّة»: المدّة · الكارت · المدّةُ بلا مال
+    for (const marker of ['s."dateTo" < e."dateTo"', "e2.card2 = r.serial", 'z.date::date = e.date::date']) {
+      assert.ok(src.includes(marker), `شرطٌ غائب: ${marker}`);
+    }
+  });
+});

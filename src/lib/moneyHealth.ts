@@ -364,6 +364,17 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
        -- ⚖️ زوالُ الأثر: قيدُ صندوقٍ حيٌّ لهذا الوصل يعني أنّ المالَ سُجِّل لاحقاً
        AND NOT EXISTS (SELECT 1 FROM money_tx m WHERE m."sourceId" = e.id
              AND m."sourceType" IN ('activation','master') AND m."isDeleted" = false)
+       -- ⚖️ **والعمليّةُ تُقاس لا الصفّ** (تصحيحُ محمد على وصل #٣٠٧٥ · ليث ستار):
+       --   تفعيلٌ واحدٌ قد يُكتَب **وصلَين في يومٍ واحد** — أحدُهما لكلّ كارتٍ استُهلك —
+       --   والمالُ يستقرّ على الأوّل، فيبقى الثاني بمدّةٍ بلا مال. وهو **سليمٌ تماماً**:
+       --   المشتركُ دفع مرّةً وأخذ شهراً، والوصلانِ وجهانِ لعمليّةٍ واحدة.
+       --   🎯 وقِيس: **٥ من ٥** حالاتٍ في هذا الفحص لها توأمٌ مدفوعٌ في نفس اليوم
+       --   (٤٦٬٠٠٠ لليث · ٣٥٬٠٠٠ للأربعة) ومجموعُ أيّام العمليّة ٣٠–٣١ يوماً.
+       --   فالشرطُ: لا وصلَ أخاً لنفس المشترك في نفس اليوم يحمل مالاً أو دَيناً.
+       AND NOT EXISTS (SELECT 1 FROM subscription_entries z
+             WHERE z."subscriberId" = e."subscriberId" AND z."isDeleted" = false AND z.id <> e.id
+               AND z.date::date = e.date::date
+               AND (coalesce(z."moneyIn",0) > 0 OR coalesce(z.money,0) > 0))
      ORDER BY e.id DESC LIMIT 100`, (x) => ({
     rowKey: `entry:${s(x.id)}`,
     title: "تفعيلٌ منح مدّةً بلا مالٍ ولا دَين",
