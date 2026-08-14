@@ -92,7 +92,9 @@ async function renderJobHtml(kind: string, refId: number, agentId: number | null
   return null;
 }
 
-async function processJob(job: { id: number; kind: string; refId: number; agentId: number | null; towerId: number | null }): Promise<void> {
+// (مُصدَّرة للطباعة المحليّة الفوريّة من خادم 47615 — الالتقاطُ الذرّيُّ داخلها يمنع
+//  ازدواجَ الطبع مع مستطلِع الـ٥ ثوانٍ مهما تداخلا)
+export async function processJob(job: { id: number; kind: string; refId: number; agentId: number | null; towerId: number | null }): Promise<void> {
   // التقاط ذرّي: الفائز الوحيد يقلب pending → printing (يمنع طباعة مزدوجة بين حاسبتين)
   const claimed = await prisma.printJob.updateMany({
     where: { id: job.id, status: "pending" },

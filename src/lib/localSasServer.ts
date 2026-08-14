@@ -338,6 +338,64 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
         return;
       }
 
+      // ═════ 🖨️ طباعةٌ محليّةٌ فوريّة (طلب محمد 2026-08-14): «٥ ثوانٍ كبيرةٌ جدّاً» ═════
+      // المتصفّحُ على حاسبة المكتب يُرسل هنا مباشرةً (إرسالٌ لحظيّ) بدل انتظار مستطلِع
+      // طابور الـ٥ ثوانٍ. وإن لم تكن هذه الحاسبةُ مالكةَ مكتبِ الوصل ⇒ 409 فيرتدّ الزرُّ
+      // للطابور السحابيّ فتطبعه مالكتُه (نفسُ قواعد ملكيّة المستطلِع حرفيّاً — فلا يُطبع
+      // وصلُ مكتبٍ على طابعة مكتبٍ آخرَ أبداً). ومنعُ ازدواجٍ مزدوج: صفُّ dedup الـ٢٠ثانية
+      // + الالتقاطُ الذرّيُّ داخل processJob (pending→printing) — فلو تداخل المساران طُبع مرّة.
+      if (p === "/print" && req.method === "POST") {
+        const aid = getWorkerAgentId();
+        if (aid == null) { sendJson(res, 503, { error: "الحاسبة غير مربوطة بوكيل بعد" }); return; }
+        let body: { kind?: string; id?: number } = {};
+        try { body = JSON.parse(await readBody(req)); } catch { /* يفشل التحقّق أدناه */ }
+        const kind = String(body.kind ?? "");
+        const refId = Number(body.id);
+        if (!["subscription", "invoice", "debt"].includes(kind) || !Number.isInteger(refId) || refId <= 0) {
+          sendJson(res, 400, { error: "بيانات غير صحيحة" }); return;
+        }
+        // مكتبُ الوصل — نفسُ استخراج المسار السحابيّ (ومعه شرطُ نوعِ قيدِ الدين)
+        let towerId: number | null = null;
+        if (kind === "subscription") {
+          const e = await prisma.subscriptionEntry.findUnique({ where: { id: refId }, select: { towerId: true } });
+          if (!e) { sendJson(res, 404, { error: "الوصل غير موجود" }); return; }
+          towerId = e.towerId;
+        } else if (kind === "debt") {
+          const tx = await prisma.moneyTx.findUnique({ where: { id: refId }, select: { towerId: true, sourceType: true } });
+          if (!tx) { sendJson(res, 404, { error: "القيد غير موجود" }); return; }
+          if (tx.sourceType !== "debt" && tx.sourceType !== "master-debt") { sendJson(res, 400, { error: "هذا القيد ليس تسديد دين" }); return; }
+          towerId = tx.towerId;
+        } else {
+          const inv = await prisma.invoice.findUnique({ where: { id: refId }, select: { towerId: true } });
+          if (!inv) { sendJson(res, 404, { error: "الفاتورة غير موجودة" }); return; }
+          towerId = inv.towerId;
+        }
+        // 🔒 العزل: مكتبُ الوصل من مكاتب وكيلِ هذه الحاسبة حصراً
+        const tw = towerId != null ? await prisma.tower.findUnique({ where: { id: towerId }, select: { agentId: true } }) : null;
+        if (towerId == null || tw?.agentId !== aid) { sendJson(res, 403, { error: "الوصل لا يتبع وكيل هذه الحاسبة" }); return; }
+        // ملكيّةُ المكتب — قواعدُ مستطلِع الطابور نفسُها: مالكةُ جلسة واتسابه، وإلّا حاملةُ
+        // جلسته محليّاً، وإلّا القائدُ (حالة «لا مالكةَ مسجّلة»). غيرُ المالكة ⇒ ارتدادٌ للسحابة.
+        const mid = process.env.MACHINE_ID || null;
+        const wa = await prisma.waSession.findUnique({ where: { towerId }, select: { hostMachineId: true } }).catch(() => null);
+        const { hostsOfficeLocally } = await import("@/lib/whatsapp");
+        const { isLeaderNow } = await import("@/lib/hybridAgent");
+        const mine = wa?.hostMachineId != null
+          ? (mid != null && wa.hostMachineId === mid)
+          : (hostsOfficeLocally(towerId) || isLeaderNow());
+        if (!mine) { sendJson(res, 409, { error: "ليست هذه حاسبةَ مكتب الوصل — يُطبع عبر الطابور" }); return; }
+        // صفُّ الأمر أوّلاً (نفسُ dedup الـ٢٠ ثانية) — فالسجلُّ واحدٌ مهما كان المسار
+        const recent = await prisma.printJob.findFirst({
+          where: { kind, refId, createdAt: { gte: new Date(Date.now() - 20_000) } },
+          orderBy: { id: "desc" },
+        });
+        const job = recent ?? await prisma.printJob.create({ data: { agentId: aid, towerId, kind, refId } });
+        const { processJob } = await import("@/lib/printAgent");
+        await processJob(job); // الالتقاطُ الذرّيُّ داخلها — إن سبقها المستطلِعُ فلا شيءَ يُعاد
+        const done = await prisma.printJob.findUnique({ where: { id: job.id }, select: { status: true, error: true } });
+        sendJson(res, 200, { ok: done?.status === "done", jobId: job.id, status: done?.status ?? "?", error: done?.error ?? null, local: true });
+        return;
+      }
+
       // بروكسي نداءات API للّوحة: /admin/*  (تُوجَّه لخادم SAS للمكتب المفتوح حالياً)
       if (p.startsWith("/admin/") || p === "/admin") {
         if (!currentPanel) { res.writeHead(404); res.end("no panel"); return; }
