@@ -4,7 +4,7 @@ import { getSession, getTechSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { agentTowerIds } from "@/lib/guard";
 import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOfficeIn, parseExtraTowers } from "@/lib/field";
-import { ensureFieldDefaults } from "@/lib/fieldDefaults";
+import { ensureFieldDefaultsOnce } from "@/app/api/_lib/fieldSeed";
 import { applyPrivateLists, type BoardViewer } from "@/lib/guardAssign";
 
 export const dynamic = "force-dynamic";
@@ -168,8 +168,8 @@ export async function GET(request: Request) {
 
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
-  // يضمن الأنواع/الأعمدة القياسيّة ويُصلح القائمين (مرّة لكلّ وكيل في عمر العمليّة)
-  await ensureFieldDefaults(session.agentId ?? null);
+  // أ-٣ · الزرعُ **مرّةً واحدةً** لا إصلاحاً كسولاً: حذفُ الوكيل وتسميتُه يثبتان بعدها
+  await ensureFieldDefaultsOnce(session.agentId ?? null);
 
   const manager = isFieldManager(session);
   // عزل المستأجر: كل مكاتب وكيل المستخدم — أي مستخدم يتصفّح المكاتب (مشاهدة)، والكتابة مقيّدة بمكتبه.
