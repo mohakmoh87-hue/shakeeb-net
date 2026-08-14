@@ -148,11 +148,30 @@ export async function POST(request: Request) {
     });
     if (!cards.length) return NextResponse.json({ error: "لا كارت مطابق ضمن حسابك" }, { status: 404 });
 
-    // مكاتب الوكيل المرتبطة بـSAS — نبحث في كلٍّ منها حتى نجد السيريال
-    const towers = await prisma.tower.findMany({
-      where: { agentId, isDeleted: false, loginUrl: { not: null }, username: { not: null }, password: { not: null } },
+    // مكاتب الوكيل المرتبطة بـSAS — نبحث في كلٍّ منها حتى نجد السيريال.
+    // 🔴 وكانت تُقرأ أعمدةُ المكتب وحدَها (= لوحتُه الأولى) — فمكتبٌ بلوحتَين (صميم) لا يُبحَث
+    //   كارتُه في الثانية أبداً. الآن **كلُّ لوحات `sas_panels`** لمكاتب الوكيل + أعمدةُ
+    //   المكتب لمن بلا لوحاتٍ مسجّلة (السلوك القديم) — 🔒 والعزلُ كما هو: مكاتبُ الوكيل حصراً.
+    const agentTowers = await prisma.tower.findMany({
+      where: { agentId, isDeleted: false },
       select: { id: true, name: true, loginUrl: true, username: true, password: true },
     });
+    const panels = await prisma.sasPanel.findMany({
+      where: { towerId: { in: agentTowers.map((t) => t.id) }, isDeleted: false },
+      select: { towerId: true, label: true, loginUrl: true, username: true, password: true },
+      orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+    });
+    const towerName = new Map(agentTowers.map((t) => [t.id, t.name]));
+    const hasPanels = new Set(panels.map((p) => p.towerId));
+    const towers = [
+      ...panels
+        .filter((p) => p.loginUrl && p.username && p.password)
+        .map((p) => ({
+          id: p.towerId, name: p.label ? `${towerName.get(p.towerId) ?? ""} · ${p.label}` : towerName.get(p.towerId) ?? null,
+          loginUrl: p.loginUrl, username: p.username, password: p.password,
+        })),
+      ...agentTowers.filter((t) => !hasPanels.has(t.id) && t.loginUrl && t.username && t.password),
+    ];
     if (!towers.length) return NextResponse.json({ error: "لا مكتب مربوط بـSAS" }, { status: 400 });
 
     const results: { cardId: number; serial: string | null; status: string; subscriber?: string; office?: string }[] = [];
