@@ -279,7 +279,7 @@ export default function ManagerAccountsPage() {
     }
   }
 
-  async function submit(type: "expense" | "receipt" | "card-payment" | "master-receipt" | "master-expense" | "card-debt-add" | "card-debt-sub") {
+  async function submit(type: "expense" | "receipt" | "card-payment" | "master-receipt" | "master-expense" | "card-debt-add" | "card-debt-sub" | "convert-to-master" | "convert-from-master") {
     setError("");
     if (!amount || Number(amount) <= 0) { setError("أدخل مبلغاً صحيحاً"); return; }
     if ((type === "expense" || type === "receipt" || type === "card-debt-add" || type === "card-debt-sub") && !notes.trim()) { setError("اكتب سبب/ملاحظة الحركة"); return; }
@@ -445,6 +445,15 @@ export default function ManagerAccountsPage() {
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => submit("master-expense")} disabled={busy} className="rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">− صرف ماستر</button>
                 <button onClick={() => submit("master-receipt")} disabled={busy} className="rounded-lg bg-indigo-500 py-2 text-sm font-semibold text-white hover:bg-indigo-600 disabled:opacity-60">+ قبض ماستر</button>
+              </div>
+              {/* أ-٥/٢ · تحويلٌ بين الكلّي والماستر — زوجُ حركتَين يُحذفان معاً، والمجموعُ لا يتغيّر */}
+              <div className="mt-1.5 grid grid-cols-2 gap-2">
+                <button onClick={() => submit("convert-to-master")} disabled={busy}
+                  title="ينقص المبلغ الكلي ويزيد الماستر بنفس المبلغ"
+                  className="rounded-lg border border-indigo-300 bg-white py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60">⇄ من الكلي إلى الماستر</button>
+                <button onClick={() => submit("convert-from-master")} disabled={busy}
+                  title="ينقص الماستر ويزيد المبلغ الكلي بنفس المبلغ"
+                  className="rounded-lg border border-indigo-300 bg-white py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60">⇄ من الماستر إلى الكلي</button>
               </div>
             </div>
           </div>
