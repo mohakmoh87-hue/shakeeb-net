@@ -41,14 +41,26 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 }
 
 // مكتب يتبع وكيل هذه الحاسبة فقط (عزل)
+// 🐌 **مخزونةٌ ٥ دقائق** (بلاغ محمد 2026-08-14: «فتح الساس بطيء منذ أكثر من يوم»):
+// كانت تُنادى عند **كلّ** طلبِ `/sas` — مستندِ اللوحة وكلِّ أصلٍ من أصولها — باستعلامِ
+// قاعدةٍ إلى Railway في أوروبا (~٢٠٠-٤٠٠م.ث من حاسبة المكتب) بعد أن حُذفت سابقتُها
+// `agentTowerCached` في أ-٢٣/٥. والمهلةُ نفسُها مهلةُ `scopesCache` المجاور — فتغييرُ
+// بياناتِ مكتبٍ يظهر خلال ٥ دقائق كما هو حالُ اللوحات سواء. والعزلُ كما هو حرفيّاً:
+// الفحصُ نفسُه، خُزّنت نتيجتُه فقط (بما فيها السلبيّة — مكتبُ غيرِ الوكيل يبقى null).
+type AgentTowerRow = { id: number; agentId: number | null; loginUrl: string | null; username: string | null; password: string | null } | null;
+const agentTowerCache = new Map<number, { t: AgentTowerRow; at: number }>();
 async function agentTower(towerId: number) {
+  const hit = agentTowerCache.get(towerId);
+  if (hit && Date.now() - hit.at < SCOPES_TTL) return hit.t;
   const aid = getWorkerAgentId();
-  if (aid == null) return null;
-  const t = await prisma.tower.findUnique({
+  if (aid == null) return null; // لا وكيلَ بعد — لا يُخزَّن، فقد يُربَط بعد لحظات
+  const row = await prisma.tower.findUnique({
     where: { id: towerId },
     select: { id: true, agentId: true, loginUrl: true, username: true, password: true },
   });
-  return t && t.agentId === aid && t.loginUrl && t.username && t.password ? t : null;
+  const t: AgentTowerRow = row && row.agentId === aid && row.loginUrl && row.username && row.password ? row : null;
+  agentTowerCache.set(towerId, { t, at: Date.now() });
+  return t;
 }
 /** مفتاحُ الخزنِ لنطاقٍ واحد: لوحةٌ بعينها أو أعمدةُ المكتب (مَن لا لوحةَ له).
  *  نصٌّ لا رقمٌ لأنّ مُعرِّفَ لوحةٍ ومُعرِّفَ مكتبٍ قد يتساويان فيتصادم مخزناهما. */
@@ -151,7 +163,7 @@ async function scopeStats(c: SasCreds, awaitFirst: boolean): Promise<{ active: n
   if (!cached || Date.now() - cached.at > STATS_TTL) {
     if (!statsInflight.has(k)) {
       statsInflight.set(k, refreshScopeStats(c)
-        .catch(() => { tokenCache.delete(k); scopesCache.delete(c.towerId); }) // توكن/بياناتٌ فاسدة: تُجدَّد بالمحاولة التالية
+        .catch(() => { tokenCache.delete(k); scopesCache.delete(c.towerId); agentTowerCache.delete(c.towerId); }) // توكن/بياناتٌ فاسدة: تُجدَّد بالمحاولة التالية
         .finally(() => statsInflight.delete(k)));
     }
     if (!cached && awaitFirst) { try { await statsInflight.get(k); } catch { /* يُخدَم بلا أرقامٍ لهذا النطاق */ } }
