@@ -161,6 +161,29 @@ export default function DebtsPage() {
     }
   }
 
+  // ═════ 🖨️ طباعةُ وصولات المحدَّدين (طلبُ محمد 2026-08-14) ═════
+  // «أريد في صفحة ديون المشتركين خيارَ طباعةٍ أستطيع طبعَ المحدَّد» — ووصلُ المشترك
+  // (`notice`) هو القالبُ الموجود لهذا الغرض، ومسارُ الطباعة يقبله جماعيّاً سلفاً
+  // (أمرٌ لكلّ مشترك، وعزلُه مفحوصٌ داخل المسار: كلُّ مشتركٍ من مكاتب المستخدم حصراً).
+  async function printSelected() {
+    const ids = [...checked];
+    if (!ids.length) return;
+    if (!confirm(`طباعة ${ids.length} وصلاً على طابعة المكتب؟\n\nيُطبع وصلُ كلّ مشتركٍ محدَّدٍ بدينه الحاليّ.`)) return;
+    setBusy(true); setBanner("");
+    try {
+      const r = await fetch("/api/print", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "notice", ids }),
+      });
+      const d = await r.json().catch(() => ({}));
+      setBusy(false);
+      setBanner(r.ok
+        ? `🖨️ أُرسل ${d.queued ?? 0} وصلاً للطباعة${d.skipped ? ` (تُخطّي ${d.skipped} طُبعت للتوّ)` : ""}` +
+          (d.workerOnline ? "" : " — ⚠️ حاسبةُ المكتب غير متّصلةٍ الآن، ستُطبع عند تشغيلها")
+        : (d.error ?? "تعذّرت الطباعة"));
+    } catch { setBusy(false); setBanner("تعذّر الاتصال بالخادم"); }
+  }
+
   const allChecked = debtors.length > 0 && checked.size === debtors.length;
 
   return (
@@ -179,6 +202,8 @@ export default function DebtsPage() {
           <span className="text-sm text-slate-500">المحدّدون: {checked.size}</span>
           <button onClick={paySelected} disabled={busy || checked.size === 0} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">💵 تسديد المحدّدين</button>
           <button onClick={messageSelected} disabled={busy || checked.size === 0} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-40">💬 رسالة مطالبة للمحدّدين</button>
+          {/* أ · طباعةُ وصولات المحدَّدين على طابعة المكتب (طلبُ محمد) */}
+          <button onClick={printSelected} disabled={busy || checked.size === 0} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40">🖨️ طباعة المحدّدين</button>
           {can("receipts.void") && (
             <button onClick={() => clearDebts([...checked])} disabled={busy || checked.size === 0} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40">🗑 مسح ديون المحدّدين</button>
           )}

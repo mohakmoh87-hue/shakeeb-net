@@ -4,7 +4,7 @@ import { appendCardHistory } from "@/lib/field";
 import { upsertOdooCard, refreshOdooCard, countOpenOdooCards } from "@/lib/odooCards";
 import {
   odooLogin, odooFetchOpenTickets, odooReadTicket, odooReceive, odooChangeBg, odooClose, odooCancel, odooChatterPost,
-  isOpenStage, isDoneStage, type OdooSession,
+  isOpenStage, isDoneStage, isCancelledStage, isUnknownStage, type OdooSession,
 } from "@/lib/odoo";
 import {
   slaStateOf, fillSlaText, inSlaWindow, fmtMin, SLA_ALARM_MIN_DEFAULT, SLA_SEND_MIN_DEFAULT,
@@ -164,6 +164,9 @@ async function sendAllowedFor(agentId: number): Promise<boolean> {
   return v;
 }
 
+/** أ-١٥/٤ · أسماءُ المراحل المجهولة التي نُبِّه عليها — مرّةً لكلّ اسمٍ لا كلَّ دورة */
+const unknownStages = new Set<string>();
+
 async function listIdsOf(towerId: number): Promise<number[]> {
   const board = await prisma.taskBoard.findFirst({ where: { towerId, isDeleted: false }, select: { id: true } });
   if (!board) return [];
@@ -197,7 +200,16 @@ async function runPull(): Promise<void> {
           maxId = Math.max(maxId, t.id);
           // حارس المصدر: مُسنَد لحساب المكتب حصراً
           if (t.assignedUid != null && t.assignedUid !== s.uid) continue;
-          if (isDoneStage(t.stageName) || !isOpenStage(t.stageName)) continue; // المنجزة/المنتهية تُتجاهَل
+          // ═════ أ-١٥/٤ · المرحلةُ المجهولةُ تُسحَب ولا تُسقَط صامتةً (مُصلَحة 2026-08-14) ═════
+          // كان الشرطُ `!isOpenStage` يُسقط **كلَّ** مرحلةٍ خارج أربعةِ أسماءٍ محفوظة — فتذكرةٌ
+          // في مرحلةٍ أُعيدت تسميتُها في أودو **لا تُسحَب أبداً** ويظنّها الجميعُ منتهية.
+          // والصواب: يُسقَط المنتهي وحدَه (`isDoneStage`)، والمجهولُ يُسحَب ويُنبَّه على اسمه
+          // — فالغيابُ عن قائمةٍ ثابتةٍ عندنا ليس دليلَ انتهاءٍ في أودو.
+          if (isDoneStage(t.stageName)) continue;
+          if (isUnknownStage(t.stageName) && !unknownStages.has(t.stageName)) {
+            unknownStages.add(t.stageName);
+            console.warn(`[odoo-sync] ⚠️ مرحلةٌ غيرُ معروفة «${t.stageName}» (مكتب ${o.id}) — تُسحَب تذاكرُها ولا تُسقَط`);
+          }
           openById.set(t.id, t);
           const existing = await prisma.taskCard.findFirst({ where: { odooTicketId: t.id, isDeleted: false }, select: { id: true } });
           if (existing) { await refreshOdooCard(existing.id, t); continue; } // قائمة ⇒ تحديثٌ فقط
@@ -215,15 +227,34 @@ async function runPull(): Promise<void> {
         if (listIds.length) {
           const open = await prisma.taskCard.findMany({
             where: { listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null }, done: false, settled: false, isDeleted: false, archivedAt: null },
+            // ═════ أ-١٥/٦ · المصالحةُ مسقوفةٌ بأربعين — **فلتكن بترتيبٍ عادل** (2026-08-14) ═════
+            // كانت بلا `orderBy` ⇒ ترتيبُ القاعدة (id تصاعديّاً غالباً) يعني أنّ أوّلَ أربعين
+            // بطاقةً تُفحَص كلَّ دورةٍ إلى الأبد، **والباقي لا يُفحَص أبداً** في مكتبٍ مزدحم —
+            // وهي عينُ الحالة التي أخفت `#1444601` عن المصالحة. الأقدمُ **فحصاً** أوّلاً
+            // (`odooFetchedAt` تُحدَّث عند كلّ تحديثٍ للبطاقة) فيدور الطابورُ على الجميع.
             select: { id: true, odooTicketId: true }, take: 40,
+            orderBy: [{ odooFetchedAt: "asc" }, { id: "asc" }],
           });
           for (const c of open) {
             if (openById.has(c.odooTicketId as number)) continue; // ما زالت مفتوحةً — حُدّثت أعلاه
             try {
               const tk = await odooReadTicket(s, c.odooTicketId as number);
               if (tk && isDoneStage(tk.stageName)) {
-                await prisma.taskCard.update({ where: { id: c.id }, data: { done: true, completedAt: new Date(), techNote: "أُنجزت/أُغلقت خارجيّاً في أودو", odooPushedAt: new Date() } });
-                await appendCardHistory(c.id, "أودو", `أُغلقت خارجيّاً في أودو (${tk.stageName})`);
+                // ═════ 🔴 أ-١٥/١ · الإلغاءُ ليس إنجازاً (علّةٌ كامنةٌ مُصلَحة 2026-08-14) ═════
+                // كان `cancelled` داخل `DONE_STAGES` فتُختَم البطاقةُ `done: true` ⇒ **عملٌ لم
+                // يُعمَل يُحتسب إنجازاً للفنيّ ويُكسبه نقاطَه** (`card_completions` تُبنى من
+                // المنجَز). والصواب: الملغاةُ تخرج من اللوحة بـ`settled` (خارج التحصيل) لا
+                // بـ`done` — فلا تُعَدُّ في إنجازاته ولا في نقاطه، ويبقى أثرُها في السجلّ.
+                const cancelled = isCancelledStage(tk.stageName);
+                await prisma.taskCard.update({
+                  where: { id: c.id },
+                  data: cancelled
+                    ? { settled: true, techNote: "أُلغيت في أودو — لا تُحتسب إنجازاً", odooPushedAt: new Date() }
+                    : { done: true, completedAt: new Date(), techNote: "أُنجزت/أُغلقت خارجيّاً في أودو", odooPushedAt: new Date() },
+                });
+                await appendCardHistory(c.id, "أودو", cancelled
+                  ? `أُلغيت في أودو (${tk.stageName}) — خرجت من اللوحة ولا تُحتسب إنجازاً للفنيّ`
+                  : `أُغلقت خارجيّاً في أودو (${tk.stageName})`);
               }
             } catch { /* تذكرة واحدة — تجاهل */ }
           }
@@ -325,7 +356,20 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
           await postNoteOnce(c.id, c.odooNotedAt, s, ticketId, note, accessToken);
           await odooCancel(s, ticketId);
         }
-        await appendCardHistory(c.id, "أودو", c.done ? "دُفِع الإنجاز إلى أودو (close)" : "دُفِع الإلغاء إلى أودو (cancel)");
+        // ═════ أ-١٥/٢ · **تحقُّقٌ أنّ الإغلاق وقع فعلاً** (علّةٌ كامنةٌ مُصلَحة 2026-08-14) ═════
+        // كان `odooClose` يُنادى ويُفترَض نجاحُه ما لم يرمِ استثناءً — لكنّ أودو قد يردّ ٢٠٠
+        // ولا تنتقل المرحلة (صلاحيّة/حالةُ سير عمل). فتبقى التذكرةُ **مفتوحةً في سوبر سيل**
+        // والبطاقةُ مختومةً عندنا ⇒ **بلا مُعيدٍ ولا إنذار** — وهي عينُ ما اشتكى منه محمد.
+        // ⇒ تُقرأ التذكرةُ بعد الدفع: إن بقيت مفتوحةً يُفكّ الحجزُ (فتُعاد المحاولة) ويُكتب
+        //   السببُ في سجلّ البطاقة. والملاحظةُ لا تُعاد (ختمُها `odooNotedAt` باقٍ).
+        const after = await odooReadTicket(s, ticketId).catch(() => null);
+        if (after && !isDoneStage(after.stageName)) {
+          await prisma.taskCard.update({ where: { id: c.id }, data: { odooPushedAt: null } }).catch(() => {});
+          await appendCardHistory(c.id, "أودو",
+            `⚠️ لم يُغلق فعلاً — التذكرةُ ما زالت «${after.stageName ?? "؟"}» بعد الدفع، ستُعاد المحاولة`).catch(() => {});
+          continue; // لا يُحتسب مدفوعاً
+        }
+        await appendCardHistory(c.id, "أودو", c.done ? "دُفِع الإنجاز إلى أودو (close) ✓ مؤكَّد" : "دُفِع الإلغاء إلى أودو (cancel) ✓ مؤكَّد");
         pushed++;
       } catch (e) {
         // فشل الدفع: يُفكّ الحجز (odooPushedAt=null) فتُعاد المحاولة — مقاومة الإطفاء/الانقطاع.

@@ -63,9 +63,22 @@ export async function DELETE(request: Request) {
   if (!(await canOperateList(s, id))) {
     return NextResponse.json({ error: "مشاهدة فقط — لا يمكنك الحذف على مكتب آخر" }, { status: 403 });
   }
+  // ═════ أ-١٥/٣ · حذفُ العمود لا يبتلع عملاً غيرَ محصَّل (مُصلَحة 2026-08-14) ═════
+  // كان يحذف **كلَّ** بطاقاته بلا استثناء — فبطاقةٌ أُنجزت ولم تُحصَّل بعد (`done` بلا
+  // `settled`) تختفي بمالها، وبطاقةُ أودو المدفوعةُ يعيدها السحبُ بطاقةً جديدةً كأنّ العملَ
+  // لم يحدث. ⇒ يُستثنى **المنجَزُ غيرُ المحصَّل** وما دُفع إلى أودو: يبقى ظاهراً في «المنجزة»
+  // ليُحصَّل، ويُبلَّغ المستخدمُ بعددها بدل أن تضيع صامتةً.
+  const keepWhere = { listId: id, isDeleted: false, OR: [{ done: true, settled: false }, { odooPushedAt: { not: null } }] };
+  const kept = await prisma.taskCard.count({ where: keepWhere });
   await prisma.$transaction([
-    prisma.taskCard.updateMany({ where: { listId: id }, data: { isDeleted: true } }),
+    prisma.taskCard.updateMany({
+      where: { listId: id, NOT: { OR: [{ done: true, settled: false }, { odooPushedAt: { not: null } }] } },
+      data: { isDeleted: true },
+    }),
     prisma.taskList.update({ where: { id }, data: { isDeleted: true } }),
   ]);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true, keptCards: kept,
+    ...(kept ? { note: `أُبقيت ${kept} بطاقةً منجزةً لم تُحصَّل بعد — تجدها في «المنجزة»` } : {}),
+  });
 }

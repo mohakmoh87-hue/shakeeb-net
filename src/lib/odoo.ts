@@ -28,11 +28,23 @@ export interface OdooSession {
 // مراحل أودو المفتوحة (تُعالَج) والمنتهية (تُتجاهَل) — بالاسم
 const OPEN_STAGES = new Set(["new", "change team", "in progres", "in progress"]);
 const DONE_STAGES = new Set(["done", "closed", "cancelled", "canceled"]);
+/** أ-١٥/١ · مراحلُ **الإلغاء** — تُميَّز عن الإنجاز: عملٌ لم يُعمَل لا يُحتسب إنجازاً للفنيّ. */
+const CANCELLED_STAGES = new Set(["cancelled", "canceled"]);
 export function isOpenStage(stageName: string | null | undefined): boolean {
   return OPEN_STAGES.has(String(stageName ?? "").trim().toLowerCase());
 }
 export function isDoneStage(stageName: string | null | undefined): boolean {
   return DONE_STAGES.has(String(stageName ?? "").trim().toLowerCase());
+}
+export function isCancelledStage(stageName: string | null | undefined): boolean {
+  return CANCELLED_STAGES.has(String(stageName ?? "").trim().toLowerCase());
+}
+/** أ-١٥/٤ · مرحلةٌ **مجهولة** (أُعيدت تسميتُها في أودو): ليست مفتوحةً ولا منتهية.
+ *  كانت تُعامَل معاملةَ المنتهي فتُسقَط التذكرةُ صامتةً ولا تُسحَب أبداً — والصوابُ أن
+ *  تُسحَب ويُنبَّه على اسمها، فالغيابُ عن قائمةٍ ثابتةٍ ليس دليلَ انتهاء. */
+export function isUnknownStage(stageName: string | null | undefined): boolean {
+  const v = String(stageName ?? "").trim().toLowerCase();
+  return !!v && !OPEN_STAGES.has(v) && !DONE_STAGES.has(v);
 }
 
 // نمط BG (اليوزر): bg-x-x-x@x — كلّ x رقم/حرف. قيمة فارغة أو غير مطابقة ⇒ اليوزر إلزاميّ.
