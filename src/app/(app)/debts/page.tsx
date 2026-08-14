@@ -146,12 +146,15 @@ export default function DebtsPage() {
     }
     const res = await fetch("/api/messages", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channel: "WHATSAPP", text: tpl, target: "list", subscriberIds: ids }),
+      // templateType: ترافق الرسالةَ صورةُ قالب الديون إن وُجدت (بلاغ محمد 2026-08-14)
+      body: JSON.stringify({ channel: "WHATSAPP", text: tpl, target: "list", subscriberIds: ids, templateType: "debts" }),
     });
     setBusy(false);
     if (res.ok) {
       const d = await res.json();
-      setBanner(`تم إرسال رسالة المطالبة — نجح ${d.sent} / فشل ${d.failed}`);
+      // ب-٢ · المتعدّد يصطفّ في القاعدة ويُرسل تباعاً — لا عدّادَي نجاح/فشل فوريّين له
+      if (d.background) setBanner(`اصطفّت ${d.queued ?? d.total} رسالة مطالبة — تُرسَل تباعاً وتستأنف نفسها. تابعها في سجلّ الرسائل.`);
+      else setBanner(`تم إرسال رسالة المطالبة — نجح ${d.sent} / فشل ${d.failed}`);
     } else {
       const d = await res.json().catch(() => ({}));
       setBanner(d.error ?? "تعذّر الإرسال");

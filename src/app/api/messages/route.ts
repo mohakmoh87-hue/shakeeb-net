@@ -20,6 +20,10 @@ const schema = z.object({
   // إرسالٌ صامتٌ في الخلفيّة (طلب محمد 2026-08-09): الردّ يعود فوراً وتُكمل الحلقة مفصولةً،
   // فتُغلق النافذة ويتنقّل المستخدم بحرّيّة بلا انتظار ١٠ ثوانٍ × عدد المشتركين.
   background: z.boolean().default(false),
+  // 🖼️ نوعُ القالب الذي اختاره المُرسِل (بلاغ محمد 2026-08-14: «الصورة لا تصل»): هذا المسارُ
+  // اليدويُّ كان لا يعرف القالبَ أصلاً فلا يحمل صورتَه — بينما التلقائيّاتُ كلُّها تحملها.
+  // بتمريره تُحمَّل صورةُ القالب الفعّالة (بسُلَّم مكتب←وكيل) وتُرسَل تعليقاً مع النصّ.
+  templateType: z.string().trim().max(40).optional(),
 });
 
 // سجل الرسائل — عزل المستأجر (كان يعرض رسائل كل الوكلاء):
@@ -162,6 +166,22 @@ export async function POST(request: Request) {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const GAP_MS = 10000; // تأخير 10 ثوانٍ بين رسالة وأخرى (تجنّب الحظر)
 
+  // 🖼️ صورةُ القالب المختار لكلّ مكتبٍ (سُلَّم مكتب←وكيل) — تُحمَّل كسولاً وتُخزَّن لكلّ مكتب،
+  // فمئةُ مستلمٍ من مكتبٍ واحدٍ = قراءةٌ واحدة. وبلا قالبٍ مختارٍ لا صورةَ (السلوك القديم).
+  const templateType = (parsed.data.templateType ?? "").trim() || null;
+  const tplImageCache = new Map<number, string | null>();
+  async function imageFor(towerId: number | null): Promise<string | null> {
+    if (!templateType || towerId == null) return null;
+    if (tplImageCache.has(towerId)) return tplImageCache.get(towerId)!;
+    let img: string | null = null;
+    try {
+      const { getEffectiveTemplateFull } = await import("@/lib/smsTemplates");
+      img = (await getEffectiveTemplateFull(templateType, session?.agentId ?? null, towerId))?.image ?? null;
+    } catch { img = null; }
+    tplImageCache.set(towerId, img);
+    return img;
+  }
+
   // ===== حلقة الإرسال — قابلةٌ للتشغيل في الخلفيّة (طلب محمد 2026-08-09) =====
   // بفاصل ١٠ ثوانٍ بين رسالة وأخرى، إرسالُ ١٠٠ مشتركٍ يستغرق ~١٧ دقيقة. كان الطلب يبقى
   // معلّقاً كلّ هذه المدّة فتُحتجَز الواجهة (ويقطعه انتهاء مهلة البوّابة). صار الإرسال الجماعيّ
@@ -192,8 +212,8 @@ export async function POST(request: Request) {
       code: sub.rewardCode, balance: sub.rewardBalance ?? 0, // كود/رصيد الخصم (فارغ لمن لا رصيد له)
       office: office?.name ?? fallbackOfficeName,
     });
-    // الإرسال من جلسة واتساب مكتب المشترك
-    const result = await sendViaProvider(channel, sub.phone, rendered, sub.towerId);
+    // الإرسال من جلسة واتساب مكتب المشترك — ومعه صورةُ القالب المختار إن وُجدت
+    const result = await sendViaProvider(channel, sub.phone, rendered, sub.towerId, await imageFor(sub.towerId));
     await prisma.message.create({
       data: {
         channel,
@@ -227,6 +247,8 @@ export async function POST(request: Request) {
   //  دفعةً أوّلاً، والساحبُ (`broadcastQueue`) يجرّها بفاصل الحظر نفسِه ويُستأنف عند
   //  الإقلاع — فالمتبقّي محفوظٌ في القاعدة مهما حدث. والفرديُّ يبقى فوريّاً كما كان
   //  (المستخدمُ ينتظر نتيجتَه أمامه).
+  // ⏳ صورةُ القالب في البثّ المصطفّ مؤجَّلة: صفُّ `messages` لا يحمل نوعَ القالب والساحبُ
+  // في lib — فإضافتُها تحتاج عموداً وقراءتَه في الساحب (دفعةُ هدمٍ قادمة). البثُّ نصٌّ الآن.
   if (channel === "WHATSAPP" && target !== "one" && recipients.length > 1) {
     const rows = recipients
       .filter((sub) => !(officeMap.get(sub.towerId ?? -1)?.waEnabled === "0")) // مكتبٌ مُطفأُ الواتساب لا يُصطَفّ (سلوكُ الحلقة القديمة نفسُه)

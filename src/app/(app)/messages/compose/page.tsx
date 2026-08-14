@@ -50,6 +50,8 @@ function ComposeInner() {
   const [searchQ, setSearchQ] = useState("");
   const [text, setText] = useState("");
   const [templates, setTemplates] = useState<Template[]>([]);
+  // 🖼️ نوعُ القالب المختار — يُمرَّر للخادم فيُرفق **صورةَ** القالب مع الرسالة (بلاغ محمد 2026-08-14)
+  const [tplType, setTplType] = useState<string>("");
   const [towers, setTowers] = useState<{ id: number; name: string | null }[]>([]);
   const [result, setResult] = useState<string>("");
   const [error, setError] = useState("");
@@ -86,11 +88,14 @@ function ComposeInner() {
           from: fromDate || undefined,
           to: toDate || undefined,
           search: searchQ || undefined,
+          templateType: tplType || undefined, // 🖼️ ليرافق الرسالةَ صورةُ القالب المختار
         }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "فشل الإرسال"); return; }
-      setResult(`تم الإرسال إلى ${data.sent} مشترك (فشل ${data.failed}) من أصل ${data.total}`);
+      // ب-٢ · البثُّ الجماعيُّ صار يصطفّ في القاعدة ويُرسَل تباعاً (يُستأنف حتى بعد أيّ انقطاع)
+      if (data.background) setResult(`اصطفّت ${data.queued ?? data.total} رسالة في طابور الإرسال — تُرسَل تباعاً بفاصل ١٠ ثوانٍ وتستأنف نفسها مهما حدث. تابعها في سجلّ الرسائل.`);
+      else setResult(`تم الإرسال إلى ${data.sent} مشترك (فشل ${data.failed}) من أصل ${data.total}`);
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally { setSending(false); }
@@ -161,6 +166,7 @@ function ComposeInner() {
           onChange={(e) => {
             const t = templates.find((x) => x.id === Number(e.target.value));
             if (t?.text) setText(t.text);
+            setTplType(t?.type ?? ""); // صورةُ هذا القالب سترافق الرسالة (والفراغُ يلغيها)
           }}
           className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
         >

@@ -130,6 +130,12 @@ export async function POST(request: Request) {
   // أول حدث في سجل التغييرات: إنشاء البطاقة (تاريخه ووقته وفاعله)
   await appendCardHistory(card.id, g.session.fullName ?? g.session.username, "إنشاء البطاقة");
   if (autoNote) await appendCardHistory(card.id, "النظام", autoNote);
+  // البند ٧ · رسالةُ «رُفعت لك بطاقة» للمشترك — كان النداءُ في مسار اللوحة وحدَه، وبطاقةُ
+  // اللوحة بلا مشتركٍ أصلاً ⇒ **صفرُ رسائلَ صدرت منذ بناء الميزة** (قياس 2026-08-14).
+  // وهذا هو المسارُ الوحيدُ الحاملُ للمشترك — فالنداءُ هنا هو الميزةُ كلُّها عمليّاً.
+  // صامتٌ وغيرُ معطِّل، والختمُ الذرّيُّ داخله يمنع أيَّ تكرار.
+  const { sendCardRaisedMessage } = await import("@/lib/cardRaisedMessage");
+  void sendCardRaisedMessage(card.id);
 
   return NextResponse.json({ ok: true, listName: list.name, card }, { status: 201 });
 }
