@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import SalaryModal from "./SalaryModal";
-import AttendanceManager from "./AttendanceManager";
 import TrackModal from "./TrackModal";
 
 type Tech = {
@@ -23,7 +22,6 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   const [busy, setBusy] = useState(false);
   const [openForm, setOpenForm] = useState(false);
   const [salaryTech, setSalaryTech] = useState<Tech | null>(null);
-  const [attTech, setAttTech] = useState<Tech | null>(null);
   const [isManager, setIsManager] = useState(true); // مستخدم المكتب يرى القائمة والتتبع فقط
   const [trackIds, setTrackIds] = useState<number[] | null>(null); // فتح نافذة التتبع بفنيين محدّدين
   // المكاتب الإضافية الدائمة (يضبطها المدير): كل مكاتب الوكيل عدا مكتب الفني الأصلي
@@ -257,7 +255,12 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                   <div className="grid grid-cols-3 gap-2">
                     <Act onClick={() => setTrackIds([t.id])} cls="bg-sky-50 text-sky-700" icon="📍" label="تتبع الموقع" />
                     <Act onClick={() => setSalaryTech(t)} cls="bg-emerald-50 text-emerald-700" icon="💰" label="الراتب" />
-                    <Act onClick={() => setAttTech(t)} cls="bg-amber-50 text-amber-700" icon="🗓️" label="الحضور" />
+                    {/* ═════ الحضورُ كلُّه في زرّه المستقلّ (قرارُ محمد 2026-08-14) ═════
+                        «أيُّ شيءٍ يتعلّق بحضور الفنيّين يجب أن يكون في الزرّ الجديد» — فنُقلت
+                        ميزاتُ النافذة (السجلّ · حذفُ بصمة · الخروجُ اليدويّ · إضافةُ يومٍ كامل)
+                        إلى صفحة «بصمات الحضور»، وهذا الزرُّ يقود إليها مفتوحةً على هذا الفنيّ.
+                        فلا وظيفةَ تُفقَد ولا تعريفَ يُكرَّر في مكانَين. */}
+                    <Act onClick={() => { window.location.href = `/attendance?tech=${t.id}`; }} cls="bg-amber-50 text-amber-700" icon="🗓️" label="الحضور" />
                     <Act onClick={() => startEdit(t)} cls="bg-slate-100 text-slate-600" icon="✏️" label="تعديل" />
                     <Act onClick={() => del(t)} cls="bg-rose-50 text-rose-600" icon="🗑️" label="حذف" />
                   </div>
@@ -274,9 +277,6 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
 
       {salaryTech && (
         <SalaryModal technicianId={salaryTech.id} name={salaryTech.name} onClose={() => setSalaryTech(null)} onSettled={onChange} />
-      )}
-      {attTech && (
-        <AttendanceManager technicianId={attTech.id} technicianName={attTech.name} onClose={() => setAttTech(null)} onChange={onChange} />
       )}
       {trackIds && (
         <TrackModal techs={techs.map((t) => ({ id: t.id, name: t.name }))} initialIds={trackIds} onClose={() => setTrackIds(null)} />

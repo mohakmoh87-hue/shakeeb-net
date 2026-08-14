@@ -31,7 +31,9 @@ describe("أ-١ · شاشةُ بصمات الحضور", () => {
 
   test("بصماتُ فنيٍّ واحدٍ تُجلَب بمُعرّفه من المسار الجاهز", () => {
     const src = read(PAGE);
-    assert.match(src, /attendance\?technicianId=\$\{t\.id\}/, "لا جلبَ لسجلّ الفنيّ");
+    // صار الجلبُ بـ`URLSearchParams` ليحمل `from`/`to` للبحث بين تاريخين — والمعرّفُ باقٍ شرطاً
+    assert.match(src, /technicianId: String\(techId\)/, "لا جلبَ لسجلّ الفنيّ بمُعرّفه");
+    assert.match(src, /attendance\?\$\{q\}/, "لا نداءَ لمسار البصمات");
     assert.match(src, /كلّ بصماته/, "لا زرَّ لعرض بصمات الفنيّ");
   });
 
@@ -87,5 +89,38 @@ describe("أ-١ · شاشةُ بصمات الحضور", () => {
     const src = read(PAGE);
     // حرسُ الصفحة لا يكفيه إخفاءُ الزرّ: العنوانُ يُكتَب مباشرةً
     assert.match(src, /!can\("field\.manage"\) && !can\("field\.payroll"\)/, "الصفحةُ بلا حرسِ صلاحيّة");
+  });
+
+  // ═════ توحيدُ الحضور في زرّه المستقلّ (طلبُ محمد 2026-08-14) ═════
+  // «يجب نقلُ كلّ شيءٍ إليه… وأيُّ شيءٍ يتعلّق بحضور الفنيّين يجب أن يكون في الزرّ الجديد».
+  // فالحرسُ على طرفَي التوحيد معاً: **وصلت** الميزاتُ هنا، و**غادرت** هناك — إذ يكفي
+  // أن يعود مكوّنٌ ثانٍ يحمل الخروجَ اليدويَّ ليعود الانقسامُ الذي طلب رفعَه.
+  test("🎯 التوحيد · ميزاتُ نافذة إدارة الفنيّين انتقلت إلى الصفحة", () => {
+    const src = read(PAGE);
+    assert.match(src, /method: "DELETE"|attReq\("DELETE"/, "لا حذفَ لبصمةٍ في الصفحة");
+    assert.match(src, /r\.salaryStatementId == null/, "يومٌ مختومٌ بكشفٍ يُعرَض زرُّ حذفِه — والقاعدةُ تمنعه");
+    assert.match(src, /بصمةَ خروج|خروجٍ يدويّ|خروج يدوي/, "لا بصمةَ خروجٍ يدويّةٍ في الصفحة");
+    assert.match(src, /يومٍ كامل|يوم كامل/, "لا إضافةَ ليومٍ كامل");
+    assert.match(src, /setFrom|from"/, "لا بحثَ بين تاريخين");
+  });
+
+  test("🚫 التوحيد · لا مكوّنَ حضورٍ ثانٍ خارج الصفحة", () => {
+    assert.equal(fs.existsSync(path.join(ROOT, "src/components/AttendanceManager.tsx")), false,
+      "نافذةُ الحضور القديمةُ ما زالت قائمةً — فالميزةُ في مكانَين");
+    const tm = read("src/components/TechnicianManager.tsx");
+    assert.equal(/AttendanceManager/.test(tm), false, "إدارةُ الفنيّين ما زالت تفتح نافذةَ الحضور القديمة");
+    // والزرُّ باقٍ لكنّه يقود إلى الصفحة مفتوحةً على الفنيّ — فلا وصولَ يُفقَد
+    assert.match(tm, /\/attendance\?tech=\$\{t\.id\}/, "زرُّ «الحضور» لا يقود إلى الصفحة الموحَّدة");
+    const page = read(PAGE);
+    assert.match(page, /get\("tech"\)/, "الصفحةُ لا تفتح الفنيَّ القادمَ من الزرّ");
+    // ومرّةً واحدةً بمرجعٍ: التحديثُ الدوريُّ كلَّ دقيقةٍ كان سيُعيد فتحَ النافذة على وجهه
+    assert.match(page, /autoOpened\.current/, "الفتحُ التلقائيُّ بلا حارسٍ — يتكرّر مع كلّ تحديثٍ دوريّ");
+    // 🔒 وإخفاءُ الزرّ ليس منعاً: المسارُ نفسُه يرفض حذفَ يومٍ مختومٍ بكشفِ راتب
+    const route = read("src/app/api/field/attendance/route.ts");
+    assert.match(route, /salaryStatementId: \{ not: null \}/, "المسارُ يحذف يوماً مختوماً بكشفِ راتب");
+    // وقراءةُ السجلّ في نافذة الراتب تبقى **عرضاً بلا أفعال** (أ-٧) فلا تُكرَّر الإدارة
+    const sal = read("src/components/SalaryModal.tsx");
+    assert.equal(/method: "DELETE"|method: "PATCH"/.test(sal), false,
+      "نافذةُ الراتب تُعدّل الحضور — والإدارةُ مكانُها زرُّ الحضور وحدَه");
   });
 });

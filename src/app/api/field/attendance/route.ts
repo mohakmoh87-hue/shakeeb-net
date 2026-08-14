@@ -478,6 +478,13 @@ export async function DELETE(request: Request) {
   if (!technicianId) return NextResponse.json({ error: "technicianId مطلوب" }, { status: 400 });
   const t = await prisma.technician.findUnique({ where: { id: technicianId } });
   if (!t || t.isDeleted || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
+  // ⛔ يومٌ مختومٌ بكشفِ راتبٍ لا يُحذَف — قاعدةُ محمد نفسُها التي يفرضها `clear-deduction`.
+  //   والواجهةُ تُخفي زرَّه، لكنّ الإخفاءَ ليس منعاً: حذفُ صفٍّ حُسِب عليه راتبٌ مُسدَّدٌ
+  //   يترك الكشفَ بلا أساسٍ فلا يُعاد بناؤه. فالمنعُ هنا حيث الأثر.
+  const sealed = await prisma.attendance.findFirst({
+    where: { technicianId, dayKey, salaryStatementId: { not: null } }, select: { id: true },
+  });
+  if (sealed) return NextResponse.json({ error: "هذا اليومُ مختومٌ بكشفِ راتبٍ — لا يُحذَف" }, { status: 409 });
   const res = await prisma.attendance.deleteMany({ where: { technicianId, dayKey } });
   return NextResponse.json({ ok: true, deleted: res.count });
 }
