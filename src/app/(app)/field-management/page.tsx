@@ -129,7 +129,9 @@ export default function FieldManagementPage() {
   type DragList = { kind: "list"; id: number; index: number; w: number; h: number; offX: number; offY: number; x: number; y: number };
   const [drag, setDrag] = useState<DragCard | DragList | null>(null);
   const dragRef = useRef<DragCard | DragList | null>(null);
-  const pendRef = useRef<{ kind: "card" | "list"; id: number; x: number; y: number; el: HTMLElement } | null>(null);
+  // أ-٤ · `mouse`: بالفأرة يبدأ السحبُ من أوّل حركةٍ بلا ضغطٍ مطوّل — والمطوّلُ يبقى للمس
+  // حصراً، فهو الذي يُبقي تمريرَ الشاشة باللمس ممكناً على الهاتف
+  const pendRef = useRef<{ kind: "card" | "list"; id: number; x: number; y: number; el: HTMLElement; mouse: boolean } | null>(null);
   const draggedAt = useRef(0); // لمنع فتح البطاقة بالنقرة التي أنهت السحب
   const boardRef = useRef<HTMLDivElement | null>(null);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -360,9 +362,13 @@ export default function FieldManagementPage() {
     const sel = kind === "card" ? "[data-card-id]" : "[data-list-id]";
     const el = (e.target as HTMLElement).closest(sel) as HTMLElement | null;
     if (!el) return;
-    pendRef.current = { kind, id, x: e.clientX, y: e.clientY, el };
+    const mouse = e.pointerType === "mouse";
+    if (mouse) e.preventDefault(); // وإلّا بدأ تحديدُ النصّ مع أوّل حركةِ سحبٍ فوريّ
+    pendRef.current = { kind, id, x: e.clientX, y: e.clientY, el, mouse };
     if (pressTimer.current) clearTimeout(pressTimer.current);
-    pressTimer.current = setTimeout(startDrag, DRAG_HOLD_MS);
+    // أ-٤ · الفأرةُ بلا مؤقّت: السحبُ ينطلق من أوّل حركةٍ (في مُعالِج pointermove) — والنقرةُ
+    // الساكنةُ تبقى نقرةً تفتح البطاقة. واللمسُ على مؤقّته كي لا يتعطّل تمريرُ الشاشة.
+    if (!mouse) pressTimer.current = setTimeout(startDrag, DRAG_HOLD_MS);
   }
   function cancelPress() {
     if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
@@ -488,7 +494,12 @@ export default function FieldManagementPage() {
       const d = dragRef.current;
       if (!d) {
         const p = pendRef.current;
-        if (p && (Math.abs(e.clientX - p.x) > DRAG_SLOP || Math.abs(e.clientY - p.y) > DRAG_SLOP)) cancelPress();
+        if (p && (Math.abs(e.clientX - p.x) > DRAG_SLOP || Math.abs(e.clientY - p.y) > DRAG_SLOP)) {
+          // أ-٤ · الفأرة: الحركةُ نفسُها تُطلق السحبَ فوراً (لا تمريرَ شاشةٍ بالفأرة يُخشى عليه).
+          // واللمس: الحركةُ قبل المؤقّت تعني تمريرَ شاشةٍ ⇒ يُلغى الانتظار كما كان.
+          if (p.mouse) startDrag();
+          else cancelPress();
+        }
         return;
       }
       e.preventDefault();
@@ -683,7 +694,8 @@ export default function FieldManagementPage() {
         return (
           <div
             className="pointer-events-none fixed z-[95] select-none"
-            style={{ left: 0, top: 0, width: drag.w, transform: `translate3d(${drag.x - drag.offX}px, ${drag.y - drag.offY}px, 0)` }}
+            // أ-٤ · «المسحوب يصير شفافاً قليلاً أثناء السحب» — فتُرى الأعمدةُ والبطاقات من خلفه
+            style={{ left: 0, top: 0, width: drag.w, opacity: .8, transform: `translate3d(${drag.x - drag.offX}px, ${drag.y - drag.offY}px, 0)` }}
           >
             <div className="fm-lift">
               {c && (
@@ -829,28 +841,34 @@ export default function FieldManagementPage() {
             </div>
           </div>
         )}
-        {lists.map((l, listIdx) => {
+        {lists.map((l) => {
           // عمود «تذاكر أودو» يظهر فقط حين «أودو نشط» (مفعّل أو به بطاقات مفتوحة) — يُخفى إن خمد
           if (!odooActive && l.name === "تذاكر أودو") return null;
           // البطاقات المنجزة تنتقل لعمود «المنجزة» فتُستبعَد من عمودها الأصلي
           const listCards = cards.filter((c) => c.listId === l.id && !c.done).sort((a, b) => a.position - b.position);
           const dragThisList = drag?.kind === "list" && drag.id === l.id;
-          // شريط الإفلات للأعمدة: علامةٌ واضحة أين سيستقرّ العمود المحمول
+          // أ-٤ · «العمود فوق عمودٍ ⇒ القديم يزيح جانباً»: خانةُ المسحوب تنطوي (عرضٌ صفر)
+          // والأعمدةُ من موضع الإفلات فصاعداً تنزلق جانباً لتفتح له مكانَه — كإزاحة البطاقات
+          // عموديّاً بالضبط، بدل شريطِ الإفلات الجامد السابق. (RTL: «بَعدُ» يعني يساراً.)
           const others = [...lists].sort((a, b) => a.position - b.position).filter((x) => !(drag?.kind === "list" && x.id === drag.id));
-          const barBefore = drag?.kind === "list" && others.findIndex((x) => x.id === l.id) === drag.index;
-          const barAfterLast = drag?.kind === "list" && drag.index >= others.length && listIdx === lists.length - 1;
+          const listShiftX = drag?.kind === "list" && !dragThisList && others.findIndex((x) => x.id === l.id) >= drag.index
+            ? -(drag.w + 12) // عرضُ المسحوب + فجوة gap-3
+            : 0;
           return (
             <Fragment key={l.id}>
-            {barBefore && <div className="h-24 w-1.5 shrink-0 animate-pulse self-stretch rounded-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,.9)]" />}
             <div
               data-list-id={l.id}
-              style={dragThisList ? { opacity: .3, filter: "grayscale(.4)", transition: "opacity .15s" } : undefined}
+              style={dragThisList
+                ? { width: 0, minWidth: 0, marginInlineEnd: -12, opacity: 0, overflow: "hidden", pointerEvents: "none", transition: "all .18s cubic-bezier(.2,.8,.2,1)" }
+                : drag?.kind === "list"
+                  ? { transform: `translateX(${listShiftX}px)`, transition: "transform .18s cubic-bezier(.2,.8,.2,1)" }
+                  : undefined}
               className={`flex max-h-full w-[280px] shrink-0 flex-col rounded-xl shadow-lg ${isTech ? "bg-slate-100" : "border border-line bg-surface-2"}`}
             >
               {/* رأس العمود: بالمتصفح للمدير — خطّ أبيض على خلفية بلون فئة العمود */}
               <div
                 onPointerDown={(e) => pressStart(e, "list", l.id)}
-                title="اضغط مطوّلاً على رأس العمود ثم اسحبه يميناً أو يساراً"
+                title="بالفأرة: اسحب رأس العمود مباشرةً — وباللمس: اضغط مطوّلاً ثم اسحب"
                 className={`flex items-center justify-between px-3 py-2 ${isTech ? "" : "rounded-t-[11px]"}`}
                 style={!isTech ? { background: catColorOf(l.name ?? "") } : undefined}>
                 <span className={`font-bold ${isTech ? "text-slate-700" : "text-white"}`}>
@@ -884,7 +902,7 @@ export default function FieldManagementPage() {
                     data-card-id={c.id}
                     onPointerDown={(e) => pressStart(e, "card", c.id)}
                     onClick={() => { if (drag || Date.now() - draggedAt.current < 250) return; setSel(c); }}
-                    title="اضغط مطوّلاً ثم اسحب: أعلى وأسفل داخل العمود أو إلى عمود آخر"
+                    title="بالفأرة: اسحب مباشرةً — وباللمس: اضغط مطوّلاً ثم اسحب (داخل العمود أو إلى عمود آخر)"
                     style={{
                       ...(dragged ? { ["--fm-h" as string]: `${drag!.h}px` } : null),
                       ...(shift ? { transform: `translateY(${shift}px)` } : null),
@@ -984,7 +1002,6 @@ export default function FieldManagementPage() {
               </div>
               )}
             </div>
-            {barAfterLast && <div className="h-24 w-1.5 shrink-0 animate-pulse self-stretch rounded-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,.9)]" />}
             </Fragment>
           );
         })}
