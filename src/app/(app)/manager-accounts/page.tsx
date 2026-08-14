@@ -252,7 +252,19 @@ export default function ManagerAccountsPage() {
       : `إرجاع ${cardIds.length} كارت وهمي للمخزن؟\n\nيعود الكارت متاحاً للاستعمال — ولا يتغيّر شيء في ديون الكارتات (يبقى سعره مسجّلاً).`;
     if (!window.confirm(confirmText)) return;
     setPhantomBusy(true);
-    const res = await fetch("/api/manager/phantom-cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, cardIds }) });
+    const send = (ownerPassword?: string) => fetch("/api/manager/phantom-cards", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...{ action, cardIds }, ...(ownerPassword ? { ownerPassword } : {}) }) });
+    let res = await send();
+    let pj = await res.json().catch(() => ({}));
+    // 🛡️ و-٤ · وهذا مسارُ حادثة ٤٣٤ كارتاً — فوقَ الحدّ يلزم إذنُ المالك
+    if (!res.ok && (pj as { needOwnerPassword?: boolean })?.needOwnerPassword) {
+      const pass = window.prompt(`${(pj as { error?: string }).error ?? ""}
+
+كلمةُ مرور المالك:`);
+      if (!pass) { setPhantomMsg("أُلغي الحذف — لم تُدخَل كلمةُ مرور المالك"); setPhantomBusy(false); return; }
+      res = await send(pass);
+      pj = await res.json().catch(() => ({}));
+    }
     setPhantomBusy(false);
     if (res.ok) {
       const d = await res.json();

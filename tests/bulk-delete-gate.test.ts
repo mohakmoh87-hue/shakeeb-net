@@ -1,0 +1,77 @@
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { BULK_DELETE_GATE } from "../src/lib/bulkDeleteGate";
+
+// ═══ و-٤ · تجميدُ الحذفِ الجماعيِّ الكبير بكلمةِ مرور المالك ═══
+//
+// 🔴 الحادثةُ المقيسة: ٩ آب ٢٠٢٦ — **٤٣٤ كارتاً** حُذفت بضغطةٍ واحدةٍ من «الكروت
+//   الوهميّة»، وكان **٧٤ منها مبيعاً ومقبوضَ الثمن** (٣٥٬٠٠٠ للواحد). ولم يُنبِّه ذلك
+//   أحداً، ولم يُكتشَف إلّا بعد أربعةِ أيّامٍ بقائمةِ سيريالاتٍ أرسلها محمد بيده.
+
+const ROOT = process.cwd();
+const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+const PATHS = [
+  "src/app/api/recharge-cards/bulk-delete/route.ts",
+  "src/app/api/manager/phantom-cards/route.ts",
+];
+
+describe("🛡️ و-٤ · بوّابةُ الحذف الجماعيّ", () => {
+  test("الحدُّ خمسونَ صفّاً — فلا تُعطَّل أعمالُ اليوم", () => {
+    assert.equal(BULK_DELETE_GATE, 50);
+  });
+
+  test("🔴 كلا مسارَي الحذف الجماعيِّ مُبوَّبان — ومنهما مسارُ الحادثة", () => {
+    for (const rel of PATHS) {
+      const src = read(rel);
+      assert.ok(src.includes("requireOwnerForBulk("), `مسارٌ بلا بوّابة: ${rel}`);
+    }
+  });
+
+  test("🔑 والبوّابةُ **قبل** اللقطة والحذف — لا بعد أثرٍ لا يُسترَدّ", () => {
+    for (const rel of PATHS) {
+      const src = read(rel);
+      const gate = src.indexOf("requireOwnerForBulk(");
+      const cap = src.indexOf("captureCardsBeforeDelete(");
+      const del = src.search(/prisma\.rechargeCard\.delete(Many)?\s*\(/);
+      assert.ok(gate > 0 && gate < cap, `البوّابةُ بعد اللقطة في ${rel}`);
+      assert.ok(gate < del, `البوّابةُ بعد الحذف في ${rel}`);
+    }
+  });
+
+  test("والعددُ يُقاس بشرطِ الحذف نفسِه لا بما حدّده المتصفّح", () => {
+    const src = read(PATHS[0]);
+    assert.ok(/prisma\.rechargeCard\.count\(\{ where \}\)/.test(src),
+      "العددُ من العميل — فيُمكن تجاوزُ البوّابة بإرسالِ رقمٍ صغير");
+  });
+
+  test("🔒 والإذنُ بكلمةِ مرور **المالك** لا بصلاحيّةِ الحذف", () => {
+    const g = read("src/lib/bulkDeleteGate.ts");
+    assert.ok(g.includes("confirmOwnerPassword("), "لا تحقّقَ من كلمة مرور المالك");
+    // و`confirmOwnerPassword` يشترط isOwner — لا يكفي أن يكون مديراً
+    assert.ok(read("src/lib/guard.ts").includes("owner?.isOwner"), "المالكُ غيرُ مشروطٍ في المُساعِد");
+  });
+
+  test("والمنعُ والإذنُ كلاهما يُسجَّلان — فبوّابةٌ بلا أثرٍ لا تُحاسِب", () => {
+    const g = read("src/lib/bulkDeleteGate.ts");
+    assert.ok(g.includes("BULK_DELETE_BLOCKED"), "المنعُ يمرّ بلا أثر");
+    assert.ok(g.includes("BULK_DELETE_OWNER_OK"), "الإذنُ يمرّ بلا أثر");
+  });
+
+  test("🖥️ والواجهتان تطلبان الكلمةَ وتُعيدان المحاولةَ مرّةً واحدة", () => {
+    for (const rel of ["src/app/(app)/cards/page.tsx", "src/app/(app)/manager-accounts/page.tsx"]) {
+      const src = read(rel);
+      assert.ok(src.includes("needOwnerPassword"), `واجهةٌ لا تفهم البوّابة: ${rel}`);
+      assert.ok(/كلمةُ مرور المالك/.test(src), `واجهةٌ لا تطلب الكلمة: ${rel}`);
+    }
+  });
+
+  test("ولا تُخزَّن كلمةُ المرور في حالةٍ أو تخزينٍ محلّيّ", () => {
+    for (const rel of ["src/app/(app)/cards/page.tsx", "src/app/(app)/manager-accounts/page.tsx"]) {
+      const src = read(rel);
+      assert.equal(/localStorage[^\n]*ownerPassword|useState[^\n]*ownerPassword/.test(src), false,
+        `كلمةُ المالك مُخزَّنةٌ في ${rel}`);
+    }
+  });
+});

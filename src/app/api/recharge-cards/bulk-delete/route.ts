@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireOwnerForBulk } from "@/lib/bulkDeleteGate";
 import { captureCardsBeforeDelete, inspectPendingDeletedCards, GUARD_INLINE_MAX } from "@/lib/cardDeleteGuard";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -6,6 +7,8 @@ import { guard } from "@/lib/guard";
 
 const schema = z.object({
   ids: z.array(z.coerce.number()).min(1, "لم تُحدَّد كروت"),
+  // و-٤ · إذنُ المالك للدفعات الكبيرة (تُطلَب فوق BULK_DELETE_GATE فقط)
+  ownerPassword: z.string().optional(),
 });
 
 // حذف جماعي لكروت التفعيل من المخزن نهائياً (صلاحية cards.delete).
@@ -25,6 +28,15 @@ export async function POST(request: Request) {
   const where = { id: { in: parsed.data.ids }, useDate: null, agentId: g.session?.agentId ?? -1 };
   // المبلغ الذي سينقص من «ديون الكارتات» — بنفس شرط الحذف حرفياً وقبله
   // (المحذوف فعلاً قد يقلّ عن المحدَّد، فتقدير المتصفح وحده يضلّل)
+  // 🛡️ و-٤ · بوّابةُ الدفعة الكبيرة **قبل أيّ أثر**: العددُ يُقاس بشرطِ الحذف نفسِه
+  //   (فالمحدَّدُ في المتصفّح قد يزيد عمّا يُحذَف فعلاً، والبوّابةُ تُبنى على الواقع).
+  const doomedCount = await prisma.rechargeCard.count({ where });
+  const gate = await requireOwnerForBulk({
+    count: doomedCount, userId: g.session?.userId,
+    ownerPassword: parsed.data.ownerPassword, what: "حذفٌ جماعيٌّ من صفحة الكروت",
+  });
+  if (gate) return gate;
+
   const agg = await prisma.rechargeCard.aggregate({ where, _sum: { price: true } });
   const removedDebt = agg._sum?.price ?? 0;
   // السيريلات قبل الحذف — الحذف فيزيائي فلا سبيل لمعرفتها بعده (المرحلة ٨)

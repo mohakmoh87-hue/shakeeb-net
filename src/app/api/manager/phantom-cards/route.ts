@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireOwnerForBulk } from "@/lib/bulkDeleteGate";
 import { captureCardsBeforeDelete, inspectPendingDeletedCards, GUARD_INLINE_MAX } from "@/lib/cardDeleteGuard";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -229,6 +230,16 @@ export async function POST(request: Request) {
   //   وهذا المسارُ بعينه هو الذي حذف ٧٤ كارتاً حقيقيّاً (٩ آب) وتعذّر إثباتُها لأنّ
   //   السجلَّ كتب المُعرِّفات لا السيريالات. فاللقطةُ تحفظ الصفَّ كاملاً، والفحصُ الصامتُ
   //   في الساس يجري دوريّاً ويُبلّغ عن كلّ حالةٍ غيرِ طبيعيّة.
+  // 🛡️ و-٤ · وهذا **مسارُ الحادثة نفسِه**: ٤٣٤ كارتاً في ضغطةٍ واحدةٍ يومَ ٩ آب،
+  //   منها ٧٤ مبيعاً ومقبوضَ الثمن. فلا يمرّ فوقَ الحدّ إلّا بكلمةِ مرور المالك.
+  {
+    const gate = await requireOwnerForBulk({
+      count: cardIds.length, userId: g.session?.userId,
+      ownerPassword: (body as { ownerPassword?: unknown } | null)?.ownerPassword,
+      what: "حذفٌ من الكروت الوهمية",
+    });
+    if (gate) return gate;
+  }
   const captured = await captureCardsBeforeDelete(cardIds, agentId, g.session.fullName ?? g.session.username, "phantom");
   const res = await prisma.rechargeCard.deleteMany({ where: delWhere });
   let keptDebt = 0;

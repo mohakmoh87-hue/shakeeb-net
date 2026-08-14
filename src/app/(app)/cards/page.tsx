@@ -130,11 +130,20 @@ export default function CardsPage() {
     )) return;
     setDeleting(true);
     try {
-      const res = await fetch("/api/recharge-cards/bulk-delete", {
+      const send = (ownerPassword?: string) => fetch("/api/recharge-cards/bulk-delete", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [...selected] }),
+        body: JSON.stringify({ ids: [...selected], ...(ownerPassword ? { ownerPassword } : {}) }),
       });
-      const d = await res.json();
+      let res = await send();
+      let d = await res.json();
+      // 🛡️ و-٤ · بوّابةُ الدفعة الكبيرة: فوقَ خمسينَ كارتاً تُطلَب كلمةُ مرور المالك
+      //   وتُعاد المحاولةُ مرّةً واحدة. ولا تُخزَّن الكلمةُ ولا تُرسَل إلّا في هذا النداء.
+      if (!res.ok && d?.needOwnerPassword) {
+        const pass = window.prompt(`${d.error}\n\nكلمةُ مرور المالك:`);
+        if (!pass) { setError("أُلغي الحذف — لم تُدخَل كلمةُ مرور المالك"); return; }
+        res = await send(pass);
+        d = await res.json();
+      }
       if (!res.ok) { setError(d.error ?? "فشل الحذف"); return; }
       loadAvail(); load();
     } catch { setError("تعذّر الاتصال بالخادم"); }
