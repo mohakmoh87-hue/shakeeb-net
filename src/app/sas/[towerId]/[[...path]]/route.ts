@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ownsTower } from "@/lib/guard";
 import { proxyToSas } from "@/lib/sasProxy";
+import { meter } from "@/app/api/_lib/egressMeter";
 import { cookies } from "next/headers";
 import { parseSasScope, sasScopeSegment } from "@/lib/sasScope";
 import { sasBaseUrl, sasLogin } from "@/lib/sas4";
@@ -90,8 +91,27 @@ async function handle(request: Request, towerSeg: string, path: string[] | undef
   // 🔒 واللوحةُ يجب أن تتبع هذا المكتب — والمكتبُ فُحص أعلاه بـ`ownsTower`. و`sasHost`
   //   يسقط إلى أعمدة المكتب إن لم تتبعه، فلا تُفتَح لوحةُ مكتبٍ آخرَ بتمريرِ معرّف.
   // والبادئةُ تحمل **المقطعَ كما وصل** كي تبقى الطلباتُ النسبيّةُ على اللوحة نفسِها.
-  return proxyToSas(request, host, joined, `/sas/${sasScopeSegment(Number(towerId), panelId)}/`, undefined,
+  const res = await proxyToSas(request, host, joined, `/sas/${sasScopeSegment(Number(towerId), panelId)}/`, undefined,
     () => scopedSasToken(Number(towerId), panelId));
+  // 📏 قياسُ النقل (طلبُ محمد 2026-08-15): كم بايتاً تخرج فعلاً من هذا الوسيط؟ الفاتورةُ
+  //   تقول «٥٫٣١ غيغا» ولا تقول مِن أين — وهذا الوسيطُ المشتبهُ الأوّل، فكلُّ أصلٍ من
+  //   لوحة الساس يعبره ذهاباً وإياباً، والعودةُ هي المدفوعة.
+  // ⚠️ ولا يُقاس بـ`content-length`: `proxyToSas` **لا يُصرّح به** (يُعيد `content-type`
+  //   و`cache-control` و`location` فقط) — فالقياسُ بالرأس كان سيسجّل صفراً ويُكذّبنا.
+  //   فيُقرأ الجسمُ فعليّاً ويُعاد بناءُ الاستجابة: نسخةٌ واحدةٌ لمخزَنٍ **موجودٍ في الذاكرة
+  //   أصلاً** (الوسيطُ يجمعه كاملاً قبل الإرسال)، فلا تحميلَ إضافيٌّ يُذكَر.
+  // ⛔ وحالاتُ «بلا جسم» تُستثنى **قبل** لمس الجسم: `new Response(body, {status:304})`
+  //   يرمي (٢٠٤/٢٠٥/٣٠٤ لا تقبل جسماً)، ولو رميَ بعد `arrayBuffer()` لكان الجسمُ قد
+  //   استُهلك فيصير الارتدادُ إلى `res` استجابةً ميّتة — أي **عطبٌ يصنعه القياسُ نفسُه**
+  //   في أكثرِ الردود شيوعاً (٣٠٤ لأصلٍ مخزَّنٍ في المتصفّح).
+  if (res.status === 204 || res.status === 205 || res.status === 304) return res;
+  try {
+    const buf = await res.arrayBuffer();
+    meter(new URL(request.url).pathname, buf.byteLength);
+    return new Response(buf, { status: res.status, headers: res.headers });
+  } catch {
+    return res; // تعذّرت القراءة (بثٌّ مثلاً) ⇒ تُخدَم كما هي — القياسُ لا يُعطّل خدمة
+  }
 }
 
 type Ctx = { params: Promise<{ towerId: string; path?: string[] }> };

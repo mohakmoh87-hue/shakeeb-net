@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { localSasBase, useLocalSasBase } from "@/lib/localSas";
+import { localSasBase, useLocalSasBase } from "./localSas";
 
 // زر طباعة فورية: يرسل أمر الطباعة الصامتة مباشرة (بلا فتح أي صفحة أو تاب).
 // ═════ محليٌّ أوّلاً (طلب محمد 2026-08-14): «٥ ثوانٍ كبيرةٌ جدّاً» ═════
@@ -23,7 +23,11 @@ export default function PrintNowButton({
     setSt("busy");
 
     // ١) المحليّ: إرسالٌ لحظيّ وطباعةٌ مباشرة — والردُّ يعود بعد الطبع الفعليّ
-    const base = warmBase || (await localSasBase().catch(() => ""));
+    // 🔴 `wait: true` هو إصلاحُ بلاغ محمد («٥ ثوانٍ لكلّ وصل»): كان الجسُّ المشتركُ يردّ
+    //    «لا عامل» فوراً إن جسَّ مكوّنٌ آخرُ قبل ١٥ ثانية — فيسقط الوصلُ إلى الطابور
+    //    السحابيّ **والعاملُ يعمل على الحاسبة نفسِها**. والآن نُنتظِر جواباً حقيقيّاً:
+    //    ١٫٥ث كحدٍّ أقصى على حاسبةٍ بلا عامل، وفوريٌّ إن كان موجوداً — مقابل ٥ ثوانٍ.
+    const base = warmBase || (await localSasBase({ wait: true }).catch(() => ""));
     if (base) {
       try {
         const ctrl = new AbortController();

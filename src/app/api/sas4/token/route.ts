@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { meter } from "@/app/api/_lib/egressMeter";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { sasScopeSegment } from "@/lib/sasScope";
@@ -58,6 +59,11 @@ export async function POST(request: Request) {
     const apiUrl = `/sas/${sasScopeSegment(towerId, panelId)}/admin/api/index.php/api/`;
     const host = creds.loginUrl.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
     const res = NextResponse.json({ token, apiUrl });
+    // 📏 عدّادُ «كم مرّةً اختير المسارُ السحابيّ أصلاً؟» — هذا النداءُ لا يقع إلّا حين لا
+    //   يُعثَر على العامل المحلّيّ، فعددُه **مقياسُ فشلِ الجسّ** مباشرةً. وبعد إصلاح
+    //   الخانق يجب أن يهبط إلى ما يقارب الصفر على حاسبات المكاتب (ويبقى للهواتف).
+    //   والبايتاتُ هنا تافهةٌ — المقصودُ العدُّ لا الحجم.
+    meter("/api/sas4/token", 0);
     // كوكي المضيف والمكتب لبروكسي /admin/* والتقاط العرض
     res.cookies.set("sas_host", host, { path: "/", httpOnly: true, sameSite: "lax" });
     res.cookies.set("sas_tower", String(towerId), { path: "/", httpOnly: true, sameSite: "lax" });

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import AchievementsModal from "@/components/AchievementsModal";
 import ChampionEmoji from "@/components/ChampionEmoji";
 import Link from "next/link";
-import { localSasBase } from "@/lib/localSas";
+import { localSasBase } from "./localSas";
 import { onMoneyRefresh } from "@/lib/moneyRefresh";
 import { isPageActive } from "@/lib/usePolling";
 import { slaStateOf, fmtMin, SLA_ALARM_MIN_DEFAULT, SLA_SEND_MIN_DEFAULT, type SlaCard } from "@/lib/odooSla";

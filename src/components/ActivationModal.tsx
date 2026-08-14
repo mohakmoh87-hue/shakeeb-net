@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { prepareSasEmbed } from "@/lib/sasEmbed";
 import { sasScopedPath } from "@/lib/sasScope";
-import { useLocalSasBase } from "@/lib/localSas";
+import { useLocalSasBase } from "./localSas";
 import { computeDateTo } from "@/lib/subscription";
 import { announceMoneyChanged } from "@/lib/moneyRefresh";
 

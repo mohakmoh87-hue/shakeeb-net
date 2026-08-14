@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
-import { useLocalSasBase } from "@/lib/localSas";
+import { useLocalSasProbe } from "@/components/localSas";
 import { sasScopedPath } from "@/lib/sasScope";
 
 // hasSas: علامة آمنة من الخادم «المكتب مربوط بـSAS» — اليوزر لا يصل لغير مديري المكاتب
@@ -44,7 +44,11 @@ export default function Sas4ImportPage() {
   // العامل المحلي على حاسبة المكتب (تلقائي): إن وُجد تُحمَّل SAS منه مباشرةً (أسرع).
   // 🔁 وبإعادة محاولةٍ: جسّةٌ واحدةٌ فاشلة (لحظةَ إعادة تشغيل العامل مع أيّ نشرة) كانت
   //    تُبقي الصفحةَ على المسار السحابيّ البطيء حتى تُحدَّث يدويّاً.
-  const localBase = useLocalSasBase();
+  // 🔴 والأهمُّ `settled` (بلاغُ محمد 2026-08-15): كان الأثرُ أدناه يعمل في أوّل تصييرٍ
+  //    و`localBase` **فارغٌ حتماً** (الخطّافُ يبدأ فارغاً) ⇒ يأخذ الفرعَ السحابيَّ ويُطلق
+  //    نداءَ الرمز إلى الموقع، ثمّ يُصحَّح إن ربح الجسُّ السباق. فمن خسر السباقَ حُمِّلت
+  //    لوحةُ الساس كلُّها عبر أمريكا — بطءٌ يراه المستخدم ونقلٌ يُدفَع ثمنُه.
+  const { base: localBase, settled } = useLocalSasProbe();
 
   useEffect(() => {
     fetch("/api/towers").then((r) => { if (r.ok) r.json().then(setTowers); });
@@ -57,6 +61,10 @@ export default function Sas4ImportPage() {
   useEffect(() => {
     setFrameUrl(null); setUsers([]); setSelected(new Set());
     if (!towerId) return;
+    // ⏸️ لا قرارَ قبل الحقيقة: ما لم تنتهِ أوّلُ جسّةٍ فنحن لا نعلم أمحلّيٌّ هو أم سحابيّ،
+    //    واختيارُ السحابة هنا كان يُحمّل اللوحةَ كلَّها عبر الموقع قبل أن يصحّح الجسُّ.
+    //    والانتظارُ ١٫٥ث كحدٍّ أقصى (مهلةُ الجسّ) — وعلى الهاتف يفشل فوراً فلا تأخير.
+    if (!settled) return;
     let active = true;
     // العامل المحلي: يحقن التوكن في اللوحة تلقائياً، فنحمّلها منه مباشرةً (سريع)
     if (localBase) {
@@ -83,7 +91,7 @@ export default function Sas4ImportPage() {
     }
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [towerId, panelId, localBase]);
+  }, [towerId, panelId, localBase, settled]);
 
   // سحب المشتركين المعروضين حالياً في اللوحة
   async function showCurrent() {

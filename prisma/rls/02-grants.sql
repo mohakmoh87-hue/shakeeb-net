@@ -10,8 +10,17 @@ REVOKE ALL ON ALL TABLES IN SCHEMA public FROM agent_worker;
 GRANT SELECT ON db_agent_roles TO agent_worker; -- أعيدت بعد REVOKE الشامل
 
 -- ---------- agents: قراءة أعمدة محدّدة فقط (بلا workerDbUrl السرّي) ----------
+-- 🔴 «permission denied for table agents» — عطبٌ حيٌّ في الإنتاج (قِيس 2026-08-15 من سجلّ
+--    Railway: ~٣ مرّات في الدقيقة، ٢٤ ساعة). المصدر: `sendAllowedFor` في `odooSync.ts`
+--    تقرأ `odooSlaSendAllowed` على حاسبة المكتب، والعمودُ **لم يُدرَج هنا** حين أُضيفت
+--    ميزةُ مهلة أودو ⇒ خرقٌ لقاعدة المستودع: «كتابةٌ/قراءةٌ جديدة = GRANT + سياسة».
+--    والأسوأ أنّه صامتٌ: `catch { v = false }` هناك «فشلٌ مغلق» — فالنتيجةُ أنّ
+--    **ميزةَ رسائل أودو التلقائيّة لا تعمل أبداً** مهما أشعلها المالك، بلا أيّة رسالة.
+--    (والإذنُ قراءةُ رايةٍ منطقيّةٍ واحدةٍ لصفّ الوكيل نفسِه — لا يُوسّع العزلَ بشيء:
+--     سياسةُ `rls_agents` تقصر الصفوفَ على وكيل الحاسبة كما هي.)
 GRANT SELECT (id, name, "officeCap", "planExpiry", "isTrial", approved,
               "backupEmail", "salaryPeriodFrom", "salaryPeriodTo",
+              "odooSlaSendAllowed",
               "isDeleted", "createdAt", "updatedAt")
   ON agents TO agent_worker;
 
