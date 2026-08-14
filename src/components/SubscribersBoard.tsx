@@ -30,7 +30,7 @@ type Subscriber = {
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
 type Tower = { id: number; name: string | null; panels?: { id: number; label: string | null }[]; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null; loanMode?: string | null; rewardsEnabled?: string | null };
-type Receipt = { id: number; date: string | null; dateTo: string | null; money: number | null; moneyIn: number | null; moneyCarry: number | null; cardType: string | null; month: string | null };
+type Receipt = { id: number; date: string | null; dateTo: string | null; money: number | null; moneyIn: number | null; moneyCarry: number | null; cardType: string | null; month: string | null; isMaster?: boolean | null };
 type MaintLog = { id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; amount: number | null; date: string };
 type InvRow = { id: number; number: number | null; date: string | null; totalMy: number | null; waselHim: number | null; type: string | null; note: string | null; subscriberId: number | null };
 
@@ -359,6 +359,18 @@ export default function SubscribersBoard() {
     const res = await fetch(`/api/subscription-entries/${id}/void`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reverse: choice.reverse }) });
     if (res.ok) { announceMoneyChanged(); loadReceipts(); load(query, showAllTowers); }
     else { const d = await res.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); }
+  }
+
+  // أ-٥/٣ · تحويلُ وصلٍ بين الماستر والنقديّ **من سجلّ صاحبه** (طلبُ محمد 2026-08-14).
+  // التحويلُ نقلُ دفترٍ لا خلقُ مال: المبلغُ والتاريخُ والمصدرُ كما هي، ويتبدّل النوعُ
+  // ووسمُه معاً — فلا يُعَدُّ المالُ مرّتَين في التقرير اليوميّ.
+  async function convertReceipt(rc: Receipt) {
+    const toMaster = !rc.isMaster;
+    if (!confirm(`تحويل الوصل #${rc.id} (${fmt(rc.moneyIn)} د.ع) إلى ${toMaster ? "🅜 ماستر" : "نقدي"}؟\n\nالمبلغ لا يتغيّر — ينتقل بين الصندوق وحساب الماستر فقط.`)) return;
+    const res = await fetch(`/api/subscription-entries/${rc.id}/convert`, { method: "POST" });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok) { announceMoneyChanged(); loadReceipts(); load(query, showAllTowers); }
+    else alert(d.error ?? "تعذّر التحويل");
   }
 
   // ===== إجراءات شريط الخيارات =====
@@ -779,10 +791,10 @@ export default function SubscribersBoard() {
                 <thead className="sticky top-0 bg-surface-2 text-ink-2"><tr>
                   <th className="p-2">#</th><th className="p-2">التاريخ والوقت</th><th className="p-2">الباقة</th>
                   <th className="p-2">أشهر</th><th className="p-2">القيمة</th><th className="p-2">الواصل</th>
-                  <th className="p-2">الدين</th><th className="p-2">ينتهي</th><th className="p-2"></th>
+                  <th className="p-2">الدين</th><th className="p-2">النوع</th><th className="p-2">ينتهي</th><th className="p-2"></th>
                 </tr></thead>
                 <tbody>
-                  {receipts.length === 0 ? <tr><td colSpan={9} className="p-6 text-center text-muted">لا توجد وصولات لهذا المشترك</td></tr>
+                  {receipts.length === 0 ? <tr><td colSpan={10} className="p-6 text-center text-muted">لا توجد وصولات لهذا المشترك</td></tr>
                     : receipts.map((rc) => (
                       <tr key={rc.id} className="border-t border-line">
                         <td className="p-2 text-muted">{rc.id}</td>
@@ -792,9 +804,21 @@ export default function SubscribersBoard() {
                         <td className="p-2">{fmt(rc.money)}</td>
                         <td className="p-2 text-ok">{fmt(rc.moneyIn)}</td>
                         <td className="p-2 text-bad">{fmt(rc.moneyCarry)}</td>
+                        {/* أ-٥/٣ · نوعُ الوصل ظاهرٌ — فالتحويلُ يحتاج أن تعرف الحالَ أوّلاً */}
+                        <td className="p-2">{rc.isMaster
+                          ? <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-bold text-indigo-700">🅜 ماستر</span>
+                          : <span className="text-[11px] text-muted">نقدي</span>}</td>
                         <td className="p-2" dir="ltr">{formatDate(rc.dateTo)}</td>
                         <td className="p-2"><div className="flex gap-1.5">
                           <PrintNowButton kind="subscription" id={rc.id} />
+                          {/* أ-٥/٣ · التحويلُ بين الماستر والنقديّ من سجلّ المشترك (طلبُ محمد) */}
+                          {can("receipts.void") && (rc.moneyIn ?? 0) > 0 && (
+                            <button onClick={() => convertReceipt(rc)}
+                              title={rc.isMaster ? "تحويل هذا الوصل إلى نقدي" : "تحويل هذا الوصل إلى ماستر"}
+                              className="rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100">
+                              {rc.isMaster ? "⇄ نقدي" : "⇄ ماستر"}
+                            </button>
+                          )}
                           {can("receipts.void") && <button onClick={() => voidReceipt(rc.id)} className="rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-bad hover:bg-red-100" title="حذف عكسي">🗑</button>}
                         </div></td>
                       </tr>

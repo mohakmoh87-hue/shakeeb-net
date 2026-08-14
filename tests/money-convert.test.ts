@@ -9,7 +9,7 @@ import path from "node:path";
 //  وبالعكس… لكن لم أرَ ذلك يُطبَّق» — وهو صحيح: البندُ كان موصوفاً ولم يُبنَ.
 const ROOT = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
-const API = "src/app/api/money/[id]/convert/route.ts";
+const API = "src/app/api/_lib/convertKind.ts"; // المنطقُ الواحد — يناديه مسارُ المال ومسارُ سجلّ المشترك
 
 describe("أ-٥/٣ · تحويلُ الوصل بين الماستر والنقديّ", () => {
   test("🔑 المعنى يُقرَأ من `moneyKinds.ts` لا من قائمةٍ يدويّة", () => {
@@ -34,9 +34,28 @@ describe("أ-٥/٣ · تحويلُ الوصل بين الماستر والنقد
     assert.ok(/status: 409/.test(src), "ضغطتان متتاليتان تُحوّلان مرّتَين بلا إنذار");
   });
 
-  test("🔒 والعزل: الصفُّ من مكتبٍ يملكه وكيلُ الجلسة", () => {
+  test("🔒 والعزل: الصفُّ من مكتبٍ يملكه وكيلُ الجلسة — في كلا المسارَين", () => {
+    assert.ok(read("src/app/api/money/[id]/convert/route.ts").includes("ownsTower(g.session, tx.towerId)"), "مسارُ المال بلا فحصِ ملكيّة");
+    assert.ok(read("src/app/api/subscription-entries/[id]/convert/route.ts").includes("ownsTower(g.session, entry.towerId)"), "مسارُ سجلّ المشترك بلا فحصِ ملكيّة");
+  });
+
+  test("🔴 وسمُ المصدر يتبدّل مع النوع — وإلّا عُدَّ المالُ مرّتَين (علّةٌ اصطادها سؤالُ محمد 2026-08-14)", () => {
+    // التقريرُ اليوميُّ يَعُدُّ التفعيلات من `subscription_entries.isMaster` والفواتيرَ من
+    // `invoices.type` — فتبديلُ `money_tx.sourceType` وحدَه يُبقي المالَ في سطر التفعيلات
+    // ويُضيفه إلى سطر الماستر معاً.
     const src = read(API);
-    assert.ok(src.includes("ownsTower(g.session, tx.towerId)"), "بلا فحصِ ملكيّةِ المكتب");
+    assert.ok(/subscriptionEntry\.updateMany[\s\S]{0,200}isMaster: toMaster/.test(src), "قيدُ التفعيل لا يُوسَم — يُعَدُّ المالُ مرّتَين");
+    assert.ok(/invoice\.update[\s\S]{0,120}type: toMaster \? "ماستر" : null/.test(src), "نوعُ الفاتورة لا يتبدّل");
+    assert.ok(/\$transaction/.test(src), "الطرفان بلا معاملة — انقطاعٌ بينهما يترك تناقضاً");
+  });
+
+  test("🖥️ وزرُّ التحويل في **سجلّ وصولات المشترك** (طلبُ محمد الصريح)", () => {
+    const b = read("src/components/SubscribersBoard.tsx");
+    assert.ok(b.includes("convertReceipt("), "لا دالّةَ تحويلٍ في سجلّ المشترك");
+    assert.ok(b.includes("/convert"), "السجلُّ لا ينادي المسار");
+    assert.ok(/⇄ نقدي|⇄ ماستر/.test(b), "الزرُّ لا يُظهر الاتّجاه");
+    // وتفعيلٌ بلا واصلٍ لا حركةَ له ⇒ لا زرَّ (وإلّا ضغطةٌ تُخرج خطأً بلا معنى)
+    assert.ok(/\(rc\.moneyIn \?\? 0\) > 0/.test(b), "الزرُّ يظهر لوصلٍ بلا واصل");
   });
 
   test("ولا يُخمَّن في حركةٍ يدويّةٍ أو نوعٍ لا مقابلَ له", () => {
