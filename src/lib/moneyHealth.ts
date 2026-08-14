@@ -328,6 +328,29 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
     amount: n(x.price), at: s(x.at),
   }));
 
+  // ── و-١-ب · كروتٌ حُذفت حديثاً ولم تُراجَع — **حتّى السليمةُ منها** ──
+  //
+  // 🔴 **تصحيحُ محمد 2026-08-14**: «كلُّ كارتٍ يعني مالاً بالنسبة لي، **وقد أكون مسحتُه
+  //   سهواً** وقد كنتُ أقصد كارتاً آخرَ أصلاً — فيجب أن يُنبِّهني على ذلك.»
+  //   وكان الحكمُ الطبيعيُّ يمرّ صامتاً تماماً بطلبه الأوّل. لكنّ **خطأَ السهو لا يُكتشَف
+  //   أبداً** بلا عرضٍ: مخزونٌ يذهب بثمنه ولا شذوذَ يُبلِّغ عنه أحد.
+  //   🔑 فهذه الحالةُ **إحاطةٌ لا إنذار** (`info`): تُجمَع كروتُ الأسبوع الأخير في صفٍّ
+  //   واحدٍ بعددها ومبلغها، وبابُ الرجوع مفتوحٌ من لوحة الكروت المحذوفة. وتختفي حين
+  //   تُعالَج أو يمضي الأسبوع — فلا تصير سجلّاً دائماً يزحم الوجه.
+  await add("cards_deleted_recent", "لا كروتَ محذوفةً تنتظر مراجعتك", `
+    SELECT d.id, d.serial, d.price, d."deletedBy", d.reason, d."sasInfo",
+           to_char(d."deletedAt" ${BG}, 'YYYY-MM-DD HH24:MI') AS at
+      FROM deleted_card_logs d
+     WHERE d."agentId" = ${agentId} AND d."handledAt" IS NULL AND d.verdict = 'normal'
+       AND d."deletedAt" > NOW() - INTERVAL '7 days'
+     ORDER BY d.id DESC LIMIT 50`, (x) => ({
+    rowKey: `dcard:${s(x.id)}`,
+    title: "كارتٌ حُذف من مخزنك — فُحص ولا تفعيلَ له في الساس",
+    detail: `سيريال ${s(x.serial)} · ${n(x.price)} د.ع · ${s(x.at)} · بيد ${s(x.deletedBy) || "؟"} · ${s(x.reason) === "phantom" ? "من الكروت الوهمية" : s(x.reason) === "bulk" ? "حذفٌ جماعيّ" : "حذفٌ مفرد"}`,
+    how: "لا شذوذَ فيه: فُحص في الساس ولا تفعيلَ له. ويُعرَض لأنّ **الحذفَ سهواً لا يُكتشَف بغير هذا** — فإن كنتَ قصدتَ كارتاً آخرَ فاضغط «أعِدْه للمخزن» أدناه، فيرجع بسيريالِه ورمزِه وسعرِه وتاريخِ إدخاله كما كان. وإن كان مقصوداً فتجاهَلِ الحالة.",
+    severity: "info", amount: n(x.price), at: s(x.at),
+  }));
+
   // ── ج-١ · 🔴 مدّةُ تفعيلٍ مقلوبةٌ أو صفر — قِيس ١٥ قيداً (منها −٢٣ يوماً) ──
   // ⚖️ **مبدأُ «زوالِ الأثر» (تصحيحُ محمد 2026-08-14)**: «هذا مشتركٌ حُلّت مشكلتُه سابقاً
   //   فلماذا يُظهره لي الآن كأنّه حالةٌ يجب اتّخاذُ إجراءٍ لها؟ ألا يقارن الحارسُ ما تمّ على
@@ -771,21 +794,9 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
     severity: "critical", amount: n(x.price), at: s(x.at),
   }));
 
-  // ── ٤) تقدُّمُ المسح — فلا يظنّ المالكُ أنّ «صفراً» تعني السلامةَ وهي تعني «لم يُفحَص» ──
-  // ⚠️ وهذا البندُ إحاطةٌ لا حالة: يظهر ما دام الفحصُ ناقصاً، ويختفي حين يكتمل.
-  await add("card_sweep_progress", "فحصُ الكروت في الساس مكتمل", `
-    SELECT (SELECT count(*)::int FROM recharge_cards WHERE "agentId" = ${agentId} AND serial IS NOT NULL) AS total,
-           (SELECT count(*)::int FROM card_sas_checks WHERE "agentId" = ${agentId}) AS checked
-     WHERE (SELECT count(*)::int FROM card_sas_checks WHERE "agentId" = ${agentId})
-         < (SELECT count(*)::int FROM recharge_cards WHERE "agentId" = ${agentId} AND serial IS NOT NULL)`,
-    (x) => ({
-      rowKey: "sweep:progress",
-      title: "فحصُ الكروت في الساس ما زال جارياً",
-      detail: `فُحص ${n(x.checked)} من ${n(x.total)} كارتاً · والمسحُ يعمل صامتاً بدفعاتٍ صغيرة`,
-      how: "لا إجراءَ منك: الحارسُ يفحص دفعةً كلَّ عشر دقائق (بحثُ الساس ~١.٥ث للكارت فلا يُستعجل). والمهمُّ أن تعرف أنّ **غيابَ حالةٍ الآن لا يعني سلامةَ ما لم يُفحَص بعد** — وهذا البندُ يختفي حين يكتمل المسح.",
-      severity: "info",
-    }));
-
+  // ── ٤) «تقدُّمُ المسح» — أُسقط مع إلغاء المسح الدوريّ (قرارُ محمد 2026-08-14) ──
+  //   فبندٌ يُعلن تقدُّمَ مسحٍ لم يبقَ يعمل هو كذبٌ مؤدَّب. والفحصُ الموجَّه عند الحذف
+  //   لا يحتاج شريطَ تقدُّمٍ: كارتٌ واحدٌ يُفحَص في ثانيتَين ويُبلَّغ عنه فوراً.
 
   // ── ٧) أرقامُ إحاطةٍ (لا حالاتٍ) ──
   let summary: Row = {};

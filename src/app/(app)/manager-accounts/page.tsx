@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import CardGuardPanel from "@/components/CardGuardPanel";
 import PageHeader from "@/components/PageHeader";
 import OfficeChat from "@/components/OfficeChat";
 import MoneyHealthButton from "@/components/MoneyHealthButton";
@@ -122,16 +121,6 @@ export default function ManagerAccountsPage() {
   const [pToDay, setPToDay] = useState("");
   const [savingPeriod, setSavingPeriod] = useState(false);
   const [periodMsg, setPeriodMsg] = useState("");
-  // 🛡️ حارسُ المال: عددُ الحالات التي تنتظر قراراً — شارةٌ على الزرّ فتُرى بلا فتحِ القسم
-  const [guardOpen, setGuardOpen] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/manager/card-guard?view=open", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (alive && j) setGuardOpen(j.openCount ?? 0); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
 
   // لوحة الكروت الوهمية
   const [phantomCards, setPhantomCards] = useState<PhantomCard[]>([]);
@@ -383,7 +372,6 @@ export default function ManagerAccountsPage() {
           ["tx", "💵", "حركةٌ جديدة · المدراء · الرواتب", !denied && !!data, 0],
           ["wa", "💬", "واتساب المكاتب", waOffices.length > 0, 0],
           ["phantom", "🔴", "الكروت الوهمية", phantomLoaded && !phantomDenied, phantomCards.length],
-          ["guard", "🛡️", "حارسُ المال · الكروتُ المحذوفة", true, guardOpen],
           ["cardprice", "💳", "سعر الكارت لكل فئة", !!cardData?.canEdit, 0],
           ["reward", "🎁", "مكافأة التفعيل", true, 0],
           ["install", "💻", "تنصيب حاسبة مكتب", true, 0],
@@ -674,8 +662,6 @@ export default function ManagerAccountsPage() {
         </div>
       )}
       </>)}
-
-      {sec === "guard" && <CardGuardPanel />}
 
       {sec === "cardprice" && (<>
       {/* تحديد سعر الكارت لكل فئة (للمدير حصراً) — يُطبَّق على الكروت الجديدة فقط */}

@@ -112,9 +112,10 @@ describe("🛡️ حارسُ المال · الكروتُ المحذوفة", () 
     assert.ok(/غيرُ مستخدَمٍ ولا تفعيلَ له في الساس/.test(g), "المخزونُ الحقيقيُّ لا يُحكَم طبيعيّاً");
   });
 
-  test("«طبيعيّ» وحدَه يمرّ صامتاً — وكلُّ ما عداه يُبلَّغ بإشعار", () => {
+  test("كلُّ حكمٍ يُبلَّغ — والطبيعيُّ مجموعاً والشاذُّ منفرداً", () => {
     const g = read("src/lib/cardDeleteGuard.ts");
-    assert.ok(g.includes('if (verdict === "normal") continue;'), "قد يمرّ حكمٌ غيرُ طبيعيٍّ صامتاً");
+    // ⚠️ تغيّرت القاعدةُ بتصحيح محمد: الطبيعيُّ لم يبقَ صامتاً بل يُجمَع في تنبيهٍ واحد
+    assert.ok(g.includes("normals.push("), "الطبيعيُّ يمرّ صامتاً — فالحذفُ سهواً لا يُكتشَف");
     assert.ok(g.includes("await notify({"), "لا إبلاغَ بالحالة");
     for (const v of ["sold-unrecorded", "no-receipt", "bad-duration", "used-not-in-sas", "error"]) {
       assert.ok(g.includes(`"${v}"`), `حكمٌ بلا نصِّ إبلاغ: ${v}`);
@@ -136,5 +137,31 @@ describe("🛡️ حارسُ المال · الكروتُ المحذوفة", () 
     const g = read("src/lib/cardDeleteGuard.ts");
     assert.ok(g.includes('verdict = "bad-duration"'), "المدّةُ المقلوبةُ لا تُلتقَط");
     assert.ok(/days <= 0/.test(g), "شرطُ المدّة ليس «صفراً أو أقلّ»");
+  });
+});
+
+describe("🔔 حتّى الحذفُ الطبيعيُّ يُنبَّه عنه (تصحيحُ محمد 2026-08-14)", () => {
+  test("🔴 الطبيعيُّ لا يمرّ صامتاً — يُجمَع في تنبيهٍ واحدٍ للدفعة", () => {
+    const g = read("src/lib/cardDeleteGuard.ts");
+    assert.ok(g.includes("normals.push("), "الطبيعيُّ يُتخطّى بلا تنبيه — فالحذفُ سهواً لا يُكتشَف");
+    assert.ok(/type: "card-deleted"/.test(g), "لا تنبيهَ لحذفٍ طبيعيّ");
+    // واحدٌ للدفعة لا لكلّ كارت: التنبيهُ خارجَ الحلقة
+    const loopEnd = g.indexOf("if (normals.length) {");
+    const lastInLoop = g.lastIndexOf("refType: \"deletedCardLog\"");
+    assert.ok(loopEnd > lastInLoop, "التنبيهُ داخلَ الحلقة — فحذفُ مئةٍ يعني مئةَ إشعار");
+  });
+
+  test("والمبلغُ في التنبيه — فالكارتُ مالٌ لا رقمٌ", () => {
+    const g = read("src/lib/cardDeleteGuard.ts");
+    assert.ok(/total\.toLocaleString/.test(g), "التنبيهُ بلا مبلغ");
+    assert.ok(/أعِدْه للمخزن/.test(g), "التنبيهُ لا يدلّ على بابِ الرجوع");
+  });
+
+  test("واللوحةُ تُظهر محذوفاتِ الأسبوع بإحاطةٍ لا بإنذار", () => {
+    const h = read("src/lib/moneyHealth.ts");
+    assert.ok(h.includes('"cards_deleted_recent"'), "لا بندَ للمحذوفات الحديثة");
+    const blk = h.slice(h.indexOf('add("cards_deleted_recent"'));
+    assert.ok(/severity: "info"/.test(blk.slice(0, 1800)), "الإحاطةُ تُعَدُّ إنذاراً فتُخيف بلا سبب");
+    assert.ok(/INTERVAL '7 days'/.test(blk.slice(0, 900)), "بلا نافذةٍ زمنيّةٍ يصير سجلّاً دائماً");
   });
 });

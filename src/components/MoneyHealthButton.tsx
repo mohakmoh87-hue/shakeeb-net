@@ -107,6 +107,31 @@ export default function MoneyHealthButton() {
     load();
   }
 
+  // ═══ إجراءُ كارتٍ محذوف — من **هذه الصفحة** لا من قسمٍ منفصل (طلبُ محمد 2026-08-14:
+  //     «لا أريد الخيارَ الجديد… فيكفي وجودُه في صفحة حارس المال: التنبيهُ مع السيريال
+  //      وشرحُ الحالة») ═══
+  async function cardAction(c: Case, action: "restore-stock" | "restore-linked" | "recheck") {
+    const id = Number(c.rowKey.split(":")[1]) || 0;
+    if (!id) return;
+    if (action !== "recheck" && !window.confirm(
+      `${action === "restore-linked" ? "إرجاعُ الكارت مستخدَماً ومربوطاً بمشتركه" : "إرجاعُ الكارت للمخزن"}:
+${c.detail}
+
+متأكّد؟`)) return;
+    setBusy(c.rowKey); setMsg("");
+    const r = await fetch("/api/manager/card-guard", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setBusy(null);
+    if (!r.ok) { setMsg(j.error ?? "تعذّر الإجراء"); return; }
+    setMsg(j.already ? "الكارتُ موجودٌ سلفاً في المخزن ✓"
+      : j.cardId ? `✅ رجع الكارتُ للمخزن برقم #${j.cardId}`
+      : `🔍 أُعيد الفحص: ${j.verdict ?? ""}`);
+    load();
+  }
+
   async function ignore(c: Case) {
     const note = window.prompt(`تجاهُلُ هذه الحالة فلا تُعاد:\n${c.title}\n\nسببُ التجاهل (اختياريّ):`);
     if (note === null) return; // أُلغي
@@ -284,6 +309,22 @@ export default function MoneyHealthButton() {
                                 className="ms-2 font-normal underline">ختمُ «راجعها»</button>
                             )}
                           </div>
+                        )}
+                        {x.rowKey.startsWith("dcard:") && (
+                          <span className="me-2 inline-flex flex-wrap gap-2">
+                            <button onClick={() => void cardAction(x, "restore-stock")} disabled={busy === x.rowKey}
+                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-bold text-white disabled:opacity-50">
+                              📦 أعِدْه للمخزن
+                            </button>
+                            <button onClick={() => void cardAction(x, "restore-linked")} disabled={busy === x.rowKey}
+                              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-700 disabled:opacity-50">
+                              ↩ أعِدْه مربوطاً بمشتركه
+                            </button>
+                            <button onClick={() => void cardAction(x, "recheck")} disabled={busy === x.rowKey}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-bold text-slate-700 disabled:opacity-50">
+                              🔍 أعِد الفحص
+                            </button>
+                          </span>
                         )}
                         <button onClick={() => void ignore(x)} disabled={busy === x.rowKey}
                           className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-100 disabled:opacity-50">

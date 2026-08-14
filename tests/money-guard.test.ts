@@ -55,6 +55,18 @@ describe("🕵️ حارسُ المال", () => {
     assert.ok(src.includes("staleBefore"), "لا يذكر السببَ (الحجزُ ينتهي بخمس دقائق) فيُعاد الخطأ");
   });
 
+  test("🔴 لا قسمَ منفصلاً للكروت المحذوفة — كلُّ شيءٍ في صفحة الحارس (قرارُ محمد)", () => {
+    const page = read("src/app/(app)/manager-accounts/page.tsx");
+    assert.equal(page.includes("CardGuardPanel"), false, "بقي القسمُ المنفصلُ الذي رفضه محمد");
+    const btn = read(BTN);
+    // التنبيهُ بالسيريال وشرحُ الحالة وأزرارُ الإرجاع — في نفس الصفحة
+    assert.ok(btn.includes('x.rowKey.startsWith("dcard:")'), "لا أزرارَ إرجاعٍ داخل صفحة الحارس");
+    assert.ok(btn.includes("أعِدْه للمخزن"), "لا زرَّ إرجاعٍ للمخزن");
+    assert.ok(btn.includes("/api/manager/card-guard"), "الأزرارُ لا تنادي مسارَ حارس الكروت");
+    const h = read(HEALTH);
+    assert.ok(/rowKey: `dcard:/.test(h), "حالاتُ الكروت المحذوفة بلا هويّةٍ تعرفها الأزرار");
+  });
+
   test("🔒 بنيةُ القاعدة ليست في لوحةِ الوكيل بل في سكربتِ المالك", () => {
     assert.equal(read(HEALTH).includes("relrowsecurity"), false,
       "فحصُ RLS في لوحةِ الوكيل — وهو ضجيجٌ له وكشفُ داخليّاتٍ في آن");
@@ -277,13 +289,13 @@ describe("🔍 فحصُ الكروت في الساس", () => {
       "يُنادي الساسَ من داخل اللوحة — فتتجمّد الصفحةُ ١.٥ث لكلّ كارت");
   });
 
-  test("⚙️ والمسحُ يعمل بنفسه دوريّاً — «بدل أن أُخبرَك أنت بفعلها»", () => {
-    const sw = read("src/lib/cardSasCheck.ts");
-    assert.ok(sw.includes("sasSearchActivation"), "المسحُ لا يسأل الساس");
-    assert.ok(/where: \{ agentId, isDeleted: false \}/.test(sw), "جلساتُ الساس غيرُ معزولةٍ بالوكيل");
-    assert.ok(/agentId,\s*serial/.test(sw), "الحكمُ لا يُخزَّن بمفتاحِ وكيلٍ وسيريال");
+  test("⛔ ولا مسحَ دوريّاً للكروت — يزيد الفاتورة والمزامنةُ تفحصها يوميّاً (قرارُ محمد)", () => {
     const sch = read("src/lib/scheduler.ts");
-    assert.ok(sch.includes("sweepCardSasChecks"), "لا دورةَ مسحٍ في المُجدول");
+    assert.equal(sch.includes("sweepCardSasChecks"), false,
+      "أُعيد المسحُ الدوريُّ — ~٤٣٠٠ نداءَ ساسٍ يوميّاً لمعلومةٍ تُنتجها المزامنةُ مجّاناً");
+    assert.ok(/يزيد الفاتورة/.test(sch), "لا يذكر السببَ في الملفّ فيُعاد الخطأ");
+    // والفحصُ الموجَّهُ عند الحذف باقٍ — وهو المكانُ الصحيح
+    assert.ok(read("src/lib/cardDeleteGuard.ts").includes("sasSearchActivation"), "ضاع الفحصُ عند الحذف");
   });
 
   test("🔒 والحكمُ يُقارن الـrealm أيضاً — فـ@mu ليس @res", () => {
@@ -292,10 +304,4 @@ describe("🔍 فحصُ الكروت في الساس", () => {
     assert.ok(/trim\(\)\.toLowerCase\(\) === /.test(sw), "المقارنةُ غيرُ مطبَّعة");
   });
 
-  test("⚠️ وتقدُّمُ المسح مُعلَنٌ — فلا يُقرَأ «صفرٌ» على أنّه سلامةٌ وهو «لم يُفحَص»", () => {
-    const src = read(HEALTH);
-    assert.ok(src.includes('"card_sweep_progress"'), "لا بندَ لتقدُّم المسح");
-    const blk = src.slice(src.indexOf('add("card_sweep_progress"'));
-    assert.ok(/severity: "info"/.test(blk.slice(0, 1800)), "التقدُّمُ يُعَدُّ حالةً لا إحاطة");
-  });
 });

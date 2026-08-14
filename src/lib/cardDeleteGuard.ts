@@ -115,6 +115,8 @@ export async function inspectPendingDeletedCards(
   agentId?: number | null,
 ): Promise<{ checked: number; critical: number }> {
   const out = { checked: 0, critical: 0 };
+  /** الطبيعيُّ المحذوف — يُجمَع ليُبلَّغ عنه تنبيهاً واحداً في آخرِ الدورة */
+  const normals: { serial: string; price: number; agentId: number | null; towerId: number | null }[] = [];
   const pending = await prisma.deletedCardLog.findMany({
     where: { verdict: "pending", ...(agentId != null ? { agentId } : {}) },
     orderBy: { id: "asc" },
@@ -236,7 +238,18 @@ export async function inspectPendingDeletedCards(
       data: { verdict, verdictAt: new Date(), sasInfo: info.slice(0, 500) },
     });
     if (claimed.count !== 1) continue; // فحصٌ آخرُ سبقنا إليه
-    if (verdict === "normal") continue;
+    // ═══ 🔔 **وحتّى الطبيعيُّ يُبلَّغ** (تصحيحُ محمد 2026-08-14) ═══
+    //   «كلُّ كارتٍ يعني مالاً بالنسبة لي، **وقد أكون مسحتُه سهواً** وقد كنتُ أقصد كارتاً
+    //    آخرَ أصلاً — فيجب أن يُنبِّهني على ذلك.»
+    //   وكان الحكمُ الطبيعيُّ يمرّ صامتاً تماماً بطلبه الأوّل («إذا الأمرُ طبيعيٌّ فقط
+    //   يحذفه نهائيّاً»). والخطأُ في السهو **لا يُكتشَف أبداً** بلا تنبيه: مخزونٌ يذهب
+    //   بثمنه ولا شذوذَ يُبلِّغ عنه.
+    //   🔑 والحلُّ بلا ضجيج: الطبيعيُّ **يُجمَع في تنبيهٍ واحدٍ للدفعة** بعددِه ومبلغِه،
+    //   والشاذُّ يبقى إشعاراً منفرداً فوريّاً. فحذفُ مئةِ كارتٍ سليمٍ = تنبيهٌ واحد.
+    if (verdict === "normal") {
+      normals.push({ serial, price: row.price ?? 0, agentId: row.agentId, towerId: row.towerId });
+      continue;
+    }
     out.critical++;
     // 🔔 «وإن كان الأمرُ به شيءٌ غيرُ طبيعيٍّ فيُبلِّغ بالحالة» — إشعارٌ للمالك فوراً
     const label: Record<string, string> = {
@@ -252,6 +265,24 @@ export async function inspectPendingDeletedCards(
       body: `${label[verdict] ?? verdict} — سيريال ${serial || "؟"}${row.price ? ` · ${row.price.toLocaleString("en-US")} د.ع` : ""}
 ${info}`,
       refType: "deletedCardLog", refId: row.id, url: "/manager-accounts",
+    });
+  }
+
+  // ═══ 🔔 تنبيهُ الحذف الطبيعيّ — واحدٌ للدفعة، ومعه بابُ الرجوع ═══
+  if (normals.length) {
+    const total = normals.reduce((a, x) => a + (x.price || 0), 0);
+    const head = normals.slice(0, 5).map((x) => x.serial).join(" · ");
+    await notify({
+      agentId: normals[0].agentId, towerId: normals[0].towerId, type: "card-deleted",
+      title: normals.length === 1
+        ? `🗑️ حُذف كارتٌ من مخزنك (${total.toLocaleString("en-US")} د.ع)`
+        : `🗑️ حُذف ${normals.length} كارتاً من مخزنك (${total.toLocaleString("en-US")} د.ع)`,
+      body: `فُحصت في الساس ولا تفعيلَ لها — مخزونٌ حُذف بلا أثرٍ ماليّ.
+` +
+            `${head}${normals.length > 5 ? ` … و${normals.length - 5} غيرها` : ""}
+` +
+            `وإن كان الحذفُ سهواً فأرجِعها من «حارسُ المال · الكروتُ المحذوفة» بزرّ «أعِدْه للمخزن».`,
+      url: "/manager-accounts",
     });
   }
   return out;
