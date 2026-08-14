@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { reverseInvoiceStock } from "@/lib/invoiceReverse";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
@@ -37,23 +38,10 @@ export async function POST(
     await prisma.$transaction(async (tx) => {
      if (reverse) {
       // 1) إرجاع المواد للمخزون (+ لذمّة الفني في فواتير الصيانة)
-      const lines = await tx.invoiceItem.findMany({ where: { invoiceId, isDeleted: false } });
-      for (const l of lines) {
-        if (l.itemId) {
-          await tx.item.update({ where: { id: l.itemId }, data: { count: { increment: l.count ?? 0 } } });
-          // إعادة الكمية لذمّة الفني الذي بِيعت من ذمّته (فواتير الصيانة فقط)
-          if (maintTech != null && (l.count ?? 0) > 0) {
-            const custody = await tx.custody.findFirst({ where: { technicianId: maintTech, itemId: l.itemId, isDeleted: false } });
-            if (custody) {
-              await tx.custody.update({ where: { id: custody.id }, data: { qty: custody.qty + (l.count ?? 0) } });
-            } else {
-              const item = await tx.item.findUnique({ where: { id: l.itemId }, select: { towerId: true } });
-              await tx.custody.create({ data: { technicianId: maintTech, itemId: l.itemId, qty: l.count ?? 0, towerId: item?.towerId ?? null } });
-            }
-          }
-        }
-        await tx.invoiceItem.update({ where: { id: l.id }, data: { isDeleted: true } });
-      }
+      // 🔑 و-٢: صار المنطقُ في `reverseInvoiceStock` — **دالّةٌ واحدةٌ لكلّ مسارٍ يحذف
+      //    فاتورة**. فقد كان مسارُ إبطالِ **المال** يحذف الفاتورةَ بسطرٍ واحدٍ بلا إرجاعِ
+      //    مخزون، ونسخُ المنطقِ هو ما جعل سلامةَ هذا المسار لا تعني سلامةَ ذاك.
+      await reverseInvoiceStock(tx, invoiceId, maintTech);
 
       // 2) إلغاء المبلغ من الصندوق
       // يشمل "master": فاتورة الماستر (والمختلطة) صفّاها يُعكسان معاً

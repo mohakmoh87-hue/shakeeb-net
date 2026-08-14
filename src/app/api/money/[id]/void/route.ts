@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { reverseInvoiceStock } from "@/lib/invoiceReverse";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
@@ -40,6 +41,12 @@ export async function POST(
     );
   }
 
+  // أثرُ إرجاعِ البضاعة — يُسجَّل في التدقيق فيُقرَأ لاحقاً بلا تخمين
+
+
+  let reversedStock: { lines: number; qty: number } | null = null;
+
+
   try {
     await prisma.$transaction(async (t) => {
      if (reverse) {
@@ -78,8 +85,18 @@ export async function POST(
         }
       }
 
-      // ===== حركة فاتورة: حذف الفاتورة (وتُزال من التقارير) =====
+      // ===== حركة فاتورة: حذف الفاتورة **وإرجاع بضاعتها للمخزن** =====
+      // 🔴 **علّةٌ مقيسةٌ على الإنتاج (2026-08-14)**: كان هذا السطرُ يحذف الفاتورةَ وحدَها،
+      //   فتُمحى الورقةُ ويبقى **المخزنُ ناقصاً** وبنودُها حيّةً بلا فاتورة. وقِيس أثرُها:
+      //   بندانِ حيّانِ في فاتورةٍ محذوفةٍ وقطعتانِ لم ترجعا للرفّ.
+      //   وهي حالةُ محمد بالحرف: «حُذفت قطعةٌ من مادةٍ في المبيعات» — فلا هي مبيعةٌ
+      //   ولا هي في المخزن. والعلاجُ بنفسِ دالّةِ إبطالِ الفاتورة فلا يتفرّق المسارانِ ثانيةً.
       if (tx.sourceType === "invoice" && tx.sourceId) {
+        const inv = await t.invoice.findUnique({ where: { id: tx.sourceId }, select: { isDeleted: true } });
+        if (inv && !inv.isDeleted) {
+          const back = await reverseInvoiceStock(t, tx.sourceId);
+          if (back.lines > 0) reversedStock = back;
+        }
         await t.invoice.updateMany({ where: { id: tx.sourceId, isDeleted: false }, data: { isDeleted: true } });
       }
 

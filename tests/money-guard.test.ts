@@ -169,3 +169,62 @@ describe("🕵️ حارسُ المال", () => {
     }
   });
 });
+
+// ═══════ ⚖️ مبدأُ «زوالِ الأثر» + و-٢ إرجاعُ بضاعةِ الفاتورة (2026-08-14) ═══════
+describe("⚖️ الحارسُ يقيس الأثرَ الباقي لا لحظةَ الحادثة", () => {
+  test("🔴 المدّةُ المقلوبةُ لا تُبلَّغ إن نال المشتركُ أيّامَه (حالةُ مروان)", () => {
+    const src = read(HEALTH);
+    const blk = src.slice(src.indexOf('add("entry_bad_duration"'), src.indexOf('add("entry_days_no_money"'));
+    // شرطُ الضرر الباقي: انتهاءُ المشترك على صفّه لا يبلغ نهايةَ ما دُفع مقابلَه
+    assert.ok(/s\."dateTo" < e\."dateTo"/.test(blk),
+      "الفحصُ يقرأ صفَّ الحادثة وحدَه — فيُنذر عن مشتركٍ نال خدمتَه (قِيس ١٥ من ١٥)");
+    assert.ok(/JOIN subscribers s/.test(blk), "لا وصلَ بصفّ المشترك فلا سبيلَ لقياسِ الضرر");
+  });
+
+  test("🔴 الكارتُ لا يُبلَّغ إن ذُكر سيريالُه في وصلٍ بأيّ تاريخ (تصحيحٌ متأخّر)", () => {
+    const src = read(HEALTH);
+    const blk = src.slice(src.indexOf('add("card_used_no_receipt"'), src.indexOf('add("card_used_zero_price"'));
+    assert.ok(/e2\.card2 = r\.serial/.test(blk), "لا يرى التصحيحَ اليدويَّ المتأخّر");
+  });
+
+  test("🔴 «مدّةٌ بلا مال» لا تُبلَّغ إن جاء قيدُ الصندوق لاحقاً", () => {
+    const src = read(HEALTH);
+    const blk = src.slice(src.indexOf('add("entry_days_no_money"'), src.indexOf('add("entry_double_minute"'));
+    assert.ok(/money_tx m WHERE m\."sourceId" = e\.id/.test(blk), "لا يرى المالَ إن سُجِّل لاحقاً");
+  });
+
+  test("🔑 و-٢ · إرجاعُ بضاعةِ الفاتورة في **دالّةٍ واحدةٍ** يستدعيها كلُّ مسارٍ يحذف فاتورة", () => {
+    const lib = read("src/lib/invoiceReverse.ts");
+    assert.ok(lib.includes("count: { increment:"), "الدالّةُ لا تُرجع الكميّةَ للمخزن");
+    assert.ok(lib.includes("custody"), "الدالّةُ لا تُرجع الكميّةَ لذمّة الفنيّ");
+    for (const rel of ["src/app/api/invoices/[id]/void/route.ts", "src/app/api/money/[id]/void/route.ts"]) {
+      assert.ok(read(rel).includes("reverseInvoiceStock("), `مسارٌ يحذف فاتورةً بلا إرجاعِ بضاعة: ${rel}`);
+    }
+  });
+
+  test("🔴 ولا يبقى مسارٌ يحذف فاتورةً بسطرٍ واحدٍ بلا إرجاع", () => {
+    const walkAll = (dir: string, out: string[] = []): string[] => {
+      for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+        const rel = `${dir}/${e.name}`;
+        if (e.isDirectory()) walkAll(rel, out); else if (/\.ts$/.test(e.name)) out.push(rel);
+      }
+      return out;
+    };
+    const offenders: string[] = [];
+    for (const rel of walkAll("src/app/api")) {
+      const lines = read(rel).split(/\r?\n/);
+      lines.forEach((line, i) => {
+        if (!/\binvoice\.update(Many)?\(/.test(line)) return;
+        // الحذفُ الناعمُ للفاتورة: يجب أن يسبقه **في نفس المسار** نداءُ الإرجاع.
+        // ⚠️ ونافذةُ الأسطر لا تكفي: في مسارِ إبطالِ الفاتورة يقع النداءُ قبل الحذف
+        //   بستّةٍ وثلاثين سطراً (بينهما إرجاعُ الصندوق والدَّين) — فالمقياسُ «قبله في
+        //   الملفّ» لا «قريباً منه»، وهذا ما تصفه القاعدةُ فعلاً.
+        if (!/isDeleted: true/.test(lines.slice(i, i + 3).join("\n"))) return;
+        const before = lines.slice(0, i).join("\n");
+        if (!before.includes("reverseInvoiceStock")) offenders.push(`${rel}:${i + 1}`);
+      });
+    }
+    assert.deepEqual(offenders, [],
+      `حذفُ فاتورةٍ بلا إرجاعِ بضاعةٍ — نفسُ علّةِ ٢٠٢٦-٠٨-١٤:\n  - ${offenders.join("\n  - ")}`);
+  });
+});

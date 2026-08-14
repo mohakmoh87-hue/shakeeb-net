@@ -234,6 +234,10 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
        AND NOT EXISTS (SELECT 1 FROM subscription_entries e
              WHERE e."subscriberId" = r."subscriberId" AND e."isDeleted" = false
                AND e.date BETWEEN r."useDate" - INTERVAL '3 days' AND r."useDate" + INTERVAL '3 days')
+       -- ⚖️ **زوالُ الأثر**: إن ذُكر سيريالُ الكارت في وصلٍ **بأيّ تاريخ** فقد سُجِّل ولو
+       --    متأخّراً (تصحيحٌ يدويٌّ بعد الحادثة) ⇒ لا حالةَ تُفتَح. قِيس: ١ من ١٤.
+       AND NOT EXISTS (SELECT 1 FROM subscription_entries e2
+             WHERE e2.card2 = r.serial AND e2."isDeleted" = false)
      ORDER BY r."useDate" DESC LIMIT 200`, (x) => ({
     rowKey: `card:${s(x.id)}`,
     title: "كارتٌ استُخدم ولا وصلَ له أصلاً — لا قبضاً ولا دَيناً",
@@ -322,17 +326,28 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
   }));
 
   // ── ج-١ · 🔴 مدّةُ تفعيلٍ مقلوبةٌ أو صفر — قِيس ١٥ قيداً (منها −٢٣ يوماً) ──
-  await add("entry_bad_duration", "كلُّ تفعيلٍ مدّتُه موجبة", `
+  // ⚖️ **مبدأُ «زوالِ الأثر» (تصحيحُ محمد 2026-08-14)**: «هذا مشتركٌ حُلّت مشكلتُه سابقاً
+  //   فلماذا يُظهره لي الآن كأنّه حالةٌ يجب اتّخاذُ إجراءٍ لها؟ ألا يقارن الحارسُ ما تمّ على
+  //   المشترك **بعد** الحالة الشاذّة؟» — وكان الفحصُ يقرأ **صفَّ الحادثة وحدَه**.
+  //   فأُضيف شرطُ الضرر الباقي: انتهاءُ المشترك على صفّه.
+  //   🎯 **وقِيس فوراً: ١٥ من ١٥** كان المشتركُ فيها نائلاً أيّامَه كاملةً — ومنها حالةُ
+  //   مروان (دفع ٤٥٬٠٠٠ في ٠٩ آب وانتهاؤه ٠٩ أيلول = شهرٌ تامّ). أي أنّ **كلَّ** إنذارات
+  //   هذا الفحص كانت ورقيّةً لا ماليّة. والمبدأ: **يُقاس الأثرُ الباقي لا لحظةُ الحادثة**.
+  await add("entry_bad_duration", "كلُّ تفعيلٍ مدّتُه موجبة **والمشتركُ نال أيّامَه**", `
     SELECT e.id, e."moneyIn", s.name AS sub, s."netUser",
            (e."dateTo"::date - e."dateFrom"::date) AS days,
+           to_char(s."dateTo" ${BG}, 'YYYY-MM-DD') AS sub_expiry,
            to_char(e.date ${BG}, 'YYYY-MM-DD') AS at
-      FROM subscription_entries e LEFT JOIN subscribers s ON s.id = e."subscriberId"
+      FROM subscription_entries e JOIN subscribers s ON s.id = e."subscriberId"
      WHERE e."isDeleted" = false AND e."towerId" IN (${T})
        AND e."dateFrom" IS NOT NULL AND e."dateTo" IS NOT NULL AND e."dateTo" <= e."dateFrom"
+       -- شرطُ الضرر الباقي: انتهاءُ المشترك لا يبلغ نهايةَ ما دُفع مقابلَه. فإن بلغه
+       -- فالخللُ في الورقة وحدَها والخدمةُ وصلت ⇒ لا حالةَ تُفتَح ولا يُزعَج المالك.
+       AND (s."dateTo" IS NULL OR s."dateTo" < e."dateTo")
      ORDER BY e.id DESC LIMIT 200`, (x) => ({
     rowKey: `entry:${s(x.id)}`,
-    title: "تفعيلٌ بمدّةٍ مقلوبةٍ أو صفر — مشتركٌ دفع ولا مدّةَ له",
-    detail: `وصل #${s(x.id)} · ${s(x.sub) || "؟"}${x.netUser ? ` (${s(x.netUser)})` : ""} · قبض ${n(x.moneyIn)} · المدّة ${n(x.days)} يوماً · ${s(x.at)}`,
+    title: "تفعيلٌ بمدّةٍ مقلوبةٍ **والمشتركُ لم ينل أيّامَه**",
+    detail: `وصل #${s(x.id)} · ${s(x.sub) || "؟"}${x.netUser ? ` (${s(x.netUser)})` : ""} · قبض ${n(x.moneyIn)} · المدّة ${n(x.days)} يوماً · انتهاؤه ${s(x.sub_expiry) || "غيرُ محدَّد"} · ${s(x.at)}`,
     how: "تاريخُ الانتهاء أقدمُ من البداية (أو مساوٍ لها) ⇒ صحّح تاريخَ الانتهاء من سجلّ تفعيلات المشترك. والمالُ مقبوضٌ والتفعيلُ في الساس قائمٌ عادةً، فالخللُ في الورقة لا في المال.",
     severity: "critical", amount: n(x.moneyIn), at: s(x.at),
   }));
@@ -346,6 +361,9 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
        AND e."dateFrom" IS NOT NULL AND e."dateTo" > e."dateFrom"
        AND coalesce(e."moneyIn",0) = 0 AND coalesce(e.money,0) = 0
        AND e."isMaster" = false AND e.date > NOW() - INTERVAL '90 days'
+       -- ⚖️ زوالُ الأثر: قيدُ صندوقٍ حيٌّ لهذا الوصل يعني أنّ المالَ سُجِّل لاحقاً
+       AND NOT EXISTS (SELECT 1 FROM money_tx m WHERE m."sourceId" = e.id
+             AND m."sourceType" IN ('activation','master') AND m."isDeleted" = false)
      ORDER BY e.id DESC LIMIT 100`, (x) => ({
     rowKey: `entry:${s(x.id)}`,
     title: "تفعيلٌ منح مدّةً بلا مالٍ ولا دَين",
