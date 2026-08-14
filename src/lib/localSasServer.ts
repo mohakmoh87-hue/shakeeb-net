@@ -14,8 +14,12 @@ const PORT = 47615;
 // توكن SAS لكل مكتب (يُخزَّن دقائق لتفادي إعادة الدخول عند كل أصل من اللوحة)
 const tokenCache = new Map<string, { token: string; at: number }>();
 const TOKEN_TTL = 4 * 60 * 1000;
-// آخر قائمة مشتركين عُرضت في اللوحة لكل مكتب (لاستيراد المعروض)
-const viewCache = new Map<number, { users: SasUser[]; at: number }>();
+// آخرُ قائمةِ مشتركين عُرضت — **مفتاحُها النطاقُ لا المكتب** (`p11` / `t43`).
+// 🔴 كان مفتاحُها `towerId`: فمكتبُ صميم بلوحتَين له **خانةٌ واحدة**، وتصفّحُ اللوحة الثانية
+//   يطمس قائمةَ الأولى. فمن فتح اللوحتَين في تبويبَين ثمّ ضغط «عرض المعروض حاليّاً» على
+//   الأولى استورد **مشتركي الثانية** — موسومين بـ`sasPanelId` الأولى (الواجهةُ تُرسل لوحةَ
+//   تبويبها). أي بياناتٌ خاطئةٌ بصمت، وهي أسوأُ من رسالة خطأ.
+const viewCache = new Map<string, { users: SasUser[]; at: number }>();
 // المكتب/المضيف للّوحة المفتوحة حالياً — تستعمله نداءات اللوحة على /admin/* (بديل الكوكيز)
 // و`panelId` جزءٌ منه: لوحتان قد تكونان على المُخدِّم نفسِه (صميم: كلتاهما على
 // `82.129.22.22`) فالمضيفُ وحدَه لا يُميّزهما، ونداءاتُ اللوحة تحتاج **حسابَها**.
@@ -66,6 +70,30 @@ async function agentTower(towerId: number) {
  *  نصٌّ لا رقمٌ لأنّ مُعرِّفَ لوحةٍ ومُعرِّفَ مكتبٍ قد يتساويان فيتصادم مخزناهما. */
 const scopeKey = (c: { panelId: number | null; towerId: number }) =>
   c.panelId != null ? `p${c.panelId}` : `t${c.towerId}`;
+
+// ═════ 🛡️ حارسُ `currentPanel`: النطاقُ من **مُحيل الطلب** لا من خانةٍ مشتركة ═════
+//
+// 🔴 العلّةُ (اصطدتُها بفحص أثر إصلاح الجسّ على صميم 2026-08-15): مُعالِجُ `/admin/*` العاري
+//   يقرأ `currentPanel` — «آخرُ لوحةٍ فُتحت على هذه الحاسبة» — **وهو متغيّرٌ واحدٌ لكلّ
+//   العمليّة**. ويُمرّر الطلبَ **بلا `authOverride`**، أي برمز المتصفّح كما هو. ورمزُ اللوحة
+//   يسكن `localStorage.sas4_jwt` وهو **لكلّ المتصفّح** ⇒ فتحُ اللوحة الثانية يطمس رمزَ
+//   الأولى، فيردّ الساسُ «Access Denied» في تبويبٍ لم يُلمَس. وهو **عينُ بلاغ صميم**
+//   محروساً في الوسيط السحابيّ وفي مسار `/sas/` المحليّ، **ومكشوفاً هنا وحدَه**.
+//
+// 🔑 والمُحيلُ يحسمها: كلُّ تبويبٍ يحمل لوحتَه في مساره (`/sas/43~p11/…`)، فيصل `Referer`
+//   موسوماً بلوحة **ذلك التبويب** — فلا خانةَ مشتركةً يُتقاتَل عليها.
+// 🔒 وأمنيّاً: المُحيلُ يملكه المتصفّح فلا يُصدَّق. فهو **دلالةٌ لا إذن**: يُستخرَج منه
+//   المكتبُ واللوحةُ ثمّ يُعادان إلى `agentTower` و`panelOfTower` — نفسُ بوّابتَي العزل
+//   اللتين يمرّ بهما مسارُ `/sas/`. فمُحيلٌ مُختلَقٌ لمكتبِ وكيلٍ آخرَ يسقط كما يسقط هناك.
+function scopeFromReferer(referer: string | undefined): { towerId: number; panelId: number | null } | null {
+  if (!referer) return null;
+  try {
+    const m = new URL(referer).pathname.match(/^\/sas\/(\d+(?:~p\d+)?)(?:\/|$)/);
+    if (!m) return null;
+    const seg = parseSasScope(m[1]);
+    return seg ? { towerId: seg.towerId, panelId: seg.panelId } : null;
+  } catch { return null; }
+}
 
 async function scopeToken(c: SasCreds): Promise<string> {
   const k = scopeKey(c);
@@ -312,7 +340,7 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
         const webRes = await proxyToSas(webReq, host, panel[2] || "", `/sas/${scoped}/`, (txt) => { capturedJson = txt; },
           () => scopeToken(creds)); // 🔑 رمزُ **هذه** اللوحة يُفرَض على كلّ نداءٍ محمولٍ بمسارها
         // التقاط قائمة المشتركين المعروضة
-        if (capturedJson) { try { const us = parseUsersList(capturedJson); if (us.length) viewCache.set(towerId, { users: us, at: Date.now() }); } catch { /* */ } }
+        if (capturedJson) { try { const us = parseUsersList(capturedJson); if (us.length) viewCache.set(scopeKey(creds), { users: us, at: Date.now() }); } catch { /* */ } }
         const ct = webRes.headers.get("content-type") || "";
         let bodyText: Buffer;
         if (ct.includes("text/html")) {
@@ -396,16 +424,49 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
         return;
       }
 
-      // بروكسي نداءات API للّوحة: /admin/*  (تُوجَّه لخادم SAS للمكتب المفتوح حالياً)
+      // بروكسي نداءات API للّوحة: /admin/*  — نطاقُه من **مُحيل التبويب** ثمّ `currentPanel`
       if (p.startsWith("/admin/") || p === "/admin") {
-        if (!currentPanel) { res.writeHead(404); res.end("no panel"); return; }
+        // 🛡️ الحارس: تبويبٌ يحمل لوحتَه في مساره ⇒ مُحيلُه يقول لوحتَه. والمشتركُ آخرَ ملاذ.
+        const ref = scopeFromReferer(req.headers.referer as string | undefined);
+        let creds: SasCreds | null = null;
+        if (ref) {
+          // 🔒 نفسُ بوّابتَي العزل: المكتبُ لوكيل هذه الحاسبة، واللوحةُ لهذا المكتب
+          const t = await agentTower(ref.towerId);
+          if (t) {
+            creds = ref.panelId != null ? await panelOfTower(ref.towerId, ref.panelId) : null;
+            if (!creds) creds = {
+              panelId: null, towerId: t.id, agentId: t.agentId, label: null,
+              loginUrl: t.loginUrl!, username: t.username!, password: t.password!, activationTemplate: null,
+            };
+          }
+        }
+        // بلا مُحيلٍ صالح: اللوحةُ المفتوحةُ حاليّاً — السلوكُ القديم حرفيّاً (توافقٌ مع
+        // تبويباتٍ مفتوحةٍ الآن وطلباتٍ بلا مُحيل)، لكنّه صار الملاذَ لا القاعدة.
+        if (!creds && currentPanel) {
+          const t = await agentTower(currentPanel.towerId);
+          if (t) {
+            creds = currentPanel.panelId != null ? await panelOfTower(currentPanel.towerId, currentPanel.panelId) : null;
+            if (!creds) creds = {
+              panelId: null, towerId: t.id, agentId: t.agentId, label: null,
+              loginUrl: t.loginUrl!, username: t.username!, password: t.password!, activationTemplate: null,
+            };
+          }
+        }
+        if (!creds) { res.writeHead(404); res.end("no panel"); return; }
+        const host = (creds.loginUrl || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
         const bodyBuf = req.method === "GET" || req.method === "HEAD" ? undefined : Buffer.from(await readBody(req));
         const webReq = toWebRequest(req, bodyBuf);
         const upstreamPath = p.replace(/^\//, ""); // admin/...
         let capturedJson: string | null = null;
-        const webRes = await proxyToSas(webReq, currentPanel.host, upstreamPath, undefined, (txt) => { capturedJson = txt; });
+        // 🔑 **والرمزُ يُفرَض** — وهذا نصفُ الحارس الآخر: كان هذا المُعالِجُ يُمرّر رمزَ
+        //   المتصفّح كما هو (بلا `authOverride`)، ورمزُ اللوحة يسكن `localStorage` المشترك
+        //   فتطمسه اللوحةُ الثانية. فصار كلُّ نداءٍ يحمل رمزَ **لوحته هو** مهما كان في
+        //   المتصفّح — كما يفعل مسارُ `/sas/` والوسيطُ السحابيّ سواءً بسواء.
+        const scoped: SasCreds = creds;
+        const webRes = await proxyToSas(webReq, host, upstreamPath, undefined, (txt) => { capturedJson = txt; },
+          () => scopeToken(scoped));
         if (capturedJson && upstreamPath.endsWith("index/user")) {
-          try { const us = parseUsersList(capturedJson); if (us.length) viewCache.set(currentPanel.towerId, { users: us, at: Date.now() }); } catch { /* */ }
+          try { const us = parseUsersList(capturedJson); if (us.length) viewCache.set(scopeKey(scoped), { users: us, at: Date.now() }); } catch { /* */ }
         }
         const ct = webRes.headers.get("content-type") || "";
         res.setHeader("Content-Type", ct);
@@ -440,29 +501,56 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
       }
 
       // ===== عمليات البيانات (JSON) =====
+      // ⚠️ هذان المساران كانا يقرآن **أعمدةَ المكتب** = بيانات اللوحة الأولى دائماً، فمكتبٌ
+      //   بلوحتَين يُجيبهما بحساب الأولى مهما طُلبت الثانية — وهو **نمطُ بلاغ صميم بعينه**
+      //   («الاستيرادُ من الساس الثاني يُظهر مشتركي الأوّل»)، أُصلح في المسار السحابيّ ونُسي
+      //   هنا. وهما اليومَ بلا مستهلكٍ في الواجهة، لكنّ إصلاحَ الجسّ يزيد المرورَ المحلّيَّ
+      //   فتُترَك مصيدةٌ مفتوحة. ⇒ صارا يقبلان `panelId` ويرتدّان لأعمدة المكتب بلاه.
       if (p === "/sas4/token" && req.method === "POST") {
         const b = JSON.parse((await readBody(req)) || "{}");
-        const t = await agentTower(Number(b.towerId));
+        const towerId = Number(b.towerId);
+        const t = await agentTower(towerId);
         if (!t) { sendJson(res, 400, { error: "المكتب لا يتبع حسابك" }); return; }
-        const token = await towerToken(t);
-        sendJson(res, 200, { token, apiUrl: `/sas/${t.id}/admin/api/index.php/api/` });
+        const want = Number(b.panelId) || null;
+        // 🔒 اللوحةُ تُقبَل إن كانت لهذا المكتب حصراً (والمكتبُ فُحص أعلاه)
+        const c = want ? await panelOfTower(towerId, want) : null;
+        if (want && !c) { sendJson(res, 403, { error: "اللوحة لا تتبع هذا المكتب" }); return; }
+        const token = c ? await scopeToken(c) : await towerToken(t);
+        sendJson(res, 200, { token, apiUrl: `/sas/${sasScopeSegment(towerId, c?.panelId ?? null)}/admin/api/index.php/api/` });
         return;
       }
       if (p === "/sas4/fetch" && req.method === "POST") {
         const b = JSON.parse((await readBody(req)) || "{}");
-        const t = await agentTower(Number(b.towerId));
+        const towerId = Number(b.towerId);
+        const t = await agentTower(towerId);
         if (!t) { sendJson(res, 400, { error: "المكتب لا يتبع حسابك" }); return; }
-        const base = sasBaseUrl(t.loginUrl!);
-        const token = await towerToken(t);
+        const want = Number(b.panelId) || null;
+        const c = want ? await panelOfTower(towerId, want) : null;
+        if (want && !c) { sendJson(res, 403, { error: "اللوحة لا تتبع هذا المكتب" }); return; }
+        const base = sasBaseUrl(c ? c.loginUrl : t.loginUrl!);
+        const token = c ? await scopeToken(c) : await towerToken(t);
         const { users, total, lastPage } = await sasFetchOnePage(base, token, Number(b.page) || 1, Number(b.count) || 50);
-        const existing = await prisma.subscriber.findMany({ where: { sasId: { in: users.map((u) => u.sasId) } }, select: { sasId: true } });
+        // 🔒 و«مستوردٌ سلفاً» يُقاس داخل هذا المكتب وغيرَ محذوف — لا في كلّ مكاتب كلّ
+        //   الوكلاء (وهي علّةُ `last-view` نفسُها التي أُصلحت هناك ونُسيت هنا).
+        const existing = await prisma.subscriber.findMany({
+          where: { sasId: { in: users.map((u) => u.sasId) }, towerId, isDeleted: false }, select: { sasId: true },
+        });
         const ex = new Set(existing.map((e) => e.sasId));
         sendJson(res, 200, { total, lastPage, page: Number(b.page) || 1, count: Number(b.count) || 50, users: users.map((u) => ({ ...u, alreadyImported: ex.has(u.sasId) })) });
         return;
       }
       if (p === "/sas4/last-view" && req.method === "GET") {
         const towerId = Number(url.searchParams.get("towerId"));
-        const v = viewCache.get(towerId);
+        // 🔒 والعزلُ أوّلاً: المكتبُ لوكيل هذه الحاسبة — وإلّا قُرئ عرضُ مكتبِ وكيلٍ آخر
+        if (!(await agentTower(towerId))) { sendJson(res, 400, { error: "المكتب لا يتبع حسابك" }); return; }
+        // لوحةُ التبويب الطالب: تُقرأ من المعامل (ترسله الواجهة) ثمّ من مُحيله — ولكلّ
+        // لوحةٍ خانتُها، فلا تُعطى قائمةُ اللوحة الثانية لمن يستورد من الأولى.
+        const askedPanel = Number(url.searchParams.get("panelId")) || null;
+        const refScope = scopeFromReferer(req.headers.referer as string | undefined);
+        const panelId = askedPanel ?? (refScope?.towerId === towerId ? refScope.panelId : null);
+        const v = viewCache.get(scopeKey({ towerId, panelId }))
+          // ارتدادٌ للتوافق: عرضٌ التُقط قبل هذه النشرة (أو لوحةٌ واحدة) خُزّن بمفتاح المكتب
+          ?? (panelId == null ? viewCache.get(scopeKey({ towerId, panelId: null })) : undefined);
         if (!v || !v.users.length) { sendJson(res, 400, { error: "لم تُعرض أي صفحة في اللوحة بعد. تصفّح المشتركين في اللوحة ثم أعد المحاولة." }); return; }
         // 🔴 نفسُ علّة الخادم (بلاغُ محمد 2026-08-13) **وأوسع**: كان بلا `isDeleted` وبلا
         // `towerId` ⇒ (١) المحذوفُ ناعماً يُعَدُّ «مستورداً» فتُقفَل شاشةُ الاستيراد عليه،

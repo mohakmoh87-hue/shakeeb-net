@@ -98,8 +98,10 @@ export default function Sas4ImportPage() {
     setError(""); setResult(""); setLoading(true);
     try {
       // العامل المحلي (سريع) إن وُجد، وإلا Vercel
+      // 🔑 واللوحةُ تُمرَّر: مكتبٌ بلوحتَين كانت له خانةُ عرضٍ واحدةٌ في العامل، فتصفّحُ
+      //    الثانية يطمس قائمةَ الأولى ⇒ استيرادُ مشتركي لوحةٍ موسومين بلوحةٍ أخرى.
       const res = localBase
-        ? await fetch(`${localBase}/sas4/last-view?towerId=${towerId}`)
+        ? await fetch(`${localBase}/sas4/last-view?towerId=${towerId}${panelId != null ? `&panelId=${panelId}` : ""}`)
         : await fetch("/api/sas4/last-view");
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "تعذّر قراءة العرض"); return; }

@@ -91,3 +91,53 @@ describe("لوحتا ساسٍ في مكتبٍ واحد", () => {
     }
   });
 });
+
+// ═════ الارتدادُ الرابع: خاناتٌ مشتركةٌ في العامل المحلّيّ (اصطيد 2026-08-15) ═════
+// كلُّ ارتداداتِ «Access Denied» السابقةِ جذرُها واحد: **حالةٌ مفتاحُها المكتبُ لا اللوحة**.
+// وأُصلحت في الوسيط السحابيّ وفي مسار `/sas/` المحلّيّ — وبقيت ثلاثُ خاناتٍ مكشوفةً في
+// العامل، لم تكن تُبلَغ لأنّ المرورَ المحلّيَّ كان نادراً (خانقُ الجسّ يدفع للسحابة).
+// وإصلاحُ الخانق يجعل المرورَ محلّيّاً ⇒ **مصائدُ كانت نائمةً تستيقظ**.
+describe("العاملُ المحلّيّ: لا خانةَ مشتركةً بين لوحتَي مكتبٍ واحد", () => {
+  const worker = read("src/lib/localSasServer.ts");
+
+  test("🛡️ `/admin/*` يستدلّ بمُحيل التبويب لا بـ«آخرِ لوحةٍ فُتحت»", () => {
+    assert.match(worker, /function scopeFromReferer/, "لا استدلالَ بالمُحيل");
+    assert.match(worker, /scopeFromReferer\(req\.headers\.referer/, "المُحيلُ لا يُقرأ في المُعالِج");
+    // 🔒 والمُحيلُ دلالةٌ لا إذن: يُعاد إلى بوّابتَي العزل قبل الاستعمال
+    const admin = worker.slice(worker.indexOf('p.startsWith("/admin/")'));
+    assert.match(admin.slice(0, 1600), /agentTower\(ref\.towerId\)/, "المُحيلُ يُصدَّق بلا فحص ملكيّة المكتب");
+    assert.match(admin.slice(0, 1600), /panelOfTower\(ref\.towerId, ref\.panelId\)/, "اللوحةُ تُقبَل بلا إثبات تبعيّتها");
+  });
+
+  test("🔑 و`/admin/*` يفرض رمزَ لوحته — لا رمزَ المتصفّح المشترك", () => {
+    // كان يُمرّر بلا `authOverride` ⇒ يذهب رمزُ `localStorage` (وهو لكلّ المتصفّح)،
+    // فتطمسه اللوحةُ الثانية فيردّ الساسُ «Access Denied» في تبويبٍ لم يُلمَس.
+    const admin = worker.slice(worker.indexOf('p.startsWith("/admin/")'));
+    assert.match(admin.slice(0, 2600), /proxyToSas\([\s\S]{0,220}?\(\) => scopeToken\(scoped\)\)/,
+      "`/admin/*` يُمرّر رمزَ المتصفّح كما هو — وهي ثغرةُ «Access Denied» بعينها");
+  });
+
+  test("📋 خانةُ «آخرِ عرض» لكلّ لوحةٍ لا لكلّ مكتب", () => {
+    assert.match(worker, /const viewCache = new Map<string,/, "مفتاحُ خانة العرض ما زال رقمَ المكتب");
+    assert.equal(/viewCache\.set\(towerId,/.test(worker), false, "خزنٌ بمفتاح المكتب — تتصادم اللوحتان");
+    assert.equal(/viewCache\.set\(currentPanel\.towerId,/.test(worker), false, "خزنٌ بمفتاح المكتب في /admin");
+    assert.match(worker, /viewCache\.get\(scopeKey\(\{ towerId, panelId \}\)\)/, "القراءةُ ليست بالنطاق");
+    // والواجهةُ تُمرّر لوحةَ تبويبها
+    assert.match(read("src/app/(app)/subscribers/sas4/page.tsx"), /last-view\?towerId=\$\{towerId\}\$\{panelId != null/,
+      "الواجهةُ لا تُرسل اللوحةَ مع طلب «المعروض حاليّاً»");
+  });
+
+  test("🪤 و`/sas4/token` و`/sas4/fetch` المحلّيّان لم يعودا يقرآن أعمدةَ المكتب وحدَها", () => {
+    const seg = worker.slice(worker.indexOf('p === "/sas4/token"'), worker.indexOf('p === "/sas4/last-view"'));
+    assert.match(seg, /panelOfTower\(towerId, want\)/, "المساران ما زالا يُجيبان بحساب اللوحة الأولى دائماً");
+    assert.equal((seg.match(/اللوحة لا تتبع هذا المكتب/g) ?? []).length, 2, "لوحةٌ غريبةٌ تُقبَل في أحدهما");
+    // و«مستوردٌ سلفاً» داخل المكتب وغيرَ محذوف (علّةُ last-view نفسُها)
+    assert.match(seg, /sasId: \{ in: users\.map\(\(u\) => u\.sasId\) \}, towerId, isDeleted: false/,
+      "«مستوردٌ سلفاً» يُقاس عبر كلّ الوكلاء أو يشمل المحذوف");
+  });
+
+  test("🔒 و«آخرُ عرض» يفحص ملكيّةَ المكتب قبل أن يُجيب", () => {
+    const seg = worker.slice(worker.indexOf('p === "/sas4/last-view"'));
+    assert.match(seg.slice(0, 900), /if \(!\(await agentTower\(towerId\)\)\)/, "يُقرأ عرضُ مكتبٍ لا يتبع الوكيل");
+  });
+});
