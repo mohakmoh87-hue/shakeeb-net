@@ -44,18 +44,33 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket,
   if (usernameRequired) descLines.push("⚠️ إدخال اليوزر (BG) إلزاميّ عند الإنجاز — بصيغة bg-x-x-x@x");
 
   const position = await prisma.taskCard.count({ where: { listId: list.id, isDeleted: false } });
-  const card = await prisma.taskCard.create({
-    data: {
-      listId: list.id, title, description: descLines.join("\n"), position,
-      kind: "", viaOdoo: true, odooTicketId: ticket.id, usernameRequired, // بلا فئة — الوسم الجانبيّ يميّزها
-      // مهلة سوبر سيل: مرجع العدّاد زمنُ أودو نفسه (مُطبَّعاً UTC — نصّه بلا منطقة)، ولحظة السحب
-      // لمهلة الرؤية وبوّابة التسليح، والهاتف عموداً صريحاً (لا استخراجاً بـregex من الوصف).
-      odooPanelId: panelId, // أ-٢٣ · لوحةُ أودو التي جاءت منها — يمنع التنفيذَ المزدوج
-      odooCreatedAt: odooDateToUtc(ticket.createDate),
-      odooFetchedAt: new Date(),
-      odooPhone: ticket.phone ?? null,
-    },
-  });
+  let card;
+  try {
+    card = await prisma.taskCard.create({
+      data: {
+        listId: list.id, title, description: descLines.join("\n"), position,
+        kind: "", viaOdoo: true, odooTicketId: ticket.id, usernameRequired, // بلا فئة — الوسم الجانبيّ يميّزها
+        // مهلة سوبر سيل: مرجع العدّاد زمنُ أودو نفسه (مُطبَّعاً UTC — نصّه بلا منطقة)، ولحظة السحب
+        // لمهلة الرؤية وبوّابة التسليح، والهاتف عموداً صريحاً (لا استخراجاً بـregex من الوصف).
+        odooPanelId: panelId, // أ-٢٣ · لوحةُ أودو التي جاءت منها — يمنع التنفيذَ المزدوج
+        odooCreatedAt: odooDateToUtc(ticket.createDate),
+        odooFetchedAt: new Date(),
+        odooPhone: ticket.phone ?? null,
+      },
+    });
+  } catch (e) {
+    // ═════ أ-١٥ · بطاقتان لتذكرةٍ واحدةٍ مستحيلتان بنيويّاً ═════
+    // «الفحصُ ثمّ الكتابة» أعلاه بلا معاملة، فحاسبتان تسحبان معاً تُنشئ كلٌّ بطاقتَها —
+    // وحينها إنجازُ إحداهما يُنجز الأخرى عبر المصالحة (عينُ ما نهى عنه محمد في أ-١٥).
+    // الفهرسُ الفريد الجزئيّ (odooTicketId حيث isDeleted=false — سكربت add-odoo-ticket-unique)
+    // يجعل الثانية تفشل بـP2002 هنا ⇒ تُلتقط وتُعاد البطاقةُ القائمة. والجزئيّةُ مقصودة:
+    // إعادةُ الإنشاء بعد حذفٍ ناعمٍ مشروعةٌ بطلبه (السحبُ يُعيد ما حُذف وتذكرتُه مفتوحة).
+    if ((e as { code?: string })?.code === "P2002") {
+      const winner = await prisma.taskCard.findFirst({ where: { odooTicketId: ticket.id, isDeleted: false }, select: { id: true } });
+      if (winner) return { created: false, cardId: winner.id };
+    }
+    throw e;
+  }
   await appendCardHistory(card.id, "أودو", `سُحبت من أودو (تذكرة #${ticket.id})${usernameRequired ? " — يوزر إلزاميّ" : ""}`);
   // البند ٧ · رسالةٌ للمشترك عند رفعِ البطاقة من أودو أيضاً — بنفس الختم الذرّيّ،
   // وهو **ألزمُ هنا**: أودو تُعيد إنشاءَ ما حُذف وتذكرتُه مفتوحةٌ كلَّ دورة.
