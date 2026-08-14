@@ -221,6 +221,46 @@ export async function POST(request: Request) {
     return { sent, failed };
   }
 
+  // ═════ ب-٢ · البثُّ الجماعيُّ واتساب يصطفّ في القاعدة — لا حلقةَ ذاكرةٍ تموت ═════
+  // (بثُّ الشدن مات عند ٤١٦/٢٤٤٧ لأنّ الحلقة كانت مفصولةً في ذاكرة الحاوية — وأيُّ نشرةٍ
+  //  تقتلها صامتاً بلا أثرٍ للبقيّة.) الآن: **كلُّ** المستلمين يُكتبون صفوفاً `PENDING`
+  //  دفعةً أوّلاً، والساحبُ (`broadcastQueue`) يجرّها بفاصل الحظر نفسِه ويُستأنف عند
+  //  الإقلاع — فالمتبقّي محفوظٌ في القاعدة مهما حدث. والفرديُّ يبقى فوريّاً كما كان
+  //  (المستخدمُ ينتظر نتيجتَه أمامه).
+  if (channel === "WHATSAPP" && target !== "one" && recipients.length > 1) {
+    const rows = recipients
+      .filter((sub) => !(officeMap.get(sub.towerId ?? -1)?.waEnabled === "0")) // مكتبٌ مُطفأُ الواتساب لا يُصطَفّ (سلوكُ الحلقة القديمة نفسُه)
+      .map((sub) => {
+        const office = sub.towerId ? officeMap.get(sub.towerId) : null;
+        return {
+          channel, subscriberId: sub.id, phone: sub.phone,
+          text: renderTemplate(text, {
+            name: sub.name, netUser: sub.netUser, address: sub.address,
+            package: sub.packageId ? pkgNameMap.get(sub.packageId) ?? "" : "",
+            phone: sub.phone, dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",
+            carry: sub.carry ?? 0, remaining: sub.carry ?? 0,
+            price: sub.packageId ? priceMap.get(sub.packageId) ?? 0 : 0,
+            code: sub.rewardCode, balance: sub.rewardBalance ?? 0,
+            office: office?.name ?? fallbackOfficeName,
+          }),
+          status: "PENDING" as const,
+          createdByUser: session?.username, agentId: session?.agentId ?? null,
+        };
+      });
+    if (!rows.length) return NextResponse.json({ error: "لا يوجد مستلمون مطابقون (واتساب مكاتبهم مُطفأ)" }, { status: 400 });
+    await prisma.message.createMany({ data: rows });
+    await prisma.auditLog.create({
+      data: {
+        userId: session?.userId, action: "SEND_MESSAGE", entity: "message",
+        details: `${channel} - ${target} - اصطفّ ${rows.length} في طابور البثّ (يُستأنف تلقائيّاً)`,
+      },
+    }).catch(() => {});
+    const { kickBroadcastDrainer } = await import("@/lib/broadcastQueue");
+    kickBroadcastDrainer("بثّ جديد");
+    // نفسُ عقد الردّ الخلفيّ القائم — فلا تتغيّر أيُّ واجهةٍ تنادي هذا المسار
+    return NextResponse.json({ ok: true, background: true, queued: rows.length, total: rows.length });
+  }
+
   // إرسالٌ صامتٌ في الخلفيّة: نُعيد الردّ فوراً ونُكمل الحلقة مفصولةً عن الطلب
   if (background) {
     void runSend().catch((e) => console.error("[messages] background send:", e instanceof Error ? e.message : e));

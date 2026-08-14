@@ -2,6 +2,17 @@
 // العامل (المجدول + الواتساب + المزامنة) يعمل فقط حيث RUN_WORKER=1 (حواسيب المكاتب المحلية).
 // على Vercel (استضافة الويب) لا يُضبط المتغيّر فلا يعمل العامل — لأنها لا تشغّل متصفّح Chromium.
 export async function register() {
+  // ب-٢ · ساحبُ طابور البثّ الجماعيّ — **على الموقع السحابيّ حصراً** (حواسيبُ المكاتب لا
+  // تسحب: الساحبُ يُرحّل إليها عبر wa_relay أصلاً، وساحبٌ واحدٌ أبسطُ حَجزاً وتشخيصاً).
+  // يُستأنف تلقائيّاً بعد أيّ نشرةٍ/إقلاعٍ — وهو ما مات به بثُّ الشدن عند ٤١٦/٢٤٤٧.
+  if (process.env.NEXT_RUNTIME === "nodejs" && process.env.RUN_WORKER !== "1") {
+    setTimeout(async () => {
+      try {
+        const { kickBroadcastDrainer } = await import("@/lib/broadcastQueue");
+        kickBroadcastDrainer("إقلاع الموقع");
+      } catch (e) { console.error("[broadcast] تعذّر بدء الساحب:", e instanceof Error ? e.message : e); }
+    }, 20_000);
+  }
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.RUN_WORKER === "1") {
     // ═════ ب-١/الأصل ٣ · القفلُ **أوّلاً** (2026-08-13) ═════
     // كان المُجدولُ يبدأ في السطر الأوّل — أي **قبل** حجز المنفذ. فلو كان عاملُ `worker.ts`
