@@ -336,6 +336,64 @@ CREATE POLICY rls_ticket_states_read ON ticket_states FOR SELECT TO agent_worker
 ALTER TABLE users          ENABLE ROW LEVEL SECURITY; -- كلمات سر الدخول
 ALTER TABLE install_tokens ENABLE ROW LEVEL SECURITY; -- رموز التنصيب
 ALTER TABLE manager_tx     ENABLE ROW LEVEL SECURITY; -- حسابات المدير (موقع فقط)
+-- ═════ 🛡️ جداولُ حارس المال — عزلٌ بـagentId كبقيّة جداول الوكيل (2026-08-14) ═════
+-- والقاعدةُ التي تُطبَّق هنا: **كلُّ كتابةٍ جديدة = GRANT + سياسة**، ومكانُها هذان
+-- الملفّان لا سكربتُ نشرٍ عابر — وإلّا فقدَ العزلُ عند أوّل استعادة.
+ALTER TABLE deleted_card_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_deleted_card_logs ON deleted_card_logs;
+CREATE POLICY rls_deleted_card_logs ON deleted_card_logs TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+ALTER TABLE guard_assignments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_guard_assignments ON guard_assignments;
+CREATE POLICY rls_guard_assignments ON guard_assignments TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+ALTER TABLE card_sas_checks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_card_sas_checks ON card_sas_checks;
+CREATE POLICY rls_card_sas_checks ON card_sas_checks TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+-- ═════ 🔒 خمسةُ جداولٍ اصطادها اختبارُ التغطية (2026-08-14) ═════
+-- **حالتان مختلفتان، والفرقُ مقيسٌ على الإنتاج:**
+--  • `sas_panels` و`money_health_ignores`: **لهما سياسةٌ على الإنتاج فعلاً** (أُنشئت من
+--    سكربتَي نشرِهما) وكانتا **غائبتَين عن هذا الملفّ** ⇒ استعادةٌ تُعيدهما مكشوفتَين.
+--  • `managers` و`card_completions` و`map_point_proposals`: بلا سياسةٍ **وبلا أيّ إذنٍ
+--    للعامل** (قِيس: صفرُ GRANT) — فتشغيلُ RLS عليها لا يمنع شيئاً قائماً ويسدّ البابَ
+--    قبل أوّلِ كتابةٍ من حاسبةِ مكتب. وهي الثلاثةُ التي يُبلّغ عنها `npm run check:money`.
+ALTER TABLE sas_panels ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_sas_panels ON sas_panels;
+CREATE POLICY rls_sas_panels ON sas_panels TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+ALTER TABLE money_health_ignores ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_money_health_ignores ON money_health_ignores;
+CREATE POLICY rls_money_health_ignores ON money_health_ignores TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+ALTER TABLE managers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_managers ON managers;
+CREATE POLICY rls_managers ON managers TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+ALTER TABLE card_completions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_card_completions ON card_completions;
+CREATE POLICY rls_card_completions ON card_completions TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+ALTER TABLE map_point_proposals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_map_point_proposals ON map_point_proposals;
+CREATE POLICY rls_map_point_proposals ON map_point_proposals TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 ALTER TABLE groups         ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE boxes          ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE box_deps       ENABLE ROW LEVEL SECURITY; -- قديمة

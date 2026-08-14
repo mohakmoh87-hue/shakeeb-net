@@ -58,6 +58,25 @@ GRANT SELECT ON map_points, push_types, ticket_types, ticket_priorities, ticket_
 
 -- ---------- بلا أي صلاحية (حسّاسة أو لا يحتاجها العامل إطلاقاً) ----------
 -- users          : حسابات الدخول وكلمات السر — العامل لا يقرؤها أبداً (تحقّق بالجرد)
+-- ═════ أذونٌ قائمةٌ على الإنتاج وكانت غائبةً عن هذا الملفّ (2026-08-14) ═════
+-- ⚠️ **تُثبَّت كما هي** لا تُوسَّع: قِيست على الإنتاج بالضبط، وتوسيعُها هنا يعني منحَ
+--   العامل أذوناً لا يملكها اليوم — وذلك تغييرُ أمنٍ لا استرجاعُ حالة.
+GRANT SELECT, INSERT, UPDATE ON sas_panels TO agent_worker; -- لوحاتُ الساس (المزامنة تقرأ وتُنشئ)
+GRANT SELECT, INSERT, DELETE ON money_health_ignores TO agent_worker; -- تجاهلاتُ حارس المال
+-- (وأمّا managers و card_completions و map_point_proposals فبلا أيّ إذنٍ للعامل —
+--  والغيابُ = منعٌ كامل، وسياساتُها دفاعٌ ثانٍ لا أوّل.)
+
+-- ═════ 🛡️ جداولُ حارس المال (2026-08-14) ═════
+-- ⚠️ **ولماذا هنا؟** أُنشئت بسياساتها من سكربتٍ على الإنتاج، وكان غيابُها عن هذا
+--   الملفّ يعني أنّ **استعادةً من نسخةٍ احتياطيّةٍ تُعيدها بلا عزلٍ ولا أذون** — فأوّلُ
+--   قراءةٍ من حاسبةِ مكتبٍ تصير تسريباً بين الوكلاء. وهذا الملفُّ مرجعُ التزويد.
+GRANT SELECT, INSERT, UPDATE ON deleted_card_logs TO agent_worker; -- لقطةُ الكارت قبل حذفه
+GRANT USAGE, SELECT ON SEQUENCE deleted_card_logs_id_seq TO agent_worker;
+GRANT SELECT, INSERT, UPDATE ON guard_assignments TO agent_worker; -- تكليفُ حالاتِ الحارس
+GRANT USAGE, SELECT ON SEQUENCE guard_assignments_id_seq TO agent_worker;
+GRANT SELECT, INSERT, UPDATE ON card_sas_checks TO agent_worker; -- حكمُ «أين الكارت؟»
+GRANT USAGE, SELECT ON SEQUENCE card_sas_checks_id_seq TO agent_worker;
+
 -- install_tokens : رموز التنصيب
 -- manager_tx     : حركات حساب المدير (تُدار من الموقع فقط)
 -- groups, boxes, box_deps, months, notes, events : جداول قديمة لا يلمسها العامل
