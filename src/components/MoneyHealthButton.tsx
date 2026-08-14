@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import GuardFigure, { type GuardMood } from "@/components/GuardFigure";
 
-// ===== «سلامة المال» (طلب محمد 2026-08-12) =====
+// ═════ 🪖 «حارسُ المال» (طلب محمد 2026-08-12 · وأُعيد تسميتُه من «سلامة المال» 2026-08-14) ═════
 // «يكون في حسابات المدير **سلامة المال**، وعند الضغط عليه تُفتح صفحةٌ فيها الحالاتُ الموجودة
 // **ولا تكرارَ فيها أبداً**، وكلُّ حالةٍ فيها تفاصيلُها وطريقةُ حلّها… ويمكنه ضغط **تجاهل** فلا
 // تُعاد له مرّةً أخرى. **ولا داعيَ لتنبيهٍ بالإيميل ولا أيّ شيءٍ آخر** — فالوكيلُ عندما يرى خللاً
 // ماليّاً يتوجّه إلى هذه الصفحة ليرى كلّ شيء.»
 //
-// ⚠️ وأمّا «الحلُّ بضغطة زر»: الحالاتُ الستُّ الحاليّةُ **كلُّها قراراتُ مالٍ لا صيانةَ بيانات**
+// ⚠️ وأمّا «الحلُّ بضغطة زر»: أكثرُ الحالات **قراراتُ مالٍ لا صيانةَ بيانات**
 // (أيُبطَل القيدُ أم يُعاد الوصل؟ أيُردُّ الرصيدُ نقداً أم يبقى؟). وزرٌّ يُقرّر عن محمد في مالٍ
 // خطرٌ لا خدمة — فالبرنامجُ **لا يُخمّن في مال**. فلكلّ حالةٍ **طريقةُ حلٍّ مكتوبةٌ بالضبط** وزرٌّ
 // يأخذه إلى الشاشة الصحيحة، و«تجاهل» لِما راجعه وأقرّه.
@@ -61,18 +62,41 @@ export default function MoneyHealthButton() {
 
   if (!h) return null;
 
+  // ═════ حالةُ الحارس الثلاثيّة (طلبُ محمد 2026-08-14) ═════
+  // «إيموجي يلبس خوذةَ عسكريٍّ وسلاحٌ بيده: لا حالاتٌ ⇒ **مرتاحٌ** والمربّعُ أخضر ·
+  //  حالةٌ غيرُ حرجة ⇒ **عصبيٌّ قليلاً/متوسّطاً** والمربّعُ برتقاليّ · حالةٌ حرجة ⇒
+  //  **غاضبٌ ومستعدٌّ** والمربّعُ أحمرُ **يتوهّج يخفت ويعلو**.»
+  //
+  // والشخصيّةُ نفسُها في `GuardFigure` — رُوجعت مع محمد حتى أقرّها: ضابطٌ برأسٍ أصفرَ
+  // وقبّعةٍ بنجمةٍ ونظّارةٍ سوداء، مرتاحٌ ثمّ منتبِهٌ بيدٍ على سمّاعته ثمّ غاضبٌ يُصوّب
+  // مسدّسَه بكلتا يديه. وهنا **الألوانُ والنصوصُ** فقط.
+  const mood: GuardMood = h.healthy ? "calm" : h.critical > 0 ? "critical" : "warn";
+  const GUARD = {
+    calm: { box: "border-emerald-300 bg-emerald-50", text: "text-emerald-700", glow: "",
+      label: "الحارس مرتاح", hint: "لا خللَ في دفترك" },
+    warn: { box: "border-orange-300 bg-orange-50", text: "text-orange-700", glow: "",
+      label: "الحارس منتبه", hint: "حالاتٌ غيرُ حرجة" },
+    critical: { box: "border-red-400 bg-red-50", text: "text-red-700", glow: "guard-alarm",
+      label: "الحارس غاضب ومستعدّ", hint: "حالةٌ حرجةٌ تنتظرك" },
+  }[mood];
+
   return (
     <>
-      {/* البطاقةُ في حسابات المدير — مكشوفةٌ دائماً (لا تحت قائمةٍ منسدلة) */}
+      {/* البطاقةُ في حسابات المدير — مكشوفةٌ دائماً (لا تحت قائمةٍ منسدلة).
+          🧭 والتوزيعُ بطلب محمد: **الشخصُ يساراً والكتابةُ يميناً** «لتستطيع تكبيرَ الشخص»
+             — فالصفُّ الأفقيُّ يُعطيه ٥٦ نقطةً بلا أن يزيد ارتفاعُ البطاقة عن جيرانها. */}
       <div onClick={() => setOpen(true)}
-        className={`cursor-pointer rounded-xl border p-4 text-center shadow-sm transition hover:shadow ${h.healthy ? "border-emerald-200 bg-emerald-50" : (h.critical > 0 ? "border-red-300 bg-red-50" : "border-amber-200 bg-amber-50")}`}>
-        <div className="text-sm text-slate-600">🛡️ سلامة المال</div>
-        <div className={`text-2xl font-extrabold ${h.healthy ? "text-emerald-700" : (h.critical > 0 ? "text-red-700" : "text-amber-700")}`}>
-          {h.healthy ? "سليم" : `${fmt(h.openCases)} حالة`}
+        className={`flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-4 shadow-sm transition hover:shadow ${GUARD.box} ${GUARD.glow}`}>
+        <div className="min-w-0 text-right">
+          <div className="text-sm font-bold text-slate-600">حارسُ المال</div>
+          <div className={`text-2xl font-extrabold leading-tight ${GUARD.text}`}>
+            {h.healthy ? "سليم" : `${fmt(h.openCases)} حالة`}
+          </div>
+          <div className={`truncate text-xs ${h.healthy ? "text-emerald-600" : GUARD.text}`}>
+            {h.healthy ? GUARD.hint : `منها ${fmt(h.critical)} حرجة`} ↗
+          </div>
         </div>
-        <div className="text-xs text-slate-400">
-          <span className="text-mynet-blue">{h.healthy ? "لا خللَ في دفترك" : `منها ${fmt(h.critical)} حرجة`} ↗</span>
-        </div>
+        <GuardFigure mood={mood} size={56} label={GUARD.label} />
       </div>
 
       {open && (
@@ -80,9 +104,12 @@ export default function MoneyHealthButton() {
           <div className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl bg-white p-6 shadow-2xl sm:rounded-2xl">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-xl font-extrabold text-slate-800">🛡️ سلامة المال</h3>
+                <h3 className="flex items-center gap-2 text-xl font-extrabold text-slate-800">
+                  <GuardFigure mood={mood} size={34} />
+                  حارسُ المال
+                </h3>
                 <div className="mt-1 text-sm text-slate-500">
-                  {h.healthy ? "كلُّ الحقائق سليمة — لا خللَ في دفترك" : `${fmt(h.openCases)} حالةٌ مفتوحة · منها ${fmt(h.critical)} حرجة`}
+                  {h.healthy ? "كلُّ الحقائق سليمة — لا خللَ في دفترك (الحارسُ مرتاح)" : `${fmt(h.openCases)} حالةٌ مفتوحة · منها ${fmt(h.critical)} حرجة`}
                   {h.ignoredCount > 0 && <> · <span className="text-slate-400">مُتجاهَلةٌ سابقاً: {fmt(h.ignoredCount)}</span></>}
                 </div>
               </div>
@@ -130,8 +157,10 @@ export default function MoneyHealthButton() {
               <b>أرقامُ إحاطة:</b> قيودٌ حيّة {fmt(h.summary.tx_live ?? 0)} · محذوفةٌ ناعماً {fmt(h.summary.tx_deleted ?? 0)} ·
               كشوفُ رواتب {fmt(h.summary.statements ?? 0)} · مدينون {fmt(h.summary.debtors ?? 0)} بمجموع {fmt(h.summary.debt_total ?? 0)}
               <div className="mt-1.5 text-[11px] text-slate-500">
-                ⚠️ لا حلَّ آليّاً لهذه الحالات عن قصد: كلُّها **قراراتُ مالٍ** (أيُبطَل القيدُ أم يُعاد الوصل؟)،
-                والبرنامجُ لا يُخمّن في مالك. ولا يُرسَل عنها بريدٌ ولا تنبيه — هذه الصفحةُ هي مكانُها.
+                🪖 الحارسُ يعمل ٢٤ ساعةً ويلتقط الحالةَ فورَ وقوعها، وخاملٌ حين لا يقع شيء.
+                و**التجاهلُ خيارٌ من خياراته**: يُسقط الحالةَ بلا إجراءٍ فلا تُعاد. أمّا ما كان
+                **قرارَ مالٍ** (أيُبطَل القيدُ أم يُعاد الوصل؟) فلا زرَّ آليّاً له عن قصد —
+                والبرنامجُ لا يُخمّن في مالك. ولا يُرسَل بريدٌ: هذه الصفحةُ هي مكانُها.
               </div>
             </div>
           </div>

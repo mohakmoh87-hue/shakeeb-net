@@ -186,6 +186,329 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
     });
   } catch (e) { checks.push({ key: "credit_subscribers", name: "مشتركون لهم رصيدٌ عندك", ok: true, cases: [], note: `تعذّر الفحص: ${(e as Error).message}` }); }
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // 🕵️ **واجباتُ الحارس الموسَّعة** (طلبُ محمد 2026-08-14):
+  // «وظيفةُ حارس المال دراسةُ **كلّ شذوذٍ ممكنٍ** يحدث للمال والمشتركين والمخازن
+  //  ويُبلِّغ به» ثمّ «أريد **كلَّ** هذه البنود أن تكون واجباتِ حارس المال، وأيضاً
+  //  يمكن تجاهُلُ أيّ حالةٍ من الحارس».
+  //
+  // وكلُّها مأخوذةٌ من `docs/MONEY-GUARD-CATALOGUE.md` — وكلُّ رقمٍ فيه **قِيس على
+  // بيانات الإنتاج** قبل أن يُكتَب فحصُه، فلا فحصَ نظريّاً يُخرج سيلاً من الكذب.
+  //
+  // ⚠️ ودرسٌ محفورٌ في هذا الملفّ من قبل: فحصٌ بمعيارٍ ناقصٍ أخرج **٢٠٠ إنذارٍ كاذب**
+  //   لوكيل شكيب. وفي مسحِ اليوم سقط بندٌ كامل («٢٥٦ تفعيلاً بلا قيدِ صندوقٍ بتسعةِ
+  //   ملايين») لمّا تبيّن أنّ **٢٥٦ من ٢٥٦ تفعيلاتُ ماستر** ومالُها في `sourceType='master'`.
+  //   فالقاعدة: **ما لا يُثبَت لا يُتَّهم**، وأيُّ فحصٍ يُخرج سيلاً فمُتَّهَمٌ هو أوّلاً.
+  //
+  // 🔒 والعزل في **شرطِ كلّ استعلام**: مكاتبُ الوكيل (T) أو `agentId` — لا فحصٌ سابقٌ عليه.
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /** يُضيف فحصاً بأمانٍ: خطأُ استعلامٍ يصير ملاحظةً ولا يُسقط اللوحةَ كلَّها. */
+  const add = async (
+    key: string, name: string, sql: string,
+    map: (x: Row) => Omit<HealthCase, "checkKey">,
+  ): Promise<void> => {
+    try {
+      const r = await q(sql);
+      checks.push({ key, name, ok: r.length === 0, cases: r.map((x) => ({ checkKey: key, ...map(x) })) });
+    } catch (e) {
+      checks.push({ key, name, ok: true, cases: [], note: `تعذّر الفحص: ${(e as Error).message}` });
+    }
+  };
+
+  // ── أ-٢ · 🔴 كارتٌ مستخدَمٌ بلا وصلِ قبض — قِيس ٥٨ كارتاً بـ١٬٤٥٨٬٧٥٠ د.ع ──
+  // نافذةُ ±٣ أيّامٍ لأنّ تاريخَ إدخالِ الوصل قد يختلف عن تاريخ مسحِ الكارت بيومٍ أو يومَين.
+  await add("card_used_no_receipt", "كلُّ كارتٍ مستخدَمٍ له وصلُ قبض", `
+    SELECT r.id, r.serial, r.price, s.name AS sub, s."netUser",
+           to_char(r."useDate" ${BG}, 'YYYY-MM-DD') AS at
+      FROM recharge_cards r LEFT JOIN subscribers s ON s.id = r."subscriberId"
+     WHERE r."agentId" = ${agentId} AND r."useDate" IS NOT NULL AND r."subscriberId" IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM subscription_entries e
+             WHERE e."subscriberId" = r."subscriberId" AND e."isDeleted" = false
+               AND coalesce(e."moneyIn",0) > 0
+               AND e.date BETWEEN r."useDate" - INTERVAL '3 days' AND r."useDate" + INTERVAL '3 days')
+     ORDER BY r."useDate" DESC LIMIT 200`, (x) => ({
+    rowKey: `card:${s(x.id)}`,
+    title: "كارتٌ استُخدم ولا وصلَ قبضٍ للمشترك",
+    detail: `سيريال ${s(x.serial)} · ${n(x.price)} د.ع · ${s(x.sub) || "؟"}${x.netUser ? ` (${s(x.netUser)})` : ""} · ${s(x.at)}`,
+    how: "كلُّ كارتٍ يُفعَّل من مخزنك يجب أن يكون أمامَه مالٌ مقبوض. فإمّا تسجّل وصلَ القبض للمشترك بتاريخه، وإمّا يكون تفعيلاً على الدَّين أو هديّةً — فتُجاهِلُ الحالةَ بعد مراجعتك.",
+    severity: "critical", amount: n(x.price), at: s(x.at),
+  }));
+
+  // ── أ-٣ · 🔴 كارتٌ مستخدَمٌ بسعرِ صفر — قِيس ٦٥ كارتاً (لا تدخل ديونَ الكارتات) ──
+  await add("card_used_zero_price", "كلُّ كارتٍ مستخدَمٍ له سعر", `
+    SELECT r.id, r.serial, r."packageId", to_char(r."useDate" ${BG}, 'YYYY-MM-DD') AS at
+      FROM recharge_cards r
+     WHERE r."agentId" = ${agentId} AND r."useDate" IS NOT NULL AND coalesce(r.price,0) = 0
+     ORDER BY r."useDate" DESC LIMIT 200`, (x) => ({
+    rowKey: `card:${s(x.id)}`,
+    title: "كارتٌ استُخدم وسعرُه صفر — لا يدخل ديونَ الكارتات",
+    detail: `سيريال ${s(x.serial)} · فئة ${s(x.packageId) || "؟"} · ${s(x.at)}`,
+    how: "اضبط سعرَ الفئة من «سعر الكارت لكل فئة» في هذه الصفحة، فالكروتُ الجديدةُ تأخذه تلقائياً. وأمّا هذا الصفُّ فسعرُه يُصحَّح من صفحة الكروت.",
+    severity: "critical", at: s(x.at),
+  }));
+
+  // ── أ-٤ · كارتُ مخزونٍ بسعرِ صفر — دَينٌ ناقصٌ مستقبلاً (قِيس ١١) ──
+  await add("card_stock_zero_price", "كلُّ كارتٍ في المخزن له سعر", `
+    SELECT r.id, r.serial, r."packageId" FROM recharge_cards r
+     WHERE r."agentId" = ${agentId} AND r."useDate" IS NULL AND coalesce(r.price,0) = 0
+     ORDER BY r.id DESC LIMIT 200`, (x) => ({
+    rowKey: `card:${s(x.id)}`,
+    title: "كارتٌ في المخزن بلا سعر",
+    detail: `سيريال ${s(x.serial)} · فئة ${s(x.packageId) || "؟"}`,
+    how: "اضبط سعرَ فئته قبل أن يُستخدَم — وإلّا استُخدم بصفرٍ فنقص دَينُ الكارتات بمقدار سعره.",
+    severity: "warn",
+  }));
+
+  // ── أ-٥ · كارتٌ مربوطٌ بمشتركٍ محذوفٍ أو غيرِ موجود ──
+  await add("card_orphan_subscriber", "كلُّ كارتٍ مستخدَمٍ له مشتركٌ قائم", `
+    SELECT r.id, r.serial, r.price, r."subscriberId" FROM recharge_cards r
+     WHERE r."agentId" = ${agentId} AND r."subscriberId" IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM subscribers s WHERE s.id = r."subscriberId" AND s."isDeleted" = false)
+     ORDER BY r.id DESC LIMIT 200`, (x) => ({
+    rowKey: `card:${s(x.id)}`,
+    title: "كارتٌ مربوطٌ بمشتركٍ غيرِ قائم",
+    detail: `سيريال ${s(x.serial)} · ${n(x.price)} د.ع · المشترك #${s(x.subscriberId)}`,
+    how: "إمّا يُعاد المشتركُ (إن حُذف خطأً) وإمّا يُفكّ ربطُ الكارت. والمالُ المقبوضُ عليه يبقى في الصندوق كما هو.",
+    severity: "warn", amount: n(x.price),
+  }));
+
+  // ── أ-٧ · حَجزٌ عالق: كارتٌ محجوزٌ منذ ساعاتٍ ولم يُستعمَل ──
+  await add("card_stuck_reservation", "لا حَجزَ كارتٍ عالقاً", `
+    SELECT r.id, r.serial, to_char(r."reservedAt" ${BG}, 'YYYY-MM-DD HH24:MI') AS at
+      FROM recharge_cards r
+     WHERE r."agentId" = ${agentId} AND r."reservedBy" IS NOT NULL AND r."useDate" IS NULL
+       AND r."reservedAt" < NOW() - INTERVAL '6 hours'
+     ORDER BY r."reservedAt" ASC LIMIT 100`, (x) => ({
+    rowKey: `card:${s(x.id)}`,
+    title: "كارتٌ محجوزٌ منذ أكثرِ من ست ساعاتٍ ولم يُستعمَل",
+    detail: `سيريال ${s(x.serial)} · حُجز ${s(x.at)}`,
+    how: "الحَجزُ مؤقّتٌ لسحبِ الكارت. وبقاؤه يعني أنّ العمليّةَ لم تكتمل — يُفكّ الحَجزُ من صفحة الكروت فيعود الكارتُ للمخزن.",
+    severity: "warn", at: s(x.at),
+  }));
+
+  // ── و-١ · حالاتُ الكروت المحذوفة التي حكم عليها الحارسُ ولم تُعالَج ──
+  // 🔑 وهذه وصلةُ حارسِ الحذف بلوحةِ الحارس: فلا حكمٌ يُدفَن في جدولٍ لا يراه أحد.
+  await add("deleted_card_verdicts", "لا حالةَ كارتٍ محذوفٍ تنتظر قراراً", `
+    SELECT d.id, d.serial, d.price, d.verdict, d."sasInfo",
+           to_char(d."deletedAt" ${BG}, 'YYYY-MM-DD HH24:MI') AS at, d."deletedBy"
+      FROM deleted_card_logs d
+     WHERE d."agentId" = ${agentId} AND d."handledAt" IS NULL
+       AND d.verdict NOT IN ('normal','pending')
+     ORDER BY d.id DESC LIMIT 200`, (x) => ({
+    rowKey: `dcard:${s(x.id)}`,
+    title: {
+      "sold-unrecorded": "كارتٌ حُذف وهو مُفعَّلٌ في الساس والبرنامجُ يحسبه مخزوناً",
+      "no-receipt": "كارتٌ حُذف وهو مُفعَّلٌ في الساس بلا وصلِ قبض",
+      "bad-duration": "كارتٌ حُذف وتفعيلُه بمدّةٍ مقلوبة",
+      "used-not-in-sas": "كارتٌ حُذف يقول البرنامجُ إنّه مستخدَمٌ ولا تفعيلَ له في الساس",
+      "error": "كارتٌ حُذف وتعذّر فحصُه في الساس",
+    }[s(x.verdict)] ?? `كارتٌ محذوفٌ بحكم ${s(x.verdict)}`,
+    detail: `سيريال ${s(x.serial)} · ${n(x.price)} د.ع · حُذف ${s(x.at)} بيد ${s(x.deletedBy) || "؟"}${x.sasInfo ? ` · ${s(x.sasInfo)}` : ""}`,
+    how: "افتح «حارسُ المال · الكروتُ المحذوفة» من أزرارِ هذه الصفحة: هناك أزرارُ العلاج — إعادةُ الكارت للمخزن، أو إعادتُه مستخدَماً ومربوطاً بمشتركه، أو تصحيحُ المدّة، أو إعادةُ الفحص.",
+    severity: ["sold-unrecorded", "no-receipt"].includes(s(x.verdict)) ? "critical" : "warn",
+    amount: n(x.price), at: s(x.at),
+  }));
+
+  // ── ج-١ · 🔴 مدّةُ تفعيلٍ مقلوبةٌ أو صفر — قِيس ١٥ قيداً (منها −٢٣ يوماً) ──
+  await add("entry_bad_duration", "كلُّ تفعيلٍ مدّتُه موجبة", `
+    SELECT e.id, e."moneyIn", s.name AS sub, s."netUser",
+           (e."dateTo"::date - e."dateFrom"::date) AS days,
+           to_char(e.date ${BG}, 'YYYY-MM-DD') AS at
+      FROM subscription_entries e LEFT JOIN subscribers s ON s.id = e."subscriberId"
+     WHERE e."isDeleted" = false AND e."towerId" IN (${T})
+       AND e."dateFrom" IS NOT NULL AND e."dateTo" IS NOT NULL AND e."dateTo" <= e."dateFrom"
+     ORDER BY e.id DESC LIMIT 200`, (x) => ({
+    rowKey: `entry:${s(x.id)}`,
+    title: "تفعيلٌ بمدّةٍ مقلوبةٍ أو صفر — مشتركٌ دفع ولا مدّةَ له",
+    detail: `وصل #${s(x.id)} · ${s(x.sub) || "؟"}${x.netUser ? ` (${s(x.netUser)})` : ""} · قبض ${n(x.moneyIn)} · المدّة ${n(x.days)} يوماً · ${s(x.at)}`,
+    how: "تاريخُ الانتهاء أقدمُ من البداية (أو مساوٍ لها) ⇒ صحّح تاريخَ الانتهاء من سجلّ تفعيلات المشترك. والمالُ مقبوضٌ والتفعيلُ في الساس قائمٌ عادةً، فالخللُ في الورقة لا في المال.",
+    severity: "critical", amount: n(x.moneyIn), at: s(x.at),
+  }));
+
+  // ── ج-٢ · تفعيلٌ منح مدّةً بلا مالٍ مقبوضٍ ولا دَين ──
+  await add("entry_days_no_money", "كلُّ تفعيلٍ ذي مدّةٍ له مالٌ أو دَين", `
+    SELECT e.id, s.name AS sub, s."netUser", (e."dateTo"::date - e."dateFrom"::date) AS days,
+           to_char(e.date ${BG}, 'YYYY-MM-DD') AS at
+      FROM subscription_entries e LEFT JOIN subscribers s ON s.id = e."subscriberId"
+     WHERE e."isDeleted" = false AND e."towerId" IN (${T})
+       AND e."dateFrom" IS NOT NULL AND e."dateTo" > e."dateFrom"
+       AND coalesce(e."moneyIn",0) = 0 AND coalesce(e.money,0) = 0
+       AND e."isMaster" = false AND e.date > NOW() - INTERVAL '90 days'
+     ORDER BY e.id DESC LIMIT 100`, (x) => ({
+    rowKey: `entry:${s(x.id)}`,
+    title: "تفعيلٌ منح مدّةً بلا مالٍ ولا دَين",
+    detail: `وصل #${s(x.id)} · ${s(x.sub) || "؟"}${x.netUser ? ` (${s(x.netUser)})` : ""} · ${n(x.days)} يوماً · ${s(x.at)}`,
+    how: "إمّا يُسجَّل مبلغُ القبض، وإمّا يُحوَّل إلى دَينٍ على المشترك، وإمّا كان هديّةً أو تعويضاً — فتُجاهِلُ الحالةَ بسببها.",
+    severity: "warn", at: s(x.at),
+  }));
+
+  // ── ب-٩ · تفعيلانِ متطابقانِ لمشتركٍ في دقيقةٍ واحدة (تنفيذٌ مزدوج) ──
+  await add("entry_double_minute", "لا تفعيلَ مكرَّراً في الدقيقة نفسِها", `
+    SELECT min(e.id) AS first_id, max(e.id) AS last_id, count(*)::int AS n,
+           sum(coalesce(e."moneyIn",0)) AS total, e."subscriberId",
+           to_char(min(e.date) ${BG}, 'YYYY-MM-DD HH24:MI') AS at
+      FROM subscription_entries e
+     WHERE e."isDeleted" = false AND e."towerId" IN (${T}) AND e.date IS NOT NULL
+     GROUP BY e."subscriberId", date_trunc('minute', e.date)
+    HAVING count(*) > 1
+     ORDER BY 1 DESC LIMIT 100`, (x) => ({
+    rowKey: `dup:${s(x.first_id)}`,
+    title: "تفعيلانِ (أو أكثر) للمشترك نفسِه في دقيقةٍ واحدة",
+    detail: `المشترك #${s(x.subscriberId)} · ${n(x.n)} وصولاتٍ بمجموع ${n(x.total)} · وصول #${s(x.first_id)}…#${s(x.last_id)} · ${s(x.at)}`,
+    how: "أكثرُ ما يكون ضغطتَين على زرِّ التفعيل. راجِع الوصلَين: إن كان أحدُهما زائداً فأبطِله (ويُبطَل معه قيدُ صندوقه) وأرجِع كارتَه للمخزن.",
+    severity: "critical", amount: n(x.total), at: s(x.at),
+  }));
+
+  // ── ج-٥ · مشتركٌ بلا مكتب — خارجَ كلّ قائمةٍ وكلّ عزل ──
+  await add("subscriber_no_tower", "كلُّ مشتركٍ له مكتب", `
+    SELECT s.id, s.name, s."netUser" FROM subscribers s
+     WHERE s."isDeleted" = false AND s."towerId" IS NULL
+       AND EXISTS (SELECT 1 FROM subscription_entries e WHERE e."subscriberId" = s.id AND e."towerId" IN (${T}))
+     ORDER BY s.id DESC LIMIT 100`, (x) => ({
+    rowKey: `sub:${s(x.id)}`,
+    title: "مشتركٌ بلا مكتب — لا يظهر في أيّ قائمة",
+    detail: `${s(x.name)}${x.netUser ? ` · ${s(x.netUser)}` : ""} · #${s(x.id)}`,
+    how: "أسنِده إلى مكتبه من صفحة المشتركين. فمشتركٌ بلا مكتبٍ لا يراه مستخدمُ مكتبٍ ولا يدخل تقاريرَه.",
+    severity: "critical",
+  }));
+
+  // ── ج-٣ · يوزرٌ مكرَّرٌ بين مشتركَين نشطَين — قِيس ٥٢ ──
+  // 🚫 وقرارُ محمد 2026-08-14: «اترك موضوع الـ٥٢ يوزر الآن لا أريد تعديله» ⇒ للعلم فقط،
+  //   ولا زرَّ إصلاحٍ ولا سببَ إنذار. فأيُّ دمجٍ **قرارُ مالٍ**: أيُّ الصفَّين صاحبُ الدَّين؟
+  // 🔑 **حالةٌ واحدةٌ جامعةٌ لا صفٌّ لكلّ يوزر**: قِيست ٢٤ مجموعةً لشكيب وحدَه، ولو
+  //   أُخرجت صفوفاً لَبقي المربّعُ برتقاليّاً أبداً ولزم ٢٤ ضغطةَ تجاهُلٍ لأمرٍ **موقوفٍ
+  //   بقراره**. والتجميعُ يجعل تجاهُلاً واحداً يُسكتها، ولا يُخفي رقماً — فالعددُ في نصّها.
+  await add("dup_netuser", "لا يوزرَ مكرَّراً بين مشتركَين", `
+    SELECT g.groups, g.extra FROM (
+      SELECT count(*)::int AS groups, coalesce(sum(k - 1), 0)::int AS extra FROM (
+        SELECT s."netUser", count(*) AS k FROM subscribers s
+         WHERE s."isDeleted" = false AND s."towerId" IN (${T})
+           AND s."netUser" IS NOT NULL AND s."netUser" <> ''
+         GROUP BY 1 HAVING count(*) > 1) t) g
+     WHERE g.groups > 0`, (x) => ({
+    rowKey: "dupuser:all",
+    title: "يوزراتٌ مكرَّرةٌ بين مشتركَين أو أكثر",
+    detail: `${n(x.groups)} مجموعةً · ${n(x.extra)} صفّاً زائداً`,
+    how: "موقوفٌ بطلبك (٢٠٢٦-٠٨-١٤): «اترك موضوع الـ٥٢ يوزر الآن». والمزامنةُ توقّفت عن إنتاج جديدٍ، والصفوفُ القائمةُ تُترَك كما هي — فأيُّ دمجٍ قرارُ مالٍ: أيُّ الصفَّين صاحبُ الدَّين؟",
+    severity: "info",
+  }));
+
+  // ── ب-٢ · 🔴 فاتورةٌ محذوفةٌ ومالُها حيٌّ في الصندوق — قِيس ١ بـ٢٥٬٠٠٠ ──
+  await add("invoice_deleted_tx_live", "كلُّ قيدِ فاتورةٍ له فاتورةٌ قائمة", `
+    SELECT m.id, m."moneyIn", m."sourceId", to_char(m.date ${BG}, 'YYYY-MM-DD HH24:MI') AS at
+      FROM money_tx m
+     WHERE m."isDeleted" = false AND m."sourceType" IN ('invoice','sale','master-invoice')
+       AND m."towerId" IN (${T}) AND m."sourceId" IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.id = m."sourceId" AND i."isDeleted" = false)
+     ORDER BY m.date DESC LIMIT 100`, (x) => ({
+    rowKey: `tx:${s(x.id)}`,
+    title: "مالُ فاتورةٍ في الصندوق وفاتورتُه محذوفة",
+    detail: `قيد #${s(x.id)} · ${n(x.moneyIn)} · فاتورة #${s(x.sourceId)} غيرُ قائمة · ${s(x.at)}`,
+    how: "نفسُ حالةِ الوصلِ المُبطَل: إمّا يُبطَل القيدُ (إن رُدّ المالُ) وإمّا تُعاد الفاتورةُ (إن بقي المالُ عندك بحقّ). والقرارُ لك — والبرنامجُ لا يُخمّن في مال.",
+    severity: "critical", amount: n(x.moneyIn), at: s(x.at),
+  }));
+
+  // ── د-١ · بندُ فاتورةٍ حيٌّ في فاتورةٍ محذوفة ⇒ بيعٌ حُذف ومخزونٌ لم يرجع (قِيس ٢) ──
+  await add("invoice_item_orphan", "لا بندَ بيعٍ في فاتورةٍ محذوفة", `
+    SELECT t.id, t."invoiceId", t.count, t.price, x.name AS item
+      FROM invoice_items t
+      JOIN invoices i ON i.id = t."invoiceId"
+      LEFT JOIN items x ON x.id = t."itemId"
+     WHERE t."isDeleted" = false AND i."isDeleted" = true AND i."towerId" IN (${T})
+     ORDER BY t.id DESC LIMIT 100`, (x) => ({
+    rowKey: `iitem:${s(x.id)}`,
+    title: "قطعةٌ مبيعةٌ في فاتورةٍ محذوفة — هل رجعت للمخزن؟",
+    detail: `${s(x.item) || "مادّة"} · عدد ${n(x.count)} · سعر ${n(x.price)} · فاتورة #${s(x.invoiceId)} محذوفة`,
+    how: "حُذفت الفاتورةُ وبقي بندُها: راجِع كميّةَ المادّة في المخزن — إن لم ترجع فأضِفها، ثمّ احذف البندَ ليتّسق السجلّ.",
+    severity: "warn", amount: n(x.count) * n(x.price),
+  }));
+
+  // ── د-٣ · مادّةٌ بكميّةٍ سالبة (بيعٌ فوق المخزون) ──
+  await add("item_negative_count", "لا مادّةَ بكميّةٍ سالبة", `
+    SELECT i.id, i.name, i.count, i.category FROM items i
+     WHERE i."isDeleted" = false AND i."towerId" IN (${T}) AND coalesce(i.count,0) < 0
+     ORDER BY i.count ASC LIMIT 100`, (x) => ({
+    rowKey: `item:${s(x.id)}`,
+    title: "مادّةٌ كميّتُها سالبة — بيعٌ فوق المخزون",
+    detail: `${s(x.name)}${x.category ? ` · ${s(x.category)}` : ""} · الكميّة ${n(x.count)}`,
+    how: "إمّا نقصٌ في إدخال شراءٍ سابقٍ، وإمّا بيعٌ مكرَّر. صحّح الجردَ من صفحة المخزن بعد مراجعةِ فواتيرِ المادّة.",
+    severity: "critical",
+  }));
+
+  // ── د-٤ · فاتورةٌ نشطةٌ بلا بنود (مالٌ بلا سلعة) ──
+  await add("invoice_no_items", "كلُّ فاتورةٍ لها بنود", `
+    SELECT i.id, i.number, i."totalMy", to_char(i.date ${BG}, 'YYYY-MM-DD') AS at
+      FROM invoices i
+     WHERE i."isDeleted" = false AND i."towerId" IN (${T})
+       AND NOT EXISTS (SELECT 1 FROM invoice_items t WHERE t."invoiceId" = i.id AND t."isDeleted" = false)
+     ORDER BY i.id DESC LIMIT 100`, (x) => ({
+    rowKey: `inv:${s(x.id)}`,
+    title: "فاتورةٌ بلا بنود",
+    detail: `فاتورة #${s(x.number) || s(x.id)} · الإجماليّ ${n(x.totalMy)} · ${s(x.at)}`,
+    how: "إمّا أُضيفت بنودُها ثمّ حُذفت، وإمّا لم تُكمَل. أضِف بنودَها أو احذف الفاتورةَ — فمالٌ بلا سلعةٍ لا يُفسَّر لاحقاً.",
+    severity: "warn", amount: n(x.totalMy), at: s(x.at),
+  }));
+
+  // ── د-٥ · مجموعُ بنودِ الفاتورة ≠ الإجماليّ المسجَّل ──
+  await add("invoice_total_mismatch", "إجماليُّ كلِّ فاتورةٍ يطابق بنودَها", `
+    SELECT q.id, q.t, q.sum_items, to_char(q.d ${BG}, 'YYYY-MM-DD') AS at FROM (
+      SELECT i.id, i."totalMy" AS t, i.date AS d,
+             coalesce(sum(x.price * x.count), 0) AS sum_items
+        FROM invoices i
+        LEFT JOIN invoice_items x ON x."invoiceId" = i.id AND x."isDeleted" = false
+       WHERE i."isDeleted" = false AND i."towerId" IN (${T})
+       GROUP BY 1,2,3) q
+     WHERE abs(coalesce(q.t,0) - q.sum_items) > 1
+     ORDER BY q.id DESC LIMIT 100`, (x) => ({
+    rowKey: `inv:${s(x.id)}`,
+    title: "إجماليُّ الفاتورة لا يطابق مجموعَ بنودها",
+    detail: `فاتورة #${s(x.id)} · المسجَّل ${n(x.t)} · مجموعُ البنود ${n(x.sum_items)} · الفرق ${Math.abs(n(x.t) - n(x.sum_items))} · ${s(x.at)}`,
+    how: "أُعيد تعديلُ بندٍ بعد حفظِ الفاتورة عادةً. افتح الفاتورةَ واحفظها من جديدٍ ليُعاد حسابُ إجماليّها.",
+    severity: "warn", amount: Math.abs(n(x.t) - n(x.sum_items)), at: s(x.at),
+  }));
+
+  // ── د-٨ · فاتورةٌ بلا مكتب ──
+  await add("invoice_no_tower", "كلُّ فاتورةٍ لها مكتب", `
+    SELECT i.id, i.number, i."totalMy" FROM invoices i
+     WHERE i."isDeleted" = false AND i."towerId" IS NULL
+       AND i."userId" IN (SELECT id FROM users WHERE "agentId" = ${agentId})
+     ORDER BY i.id DESC LIMIT 100`, (x) => ({
+    rowKey: `inv:${s(x.id)}`,
+    title: "فاتورةٌ بلا مكتب — تختفي عن تقارير المكاتب",
+    detail: `فاتورة #${s(x.number) || s(x.id)} · ${n(x.totalMy)}`,
+    how: "أسنِدها إلى مكتبها من صفحة الفواتير.",
+    severity: "warn", amount: n(x.totalMy),
+  }));
+
+  // ── هـ-١ · 🔴 كشفُ راتبٍ بصافٍ سالب — قِيس ٥ كشوف (أكبرُها −٥٠٠٬٦١٢) ──
+  await add("salary_negative_net", "لا كشفَ راتبٍ بصافٍ سالب", `
+    SELECT id, "technicianName", net, "baseEarned", "attendanceDeductions", "periodFrom", "periodTo"
+      FROM salary_statements
+     WHERE "agentId" = ${agentId} AND "cancelledAt" IS NULL AND net < 0
+     ORDER BY net ASC LIMIT 100`, (x) => ({
+    rowKey: `sal:${s(x.id)}`,
+    title: "كشفُ راتبٍ صافيه سالب — الخصومُ تتجاوز المستحقّ",
+    detail: `${s(x.technicianName)} · مستحقّ ${n(x.baseEarned)} · خصوم ${n(x.attendanceDeductions)} · الصافي ${n(x.net)} · ${s(x.periodFrom)} → ${s(x.periodTo)}`,
+    how: "الفنيُّ لا يُطالَب بمالٍ من راتبه: راجِع الخصومَ وامسح ما لا يستحقّه بزرِّ «إلغاء الخصم» من حضور الفنيّين (بملاحظةٍ إلزاميّة). وترحيلُ المتبقّي للشهر التالي يحتاج بناءً لم يُنفَّذ بعد (ب-٠٠).",
+    severity: "critical", amount: Math.abs(n(x.net)),
+  }));
+
+  // ── هـ-٣ · حضورٌ بلا خروجٍ من أيّامٍ ماضية ──
+  await add("attendance_open_past", "لا حضورَ بلا خروجٍ من أيّامٍ ماضية", `
+    SELECT a.id, t.name, to_char(a."checkIn" ${BG}, 'YYYY-MM-DD HH24:MI') AS at
+      FROM attendances a JOIN technicians t ON t.id = a."technicianId"
+     WHERE a."checkOut" IS NULL AND a."checkIn" < NOW() - INTERVAL '20 hours'
+       AND t."agentId" = ${agentId}
+     ORDER BY a."checkIn" ASC LIMIT 100`, (x) => ({
+    rowKey: `att:${s(x.id)}`,
+    title: "فنيٌّ بصم حضوراً ولم يبصم خروجاً",
+    detail: `${s(x.name)} · حضورُه ${s(x.at)}`,
+    how: "يُختَم اليومُ من صفحة حضور الفنيّين. والبرنامجُ يختم أمسَ المفتوحَ تلقائياً، فبقاءُ الصفِّ يعني يوماً أقدمَ من ذلك.",
+    severity: "warn", at: s(x.at),
+  }));
+
+
   // ── ٧) أرقامُ إحاطةٍ (لا حالاتٍ) ──
   let summary: Row = {};
   try {

@@ -768,3 +768,60 @@ input[type="number"] { direction: ltr; }
 
 /* شريحة «مبلغ الاشتراك» في شريط خيارات المشترك — لاجوردية */
 .nst .sb-chip.c-sub { background: linear-gradient(120deg, #5b87b8, #2a5480); }
+
+/* ═════ 🪖 حارسُ المال · حركةٌ للكبار لا للأطفال (طلبُ محمد 2026-08-14) ═════
+   «حركاتُه يجب أن تكون موجَّهةً **للكبار وليس للأطفال**» — فلا قفزٌ ولا دورانٌ ولا تكبير.
+   المدى كلُّه **دون النقطة الواحدة** في الرسم (viewBox 40)، والإيقاعُ بطيء:
+     • مرتاحٌ  ⇒ تنفّسٌ صدريٌّ بطيء (٤.٢ث) ومسحٌ خفيفٌ بالنظر.
+     • منتبِهٌ ⇒ الرأسُ يمسح الجهتَين ببطء (٣.٢ث) والبندقيّةُ تعلو قليلاً — يقظةٌ ساكنة.
+     • غاضبٌ  ⇒ رجفةٌ **محبوسة** (٠.٢٥ث بمدى ٠.٣ نقطة) كعضلةٍ مشدودةٍ لا كاهتزازِ لعبة.
+   ⚠️ وكلُّها `transform` داخل SVG واحدٍ — فلا يتغيّر مقاسُ عنصرٍ في الصفحة، وأبعادُ
+      المربّع تبقى حرفيّاً كما هي (شرطُ محمد). والتوهّجُ الأحمرُ ظلٌّ خارجَ الصندوق. */
+
+/* ── المربّعُ الأحمرُ يتوهّج: يخفت ويعلو (بالظلّ لا بالشفافيّة — فالشفافيّةُ تُخفي النصّ) ── */
+@keyframes guardAlarmGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.40), 0 1px 2px rgba(0,0,0,.05); }
+  50%      { box-shadow: 0 0 18px 6px rgba(220, 38, 38, 0.55), 0 1px 2px rgba(0,0,0,.05); }
+}
+.guard-alarm { animation: guardAlarmGlow 1.5s ease-in-out infinite; }
+
+.guard-glyph { will-change: transform; }
+
+/* ── مرتاح ── */
+@keyframes guardBodyCalm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-.45px); } }
+@keyframes guardHeadCalm { 0%, 100% { transform: rotate(-1.1deg); } 50% { transform: rotate(1.1deg); } }
+@keyframes guardGunCalm  { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-.3px); } }
+.guard-body-calm { animation: guardBodyCalm 4.2s ease-in-out infinite; }
+.guard-head-calm { animation: guardHeadCalm 6s ease-in-out infinite; }
+.guard-gun-calm  { animation: guardGunCalm 4.2s ease-in-out infinite; }
+
+/* ── منتبِه: يقظةٌ ساكنة — الرأسُ يمسح والسلاحُ يعلو، ولا اهتزاز ── */
+@keyframes guardHeadWarn {
+  0%, 100% { transform: rotate(-5.5deg) translateY(0); }
+  8%       { transform: rotate(-5.5deg) translateY(-.5px); }
+  46%      { transform: rotate(5.5deg) translateY(-.5px); }
+  56%      { transform: rotate(5deg) translateY(0); }
+}
+@keyframes guardBodyWarn { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-.35px); } }
+@keyframes guardGunWarn  { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-.5px) rotate(-1.6deg); } }
+.guard-head-warn { animation: guardHeadWarn 2.3s ease-in-out infinite; }
+.guard-body-warn { animation: guardBodyWarn 3.4s ease-in-out infinite; }
+.guard-gun-warn  { animation: guardGunWarn 3.2s ease-in-out infinite; }
+
+/* ── غاضبٌ مستعدّ: رجفةٌ محبوسةٌ ضيّقةُ المدى (شدُّ عضلٍ لا اهتزازُ لعبة) ── */
+@keyframes guardBodyRage {
+  0%, 100% { transform: translate(0, 0); }
+  20%      { transform: translate(.55px, -.3px); }
+  40%      { transform: translate(-.5px, .2px); }
+  60%      { transform: translate(.4px, .3px); }
+  80%      { transform: translate(-.3px, -.2px); }
+}
+@keyframes guardHeadRage { 0%, 100% { transform: rotate(-2deg) scale(1); } 50% { transform: rotate(2deg) scale(1.02); } }
+@keyframes guardGunRage  { 0%, 100% { transform: rotate(0deg) translateY(0); } 50% { transform: rotate(-4deg) translateY(-.8px); } }
+.guard-body-rage { animation: guardBodyRage .19s steps(5, end) infinite; }
+.guard-head-rage { animation: guardHeadRage .7s ease-in-out infinite; }
+.guard-gun-rage  { animation: guardGunRage .7s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .guard-alarm, .guard-glyph { animation: none !important; }
+}
