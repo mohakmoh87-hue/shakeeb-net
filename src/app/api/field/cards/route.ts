@@ -165,6 +165,27 @@ export async function PATCH(request: Request) {
     const events: string[] = [];
     if ("technicianId" in data && before.technicianId !== updated.technicianId) {
       events.push(`تغيير الفني من «${before.assignee ?? "بلا فني"}» إلى «${updated.assignee ?? "بلا فني"}»`);
+      // ═════ أ-٢٢ · إشعارُ هاتف الفنيّ لحظةَ الإسناد (حسمه محمد 2026-08-12) ═════
+      // «يُنبَّه عند كلّ إسناد، حتى لو تكرّر لنفس البطاقة» ⇒ المعيارُ حدثُ الإسناد لا حالةٌ
+      // محفوظة — وهذا الفرعُ يُطلق عند كلّ technicianId جديدٍ فيكفي النداءُ فيه بلا ذاكرة.
+      // (سحبُ الفنيّ للبطاقة بنفسه في claim-card لا يمرّ من هنا — فلا يُنبَّه على فعله ✓)
+      // أفضلُ جهدٍ لا يُفشل التعديل، وبطاقاتُ أودو تمرّ من هذا الفرع نفسِه عند إسنادها.
+      if (updated.technicianId != null) {
+        try {
+          const { sendPushToTechnician } = await import("@/lib/push");
+          const { listOfficeId } = await import("@/lib/field");
+          const officeId = await listOfficeId(updated.listId);
+          const office = officeId != null
+            ? await prisma.tower.findUnique({ where: { id: officeId }, select: { name: true } })
+            : null;
+          const kindTxt = (updated.kind ?? "").trim() || "عمل";
+          void sendPushToTechnician(updated.technicianId, {
+            title: `🛠️ بطاقة ${kindTxt} جديدة`,
+            body: `${updated.title ?? ""}${office?.name ? ` · ${office.name}` : ""}`.trim() || "بطاقة موجَّهة إليك",
+            url: `/field-management`,
+          });
+        } catch { /* الإشعارُ رفاهيةٌ — لا يُفشل الإسناد */ }
+      }
     }
     // تحويل بطاقة دعمٍ إلى فنيٍّ آخر يُخرجها من دعم الأوّل — فإن لم يبقَ له شيءٌ انتهى دعمه
     // (قرار محمد: «أو في حالة تحويل بطاقة الدعم على فني آخر»). maybeEndCardSupport تُسقط

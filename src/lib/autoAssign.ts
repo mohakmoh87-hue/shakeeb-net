@@ -136,8 +136,21 @@ export async function distributePending(officeId: number | null, agentId: number
     if (!(await autoAssignOn(officeId, c.kind, office.agentId ?? agentId))) continue;
     const picked = await pickAssignee(officeId, agentTowers);
     if (!picked) break; // لا مؤهَّل ⇒ توقّف (الباقي يبقى معلّقاً)
-    await prisma.taskCard.update({ where: { id: c.id }, data: { technicianId: picked.id, assignee: picked.name } });
+    const assigned = await prisma.taskCard.update({
+      where: { id: c.id },
+      data: { technicianId: picked.id, assignee: picked.name },
+      select: { technicianId: true, title: true, kind: true },
+    });
     n++;
+    // أ-٢٢ · التوزيعُ التلقائيُّ توجيهٌ أيضاً ⇒ إشعارُ هاتف الفنيّ — أفضلُ جهدٍ لا يُفشل التوزيع
+    try {
+      const { sendPushToTechnician } = await import("@/lib/push");
+      const kindTxt = (assigned.kind ?? "").trim() || "عمل";
+      void sendPushToTechnician(assigned.technicianId, {
+        title: `🛠️ بطاقة ${kindTxt} جديدة`,
+        body: (assigned.title ?? "").trim() || "بطاقة موجَّهة إليك",
+      });
+    } catch { /* الإشعارُ رفاهية */ }
   }
   return n;
 }

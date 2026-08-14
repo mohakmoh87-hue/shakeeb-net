@@ -57,3 +57,24 @@ export async function sendPushToAgent(agentId: number | null, payload: PushPaylo
     );
   }
 }
+
+// ═════ أ-٢٢ · إشعارُ **الفنيّ** على هاتفه (طلب محمد 2026-08-12) ═════
+// «عند توجيه بطاقةٍ على فنيّ يجب أن يذهب إشعارٌ إلى هاتفه… لأنّ الفنيَّ الآن يضطرّ إلى
+// فتح التطبيق في كلّ مرّةٍ ليبحث عن بطاقاتٍ جديدة.»
+// كانت القناةُ غائبةً من النظام كلّه: `Technician.fcmToken` يُسجَّل من التطبيق ولا
+// يستهلكه إلّا إيقاظُ تتبّع GPS — و`sendFcmNotification` لا تُنادى لفنيٍّ إطلاقاً.
+// وهي على نمط نظيرتها للمديرين حرفيّاً: تقرأ الرمزَ، تُرسل، وتُفرّغه إن كان باطلاً.
+// 🔒 العزلُ ضمنيّ: الإشعارُ إلى رمزِ ذلك الفنيّ وحدَه — لا قراءةَ رموزٍ بغير technicianId.
+// وفنيٌّ بلا رمزٍ (لم يُثبّت التطبيق أو لم يمنح الإذن) يُتخطّى بصمتٍ — أفضلُ جهد.
+export async function sendPushToTechnician(technicianId: number | null, payload: PushPayload): Promise<void> {
+  if (technicianId == null || !fcmEnabled()) return;
+  const tech = await prisma.technician.findUnique({
+    where: { id: technicianId },
+    select: { id: true, fcmToken: true, isDeleted: true },
+  });
+  if (!tech || tech.isDeleted || !tech.fcmToken) return;
+  const r = await sendFcmNotification(tech.fcmToken, payload.title, payload.body);
+  if (r.invalidToken) {
+    await prisma.technician.update({ where: { id: tech.id }, data: { fcmToken: null } }).catch(() => {});
+  }
+}
