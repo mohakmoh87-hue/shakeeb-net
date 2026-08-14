@@ -6,6 +6,7 @@ import { guard, towerScope } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { renderTemplate, sendViaProvider, type Channel } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
+import { QUEUE_MARK } from "@/lib/broadcastQueue"; // علامةُ صفوف طابور البثّ (درعُها من مقصلة المجدول)
 
 const schema = z.object({
   channel: z.enum(["SMS", "WHATSAPP", "TELEGRAM"]).default("SMS"),
@@ -266,6 +267,10 @@ export async function POST(request: Request) {
             office: office?.name ?? fallbackOfficeName,
           }),
           status: "PENDING" as const,
+          // 🛡️ علامةُ الطابور في error — درعُ الصفّ من مقصلة «محاولة واحدة» على الحاسبات،
+          // وبها يلتقطه الساحبُ. و`templateType` ليقرأ الساحبُ صورةَ القالب لحظةَ الإرسال.
+          error: QUEUE_MARK,
+          templateType: templateType ?? null,
           createdByUser: session?.username, agentId: session?.agentId ?? null,
         };
       });

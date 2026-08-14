@@ -20,10 +20,50 @@ export async function sendCardRaisedMessage(cardId: number): Promise<void> {
       where: { id: cardId },
       select: {
         id: true, title: true, kind: true, label: true, subscriberId: true,
-        raisedNoticeAt: true, listId: true, viaOdoo: true,
+        raisedNoticeAt: true, listId: true, viaOdoo: true, odooPhone: true, description: true,
       },
     });
-    if (!card || card.raisedNoticeAt != null || card.subscriberId == null) return;
+    if (!card || card.raisedNoticeAt != null) return;
+
+    // ═════ بطاقةُ أودو: لا `subscriberId` لها بنيويّاً — هاتفُها في `odooPhone` ═════
+    // (قياس 2026-08-14: كلُّ بطاقات أودو بلا مشترك ⇒ كانت الدالّةُ تخرج صامتةً لها دائماً،
+    //  فذراعُ «أو من أودو» من طلب محمد لم يعمل قطّ. المشتركُ يُروى من وصف البطاقة إن وُجد.)
+    if (card.subscriberId == null) {
+      if (!card.viaOdoo || !card.odooPhone) return;
+      const officeId = (await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } })
+        .then((l) => l ? prisma.taskBoard.findUnique({ where: { id: l.boardId }, select: { towerId: true } }) : null))?.towerId ?? null;
+      if (officeId == null) return;
+      const office = await prisma.tower.findUnique({
+        where: { id: officeId },
+        select: { name: true, agentId: true, waEnabled: true },
+      });
+      if (!office || office.waEnabled === "0") return;
+      const tpl = await getEffectiveTemplateFull("cardRaised", office.agentId, officeId);
+      if (!tpl) return;
+      const claimed = await prisma.taskCard.updateMany({
+        where: { id: card.id, raisedNoticeAt: null },
+        data: { raisedNoticeAt: new Date() },
+      });
+      if (claimed.count !== 1) return;
+      const desc = card.description ?? "";
+      const text = renderTemplate(tpl.text, {
+        "الاسم": desc.match(/🧑 المشترك: (.+)/)?.[1]?.trim() ?? "",
+        "اليوزر": desc.match(/👤 اليوزر: (.+)/)?.[1]?.trim() ?? "",
+        "العملية": card.label ?? card.kind ?? "تذكرة أودو",
+        "التفاصيل": card.title ?? "",
+        "المكتب": office.name ?? "SHAKEEB",
+        "المصدر": "أودو",
+      });
+      const res = await sendViaProvider("WHATSAPP", card.odooPhone, text, officeId, tpl.image);
+      await prisma.message.create({
+        data: {
+          channel: "WHATSAPP", phone: card.odooPhone, text,
+          status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+          createdByUser: "card-raised", agentId: office.agentId ?? null,
+        },
+      }).catch(() => {});
+      return;
+    }
 
     const sub = await prisma.subscriber.findUnique({
       where: { id: card.subscriberId },
@@ -66,6 +106,7 @@ export async function sendCardRaisedMessage(cardId: number): Promise<void> {
         status: res.ok ? "SENT" : "FAILED",
         error: res.error ?? null,
         createdByUser: "card-raised",
+        agentId: office.agentId ?? null, // عزلُ سجلّ الرسائل بالوكيل — كانت تُكتب بلا وكيلٍ فتغيب عن سجلّه
       },
     }).catch(() => {});
   } catch {

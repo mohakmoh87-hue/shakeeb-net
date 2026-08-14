@@ -6,12 +6,16 @@ export async function register() {
   // تسحب: الساحبُ يُرحّل إليها عبر wa_relay أصلاً، وساحبٌ واحدٌ أبسطُ حَجزاً وتشخيصاً).
   // يُستأنف تلقائيّاً بعد أيّ نشرةٍ/إقلاعٍ — وهو ما مات به بثُّ الشدن عند ٤١٦/٢٤٤٧.
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.RUN_WORKER !== "1") {
-    setTimeout(async () => {
+    const kick = async (reason: string) => {
       try {
         const { kickBroadcastDrainer } = await import("@/lib/broadcastQueue");
-        kickBroadcastDrainer("إقلاع الموقع");
+        kickBroadcastDrainer(reason);
       } catch (e) { console.error("[broadcast] تعذّر بدء الساحب:", e instanceof Error ? e.message : e); }
-    }, 20_000);
+    };
+    setTimeout(() => void kick("إقلاع الموقع"), 20_000);
+    // دوريّةُ أمانٍ كلَّ ٥ دقائق: صفوفٌ أُعيدت للطابور يدويّاً (أو حُرِّرت من حجزٍ عالق)
+    // تُلتقط بلا انتظار بثٍّ جديد — والركلُ رخيصٌ: لا شيءَ في الطابور ⇒ خروجٌ فوريّ.
+    setInterval(() => void kick("دوريّة"), 5 * 60_000);
   }
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.RUN_WORKER === "1") {
     // ═════ ب-١/الأصل ٣ · القفلُ **أوّلاً** (2026-08-13) ═════

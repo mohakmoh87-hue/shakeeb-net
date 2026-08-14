@@ -402,7 +402,11 @@ export async function catchUpManagerReport(): Promise<{ sent: number; failed: nu
 // السجلّ يظنّها لم تصل ولا مرّة. لذلك: كل رسالة تُحاوَل مرّة واحدة، وما لم يُرسَل يُلغى.
 export async function cancelUnsentMessages(): Promise<{ cancelled: number }> {
   const res = await prisma.message.updateMany({
-    where: { channel: "WHATSAPP", status: "PENDING" },
+    // 🔴 `error: null` شرطٌ حاكم (حادثة 2026-08-14 18:45): كانت تُلغي كلَّ PENDING بلا
+    //   استثناء — **فذبحت طابورَ البثّ الجديد** (١٧٦ رسالةً لمكتب الرسالة في أوّل دقيقةٍ
+    //   بعد عودة الحاسبات). صفوفُ الطابور موسومةٌ في error («📤 في طابور البثّ» أو
+    //   «⏳ قيد الإرسال») فتُستثنى — وتبقى المقصلةُ ليتامى النمط القديم (error فارغ) وحدَهم.
+    where: { channel: "WHATSAPP", status: "PENDING", error: null },
     data: { status: "FAILED", error: "أُلغيت — محاولة واحدة فقط بلا إعادة إرسال" },
   });
   if (res.count) console.log(`[scheduler] أُلغيت ${res.count} رسالة لم تُرسل (بلا إعادة محاولة)`);
