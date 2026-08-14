@@ -136,6 +136,7 @@ async function sendDebtPaidMessage(a: {
         channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text,
         status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
         createdByUser: a.createdByUser ?? null,
+        agentId: office?.agentId ?? null, // عزل: سجلُّ الرسائل يُرشَّح بالوكيل — وبلاه تغيب الرسالة عن صاحبها
       },
     });
   } catch {

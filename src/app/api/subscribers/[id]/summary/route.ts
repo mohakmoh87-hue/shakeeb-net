@@ -56,8 +56,12 @@ export async function POST(
   await prisma.message.create({
     data: {
       channel: "WHATSAPP", subscriberId: subscriber.id, phone: subscriber.phone, text,
-      status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+      status: res.ok ? "SENT" : "FAILED",
+      // 🖼️ وصلت بلا صورة؟ السببُ يُحفَظ هنا فيُرى في سجلّ الرسائل (بدل نافذة الحاسبة)
+      error: res.error ?? (res.imageError ? `أُرسلت بلا صورة — ${res.imageError}` : null),
       createdByUser: session?.username,
+      // عزل: بلا الوكيل تغيب رسالةُ الملخّص عن سجلّ صاحبها (قِيس ١١٨ رسالةً كذلك في ٣ ساعات)
+      agentId: office?.agentId ?? session?.agentId ?? null,
     },
   });
   if (!res.ok) return NextResponse.json({ error: res.error ?? "تعذّر الإرسال" }, { status: 502 });

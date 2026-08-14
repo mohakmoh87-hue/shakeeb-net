@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 // كشف العامل المحلي على حاسبة المكتب (المنفذ 47615). إن كان موجوداً، تُوجَّه عمليات
 // SAS إليه مباشرةً (سريع، قرب خادم SAS)؛ وإلا تُستعمل مسارات Vercel (ارتداد آمن).
 // http://127.0.0.1 يُعامَل كسياق آمن في المتصفّح فلا يُحجب رغم أن الصفحة https.
@@ -25,4 +27,30 @@ export async function localSasBase(): Promise<string> {
     }
   } catch { /* لا عامل محلي — نعتمد على Vercel */ }
   return cachedBase;
+}
+
+// ═════ 🔁 جسٌّ يُعيد المحاولة — لا سقوطٌ دائمٌ بجسّةٍ واحدةٍ فاشلة (2026-08-14) ═════
+// كانت الصفحاتُ تجسّ **مرّةً واحدةً عند التحميل**؛ فلو صادفت الجسّةُ لحظةَ إعادة تشغيل
+// العامل (وهي تقع مع كلّ نشرةِ `lib`، ودقائقُها تطول بـ`npm install`) بقيت تلك الصفحةُ
+// على المسار السحابيّ **حتى تُحدَّث يدويّاً** — فيبطؤ فتحُ الساس وتتأخّر الطباعة بلا سبب
+// ظاهرٍ للمستخدم.
+// ⇒ خطّافٌ يُعيد المحاولة كلَّ ٢٠ ثانية (أطولُ من عتبة الجسّ الداخليّة ١٥ث فتُنفَّذ فعلاً)
+//   حتى ينجح أو تمضي خمسُ دقائق — فيلتقط العاملَ فورَ عودته بلا تدخّل.
+export function useLocalSasBase(): string {
+  const [base, setBase] = useState("");
+  useEffect(() => {
+    let alive = true;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = () => {
+      void localSasBase().then((b) => {
+        if (!alive) return;
+        if (b) { setBase(b); return; }           // وُجد ⇒ يتوقّف الجسّ (النتيجةُ مخزونةٌ داخليّاً)
+        if (++tries < 15) timer = setTimeout(tick, 20_000); // ١٥ محاولة ≈ ٥ دقائق
+      }).catch(() => {});
+    };
+    tick();
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+  }, []);
+  return base;
 }

@@ -464,6 +464,7 @@ export async function POST(request: Request) {
               channel: "WHATSAPP", subscriberId: sub.id, phone: toPhone, text,
               status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
               createdByUser: String(actor.userId ?? ""),
+              agentId: actor.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
             },
           });
         }

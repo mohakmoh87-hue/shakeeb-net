@@ -4,7 +4,7 @@
 // الصافي = مبالغ الأيام + الإضافي + المكافآت + إضافات الحساب (قبض) − خصومات الحضور − الخصومات المؤكّدة − سحوبات الحساب (صرف).
 
 export type SalaryAttendance = {
-  dayKey: string | null; checkIn: Date | null;
+  dayKey: string | null; checkIn: Date | null; checkOut?: Date | null; // أ-٧ · وقتُ الخروج للمراجعة
   lateDeduction: number | null; earlyDeduction: number | null; overtimeAddition: number | null;
   lateExcuse?: string | null; // pending/approved ⇒ خصم التأخير مُعلَّق (لا يُحتسب)
 };
@@ -17,7 +17,9 @@ export type SalaryPeriod = { from: string; to: string };
 export type NegMode = "carry" | "zero";
 
 export type SalaryItem = { date: string; type: string; label: string; amount: number; reason?: string; txId?: number };
-export type SalaryDay = { date: string; amount: number; note: string }; // تفصيل مبالغ الأيام
+// أ-٧ · تفصيلُ اليوم يحمل **وقتَي البصم** أيضاً (طلبُ محمد): «تظهر بصماتُ كلّ أيّام فترة
+// الراتب للمراجعة لا الأيّامُ ذاتُ الأثر الماليّ وحدَها» — والمراجعةُ تحتاج الوقتَ لا المبلغَ.
+export type SalaryDay = { date: string; amount: number; note: string; checkIn?: string | null; checkOut?: string | null };
 export type SalaryResult = {
   daysPaid: number; cleanDays: number; dailyAmount: number;
   baseEarned: number; overtime: number; bonuses: number; credits: number;
@@ -138,7 +140,8 @@ export async function statementForTechnician(
   const dateRange = p ? { gte: new Date(`${p.from}T00:00:00+03:00`), lte: new Date(`${p.to}T23:59:59.999+03:00`) } : undefined;
 
   const [att, leaves, adj, money] = await Promise.all([
-    prisma.attendance.findMany({ where: { technicianId, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, checkIn: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true, lateExcuse: true } }),
+    // أ-٧ · `checkOut` يُجلَب أيضاً — فتفصيلُ اليوم يُظهر وقتَي البصم للمراجعة لا المبلغَ وحدَه
+    prisma.attendance.findMany({ where: { technicianId, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, checkIn: true, checkOut: true, lateDeduction: true, earlyDeduction: true, overtimeAddition: true, lateExcuse: true } }),
     prisma.leave.findMany({ where: { technicianId, isDeleted: false, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, paid: true, status: true, reason: true } }),
     prisma.adjustment.findMany({ where: { technicianId, salaryStatementId: null, ...(dayRange ? { dayKey: dayRange } : {}) }, select: { dayKey: true, kind: true, amount: true, status: true, reason: true } }),
     accountId
@@ -255,7 +258,13 @@ export function computeSalary(
     if (ot) { items.push({ date: a.dayKey, type: "overtime", label: "إضافي", amount: ot }); notes.push("إضافي"); }
     if (lateHeld) notes.push(a.lateExcuse === "approved" ? "عُذر مقبول" : "طلب نسيان بصمة معلّق");
     if (!late && !early && !ot && !lateHeld) cleanDays++; // بصمة سليمة
-    dayDetails.push({ date: a.dayKey, amount: dm, note: notes.length ? notes.join("، ") : "بصمة سليمة" });
+    // أ-٧ · ومعه وقتا البصم — فالمراجعةُ تحتاج «متى بصم» لا المبلغَ وحدَه
+    const hm = (d: Date | null | undefined) =>
+      d ? new Date(d).toLocaleTimeString("en-GB", { timeZone: "Asia/Baghdad", hour: "2-digit", minute: "2-digit", hour12: false }) : null;
+    dayDetails.push({
+      date: a.dayKey, amount: dm, note: notes.length ? notes.join("، ") : "بصمة سليمة",
+      checkIn: hm(a.checkIn), checkOut: hm(a.checkOut),
+    });
   }
 
   // ═════ 🔴 أ-٨ · يومٌ واحدٌ لا يُدفَع مرّتَين (2026-08-13) ═════

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { prepareSasEmbed } from "@/lib/sasEmbed";
 import { sasScopedPath } from "@/lib/sasScope";
-import { localSasBase } from "@/lib/localSas";
+import { useLocalSasBase } from "@/lib/localSas";
 import { computeDateTo } from "@/lib/subscription";
 import { announceMoneyChanged } from "@/lib/moneyRefresh";
 
@@ -125,9 +125,9 @@ export default function ActivationModal({
   }, [months, manualDate]);
   const directLink = sasDirectUrl(tower, subscriber);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
-  const [localBase, setLocalBase] = useState<string>("");
-
-  useEffect(() => { localSasBase().then(setLocalBase); }, []);
+  // 🔁 جسٌّ يُعيد المحاولة: جسّةٌ واحدةٌ فاشلة (لحظةَ إعادة تشغيل العامل) كانت تُبقي
+  //    هذه النافذةَ على المسار السحابيّ البطيء حتى تُحدَّث الصفحة يدويّاً
+  const localBase = useLocalSasBase();
 
   // تسجيل الدخول التلقائي للوحة SAS4 المضمّنة ثم تحميلها.
   // إن وُجد العامل المحلي (حاسبة المكتب) تُحمَّل منه مباشرةً (أسرع، يحقن التوكن تلقائياً)؛

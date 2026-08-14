@@ -41,6 +41,10 @@ export function renderTemplate(
 export interface SendResult {
   ok: boolean;
   error?: string;
+  /** وصلت الرسالةُ بلا صورةٍ وهذا سببُه (تُوثَّق في سجلّ الرسائل — لا في نافذة الحاسبة وحدَها) */
+  imageError?: string;
+  /** وصلت بصورتها */
+  withImage?: boolean;
 }
 
 // نقطة التوصيل بمزوّد حقيقي (Twilio / واتساب API / بوت تيليغرام)

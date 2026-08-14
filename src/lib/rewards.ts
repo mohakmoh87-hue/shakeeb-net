@@ -187,7 +187,7 @@ export async function sendRewardUsedMessage(a: {
     const text = renderTemplate(tpl, { name: a.name, amount: a.discount, balance: a.balance, office: office?.name ?? "SHAKEEB" });
     const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId);
     await prisma.message.create({
-      data: { channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text, status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: a.createdByUser },
+      data: { channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text, status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: a.createdByUser, agentId: a.agentId ?? null },
     });
   } catch { /* تجاهل */ }
 }

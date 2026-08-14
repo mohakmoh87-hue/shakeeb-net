@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
-import { localSasBase } from "@/lib/localSas";
+import { useLocalSasBase } from "@/lib/localSas";
 import { sasScopedPath } from "@/lib/sasScope";
 
 // hasSas: علامة آمنة من الخادم «المكتب مربوط بـSAS» — اليوزر لا يصل لغير مديري المكاتب
@@ -41,12 +41,13 @@ export default function Sas4ImportPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
-  // العامل المحلي على حاسبة المكتب (تلقائي): إن وُجد تُحمَّل SAS منه مباشرةً (أسرع)
-  const [localBase, setLocalBase] = useState<string>("");
+  // العامل المحلي على حاسبة المكتب (تلقائي): إن وُجد تُحمَّل SAS منه مباشرةً (أسرع).
+  // 🔁 وبإعادة محاولةٍ: جسّةٌ واحدةٌ فاشلة (لحظةَ إعادة تشغيل العامل مع أيّ نشرة) كانت
+  //    تُبقي الصفحةَ على المسار السحابيّ البطيء حتى تُحدَّث يدويّاً.
+  const localBase = useLocalSasBase();
 
   useEffect(() => {
     fetch("/api/towers").then((r) => { if (r.ok) r.json().then(setTowers); });
-    localSasBase().then(setLocalBase); // كشف تلقائي للعامل المحلي
   }, []);
 
   const tower = towers.find((t) => t.id === towerId);

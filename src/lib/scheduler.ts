@@ -134,6 +134,7 @@ export async function runExpiringReminder(
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
         status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
         createdByUser: "scheduler",
+        agentId: office?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
       },
     });
     res.ok ? sent++ : failed++;
@@ -214,6 +215,7 @@ export async function runDebtReminder(
       data: {
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
         status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: "scheduler",
+        agentId: office?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
       },
     });
     res.ok ? sent++ : failed++;
@@ -330,6 +332,7 @@ export async function runExpiredNotice(
         data: {
           channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
           status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: "scheduler",
+          agentId: office.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
         },
       });
       // ⚠️ والختمُ **يبقى** ولو فشل الإرسال: إعادةُ المحاولة كلَّ يومٍ تعني رسالةً

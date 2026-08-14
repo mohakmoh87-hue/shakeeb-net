@@ -42,6 +42,7 @@ export async function sendLoanMessage(opts: {
         status: res.ok ? "SENT" : "FAILED",
         error: res.error ?? null,
         createdByUser: opts.createdByUser ?? null,
+        agentId: opts.agentId ?? null, // عزل سجلّ الرسائل بالوكيل (كان يُمرَّر للقالب ولا يُكتب)
       },
     });
   } catch {

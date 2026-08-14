@@ -105,9 +105,35 @@ function stateOf(rec: { checkIn: Date | null; checkOut: Date | null } | null): "
 }
 
 // GET: للفني → حالة يومه. للمدير/الموظف → حضور فنيّي المكتب اليوم.
+// أ-٧ · مُرشِّحُ المدى للسجلّ: `from`/`to` بصيغة YYYY-MM-DD (dayKey نصٌّ يقارَن زمنيّاً)
+function dayRangeOf(url: URL): { gte?: string; lte?: string } | undefined {
+  const ok = (s: string | null) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null);
+  const from = ok(url.searchParams.get("from"));
+  const to = ok(url.searchParams.get("to"));
+  if (!from && !to) return undefined;
+  return { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) };
+}
+
 export async function GET(request: Request) {
   const tech = await getTechSession();
   if (tech) {
+    // ═════ أ-٧ · «وفي تطبيق الفنيّ تظهر له **كلُّ** بصماته لا المؤثِّرة فقط» ═════
+    // كانت جلسةُ الفنيّ تُرجع حالةَ **يومه** حصراً، فلا سبيلَ له لمراجعة سجلّه.
+    // 🔒 والعزلُ ضمنيٌّ تامّ: السجلُّ من `tech.technicianId` (جلستُه) — لا معرّفَ يُقبَل منه.
+    const u = new URL(request.url);
+    if (u.searchParams.get("log") === "1") {
+      const range = dayRangeOf(u);
+      const recs = await prisma.attendance.findMany({
+        where: { technicianId: tech.technicianId, ...(range ? { dayKey: range } : {}) },
+        orderBy: { dayKey: "desc" },
+        select: {
+          id: true, dayKey: true, checkIn: true, checkOut: true, checkInActual: true, checkOutActual: true,
+          lateDeduction: true, earlyDeduction: true, overtimeAddition: true, lateExcuse: true, checkoutBy: true,
+        },
+        take: range ? 400 : 120,
+      });
+      return NextResponse.json({ role: "technician", log: recs });
+    }
     const rec = await todayRecord(tech.technicianId);
     // أ-٢٥ · لا سجلَّ لليوم؟ فلعلّه لم يُغلق سجلَّ أمس — يُعرَض عليه ليُغلقه، و`lateDay`
     // يُخبر الشريطَ أنّ الخروجَ هذا **لأمس** فلا يظنّه خروجَ اليوم.
@@ -129,13 +155,15 @@ export async function GET(request: Request) {
     if (!t || t.isDeleted || !(await ownsTower(session, t.towerId))) {
       return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
     }
+    // أ-٧ · «وبحثٌ بين تاريخين لمراجعة بصماتٍ أقدم» — بلا المدى تبقى آخرُ ١٢٠ يوماً كما كانت
+    const range = dayRangeOf(url);
     const recs = await prisma.attendance.findMany({
-      where: { technicianId: logTechId },
+      where: { technicianId: logTechId, ...(range ? { dayKey: range } : {}) },
       orderBy: { dayKey: "desc" },
       select: { id: true, dayKey: true, checkIn: true, checkInActual: true, checkOut: true, checkOutActual: true, checkoutBy: true, lateExcuse: true, lateDeduction: true, earlyDeduction: true, salaryStatementId: true, deductionClearedBy: true, deductionClearedAt: true, deductionClearReason: true, deductionClearedAmount: true,
         // أ-١٠/القاعدة ٣ · تُقرأ الآن وتُعرَض: **أين** بصم — و`towerId` **لمن** يُحتسَب
         towerId: true, checkInTowerId: true, checkOutTowerId: true },
-      take: 120,
+      take: range ? 400 : 120, // بمدىً صريحٍ يُسمح بأوسع (مراجعةُ أشهرٍ ماضية)
     });
     // أسماءُ المكاتب الظاهرة في السجلّ — **من مكاتب وكيل المستخدم حصراً** (عزل)
     const agentT = await agentTowerIds(session);

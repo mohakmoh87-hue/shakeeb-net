@@ -55,6 +55,7 @@ export async function POST(request: Request) {
           channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text: msg,
           status: res.ok ? "SENT" : "FAILED", error: ("error" in res ? res.error : null) ?? null,
           createdByUser: actor.name,
+          agentId: office?.agentId ?? actor.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
         },
       }).catch(() => {});
     }

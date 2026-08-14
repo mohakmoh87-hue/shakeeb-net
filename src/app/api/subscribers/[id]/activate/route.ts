@@ -388,8 +388,10 @@ async function sendActivationMessage(a: {
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text,
-        status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+        status: res.ok ? "SENT" : "FAILED",
+        error: res.error ?? (res.imageError ? `أُرسلت بلا صورة — ${res.imageError}` : null),
         createdByUser: a.createdByUser,
+        agentId: office?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل (من مكتب المشترك المقروء أعلاه)
       },
     });
   } catch {

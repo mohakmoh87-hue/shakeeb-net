@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { localSasBase } from "@/lib/localSas";
+import { localSasBase, useLocalSasBase } from "@/lib/localSas";
 
 // زر طباعة فورية: يرسل أمر الطباعة الصامتة مباشرة (بلا فتح أي صفحة أو تاب).
 // ═════ محليٌّ أوّلاً (طلب محمد 2026-08-14): «٥ ثوانٍ كبيرةٌ جدّاً» ═════
@@ -12,6 +12,10 @@ export default function PrintNowButton({
   kind, id, className = "",
 }: { kind: "subscription" | "invoice" | "debt"; id: number; className?: string }) {
   const [st, setSt] = useState<"idle" | "busy" | "ok" | "printed" | "off" | "err">("idle");
+  // 🔁 جسٌّ مستمرٌّ بالخلفيّة: يلتقط العاملَ فورَ عودته (بعد أيّ نشرة) فلا تنتظر الطباعةُ
+  //    تحديثَ الصفحة يدويّاً. والضغطةُ نفسُها تجسّ أيضاً (سطرُ `localSasBase` أدناه) —
+  //    فأيُّهما سبق يكفي، والنتيجةُ مخزونةٌ داخلَ الوحدة فلا يتكرّر النداءُ الشبكيّ.
+  const warmBase = useLocalSasBase();
 
   async function go(e: React.MouseEvent) {
     e.stopPropagation(); e.preventDefault();
@@ -19,7 +23,7 @@ export default function PrintNowButton({
     setSt("busy");
 
     // ١) المحليّ: إرسالٌ لحظيّ وطباعةٌ مباشرة — والردُّ يعود بعد الطبع الفعليّ
-    const base = await localSasBase().catch(() => "");
+    const base = warmBase || (await localSasBase().catch(() => ""));
     if (base) {
       try {
         const ctrl = new AbortController();

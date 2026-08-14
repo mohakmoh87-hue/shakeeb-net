@@ -248,10 +248,28 @@ async function abandonStrayOffice(officeId: number, mid: string | null) {
 }
 
 // مستطلِع الاتصال: كل حاسبة تُبقي جلسة مكتبها متصلة — بمهلة 60ث بين المحاولات.
+// ═════ 🔴 حالةُ الجلسة تكذب بعد إطفاء العامل (بلاغ محمد 2026-08-14) ═════
+// `wa_sessions.state` يبقى `ready` مكتوباً في القاعدة بعد إطفاء العامل أو إعادة تشغيله —
+// فالموقعُ يظنّ الجلسةَ جاهزةً ويُمرّر إليها الرسائل، ثمّ تفشل بـ«واتساب المكتب غير جاهز
+// (الحالة: disconnected)». وهو عينُ الخطأ الذي رآه محمد عند إرسال ملخّصٍ لحظةَ نشرة.
+// ⇒ عند إقلاع العامل: كلُّ جلسةٍ **مسجَّلةٍ باسم هذه الحاسبة** تُصفَّر إلى `disconnected`
+//   فوراً — فالعميلُ لم يبدأ بعد. وحين يبلغ `ready` فعلاً يُعيد نشرَها (السطر ٤٤).
+// 🔒 ولا تُلمَس جلسةُ حاسبةٍ أخرى حيّة: الشرطُ `hostMachineId = MACHINE_ID` حصراً.
+async function resetOwnSessionsOnBoot(): Promise<void> {
+  const mid = process.env.MACHINE_ID || null;
+  if (!mid) return; // بلا هويّةٍ لا نُصفّر شيئاً — الصمتُ أسلمُ من لمسِ جلسةِ غيرنا
+  const r = await prisma.waSession.updateMany({
+    where: { hostMachineId: mid, state: { in: ["ready", "qr", "authenticated", "starting"] } },
+    data: { state: "disconnected", qr: null, error: "العاملُ أُعيد تشغيلُه — بانتظار اتّصال الجلسة" },
+  }).catch(() => null);
+  if (r?.count) console.log(`[whatsapp] 🔄 صُفِّرت حالةُ ${r.count} جلسةٍ لهذه الحاسبة عند الإقلاع (كانت تُظهر «جاهزة» والعميلُ لم يبدأ)`);
+}
+
 export function startWaRequestPoller() {
   const gg = globalThis as unknown as { __waPollerStarted?: boolean };
   if (gg.__waPollerStarted) return;
   gg.__waPollerStarted = true;
+  void resetOwnSessionsOnBoot(); // قبل أوّل دورة — فلا نافذةَ تكذب فيها الحالة
   setInterval(async () => {
     try {
       const mid = process.env.MACHINE_ID || null;
@@ -415,7 +433,9 @@ export function toWaId(phoneRaw: string): string | null {
   return `${p}@c.us`;
 }
 
-export type SendResult = { ok: boolean; error?: string };
+/** `imageError`: الرسالةُ وصلت **بلا صورة** وهذا سببُه — يُوثَّق في سجلّ الرسائل للتشخيص.
+ *  و`withImage`: وصلت بصورتها (يُفيد في تأكيد أنّ الميزةَ تعمل حين يُسأل عنها). */
+export type SendResult = { ok: boolean; error?: string; imageError?: string; withImage?: boolean };
 
 // ذاكرة مؤقتة للأرقام المؤكَّد أن لها واتساب (لتفادي إعادة الفحص على خوادم واتساب).
 // نُخزّن النتائج الموجبة فقط؛ النتائج السالبة تُعاد فحصها دائماً حتى يظهر التنبيه
@@ -599,6 +619,10 @@ async function sendWhatsAppLocal(officeId: number, phone: string, text: string, 
     //  قالبٍ أختاره». والصورةُ تُرسَل **مع النصّ تعليقاً واحداً** لا رسالتَين — فرسالتان
     //  تُضاعفان ما يراه المشتركُ وما يُحسَب على الرقم.
     // 🔑 وعند فشلِ الصورة **يُرسَل النصُّ وحدَه**: رسالةٌ بلا صورةٍ خيرٌ من لا رسالة.
+    // ═════ 🖼️ سببُ سقوط الصورة يُوثَّق في **سجلّ الرسائل** لا في نافذة الحاسبة وحدَها ═════
+    // (بلاغ محمد 2026-08-14: «وصلت الرسالةُ بلا صورة» — وكان السببُ محبوساً في `console`
+    //  على حاسبة المكتب، فتعذّر تشخيصُه عن بُعد. الآن يعود مع النتيجة فيُكتب في `messages`.)
+    let imageNote: string | null = null;
     if (image) {
       try {
         const { MessageMedia } = await import("whatsapp-web.js");
@@ -606,14 +630,18 @@ async function sendWhatsAppLocal(officeId: number, phone: string, text: string, 
         if (m) {
           const media = new MessageMedia(m[1], m[2]);
           await client.sendMessage(waId, media, { caption: text });
-          return { ok: true };
+          return { ok: true, withImage: true };
         }
+        // لا يطابق صيغةَ data URI ⇒ كان يسقط **صامتاً تماماً** قبل اليوم
+        imageNote = `صيغةُ الصورة غير صالحة (لا تبدأ بـdata:…;base64) — طولُها ${image.length}`;
       } catch (e) {
-        console.error("[whatsapp] تعذّر إرسال الصورة — يُرسَل النصُّ وحدَه:", e instanceof Error ? e.message : e);
+        imageNote = `تعذّر إرسال الصورة: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300);
       }
+      if (imageNote) console.error("[whatsapp] يُرسَل النصُّ وحدَه —", imageNote);
     }
     await client.sendMessage(waId, text);
-    return { ok: true };
+    // «أُرسلت بلا صورة» ليست فشلاً — الرسالةُ وصلت، والسببُ يُحفَظ للتشخيص
+    return imageNote ? { ok: true, imageError: imageNote } : { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // ===== «No LID for user» — رسائل تضيع بلا محاولة ثانية (تشخيص 2026-08-05) =====
@@ -651,7 +679,10 @@ export async function sendWhatsApp(officeId: number | null | undefined, phone: s
   // المهلة ٤٥ ثانية لا ١٥: القياس على مكتب الشدن (2026-08-10) أظهر إرسالاً يستغرق ١٢–١٤ ثانية
   // في الإرسال الجماعيّ، فكانت رسائلٌ **وصلت فعلاً** تُختَم "فاشلة" لمجرّد تجاوز المهلة.
   const r = await relayRequest(officeId, "sendMsg", { phone, text, image: image ?? null }, 45000);
-  return r.ok ? { ok: true } : { ok: false, error: r.error ?? "تعذّر الإرسال عبر حاسبة المكتب" };
+  if (!r.ok) return { ok: false, error: r.error ?? "تعذّر الإرسال عبر حاسبة المكتب" };
+  // 🖼️ نتيجةُ الصورة تعود من الحاسبة عبر `result` — فيُعرَف سببُ سقوطها من الموقع نفسِه
+  const rr = (r.result ?? {}) as { imageError?: string; withImage?: boolean };
+  return { ok: true, ...(rr.imageError ? { imageError: rr.imageError } : {}), ...(rr.withImage ? { withImage: true } : {}) };
 }
 
 // ===== مُرحِّل عمليات واتساب (الموقع ↔ الوكيل) =====
@@ -781,7 +812,8 @@ export function startWaRelayPoller() {
           if (relayRow.kind === "chats") result = await getOfficeChats(relayRow.towerId, p.limit ?? 40);
           else if (relayRow.kind === "messages") result = await getOfficeMessages(relayRow.towerId, p.chatId ?? "", p.limit ?? 40);
           else if (relayRow.kind === "send") result = await sendOfficeChat(relayRow.towerId, p.chatId ?? "", p.text ?? "");
-          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true }; }
+          // 🖼️ ونتيجةُ الصورة تُعاد إلى الموقع (لا تبقى في نافذة الحاسبة) فتُكتب في سجلّ الرسائل
+          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true, ...(rr.imageError ? { imageError: rr.imageError } : {}), ...(rr.withImage ? { withImage: true } : {}) }; }
           else if (relayRow.kind === "media") result = await downloadOfficeMedia(relayRow.towerId, p.msgId ?? "");
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
           else if (relayRow.kind === "sas") result = await runSasOp(relayRow.towerId, p.op ?? "", p);

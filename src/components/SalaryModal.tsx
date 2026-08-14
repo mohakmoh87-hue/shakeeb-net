@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import MoneyTxModal from "@/components/MoneyTxModal";
 
 type Item = { date: string; type: string; label: string; amount: number; reason?: string; txId?: number };
-type Day = { date: string; amount: number; note: string };
+// أ-٧ · وقتا البصم مع تفصيل اليوم (اختياريّان: الكشوفُ القديمة المحفوظة بلاهما)
+type Day = { date: string; amount: number; note: string; checkIn?: string | null; checkOut?: string | null };
 type Statement = {
   daysPaid: number; cleanDays: number; dailyAmount: number; baseEarned: number; overtime: number; bonuses: number; credits: number;
   attendanceDeductions: number; confirmedDeductions: number; advances: number; net: number; periodFrom: string; periodTo: string; items: Item[]; dayDetails: Day[];
@@ -189,6 +190,9 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
                 ))}
               </ul>
             )}
+
+            {/* أ-٧ · سجلُّ البصمات — كلُّها لا المؤثِّرةُ وحدَها، وببحثٍ بين تاريخين */}
+            <AttendanceLog technicianId={technicianId} isManager={isManager} periodFrom={st.periodFrom} periodTo={st.periodTo} />
 
             {isManager && (
               !choosing ? (
@@ -378,6 +382,103 @@ function Cell({ k, label, value, tone, expand, setExpand }: { k: string; label: 
   );
 }
 
+// ═════════ أ-٧ · سجلُّ البصمات (طلبُ محمد) ═════════
+// «تظهر بصماتُ **كلّ أيّام فترة الراتب** للمراجعة لا الأيّامُ ذاتُ الأثر الماليّ وحدَها،
+//  **وبحثٌ بين تاريخين** لمراجعة بصماتٍ أقدم. **وفي تطبيق الفنيّ** تظهر له كلُّ بصماته.»
+// 🔒 والعزل: المديرُ يمرّر `technicianId` (يُفحَص بـ`ownsTower` في المسار)، والفنيُّ لا يمرّر
+//    شيئاً — سجلُّه يُشتقّ من جلسته وحدَها، فلا يرى غيرَه بحال.
+type LogRow = {
+  id: number; dayKey: string | null; checkIn: string | null; checkOut: string | null;
+  checkInActual?: string | null; checkOutActual?: string | null; checkoutBy?: string | null;
+  lateDeduction?: number | null; earlyDeduction?: number | null; overtimeAddition?: number | null; lateExcuse?: string | null;
+};
+function AttendanceLog({ technicianId, isManager, periodFrom, periodTo }:
+  { technicianId?: number | null; isManager: boolean; periodFrom: string; periodTo: string }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<LogRow[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [from, setFrom] = useState(periodFrom);
+  const [to, setTo] = useState(periodTo);
+
+  const load = useCallback(async (f: string, t: string) => {
+    setBusy(true);
+    const q = new URLSearchParams();
+    if (isManager && technicianId != null) q.set("technicianId", String(technicianId));
+    else q.set("log", "1"); // جلسةُ الفنيّ: سجلُّ نفسِه
+    if (f) q.set("from", f);
+    if (t) q.set("to", t);
+    const r = await fetch(`/api/field/attendance?${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+    setRows((r?.log ?? []) as LogRow[]);
+    setBusy(false);
+  }, [isManager, technicianId]);
+
+  const hm = (s: string | null | undefined) =>
+    s ? new Date(s).toLocaleTimeString("en-GB", { timeZone: "Asia/Baghdad", hour: "2-digit", minute: "2-digit", hour12: false }) : "—";
+
+  return (
+    <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5">
+      <button
+        onClick={() => { const n = !open; setOpen(n); if (n && rows == null) void load(from, to); }}
+        className="flex w-full items-center justify-between text-sm font-bold text-slate-700">
+        <span>🕐 سجلّ البصمات {open ? "▲" : "▼"}</span>
+        <span className="text-[11px] font-normal text-slate-500">كلّ الأيّام — لا المؤثِّرة فقط</span>
+      </button>
+      {open && (
+        <>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <label className="text-[11px] font-semibold text-slate-600">من
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} dir="ltr"
+                className="mr-1 rounded-lg border border-slate-300 px-2 py-1 text-xs" /></label>
+            <label className="text-[11px] font-semibold text-slate-600">إلى
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} dir="ltr"
+                className="mr-1 rounded-lg border border-slate-300 px-2 py-1 text-xs" /></label>
+            <button onClick={() => void load(from, to)} disabled={busy}
+              className="rounded-lg bg-mynet-blue px-3 py-1 text-xs font-bold text-white disabled:opacity-60">
+              {busy ? "..." : "بحث"}
+            </button>
+            <button onClick={() => { setFrom(periodFrom); setTo(periodTo); void load(periodFrom, periodTo); }}
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">
+              فترة الراتب
+            </button>
+          </div>
+          <div className="mt-2 max-h-64 overflow-auto">
+            {rows == null || busy ? <div className="p-3 text-center text-xs text-slate-400">...</div>
+            : rows.length === 0 ? <div className="p-3 text-center text-xs text-slate-400">لا بصمات في هذا المدى</div>
+            : (
+              <table className="w-full text-right text-[11px]">
+                <thead className="sticky top-0 bg-slate-100 text-slate-600"><tr>
+                  <th className="p-1.5">اليوم</th><th className="p-1.5">دخول</th><th className="p-1.5">خروج</th><th className="p-1.5">ملاحظة</th>
+                </tr></thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const notes: string[] = [];
+                    if (r.lateDeduction) notes.push(`تأخير −${num(r.lateDeduction)}`);
+                    if (r.earlyDeduction) notes.push(`خروج مبكّر −${num(r.earlyDeduction)}`);
+                    if (r.overtimeAddition) notes.push(`إضافي +${num(r.overtimeAddition)}`);
+                    if (r.lateExcuse === "approved") notes.push("عُذر مقبول");
+                    else if (r.lateExcuse === "pending") notes.push("طلبٌ معلّق");
+                    if (r.checkoutBy === "manager") notes.push("أُغلق يدويّاً");
+                    return (
+                      <tr key={r.id} className="border-t border-slate-100">
+                        <td className="p-1.5 font-mono text-slate-500" dir="ltr">{r.dayKey ?? "—"}</td>
+                        <td className="p-1.5 font-mono" dir="ltr">{hm(r.checkIn)}
+                          {r.checkInActual && hm(r.checkInActual) !== hm(r.checkIn) && <span className="text-[10px] text-slate-400"> (فعليّ {hm(r.checkInActual)})</span>}</td>
+                        <td className="p-1.5 font-mono" dir="ltr">{hm(r.checkOut)}
+                          {r.checkOutActual && hm(r.checkOutActual) !== hm(r.checkOut) && <span className="text-[10px] text-slate-400"> (فعليّ {hm(r.checkOutActual)})</span>}</td>
+                        <td className="p-1.5 text-slate-600">{notes.length ? notes.join(" · ") : "سليمة"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // لوحة تفاصيل الخانة المختارة — تعرض بنودها المفصّلة
 function DetailPanel({ cat, st, onClose }: { cat: string; st: Statement; onClose: () => void }) {
   const titles: Record<string, string> = {
@@ -385,8 +486,13 @@ function DetailPanel({ cat, st, onClose }: { cat: string; st: Statement; onClose
     attded: "تفصيل خصم الحضور", confded: "تفصيل الخصومات المؤكّدة", advance: "تفصيل السحب من الحساب (صرف)", clean: "الأيام السليمة",
   };
   let rows: { date: string; label: string; amount: number; reason?: string }[] = [];
-  if (cat === "days") rows = st.dayDetails.map((d) => ({ date: d.date, label: d.note, amount: d.amount }));
-  else if (cat === "clean") rows = st.dayDetails.filter((d) => d.note === "بصمة سليمة").map((d) => ({ date: d.date, label: "بصمة سليمة", amount: d.amount }));
+  // أ-٧ · يُعرَض وقتا البصم مع كلّ يوم — «للمراجعة» لا لمعرفة المبلغ فقط (طلبُ محمد)
+  const withTimes = (d: Day, base: string) => {
+    const t = d.checkIn || d.checkOut ? `🕐 ${d.checkIn ?? "—"} ← ${d.checkOut ?? "—"}` : "";
+    return t ? `${base} · ${t}` : base;
+  };
+  if (cat === "days") rows = st.dayDetails.map((d) => ({ date: d.date, label: withTimes(d, d.note), amount: d.amount }));
+  else if (cat === "clean") rows = st.dayDetails.filter((d) => d.note === "بصمة سليمة").map((d) => ({ date: d.date, label: withTimes(d, "بصمة سليمة"), amount: d.amount }));
   else {
     const types: Record<string, string[]> = {
       overtime: ["overtime"], bonus: ["bonus"], credit: ["credit"],
