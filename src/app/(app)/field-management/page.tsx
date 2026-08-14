@@ -284,6 +284,9 @@ export default function FieldManagementPage() {
 
 
   const isTech = role === "technician";
+  // أ-٢ · إدارةُ الأعمدة (إنشاء/تسمية/حذف/⏱) للمدير **ولمستخدم المكتب** على مكتبه المعروض —
+  // والفنيُّ مستثنى (حسمه محمد 2026-08-14: «نعم يشمل الحذف أيضاً»). والخادمُ يحرس بنفس القاعدة.
+  const canEditLists = canManage || (canOperate && !isTech);
   const canTrack = role !== "" && role !== "technician"; // تتبّع الفنيين للمدير/الموظف فقط
   async function techLogout() {
     await fetch("/api/field/tech-logout", { method: "POST" });
@@ -837,7 +840,7 @@ export default function FieldManagementPage() {
             <div className="flex flex-col items-center gap-3 text-center text-white/85">
               <div className="text-6xl">🗂️</div>
               <div className="text-lg font-bold">لا أعمدة بعد</div>
-              <div className="max-w-[240px] text-sm text-white/60">{canManage ? "أضِف أول عمود لتبدأ بتنظيم بطاقات الفنيين" : "لم يُنشئ المدير أعمدة لهذا المكتب بعد"}</div>
+              <div className="max-w-[240px] text-sm text-white/60">{canEditLists ? "أضِف أول عمود لتبدأ بتنظيم بطاقات الفنيين" : "لم يُنشئ المدير أعمدة لهذا المكتب بعد"}</div>
             </div>
           </div>
         )}
@@ -875,7 +878,7 @@ export default function FieldManagementPage() {
                   {l.name} <span className={`text-xs font-normal ${isTech ? "text-slate-400" : "text-white/75"}`}>({listCards.length})</span>
                   {l.timeTracked && <span className={`ml-1 rounded px-1 py-0.5 text-[10px] font-semibold ${isTech ? "bg-sky-100 text-sky-700" : "bg-white/25 text-white"}`} title="عمود محسوب بالوقت">⏱</span>}
                 </span>
-                {canManage && (
+                {canEditLists && (
                   <div className={`flex gap-1 ${isTech ? "text-slate-400" : "text-white/85"}`}>
                     <button onClick={() => toggleTimeTracked(l)} className={`rounded px-1 ${l.timeTracked ? (isTech ? "text-sky-600" : "bg-white/25 text-white") : (isTech ? "hover:bg-slate-200" : "hover:bg-white/20")}`} title={l.timeTracked ? "إلغاء الاحتساب بالوقت" : "تفعيل الاحتساب بالوقت"}>⏱</button>
                     <button onClick={() => renameList(l)} className={`rounded px-1 ${isTech ? "hover:bg-slate-200" : "hover:bg-white/20"}`} title="إعادة تسمية">✏️</button>
@@ -1037,8 +1040,8 @@ export default function FieldManagementPage() {
           );
         })()}
 
-        {/* إضافة عمود — للمدير فقط */}
-        {canManage && (
+        {/* أ-٢ · إضافة عمود — للمدير ولمستخدم المكتب (حسمه محمد 2026-08-14) */}
+        {canEditLists && (
           <div className={`w-[280px] shrink-0 rounded-xl p-2 ${isTech ? "bg-white/20" : "border border-dashed border-line bg-surface"}`}>
             <input value={newList} onChange={(e) => setNewList(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addList()} placeholder="+ إضافة عمود جديد" className={`w-full rounded-lg px-3 py-2 text-sm outline-none ${isTech ? "bg-white/90" : "border border-line bg-surface"}`} />
             {newList.trim() && <button onClick={addList} className="mt-1 w-full rounded-lg bg-white py-1.5 text-sm font-semibold text-mynet-blue">إضافة العمود</button>}

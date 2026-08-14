@@ -1,33 +1,37 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { guard } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
-import { can } from "@/lib/rbac";
-import { agentOwnsBoard, agentOwnsList, canOperateList } from "@/lib/field";
+import { agentOwnsBoard, agentOwnsList, canOperateList, canOperateOffice } from "@/lib/field";
 import { ensureCardType } from "@/lib/fieldDefaults";
 
-// إدارة الأعمدة للمدير فقط (field.manage) — إضافة/تسمية/حذف/تحديد «محسوب بالوقت».
+// ═════ أ-٢ · إدارةُ الأعمدة **للمستخدم أيضاً** لا للمدير وحده (حسمه محمد 2026-08-14) ═════
+// «المستخدم يُنشئ ويُعدّل ويحذف ويُرتّب الأعمدة والبطاقات كما يشاء» — وسُئل عن الحذف فقال:
+// «نعم يشمل الحذف أيضاً». فسقط شرطُ `field.manage` عن الإنشاء والتسمية والحذف و«محسوب
+// بالوقت»، وبقيت القاعدةُ الحاكمة قاعدةَ **الكتابة على المكتب** نفسَها التي تحكم البطاقات:
+// المديرُ على كلّ مكاتب وكيله، ومستخدمُ المكتب على مكتبه وحدَه (مشاهدةٌ لغيره) — عبر
+// `canOperateOffice/List` فلا يتغيّر العزل قيدَ أنملة. والفنيّون لا يصلون أصلاً (جلستُهم
+// ليست جلسةَ مستخدم ⇒ 401).
 
 // إنشاء عمود جديد في اللوحة
 export async function POST(request: Request) {
-  const g = await guard("field.manage");
-  if (g.error) return g.error;
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const b = await request.json().catch(() => null);
   if (!b?.boardId || !b?.name?.trim()) return NextResponse.json({ error: "بيانات ناقصة" }, { status: 400 });
-  if (!(await agentOwnsBoard(g.session, Number(b.boardId)))) return NextResponse.json({ error: "اللوحة لا تتبع حسابك" }, { status: 403 });
-  const count = await prisma.taskList.count({ where: { boardId: Number(b.boardId), isDeleted: false } });
-  const created = await prisma.taskList.create({ data: { boardId: Number(b.boardId), name: String(b.name).trim(), position: count, timeTracked: !!b.timeTracked } });
+  const boardId = Number(b.boardId);
+  if (!(await agentOwnsBoard(s, boardId))) return NextResponse.json({ error: "اللوحة لا تتبع حسابك" }, { status: 403 });
+  const board = await prisma.taskBoard.findUnique({ where: { id: boardId }, select: { towerId: true } });
+  if (!(await canOperateOffice(s, board?.towerId ?? null))) {
+    return NextResponse.json({ error: "مشاهدة فقط — لا يمكنك الإضافة على مكتب آخر" }, { status: 403 });
+  }
+  const count = await prisma.taskList.count({ where: { boardId, isDeleted: false } });
+  const created = await prisma.taskList.create({ data: { boardId, name: String(b.name).trim(), position: count, timeTracked: !!b.timeTracked } });
   // ربطٌ تلقائيّ: إنشاء عمودٍ جديد يُنشئ نوعه في «الأنواع والأوقات» بنفس الاسم (يتخطّى النظاميّة)
-  await ensureCardType(g.session?.agentId ?? null, created.name);
+  await ensureCardType(s.agentId ?? null, created.name);
   return NextResponse.json(created, { status: 201 });
 }
 
-// تعديل عمود (الاسم/الترتيب/محسوب بالوقت)
-// ===== تحريك الأعمدة للمدير **وللمستخدم** (طلب محمد 2026-08-09) =====
-// كان المسار كلّه بصلاحيّة field.manage، فسحبُ مستخدم المكتب للعمود يفشل بصمت (العميل
-// يتجاهل الخطأ) ويعود الترتيب عند أوّل تحديث. الآن: **تحريك الترتيب** يجوز لمن يكتب على
-// مكتب العمود (المدير على مكاتب وكيله، ومستخدم المكتب على مكتبه — نفس قاعدة سحب البطاقات)،
-// أمّا **التسمية وخاصيّة «محسوب بالوقت»** فتبقى للمدير (field.manage) كما هي.
+// تعديل عمود (الاسم/الترتيب/محسوب بالوقت) — لمن يكتب على مكتب العمود (أ-٢)
 export async function PATCH(request: Request) {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
@@ -39,26 +43,26 @@ export async function PATCH(request: Request) {
   if (!(await canOperateList(s, listId))) {
     return NextResponse.json({ error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" }, { status: 403 });
   }
-  const wantsName = typeof b.name === "string";
-  const wantsTime = typeof b.timeTracked === "boolean";
-  if ((wantsName || wantsTime) && !can(s, "field.manage")) {
-    return NextResponse.json({ error: "تسمية الأعمدة وخصائصها للمدير — أمّا ترتيبها فمتاحٌ لك" }, { status: 403 });
-  }
   const data: { name?: string; position?: number; timeTracked?: boolean } = {};
-  if (wantsName) data.name = b.name.trim();
+  if (typeof b.name === "string" && b.name.trim()) data.name = b.name.trim();
   if (typeof b.position === "number") data.position = b.position;
-  if (wantsTime) data.timeTracked = b.timeTracked;
-  const updated = await prisma.taskList.update({ where: { id: Number(b.id) }, data });
+  if (typeof b.timeTracked === "boolean") data.timeTracked = b.timeTracked;
+  const updated = await prisma.taskList.update({ where: { id: listId }, data });
+  // تسميةٌ جديدة = نوعُ عمليّةٍ جديد (كإنشاء عمودٍ باسمٍ جديد تماماً) — والقديم يبقى لتاريخه
+  if (data.name) await ensureCardType(s.agentId ?? null, data.name);
   return NextResponse.json(updated);
 }
 
-// حذف عمود (وبطاقاته) حذفاً منطقياً
+// حذف عمود (وبطاقاته) حذفاً منطقياً — لمن يكتب على مكتب العمود (أ-٢)
 export async function DELETE(request: Request) {
-  const g = await guard("field.manage");
-  if (g.error) return g.error;
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
-  if (!(await agentOwnsList(g.session, id))) return NextResponse.json({ error: "العمود لا يتبع حسابك" }, { status: 403 });
+  if (!(await agentOwnsList(s, id))) return NextResponse.json({ error: "العمود لا يتبع حسابك" }, { status: 403 });
+  if (!(await canOperateList(s, id))) {
+    return NextResponse.json({ error: "مشاهدة فقط — لا يمكنك الحذف على مكتب آخر" }, { status: 403 });
+  }
   await prisma.$transaction([
     prisma.taskCard.updateMany({ where: { listId: id }, data: { isDeleted: true } }),
     prisma.taskList.update({ where: { id }, data: { isDeleted: true } }),
