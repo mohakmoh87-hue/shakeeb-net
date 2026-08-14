@@ -294,6 +294,22 @@ export async function endSupport(technicianId: number) {
   await prisma.technician.update({ where: { id: technicianId }, data: { supportTowerId: null, supportKind: null, supportCardIds: null } });
 }
 
+// ═════ الإجازةُ الزمنيّةُ المعتمدةُ ليومٍ — تُزيح حدَّ الدوام في حساب الخصم (طلبُ محمد) ═════
+// تُقرأ عند كلّ حسابِ بصمةٍ (خروجُ الفنيّ · الخروجُ التلقائيّ · إغلاقُ المدير) فيسقط خصمُ
+// الوقت المأذون به. و**لا حصّةَ ولا عدد**: إن وافق المديرُ حُسِبت، وإلّا فلا (نصُّ محمد).
+// 🔒 والعزلُ ضمنيّ: بمعرّف الفنيّ ويومِه — ولا مدخلَ للمستخدم فيها.
+export async function approvedTimeLeaveFor(
+  technicianId: number, dayKey: string | null | undefined,
+): Promise<{ startMin: number; endMin: number } | null> {
+  if (!dayKey) return null;
+  const l = await prisma.leave.findFirst({
+    where: { technicianId, dayKey, kind: "time", status: "approved", isDeleted: false },
+    select: { startMin: true, endMin: true },
+    orderBy: { id: "desc" },
+  }).catch(() => null);
+  return l?.startMin != null && l.endMin != null ? { startMin: l.startMin, endMin: l.endMin } : null;
+}
+
 // لوحة المكتب (تُنشأ إن لم توجد) — لوحة واحدة لكل قيمة towerId.
 export async function getOrCreateBoard(towerId: number | null) {
   let board = await prisma.taskBoard.findFirst({

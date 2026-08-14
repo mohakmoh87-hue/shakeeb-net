@@ -41,12 +41,34 @@ export type AttendanceCalc = {
   lateDeduction: number; earlyDeduction: number; overtimeAddition: number;
 };
 
+/** إجازةٌ زمنيّةٌ **معتمدةٌ** لذلك اليوم — بدقائق اليوم (٠…١٤٣٩). */
+export type TimeLeave = { startMin: number; endMin: number };
+
+// ═════════ الإجازةُ الزمنيّة: تُزيح حدَّ الدوام لذلك اليوم وحدَه (طلبُ محمد) ═════════
+// «زمنيّةٌ ١٢ ظهراً ← ٤ عصراً: بصمةُ دخوله أصلاً ١٢، فبعد موافقة المدير **تنتقل بصمةُ دخوله
+//  إلى ٤ عصراً — في هذا اليوم فقط**» · و«٩ ← ١١ ليلاً: بصمةُ خروجه تنتقل إلى ٩».
+// 🔑 والتطبيقُ **إزاحةُ الحدّ لا تعديلُ البصمة**: البصمةُ الحقيقيّةُ تبقى كما سُجّلت (فالتاريخُ
+//   لا يُزوَّر)، ويُحاسَب اليومُ على دوامٍ مُقلَّص — فيسقط الخصمُ وحدَه.
+// ⛔ والإجازةُ **وسطَ الدوام** لا تُزيح شيئاً: ألغى محمد «بصمتين في يومٍ واحد» (2026-08-14)،
+//   فلا مقاطعَ حضورٍ — وتبقى للتوثيق ولاستبعاده من التوزيع التلقائيّ وقتَها (autoAssign).
+function shiftWithLeave(startMin: number, endMin: number, leave?: TimeLeave | null): { s: number; e: number } {
+  if (!leave || leave.endMin <= leave.startMin) return { s: startMin, e: endMin };
+  // تلامسُ بدايةَ الدوام ⇒ يبدأ دوامُه من نهايتها (ولا يتجاوز نهايةَ الدوام)
+  if (leave.startMin <= startMin && leave.endMin > startMin) return { s: Math.min(leave.endMin, endMin), e: endMin };
+  // تلامسُ نهايةَ الدوام ⇒ ينتهي دوامُه ببدايتها (ولا ينزل تحت بدايته)
+  if (leave.endMin >= endMin && leave.startMin < endMin) return { s: startMin, e: Math.max(leave.startMin, startMin) };
+  return { s: startMin, e: endMin }; // وسطَ الدوام ⇒ بلا إزاحة (الحالةُ ٣ الملغاة)
+}
+
 // حساب التأخير/الخروج المبكّر/الإضافي وفق القواعد المؤكّدة.
-export function computeAttendance(tech: TechShift, checkIn: Date, checkOut: Date): AttendanceCalc {
+// `timeLeave`: إجازةٌ زمنيّةٌ معتمدةٌ لذلك اليوم — تُزيح حدَّ الدوام فيسقط خصمُها.
+export function computeAttendance(tech: TechShift, checkIn: Date, checkOut: Date, timeLeave?: TimeLeave | null): AttendanceCalc {
   const zero: AttendanceCalc = { lateMinutes: 0, earlyMinutes: 0, overtimeMinutes: 0, lateDeduction: 0, earlyDeduction: 0, overtimeAddition: 0 };
-  const startMin = parseHHMM(tech.shiftStart);
-  let endMin = parseHHMM(tech.shiftEnd);
-  if (startMin == null || endMin == null) return zero;
+  const rawStart = parseHHMM(tech.shiftStart);
+  const rawEnd = parseHHMM(tech.shiftEnd);
+  if (rawStart == null || rawEnd == null) return zero;
+  const { s: startMin, e: endShifted } = shiftWithLeave(rawStart, rawEnd, timeLeave);
+  let endMin = endShifted;
   const ge = Math.max(0, tech.entryGraceMin ?? 0);
   const xg = Math.max(0, tech.exitGraceMin ?? 0);
   const lr = Math.max(0, tech.lateRatePerMin ?? 0);

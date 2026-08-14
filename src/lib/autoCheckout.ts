@@ -32,7 +32,10 @@ export async function runAutoCheckout(opts?: { resetSupport?: boolean }): Promis
     });
     if (!t) continue;
     const checkoutAt = scheduledCheckout(rec.checkIn, t.shiftEnd);
-    const calc = computeAttendance(t, rec.checkIn, checkoutAt); // خروج بوقته ⇒ بلا إضافي
+    // ومعه الإجازةُ الزمنيّةُ المعتمدةُ لذلك اليوم — فلا يُخصَم وقتٌ أذن به المديرُ (طلبُ محمد)
+    const { approvedTimeLeaveFor } = await import("@/lib/field");
+    const tl = await approvedTimeLeaveFor(rec.technicianId, rec.dayKey);
+    const calc = computeAttendance(t, rec.checkIn, checkoutAt, tl); // خروج بوقته ⇒ بلا إضافي
     // إن كان مُعاراً (دعم) والدخول بمكتبٍ آخر: تُنسب بصمة الخروج لمكتب الدعم
     const outTower = t.supportTowerId != null && t.supportTowerId !== rec.towerId ? t.supportTowerId : null;
     // إغلاق ذرّي مشروط بأن السجل ما زال مفتوحاً — يمنع الغرامة المكرّرة إن تسابق التدارك والكرون

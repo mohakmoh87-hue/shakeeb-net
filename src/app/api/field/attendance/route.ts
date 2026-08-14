@@ -5,7 +5,7 @@ import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { baghdadDayKey, computeAttendance, parseHHMM, baghdadMinutesOfDay } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
-import { endSupport, techEffectiveOffices } from "@/lib/field";
+import { endSupport, techEffectiveOffices, approvedTimeLeaveFor } from "@/lib/field";
 import { decideStampOffice, fallbackOffice, type StampResult } from "@/app/api/_lib/stampOffice";
 
 export const dynamic = "force-dynamic";
@@ -345,7 +345,9 @@ export async function POST(request: Request) {
   const outAt = lateDay && lateOpen
     ? new Date(Math.min(now.getTime(), lateOpen.endAt.getTime()))
     : now;
-  const calc = t ? computeAttendance(t, outRec.checkIn, outAt) : null;
+  // الإجازةُ الزمنيّةُ المعتمدةُ لذلك اليوم تُزيح حدَّ الدوام فيسقط خصمُ وقتِها (طلبُ محمد)
+  const outLeave = t ? await approvedTimeLeaveFor(tech.technicianId, outRec.dayKey) : null;
+  const calc = t ? computeAttendance(t, outRec.checkIn, outAt, outLeave) : null;
   // دعم يومٍ طُلب بعد بصمة دخوله بمكتبه الأصلي: الدخول يبقى لمكتبه، والخروج يُنسب لمكتب الدعم
   // القاعدة ٣ · **مكانُ** الخروج يُحفَظ دائماً لا حين يختلف فقط: كان `null` يعني «نفسَ
   // المكتب» فلا يُعرَف يقيناً أين بصم، وكان **يُكتَب ولا يُقرَأ** أصلاً. والآن يُقرأ ويُعرَض.
@@ -461,7 +463,7 @@ export async function PATCH(request: Request) {
   if (checkoutAt.getTime() < rec.checkIn.getTime()) {
     return NextResponse.json({ error: "وقتُ الخروج قبل وقت الدخول" }, { status: 400 });
   }
-  const calc = computeAttendance(t, rec.checkIn, checkoutAt);
+  const calc = computeAttendance(t, rec.checkIn, checkoutAt, await approvedTimeLeaveFor(t.id, rec.dayKey));
   await prisma.attendance.update({ where: { id: rec.id }, data: { checkOut: checkoutAt, checkoutBy: "manager", ...calc } });
   return NextResponse.json({ ok: true, checkOut: checkoutAt, calc, corrected: rec.checkoutBy === "auto" });
 }
