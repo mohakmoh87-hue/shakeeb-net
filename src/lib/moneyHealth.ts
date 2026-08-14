@@ -216,47 +216,58 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
     }
   };
 
-  // ── أ-٢ · 🔴 كارتٌ مستخدَمٌ بلا وصلِ قبض — قِيس ٥٨ كارتاً بـ١٬٤٥٨٬٧٥٠ د.ع ──
-  // نافذةُ ±٣ أيّامٍ لأنّ تاريخَ إدخالِ الوصل قد يختلف عن تاريخ مسحِ الكارت بيومٍ أو يومَين.
-  await add("card_used_no_receipt", "كلُّ كارتٍ مستخدَمٍ له وصلُ قبض", `
+  // ── أ-٢ · 🔴 كارتٌ مستخدَمٌ **بلا أيّ وصلٍ أصلاً** ──
+  //
+  // 🔴 **تصحيحٌ من محمد 2026-08-14**: «إذا فعّلتُ مشتركاً بالدَّين فهذا لا يُعتبر خطراً،
+  //   فلماذا حسبتَه خطراً؟» — وكان معياري «بلا وصلٍ **بمبلغٍ مقبوض**»، والتفعيلُ على
+  //   الدَّين وصلُه مسجَّلٌ بمقبوضٍ صفرٍ والمالُ متتبَّعٌ في دَين المشترك. فليس خطراً.
+  // ⚖️ **وقِيس أثرُ خطئي**: ٥٨ حالةً بالمعيار القديم، منها **٤٤ تفعيلاتُ دَينٍ مشروعة**
+  //   (٩٧٠٬٣٥٠ د.ع) ⇒ **٧٦٪ من الإنذار كان ظلماً**. والحقيقيُّ **١٤ كارتاً بـ٤٨٨٬٤٠٠**
+  //   لا وصلَ لها أصلاً — لا قبضاً ولا دَيناً، أي كارتٌ خرج من المخزن بلا أثرٍ ماليّ.
+  //   والدرسُ هو نفسُه الذي تكرّر مرّتَين اليوم: **معيارٌ ناقصٌ يُنتج إنذاراً كاملاً كاذباً**.
+  // ونافذةُ ±٣ أيّامٍ لأنّ تاريخَ إدخالِ الوصل قد يختلف عن تاريخ مسحِ الكارت بيومٍ أو يومَين.
+  await add("card_used_no_receipt", "كلُّ كارتٍ مستخدَمٍ له وصلٌ — قبضاً أو دَيناً", `
     SELECT r.id, r.serial, r.price, s.name AS sub, s."netUser",
            to_char(r."useDate" ${BG}, 'YYYY-MM-DD') AS at
       FROM recharge_cards r LEFT JOIN subscribers s ON s.id = r."subscriberId"
      WHERE r."agentId" = ${agentId} AND r."useDate" IS NOT NULL AND r."subscriberId" IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM subscription_entries e
              WHERE e."subscriberId" = r."subscriberId" AND e."isDeleted" = false
-               AND coalesce(e."moneyIn",0) > 0
                AND e.date BETWEEN r."useDate" - INTERVAL '3 days' AND r."useDate" + INTERVAL '3 days')
      ORDER BY r."useDate" DESC LIMIT 200`, (x) => ({
     rowKey: `card:${s(x.id)}`,
-    title: "كارتٌ استُخدم ولا وصلَ قبضٍ للمشترك",
+    title: "كارتٌ استُخدم ولا وصلَ له أصلاً — لا قبضاً ولا دَيناً",
     detail: `سيريال ${s(x.serial)} · ${n(x.price)} د.ع · ${s(x.sub) || "؟"}${x.netUser ? ` (${s(x.netUser)})` : ""} · ${s(x.at)}`,
-    how: "كلُّ كارتٍ يُفعَّل من مخزنك يجب أن يكون أمامَه مالٌ مقبوض. فإمّا تسجّل وصلَ القبض للمشترك بتاريخه، وإمّا يكون تفعيلاً على الدَّين أو هديّةً — فتُجاهِلُ الحالةَ بعد مراجعتك.",
+    how: "الكارتُ خرج من مخزنك ولا قيدَ للمشترك في تلك الأيّام: لا وصلَ قبضٍ ولا تفعيلاً على الدَّين. سجّل الوصلَ بتاريخه (قبضاً أو دَيناً)، أو تجاهَلِ الحالةَ إن كان تعويضاً أو تفعيلَ اختبار. ⚠️ والتفعيلُ على الدَّين **لا يُبلَّغ عنه** — فوصلُه مسجَّلٌ والمالُ في دَين المشترك.",
     severity: "critical", amount: n(x.price), at: s(x.at),
   }));
 
-  // ── أ-٣ · 🔴 كارتٌ مستخدَمٌ بسعرِ صفر — قِيس ٦٥ كارتاً (لا تدخل ديونَ الكارتات) ──
+  // ── أ-٣ · 🔴 كروتٌ مستخدَمةٌ بسعرِ صفر — **مجموعةً بالفئة** لا صفّاً لكلّ كارت ──
+  // 🔑 قِيست ٦٥ كارتاً لصفاء، وكلُّها **جذرٌ واحد**: سعرُ فئةٍ غيرُ مضبوط. فصفٌّ لكلّ كارتٍ
+  //   يعني ٦٥ إنذاراً لعلاجٍ واحدٍ — والتجميعُ يجعل الحالةَ تقول ما يُفعَل: اضبط سعرَ الفئة.
   await add("card_used_zero_price", "كلُّ كارتٍ مستخدَمٍ له سعر", `
-    SELECT r.id, r.serial, r."packageId", to_char(r."useDate" ${BG}, 'YYYY-MM-DD') AS at
-      FROM recharge_cards r
+    SELECT r."packageId", count(*)::int AS n, p.name AS pkg,
+           to_char(max(r."useDate") ${BG}, 'YYYY-MM-DD') AS at
+      FROM recharge_cards r LEFT JOIN packages p ON p.id = r."packageId"
      WHERE r."agentId" = ${agentId} AND r."useDate" IS NOT NULL AND coalesce(r.price,0) = 0
-     ORDER BY r."useDate" DESC LIMIT 200`, (x) => ({
-    rowKey: `card:${s(x.id)}`,
-    title: "كارتٌ استُخدم وسعرُه صفر — لا يدخل ديونَ الكارتات",
-    detail: `سيريال ${s(x.serial)} · فئة ${s(x.packageId) || "؟"} · ${s(x.at)}`,
-    how: "اضبط سعرَ الفئة من «سعر الكارت لكل فئة» في هذه الصفحة، فالكروتُ الجديدةُ تأخذه تلقائياً. وأمّا هذا الصفُّ فسعرُه يُصحَّح من صفحة الكروت.",
+     GROUP BY 1, 3 ORDER BY 2 DESC LIMIT 50`, (x) => ({
+    rowKey: `zerocards:${s(x.packageId)}`,
+    title: "كروتٌ استُخدمت بسعرِ صفر — لا تدخل ديونَ الكارتات",
+    detail: `${n(x.n)} كارتاً من فئة «${s(x.pkg) || s(x.packageId) || "غيرِ محدَّدة"}» · آخرُها ${s(x.at)}`,
+    how: "اضبط سعرَ هذه الفئة من «سعر الكارت لكل فئة» في هذه الصفحة — فالكروتُ الجديدةُ تأخذه تلقائيّاً. وأمّا القائمةُ فسعرُها يُصحَّح من صفحة الكروت (تحديدٌ جماعيٌّ ثمّ تعديلُ السعر).",
     severity: "critical", at: s(x.at),
   }));
 
-  // ── أ-٤ · كارتُ مخزونٍ بسعرِ صفر — دَينٌ ناقصٌ مستقبلاً (قِيس ١١) ──
+  // ── أ-٤ · كروتُ مخزونٍ بسعرِ صفر — دَينٌ ناقصٌ مستقبلاً (قِيس ١١) ──
   await add("card_stock_zero_price", "كلُّ كارتٍ في المخزن له سعر", `
-    SELECT r.id, r.serial, r."packageId" FROM recharge_cards r
+    SELECT r."packageId", count(*)::int AS n, p.name AS pkg
+      FROM recharge_cards r LEFT JOIN packages p ON p.id = r."packageId"
      WHERE r."agentId" = ${agentId} AND r."useDate" IS NULL AND coalesce(r.price,0) = 0
-     ORDER BY r.id DESC LIMIT 200`, (x) => ({
-    rowKey: `card:${s(x.id)}`,
-    title: "كارتٌ في المخزن بلا سعر",
-    detail: `سيريال ${s(x.serial)} · فئة ${s(x.packageId) || "؟"}`,
-    how: "اضبط سعرَ فئته قبل أن يُستخدَم — وإلّا استُخدم بصفرٍ فنقص دَينُ الكارتات بمقدار سعره.",
+     GROUP BY 1, 3 ORDER BY 2 DESC LIMIT 50`, (x) => ({
+    rowKey: `zerostock:${s(x.packageId)}`,
+    title: "كروتٌ في المخزن بلا سعر",
+    detail: `${n(x.n)} كارتاً من فئة «${s(x.pkg) || s(x.packageId) || "غيرِ محدَّدة"}»`,
+    how: "اضبط سعرَ الفئة قبل أن تُستخدَم — وإلّا استُخدمت بصفرٍ فنقص دَينُ الكارتات بمقدار أسعارها.",
     severity: "warn",
   }));
 
@@ -508,6 +519,154 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
     severity: "warn", at: s(x.at),
   }));
 
+
+  // ═══════ الدفعةُ الثانية من واجبات الحارس (2026-08-14 · إكمالُ القائمة) ═══════
+
+  // ── ج-٨ · تفعيلانِ متقاطعانِ للمشترك نفسِه (مدّتان تتداخلان) ──
+  // 🔑 وهذا يُلتقَط ما لا تُلتقطه «دقيقةٌ واحدة»: تفعيلٌ ثانٍ بعد ساعاتٍ أو أيّامٍ ومدّتُه
+  //   تُغطّي مدّةً سارية ⇒ المشتركُ دفع مرّتَين لأيّامٍ واحدة، أو نُقص من رصيدك بلا مقابل.
+  await add("entry_overlap", "لا مدّتَي تفعيلٍ متداخلتَين لمشتركٍ واحد", `
+    SELECT a.id AS first_id, b.id AS last_id, a."subscriberId",
+           coalesce(a."moneyIn",0) + coalesce(b."moneyIn",0) AS total,
+           s.name AS sub, s."netUser",
+           to_char(b."dateFrom" ${BG}, 'YYYY-MM-DD') AS at,
+           (a."dateTo"::date - b."dateFrom"::date) AS overlap_days
+      FROM subscription_entries a
+      JOIN subscription_entries b ON b."subscriberId" = a."subscriberId" AND b.id > a.id
+      LEFT JOIN subscribers s ON s.id = a."subscriberId"
+     WHERE a."isDeleted" = false AND b."isDeleted" = false
+       AND a."towerId" IN (${T}) AND b."towerId" IN (${T})
+       AND a."dateFrom" IS NOT NULL AND a."dateTo" IS NOT NULL
+       AND b."dateFrom" IS NOT NULL AND b."dateTo" IS NOT NULL
+       AND a."dateTo" > a."dateFrom" AND b."dateTo" > b."dateFrom"
+       AND b."dateFrom" < a."dateTo" AND b."dateTo" > a."dateFrom"
+     ORDER BY b.id DESC LIMIT 100`, (x) => ({
+    rowKey: `ovl:${s(x.first_id)}:${s(x.last_id)}`,
+    title: "مدّتا تفعيلٍ متداخلتانِ لمشتركٍ واحد",
+    detail: `${s(x.sub) || "؟"}${x.netUser ? ` (${s(x.netUser)})` : ""} · وصلا #${s(x.first_id)} و#${s(x.last_id)} · تقاطعٌ ${n(x.overlap_days)} يوماً · المجموع ${n(x.total)}`,
+    how: "المشتركُ دفع مرّتَين عن أيّامٍ واحدة (أو فُعِّل مرّتَين خطأً). راجِع الوصلَين: يُبطَل الزائدُ ويُرحَّل المتبقّي، أو تُصحَّح بدايةُ الثاني ليبدأ من انتهاء الأوّل.",
+    severity: "critical", amount: n(x.total), at: s(x.at),
+  }));
+
+  // ── أ-٦ · كارتٌ مستخدَمٌ بلا مشترك — مالٌ بلا وجهٍ يُنسَب إليه ──
+  await add("card_used_no_subscriber", "كلُّ كارتٍ مستخدَمٍ له مشترك", `
+    SELECT r.id, r.serial, r.price, to_char(r."useDate" ${BG}, 'YYYY-MM-DD') AS at
+      FROM recharge_cards r
+     WHERE r."agentId" = ${agentId} AND r."useDate" IS NOT NULL AND r."subscriberId" IS NULL
+     ORDER BY r."useDate" DESC LIMIT 100`, (x) => ({
+    rowKey: `card:${s(x.id)}`,
+    title: "كارتٌ مُعلَّمٌ مستخدَماً بلا مشترك",
+    detail: `سيريال ${s(x.serial)} · ${n(x.price)} د.ع · ${s(x.at)}`,
+    how: "ابحث عن سيريالِه في تفعيلات الساس (زرُّ «ربط كارت» في الكروت الوهميّة يفعلها) لتعرف لمن فُعِّل، ثمّ اربِطه بمشتركه. فكارتٌ بلا مشتركٍ مالٌ لا يُنسَب لأحد.",
+    severity: "warn", amount: n(x.price), at: s(x.at),
+  }));
+
+  // ── أ-٩ · سيريالٌ واحدٌ عند وكيلَين (تكرارُ استيرادٍ يُضاعف دَينَ الكارتات) ──
+  // ⚠️ والقيدُ `@@unique(agentId, serial)` يمنعُه **داخل** الوكيل لا بينهم.
+  await add("card_serial_cross_agent", "لا سيريالَ كارتٍ عند وكيلَين", `
+    SELECT r.id, r.serial, r.price, r."agentId" FROM recharge_cards r
+     WHERE r."agentId" = ${agentId} AND r.serial IS NOT NULL
+       AND EXISTS (SELECT 1 FROM recharge_cards z WHERE z.serial = r.serial
+                     AND z."agentId" IS NOT NULL AND z."agentId" <> ${agentId})
+     ORDER BY r.id DESC LIMIT 100`, (x) => ({
+    rowKey: `card:${s(x.id)}`,
+    title: "سيريالُ كارتٍ موجودٌ عند وكيلٍ آخرَ أيضاً",
+    detail: `سيريال ${s(x.serial)} · ${n(x.price)} د.ع`,
+    how: "إمّا خطأُ استيرادٍ (نفسُ الملفّ رُفع لوكيلَين) وإمّا الكارتُ ليس لك. راجِع وجبةَ الإدخال — فكلُّ نسخةٍ زائدةٍ تزيد دَينَ الكارتات بسعرها.",
+    severity: "critical", amount: n(x.price),
+  }));
+
+  // ── ب-٥ · حركةٌ بمبلغٍ صفرٍ من الطرفَين — قيدٌ فارغٌ يشوّش الحساب ──
+  await add("tx_zero_amount", "لا قيدَ صندوقٍ بمبلغٍ صفر", `
+    SELECT m.id, m."sourceType", to_char(m.date ${BG}, 'YYYY-MM-DD HH24:MI') AS at, m.notes
+      FROM money_tx m
+     WHERE m."isDeleted" = false AND m."towerId" IN (${T})
+       AND coalesce(m."moneyIn",0) = 0 AND coalesce(m."moneyOut",0) = 0
+     ORDER BY m.date DESC LIMIT 100`, (x) => ({
+    rowKey: `tx:${s(x.id)}`,
+    title: "قيدٌ ماليٌّ بمبلغِ صفرٍ في الطرفَين",
+    detail: `قيد #${s(x.id)} · ${s(x.sourceType) || "—"} · ${s(x.notes) || ""} · ${s(x.at)}`,
+    how: "قيدٌ فارغٌ لا يُغيّر رصيداً ولكنّه يشوّش السجلّ. احذفه من صفحة المقبوضات/المصروفات، أو أدخِل مبلغَه الصحيح إن كان ناقصاً.",
+    severity: "warn", at: s(x.at),
+  }));
+
+  // ── ب-١٠ · حركةٌ لمكتبٍ محذوف — مالٌ في مكتبٍ لا يظهر في أيّ قائمة ──
+  await add("tx_deleted_tower", "لا قيدَ ماليٍّ لمكتبٍ محذوف", `
+    SELECT m.id, m."moneyIn", m."moneyOut", t.name AS office,
+           to_char(m.date ${BG}, 'YYYY-MM-DD') AS at
+      FROM money_tx m JOIN towers t ON t.id = m."towerId"
+     WHERE m."isDeleted" = false AND t."isDeleted" = true AND t."agentId" = ${agentId}
+     ORDER BY m.date DESC LIMIT 100`, (x) => ({
+    rowKey: `tx:${s(x.id)}`,
+    title: "قيدٌ ماليٌّ في مكتبٍ محذوف",
+    detail: `قيد #${s(x.id)} · قبض ${n(x.moneyIn)} · صرف ${n(x.moneyOut)} · المكتب «${s(x.office)}» محذوف · ${s(x.at)}`,
+    how: "المكتبُ محذوفٌ ومالُه باقٍ: انقل القيدَ إلى مكتبٍ قائم، أو أعِد تفعيلَ المكتب إن حُذف خطأً. فقيدٌ في مكتبٍ محذوفٍ لا يدخل تقريراً ولا يُحاسَب.",
+    severity: "critical", amount: n(x.moneyIn) || n(x.moneyOut), at: s(x.at),
+  }));
+
+  // ── ج-٦ · مشتركٌ محذوفٌ وله دَينٌ أو رصيد ──
+  await add("deleted_sub_balance", "لا مشتركَ محذوفٍ له دَينٌ أو رصيد", `
+    SELECT s.id, s.name, s."netUser", s.carry FROM subscribers s
+     WHERE s."isDeleted" = true AND coalesce(s.carry,0) <> 0 AND s."towerId" IN (${T})
+     ORDER BY abs(coalesce(s.carry,0)) DESC LIMIT 100`, (x) => ({
+    rowKey: `sub:${s(x.id)}`,
+    title: n(x.carry) > 0 ? "مشتركٌ محذوفٌ وعليه دَين" : "مشتركٌ محذوفٌ وله رصيدٌ عندك",
+    detail: `${s(x.name)}${x.netUser ? ` · ${s(x.netUser)}` : ""} · ${n(x.carry) > 0 ? "دَينُه" : "رصيدُه"} ${Math.abs(n(x.carry))}`,
+    how: n(x.carry) > 0
+      ? "الدَّينُ يختفي من القوائم بحذفِ المشترك ويبقى في القاعدة. إن كان مقبوضاً فسجّله، وإن كان ميئوساً منه فصفِّره قبل الحذف — أو تجاهَلِ الحالةَ إن أقررتَ إسقاطَه."
+      : "رصيدٌ لمشتركٍ محذوف: يُردّ له نقداً (فتُسجّل صرفاً بمقداره) أو يُصفَّر بقرارك.",
+    severity: "warn", amount: Math.abs(n(x.carry)),
+  }));
+
+  // ── د-٦ · بيعٌ بأقلَّ من سعرِ الشراء (خسارةٌ صامتة) ──
+  await add("sale_below_cost", "لا بيعَ بأقلَّ من سعرِ الشراء", `
+    SELECT t.id, x.name AS item, t.count, t.price, t."buyPrice", t."invoiceId"
+      FROM invoice_items t
+      JOIN invoices i ON i.id = t."invoiceId"
+      LEFT JOIN items x ON x.id = t."itemId"
+     WHERE t."isDeleted" = false AND i."isDeleted" = false AND i."towerId" IN (${T})
+       AND coalesce(t."buyPrice",0) > 0 AND coalesce(t.price,0) > 0 AND t.price < t."buyPrice"
+     ORDER BY (t."buyPrice" - t.price) * t.count DESC LIMIT 100`, (x) => ({
+    rowKey: `iitem:${s(x.id)}`,
+    title: "قطعةٌ بيعت بأقلَّ من سعرِ شرائها",
+    detail: `${s(x.item) || "مادّة"} · شراء ${n(x.buyPrice)} · بيع ${n(x.price)} · عدد ${n(x.count)} · فاتورة #${s(x.invoiceId)}`,
+    how: "إبلاغٌ فقط — فقرارُ البيع بخسارةٍ قرارُك (تصفيةٌ أو مجاملة). وإن كان خطأَ إدخالٍ فصحّح السعرَ من الفاتورة.",
+    severity: "warn", amount: (n(x.buyPrice) - n(x.price)) * n(x.count),
+  }));
+
+  // ── د-٧ · بندٌ يشير إلى مادّةٍ محذوفةٍ أو غيرِ موجودة ──
+  await add("invoice_item_no_material", "كلُّ بندِ بيعٍ له مادّةٌ قائمة", `
+    SELECT t.id, t."invoiceId", t.count, t.price, t."itemId"
+      FROM invoice_items t
+      JOIN invoices i ON i.id = t."invoiceId"
+     WHERE t."isDeleted" = false AND i."isDeleted" = false AND i."towerId" IN (${T})
+       AND t."itemId" IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM items x WHERE x.id = t."itemId" AND x."isDeleted" = false)
+     ORDER BY t.id DESC LIMIT 100`, (x) => ({
+    rowKey: `iitem:${s(x.id)}`,
+    title: "بندُ بيعٍ يشير إلى مادّةٍ غيرِ قائمة",
+    detail: `مادّة #${s(x.itemId)} · عدد ${n(x.count)} · سعر ${n(x.price)} · فاتورة #${s(x.invoiceId)}`,
+    how: "حُذفت المادّةُ وبقي بيعُها: إن حُذفت خطأً فأعِدها، وإلّا فالبندُ صحيحٌ تاريخيّاً — تجاهَلِ الحالةَ فالمالُ مقبوضٌ والسلعةُ خرجت.",
+    severity: "warn", amount: n(x.count) * n(x.price),
+  }));
+
+  // ── د-٩ · مادّةٌ تحت حدّها الأدنى — تنبيهُ شراءٍ لا شذوذ ──
+  await add("item_below_min", "لا مادّةَ تحت حدّها الأدنى", `
+    SELECT i.id, i.name, i.count, i."minCount" FROM items i
+     WHERE i."isDeleted" = false AND i."towerId" IN (${T})
+       AND coalesce(i."minCount",0) > 0 AND coalesce(i.count,0) <= i."minCount"
+     ORDER BY (coalesce(i.count,0) - i."minCount") ASC LIMIT 100`, (x) => ({
+    rowKey: `item:${s(x.id)}`,
+    title: "مادّةٌ وصلت حدَّها الأدنى",
+    detail: `${s(x.name)} · المتوفّر ${n(x.count)} · الحدُّ الأدنى ${n(x.minCount)}`,
+    how: "تنبيهُ شراءٍ لا خللٌ ماليّ: اطلب المادّةَ أو اخفِض حدَّها الأدنى من صفحة المخزن. ويُتجاهَل إن لم تُرِد تنبيهاتِ المخزن.",
+    severity: "info",
+  }));
+
+  // ── ز-٢ · جدولٌ فيه عزلٌ بلا سياسةِ RLS — **نُقل إلى `npm run check:money`** ──
+  // 🔒 وسببُ النقل: بنيةُ القاعدة **ليست شأنَ الوكيل المستأجر**. فصفاءُ والشدنُ لا يعنيهما
+  //   أنّ جدولاً بلا سياسةٍ، وإظهارُه لهم ضجيجٌ وكشفُ داخليّاتٍ في آنٍ واحد. وهو شأنُ
+  //   محمد وحدَه ⇒ مكانُه سكربتُ المالك لا لوحةُ الوكيل. (وقد اصطاد ٣ جداولَ فعلاً.)
 
   // ── ٧) أرقامُ إحاطةٍ (لا حالاتٍ) ──
   let summary: Row = {};

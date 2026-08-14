@@ -194,11 +194,17 @@ export async function inspectPendingDeletedCards(
                     subscriberId: row.subscriberId, isDeleted: false,
                     date: { gte: new Date(when.getTime() - 3 * 86400_000), lte: new Date(when.getTime() + 3 * 86400_000) },
                   },
-                  select: { id: true, moneyIn: true, dateFrom: true, dateTo: true },
+                  select: { id: true, moneyIn: true, money: true, dateFrom: true, dateTo: true },
                 })
               : null;
-            if (entry && (entry.moneyIn ?? 0) > 0) {
-              info += ` · وصلٌ #${entry.id} بمبلغ ${entry.moneyIn}`;
+            // 🔴 **تصحيحُ محمد**: وجودُ الوصل يكفي — والتفعيلُ على الدَّين وصلُه بمبلغٍ
+          //   مقبوضٍ صفرٍ والمالُ في دَين المشترك، فليس خطراً. وكان الشرطُ `moneyIn > 0`
+          //   فيظلم كلَّ تفعيلٍ على الدَّين (قِيس ٤٤ كارتاً من ٥٨ في نظير هذا الفحص).
+          if (entry) {
+              const onDebt = (entry.moneyIn ?? 0) <= 0 && (entry.money ?? 0) > 0;
+            info += onDebt
+              ? ` · وصلٌ #${entry.id} **على الدَّين** بمبلغ ${entry.money}`
+              : ` · وصلٌ #${entry.id} بمبلغ ${entry.moneyIn}`;
             // ═══ مدّةُ التفعيل: مقلوبةٌ أو صفرٌ ⇒ سجلٌّ مضطربٌ يُبلَّغ (طلبُ محمد 2026-08-14) ═══
             //   وأصلُه صفٌّ حقيقيٌّ رُئي في تدقيق الـ٧٤: `bg-5-23-1@mu` مدّتُه **−٥** لا ٣١،
             //   أي أنّ تاريخَ الانتهاء **أقدمُ من البداية**. والمالُ مقبوضٌ والتفعيلُ ثابت،
@@ -215,7 +221,7 @@ export async function inspectPendingDeletedCards(
               }
             } else {
               verdict = "no-receipt";
-              info += entry ? ` · وصلٌ #${entry.id} **بلا مبلغٍ مقبوض**` : " · **بلا وصلِ قبض**";
+              info += " · **بلا أيّ وصلٍ — لا قبضاً ولا دَيناً**";
             }
           }
         }

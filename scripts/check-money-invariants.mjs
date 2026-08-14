@@ -204,6 +204,32 @@ console.log(`  مشتركون لهم رصيدٌ (carry سالب): ${i.credit_sub
 console.log(`  مدينون: ${i.debtors}`);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 🔒 ز-٢ · جدولٌ فيه عمودُ عزلٍ وبلا سياسةِ RLS — **شأنُ المالك لا شأنُ الوكيل**
+//   فبنيةُ القاعدة لا تُعرَض في لوحةِ وكيلٍ مستأجر: هي ضجيجٌ له وكشفُ داخليّاتٍ في آنٍ.
+//   وقاعدةُ المستودع: **كلُّ كتابةٍ جديدة = GRANT + سياسة** — وهذه الحقيقةُ تحرسها.
+// 🎯 واصطاد من أوّل تشغيلٍ ثلاثةَ جداول: map_point_proposals · card_completions · managers.
+//   والموقعُ يقرؤها بدورِ المالك فلا تسريبَ اليوم، لكنّ **حاسبةَ المكتب** تعمل بدورٍ محدودٍ
+//   يعتمد على RLS وحدَه ⇒ أوّلُ كتابةٍ من العامل على أحدها تصير تسريباً بين الوكلاء.
+{
+  const r = await c.query(`
+    SELECT c.relname AS tbl,
+           (SELECT count(*) FROM pg_policies p WHERE p.tablename = c.relname)::int AS pol
+      FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+     WHERE ns.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = false
+       AND EXISTS (SELECT 1 FROM information_schema.columns k
+                    WHERE k.table_name = c.relname AND k.column_name IN ('agentId','towerId'))
+     ORDER BY 1`);
+  const ok = r.rows.length === 0;
+  results.push({ ok, name: "كلُّ جدولٍ فيه عمودُ عزلٍ له سياسةُ RLS" });
+  if (!ok) failures++;
+  console.log(`\n${ok ? "✅" : "⚠️"} كلُّ جدولٍ فيه عمودُ عزلٍ له سياسةُ RLS`);
+  for (const x of r.rows) {
+    console.log(`   • ${x.tbl} — RLS مُطفأ · سياساتُه ${x.pol}`);
+  }
+  if (!ok) console.log(`   العلاج: ENABLE ROW LEVEL SECURITY + سياسةُ agentId كما في prisma/rls/03-policies.sql`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log("\n════════ الخلاصة ════════");
 console.log(`  حقائقُ سليمة: ${results.filter((r) => r.ok).length} · مُخِلّة: ${failures}`);
 if (failures === 0) console.log("  ✅ لا خللَ ماليّاً في البيانات");

@@ -20,10 +20,38 @@ const BTN = "src/components/MoneyHealthButton.tsx";
 const FIG = "src/components/GuardFigure.tsx";
 
 describe("🕵️ حارسُ المال", () => {
-  test("واجباتُه صارت خمسةً وعشرين فحصاً — لا ستّةً", () => {
+  test("واجباتُه صارت أربعةً وثلاثين فحصاً — لا ستّةً", () => {
     const src = read(HEALTH);
     const n = (src.match(/checks\.push\(\{|await add\(/g) ?? []).length;
-    assert.ok(n >= 25, `عددُ الفحوص ${n} — أقلُّ من الخمسة والعشرين المتّفق عليها`);
+    assert.ok(n >= 34, `عددُ الفحوص ${n} — أقلُّ من الأربعة والثلاثين`);
+  });
+
+  test("🔴 التفعيلُ على الدَّين **ليس خطراً** — تصحيحُ محمد 2026-08-14", () => {
+    const src = read(HEALTH);
+    const blk = src.slice(src.indexOf('add("card_used_no_receipt"'), src.indexOf('add("card_used_zero_price"'));
+    // المعيارُ: **لا وصلَ أصلاً** — لا «لا وصلَ بمبلغٍ مقبوض» (فذاك يظلم كلَّ تفعيلِ دَين)
+    assert.equal(/coalesce\(e\."moneyIn",0\) > 0/.test(blk), false,
+      "ما زال الفحصُ يشترط مبلغاً مقبوضاً — فيُنذر عن كلّ تفعيلٍ على الدَّين (قِيس ٤٤ من ٥٨)");
+    assert.ok(/NOT EXISTS[\s\S]{0,200}subscription_entries/.test(blk), "لا شرطَ لغياب الوصل");
+    const g = read("src/lib/cardDeleteGuard.ts");
+    assert.ok(g.includes("if (entry) {"), "حارسُ الحذف ما زال يشترط مبلغاً مقبوضاً");
+    assert.ok(/على الدَّين/.test(g), "حارسُ الحذف لا يذكر الدَّين في تشخيصه");
+  });
+
+  test("🔑 ما جذرُه واحدٌ يُجمَع في حالةٍ واحدة — لا صفٌّ لكلّ كارت", () => {
+    const src = read(HEALTH);
+    for (const [key, rk] of [["card_used_zero_price", "zerocards:"], ["card_stock_zero_price", "zerostock:"]]) {
+      const blk = src.slice(src.indexOf(`add("${key}"`)).slice(0, 900);
+      assert.ok(blk.includes(`rowKey: \`${rk}`), `${key} غيرُ مجموعٍ بالفئة`);
+      assert.ok(blk.includes("GROUP BY"), `${key} بلا تجميع`);
+    }
+  });
+
+  test("🔒 بنيةُ القاعدة ليست في لوحةِ الوكيل بل في سكربتِ المالك", () => {
+    assert.equal(read(HEALTH).includes("relrowsecurity"), false,
+      "فحصُ RLS في لوحةِ الوكيل — وهو ضجيجٌ له وكشفُ داخليّاتٍ في آن");
+    assert.ok(read("scripts/check-money-invariants.mjs").includes("relrowsecurity"),
+      "فحصُ RLS غائبٌ عن سكربتِ المالك");
   });
 
   test("🔒 كلُّ فحصٍ معزولٌ بمكاتب الوكيل أو بـagentId — في شرطِ الاستعلام نفسِه", () => {
