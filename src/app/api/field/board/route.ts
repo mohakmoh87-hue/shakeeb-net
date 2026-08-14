@@ -5,11 +5,12 @@ import { can } from "@/lib/rbac";
 import { agentTowerIds } from "@/lib/guard";
 import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOfficeIn, parseExtraTowers } from "@/lib/field";
 import { ensureFieldDefaults } from "@/lib/fieldDefaults";
+import { applyPrivateLists, type BoardViewer } from "@/lib/guardAssign";
 
 export const dynamic = "force-dynamic";
 
 // لوحة لمكتب واحد: الأعمدة والبطاقات (معزولة بالوكيل). مشترك بين المستخدم والفني.
-async function buildBoard(officeId: number | null, agentId: number | null) {
+async function buildBoard(officeId: number | null, agentId: number | null, viewer: BoardViewer = { kind: "manager" }) {
   const board = await getOrCreateBoard(officeId);
   const lists = await prisma.taskList.findMany({ where: { boardId: board.id, isDeleted: false }, orderBy: { position: "asc" } });
   // المؤرشفة (بعد التحصيل) لا تظهر على اللوحة — تُعرض من نافذة الأرشيف
@@ -56,7 +57,13 @@ async function buildBoard(officeId: number | null, agentId: number | null) {
       alarmMin: tw?.odooSlaAlarmMin ?? null, sendMin: tw?.odooSlaSendMin ?? null, auto: tw?.odooSlaAuto === "1",
     };
   }
-  return { board, lists, cards, technicians, cardTypes, odooOpen, odooActive, odooSla };
+  // 🔒 قاعدةُ العمود الخاصّ في **نقطةٍ واحدةٍ** تمرّ بها كلُّ فروع المسار (فنّيٌّ · دعمٌ ·
+  //   مكاتبُ إضافيّة · مديرٌ · مستخدمُ مكتب): مَن يرى ماذا، ثمّ إخفاءُ العمود إذا خلا.
+  //   ⚠️ ولو وُضع الحجبُ في فرعٍ واحدٍ لَظهرت البطاقةُ من فرعٍ آخر — والفروعُ خمسة.
+  return applyPrivateLists(
+    { board, lists, cards, technicians, cardTypes, odooOpen, odooActive, odooSla },
+    viewer,
+  );
 }
 
 // لوحة "إدارة الفنيين" لمكتب واحد مع أعمدتها وبطاقاتها وفنّييه.
@@ -96,7 +103,7 @@ export async function GET(request: Request) {
     // دعم «يوم كامل»: تُقلب لوحته كلياً — يرى كل بطاقات المكتب الطالب للدعم،
     // ولا يرى أي بطاقة من مكتبه الأصلي، حتى ينتهي الدعم فيعود تلقائياً.
     if (me?.supportTowerId != null && me.supportTowerId !== tech.towerId && me.supportKind === "day") {
-      const data = onlyMine(await buildBoard(me.supportTowerId, tech.agentId));
+      const data = onlyMine(await buildBoard(me.supportTowerId, tech.agentId, { kind: "technician", technicianId: tech.technicianId }));
       const sOffice = await prisma.tower.findUnique({ where: { id: me.supportTowerId }, select: { name: true } });
       return NextResponse.json({
         ...data, offices: [], officeId: me.supportTowerId, isManager: false, canManage: false,
@@ -116,7 +123,7 @@ export async function GET(request: Request) {
       ? await prisma.tower.findMany({ where: { id: { in: myOffices }, isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" } })
       : [];
 
-    const data = onlyMine(await buildBoard(viewOffice, tech.agentId));
+    const data = onlyMine(await buildBoard(viewOffice, tech.agentId, { kind: "technician", technicianId: tech.technicianId }));
     // مُعارٌ لدعم بطاقات محدّدة؟ تُضاف له (وله وحده) بطاقاته في مكتب الدعم بعمودٍ افتراضي «دعم مؤقت»
     // (على لوحة مكتبه الأصلي فقط، وليس مكتب دعمٍ هو أصلاً ضمن مكاتبه الإضافية)
     if (viewOffice === tech.towerId && me?.supportTowerId != null && me.supportTowerId !== tech.towerId && !myOffices.includes(me.supportTowerId)) {
@@ -198,7 +205,9 @@ export async function GET(request: Request) {
   // المدير بلا اختيار → افتراضياً أول مكتب
   if (manager && officeId == null && offices.length > 0) officeId = offices[0].id;
 
-  const data = await buildBoard(officeId, session.agentId);
+  // 🔒 العمودُ الخاصُّ: المديرُ يراه كلَّه، ومستخدمُ المكتب غيرُ المدير لا يراه أصلاً
+  const data = await buildBoard(officeId, session.agentId,
+    isFieldManager(session) ? { kind: "manager" } : { kind: "user" });
   return NextResponse.json({
     ...data, offices, officeId, officePanels,
     isManager: manager,

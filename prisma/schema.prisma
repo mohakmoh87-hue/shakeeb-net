@@ -985,7 +985,15 @@ model TaskList {
   boardId     Int // اللوحة المالكة
   name        String
   position    Int      @default(0)
-  timeTracked Boolean  @default(false) // عمود محسوب بالوقت — تجاوز وقت الفئة يولّد خصماً معلّقاً
+  timeTracked Boolean  @default(false)
+  // ═══ 🔒 عمودٌ خاصٌّ: لا يرى ما فيه إلّا **المديرُ أو الفنيُّ المعنيُّ** (طلبُ محمد 2026-08-14)
+  //     «يجب إنشاءُ عمودٍ خاصٍّ بها، تكون خصائصُ العمود أن لا يمكن رؤيةُ ما فيه سوى من
+  //      المدير أو من الفنيّ المعنيّ.»
+  //   🔑 والخاصيّةُ **على العمود** لا على البطاقة عن قصدٍ: فبطاقةٌ تُنقَل إلى عمودٍ عامٍّ
+  //     تصير مرئيّةً، وبطاقةٌ تُضاف هنا تصير مكتومةً — والقاعدةُ تتبع مكانَها لا نوعَها.
+  //   ⚠️ وبقيّةُ الفنيّين لا يرونها **ولو لم يكن عليهم `ownCardsOnly`** — فذلك الخيارُ
+  //     يُظهر لهم كلَّ بطاقات اللوحة، وهذا العمودُ يستثنيهم منه.
+  privateToAssignee Boolean @default(false) // عمود محسوب بالوقت — تجاوز وقت الفئة يولّد خصماً معلّقاً
   isDeleted   Boolean  @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
@@ -1348,9 +1356,15 @@ model Notification {
   id        Int      @id @default(autoincrement())
   agentId   Int? // عزل الوكيل
   towerId   Int? // مكتب الحدث
-  type      String // checkin | checkout | leave | deduction
+  type      String // checkin | checkout | leave | deduction | guard-assign
   title     String
   body      String
+  // ═══ مُخاطَبُ الإشعار (طلبُ محمد 2026-08-14: «إرسالُ أيّ حالةٍ إلى أيّ فنيٍّ أو مديرٍ أو
+  //     مستخدمٍ فتظهر له بالإشعارات لديه من أجل تكليفه بمراجعتها») ═══
+  // 🔑 وكانت الإشعاراتُ **عامّةً للوكيل كلِّه** (`where: { agentId }`) فلا سبيلَ لتوجيهِ
+  //   واحدٍ إلى شخصٍ بعينه. و`null` تعني «للجميع» كما كان — فلا يتغيّر شيءٌ لِما مضى.
+  userId       Int? // المستخدمُ المُخاطَب (مديرٌ أو مستخدمُ مكتب)
+  technicianId Int? // الفنيُّ المُخاطَب
   refType   String? // technician | leave | adjustment
   refId     Int?
   read      Boolean  @default(false)
@@ -1447,6 +1461,36 @@ model SasPanel {
 // «يمكنه ضغط تجاهل فلا تُعاد له مرّةً أخرى». والهويّةُ `rowKey` (مثل `tx:2541`) تجعل التجاهلَ
 // **لحالةٍ بعينها** لا لصنفٍ كامل — فلا يُخفي تجاهلُ خللٍ خللاً آخرَ من نوعه.
 // ولا حذفَ للبيانات ولا إصلاحَ صامت: التجاهلُ **إخفاءٌ من القائمة فقط**، والمالُ كما هو.
+// ═════ 🎯 تكليفُ حالاتِ حارس المال (طلبُ محمد 2026-08-14) ═════
+// «أريد إمكانيّةَ إرسالِ أيّ حالةٍ أو مجموعةِ حالاتٍ إلى أيّ فنيٍّ أو مديرٍ أو مستخدمٍ
+//  فتظهر له بالإشعارات لديه من أجل تكليفه بمراجعتها، أو يمكن وضعُها تكتاً لا يراه غيره
+//  عدا المدير.»
+//
+// والحالاتُ تُحسَب لحظةَ الطلب (لا جدولَ لها)، فالتكليفُ يُثبَّت **بهويّةِ الحالة نفسِها**
+// (`checkKey`+`rowKey`) كما يُثبَّت التجاهل. فإن زال الشذوذُ زالت الحالةُ ومعها تكليفُها،
+// وإن بقي فالتكليفُ ظاهرٌ عليها فلا تُكلَّف مرّتَين ولا يُنسى مَن كُلِّف بها.
+model GuardAssignment {
+  id           Int      @id @default(autoincrement())
+  agentId      Int // عزل: لكلّ وكيلٍ تكليفاتُه
+  checkKey     String
+  rowKey       String
+  toUserId     Int? // المستخدمُ/المديرُ المُكلَّف
+  toTechnicianId Int? // الفنيُّ المُكلَّف (تصله بطاقةُ مهمّةٍ في لوحته)
+  toName       String? // اسمُ المُكلَّف وقتَ التكليف (فالحسابُ قد يُحذَف)
+  note         String? // ما طلبه المديرُ منه
+  taskCardId   Int? // بطاقةُ المهمّة إن كان المُكلَّفُ فنيّاً
+  assignedBy   String?
+  assignedAt   DateTime @default(now())
+  doneAt       DateTime? // ختمُ المُكلَّف «راجعتُها»
+  doneNote     String?
+
+  @@unique([agentId, checkKey, rowKey])
+  @@index([agentId])
+  @@index([toUserId])
+  @@index([toTechnicianId])
+  @@map("guard_assignments")
+}
+
 model MoneyHealthIgnore {
   id        Int      @id @default(autoincrement())
   agentId   Int // عزل: لكلّ وكيلٍ تجاهلاتُه

@@ -19,9 +19,15 @@ type Case = {
   severity: "critical" | "warn" | "info"; amount?: number; at?: string;
 };
 type Check = { key: string; name: string; ok: boolean; cases: Case[]; note?: string; hiddenCount?: number };
+type Assignment = {
+  id: number; key: string; toName: string | null; isTech: boolean;
+  note: string | null; assignedBy: string | null; assignedAt: string; doneAt: string | null;
+};
+type Person = { id: number; name: string; isAdmin?: boolean; office: string | null };
 type Health = {
   healthy: boolean; openCases: number; critical: number;
   checks: Check[]; summary: Record<string, number>; ignoredCount: number;
+  assignments?: Assignment[];
 };
 
 const fmt = (n: number) => Number(n ?? 0).toLocaleString("en-US");
@@ -38,6 +44,13 @@ export default function MoneyHealthButton() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
 
+  // ═══ 🎯 التكليف: اختيارٌ متعدّدٌ ثمّ مُكلَّفٌ واحد (طلبُ محمد 2026-08-14) ═══
+  const [sel, setSel] = useState<Map<string, Case>>(new Map());
+  const [people, setPeople] = useState<{ users: Person[]; technicians: Person[] } | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [toWhom, setToWhom] = useState(""); // "u:12" للمستخدم · "t:5" للفنيّ
+  const [assignNote, setAssignNote] = useState("");
+
   const load = useCallback(() => {
     fetch("/api/money-health")
       .then((r) => (r.ok ? r.json() : null))
@@ -45,6 +58,54 @@ export default function MoneyHealthButton() {
       .catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const asgMap = new Map<string, Assignment>((h?.assignments ?? []).map((a) => [a.key, a] as const));
+  const toggle = (key: string, c: Case) => setSel((m) => {
+    const n = new Map(m);
+    if (n.has(key)) n.delete(key); else n.set(key, c);
+    return n;
+  });
+
+  async function openAssign() {
+    setAssignOpen(true); setMsg("");
+    if (!people) {
+      const r = await fetch("/api/money-health/assign", { cache: "no-store" })
+        .then((x) => (x.ok ? x.json() : null)).catch(() => null);
+      if (r) setPeople({ users: r.users ?? [], technicians: r.technicians ?? [] });
+    }
+  }
+
+  async function assignAction(action: "done" | "unassign", id: number) {
+    const note = action === "done" ? (window.prompt("ملاحظةٌ على الختم (اختياريّة):") ?? "") : "";
+    const r = await fetch("/api/money-health/assign", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, id, note }),
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); setMsg(e.error ?? "تعذّر الإجراء"); return; }
+    setMsg(action === "done" ? "خُتمت المراجعة ✓" : "سُحب التكليف ✓");
+    load();
+  }
+
+  async function doAssign() {
+    const cases = [...sel.values()];
+    if (!cases.length || !toWhom) { setMsg("اختر الحالاتِ والمُكلَّف"); return; }
+    const [kind, idStr] = toWhom.split(":");
+    const r = await fetch("/api/money-health/assign", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "assign", note: assignNote.trim(),
+        ...(kind === "u" ? { toUserId: Number(idStr) } : { toTechnicianId: Number(idStr) }),
+        cases: cases.map((c) => ({ checkKey: c.checkKey, rowKey: c.rowKey, title: c.title, detail: c.detail, how: c.how })),
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setMsg(j.error ?? "تعذّر التكليف"); return; }
+    setMsg(`🎯 كُلِّف ${j.toName ?? ""} بـ${j.assigned} حالة`
+      + (j.skipped ? ` (${j.skipped} مُكلَّفةٌ سابقاً)` : "")
+      + (j.taskCardId ? " · ووُضعت بطاقةٌ في عمود «👮 حارس المال» بلوحته" : ""));
+    setSel(new Map()); setAssignOpen(false); setAssignNote(""); setToWhom("");
+    load();
+  }
 
   async function ignore(c: Case) {
     const note = window.prompt(`تجاهُلُ هذه الحالة فلا تُعاد:\n${c.title}\n\nسببُ التجاهل (اختياريّ):`);
@@ -120,37 +181,125 @@ export default function MoneyHealthButton() {
 
             {msg && <div className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{msg}</div>}
 
-            {/* الحقائقُ السبع: السليمُ سطرٌ أخضرُ مختصر، وذاتُ الحالاتِ مفصَّلة */}
+            {/* ═════ 🎯 شريطُ التكليف — يظهر حين تُحدَّد حالةٌ أو أكثر ═════
+                «إرسالُ أيّ حالةٍ أو مجموعةِ حالاتٍ إلى أيّ فنيٍّ أو مديرٍ أو مستخدمٍ فتظهر
+                 له بالإشعارات لديه من أجل تكليفه بمراجعتها.» */}
+            {sel.size > 0 && (
+              <div className="mb-3 rounded-xl border border-mynet-blue/40 bg-mynet-blue/5 p-3">
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-700">
+                  <span>🎯 حُدِّدت {fmt(sel.size)} حالة</span>
+                  <button onClick={() => setSel(new Map())} className="text-[12px] font-normal text-slate-500 underline">إلغاءُ التحديد</button>
+                  {!assignOpen && (
+                    <button onClick={() => void openAssign()}
+                      className="ms-auto rounded-lg bg-mynet-blue px-3 py-1.5 text-sm font-bold text-white">
+                      تكليفُ شخصٍ بمراجعتها
+                    </button>
+                  )}
+                </div>
+                {assignOpen && (
+                  <div className="space-y-2">
+                    <select value={toWhom} onChange={(e) => setToWhom(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+                      <option value="">— اختر المُكلَّف —</option>
+                      {people?.users?.length ? (
+                        <optgroup label="مدراء ومستخدمون (يصلهم إشعارٌ خاصٌّ بهم)">
+                          {people.users.map((u) => (
+                            <option key={`u${u.id}`} value={`u:${u.id}`}>
+                              {u.name}{u.isAdmin ? " · مدير" : ""}{u.office ? ` · ${u.office}` : ""}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null}
+                      {people?.technicians?.length ? (
+                        <optgroup label="فنيّون (تصلهم بطاقةٌ في عمود «👮 حارس المال» بلوحتهم)">
+                          {people.technicians.map((t) => (
+                            <option key={`t${t.id}`} value={`t:${t.id}`}>{t.name}{t.office ? ` · ${t.office}` : ""}</option>
+                          ))}
+                        </optgroup>
+                      ) : null}
+                    </select>
+                    <input value={assignNote} onChange={(e) => setAssignNote(e.target.value)}
+                      placeholder="ما تطلبه منه (اختياريّ) — يظهر في أوّل التكت"
+                      className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm" />
+                    <div className="flex gap-2">
+                      <button onClick={() => void doAssign()} disabled={!toWhom}
+                        className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+                        إرسالُ التكليف
+                      </button>
+                      <button onClick={() => setAssignOpen(false)} className="text-sm text-slate-500">إلغاء</button>
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      🔒 عنوانُ التكت «حالاتٌ حرجةٌ من المدير يجب اتّخاذُ إجراءٍ بها»، وفيه تفاصيلُ كلّ حالةٍ
+                      وطريقةُ حلّها. ولا يراه إلّا أنت والمُكلَّفُ نفسُه — والعمودُ يختفي من لوحته إذا خلا.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ═════ الحالاتُ **وحدَها** (طلبُ محمد 2026-08-14) ═════
+                «أريد في القائمة تظهر **فقط الحالات**، وليس مثلَ الآن يظهر صحٌّ أخضرُ لِما ليس
+                 به شذوذٌ ومن ضمنها الحالات، فتكون الصفحةُ مزدحمة.»
+                فالسليمُ صار **سطراً واحداً** أسفلَ القائمة بعددِه (لا صفّاً لكلّ حقيقة)،
+                والمساحةُ كلُّها للحالات. ولا يُحذَف الرقمُ من الشاشة — يُختصَر مكانُه. */}
             <div className="mb-4 space-y-3">
-              {h.checks.map((c) => (
+              {h.checks.filter((c) => !c.ok && c.cases.length > 0).map((c) => (
                 <div key={c.key}>
-                  <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${c.ok ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>
-                    <span>{c.ok ? "✅" : "🔴"}</span>
+                  <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">
+                    <span>🔴</span>
                     <span className="min-w-0 flex-1">{c.name}</span>
-                    {!c.ok && <span className="rounded bg-white px-1.5 py-0.5 text-xs">{c.cases.length}</span>}
+                    <span className="rounded bg-white px-1.5 py-0.5 text-xs">{c.cases.length}</span>
                     {(c.hiddenCount ?? 0) > 0 && <span className="text-[11px] font-normal text-slate-400">({c.hiddenCount} مُتجاهَلة)</span>}
                   </div>
                   {c.note && <div className="mt-1 px-3 text-[11px] text-amber-700">{c.note}</div>}
 
-                  {c.cases.map((x) => (
-                    <div key={x.rowKey} className={`mt-2 rounded-xl border p-3.5 ${TONE[x.severity].box}`}>
-                      <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                        <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${TONE[x.severity].chip}`}>{TONE[x.severity].label}</span>
-                        <span className="text-base font-bold text-slate-800">{x.title}</span>
-                        {x.amount ? <span className="text-base font-extrabold text-slate-900">{fmt(x.amount)} د.ع</span> : null}
+                  {c.cases.map((x) => {
+                    const key = `${x.checkKey}|${x.rowKey}`;
+                    const asg = asgMap.get(key);
+                    const picked = sel.has(key);
+                    return (
+                      <div key={x.rowKey} className={`mt-2 rounded-xl border p-3.5 ${TONE[x.severity].box} ${picked ? "ring-2 ring-mynet-blue" : ""}`}>
+                        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                          {/* اختيارٌ متعدّد: حالةٌ أو مجموعةُ حالاتٍ في تكليفٍ واحد */}
+                          <input type="checkbox" checked={picked} onChange={() => toggle(key, x)}
+                            className="h-4 w-4 accent-mynet-blue" aria-label="تحديد الحالة" />
+                          <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${TONE[x.severity].chip}`}>{TONE[x.severity].label}</span>
+                          <span className="text-base font-bold text-slate-800">{x.title}</span>
+                          {x.amount ? <span className="text-base font-extrabold text-slate-900">{fmt(x.amount)} د.ع</span> : null}
+                        </div>
+                        <div className="mb-2 text-sm text-slate-700">{x.detail}</div>
+                        <div className="mb-2.5 rounded-lg bg-white/70 p-2.5 text-sm text-slate-600">
+                          <b className="text-slate-700">طريقةُ الحلّ:</b> {x.how}
+                        </div>
+                        {/* التكليفُ القائمُ ظاهرٌ على الحالة — فلا تُكلَّف مرّتَين ولا يُنسى مَن كُلِّف */}
+                        {asg && (
+                          <div className="mb-2 rounded-lg bg-mynet-blue/10 px-2.5 py-1.5 text-[12px] font-bold text-mynet-blue">
+                            🎯 مُكلَّفٌ به: {asg.toName ?? "؟"}{asg.isTech ? " (فنّي)" : ""}
+                            {asg.doneAt ? " · ✔ راجعها" : " · لم يُختَم بعد"}
+                            {asg.note ? <span className="font-normal"> · «{asg.note}»</span> : null}
+                            <button onClick={() => void assignAction("unassign", asg.id)}
+                              className="ms-2 font-normal underline">سحبُ التكليف</button>
+                            {!asg.doneAt && (
+                              <button onClick={() => void assignAction("done", asg.id)}
+                                className="ms-2 font-normal underline">ختمُ «راجعها»</button>
+                            )}
+                          </div>
+                        )}
+                        <button onClick={() => void ignore(x)} disabled={busy === x.rowKey}
+                          className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-100 disabled:opacity-50">
+                          {busy === x.rowKey ? "..." : "🙈 تجاهل — لا تُعِدها"}
+                        </button>
                       </div>
-                      <div className="mb-2 text-sm text-slate-700">{x.detail}</div>
-                      <div className="mb-2.5 rounded-lg bg-white/70 p-2.5 text-sm text-slate-600">
-                        <b className="text-slate-700">طريقةُ الحلّ:</b> {x.how}
-                      </div>
-                      <button onClick={() => void ignore(x)} disabled={busy === x.rowKey}
-                        className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-100 disabled:opacity-50">
-                        {busy === x.rowKey ? "..." : "🙈 تجاهل — لا تُعِدها"}
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ))}
+              {/* السليمُ في سطرٍ واحدٍ — لا يزدحم به الوجه */}
+              {h.checks.some((c) => c.ok) && (
+                <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-700">
+                  ✅ {fmt(h.checks.filter((c) => c.ok).length)} حقيقةً سليمةً لا شذوذَ فيها
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl bg-slate-50 p-3 text-[12px] text-slate-600">

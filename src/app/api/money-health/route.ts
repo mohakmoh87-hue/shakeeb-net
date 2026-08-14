@@ -28,6 +28,9 @@ export async function GET() {
     select: { checkKey: true, rowKey: true, createdAt: true, byUser: true, note: true },
   });
   const ignoredSet = new Set(ignored.map((i) => `${i.checkKey}|${i.rowKey}`));
+  const assignments = await prisma.guardAssignment.findMany({
+    where: { agentId }, orderBy: { id: "desc" }, take: 500,
+  });
 
   const visible = checks.map((c) => {
     const cases = c.cases.filter((x) => !ignoredSet.has(`${x.checkKey}|${x.rowKey}`));
@@ -44,6 +47,13 @@ export async function GET() {
     checks: visible,
     summary,
     ignoredCount: ignored.length,
+    // 🎯 التكليفاتُ القائمةُ — تُلحَق بالحالة في الواجهة («مُكلَّفٌ به فلان») فلا تُكلَّف
+    //   مرّتَين ولا يُنسى مَن كُلِّف. ولا يراها إلّا المدير (هذا المسارُ بصلاحيّةِ المال).
+    assignments: assignments.map((a) => ({
+      id: a.id, key: `${a.checkKey}|${a.rowKey}`, toName: a.toName,
+      isTech: a.toTechnicianId != null, note: a.note,
+      assignedBy: a.assignedBy, assignedAt: a.assignedAt, doneAt: a.doneAt,
+    })),
   });
 }
 
