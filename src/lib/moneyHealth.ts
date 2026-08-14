@@ -426,6 +426,45 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
     severity: "critical", amount: n(x.total), at: s(x.at),
   }));
 
+  // ── ب-٧ · شهرٌ مُنح بأقلَّ من سعرِ باقته — **بالعمليّة لا بالصفّ** ──
+  //
+  // 🔴 وتاريخُ هذا البند درسٌ في المعايير: قِيس أوّلاً بالصفّ فأخرج **٤٤٣ حالةً**، و**٤٢٧
+  //   منها فارقُها ١٠٠٠ بالضبط** ولا تفسيرَ مُثبَتاً له ⇒ أوقفتُه ولم أبنِه (سؤالٌ معلَّقٌ
+  //   لمحمد: هل ثمّة ألفٌ يُضاف على كلّ تفعيل؟).
+  //   ثمّ قِيس **نقصاً فقط** فأخرج ٥ حالاتٍ بـ١٨٥٬٠٠٠ — وكانت **هي نفسُها** أنصافَ
+  //   العمليّات (تفعيلٌ بكارتَين ومالُه على الوصل الأوّل)، أي الإنذارُ الكاذبُ نفسُه.
+  //   فقِيس **بالعمليّة كاملةً** (كلُّ وصولاتِ المشترك في يومٍ واحد) ⇒ **صفر**.
+  //
+  // 🔑 فالمعيارُ الباقي: **مجموعُ مالِ العمليّة** (مقبوضاً أو دَيناً) أقلُّ من سعر باقته
+  //   وقد نالت **٢٥ يوماً أو أكثر** (فالتفعيلاتُ الجزئيّةُ لها أسعارٌ أخرى).
+  //   والزيادةُ **لا تُبلَّغ** — فلا تفسيرَ مُثبَتاً للألف، ولا يُنذَر بما لا يُفهَم.
+  await add("entry_underpaid", "كلُّ شهرٍ مُنح بسعرِ باقته", `
+    WITH op AS (
+      SELECT e."subscriberId", e.date::date AS d, min(e.id) AS first_id,
+             sum(coalesce(e."moneyIn",0)) AS paid, sum(coalesce(e.money,0)) AS due,
+             sum(e."dateTo"::date - e."dateFrom"::date) AS days, count(*)::int AS parts
+        FROM subscription_entries e
+       WHERE e."isDeleted" = false AND e."isMaster" = false AND e."towerId" IN (${T})
+         AND e.date > NOW() - INTERVAL '90 days'
+         AND e."dateFrom" IS NOT NULL AND e."dateTo" IS NOT NULL
+       GROUP BY 1, 2)
+    SELECT op.first_id, op.parts, op.paid, op.due, op.days,
+           s.name AS sub, s."netUser", p.name AS pkg, p."priceDinar" AS price,
+           to_char(op.d, 'YYYY-MM-DD') AS at
+      FROM op JOIN subscribers s ON s.id = op."subscriberId"
+              JOIN packages p ON p.id = s."packageId"
+     WHERE coalesce(p."priceDinar",0) > 0 AND op.days >= 25
+       AND GREATEST(op.paid, op.due) < p."priceDinar"
+     ORDER BY (p."priceDinar" - GREATEST(op.paid, op.due)) DESC LIMIT 100`, (x) => ({
+    rowKey: `under:${s(x.first_id)}`,
+    title: "شهرٌ مُنح بأقلَّ من سعرِ باقته",
+    detail: `${s(x.sub) || "؟"}${x.netUser ? ` (${s(x.netUser)})` : ""} · باقة «${s(x.pkg)}» بـ${n(x.price)} · ` +
+            `المُحصَّل ${n(x.paid)}${n(x.due) > n(x.paid) ? ` (ودَينٌ ${n(x.due)})` : ""} · ` +
+            `${n(x.days)} يوماً في ${n(x.parts)} وصلاً · ${s(x.at)} · **الفارق ${n(x.price) - Math.max(n(x.paid), n(x.due))}**`,
+    how: "المشتركُ نال شهراً كاملاً بأقلَّ من سعر باقته ولا دَينَ يُغطّي الفرق. فإمّا خصمٌ مقصودٌ (فتُجاهِلُ الحالةَ بسببه)، وإمّا نقصُ إدخالٍ ⇒ سجّل الفرقَ قبضاً أو دَيناً على المشترك. ⚠️ والزيادةُ لا تُبلَّغ — فلا معيارَ مُثبَتاً لها بعد.",
+    severity: "critical", amount: n(x.price) - Math.max(n(x.paid), n(x.due)), at: s(x.at),
+  }));
+
   // ── ج-٥ · مشتركٌ بلا مكتب — خارجَ كلّ قائمةٍ وكلّ عزل ──
   await add("subscriber_no_tower", "كلُّ مشتركٍ له مكتب", `
     SELECT s.id, s.name, s."netUser" FROM subscribers s

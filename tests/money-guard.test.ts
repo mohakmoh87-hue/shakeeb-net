@@ -305,3 +305,23 @@ describe("🔍 فحصُ الكروت في الساس", () => {
   });
 
 });
+
+describe("ب-٧ · شهرٌ بأقلَّ من سعرِ باقته — بالعمليّة لا بالصفّ", () => {
+  test("🔴 المعيارُ بالعمليّة: مجموعُ يومِ التفعيل لا الوصلُ المفرد", () => {
+    const src = read(HEALTH);
+    assert.ok(src.includes('"entry_underpaid"'), "بندُ النقص غيرُ مبنيّ");
+    const blk = src.slice(src.indexOf('add("entry_underpaid"'), src.indexOf('add("subscriber_no_tower"'));
+    // تجميعٌ بالمشترك واليوم — وإلّا عاد الإنذارُ الكاذبُ نفسُه (٥ أنصافِ عمليّات)
+    assert.ok(/GROUP BY 1, 2/.test(blk), "بلا تجميعٍ بالعمليّة — فتُنذَر أنصافُ العمليّات");
+    assert.ok(/e\.date::date AS d/.test(blk), "التجميعُ ليس بيوم التفعيل");
+    assert.ok(/GREATEST\(op\.paid, op\.due\)/.test(blk), "الدَّينُ لا يُحسَب تغطيةً — والدَّينُ ليس خطراً");
+    assert.ok(/op\.days >= 25/.test(blk), "بلا شرطِ شهرٍ كامل — فالتفعيلاتُ الجزئيّةُ تُنذَر ظلماً");
+  });
+
+  test("والزيادةُ **لا تُبلَّغ** — فلا معيارَ مُثبَتاً للألف", () => {
+    const src = read(HEALTH);
+    const blk = src.slice(src.indexOf('add("entry_underpaid"'), src.indexOf('add("subscriber_no_tower"'));
+    assert.equal(/> p\."priceDinar"/.test(blk), false, "يُنذر عن الزيادةِ أيضاً — و٤٢٧ منها بلا تفسير");
+    assert.ok(/الزيادةُ لا تُبلَّغ/.test(blk), "لا يُصرّح بأنّ الزيادةَ متروكةٌ عن قصد");
+  });
+});
