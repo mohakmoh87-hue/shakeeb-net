@@ -24,6 +24,22 @@ import { formatDate } from "@/lib/format";
 /** بعدها يُمسَح الصفُّ المعلَّق ولا يُرسَل (نصُّ الطلب: «إن مرّت ٢٤ ساعةً ولم يُفتَح واتساب»). */
 export const SELF_ACT_QUEUE_TTL_MS = 24 * 60 * 60 * 1000;
 
+// ═════ 🔴 حادثةُ 2026-08-14 19:16 — «أين ذهبت مهلةُ العشر ثوانٍ؟» (بلاغُ محمد) ═════
+// ١٧٦ رسالةَ بثٍّ لمكتب الرسالة خرجت في ~٤ دقائق بمتوسّط **١٫١ ثانيةٍ** بينها. والسببُ أنّ
+// هذه الدالّةَ — وهي على **كلّ حاسبة مكتب** وتُنادى كلَّ دورةِ مجدولٍ وعند جهوزيّة الواتساب —
+// كانت تلتقط **كلَّ** صفٍّ `PENDING` لمشتركي مكتبها بلا تمييزِ مصدره، وترسله **بلا أيّ
+// فاصل**. فخطفت طابورَ البثّ من ساحبه السحابيِّ ذي الفاصل العشريّ، وأخرجته رشقةً واحدة.
+// 🔴 والخطرُ ليس تجميليّاً: رشقةٌ كهذه سببٌ مباشرٌ لحظر رقم الواتساب.
+//
+// ⇒ إصلاحان لا واحد:
+//   ١. **العزل**: لا تأخذ إلّا صفوفَها هي (`createdByUser = "sync"`) — فطابورُ البثّ
+//      (وسمُه `createdByUser` = اسمُ المُرسِل، وعلامتُه في `error`) يبقى لساحبه وحدَه.
+//   ٢. **فاصلٌ وحارس**: فاصلٌ بين رسالةٍ وأخرى حتى لصفوفها هي، وحارسُ تشغيلٍ واحدٍ لكلّ
+//      مكتب — فهي تُنادى كلَّ دقيقة، وبلا حارسٍ تتراكب النسخُ فيعود التوازي من بابٍ آخر.
+const SELF_ACT_GAP_MS = 10_000; // فاصلُ مكافحة الحظر — نفسُ فاصل ساحب البثّ
+const SELF_ACT_BATCH = 30;      // سقفُ الدورة الواحدة (٣٠ × ١٠ث = ٥ دقائق) والباقي في التالية
+const draining = new Set<number>(); // مكاتبُ يجري تصريفُها الآن (حارسُ عدم التراكب)
+
 /**
  * يُبلِّغ مشتركاً فعّل اشتراكه بنفسه. يُنادى من المزامنة لكلّ تفعيلٍ **مُفعِّلُه ليس
  * حسابَ المكتب**. لا يرمي استثناءً أبداً — مزامنةُ المكتب أهمُّ من رسالة.
@@ -118,6 +134,8 @@ export async function notifySelfActivated(
  */
 export async function drainSelfActivatedQueue(towerId: number): Promise<{ sent: number; expired: number; failed: number }> {
   const out = { sent: 0, expired: 0, failed: 0 };
+  if (draining.has(towerId)) return out; // دورةٌ سابقةٌ ما زالت تعمل لهذا المكتب
+  draining.add(towerId);
   try {
     const cutoff = new Date(Date.now() - SELF_ACT_QUEUE_TTL_MS);
     // 🔑 و`Message` **بلا علاقةٍ** إلى `Subscriber` (فيه `subscriberId` مجرَّداً)، فلا يصحّ
@@ -125,7 +143,9 @@ export async function drainSelfActivatedQueue(towerId: number): Promise<{ sent: 
     //   ثمّ يُنسَب كلُّ صفٍّ لمكتبه بمعرّف مشتركه — 🔒 وهو موضعُ العزل: لا تُرسَل رسالةُ
     //   مشتركٍ من واتساب مكتبٍ ليس مكتبَه.
     const all = await prisma.message.findMany({
-      where: { status: "PENDING", channel: "WHATSAPP", subscriberId: { not: null } },
+      // 🔒 **صفوفُها هي حصراً**: `createdByUser: "sync"` هو وسمُ ما تُنشئه هذه الميزةُ أعلاه.
+      //   وبلا هذا الشرط كانت تخطف طابورَ البثّ فتُخرجه رشقةً (حادثةُ ١٧٦ رسالة).
+      where: { status: "PENDING", channel: "WHATSAPP", subscriberId: { not: null }, createdByUser: "sync" },
       select: { id: true, phone: true, text: true, date: true, subscriberId: true },
       orderBy: { id: "asc" },
       take: 1000,
@@ -146,10 +166,14 @@ export async function drainSelfActivatedQueue(towerId: number): Promise<{ sent: 
       await prisma.message.deleteMany({ where: { id: { in: stale.map((m) => m.id) } } });
       out.expired = stale.length;
     }
-    // ٢) إرسالُ الباقي — سقفُ ٢٠٠ لدورةٍ واحدة والباقي في التالية
-    const pend = ours.filter((m) => m.date >= cutoff).slice(0, 200);
+    // ٢) إرسالُ الباقي — سقفُ الدورة والباقي في التالية، **وبفاصلٍ بين رسالةٍ وأخرى**
+    const pend = ours.filter((m) => m.date >= cutoff).slice(0, SELF_ACT_BATCH);
+    let first = true;
     for (const m of pend) {
       if (!m.phone) { await prisma.message.deleteMany({ where: { id: m.id } }); continue; }
+      // ⏱️ الفاصلُ **قبل** كلّ رسالةٍ عدا الأولى — فلا رشقةَ تُعرّض الرقمَ للحظر
+      if (!first) await new Promise((r) => setTimeout(r, SELF_ACT_GAP_MS));
+      first = false;
       // الحَجزُ قبل الأثر
       const claim = await prisma.message.updateMany({
         where: { id: m.id, status: "PENDING" },
@@ -163,6 +187,8 @@ export async function drainSelfActivatedQueue(towerId: number): Promise<{ sent: 
         await prisma.message.updateMany({ where: { id: m.id }, data: { status: "FAILED", error: res.error ?? "فشل الإرسال من الطابور" } });
       }
     }
-  } catch { /* الطابورُ مكسبٌ لا واجبٌ يُخاطَر لأجله */ }
+  } catch { /* الطابورُ مكسبٌ لا واجبٌ يُخاطَر لأجله */ } finally {
+    draining.delete(towerId); // يُحرَّر دائماً — وإلّا تجمّد تصريفُ المكتب إلى الأبد
+  }
   return out;
 }
