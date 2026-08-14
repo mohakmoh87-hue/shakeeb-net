@@ -63,3 +63,64 @@ export async function requireOwnerForBulk(opts: {
     count: opts.count,
   }, { status: 403 });
 }
+
+// ═════ و-٣ · حذفُ مشتركٍ عليه دَينٌ أو له تفعيلٌ ساري ═════
+//
+// ⚠️ **ولماذا هو أخطرُ من حذفِ الكروت**: `purgeSubscribers` حذفٌ **فيزيائيٌّ** يمحو
+//   المشتركَ **وكلَّ سجلّاته** — وصولاتُه وحركاتُ صندوقه. فمشتركٌ عليه دَينٌ يُحذَف
+//   يمحو الدَّينَ من الوجود، ومشتركٌ له شهرٌ مدفوعٌ سارٍ يمحو أثرَ ما قبضتَه منه.
+//   ولا سجلَّ محذوفاتٍ يُرجعه (بندُ ب-٥-ب لم يُبنَ بعد).
+//
+// 🔑 والبوّابةُ تُقاس **بالضرر لا بالعدد**: حذفُ ألفِ مشتركٍ بلا دَينٍ ولا تفعيلٍ سارٍ
+//   عملٌ مشروع (تنظيفُ استيراد)، وحذفُ **واحدٍ** عليه دَينٌ يحتاج إذنَ المالك.
+
+/** يفحص المشتركين المُستهدَفين: أيُّهم عليه دَينٌ أو له تفعيلٌ سارٍ؟ */
+export async function requireOwnerForSubscriberPurge(opts: {
+  targetIds: number[];
+  userId: number | undefined;
+  ownerPassword: unknown;
+}): Promise<NextResponse | null> {
+  if (!opts.targetIds.length) return null;
+
+  const risky = await prisma.subscriber.findMany({
+    where: {
+      id: { in: opts.targetIds },
+      OR: [
+        { carry: { gt: 0 } }, // دَينٌ عليه
+        { dateTo: { gt: new Date() } }, // تفعيلٌ سارٍ دفع مقابله
+      ],
+    },
+    select: { id: true, name: true, netUser: true, carry: true, dateTo: true },
+    take: 500,
+  });
+  if (!risky.length) return null;
+
+  const debt = risky.reduce((a, x) => a + Math.max(0, x.carry ?? 0), 0);
+  const live = risky.filter((x) => x.dateTo && x.dateTo > new Date()).length;
+  const pass = typeof opts.ownerPassword === "string" ? opts.ownerPassword : null;
+  const ok = opts.userId != null && (await confirmOwnerPassword(opts.userId, pass));
+
+  await prisma.auditLog.create({
+    data: {
+      userId: opts.userId,
+      action: ok ? "SUB_PURGE_OWNER_OK" : "SUB_PURGE_BLOCKED",
+      entity: "subscriber", entityId: risky.map((r) => r.id).join(",").slice(0, 200),
+      details: `${ok ? "أُذن" : "مُنع"} حذفُ ${risky.length} مشتركاً فيهم خطر — دَينٌ ${debt} · تفعيلٌ سارٍ ${live}` +
+               `${ok ? " بكلمةِ مرور المالك" : pass ? " (كلمةُ المرور خاطئة)" : " (بلا كلمةِ مرور)"}`,
+    },
+  }).catch(() => {});
+  if (ok) return null;
+
+  const sample = risky.slice(0, 5)
+    .map((r) => `${r.name ?? r.netUser ?? r.id}${(r.carry ?? 0) > 0 ? ` (دَين ${r.carry})` : " (تفعيلٌ سارٍ)"}`)
+    .join(" · ");
+  return NextResponse.json({
+    error: `🛡️ من بين المحدَّدين **${risky.length} مشتركاً لا يجوز حذفُهم بلا إذنك**: ` +
+           `دَينٌ مجموعُه ${debt.toLocaleString("en-US")} د.ع · و${live} منهم تفعيلُه سارٍ.\n` +
+           `${sample}${risky.length > 5 ? " …" : ""}\n` +
+           `والحذفُ هنا **فيزيائيٌّ يمحو وصولاتِهم وحركاتِ صندوقهم** ولا سجلَّ يُرجعها. ` +
+           `فسدِّد الدَّينَ أو صفِّره أوّلاً، أو أدخِل كلمةَ مرور المالك للمتابعة.`,
+    needOwnerPassword: true,
+    risky: risky.length, debt, live,
+  }, { status: 403 });
+}

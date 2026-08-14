@@ -61,6 +61,30 @@ type ExtRow = {
   dateTo: string | null; office: string | null; package: string | null; foundAt: string | null;
 };
 
+// 🛡️ و-٣ · بوّابةُ الحذف الخطر: مشتركٌ عليه دَينٌ أو تفعيلُه سارٍ لا يُمحى (هو وسجلّاتُه
+//   الماليّة) إلّا بكلمةِ مرور المالك. وتُطلَب مرّةً واحدةً وتُعاد المحاولةُ ثمّ لا تُخزَّن.
+async function sendPurge(body: Record<string, unknown>): Promise<void> {
+  const send = (ownerPassword?: string) => fetch("/api/subscribers/bulk-delete", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, ...(ownerPassword ? { ownerPassword } : {}) }),
+  });
+  let r = await send();
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    if ((j as { needOwnerPassword?: boolean }).needOwnerPassword) {
+      const pass = window.prompt(`${(j as { error?: string }).error ?? ""}
+
+كلمةُ مرور المالك:`);
+      if (!pass) { window.alert("أُلغي الحذف — لم تُدخَل كلمةُ مرور المالك"); return; }
+      r = await send(pass);
+      if (!r.ok) {
+        const j2 = await r.json().catch(() => ({}));
+        window.alert((j2 as { error?: string }).error ?? "تعذّر الحذف");
+      }
+    } else window.alert((j as { error?: string }).error ?? "تعذّر الحذف");
+  }
+}
+
 export default function SubscribersBoard() {
   const router = useRouter();
   const { can } = usePermission();
@@ -400,14 +424,14 @@ export default function SubscribersBoard() {
     const ids = checked.size > 0 ? [...checked] : subs.map((s) => s.id);
     if (ids.length === 0) return;
     if (!confirm(`حذف ${ids.length} مشترك من القائمة الحالية؟`)) return;
-    await fetch("/api/subscribers/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+    await sendPurge({ ids });
     announceMoneyChanged(); // حذف المشترك قد يعكس حركات مالية لليوم
     setChecked(new Set()); setDelMenu(false); setSelectedId(null); load(query, showAllTowers);
   }
   async function deleteAllSubs() {
     if (!confirm("⚠️ حذف جميع المشتركين نهائياً؟")) return;
     if (!confirm("تأكيد أخير: حذف الكل؟")) return;
-    await fetch("/api/subscribers/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
+    await sendPurge({ all: true });
     announceMoneyChanged();
     setChecked(new Set()); setDelMenu(false); setSelectedId(null); load(query, showAllTowers);
   }

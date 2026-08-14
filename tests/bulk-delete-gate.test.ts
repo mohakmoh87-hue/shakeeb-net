@@ -75,3 +75,38 @@ describe("🛡️ و-٤ · بوّابةُ الحذف الجماعيّ", () => {
     }
   });
 });
+
+describe("🛡️ و-٣ · حذفُ مشتركٍ عليه دَينٌ أو تفعيلٌ سارٍ", () => {
+  const R = "src/app/api/subscribers/bulk-delete/route.ts";
+
+  test("🔴 البوّابةُ **قبل** الحذف الفيزيائيّ — فهو يمحو الوصولاتِ وحركاتِ الصندوق", () => {
+    const src = read(R);
+    const gate = src.indexOf("requireOwnerForSubscriberPurge(");
+    const purge = src.indexOf("purgeSubscribers(");
+    assert.ok(gate > 0, "لا بوّابةَ على حذف المشتركين");
+    assert.ok(gate < purge, "البوّابةُ بعد الحذف — والحذفُ لا يُسترَدّ");
+  });
+
+  test("🔑 والقياسُ بالضرر لا بالعدد: دَينٌ أو تفعيلٌ سارٍ", () => {
+    const g = read("src/lib/bulkDeleteGate.ts");
+    const blk = g.slice(g.indexOf("requireOwnerForSubscriberPurge"));
+    assert.ok(/carry: \{ gt: 0 \}/.test(blk), "الدَّينُ غيرُ مفحوص");
+    assert.ok(/dateTo: \{ gt: new Date\(\) \}/.test(blk), "التفعيلُ الساري غيرُ مفحوص");
+    // ولا حدَّ عددٍ هنا: واحدٌ عليه دَينٌ يكفي
+    assert.equal(/BULK_DELETE_GATE/.test(blk), false, "قِيس بالعدد فمرّ مشتركٌ عليه دَين");
+  });
+
+  test("والرسالةُ تُسمّي المشتركين ومبلغَ الدَّين — فالقرارُ يُبنى على معلومة", () => {
+    const g = read("src/lib/bulkDeleteGate.ts");
+    const blk = g.slice(g.indexOf("requireOwnerForSubscriberPurge"));
+    assert.ok(/sample/.test(blk) && /debt\.toLocaleString/.test(blk), "الرسالةُ بلا أسماءَ ولا مبلغ");
+    assert.ok(/SUB_PURGE_BLOCKED/.test(blk) && /SUB_PURGE_OWNER_OK/.test(blk), "بلا أثرٍ في التدقيق");
+  });
+
+  test("🖥️ وواجهةُ المشتركين تطلب الكلمةَ ولا تُخزّنها", () => {
+    const src = read("src/components/SubscribersBoard.tsx");
+    assert.ok(src.includes("needOwnerPassword"), "الواجهةُ لا تفهم البوّابة");
+    assert.ok(src.includes("sendPurge("), "النداءُ لم يُوحَّد فيبقى مسارٌ بلا بوّابة");
+    assert.equal(/useState[^\n]*ownerPassword|localStorage[^\n]*ownerPassword/.test(src), false, "الكلمةُ مُخزَّنة");
+  });
+});
