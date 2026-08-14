@@ -1491,6 +1491,40 @@ model GuardAssignment {
   @@map("guard_assignments")
 }
 
+// ═════ 🔍 فحصُ الكارت في الساس — **قبل** رفعِ أيّ حالةِ كارت (طلبُ محمد 2026-08-14) ═════
+//
+// «كان يجب على حارس المال أن **يفحص أوّلاً أين الكارت** وبعدها يُعطي الحالة، بدل أن
+//  يُخبرني بهذا الشكل… والأحرى به أن يفحص أين هذا الكارتُ ليُخبرني بكارتٍ استُهلك بمبلغِ صفر.»
+//
+// 🔴 **وأوّلُ قياسٍ كشف ما هو أخطرُ من السؤال**: ٣ من ٨ كروتٍ **مربوطةٌ في البرنامج
+//   بمشتركٍ غيرِ الذي استهلكها في الساس** — ومنها كارتٌ ذهب إلى realm آخرَ (@res) بمديرٍ
+//   آخر. أي أنّ المالَ نُسب لمشتركٍ والخدمةُ ذهبت لآخر.
+//
+// وبحثُ الساس ~١.٥ث للكارت فلا يصلح في مسارٍ يستجيب لمستخدم ⇒ يُخزَّن الحكمُ هنا،
+// ويُحدَّث بمسحٍ دوريٍّ صامت، وتقرأه لوحةُ الحارس فتُظهر الحالةَ **بعد** ثبوتها لا قبله.
+model CardSasCheck {
+  id           Int      @id @default(autoincrement())
+  agentId      Int
+  serial       String
+  cardId       Int?
+  subscriberId Int? // مَن يقول البرنامجُ إنّه صاحبُه
+  // ما وجده الساس
+  sasUsername  String?
+  sasName      String?
+  sasMethod    String?
+  sasCreatedAt String?
+  sasOldExpiry String?
+  sasNewExpiry String?
+  sasPrice     Float?
+  /// match | mismatch | not-found | error — والحُكمُ يُحسَب لا يُخمَّن
+  verdict      String
+  checkedAt    DateTime @default(now())
+
+  @@unique([agentId, serial])
+  @@index([agentId, verdict])
+  @@map("card_sas_checks")
+}
+
 model MoneyHealthIgnore {
   id        Int      @id @default(autoincrement())
   agentId   Int // عزل: لكلّ وكيلٍ تجاهلاتُه

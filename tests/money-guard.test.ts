@@ -248,3 +248,46 @@ describe("⚖️ العمليّةُ تُقاس لا الصفُّ (وصل #٣٠٧
     }
   });
 });
+
+// ═══════ 🔍 «أين الكارت؟» — الحارسُ يفحص بنفسه قبل أن يُعطي الحالة ═══════
+describe("🔍 فحصُ الكروت في الساس", () => {
+  test("🔴 سيريالٌ في تفعيلَين لمشتركَين — يُقاس بلا ساسٍ أصلاً", () => {
+    const src = read(HEALTH);
+    assert.ok(src.includes('"card_serial_reused"'), "لا فحصَ لسيريالٍ مُعادِ الاستخدام");
+    const blk = src.slice(src.indexOf('add("card_serial_reused"'));
+    assert.ok(/HAVING count\(DISTINCT e\."subscriberId"\) > 1/.test(blk), "لا شرطَ لمشتركَين مختلفَين");
+    assert.ok(/severity: "critical"/.test(blk.slice(0, 1600)), "الحالةُ ليست حرجةً وهي قبضٌ مرّتَين");
+  });
+
+  test("🔑 حالاتُ الساس تُقرأ من **جدول الفحص** لا من الساس مباشرةً في مسارِ المستخدم", () => {
+    const src = read(HEALTH);
+    for (const k of ['"card_sas_mismatch"', '"card_stock_used_in_sas"']) {
+      assert.ok(src.includes(k), `فحصٌ غائب: ${k}`);
+    }
+    assert.ok(src.includes("card_sas_checks"), "لا يقرأ جدولَ الفحص");
+    assert.equal(src.includes("sasSearchActivation"), false,
+      "يُنادي الساسَ من داخل اللوحة — فتتجمّد الصفحةُ ١.٥ث لكلّ كارت");
+  });
+
+  test("⚙️ والمسحُ يعمل بنفسه دوريّاً — «بدل أن أُخبرَك أنت بفعلها»", () => {
+    const sw = read("src/lib/cardSasCheck.ts");
+    assert.ok(sw.includes("sasSearchActivation"), "المسحُ لا يسأل الساس");
+    assert.ok(/where: \{ agentId, isDeleted: false \}/.test(sw), "جلساتُ الساس غيرُ معزولةٍ بالوكيل");
+    assert.ok(/agentId,\s*serial/.test(sw), "الحكمُ لا يُخزَّن بمفتاحِ وكيلٍ وسيريال");
+    const sch = read("src/lib/scheduler.ts");
+    assert.ok(sch.includes("sweepCardSasChecks"), "لا دورةَ مسحٍ في المُجدول");
+  });
+
+  test("🔒 والحكمُ يُقارن الـrealm أيضاً — فـ@mu ليس @res", () => {
+    const sw = read("src/lib/cardSasCheck.ts");
+    assert.equal(/\.split\("@"\)/.test(sw), false, "يقصّ الـrealm فيُخفي كارتاً ذهب لوكيلٍ آخر");
+    assert.ok(/trim\(\)\.toLowerCase\(\) === /.test(sw), "المقارنةُ غيرُ مطبَّعة");
+  });
+
+  test("⚠️ وتقدُّمُ المسح مُعلَنٌ — فلا يُقرَأ «صفرٌ» على أنّه سلامةٌ وهو «لم يُفحَص»", () => {
+    const src = read(HEALTH);
+    assert.ok(src.includes('"card_sweep_progress"'), "لا بندَ لتقدُّم المسح");
+    const blk = src.slice(src.indexOf('add("card_sweep_progress"'));
+    assert.ok(/severity: "info"/.test(blk.slice(0, 1800)), "التقدُّمُ يُعَدُّ حالةً لا إحاطة");
+  });
+});

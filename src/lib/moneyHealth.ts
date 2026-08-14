@@ -697,6 +697,93 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
   //   أنّ جدولاً بلا سياسةٍ، وإظهارُه لهم ضجيجٌ وكشفُ داخليّاتٍ في آنٍ واحد. وهو شأنُ
   //   محمد وحدَه ⇒ مكانُه سكربتُ المالك لا لوحةُ الوكيل. (وقد اصطاد ٣ جداولَ فعلاً.)
 
+  // ═══════ 🔍 «أين الكارت؟» — الحارسُ يفحص بنفسه (طلبُ محمد 2026-08-14) ═══════
+  //
+  // «كان يجب على حارس المال أن **يفحص أوّلاً أين الكارت** وبعدها يُعطي الحالة» ·
+  // «أعتقد أنّ هذه الكروتَ **رجعت إلى المخزن** من الوهميّ وتمّ إعادةُ استخدامها — أريد
+  //  فحصَ جميع الكروت» · «ويجب أن يعمل الحارسُ كلَّ هذه الأمور **بنفسه** بدل أن أُخبرَك».
+  //
+  // 🔴 **وما كشفه القياسُ على الإنتاج، ونظريّةُ محمد أصابت جوهرَه**: الكارتُ يُبطَل وصلُه
+  //   فيرجع للمخزن (`useDate=null`)، ثمّ يُستخدَم لمشتركٍ آخر — **لكنّه في الساس مُستهلَكٌ
+  //   للأوّل**. فالمالُ يُقبَض مرّتَين على كارتٍ واحدٍ وشهرٍ واحد. أمثلةٌ مقيسة:
+  //     • `490548619878085` — مروان ١٠ آب (٤٥٬٠٠٠) ثمّ ليث ١٣ آب (٤٦٬٠٠٠)
+  //     • `377061353405719` — مشتركان في **٢٦ دقيقة**
+  //     • `371078030969621` — ومعه تحذيرٌ صريح «الساس ما زال منتهياً عند التأكيد»
+
+  // ── ١) سيريالٌ واحدٌ في تفعيلَين حيَّين لمشتركَين مختلفَين ──
+  // 🔑 **ولا يحتاج ساساً أصلاً**: كارتٌ لشهرٍ واحدٍ فلا يخدم مشتركَين. قِيس: ٣ سيريالاتٍ
+  //   بـ٢٣٠٬٠٠٠ — وهي أوضحُ صورةٍ لِما وصفه محمد.
+  await add("card_serial_reused", "لا سيريالَ كارتٍ في تفعيلَين لمشتركَين", `
+    SELECT e.card2 AS serial, count(*)::int AS entries,
+           sum(coalesce(e."moneyIn",0)) AS money_total,
+           string_agg(DISTINCT s.name, ' ← ') AS names,
+           to_char(min(e.date) ${BG}, 'YYYY-MM-DD') AS first_at,
+           to_char(max(e.date) ${BG}, 'YYYY-MM-DD') AS last_at,
+           min(e.id) AS first_id, max(e.id) AS last_id
+      FROM subscription_entries e JOIN subscribers s ON s.id = e."subscriberId"
+     WHERE e."isDeleted" = false AND e.card2 IS NOT NULL AND e.card2 <> ''
+       AND e."towerId" IN (${T})
+     GROUP BY 1 HAVING count(DISTINCT e."subscriberId") > 1
+     ORDER BY 3 DESC LIMIT 100`, (x) => ({
+    rowKey: `reused:${s(x.serial)}`,
+    title: "سيريالُ كارتٍ واحدٍ في تفعيلَين لمشتركَين مختلفَين",
+    detail: `سيريال ${s(x.serial)} · ${n(x.entries)} تفعيلاتٍ بمجموع ${n(x.money_total)} · ${s(x.names)} · ${s(x.first_at)} → ${s(x.last_at)} (وصلا #${s(x.first_id)} و#${s(x.last_id)})`,
+    how: "كارتٌ واحدٌ لشهرٍ واحدٍ فلا يخدم مشتركَين. وأكثرُ ما يحدث: أُبطل وصلُ الأوّل فرجع الكارتُ للمخزن ثمّ استُخدم للثاني — والساسُ استهلكه للأوّل. راجِع الوصلَين في الساس بزرّ «ربط كارت»: مَن نال الشهرَ فعلاً؟ ثمّ صحّح سيريالَ الوصل الآخر بالكارت الذي خدمه حقّاً، أو أبطِله إن لم يُخدَم.",
+    severity: "critical", amount: n(x.money_total), at: s(x.last_at),
+  }));
+
+  // ── ٢) الساسُ يقول إنّ صاحبَ الكارت غيرُ الذي في البرنامج ──
+  // 🔑 **يُقرأ من جدول الفحص لا من الساس مباشرةً**: البحثُ ~١.٥ث للكارت، والمسحُ الدوريُّ
+  //   يُثبّت الحكمَ أوّلاً فتظهر الحالةُ **مفحوصةً** لا سؤالاً معلَّقاً (طلبُ محمد الصريح).
+  await add("card_sas_mismatch", "كلُّ كارتٍ صاحبُه في الساس هو صاحبُه في البرنامج", `
+    SELECT k.serial, k."sasUsername", k."sasName", k."sasCreatedAt", k."sasNewExpiry",
+           s.name AS prog_name, s."netUser" AS prog_user, r.price,
+           to_char(k."checkedAt" ${BG}, 'YYYY-MM-DD HH24:MI') AS at
+      FROM card_sas_checks k
+      LEFT JOIN subscribers s ON s.id = k."subscriberId"
+      LEFT JOIN recharge_cards r ON r.id = k."cardId"
+     WHERE k."agentId" = ${agentId} AND k.verdict = 'mismatch'
+     ORDER BY k."checkedAt" DESC LIMIT 200`, (x) => ({
+    rowKey: `sasmm:${s(x.serial)}`,
+    title: "كارتٌ خدم مشتركاً في الساس والبرنامجُ ينسبه لآخر",
+    detail: `سيريال ${s(x.serial)}${x.price ? ` · ${n(x.price)} د.ع` : ""} · البرنامج: ${s(x.prog_name) || "بلا مشترك"}${x.prog_user ? ` (${s(x.prog_user)})` : ""} · **الساس: ${s(x.sasName)} (${s(x.sasUsername)})** · فُعِّل ${s(x.sasCreatedAt)} · انتهاؤه ${s(x.sasNewExpiry)} · فُحص ${s(x.at)}`,
+    how: "الساسُ هو الحقيقةُ في مَن نال الخدمة. فإمّا رُبط الكارتُ بالمشترك الخطأ في البرنامج (فيُصحَّح الربط)، وإمّا أُدخل سيريالٌ مستهلَكٌ في تفعيلٍ جديد (فيُصحَّح سيريالُ الوصل بالكارت الذي خدمه فعلاً). والمالُ لا يُمَسّ حتى تُقرِّر.",
+    severity: "critical", amount: n(x.price), at: s(x.at),
+  }));
+
+  // ── ٣) كارتٌ في المخزن والساسُ يقول إنّه مُستهلَك ──
+  // وهذا جوابُ سؤال محمد «أين هذه الكروتُ الآن؟» في أخطرِ صوره: كارتٌ يحسبه البرنامجُ
+  // متاحاً وسيُستخدم مرّةً أخرى — فيُقبَض ثمنُه ولا خدمةَ خلفه.
+  await add("card_stock_used_in_sas", "لا كارتَ في المخزن مُستهلَكٌ في الساس", `
+    SELECT k.serial, k."sasName", k."sasUsername", k."sasCreatedAt", r.price,
+           to_char(k."checkedAt" ${BG}, 'YYYY-MM-DD HH24:MI') AS at
+      FROM card_sas_checks k
+      JOIN recharge_cards r ON r.id = k."cardId"
+     WHERE k."agentId" = ${agentId} AND k."sasUsername" IS NOT NULL AND r."useDate" IS NULL
+     ORDER BY k."checkedAt" DESC LIMIT 200`, (x) => ({
+    rowKey: `stockused:${s(x.serial)}`,
+    title: "كارتٌ في مخزنك وهو **مُستهلَكٌ في الساس**",
+    detail: `سيريال ${s(x.serial)}${x.price ? ` · ${n(x.price)} د.ع` : ""} · الساس: ${s(x.sasName)} (${s(x.sasUsername)}) · فُعِّل ${s(x.sasCreatedAt)} · فُحص ${s(x.at)}`,
+    how: "لا تُعِد استخدامَه: الساسُ استهلكه ولن يمنح يوماً. أزِله من المخزن (أو علّمه مستخدَماً لمن خدمه) — وإلّا قُبض ثمنُه من مشتركٍ ولا خدمةَ خلفه. وراجِع كيف رجع للمخزن: إبطالُ وصلٍ يُرجع الكارتَ آليّاً.",
+    severity: "critical", amount: n(x.price), at: s(x.at),
+  }));
+
+  // ── ٤) تقدُّمُ المسح — فلا يظنّ المالكُ أنّ «صفراً» تعني السلامةَ وهي تعني «لم يُفحَص» ──
+  // ⚠️ وهذا البندُ إحاطةٌ لا حالة: يظهر ما دام الفحصُ ناقصاً، ويختفي حين يكتمل.
+  await add("card_sweep_progress", "فحصُ الكروت في الساس مكتمل", `
+    SELECT (SELECT count(*)::int FROM recharge_cards WHERE "agentId" = ${agentId} AND serial IS NOT NULL) AS total,
+           (SELECT count(*)::int FROM card_sas_checks WHERE "agentId" = ${agentId}) AS checked
+     WHERE (SELECT count(*)::int FROM card_sas_checks WHERE "agentId" = ${agentId})
+         < (SELECT count(*)::int FROM recharge_cards WHERE "agentId" = ${agentId} AND serial IS NOT NULL)`,
+    (x) => ({
+      rowKey: "sweep:progress",
+      title: "فحصُ الكروت في الساس ما زال جارياً",
+      detail: `فُحص ${n(x.checked)} من ${n(x.total)} كارتاً · والمسحُ يعمل صامتاً بدفعاتٍ صغيرة`,
+      how: "لا إجراءَ منك: الحارسُ يفحص دفعةً كلَّ عشر دقائق (بحثُ الساس ~١.٥ث للكارت فلا يُستعجل). والمهمُّ أن تعرف أنّ **غيابَ حالةٍ الآن لا يعني سلامةَ ما لم يُفحَص بعد** — وهذا البندُ يختفي حين يكتمل المسح.",
+      severity: "info",
+    }));
+
+
   // ── ٧) أرقامُ إحاطةٍ (لا حالاتٍ) ──
   let summary: Row = {};
   try {

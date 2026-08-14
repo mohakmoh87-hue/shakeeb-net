@@ -569,6 +569,16 @@ export function startScheduler() {
         .then((m) => m.inspectPendingDeletedCards(30, wAgent))
         .catch(() => {});
     }
+    // 🔍 «أين الكارت؟» · مسحُ الكروت في الساس — دفعةٌ كلَّ عشر دقائق (طلبُ محمد 2026-08-14:
+    //    «أريد فحصَ جميع الكروت» و«يجب أن يعمل الحارسُ كلَّ هذا بنفسه»).
+    //    ⚙️ والبحثُ ~١.٥ث للكارت ⇒ ٣٠ كارتاً/دورة = ~٤٣٠٠ يوميّاً، فيُغطّي مخزنَ شكيب
+    //    (~٥٤٠٠ كارتاً) في يومٍ وثلث، ثمّ يُعيد فحصَ ما مضى عليه أسبوع. ولا يُستعجَل:
+    //    استعجالُه يُثقل الساسَ الذي تعتمد عليه المكاتبُ في عملها اليوميّ.
+    if (Number(nowHM.slice(3)) % 10 === 5 && wAgent != null) {
+      import("@/lib/cardSasCheck")
+        .then((m) => m.sweepCardSasChecks(wAgent, 30))
+        .catch(() => {});
+    }
     // مزامنة اشتراكات كل مكتب حسب وقته المضبوط (مرحلتان: كروت الأمس ثم تصحيح التواريخ)
     try {
       const offices = await prisma.tower.findMany({ where: { isDeleted: false, syncEnabled: "1", syncTime: { not: null }, ...(wAgent != null ? { agentId: wAgent } : {}) }, select: { id: true, syncTime: true } });

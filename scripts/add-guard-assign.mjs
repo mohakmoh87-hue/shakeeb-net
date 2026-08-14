@@ -88,6 +88,39 @@ try {
   }
   console.log(`✅ أذونُ العمود الخاصّ (${rows2.length} صفَّ أذونٍ فُحص)`);
 
+  // ٥) 🔍 جدولُ فحصِ الكروت في الساس — «الحارسُ يفحص أين الكارتُ ثمّ يُعطي الحالة»
+  const t2 = await c.query(`SELECT 1 FROM information_schema.tables WHERE table_name='card_sas_checks'`);
+  if (t2.rowCount) console.log("• card_sas_checks موجودٌ سابقاً");
+  else {
+    await c.query(`
+      CREATE TABLE card_sas_checks (
+        id             SERIAL PRIMARY KEY,
+        "agentId"      INTEGER NOT NULL,
+        serial         TEXT NOT NULL,
+        "cardId"       INTEGER,
+        "subscriberId" INTEGER,
+        "sasUsername"  TEXT,
+        "sasName"      TEXT,
+        "sasMethod"    TEXT,
+        "sasCreatedAt" TEXT,
+        "sasOldExpiry" TEXT,
+        "sasNewExpiry" TEXT,
+        "sasPrice"     DOUBLE PRECISION,
+        verdict        TEXT NOT NULL,
+        "checkedAt"    TIMESTAMP(3) NOT NULL DEFAULT NOW()
+      )`);
+    await c.query(`CREATE UNIQUE INDEX "card_sas_checks_agentId_serial_key" ON card_sas_checks ("agentId", serial)`);
+    await c.query(`CREATE INDEX "card_sas_checks_agentId_verdict_idx" ON card_sas_checks ("agentId", verdict)`);
+    console.log("✅ أُنشئ card_sas_checks");
+  }
+  await c.query(`GRANT SELECT, INSERT, UPDATE ON card_sas_checks TO agent_worker`);
+  await c.query(`GRANT USAGE, SELECT ON SEQUENCE card_sas_checks_id_seq TO agent_worker`);
+  await c.query(`ALTER TABLE card_sas_checks ENABLE ROW LEVEL SECURITY`);
+  await c.query(`DROP POLICY IF EXISTS rls_card_sas_checks ON card_sas_checks`);
+  await c.query(`CREATE POLICY rls_card_sas_checks ON card_sas_checks TO agent_worker
+    USING ("agentId" = current_agent_id()) WITH CHECK ("agentId" = current_agent_id())`);
+  console.log("✅ GRANT + RLS لفحوصِ الكروت");
+
   const chk = await c.query(`SELECT relrowsecurity AS on FROM pg_class WHERE relname='guard_assignments'`);
   console.log(`\n🔍 RLS على التكليفات: ${chk.rows[0]?.on}`);
   console.log("✅ تمّ.");
