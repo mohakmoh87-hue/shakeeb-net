@@ -197,7 +197,7 @@ export default function AllSubscribersPage() {
       </div>
 
       {/* شريط الإجراءات */}
-      <div data-app-bar className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
         <span className="text-sm font-bold text-slate-700">المجموع: {fmt(total)}</span>
         <span className="text-sm text-slate-500">· المحدَّد: <b className="text-mynet-blue">{checked.size}</b></span>
         <div className="flex-1" />

@@ -5,7 +5,6 @@ import AppShell from "@/components/shell/AppShell";
 import ReminderPrompt from "@/components/ReminderPrompt";
 import CompletionNotifier from "@/components/CompletionNotifier";
 import StandaloneLock from "@/components/StandaloneLock";
-import AppBarHandle from "@/components/AppBarHandle";
 import PlanBanner from "@/components/PlanBanner";
 
 // غلاف الصفحات المحمية: شريط أدوات علوي + المحتوى
@@ -23,7 +22,6 @@ export default async function AppLayout({
         <div className="flex min-h-screen flex-col">
           <PlanBanner agentId={tech.agentId ?? null} />
           <main className="flex-1">{children}</main>
-          <AppBarHandle />
         </div>
       );
     }
@@ -51,9 +49,6 @@ export default async function AppLayout({
 
       {/* في التطبيق المثبّت: يحصر التنقّل بإدارة الفنيين لأي حساب */}
       <StandaloneLock />
-
-      {/* مقبضُ شريط الخيارات — يظهر في التطبيق وحدَه وفي صفحةٍ تحمل شريطاً فعلاً */}
-      <AppBarHandle />
 
       {/* تنبيه انتهاء الاشتراك — خارج غلاف الموقع ليظهر في التطبيق المثبّت أيضاً */}
       <PlanBanner agentId={session.agentId ?? null} />

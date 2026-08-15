@@ -428,7 +428,7 @@ export default function CashboxPage() {
       )}
 
       {/* بحث بالتاريخ (من – إلى) — يشمل اليومين، والإجماليات أعلاه تعكس النتيجة */}
-      <div data-app-bar className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <DateRangeFilter
           on={dateOn} setOn={setDateOn} from={from} setFrom={setFrom} to={to} setTo={setTo}
           onChange={(onNow, f, t) => load(onNow ? f : "", onNow ? t : "", q, typeFilter, officeId, accFilter)}

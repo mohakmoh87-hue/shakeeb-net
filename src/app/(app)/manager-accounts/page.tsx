@@ -379,7 +379,7 @@ export default function ManagerAccountsPage() {
           ⚠️ ولم يُغيَّر سطرٌ واحدٌ في داخل أيّ قسم — أُعيد ترتيبُها فقط. والكروتُ
           الوهميّةُ إنذارٌ أحمرُ لا يجوز أن يُخفى، فعددُها **على زرّه** ويصير الزرُّ
           أحمرَ حين يكون فيها شيء، فتراه من أوّل نظرةٍ بلا فتحِ القسم. */}
-      <div data-app-bar className="mb-6 flex flex-wrap gap-2">
+      <div className="mb-6 flex flex-wrap gap-2">
         {([
           ["tx", "💵", "حركةٌ جديدة · المدراء · الرواتب", !denied && !!data, 0],
           ["wa", "💬", "واتساب المكاتب", waOffices.length > 0, 0],
