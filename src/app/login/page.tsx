@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import InstallApp from "@/components/InstallApp";
-import { isAppMode } from "@/lib/appMode";
 
 // صفحة تسجيل الدخول بالطراز الجديد (رموز .nst من النموذج المعتمد) — المنطق كما هو:
 // دخول + نسيت كلمة السر + تجربة أسبوع + الصفحة التعريفية + رقم التواصل + تثبيت التطبيق.
@@ -56,8 +55,12 @@ export default function LoginPage() {
         setError(data.error ?? "فشل تسجيل الدخول");
         return;
       }
-      // في التطبيق (PWA مثبّت أو التطبيق الأصلي): يبقى الجميع على إدارة الفنيين. وإلا التوجيه حسب الدور.
-      window.location.href = isAppMode() ? "/field-management" : (data.redirect ?? "/dashboard");
+      // 🔴 كان: `isAppMode() ? "/field-management" : …` — أي أنّ التطبيقَ **يطمس وجهةَ الخادم**
+      //   لكلّ حساب. والخادمُ يعرف الدورَ ويقولُه: الفنيُّ يُردّ بـ`/field-management`
+      //   والمستخدمُ بوجهته. فطلبُ محمد (2026-08-15) أن يدخل المديرُ كاملَ الموقع من التطبيق
+      //   «مثل التسجيل العادي» ⇒ تُحتَرم وجهةُ الخادم دائماً، والحصرُ يبقى على الفنيّ وحدَه
+      //   (يفرضه `StandaloneLock` بسؤال `/api/me`).
+      window.location.href = data.redirect ?? "/dashboard";
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {
