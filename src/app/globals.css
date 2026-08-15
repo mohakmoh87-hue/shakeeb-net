@@ -207,15 +207,59 @@ html[data-app-mode] [data-app-bar] {
 }
 /* أزرارُ الشريط تتوزّع بالتساوي فلا يتيه زرٌّ صغيرٌ في الطرف */
 html[data-app-mode] [data-app-bar] > * { flex: 1 1 7.5rem; min-width: 0; }
-/* 🛡️ حارسُ الارتفاع: شريطٌ بأزرارٍ كثيرةٍ لا يبتلع الشاشة — يُمرَّر داخلَ نفسِه */
-html[data-app-mode] [data-app-bar] { max-height: 38vh; overflow-y: auto; }
+/* 🔑 ورقةٌ تُطوى لا شريطٌ ثابت (طلبُ محمد 2026-08-15):
+   «تاخذ ربع الشاشة الاسفل بشكل ثابت ودائم وتخفي خلفها خيارات … ويجب ان يمكن
+   اخفائها وفتحها». فالشريطُ مُثبَّتٌ فوق الصفحة لا في تدفّقها، وثباتُه يحجب
+   الربعَ الأسفل دائماً — وفي حسابات المدير يقع تحته سجلُّ الحركات وأزرارُ
+   الحذف فتصير غيرَ قابلةٍ للبلوغ. فيَنزلق خارجَ الشاشة حتى يُطلَب.
+   والحدُّ ربعُ الشاشة (25vh) بنصّ طلبه، ويُمرَّر داخلَه إن زادت أزرارُه. */
+html[data-app-mode] [data-app-bar] {
+  max-height: 25vh;
+  overflow-y: auto;
+  transform: translateY(calc(100% + 2rem));
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  padding-bottom: calc(0.55rem + env(safe-area-inset-bottom) + 2.6rem);
+}
+html[data-app-mode][data-appbar-open] [data-app-bar] { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  html[data-app-mode] [data-app-bar] { transition: none; }
+}
 
-/* 🛡️ وفراغٌ أسفل المحتوى بقدر الشريط، وإلّا غطّى آخرَ سطر.
-   ويُطبَّق بـ:has فلا يحتاج علامةً ثانيةً في الصفحة — فعلامةٌ منسيّةٌ واحدةٌ
-   كانت تكفي لإخفاء آخر سطرٍ في صفحةٍ كاملة. والقيمةُ سخيّةٌ (7rem) لأنّ
-   الشريطَ قد يلتفّ سطرَين، والفراغُ الزائد لا يضرّ والناقصُ يُخفي بيانات. */
+/* المقبضُ لا وجودَ له في متصفّح الحاسبة/الهاتف — الشريطُ هناك في تدفّق الصفحة */
+.app-bar-handle { display: none; }
+
+/* مقبضُ الفتح/الطيّ — يبقى فوق الشريط في كلتا الحالتَين فلا يُغلَق على نفسه */
+html[data-app-mode] .app-bar-handle {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 41;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0 calc(0.4rem + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #1c8fe6 0%, #0f6fbf 100%);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 -4px 16px rgba(10, 79, 138, 0.28);
+}
+html[data-app-mode] .app-bar-grip {
+  width: 2.1rem;
+  height: 0.24rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+/* 🛡️ وفراغٌ أسفل المحتوى **بقدر المقبض وحدَه** — فالشريطُ مطويٌّ في الأصل ولا
+   يحجب شيئاً، وحين يُفتح فبطلبِ المستخدم ولحظةً واحدة. ويُطبَّق بـ:has فلا
+   يحتاج علامةً ثانيةً في الصفحة: علامةٌ منسيّةٌ واحدةٌ كانت تكفي لإخفاء آخرِ
+   سطرٍ في صفحةٍ كاملة. */
 html[data-app-mode] body:has([data-app-bar]) main,
-html[data-app-mode] body:has([data-app-bar]) [data-app-fullheight] { padding-bottom: 7rem !important; }
+html[data-app-mode] body:has([data-app-bar]) [data-app-fullheight] { padding-bottom: 3.4rem !important; }
 
 /* ---- ٢) رؤوسُ القوائم بلونٍ واحد ----
    طلبُ محمد: «ايضا رؤوس كل الفوائم بنفس اللون» — زرقةُ خلفيّةِ المجموع نفسُها. */
