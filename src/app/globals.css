@@ -207,8 +207,15 @@ html[data-app-mode] [data-app-bar] {
 }
 /* أزرارُ الشريط تتوزّع بالتساوي فلا يتيه زرٌّ صغيرٌ في الطرف */
 html[data-app-mode] [data-app-bar] > * { flex: 1 1 7.5rem; min-width: 0; }
-/* وفراغٌ أسفل المحتوى بقدر الشريط، وإلّا غطّى آخرَ سطر */
-html[data-app-mode] [data-app-bar-pad] { padding-bottom: 5.5rem; }
+/* 🛡️ حارسُ الارتفاع: شريطٌ بأزرارٍ كثيرةٍ لا يبتلع الشاشة — يُمرَّر داخلَ نفسِه */
+html[data-app-mode] [data-app-bar] { max-height: 38vh; overflow-y: auto; }
+
+/* 🛡️ وفراغٌ أسفل المحتوى بقدر الشريط، وإلّا غطّى آخرَ سطر.
+   ويُطبَّق بـ:has فلا يحتاج علامةً ثانيةً في الصفحة — فعلامةٌ منسيّةٌ واحدةٌ
+   كانت تكفي لإخفاء آخر سطرٍ في صفحةٍ كاملة. والقيمةُ سخيّةٌ (7rem) لأنّ
+   الشريطَ قد يلتفّ سطرَين، والفراغُ الزائد لا يضرّ والناقصُ يُخفي بيانات. */
+html[data-app-mode] body:has([data-app-bar]) main,
+html[data-app-mode] body:has([data-app-bar]) [data-app-fullheight] { padding-bottom: 7rem !important; }
 
 /* ---- ٢) رؤوسُ القوائم بلونٍ واحد ----
    طلبُ محمد: «ايضا رؤوس كل الفوائم بنفس اللون» — زرقةُ خلفيّةِ المجموع نفسُها. */
