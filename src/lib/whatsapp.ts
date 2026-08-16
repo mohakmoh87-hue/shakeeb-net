@@ -17,7 +17,26 @@ type WaStore = {
   lastError: string | null;
   startedAt: number | null;
   retries: number; // عدد محاولات إعادة التشغيل عند العُلوق (starting/authenticated)
+  qrAt: number | null; // لحظةُ آخرِ رمزِ QR وصل من واتساب — لكشف الرمز المتجمّد
 };
+
+// ═════ 🔴 الرمزُ المتجمّد: «QR ما يحدّث نفسه» (بلاغُ محمد عن صميم 2026-08-15) ═════
+//
+// واتسابُ يُدوّر رمزَ الربط كلَّ ~٢٠ ثانية ويُطلق الحدثَ `qr` في كلّ مرّة. فإن تعطّلت
+// صفحةُ كروميوم أو عَلِقت، تتوقّف الأحداثُ ويبقى آخرُ رمزٍ في الذاكرة **إلى الأبد**.
+//
+// وكانت `qr` **حالةً بالِعة** لا مخرجَ منها، في ثلاثة مواضعَ معاً:
+//   · `startWhatsApp` يرى الحالةَ `qr` فيرجع فوراً بلا إعادة تشغيل
+//   · وحارسا الدورة (المربوطة وغيرُ المربوطة) يَعُدّان `qr` حياةً فلا يُنعشان شيئاً
+// ⇒ فالمستخدم يمسح رمزاً ميّتاً، ويُعيد المسحَ، ولا يتبدّل شيءٌ أبداً. وهو ما وصفه
+//   محمد حرفيّاً: «فقط يبقى ثابت على الكيو ار واحد وميحدث».
+//
+// والحدُّ ١٢٠ ثانيةً = ستُّ دوراتِ تدويرٍ فائتة. فتأخُّرُ دورةٍ أو دورتَين على شبكةٍ
+// بطيئةٍ لا يهدم جلسةً سليمة، وتوقُّفٌ حقيقيٌّ يُكشَف خلال دقيقتَين.
+const QR_STALE_MS = 120_000;
+function qrStuck(s: WaStore): boolean {
+  return s.state === "qr" && s.qrAt != null && Date.now() - s.qrAt > QR_STALE_MS;
+}
 
 const g = globalThis as unknown as { __waOffices?: Map<number, WaStore> };
 function offices(): Map<number, WaStore> {
@@ -27,7 +46,7 @@ function offices(): Map<number, WaStore> {
 function store(officeId: number): WaStore {
   const m = offices();
   if (!m.has(officeId)) {
-    m.set(officeId, { client: null, state: "disconnected", qr: null, lastError: null, startedAt: null, retries: 0 });
+    m.set(officeId, { client: null, state: "disconnected", qr: null, lastError: null, startedAt: null, retries: 0, qrAt: null });
   }
   return m.get(officeId)!;
 }
@@ -54,8 +73,13 @@ const STARTUP_TIMEOUT_MS = 75_000; // إن لم يظهر QR/يجهز خلال ه
 export async function startWhatsApp(officeId: number): Promise<WaState> {
   const s = store(officeId);
   // جاهز/يعرض QR → أعِد الحالة كما هي
-  if (s.client && (s.state === "ready" || s.state === "authenticated" || s.state === "qr")) {
+  // 🔑 والرمزُ المتجمّد مستثنى: كانت `qr` تُرجِع فوراً مهما طال جمودُها، فلا يُنعَش أبداً.
+  if (s.client && (s.state === "ready" || s.state === "authenticated" || (s.state === "qr" && !qrStuck(s)))) {
     return s.state;
+  }
+  if (qrStuck(s)) {
+    console.log(`[whatsapp] ♻️ رمزُ مكتب ${officeId} متجمّدٌ منذ أكثرَ من دقيقتَين — إعادةُ تشغيل`);
+    s.lastError = "الرمزُ توقّف عن التجدّد — أُعيد التشغيل";
   }
 
   // ═════ لا تُستضاف جلسةٌ لا يحتاجها أحد (تدقيقُ 2026-08-13) ═════
@@ -162,7 +186,7 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   });
 
   client.on("loading_screen", (percent: string, message: string) => { console.log(`[whatsapp] مكتب ${officeId} تحميل ${percent}% ${message ?? ""}`); });
-  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
+  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; st.qrAt = Date.now(); publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
   client.on("authenticated", () => { const st = store(officeId); st.qr = null; st.state = "authenticated"; publish(officeId); console.log(`[whatsapp] مكتب ${officeId} تم التوثيق — بانتظار الجهوزية`); });
   client.on("ready", () => {
     const st = store(officeId); st.qr = null; st.state = "ready"; st.retries = 0;
@@ -237,7 +261,7 @@ export function hostsOfficeLocally(officeId: number): boolean {
 async function abandonStrayOffice(officeId: number, mid: string | null) {
   const st = store(officeId);
   if (st.client) { try { await Promise.resolve(st.client.destroy()).catch(() => {}); } catch { /* تجاهل */ } st.client = null; }
-  st.state = "disconnected"; st.qr = null; st.lastError = null; st.startedAt = null;
+  st.state = "disconnected"; st.qr = null; st.qrAt = null; st.lastError = null; st.startedAt = null;
   deleteSessionDir(officeId);
   // انشر «غير متصل» وحرّر الملكية — فقط إن كانت مسجّلة لهذه الحاسبة أو بلا مالك
   // (لا نلمس مكتباً تستضيفه حاسبة أخرى حيّة)
@@ -294,7 +318,7 @@ export function startWaRequestPoller() {
         // استضِف مكتبي دائماً: يستأنف من ملفاته إن وُجدت، وإلا يُظهر QR للربط الأول
         // (مكتب بلا جلسة). وأتجاهل أي ملكية قديمة عالقة لحاسبة أخرى — أثبّتها لي عند ready.
         const st = store(boundTower);
-        const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
+        const alive = st.client && (st.state === "ready" || (st.state === "qr" && !qrStuck(st)) || st.state === "authenticated" || st.state === "starting");
         const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
         if (!alive && !recentlyTried) void startWhatsApp(boundTower);
         // نبضة صحّة لعميل الواتساب نفسه: كانت الحالة تُكتب مرّة عند ready ولا تُراجَع،
@@ -330,7 +354,7 @@ export function startWaRequestPoller() {
             continue;
           }
         }
-        const alive = st.client && (st.state === "ready" || st.state === "qr" || st.state === "authenticated" || st.state === "starting");
+        const alive = st.client && (st.state === "ready" || (st.state === "qr" && !qrStuck(st)) || st.state === "authenticated" || st.state === "starting");
         const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
         if (!alive && !recentlyTried) void startWhatsApp(id); // أعد وصل جلسة هذه الحاسبة
       }
