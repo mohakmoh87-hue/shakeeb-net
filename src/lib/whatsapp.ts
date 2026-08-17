@@ -18,7 +18,29 @@ type WaStore = {
   startedAt: number | null;
   retries: number; // عدد محاولات إعادة التشغيل عند العُلوق (starting/authenticated)
   qrAt: number | null; // لحظةُ آخرِ رمزِ QR وصل من واتساب — لكشف الرمز المتجمّد
+  cooldownUntil: number | null; // هدنةٌ بعد استنفاد المحاولات — تنتهي وحدَها فيُستأنف
 };
+
+// ═════ 🔴 «خطأ» لم تعد نهايةَ الطريق (بلاغُ الشدن 2026-08-15) ═════
+//
+// رأى محمد على حاسبة الشدن: «Protocol error (Runtime.callFunctionOn): Target closed»
+// — أي أنّ كروميوم مات أثناء الإقلاع.
+//
+// 🔴 وكان عدّادُ المحاولات `retries` **لا يُصفَّر إلّا عند بلوغ «متصل»**. فبعد ثلاث
+//   محاولاتٍ فاشلة يبقى العدّادُ ٣ ما دامت العمليّةُ حيّة، فكلُّ محاولةٍ لاحقةٍ
+//   تُعلَن خطأً فوراً **حتى لو زال السببُ تماماً** (فرغت مساحةُ القرص مثلاً).
+//   ⇒ المستخدم يُصلح السببَ ولا يتبدّل شيءٌ حتى يُعيد تشغيل البرنامج يدويّاً.
+//
+// 🔑 والعلاج مسارُ خروجٍ مضمون، لا تصفيرٌ ساذج:
+//   · التصفيرُ عند **تقدّمٍ حقيقيّ** (رمزٌ وصل أو جهوزيّة) — فكروميوم يعمل ⇒ العطلُ زال.
+//   · واستنفادُ المحاولات يفتح **هدنةً** لا نهايةً: يُصفَّر العدّادُ وتُضبط مهلةٌ،
+//     فإذا انقضت استُؤنفت المحاولاتُ من جديدٍ تلقائيّاً.
+//
+// ⚠️ ولماذا الهدنةُ لا «التصفيرُ بعد هدوء»: حارسَ الدورة يُعيد المحاولةَ كلَّ ~٦٠ث،
+//   فلا يهدأ شيءٌ أبداً ولا يمرّ شرطُ الهدوء ⇒ لكانت العلّةُ باقيةً بثوبٍ آخر.
+//   والهدنةُ ١٠ دقائق: طويلةٌ فلا تُرهق حاسبةً معطوبةً بكروميوم كلَّ دقيقة،
+//   وقصيرةٌ فلا ينتظر المستخدمُ طويلاً بعد إصلاح السبب.
+const COOLDOWN_MS = 10 * 60_000;
 
 // ═════ 🔴 الرمزُ المتجمّد: «QR ما يحدّث نفسه» (بلاغُ محمد عن صميم 2026-08-15) ═════
 //
@@ -46,7 +68,7 @@ function offices(): Map<number, WaStore> {
 function store(officeId: number): WaStore {
   const m = offices();
   if (!m.has(officeId)) {
-    m.set(officeId, { client: null, state: "disconnected", qr: null, lastError: null, startedAt: null, retries: 0, qrAt: null });
+    m.set(officeId, { client: null, state: "disconnected", qr: null, lastError: null, startedAt: null, retries: 0, qrAt: null, cooldownUntil: null });
   }
   return m.get(officeId)!;
 }
@@ -75,6 +97,10 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   // جاهز/يعرض QR → أعِد الحالة كما هي
   // 🔑 والرمزُ المتجمّد مستثنى: كانت `qr` تُرجِع فوراً مهما طال جمودُها، فلا يُنعَش أبداً.
   if (s.client && (s.state === "ready" || s.state === "authenticated" || (s.state === "qr" && !qrStuck(s)))) {
+    return s.state;
+  }
+  // هدنةٌ سارية: لا تُرهق حاسبةً معطوبةً بإقلاعِ كروميوم كلَّ دورة
+  if (s.cooldownUntil && Date.now() < s.cooldownUntil && !s.client) {
     return s.state;
   }
   if (qrStuck(s)) {
@@ -186,10 +212,10 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   });
 
   client.on("loading_screen", (percent: string, message: string) => { console.log(`[whatsapp] مكتب ${officeId} تحميل ${percent}% ${message ?? ""}`); });
-  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; st.qrAt = Date.now(); publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
+  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; st.qrAt = Date.now(); st.retries = 0; st.cooldownUntil = null; publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
   client.on("authenticated", () => { const st = store(officeId); st.qr = null; st.state = "authenticated"; publish(officeId); console.log(`[whatsapp] مكتب ${officeId} تم التوثيق — بانتظار الجهوزية`); });
   client.on("ready", () => {
-    const st = store(officeId); st.qr = null; st.state = "ready"; st.retries = 0;
+    const st = store(officeId); st.qr = null; st.state = "ready"; st.retries = 0; st.cooldownUntil = null;
     publish(officeId);
     console.log(`[whatsapp] ✅ مكتب ${officeId} جاهز`);
     // البند ٤-ب · تصريفُ طابور «فعّل بنفسه» لحظةَ جهوزيّة الواتساب (نصُّ الطلب:
@@ -230,8 +256,12 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
       st.state = "disconnected";
       void startWhatsApp(officeId);
     } else {
+      // 🔑 هدنةٌ لا نهاية: تُصفَّر الميزانيّةُ الآن وتُضبط مهلة، فإذا انقضت
+      //   استُؤنفت المحاولاتُ تلقائيّاً بلا تدخّلٍ من أحد.
       st.state = "error";
-      st.lastError = "تعذّر إكمال اتصال الواتساب بعد عدّة محاولات — أعد المحاولة لاحقاً";
+      st.retries = 0;
+      st.cooldownUntil = Date.now() + COOLDOWN_MS;
+      st.lastError = "تعذّر إكمال اتصال الواتساب بعد عدّة محاولات — تُستأنف تلقائياً خلال ١٠ دقائق";
       publish(officeId);
     }
   }, STARTUP_TIMEOUT_MS);
@@ -261,7 +291,7 @@ export function hostsOfficeLocally(officeId: number): boolean {
 async function abandonStrayOffice(officeId: number, mid: string | null) {
   const st = store(officeId);
   if (st.client) { try { await Promise.resolve(st.client.destroy()).catch(() => {}); } catch { /* تجاهل */ } st.client = null; }
-  st.state = "disconnected"; st.qr = null; st.qrAt = null; st.lastError = null; st.startedAt = null;
+  st.state = "disconnected"; st.qr = null; st.qrAt = null; st.cooldownUntil = null; st.lastError = null; st.startedAt = null;
   deleteSessionDir(officeId);
   // انشر «غير متصل» وحرّر الملكية — فقط إن كانت مسجّلة لهذه الحاسبة أو بلا مالك
   // (لا نلمس مكتباً تستضيفه حاسبة أخرى حيّة)
