@@ -462,7 +462,27 @@ function OfficeWhatsApp({ officeId }: { officeId: number }) {
         </div>
       )}
       {st.error && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{st.error}</div>}
-      {ready && canConnect && <button onClick={logout} className="w-full rounded-lg bg-slate-100 py-2 text-sm text-slate-600 hover:bg-slate-200">فصل / ربط حساب آخر</button>}
+      {/* ═════ 🔴 الزرُّ كان غائباً بالضبط حين يُحتاج (بلاغُ الشدن 2026-08-15) ═════
+          كان الشرطُ `ready &&` — أي أنّ «فصل الواتساب» لا يظهر إلّا والاتصالُ سليم.
+          فمكتبٌ عالقٌ على «خطأ» أو على رمزٍ لا يُمسَح **لا يملك صاحبُه أيَّ وسيلةٍ
+          لإعادة ضبطه**، وهو حالُ الشدن حرفيّاً: «لا يظهر لي فك ربط، فقط جاري البدء
+          ثمّ الخطأ ويعيد نفسه».
+          وفكُّ الربط هو ما يمسح ملفَّ الجلسة التالف من قرص الحاسبة — أي أنّه
+          **العلاجُ نفسُه** الذي حُجب عن الحالة التي تحتاجه.
+          فصار يظهر دائماً (بصلاحية whatsapp.connect)، ويتبدّل نصُّه بحسب الحال:
+          «فصل» حين يعمل، و«إعادة ضبط» حين يكون عالقاً — فلا يُخيفه أنّه يقطع اتّصالاً
+          قائماً وهو لا يقطع شيئاً. */}
+      {canConnect && (
+        <button
+          onClick={() => {
+            if (ready && !confirm("فصلُ واتساب هذا المكتب؟ ستحتاج مسحَ رمزٍ جديدٍ لإعادة ربطه.")) return;
+            void logout();
+          }}
+          className={`w-full rounded-lg py-2 text-sm ${ready ? "bg-slate-100 text-slate-600 hover:bg-slate-200" : "bg-amber-50 text-amber-800 hover:bg-amber-100 font-semibold"}`}
+        >
+          {ready ? "فصل / ربط حساب آخر" : "♻️ إعادة ضبط الجلسة (تمسح الجلسة العالقة وتبدأ من جديد)"}
+        </button>
+      )}
     </div>
   );
 }
