@@ -59,3 +59,11 @@ phantom-flags-backup-*.json
 
 # تقريرُ فحصِ الكروت الوهميّة — بياناتُ إنتاجٍ لا تُودَع
 phantom-verification-report.json
+
+# ملفُّ التعافي — لا يُودَع ما دام المستودعُ عامّاً (شرطُ محمد)
+docs/RECOVERY.md
+# سكربتاتُ فحصٍ مؤقّتة
+_q.mjs
+_qr.mjs
+_fix.cjs
+_new.txt
