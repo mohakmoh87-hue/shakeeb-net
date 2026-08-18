@@ -1,4 +1,4 @@
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gzipSync, gunzipSync, createGzip } from "node:zlib";
 import { prisma } from "@/lib/prisma";
 
 // ===== النسخ الاحتياطي والاسترجاع لكل وكيل (عزل المستأجر) =====
@@ -99,19 +99,82 @@ export type FullBackup = { version: number; full: true; exportedAt: string; tabl
 
 // تصدير النظام بأكمله ككائن + gzip: كل جدول حقيقي بكل صفوفه. ملف واحد يعيد كل شيء تماماً.
 export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: string; tableCount: number; rowCount: number }> {
+  // ═════ 🔴 «النسخةُ الكاملةُ دائماً تفشل ولا تصل» (بلاغُ محمد 2026-08-19) ═════
+  // مهمّةُ GitHub تردّ **502 بعد ~٥١ ثانية** — أي أنّ الخادمَ **سقط أثناء التنفيذ**
+  // لا أنّه رفض الطلب. والسببُ أنّ هذه الدالّة كانت تُجسّد القاعدةَ كلَّها في الذاكرة
+  // **ثلاثَ مرّاتٍ متراكبة**:
+  //   ١. كائنٌ واحدٌ يحمل صفوفَ الجداول الـ٥٥ كلِّها معاً (٤٧٬٧٧٢ مشتركاً + الرسائل
+  //      + سجلّاتُ التدقيق + الكروت…)
+  //   ٢. ثمّ JSON.stringify يبني **نصّاً واحداً** بحجمها كلِّه
+  //   ٣. ثمّ Buffer.from ينسخه، ثمّ gzipSync يحجز مخرجَه — وكلُّه **متزامنٌ**
+  //      يُجمّد حلقةَ الأحداث حتى النهاية.
+  // ⇒ ذروةُ الذاكرة أضعافُ حجم البيانات ⇒ الحاويةُ تُقتل (OOM) ⇒ 502.
+  //
+  // 🔑 والعلاج بثّيّ: مجرى gzip يُكتَب إليه **صفحةً صفحة**، فذروةُ الذاكرة تصير
+  //   صفحةً واحدةً (٢٠٠٠ صفّ) مهما كبرت القاعدة — لا القاعدةَ كلَّها. والناتجُ
+  //   المضغوطُ وحدَه يُجمَّع لأنّ البريدَ يحتاجه مرفقاً، وهو أصغرُ بمراتب.
   const realTables = await allRealTables();
-  const tables: Record<string, Row[]> = {};
+  const PAGE = 2000;
   let rowCount = 0;
+  let tableCount = 0;
+
+  const gzip = createGzip({ level: 6 });
+  const chunks: Buffer[] = [];
+  gzip.on("data", (c: Buffer) => chunks.push(c));
+  const finished = new Promise<void>((res, rej) => { gzip.on("end", res); gzip.on("error", rej); });
+  // كتابةٌ تحترم ضغطَ المجرى (drain) — وإلّا تراكم غيرُ المضغوط في الذاكرة فعاد العطل
+  const put = (str: string): Promise<void> =>
+    new Promise((res, rej) => {
+      if (gzip.write(str)) return res();
+      gzip.once("drain", res);
+      gzip.once("error", rej);
+    });
+
+  await put('{"version":' + BACKUP_VERSION + ',"full":true,"exportedAt":' + JSON.stringify(new Date().toISOString()) + ',"tables":{');
   for (const t of realTables) {
     if (FULL_EXCLUDE.has(t) || !SAFE_IDENT.test(t)) continue;
-    const rows = await prisma.$queryRawUnsafe<Row[]>(`SELECT * FROM "${t}"`);
-    tables[t] = rows;
-    rowCount += rows.length;
+    await put((tableCount ? "," : "") + JSON.stringify(t) + ":[");
+    tableCount++;
+    let offset = 0;
+    let tableRows = 0;
+    let firstRow = true;
+    for (;;) {
+      // ⚠️ ترتيبٌ ثابتٌ شرطُ صحّةِ الترقيم: بلا ORDER BY قد يُعيد Postgres صفّاً مرّتَين
+      //    ويُسقط آخرَ بين صفحتَين — أي نسخةٌ ناقصةٌ **بلا أيّ خطأ يظهر**.
+      const rows = await prisma.$queryRawUnsafe<Row[]>(
+        'SELECT * FROM "' + t + '" ORDER BY 1 OFFSET ' + offset + " LIMIT " + PAGE,
+      );
+      if (rows.length === 0) break;
+      for (const r of rows) {
+        await put((firstRow ? "" : ",") + JSON.stringify(r, jsonReplacer));
+        firstRow = false;
+      }
+      rowCount += rows.length;
+      tableRows += rows.length;
+      offset += rows.length;
+      if (rows.length < PAGE) break;
+    }
+    await put("]");
+    // 🛡️ حارسُ الاكتمال: الترقيمُ بـOFFSET يعتمد ترتيبَ العمود الأوّل. فلو لم يكن
+    //    مُميِّزاً في جدولٍ ما، أمكن نظريّاً أن يتكرّر صفٌّ ويسقط آخرُ **بلا خطأ يظهر**
+    //    — أي نسخةٌ ناقصةٌ يُكتشَف نقصُها يومَ الكارثة وحدَه. فيُقارَن المعدودُ بالحقيقيّ،
+    //    وأيُّ فارقٍ يُسقط النسخةَ بصوتٍ عالٍ بدل أن يمرّ صامتاً.
+    const [{ n }] = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+      'SELECT count(*)::bigint AS n FROM "' + t + '"',
+    );
+    if (Number(n) !== tableRows) {
+      throw new Error(
+        "نسخةٌ ناقصة: جدول " + t + " فيه " + Number(n) + " صفّاً وخرج منه " + tableRows + " — أُوقفت النسخة",
+      );
+    }
   }
-  const backup: FullBackup = { version: BACKUP_VERSION, full: true, exportedAt: new Date().toISOString(), tables };
-  const gz = gzipSync(Buffer.from(JSON.stringify(backup, jsonReplacer)));
+  await put("}}");
+  gzip.end();
+  await finished;
+
+  const gz = Buffer.concat(chunks);
   const stamp = new Date().toISOString().slice(0, 10);
-  return { gz, filename: `shakeeb-full-${stamp}.json.gz`, tableCount: Object.keys(tables).length, rowCount };
+  return { gz, filename: `shakeeb-full-${stamp}.json.gz`, tableCount, rowCount };
 }
 
 // فكّ ملف نسخة النظام الكاملة (gzip أو JSON خام) والتحقّق من صحّته
