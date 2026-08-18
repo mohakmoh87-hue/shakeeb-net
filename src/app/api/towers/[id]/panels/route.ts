@@ -48,7 +48,37 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const r = await ownedTower(id);
   if ("error" in r) return r.error;
-  const panels = await panelsOfTower(r.tower.id);
+  let panels = await panelsOfTower(r.tower.id);
+  // ═════ إزالةُ الازدواج (قرارُ محمد 2026-08-19): جدولُ اللوحات هو مصدرُ الحقيقة ═════
+  // نافذةُ اللوحات صارت **المحرِّرَ الوحيدَ** لبيانات الساس/الديلر (حُذفت حقولُها من
+  // نموذج المكتب). فمكتبٌ بلا صفِّ لوحةٍ كان سيفقد كلَّ سبيلٍ للتحرير ⇒ يُبذَر صفُّ
+  // اللوحة الأولى من أعمدة المكتب عند أوّل فتح — نسخاً حرفيّاً، فلا يتغيّر سلوكُ
+  // أيّ مكتبٍ بحرف. (idempotent: لا يُنشأ إلّا عند الغياب التامّ.)
+  if (panels.length === 0) {
+    const t = await prisma.tower.findFirst({
+      where: { id: r.tower.id },
+      select: {
+        name: true, loginUrl: true, username: true, password: true, activationTemplate: true,
+        odooEnabled: true, odooUrl: true, odooUser: true, odooPass: true,
+        loanUser: true, loanPass: true,
+      },
+    });
+    if (t) {
+      await prisma.sasPanel.create({
+        data: {
+          towerId: r.tower.id, agentId: r.tower.agentId,
+          label: t.name ?? "اللوحة الأولى", isPrimary: true, sortOrder: 0,
+          loginUrl: t.loginUrl, username: t.username, password: t.password,
+          activationTemplate: t.activationTemplate,
+          odooEnabled: t.odooEnabled ?? "0", odooUrl: t.odooUrl ?? "https://odoo.supercell.iq",
+          odooUser: t.odooUser, odooPass: t.odooPass,
+          // كما هي: عمودُ المكتب مشفَّرٌ سلفاً بنفس الصندوق — لا يُعاد تشفيرُه
+          loanUser: t.loanUser, loanPass: t.loanPass,
+        },
+      }).catch(() => { /* سباقُ فتحَين متزامنَين — القادمُ يقرأ الموجود */ });
+      panels = await panelsOfTower(r.tower.id);
+    }
+  }
   const quota = await multiSasQuota(r.tower.agentId);
   return NextResponse.json({
     // ⚠️ كلماتُ المرور **لا تُرسَل** إلى الواجهة أبداً — يُرسَل وجودُها فقط.
@@ -162,7 +192,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   // ⚠️ واللوحاتُ غيرُ الأولى **لا تُنسَخ إلى المكتب أبداً**: هي مُخدِّماتٌ مستقلّةٌ برابطها،
   // ونسخُها يُفسِد مرجعَ المكتب بلوحةٍ ليست لوحتَه.
   if (panel.isPrimary) {
-    const back: Record<string, string> = {};
+    const back: Record<string, string | null> = {};
     if (d.loginUrl != null) back.loginUrl = d.loginUrl;
     if (d.username != null) back.username = d.username;
     if (d.activationTemplate != null) back.activationTemplate = d.activationTemplate;
@@ -173,6 +203,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (d.odooUrl != null) back.odooUrl = d.odooUrl;
     if (d.odooUser != null) back.odooUser = d.odooUser;
     if (d.odooPass) back.odooPass = d.odooPass; // الفارغةُ تُبقي القديمة
+    // 🔴 والديلرُ كان **خارجَ المرآة كلّيّاً** (بلاغُ محمد 2026-08-19): يُدخَل في صفحة
+    //   المكتب فلا تعرفه اللوحة، ويُدخَل في اللوحة فلا يعرفه المكتب — مكانان لا يعرف
+    //   أحدُهما الآخر. وأعمدةُ المكتب مرجعُ الارتداد لمن لا حسابَ للوحته ⇒ تُكمَل المرآة.
+    if (d.loanUser !== undefined) back.loanUser = d.loanUser || null;
+    if (d.loanPass) back.loanPass = encryptSecret(d.loanPass);
     if (Object.keys(back).length) {
       await prisma.tower.update({ where: { id: r.tower.id }, data: back }).catch(() => {});
     }

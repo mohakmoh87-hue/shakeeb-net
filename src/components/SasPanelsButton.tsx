@@ -24,7 +24,7 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ t: "ok" | "err"; m: string } | null>(null);
-  const [form, setForm] = useState({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "", loanUser: "", loanPass: "" });
+  const [form, setForm] = useState({ label: "", loginUrl: "", username: "", password: "", loanUser: "", loanPass: "" });
   // 🔴 بلاغُ محمد 2026-08-13: «ظهرت لوحةُ المكتب بساسَين لصميم ولكن **لا يمكن تعديلُ
   // الصفحتَين**، حيث يمكن فقط حذفُ الصفحة الثانية أمّا الأولى فلا تُعدَّل ولا تُمسَح.»
   // والعلّةُ **في الواجهة وحدَها**: مسارُ `PATCH` موجودٌ وكاملٌ ويعمل لأيّ لوحةٍ بما فيها
@@ -33,7 +33,7 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
   // نتيجةُ اختبار قروض كلّ لوحةٍ على حدة (درسُ علّة الساس: يُسمّى ما اختُبر)
   const [loanTest, setLoanTest] = useState<Record<number, { ok: boolean; m: string } | undefined>>({});
   const [editId, setEditId] = useState<number | null>(null);
-  const [ef, setEf] = useState({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "", loanUser: "", loanPass: "" });
+  const [ef, setEf] = useState({ label: "", loginUrl: "", username: "", password: "", loanUser: "", loanPass: "" });
 
   const load = useCallback(() => {
     fetch(`/api/towers/${towerId}/panels`)
@@ -70,36 +70,18 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
     setBusy(false);
     if (!r.ok) { setMsg({ t: "err", m: d.error ?? "تعذّر الإنشاء" }); return; }
     setMsg({ t: "ok", m: "أُضيفت اللوحة ✓ — ووُسم مشتركو المكتب بلوحته الأولى تلقائياً" });
-    setForm({ label: "", loginUrl: "", username: "", password: "", odooUser: "", odooPass: "", loanUser: "", loanPass: "" });
+    setForm({ label: "", loginUrl: "", username: "", password: "", loanUser: "", loanPass: "" });
     load(); onChange?.();
   }
 
   function startEdit(p: Panel) {
     setEditId(p.id); setMsg(null);
     // كلمتا المرور تُتركان فارغتَين: الخادمُ يُبقي القديمة إن لم تُرسَل — فلا تُطمَس بالخطأ
-    setEf({ label: p.label ?? "", loginUrl: p.loginUrl ?? "", username: p.username ?? "", password: "", odooUser: p.odooUser ?? "", odooPass: "", loanUser: p.loanUser ?? "", loanPass: "" });
+    setEf({ label: p.label ?? "", loginUrl: p.loginUrl ?? "", username: p.username ?? "", password: "", loanUser: p.loanUser ?? "", loanPass: "" });
   }
 
   /** يُشعل/يُطفئ أودو **لهذه اللوحة** وحدَها — ولا يمسّ اللوحةَ الأخرى ولا المكتب.
    *  والمسارُ يقبله سلفاً (`PATCH` يقرأ `odooEnabled`)، فالناقصُ كان المفتاحَ وحدَه. */
-  async function toggleOdoo(p: Panel) {
-    const next = p.odooEnabled === "1" ? "0" : "1";
-    if (next === "0" && !confirm(`إطفاءُ أودو للوحة «${p.label ?? p.id}»؟\n\n`
-      + "• لا تُسحَب تذاكرُ جديدةٌ منها.\n"
-      + "• والبطاقاتُ المفتوحةُ تبقى تُدفَع حتى إنجاز آخرِها (لا تُهمَل).")) return;
-    setBusy(true); setMsg(null);
-    try {
-      const r = await fetch(`/api/towers/${towerId}/panels?panelId=${p.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ odooEnabled: next }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) { setMsg({ t: "err", m: d.error ?? "تعذّر التغيير" }); return; }
-      setMsg({ t: "ok", m: next === "1" ? "✓ أُشعل أودو لهذه اللوحة" : "✓ أُطفئ أودو لهذه اللوحة" });
-      load(); onChange?.();
-    } catch { setMsg({ t: "err", m: "تعذّر الاتصال بالخادم" }); }
-    finally { setBusy(false); }
-  }
 
   /** يختبر حسابَ ديلرِ **هذه اللوحة** على مشتركٍ **منها** — والنتيجةُ تُسمّي ما اختُبر. */
   async function testLoan(panelId: number) {
@@ -127,9 +109,8 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
       return;
     }
     setBusy(true); setMsg(null);
-    const body: Record<string, string> = { label: ef.label, loginUrl: ef.loginUrl, username: ef.username, odooUser: ef.odooUser, loanUser: ef.loanUser };
+    const body: Record<string, string> = { label: ef.label, loginUrl: ef.loginUrl, username: ef.username, loanUser: ef.loanUser };
     if (ef.password) body.password = ef.password;
-    if (ef.odooPass) body.odooPass = ef.odooPass;
     if (ef.loanPass) body.loanPass = ef.loanPass; // فارغةٌ = أبقِ القديمة
     const r = await fetch(`/api/towers/${towerId}/panels?panelId=${panelId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -196,24 +177,15 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
                             والزرُّ يُعطَّل بلا حسابِ أودو: إشعالُ لوحةٍ بلا حسابٍ يُخرجها من
                             المُرشِّح على أيّ حال (`odooUser` غيرُ فارغ)، فمفتاحٌ يُشتَغل بلا
                             أثرٍ كذبةٌ صريحة. */}
+                        {/* إزالةُ الازدواج (قرارُ محمد 2026-08-19): أودو يُدارُ حصراً من
+                            صفحة إدارة الفنيّين (زرّ «إعدادات أودو» لكلّ لوحة) — هنا شارةُ
+                            حالةٍ للقراءة فقط، فلا يبقى لأودو مدخلان. */}
                         {" · أودو "}
-                        <button
-                          onClick={() => void toggleOdoo(p)}
-                          disabled={busy || !(p.odooUser && p.hasOdooPass)}
-                          title={p.odooUser && p.hasOdooPass
-                            ? (p.odooEnabled === "1" ? "إطفاءُ أودو لهذه اللوحة" : "إشعالُ أودو لهذه اللوحة")
-                            : "اضبط مستخدمَ أودو وكلمةَ مروره لهذه اللوحة أوّلاً"}
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                            p.odooEnabled === "1"
-                              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                              : "bg-slate-200 text-slate-600 hover:bg-slate-300"
-                          }`}
-                        >
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${p.odooEnabled === "1" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}
+                          title="يُدار من صفحة إدارة الفنيّين — زرّ «إعدادات أودو»">
                           {p.odooEnabled === "1" ? "مُفعَّل ✓" : "خامد"}
-                        </button>
-                        {!(p.odooUser && p.hasOdooPass) && (
-                          <span className="ms-1 text-[10px] text-amber-600">(اضبط حسابَ أودو أوّلاً)</span>
-                        )}
+                        </span>
+
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
@@ -245,9 +217,8 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
                         ["loginUrl", "رابط لوحة الساس", true],
                         ["username", "اسم مستخدم الساس", true],
                         ["password", p.hasPassword ? "كلمة مرور الساس (اتركها فارغة لتبقى)" : "كلمة مرور الساس", true],
-                        ["odooUser", "مستخدم أودو (اختياريّ)", true],
                         ["loanUser", "مستخدم قروض سوبر سيل لهذه اللوحة (اختياريّ)", true],
-                        ["odooPass", p.hasOdooPass ? "كلمة مرور أودو (اتركها فارغة لتبقى)" : "كلمة مرور أودو (اختياريّ)", true],
+                        ["loanPass", p.hasLoanPass ? "كلمة مرور قروض اللوحة (اتركها فارغة لتبقى)" : "كلمة مرور قروض هذه اللوحة (اختياريّ)", true],
                       ] as [string, string, boolean][]).map(([k, ph, ltr]) => (
                         <input key={k} value={ef[k as keyof typeof ef]} placeholder={ph}
                           type={k.toLowerCase().includes("pass") ? "password" : "text"}
@@ -291,10 +262,8 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
                   ["loginUrl", "رابط لوحة الساس"],
                   ["username", "اسم مستخدم الساس"],
                   ["password", "كلمة مرور الساس"],
-                  ["odooUser", "مستخدم أودو (اختياريّ)"],
                   ["loanUser", "مستخدم قروض سوبر سيل لهذه اللوحة (اختياريّ)"],
                   ["loanPass", "كلمة مرور قروض هذه اللوحة (اختياريّ)"],
-                  ["odooPass", "كلمة مرور أودو (اختياريّ)"],
                 ].map(([k, ph]) => (
                   <input key={k} value={form[k as keyof typeof form]} placeholder={ph}
                     type={k.toLowerCase().includes("pass") ? "password" : "text"}
