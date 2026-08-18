@@ -89,7 +89,10 @@ const faceCallPhone = (desc?: string | null): string | null => facePhoneOf(desc)
 // ما يتسجّل لنداءات tel على جهازه). وشارةُ «اتصال» تقول إنّه يُضغَط لا يُقرأ فقط.
 // ⚠️ و`stopPropagation` شرطٌ: البطاقةُ كلُّها زرُّ فتحٍ، فبلاه تنفتح النافذةُ بدل الاتصال.
 function CallPhone({ phone }: { phone: string }) {
-  const clean = phone.replace(/[^d+]/g, "");
+  // ⚠️ `\d` لا `d`: كُتب هذا السطرُ أوّلَ مرّةٍ عبر سكربتٍ ابتلع الشرطةَ المائلة، فصار
+  //    المعنى «احذفْ كلَّ ما ليس الحرفَ d أو +» ⇒ يمحو أرقامَ الهاتف كلَّها فيصير الناتجُ
+  //    فارغاً، فيرتدّ إلى النصّ العاديّ ولا يظهر زرُّ الاتصال أبداً (بلاغُ محمد).
+  const clean = phone.replace(/[^\d+]/g, "");
   if (!clean) return <span dir="ltr">📞 {phone}</span>;
   return (
     <a
@@ -946,7 +949,7 @@ export default function FieldManagementPage() {
                         والهاتفَ والملاحظةَ — والاسمُ هو ما يعرفه الفنيُّ والمشتركُ عند الباب. */}
                     {c.subscriberName && <div className="mt-0.5 text-xs font-semibold text-slate-600">👤 {c.subscriberName}</div>}
                     {/* على الوجه: هاتف النافذة المنبثقة إن وُجد وإلا الرقم المخزون + الملاحظة — واسم المشترك يظهر بفتح البطاقة فقط */}
-                    {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={faceCallPhone(c.description)!} /></div>}
+                    {(faceCallPhone(c.description) ?? c.odooPhone) && <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={(faceCallPhone(c.description) ?? c.odooPhone)!} /></div>}
                     {faceNoteOf(c.description) && <div className="mt-0.5 text-xs text-slate-500">📝 {faceNoteOf(c.description)}</div>}
                     {c.techNote && <div className="mt-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">🗒️ {c.techNote}</div>}
                     {/* بطاقة التوصيل: المبلغان على الوجه قبل فتح البطاقة — الاشتراك (من باقة
@@ -1049,7 +1052,7 @@ export default function FieldManagementPage() {
                         «في عامود المنجزة يجب ظهور اسم المشترك واليوزر هي وكل الاعمدة الاخرى»
                         — واليوزرُ هو عنوانُ البطاقة أعلاه، فالاسمُ كان الناقص) */}
                     {c.subscriberName && <div className="mt-0.5 text-xs font-semibold text-slate-600">👤 {c.subscriberName}</div>}
-                    {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={faceCallPhone(c.description)!} /></div>}
+                    {(faceCallPhone(c.description) ?? c.odooPhone) && <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={(faceCallPhone(c.description) ?? c.odooPhone)!} /></div>}
                     {/* ما كتبه الفني عند الإنجاز — على وجه البطاقة مباشرة (طلب محمد 2026-07-29؛ متصفح المدير فقط — لوحة الفني كما هي) */}
                     {!isTech && c.serviceDetails && <div className="mt-0.5 whitespace-pre-wrap rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-slate-600">🔧 {c.serviceDetails}</div>}
                     {!isTech && c.techNote && <div className="mt-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">🗒️ {c.techNote}</div>}
