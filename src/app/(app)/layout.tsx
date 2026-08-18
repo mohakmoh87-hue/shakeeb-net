@@ -6,6 +6,7 @@ import ReminderPrompt from "@/components/ReminderPrompt";
 import CompletionNotifier from "@/components/CompletionNotifier";
 import StandaloneLock from "@/components/StandaloneLock";
 import PlanBanner from "@/components/PlanBanner";
+import ClientErrorReporter from "@/components/ClientErrorReporter";
 
 // غلاف الصفحات المحمية: شريط أدوات علوي + المحتوى
 export default async function AppLayout({
@@ -21,6 +22,7 @@ export default async function AppLayout({
       return (
         <div className="flex min-h-screen flex-col">
           <PlanBanner agentId={tech.agentId ?? null} />
+          <ClientErrorReporter />
           <main className="flex-1">{children}</main>
         </div>
       );
@@ -49,6 +51,9 @@ export default async function AppLayout({
 
       {/* في التطبيق المثبّت: يحصر التنقّل بإدارة الفنيين لأي حساب */}
       <StandaloneLock />
+
+      {/* مُبلّغُ أخطاء الواجهة — كلُّ انهيارٍ في أيّ متصفّحٍ يُسجَّل في سجلّ التدقيق */}
+      <ClientErrorReporter />
 
       {/* تنبيه انتهاء الاشتراك — خارج غلاف الموقع ليظهر في التطبيق المثبّت أيضاً */}
       <PlanBanner agentId={session.agentId ?? null} />
