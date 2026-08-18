@@ -82,6 +82,27 @@ const facePhoneOf = (desc?: string | null): string | null => lineOf(desc, "📞"
 const faceNoteOf = (desc?: string | null): string | null => lineOf(desc, "📝", "ملاحظة");
 // الهاتف الظاهر على وجه البطاقة: المُدخَل في النافذة المنبثقة إن وُجد، وإلا الرقم المخزون للمشترك
 const faceCallPhone = (desc?: string | null): string | null => facePhoneOf(desc) ?? phoneOf(desc);
+
+// ═════ الهاتفُ يُتَّصل به لا يُنسخ (طلبُ محمد 2026-08-19) ═════
+// «بدل نسخ الرقم ووضعه في الهاتف من اجل الاتصال به»: الرقمُ رابطُ `tel:` فيضغطه
+// الفنيُّ فيفتح الهاتفُ قائمةَ برامج الاتصال (الهاتف · واتساب · فايبر · وييف — كلُّ
+// ما يتسجّل لنداءات tel على جهازه). وشارةُ «اتصال» تقول إنّه يُضغَط لا يُقرأ فقط.
+// ⚠️ و`stopPropagation` شرطٌ: البطاقةُ كلُّها زرُّ فتحٍ، فبلاه تنفتح النافذةُ بدل الاتصال.
+function CallPhone({ phone }: { phone: string }) {
+  const clean = phone.replace(/[^d+]/g, "");
+  if (!clean) return <span dir="ltr">📞 {phone}</span>;
+  return (
+    <a
+      href={`tel:${clean}`}
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex items-center gap-1 rounded hover:bg-emerald-50"
+      title="اتصال بالمشترك"
+    >
+      <span dir="ltr">📞 {phone}</span>
+      <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">اتصال</span>
+    </a>
+  );
+}
 // عنوان البطاقة هو اليوزر نفسه، والوصف يحمل سطر «👤 اليوزر: …» أيضاً (يبقى مخزَّناً لأن
 // مطابقة المكافآت الآلية تقرأه) — فكان يُعرض مرّتين في التفاصيل. يُطوى السطر عند العرض
 // إن كان نفس العنوان حرفاً بحرف، ويبقى ظاهراً إن اختلف (فاختلافه خبرٌ يُقرأ).
@@ -925,7 +946,7 @@ export default function FieldManagementPage() {
                         والهاتفَ والملاحظةَ — والاسمُ هو ما يعرفه الفنيُّ والمشتركُ عند الباب. */}
                     {c.subscriberName && <div className="mt-0.5 text-xs font-semibold text-slate-600">👤 {c.subscriberName}</div>}
                     {/* على الوجه: هاتف النافذة المنبثقة إن وُجد وإلا الرقم المخزون + الملاحظة — واسم المشترك يظهر بفتح البطاقة فقط */}
-                    {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
+                    {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={faceCallPhone(c.description)!} /></div>}
                     {faceNoteOf(c.description) && <div className="mt-0.5 text-xs text-slate-500">📝 {faceNoteOf(c.description)}</div>}
                     {c.techNote && <div className="mt-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">🗒️ {c.techNote}</div>}
                     {/* بطاقة التوصيل: المبلغان على الوجه قبل فتح البطاقة — الاشتراك (من باقة
@@ -1024,7 +1045,11 @@ export default function FieldManagementPage() {
                 ) : doneCards.map((c) => (
                   <div key={c.id} onClick={() => setSel(c)} className="cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md">
                     <div className="text-sm font-medium text-slate-800">{c.title}</div>
-                    {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500" dir="ltr">📞 {faceCallPhone(c.description)}</div>}
+                    {/* اسمُ المشترك — كان غائباً عن هذا العمود وحدَه (طلبُ محمد 2026-08-19:
+                        «في عامود المنجزة يجب ظهور اسم المشترك واليوزر هي وكل الاعمدة الاخرى»
+                        — واليوزرُ هو عنوانُ البطاقة أعلاه، فالاسمُ كان الناقص) */}
+                    {c.subscriberName && <div className="mt-0.5 text-xs font-semibold text-slate-600">👤 {c.subscriberName}</div>}
+                    {faceCallPhone(c.description) && <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={faceCallPhone(c.description)!} /></div>}
                     {/* ما كتبه الفني عند الإنجاز — على وجه البطاقة مباشرة (طلب محمد 2026-07-29؛ متصفح المدير فقط — لوحة الفني كما هي) */}
                     {!isTech && c.serviceDetails && <div className="mt-0.5 whitespace-pre-wrap rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-slate-600">🔧 {c.serviceDetails}</div>}
                     {!isTech && c.techNote && <div className="mt-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">🗒️ {c.techNote}</div>}
@@ -1154,6 +1179,15 @@ export default function FieldManagementPage() {
               <MapButton text={`${sel.title}\n${sel.description ?? ""}`} towerId={sel.listId === -1 ? (supportOfficeId ?? officeId) : officeId} />
               <button onClick={() => setSel(null)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>
             </div>
+
+            {/* 📞 شريطُ الاتصال — «عند رفع اي بطاقة من اي مكان وحتى من الاودو» (طلبُ محمد
+                2026-08-19): الرقمُ زرُّ اتصالٍ يفتح قائمةَ برامج الهاتف، لا نصٌّ يُنسخ.
+                وبطاقةُ أودو هاتفُها في حقلها المستقلّ (odooPhone) فيُرتَدّ إليه. */}
+            {(faceCallPhone(sel.description) ?? sel.odooPhone) && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg bg-emerald-50/70 px-3 py-2 text-sm font-semibold text-slate-700">
+                <CallPhone phone={(faceCallPhone(sel.description) ?? sel.odooPhone)!} />
+              </div>
+            )}
 
             {!canOperate && (
               <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-700">👁️ مشاهدة فقط — بطاقة مكتب آخر (لا يمكنك التعديل)</div>
