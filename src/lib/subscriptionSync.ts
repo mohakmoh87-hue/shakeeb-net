@@ -29,7 +29,7 @@ export interface SyncResult {
   office: string;
   phase1: {
     activations: number; internal: number; external: number;
-    phantom: number; markedUsed: number; duplicates: number; imported: number;
+    phantom: number; markedUsed: number; duplicates: number; imported: number; dupUserPhase1?: number;
     verifiedReal: number; // كروت مُستخدمة أمس أُكّد تفعيلها في SAS ببحث مباشر (ليست وهمية)
   };
   // البند ٥ · `dupUserSkipped`: مشتركٌ في الساس **يوزرُه موجودٌ عندنا بصفٍّ آخر** فلم
@@ -152,6 +152,7 @@ export async function runOfficeSyncAll(
       external: sum((r) => r.phase1.external), phantom: sum((r) => r.phase1.phantom),
       markedUsed: sum((r) => r.phase1.markedUsed), duplicates: sum((r) => r.phase1.duplicates),
       imported: sum((r) => r.phase1.imported), verifiedReal: sum((r) => r.phase1.verifiedReal),
+      dupUserPhase1: sum((r) => r.phase1.dupUserPhase1 ?? 0),
     },
     phase2: {
       checked: sum((r) => r.phase2.checked), dateFixed: sum((r) => r.phase2.dateFixed),
@@ -188,7 +189,7 @@ export async function runOfficeSync(
   if (syncRunning.has(lockKey)) {
     return {
       office: "المكتب",
-      phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0 },
+      phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0, dupUserPhase1: 0 },
       phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0, pkgFixed: 0 },
       events: [], reportSent: null,
       error: "مزامنة هذا المكتب قيد التنفيذ بالفعل — تم تجاهل الطلب المكرّر",
@@ -218,7 +219,7 @@ async function runOfficeSyncInner(
   const officeName = (panelId != null && creds?.label ? `${office?.name ?? "المكتب"} · ${creds.label}` : office?.name) ?? "المكتب";
   const empty: SyncResult = {
     office: officeName,
-    phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0 },
+    phase1: { activations: 0, internal: 0, external: 0, phantom: 0, markedUsed: 0, duplicates: 0, imported: 0, verifiedReal: 0, dupUserPhase1: 0 },
     phase2: { checked: 0, dateFixed: 0, imported: 0, failed: false, skippedPkg: 0, pkgFixed: 0 },
     events: [], reportSent: null,
   };
@@ -262,6 +263,8 @@ async function runOfficeSyncInner(
   // ===================== المرحلة 1: كروت وتفعيلات الأمس =====================
   const events: SyncEvent[] = [];
   let internal = 0, external = 0, phantom = 0, markedUsed = 0, duplicates = 0, imported = 0;
+  // كم مرّةً منع حارسُ اليوزر إنشاءَ صفٍّ ثانٍ في هذا المسار (يُبلَّغ في تقرير المزامنة)
+  let dupUserPhase1 = 0;
 
   // كروت **وكيل هذا المكتب فقط** (البِن → الكارت). كان بلا أي فلتر، والمزامنة تكتب على
   // الكارت المطابق (تستهلكه وتنسبه لمشترك) — أي أن مزامنة وكيل قد تستهلك كارت وكيل آخر
@@ -278,6 +281,23 @@ async function runOfficeSyncInner(
     select: { id: true, sasId: true, name: true, netUser: true },
   });
   const subBySasId = new Map(officeSubs.filter((s) => s.sasId).map((s) => [s.sasId as number, s]));
+  // ═════ 🔴 حرسُ تكرار اليوزر — **للمسار الأوّل أيضاً** (بلاغُ محمد 2026-08-19) ═════
+  // للمزامنة **مسارا إنشاء**: هذا (السيناريو ٧ من تفعيلات الأمس) والاستيرادُ الشامل
+  // أدناه. والحارسُ كان على الثاني وحدَه ⇒ فبقي هذا يُنشئ صفّاً ثانياً ليوزرٍ موجود.
+  // 🎯 وقِيس على الإنتاج (2026-08-19): **٤ صفوفٍ مكرّرةٍ أنشأتها المزامنةُ يوم ٠٨-١٥**،
+  //    أي **بعد** نشر الحارس على المسار الثاني — وهو الدليلُ القاطع على ثغرة المسار الأوّل.
+  // وحالةُ محمد بنصّها: يستورد اليوزر (١٠ أيّام)، ويُفعّله يدويّاً ٥٠ يوماً (⇒ ٦٠)، ثمّ
+  // تُفعّله سوبر سيل في الساس فيصل تفعيلٌ بـsasId مختلف ⇒ صفٌّ ثانٍ بـ١٠ أيّام.
+  // 🔑 والمطابقةُ باليوزر: **«اليوزرُ هو الفيصلُ الأكبرُ الذي لا يُخطئ»** — فإن وُجد
+  //    صفُّه استُعمل هو ولم يُنشأ ثانٍ، فيُسجَّل التفعيلُ على صاحبه الصحيح.
+  const subByUserPhase1 = new Map<string, { id: number; sasId: number | null; name: string | null; netUser: string | null }>();
+  for (const s of await prisma.subscriber.findMany({
+    where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
+    select: { id: true, sasId: true, name: true, netUser: true },
+  })) {
+    const u = (s.netUser ?? "").trim().toLowerCase();
+    if (u && !subByUserPhase1.has(u)) subByUserPhase1.set(u, s);
+  }
   const subById = new Map(officeSubs.map((s) => [s.id, s]));
 
   // مجموعة (مشترك SAS | بِن) من **النافذة الموسّعة** (الأمس + اليوم) — تُستخدم للتحقّق من
@@ -303,6 +323,16 @@ async function runOfficeSyncInner(
 
     // السيناريو 7: مشترك جديد في SAS غير موجود بالبرنامج → استيراد تلقائي + إبلاغ
     let sub = subBySasId.get(a.sasUserId);
+    // 🔑 لا صفَّ ثانياً ليوزرٍ موجود: يُستعمل صفُّه القائم (وسجّلْ أنّ sasId تغيّر)
+    if (!sub) {
+      const uKey = (a.username ?? "").trim().toLowerCase();
+      const byUser = uKey ? subByUserPhase1.get(uKey) : undefined;
+      if (byUser) {
+        sub = byUser;
+        subBySasId.set(a.sasUserId, byUser);
+        dupUserPhase1++;
+      }
+    }
     if (!sub) {
       const newDate = a.newExpiration ? new Date(a.newExpiration) : null;
       try {
@@ -623,7 +653,7 @@ async function runOfficeSyncInner(
   // ===================== التقرير =====================
   const result: SyncResult = {
     office: officeName,
-    phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported, verifiedReal },
+    phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported, verifiedReal, dupUserPhase1 },
     phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg, pkgFixed, dupUserSkipped },
     events, reportSent: null,
     // السببُ يُحمَل إلى الحالة المخزَّنة فتراه الواجهةُ ويُقرأ من القاعدة عند التشخيص
@@ -653,6 +683,8 @@ function buildReportText(r: SyncResult, day: Date, title = "تقرير المز�
   text += `تفعيلات ${formatDate(day)}: ${p1.activations} | كروت البرنامج: ${p1.internal} | خارجي: ${p1.external}\n`;
   text += `تصحيح تواريخ: ${r.phase2.dateFixed} من ${r.phase2.checked} مشترك\n`;
   if (r.phase2.pkgFixed > 0) text += `🏷️ رُبطت باقاتهم وأسعارها: ${r.phase2.pkgFixed} مشترك\n`;
+  if ((r.phase1.dupUserPhase1 ?? 0) > 0) text += `
+🔗 تفعيلٌ رُبط بصفّ اليوزر القائم بدل إنشاء صفٍّ مكرَّر: ${r.phase1.dupUserPhase1}`;
   if ((r.phase2.dupUserSkipped ?? 0) > 0) text += `
 ⚠️ يوزرٌ موجودٌ سلفاً فلم يُستورَد (يحتاج قرارك): ${r.phase2.dupUserSkipped}`;
   if (r.phase2.skippedPkg > 0) text += `⏭️ تُركوا بلا تعديل (فئتهم غير مضافة بالبرنامج): ${r.phase2.skippedPkg} مشترك\n`;

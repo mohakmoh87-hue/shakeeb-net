@@ -4,7 +4,10 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 
-type Template = { id: number; type: string | null; text: string | null; towerId?: number | null; enable?: string | null };
+// صيغةُ /api/sms-templates/effective — النصُّ الذي يُرسَل فعلاً بسُلَّم مكتب←وكيل←افتراضيّ
+type Template = { key: string; type: string; text: string; scope: "office" | "agent" | "default" | "custom" };
+// من أين جاء نصُّ القالب — يُطمئن المستخدمَ أنّه يرى ما سيُرسَل حقّاً
+const SCOPE_TAG: Record<string, string> = { office: " — قالب المكتب", agent: " — قالب الوكيل", default: " — افتراضيّ", custom: "" };
 
 const TARGETS = [
   { key: "all", label: "كل المشتركين" },
@@ -52,7 +55,6 @@ function ComposeInner() {
   const [templates, setTemplates] = useState<Template[]>([]);
   // 🖼️ نوعُ القالب المختار — يُمرَّر للخادم فيُرفق **صورةَ** القالب مع الرسالة (بلاغ محمد 2026-08-14)
   const [tplType, setTplType] = useState<string>("");
-  const [towers, setTowers] = useState<{ id: number; name: string | null }[]>([]);
   const [result, setResult] = useState<string>("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
@@ -60,9 +62,16 @@ function ComposeInner() {
   const [confirmBeforeSend, setConfirmBeforeSend] = useState(false);
 
   useEffect(() => {
-    // all=1: كل القوالب بما فيها تخصيصات المكاتب — «تظهر لي قوالب الرسائل كلها»
-    fetch("/api/sms-templates?all=1").then((r) => void (r.ok && r.json().then(setTemplates)));
-    fetch("/api/towers").then((r) => void (r.ok && r.json().then((d) => setTowers(d))));
+    // ═════ 🔴 القائمةُ كانت تظهر فارغةً دائماً (بلاغُ محمد 2026-08-19) ═════
+    // `?all=1` يقرأ **صفوفَ القاعدة وحدَها**، والنظامُ يعتمد نصوصاً **افتراضيّةً في
+    // الكود** حين لا صفَّ — فوكيلٌ لم يُخصّص قوالبَه يرى «لا قوالب محفوظة» بينما
+    // رسائلُه التلقائيّةُ تُرسَل بنصوصٍ موجودةٍ فعلاً. ومسارُ `/effective` بُني
+    // لهذا بالذات (مكتب ← وكيل ← افتراضيّ + القوالب الحرّة) وطُبِّق على صفحة «كلّ
+    // المشتركين» وحدَها — وبقيت هذه على القديم.
+    fetch("/api/sms-templates/effective")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setTemplates(Array.isArray(d?.templates) ? d.templates : []))
+      .catch(() => {});
     // اقرأ إعداد الصمت الافتراضي؛ إن كان مُطفأ يُطلب التأكيد افتراضياً
     fetch("/api/settings").then((r) => void (r.ok && r.json().then((s: Record<string, string>) => {
       setConfirmBeforeSend(s.silent === "0");
@@ -164,25 +173,20 @@ function ComposeInner() {
         <label className="mb-1 block text-sm font-medium text-slate-700">اختر قالباً جاهزاً (اختياري)</label>
         <select
           onChange={(e) => {
-            const t = templates.find((x) => x.id === Number(e.target.value));
+            const t = templates.find((x) => x.key === e.target.value);
             if (t?.text) setText(t.text);
             setTplType(t?.type ?? ""); // صورةُ هذا القالب سترافق الرسالة (والفراغُ يلغيها)
           }}
           className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
         >
           <option value="">— اختر قالباً لتحميل نصّه —</option>
-          {templates.map((t) => {
-            const base = EVENT_LABELS[t.type ?? ""] ?? t.type ?? "قالب";
-            const office = t.towerId != null ? towers.find((x) => x.id === t.towerId)?.name ?? `مكتب ${t.towerId}` : null;
-            const off = t.enable === "0" ? " — معطَّل" : "";
-            return (
-              <option key={t.id} value={t.id}>
-                {base}{office ? ` — ${office}` : " — عام"}{off}
-              </option>
-            );
-          })}
+          {templates.map((t) => (
+            <option key={t.key} value={t.key}>
+              {EVENT_LABELS[t.type ?? ""] ?? t.type ?? "قالب"}{SCOPE_TAG[t.scope] ?? ""}
+            </option>
+          ))}
         </select>
-        {templates.length === 0 && <div className="mb-4 -mt-2 text-xs text-slate-400">لا قوالب محفوظة بعد — أضِفها من صفحة «قوالب الرسائل».</div>}
+        {templates.length === 0 && <div className="mb-4 -mt-2 text-xs text-slate-400">لا قوالب متاحة — أضِفها من صفحة «قوالب الرسائل».</div>}
 
         {/* النص */}
         <label className="mb-1 block text-sm font-medium text-slate-700">نص الرسالة</label>

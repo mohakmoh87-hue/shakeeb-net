@@ -83,6 +83,8 @@ export default function ActivationModal({
     return toInputDate(computeDateTo(start, 1, tower?.activationMode));
   });
   const [copied, setCopied] = useState(false);
+  // فشلُ النسخ (سفاري iOS) — يُظهر السيريال للنسخ اليدويّ بدل الصمت
+  const [copyFail, setCopyFail] = useState(false);
   const [loadingCard, setLoadingCard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -149,12 +151,42 @@ export default function ActivationModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscriber.id, localBase]);
 
+  // ═════ 🔴 «الكارت ميصيرله نسخ» في متصفّح الأيفون (بلاغُ محمد 2026-08-19) ═════
+  // سفاري iOS يمنح `navigator.clipboard.writeText` **فقط داخل لمسةِ المستخدم مباشرةً**.
+  // والسحبُ ينسخ **بعد `await fetch`** ⇒ اللمسةُ انتهت فيرفض المتصفّح النسخ. ومعه علّةٌ
+  // ثانيةٌ أسوأ: الفشلُ كان **مبتلَعاً صامتاً** (`() => {}`) وحتى `?.` تبتلع غيابَ الواجهة
+  // كلَّها ⇒ المستخدم يضغط ولا يحدث شيءٌ ولا يُقال له لماذا.
+  // 🔑 والعلاج ثلاثيّ: بديلٌ قديمٌ يعمل على iOS (`execCommand` على حقلٍ مُحدَّد)، ثمّ
+  //   إظهارُ السيريال للنسخ اليدويّ إن فشل الاثنان — فلا يبقى المستخدم أمام زرٍّ أخرس.
   const copy = useCallback((serial: string | null) => {
     if (!serial) return;
-    navigator.clipboard?.writeText(serial).then(
-      () => { setCopied(true); setTimeout(() => setCopied(false), 1500); },
-      () => {},
-    );
+    const ok = () => { setCopied(true); setCopyFail(false); setTimeout(() => setCopied(false), 1500); };
+    // البديلُ المتوافق مع سفاري iOS — يعمل ما دام في سياق حدثٍ، ولا يحتاج أذوناً
+    const legacy = (): boolean => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = serial;
+        ta.setAttribute("readonly", "");
+        // خارج الشاشة بلا تمريرٍ مفاجئ، و`contentEditable` شرطُ التحديد على iOS
+        ta.style.cssText = "position:fixed;top:0;left:-9999px;opacity:0";
+        ta.contentEditable = "true";
+        document.body.appendChild(ta);
+        const range = document.createRange();
+        range.selectNodeContents(ta);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        ta.setSelectionRange(0, serial.length);
+        const done = document.execCommand("copy");
+        document.body.removeChild(ta);
+        return done;
+      } catch { return false; }
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(serial).then(ok, () => { if (legacy()) ok(); else setCopyFail(true); });
+      return;
+    }
+    if (legacy()) ok(); else setCopyFail(true);
   }, []);
 
   // عند تغيير الفئة: أرجِع أي كارت محجوز سابقاً وامسح الكارت (لا سحب تلقائي)
@@ -270,10 +302,17 @@ export default function ActivationModal({
             <div className="cbox">
               <div className="cbox-row">
                 <button className="pull" onClick={pullCard} disabled={loadingCard || !packageId}>{loadingCard ? "..." : "🎴 سحب بطاقة"}</button>
-                <div className="ser">{card?.serial ?? "— — — —"}</div>
+                {/* السيريالُ قابلٌ للتحديد باللمس — على iOS يبقى هذا آخرَ طريقٍ مضمونٍ للنسخ */}
+                <div className="ser" style={{ userSelect: "all", WebkitUserSelect: "all" }}>{card?.serial ?? "— — — —"}</div>
                 <button className="cpy" onClick={() => copy(card?.serial ?? null)} title="نسخ السيريال">{copied ? "✓" : "📋"}</button>
                 <div className="rem">المتبقي<br /><b>{available}</b></div>
               </div>
+              {/* 🍏 فشلُ النسخ (سفاري iOS يرفضه خارج لمسةِ المستخدم): يُقال صراحةً بدل الصمت */}
+              {copyFail && card?.serial && (
+                <div className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] leading-5 text-amber-800">
+                  تعذّر النسخُ تلقائيّاً على هذا المتصفّح — اضغطْ مطوّلاً على السيريال أعلاه ثمّ «نسخ».
+                </div>
+              )}
             </div>
 
             {/* 2) الفئة والتاريخ */}
