@@ -129,6 +129,9 @@ export default function ActivationModal({
   }, [months, manualDate]);
   const directLink = sasDirectUrl(tower, subscriber);
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
+  // فشلُ تهيئة إطار الساس — يُعرَض سببُه بدل ارتدادٍ أخرسَ إلى الساس الخام
+  const [embedErr, setEmbedErr] = useState<string | null>(null);
+  const [embedTry, setEmbedTry] = useState(0); // عدّادُ «إعادة محاولة» — يُعيد تشغيل التأثير
   // 🔁 جسٌّ يُعيد المحاولة: جسّةٌ واحدةٌ فاشلة (لحظةَ إعادة تشغيل العامل) كانت تُبقي
   //    هذه النافذةَ على المسار السحابيّ البطيء حتى تُحدَّث الصفحة يدويّاً
   const localBase = useLocalSasBase();
@@ -146,12 +149,22 @@ export default function ActivationModal({
     }
     const proxied = sasUrl(subscriber);
     if (!proxied) { setFrameSrc(directLink); return; }
-    prepareSasEmbed(subscriber.towerId, subscriber.sasPanelId).then((ok) => {
-      if (active) setFrameSrc(ok ? proxied : directLink);
+    // ═════ 🔴 لا سقوطَ صامتاً إلى الساس الخام (بلاغُ عليّ البياتي 2026-08-19) ═════
+    // كان فشلُ التهيئة يُحمّل `directLink` — أي **خادمَ الساس الخام داخل الإطار**.
+    // والساسُ الخام في إطارٍ لا جلسةَ له ولا يقبل الدخولَ العميق ⇒ يرتدّ إلى صفحته
+    // الرئيسيّة/الدخول، فيرى المستخدم «صفحةَ التفعيل لا تثبت وتخرج» **بلا أيّ أثرٍ
+    // يقول لماذا** — لا هو يعرف ولا نحن. فالإبدالُ الأخرسُ أخفى العلّةَ الحقيقيّة.
+    // 🔑 الآن: الفشلُ يوقف التحميلَ ويعرض سببَه الحرفيَّ داخل النافذة، مع «إعادة
+    //   محاولة» و«فتح بنافذة جديدة» (النافذةُ المستقلّةُ يصلح فيها الساسُ الخام).
+    setEmbedErr(null);
+    prepareSasEmbed(subscriber.towerId, subscriber.sasPanelId).then((r) => {
+      if (!active) return;
+      if (r.ok) setFrameSrc(proxied);
+      else { setFrameSrc(null); setEmbedErr(r.reason); }
     });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subscriber.id, localBase]);
+  }, [subscriber.id, localBase, embedTry]);
 
   // ═════ 🔴 «الكارت ميصيرله نسخ» في متصفّح الأيفون (بلاغُ محمد 2026-08-19) ═════
   // سفاري iOS يمنح `navigator.clipboard.writeText` **فقط داخل لمسةِ المستخدم مباشرةً**.
@@ -460,6 +473,20 @@ export default function ActivationModal({
             <div className="sbody">
               {frameSrc ? (
                 <ScaledSasFrame src={frameSrc} title="SAS4 activation" />
+              ) : embedErr ? (
+                /* فشلُ التهيئة يُقال بسببه الحرفيّ — هو نصُّ التشخيص عند تكرار البلاغ */
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4 text-center">
+                  <div className="text-3xl">⚠️</div>
+                  <div className="text-sm font-bold text-rose-700">تعذّر فتحُ لوحة الساس داخل النافذة</div>
+                  <div className="max-w-md rounded-lg bg-rose-50 px-3 py-2 text-xs leading-6 text-rose-800" dir="auto">{embedErr}</div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setEmbedTry((n) => n + 1)} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-bold text-white hover:bg-mynet-blue-dark">↺ إعادة محاولة</button>
+                    {directLink && (
+                      <a href={directLink} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200">فتح بنافذة جديدة ↗</a>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500">النافذةُ تبقى مفتوحةً والكارتُ محجوزاً — أكمِل التفعيلَ من النافذة الجديدة ثمّ احفظ هنا.</div>
+                </div>
               ) : (
                 <div className="flex flex-1 items-center justify-center text-sm" style={{ color: "var(--muted)" }}>
                   {subscriber.sasId ? "جاري تسجيل الدخول التلقائي..." : "هذا المشترك غير مربوط بـ SAS4"}
