@@ -49,13 +49,16 @@ export async function GET(request: Request) {
     }),
   ]);
 
-  // ربط أسماء المشتركين
+  // ربط أسماء المشتركين **ويوزراتِهم**
+  // 🔑 «اليوزرُ هو الأساسُ في كلّ شيء» (طلبُ محمد 2026-08-19): الاسمُ يتكرّر ويُكتب
+  //    بصيغٍ شتّى، واليوزرُ مُميِّزٌ لا يُخطئ — فلا يُعرَض مشتركٌ في تقريرٍ بلا يوزره.
   const ids = [...new Set(entries.map((e) => e.subscriberId).filter(Boolean))];
   const subs = await prisma.subscriber.findMany({
     where: { id: { in: ids as number[] } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, netUser: true },
   });
   const nameMap = new Map(subs.map((s) => [s.id, s.name]));
+  const userMap = new Map(subs.map((s) => [s.id, s.netUser]));
 
   return NextResponse.json({
     from: from.toISOString(),
@@ -63,6 +66,7 @@ export async function GET(request: Request) {
     entries: entries.map((e) => ({
       ...e,
       subscriberName: e.subscriberId ? nameMap.get(e.subscriberId) : null,
+      subscriberUser: e.subscriberId ? userMap.get(e.subscriberId) ?? null : null,
     })),
     money,
     totals: {

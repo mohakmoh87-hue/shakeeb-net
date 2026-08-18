@@ -14,6 +14,7 @@ import DateRangeFilter from "@/components/DateRangeFilter";
 type Entry = {
   id: number;
   subscriberName: string | null;
+  subscriberUser: string | null; // اليوزر — الأساسُ الذي لا يُخطئ
   cardType: string | null;
   month: string | null;
   money: number | null;
@@ -112,7 +113,10 @@ export default function DetailedReport() {
                   ) : data.entries.map((e) => (
                     <tr key={e.id} className="border-t border-slate-100">
                       <td className="p-2">{e.id}</td>
-                      <td className="p-2">{e.subscriberName ?? "—"}</td>
+                      <td className="p-2">
+                        {e.subscriberName ?? "—"}
+                        {e.subscriberUser && <span className="ms-1 text-[11px] font-semibold text-mynet-blue" dir="ltr">{e.subscriberUser}</span>}
+                      </td>
                       <td className="p-2">{e.cardType ?? "—"}</td>
                       <td className="p-2">{e.month ?? "—"}</td>
                       <td className="p-2">{fmt(e.money)}</td>

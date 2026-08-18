@@ -85,6 +85,8 @@ export default function ActivationModal({
   const [copied, setCopied] = useState(false);
   // فشلُ النسخ (سفاري iOS) — يُظهر السيريال للنسخ اليدويّ بدل الصمت
   const [copyFail, setCopyFail] = useState(false);
+  // ضاع حجزُ الكارت (أخذه ساحبٌ آخر) — يُنبَّه فوراً لا عند الحفظ
+  const [holdLost, setHoldLost] = useState(false);
   const [loadingCard, setLoadingCard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -188,6 +190,32 @@ export default function ActivationModal({
     }
     if (legacy()) ok(); else setCopyFail(true);
   }, []);
+
+  // ═════ 🔴 نبضةُ حجز الكارت (بلاغُ محمد 2026-08-19) ═════
+  // الحجزُ ينتهي بعد ٥ دقائق، ومَن يُفعّل على لوحة الساس أوّلاً يتجاوزها بكثير ⇒
+  // يعود ليحفظ فيجد كارتَه «رجع للمخزن» وقد أخذه ساحبٌ آخر. فما دامت النافذةُ
+  // مفتوحةً والكارتُ في اليد، تُجدَّد لحظةُ الحجز كلَّ دقيقتَين (نصفُ المهلة).
+  // وحين تُغلق النافذةُ تتوقّف النبضةُ فينتهي الحجزُ وحدَه — فلا كارتَ يُحبَس أبداً.
+  useEffect(() => {
+    const id = card?.id;
+    if (!id) return;
+    let alive = true;
+    const beat = () => {
+      fetch("/api/recharge-cards/hold", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId: id }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          // ضاع الحجزُ فعلاً (انتهى قبل أوّل نبضةٍ وأخذه غيرُك) — يُقال صراحةً بدل
+          // أن يكتشفه المستخدمُ عند الحفظ بكارتٍ ليس له
+          if (alive && d && d.held === false) setHoldLost(true);
+        })
+        .catch(() => {});
+    };
+    const t = window.setInterval(beat, 120000);
+    return () => { alive = false; window.clearInterval(t); };
+  }, [card?.id]);
 
   // عند تغيير الفئة: أرجِع أي كارت محجوز سابقاً وامسح الكارت (لا سحب تلقائي)
   useEffect(() => {
@@ -308,6 +336,12 @@ export default function ActivationModal({
                 <div className="rem">المتبقي<br /><b>{available}</b></div>
               </div>
               {/* 🍏 فشلُ النسخ (سفاري iOS يرفضه خارج لمسةِ المستخدم): يُقال صراحةً بدل الصمت */}
+              {/* ⚠️ ضاع الحجز: يُقال الآن لا عند الحفظ — فيسحب المستخدمُ كارتاً بديلاً بوعي */}
+              {holdLost && (
+                <div className="mt-1 rounded-lg bg-rose-50 px-2 py-1 text-[11px] leading-5 font-semibold text-rose-700">
+                  انتهى حجزُ هذا الكارت وأخذه مستخدمٌ آخر — اسحبْ كارتاً جديداً قبل الحفظ.
+                </div>
+              )}
               {copyFail && card?.serial && (
                 <div className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] leading-5 text-amber-800">
                   تعذّر النسخُ تلقائيّاً على هذا المتصفّح — اضغطْ مطوّلاً على السيريال أعلاه ثمّ «نسخ».

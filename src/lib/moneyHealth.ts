@@ -784,7 +784,9 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
   await add("card_serial_reused", "لا سيريالَ كارتٍ في تفعيلَين لمشتركَين", `
     SELECT e.card2 AS serial, count(*)::int AS entries,
            sum(coalesce(e."moneyIn",0)) AS money_total,
-           string_agg(DISTINCT s.name, ' ← ') AS names,
+           -- 🔑 اليوزرُ مع الاسم: أخطرُ حالةٍ في الحارس، والاسمُ وحدَه لا يُميّز مشتركاً
+           --    (٥٢ يوزراً مكرَّراً بأسماءٍ متشابهة) ⇒ لا يُراجَع الوصلُ إلّا بيوزرِ صاحبه.
+           string_agg(DISTINCT coalesce(s.name,'?') || ' (' || coalesce(s."netUser",'بلا يوزر') || ')', ' ← ') AS names,
            to_char(min(e.date) ${BG}, 'YYYY-MM-DD') AS first_at,
            to_char(max(e.date) ${BG}, 'YYYY-MM-DD') AS last_at,
            min(e.id) AS first_id, max(e.id) AS last_id
