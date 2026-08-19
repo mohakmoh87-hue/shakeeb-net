@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>مختبرُ روابط Wave</title>
+<style>
+body{background:#f6f8fb;color:#0f172a;font-family:"Segoe UI",Tahoma,system-ui,sans-serif;direction:rtl;margin:0;padding:1.6rem 1rem;line-height:1.9}
+.wrap{max-width:30rem;margin:0 auto}
+h1{font-size:1.25rem;margin:0 0 .2rem}
+.sub{color:#64748b;font-size:.85rem;margin-bottom:1.2rem}
+.card{background:#fff;border:1px solid #dbe3ee;border-radius:1rem;padding:1rem 1.1rem;margin-bottom:.9rem}
+.card b{display:block;margin-bottom:.15rem}
+.card p{margin:.1rem 0 .6rem;font-size:.82rem;color:#64748b}
+a.btn,button.btn{display:block;width:100%;text-align:center;background:#0f6fbf;color:#fff;text-decoration:none;font-weight:700;border:0;border-radius:.7rem;padding:.7rem;font-size:1rem;cursor:pointer}
+.tag{display:inline-block;background:#ecfdf5;color:#047857;border-radius:.5rem;padding:0 .5rem;font-size:.72rem;font-weight:700;margin-right:.3rem}
+.note{font-size:.8rem;color:#64748b;border-top:1px dashed #dbe3ee;margin-top:1rem;padding-top:.8rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>☎️ مختبرُ روابط Wave</h1>
+<div class="sub">افتح هذه الصفحةَ في <b>كروم</b> على هاتفك (لا داخل أيّ تطبيقٍ آخر) واضغط الأزرارَ بالترتيب، وأبلغ عن نتيجة كلٍّ منها.</div>
+
+<div class="card"><b>١ · tel: (المعيار)</b>
+<p>يجب أن تظهر قائمتُك المعتادة (هاتف/واتساب/تروكولر). إن لم تظهر فأنت لست في كروم — توقّف وافتح الصفحةَ في كروم أوّلاً.</p>
+<a class="btn" href="tel:07701234567">جرّب tel:</a></div>
+
+<div class="card"><b>٢ · sip: <span class="tag">الأهمّ</span></b>
+<p>إن فتح Wave (ولو ضمن قائمة) فالحلُّ سطرٌ واحدٌ والرقمُ يصل جاهزاً.</p>
+<a class="btn" href="sip:07701234567">جرّب sip:</a></div>
+
+<div class="card"><b>٣ · callto:</b>
+<a class="btn" href="callto:07701234567">جرّب callto:</a></div>
+
+<div class="card"><b>٤ · فتحُ تطبيق Wave (تخمين حزمة أ)</b>
+<p>يفتح التطبيقَ نفسَه بلا رقم. «متجر Play» أو لا شيء = تخمينٌ خاطئ، وفتحُ Wave = أصبنا.</p>
+<a class="btn" href="intent://dial#Intent;scheme=wave;package=com.grandstream.wave;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-a;end">جرّب الحزمة (أ)</a></div>
+
+<div class="card"><b>٥ · فتحُ تطبيق Wave (تخمين حزمة ب)</b>
+<a class="btn" href="intent://dial#Intent;scheme=wave;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-b;end">جرّب الحزمة (ب)</a></div>
+
+<div class="card"><b>٦ · نسخُ الرقم (الاحتياط الدائم)</b>
+<p>ينسخ الرقمَ — ثمّ افتح Wave يدويّاً والصقه. هذا يعمل مهما كانت النتائج.</p>
+<button class="btn" onclick="navigator.clipboard.writeText('07701234567').then(()=>{this.textContent='✓ نُسخ — افتح Wave والصقه'})">انسخ 07701234567</button></div>
+
+<div class="note">📌 <b>الأهمُّ من الأزرار كلِّها:</b> أرسل اسمَ تطبيق Wave كما يظهر في متجر Play (أو رابطَ صفحته) — منه يُعرف اسمُ حزمته الدقيق.<br>عاد الرابطُ بك إلى هنا مع <b>#miss-a</b> أو <b>#miss-b</b> في العنوان؟ معناه: التخمينُ خاطئ والتطبيقُ غيرُ مثبَّتٍ بذلك الاسم.<br><br>صفحةُ فحصٍ مؤقّتة — لا تقرأ ولا تكتب شيئاً في النظام، وتُحذف بعد التجربة.</div>
+</div>
+</body>
+</html>
