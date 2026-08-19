@@ -59,7 +59,10 @@ export async function POST(
   const [, tx] = await prisma.$transaction([
     prisma.subscriber.update({
       where: { id: subscriberId },
-      data: { carry: newCarry },
+      // 🔴 حرِجة ٣ · تسديدٌ ذرّيّ: كان `carry: newCarry` مطلقاً من قراءةٍ سابقة، فتفعيلٌ
+      //   متزامنٌ يمحو هذا التسديد (القبضُ يبقى والدَّينُ يرجع). النقصانُ (amount) مستقلٌّ
+      //   عن القديم ⇒ `decrement` ذرّيّ يبقى صحيحاً مهما تزامن. (newCarry تبقى للوصل والتدقيق.)
+      data: { carry: { decrement: amount } },
     }),
     prisma.moneyTx.create({
       data: {

@@ -172,37 +172,74 @@ export async function POST(request: Request) {
   // ⇒ الآن: الصفرُ وحدَه يُرفض (لا شيءَ يُسدَّد)، والسالبُ يُسجَّل **صرفاً** بمقداره.
   // ⚠️ ولا يُكتَب سالبٌ في عمودٍ أبداً: الصندوقُ عمودان (`moneyIn`/`moneyOut`) وكلٌّ موجبٌ —
   //    وهذا جوهرُ ب-٠٠ («الصندوقُ لا يستطيع حمل سالبٍ أصلاً»).
-  const total = rows.reduce((s, r) => s + (r.moneyOut ?? 0) - (r.moneyIn ?? 0), 0);
-  if (total === 0) return NextResponse.json({ error: "المجموع المحدَّد صفر — لا شيءَ يُسدَّد" }, { status: 400 });
-  const settleIn = total > 0 ? total : 0; // ذمّةٌ على المكتب ⇒ يُقبَض منه
-  const settleOut = total < 0 ? -total : 0; // رصيدٌ لصالح المكتب ⇒ يُصرَف له
-  const absTotal = Math.abs(total);
+  // فحصٌ مبكرٌ لتجربةِ مستخدمٍ لطيفة (صفر ⇒ 400 فوراً) — والحسمُ الذرّيُّ داخل المعاملة أدناه
+  const preTotal = rows.reduce((s, r) => s + (r.moneyOut ?? 0) - (r.moneyIn ?? 0), 0);
+  if (preTotal === 0) return NextResponse.json({ error: "المجموع المحدَّد صفر — لا شيءَ يُسدَّد" }, { status: 400 });
 
+  // ═════ 🔴 حرِجة ٢ · تسديدان متزامنان يختلقان مالاً (اصطاده الفحصُ العدائيّ 2026-08-19) ═════
+  // كانت القيودُ تُقرأ **خارج** المعاملة والوسمُ (updateMany) بلا شرطِ `settledAt: null` ولا
+  // فحصِ عدّ ⇒ طلبان متزامنان يقرآن نفسَ القيود المفتوحة، ويُنشئ كلٌّ حركةَ قبضٍ كاملة
+  // (مليونٌ مقابل دينٍ واحد)، والحركةُ الأولى تُصبح يتيمةً لا يشير إليها قيد فلا يبلغها
+  // الإرجاعُ أبداً ⇒ مالٌ زائدٌ في تقرير اليوم إلى الأبد.
+  // 🔑 الآن: القراءةُ **داخل** المعاملة، والوسمُ مشروطٌ بـ`settledAt: null` مع فحصِ العدّ —
+  //    فإن وسمَ طلبٌ آخرُ القيودَ بيننا، يُطابق updateMany عدداً أقلَّ فتُلغى المعاملةُ كلُّها
+  //    (لا حركةَ قبضٍ يتيمة). والمسارُ السليمُ (بلا تزامن) لا يتغيّر سلوكُه بحرف.
+  // 🔒 العزلُ محفوظ: القراءةُ مقيَّدةٌ بـaccountId المُتحقَّق ملكيّتُه أعلاه.
   const now = new Date();
-  const result = await prisma.$transaction(async (tx) => {
-    const settle = await tx.moneyTx.create({
-      data: {
-        moneyIn: settleIn, moneyOut: settleOut,
-        accountId, towerId: acc.towerId,
-        sourceType: SETTLE_TYPE,
-        date: now, serverDate: now, userId: g.session?.userId ?? null,
-        // النصُّ يُبيّن الاتّجاهَ صريحاً — فقيدُ صرفٍ في تسديدِ مكتبٍ يُربك من يقرؤه بلا تفسير
-        notes: `تسديد مكتب «${acc.name ?? accountId}» — ${rows.length} قيد بمجموع ${absTotal.toLocaleString("en-US")}`
-          + (settleOut > 0 ? " (رصيدٌ لصالح المكتب ⇒ صرفٌ له)" : ""),
-      },
-    });
-    await tx.moneyTx.updateMany({ where: { id: { in: rows.map((r) => r.id) } }, data: { settledAt: now, settledTxId: settle.id } });
-    await tx.auditLog.create({
-      data: {
-        userId: g.session?.userId ?? null, action: "OFFICE_SETTLE", entity: "account", entityId: String(accountId),
-        details:
-          `تسديد مكتب «${acc.name ?? accountId}»: ${rows.length} قيد بمجموع ${absTotal.toLocaleString("en-US")} د.ع` +
-          // ب-٠٠ · الاتّجاهُ يُكتَب صريحاً: «قبضاً» كان مفروضاً في كلّ الحالات، والسالبُ صرفٌ
-          ` — قُيّد ${settleOut > 0 ? "صرفاً (رصيدٌ لصالح المكتب)" : "قبضاً"} بتاريخ اليوم فيدخل تقرير اليوم${actor ? ` — بواسطة ${actor}` : ""}`,
-      },
-    });
-    return settle;
-  });
+  let result;
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      const fresh = await tx.moneyTx.findMany({
+        where: {
+          accountId, isDeleted: false, settledAt: null, sourceType: { not: SETTLE_TYPE },
+          ...(txIds.length ? { id: { in: txIds } } : {}),
+        },
+        select: { id: true, moneyIn: true, moneyOut: true },
+      });
+      if (!fresh.length) throw new Error("SETTLE_CONFLICT");
+      const total = fresh.reduce((s, r) => s + (r.moneyOut ?? 0) - (r.moneyIn ?? 0), 0);
+      if (total === 0) throw new Error("SETTLE_ZERO");
+      const settleIn = total > 0 ? total : 0;   // ذمّةٌ على المكتب ⇒ يُقبَض منه
+      const settleOut = total < 0 ? -total : 0; // رصيدٌ لصالح المكتب ⇒ يُصرَف له
+      const absTotal = Math.abs(total);
 
-  return NextResponse.json({ ok: true, settled: rows.length, total, amount: absTotal, direction: settleOut > 0 ? "out" : "in", txId: result.id });
+      const settle = await tx.moneyTx.create({
+        data: {
+          moneyIn: settleIn, moneyOut: settleOut,
+          accountId, towerId: acc.towerId,
+          sourceType: SETTLE_TYPE,
+          date: now, serverDate: now, userId: g.session?.userId ?? null,
+          notes: `تسديد مكتب «${acc.name ?? accountId}» — ${fresh.length} قيد بمجموع ${absTotal.toLocaleString("en-US")}`
+            + (settleOut > 0 ? " (رصيدٌ لصالح المكتب ⇒ صرفٌ له)" : ""),
+        },
+      });
+      // الوسمُ الذرّيّ: يمسّ القيودَ التي ما زالت `settledAt: null` — فإن سبقنا طلبٌ آخرُ نقص العدّ
+      const stamp = await tx.moneyTx.updateMany({
+        where: { id: { in: fresh.map((r) => r.id) }, settledAt: null },
+        data: { settledAt: now, settledTxId: settle.id },
+      });
+      if (stamp.count !== fresh.length) throw new Error("SETTLE_CONFLICT"); // سبقنا تسديدٌ متزامن ⇒ إلغاءٌ كامل
+      await tx.auditLog.create({
+        data: {
+          userId: g.session?.userId ?? null, action: "OFFICE_SETTLE", entity: "account", entityId: String(accountId),
+          details:
+            `تسديد مكتب «${acc.name ?? accountId}»: ${fresh.length} قيد بمجموع ${absTotal.toLocaleString("en-US")} د.ع` +
+            // ب-٠٠ · الاتّجاهُ يُكتَب صريحاً: «قبضاً» كان مفروضاً في كلّ الحالات، والسالبُ صرفٌ
+            ` — قُيّد ${settleOut > 0 ? "صرفاً (رصيدٌ لصالح المكتب)" : "قبضاً"} بتاريخ اليوم فيدخل تقرير اليوم${actor ? ` — بواسطة ${actor}` : ""}`,
+        },
+      });
+      return { txId: settle.id, settled: fresh.length, total, absTotal, direction: settleOut > 0 ? "out" : "in" as const };
+    });
+  } catch (e) {
+    // إلغاءٌ نظيف: تسديدٌ متزامنٌ سبقنا (لا حركةَ قبضٍ يتيمة — كلُّ المعاملة رُوجعت)
+    if (e instanceof Error && e.message === "SETTLE_CONFLICT") {
+      return NextResponse.json({ error: "سُدِّدت هذه القيودُ للتوّ من جهةٍ أخرى — حدّث الصفحةَ وأعِد المحاولة إن بقي شيء" }, { status: 409 });
+    }
+    if (e instanceof Error && e.message === "SETTLE_ZERO") {
+      return NextResponse.json({ error: "المجموع المحدَّد صفر — لا شيءَ يُسدَّد" }, { status: 400 });
+    }
+    throw e;
+  }
+
+  return NextResponse.json({ ok: true, settled: result.settled, total: result.total, amount: result.absTotal, direction: result.direction, txId: result.txId });
 }

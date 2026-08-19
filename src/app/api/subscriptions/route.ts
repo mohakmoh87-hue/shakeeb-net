@@ -169,7 +169,9 @@ export async function POST(request: Request) {
         packageId,
         dateFrom: subscriber.dateFrom ?? calc.dateFrom,
         dateTo: calc.dateTo,
-        carry: calc.newCarry,
+        // 🔴 حرِجة ٣ · دَينٌ ذرّيّ: كان `carry: calc.newCarry` مطلقاً. والفارقُ (total-paid)
+        //   مستقلٌّ عن القديم (newCarry = previousCarry + total - paid) ⇒ إضافةٌ ذرّيّة.
+        carry: { increment: calc.total - paid },
         month: months,
         wasel: paid,
       },

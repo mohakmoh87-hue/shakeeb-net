@@ -286,7 +286,9 @@ export async function POST(request: Request) {
     if (remainder > 0 && subscriber) {
       await tx.subscriber.update({
         where: { id: subscriber.id },
-        data: { carry: (subscriber.carry ?? 0) + remainder },
+        // 🔴 حرِجة ٣ · دَينٌ ذرّيّ: كان `(subscriber.carry ?? 0) + remainder` مطلقاً من قراءةٍ
+        //   سابقة فتُمحى دفعةٌ متزامنة. `increment` ذرّيّ (وهو نمطُ السطر ٣٠١ الصحيحُ في هذا الملفّ).
+        data: { carry: { increment: remainder } },
       });
     }
     // ===== ب-٠٠ · الحرجة ٥: الواصلُ الزائدُ **رصيدٌ للمشترك لا إيرادُ الفاتورة** =====

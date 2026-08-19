@@ -48,6 +48,23 @@ export async function convertMoneyKind(txId: number, userId: number | undefined)
   }
   const toMaster = !isMaster;
 
+  // ═════ 🔴 حرِجة ٤ · شقُّ زوجِ التحويل (نقديّ↔ماستر) لا يُحوَّل (اصطاده الفحصُ العدائيّ 2026-08-19) ═════
+  // النوعُ «master» يخدم أمرَين: ماسترَ **تفعيلٍ** (sourceId → قيدُ اشتراك)، وشقَّ **زوجِ
+  // تحويلٍ** في التقارير (sourceId → الحركةُ المقابلةُ، بمؤشّرَين متبادلَين). ولأنّ TO_CASH
+  // ["master"]="activation" فإنّ تحويلَ شقِّ الزوج كان يمرّ: يُقلَب نوعُه، ثمّ (السطرُ 72،
+  // cur==="master") يَسِمُ `subscriptionEntry` حيثُ id = sourceId = **معرّفُ الحركة المقابلة**
+  // ⇒ يُقلَب قيدُ تفعيلٍ أجنبيٌّ صادفَ ذلك المعرّف، ويختفي المبلغُ من الماستر. فيُرفَض كالحذف.
+  // 🔑 والتمييزُ قاطعٌ بالمؤشّر المتبادل (كما في مسار الحذف) فلا يلتبس بماستر تفعيلٍ حقيقيّ.
+  if ((cur === "master" || cur === "transfer") && tx.sourceId != null) {
+    const other = await prisma.moneyTx.findUnique({ where: { id: tx.sourceId } });
+    const isTransferPair = other != null && !other.isDeleted && other.sourceId === tx.id &&
+      ((cur === "master" && other.sourceType === "transfer") ||
+       (cur === "transfer" && other.sourceType === "master"));
+    if (isTransferPair) {
+      return { ok: false, status: 400, error: "هذه حركةُ تحويلٍ نقديّ↔ماستر (زوجٌ) — لا تُحوَّل كوصل. أبطِلها من الصندوق ليُحذَف الزوجُ معاً." };
+    }
+  }
+
   let siblings = 0;
   let stamped: string | null = null;
   try {

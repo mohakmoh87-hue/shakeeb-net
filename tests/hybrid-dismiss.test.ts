@@ -24,7 +24,7 @@ describe("صرفُ الحاسبة المحظورة — لا تعود", () => {
   test("النبضةُ لا تُحيي المصروفة: تحديثُها لا يمسّ blocked ولا dismissedAt", () => {
     const c = code("src/app/api/hybrid/heartbeat/route.ts");
     // update لا يحمل blocked ولا approved ولا dismissedAt — فالصفُّ المصروفُ يبقى كما هو
-    const upd = c.match(/update: \{[^}]*\}/s)?.[0] ?? "";
+    const upd = c.match(/update: \{[\s\S]*?\}/)?.[0] ?? "";
     assert.ok(upd && !/blocked/.test(upd) && !/approved/.test(upd) && !/dismissedAt/.test(upd),
       "نبضةٌ تمسّ blocked/approved/dismissedAt ستُحيي حاسبةً صُرفت");
   });
