@@ -1379,3 +1379,50 @@ html[data-app-trial] .trial-only-bar > button { flex: 1 1 auto; }
   }
   html[data-app-trial] [data-acc-secs] > button > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* ---- ١٧) الشريطُ السفليُّ الثابت data-app-dock (نموذج الصفحات الداخليّة 2026-08-19) ----
+   لقطةُ محمد للصفحات المتّفَقة (الوصولات · المصروفات · حسابات المدير): شريطُ
+   الأفعال أسفلُ الشاشة **ثابتٌ نحيفٌ دائمُ الظهور** — لا ورقةَ تُطوى ولا مقبض.
+   العلامةُ شفّافةٌ في المتصفّح/الإنتاج كأخواتها. */
+@media (max-width: 767.98px) {
+  html[data-app-trial] [data-app-dock] {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+    margin: 0 !important;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) !important;
+    background: #fff;
+    border-top: 1px solid #e3e9f0;
+    box-shadow: 0 -3px 10px rgba(16, 32, 50, .07);
+    max-height: 30vh;
+    overflow-y: auto;
+  }
+  html[data-app-trial] [data-app-dock] > * { flex: 1 1 8rem; min-width: 0; }
+  html[data-app-trial] [data-app-dock] > button,
+  html[data-app-trial] [data-app-dock] > a {
+    text-align: center; justify-content: center; border-radius: 9px;
+    font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* فراغُ المحتوى فوق الشريط الثابت */
+  html[data-app-trial] body:has([data-app-dock]) main { padding-bottom: 5.2rem !important; }
+}
+
+/* ---- ١٨) شارةُ الواتساب بعرض مستطيل المشتركين (طلب محمد 2026-08-19 مساءً) ----
+   «مستطيل حالة واتساب يكبر ويصبح بنفس عرض مستطيل المشتركين وفي الحالتين» */
+html[data-app-trial] .tfm-wa .wa {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  margin-inline-start: 0 !important; /* الشارةُ تحمل هامشاً سطريّاً مضمّناً — يُصفَّر */
+  border-radius: 10px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+}

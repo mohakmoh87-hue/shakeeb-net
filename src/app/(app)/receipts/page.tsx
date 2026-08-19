@@ -184,7 +184,9 @@ export default function ReceiptsPage() {
             <option value="sub">📄 وصولات المشتركين (التفعيلات)</option>
             <option value="inv">🛒 وصولات المبيعات (الفواتير)</option>
           </select>
-          <div data-app-bar className="hbtns">
+          {/* 🧪 data-app-dock: شريطٌ سفليٌّ ثابتٌ نحيفٌ دائمُ الظهور في التجربة —
+              نموذجُ «سجلّ الوصولات» الذي أرسله محمد 2026-08-19 (لا ورقةَ تُطوى هنا) */}
+          <div data-app-dock className="hbtns">
             <button className="gbtn" onClick={() => void reprint()} disabled={checked.size === 0 || busy}>🖨️ إعادة طباعة</button>
             {can("receipts.void") && (
               <button className="gbtn danger" onClick={() => void removeChecked()} disabled={checked.size === 0 || busy}>🗑️ حذف</button>
