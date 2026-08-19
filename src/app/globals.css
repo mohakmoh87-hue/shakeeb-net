@@ -1426,3 +1426,62 @@ html[data-app-trial] .tfm-wa .wa {
   font-size: 11.5px;
   font-weight: 800;
 }
+
+/* ---- ١٩) مربّعاتُ صفحة الفنيّين + الانطواءُ بأيّ لمسة (بلاغات محمد 2026-08-19 ليلاً) ----
+   «ازالة القائمة… وجعل خيارات تظهر بشكل مربعات جميله ولا اريد اي خيار بقائمة
+   منسدلة» + «عند الضغط على اي مكان في الشاشة تنطوي خيارات تلقائيا». */
+
+/* المربّعات: معدومةٌ خارج التجربة — وداخلها شبكةٌ ثلاثيّةٌ من بطاقاتٍ بيضاءَ أنيقة */
+.trial-tiles { display: none; }
+html[data-app-trial] .trial-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  width: 100%;
+  padding-top: 2px;
+}
+html[data-app-trial] .trial-tiles .tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 4px 7px;
+  border-radius: 12px;
+  border: 1.4px solid #cfe4f7;
+  background: linear-gradient(168deg, #ffffff 0%, #f2f8fe 100%);
+  box-shadow: 0 1px 4px rgba(13, 84, 144, .10);
+  font-size: 15px; /* حجمُ الرمز */
+}
+html[data-app-trial] .trial-tiles .tile > span {
+  font-size: 10px;
+  font-weight: 800;
+  color: #0d5490;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+html[data-app-trial] .trial-tiles .tile > .tbadge {
+  position: absolute;
+  top: 3px;
+  inset-inline-end: 5px;
+  background: #e5484d;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 5px;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+/* طبقةُ الانطواء: أيُّ لمسةٍ خارج الورقة تطويها — تحت الورقة (39) وفوق المحتوى */
+.app-bar-backdrop { display: none; }
+html[data-app-trial] .app-bar-backdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: transparent;
+}

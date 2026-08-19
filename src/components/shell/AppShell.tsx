@@ -36,6 +36,11 @@ const NAV: NavEntry[] = [
   {
     kind: "group", icon: "💵", label: "المصاريف",
     items: [
+      // بلاغ محمد 2026-08-19: «بعض الصفحات لا يمكن الوصول اليها ابدا مثل المصروفات
+      // والمقبوضات وفاتورة مبيع» — كان طريقُهما الوحيدُ بطاقاتِ إحصاء الرئيسيّة.
+      // فأُدرجتا في قائمة التنقّل (وهما في نموذج «ب · القائمة» تحت المصاريف أصلاً).
+      { label: "المصروفات والمقبوضات", href: "/cashbox", perm: "finance.view" },
+      { label: "فاتورة المبيع", href: "/invoices", perm: "inventory.manage" },
       { label: "انشاء حساب مصروفات", href: "/accounts", perm: "accounts.manage" },
       { label: "سجلّ المكافآت", href: "/rewards", perm: "rewards.config" },
     ],

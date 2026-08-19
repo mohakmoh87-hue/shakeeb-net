@@ -825,7 +825,28 @@ export default function FieldManagementPage() {
               {o.name ?? `مكتب ${o.id}`}
             </button>
           ))}
-          <span className="mx-1 h-5 w-px bg-line" />
+          <span className="mx-1 h-5 w-px bg-line" data-trial-hide />
+          {/* 🧪 مربّعاتُ التجربة (طلب محمد 2026-08-19): «لا اريد اي خيار بقائمة منسدلة —
+              الافضل مربعات لكل خيار موجود» — كلُّ بنود القائمتَين مربّعاتٌ مسطّحةٌ جميلة.
+              لا وجودَ لها في المتصفّح (.trial-tiles معدومةٌ خارج التجربة) والقائمتان
+              المنسدلتان تُخفيان في التجربة (data-trial-hide أدناه) — لا ازدواج */}
+          <div className="trial-tiles">
+            {(canManage || canOperate) && (
+              <button className="tile" onClick={() => setTechModal(true)}>👷<span>الفنيون ({technicians.length})</span></button>
+            )}
+            {canManage && (
+              <button className="tile" onClick={() => setLeaveModal(true)}>📅<span>الإجازات</span>{leavePending > 0 && <b className="tbadge">{leavePending}</b>}</button>
+            )}
+            {canManage && (
+              <button className="tile" onClick={() => setDedModal(true)}>💠<span>الخصومات</span>{dedPending > 0 && <b className="tbadge">{dedPending}</b>}</button>
+            )}
+            {canManage && <button className="tile" onClick={() => setAchModal(true)}>🏅<span>إنجازات الفنيين</span></button>}
+            {officeId != null && <button className="tile" onClick={() => setSupportModal(true)}>🤝<span>دعم مؤقت</span></button>}
+            {canManage && !isTech && <button className="tile" onClick={() => router.push("/attendance")}>🕒<span>حضور الفنيين</span></button>}
+            {canManage && <button className="tile" onClick={() => setTypesModal(true)}>⏱<span>الأنواع والأوقات</span></button>}
+            <button className="tile" onClick={() => setArchiveModal(true)}>🗂️<span>الأرشيف</span></button>
+            {canOperate && !isTech && <button className="tile" onClick={() => setTrashModal(true)}>🗑️<span>المحذوفة</span></button>}
+          </div>
           {/* ═════ البند ١٠ · قوائمُ منسدلةٌ بدل صفٍّ من تسعة أزرار (طلبُ محمد 2026-08-14) ═════
               بنصّه: «كثرت الأزرارُ للقائمة العلويّة جدّاً ⇒ قوائمُ منسدلةٌ ٢ أو ٣ مجموعات
               بحسب كلّ فئةٍ واختصاص، وعنوانُ القائمة يخصّ ما بداخلها».
@@ -835,6 +856,7 @@ export default function FieldManagementPage() {
                  مطويّةٍ = شارةٌ لا تُرى ⇒ «المديرُ لم ينتبه» — وهي بعينها شكوى محمد في
                  بند الإجازة الزمنيّة (الحالة ٤). فمجموعُ المعلَّقات يظهر على العنوان. */}
           {(canManage || canOperate) && (
+            <div data-trial-hide className="contents">
             <FieldMenu title="شؤون الفنيّين" badge={canManage ? leavePending + dedPending : 0}>
               <FieldMenuItem onClick={() => setTechModal(true)}>👷 الفنيون ({technicians.length})</FieldMenuItem>
               {canManage && (
@@ -853,12 +875,15 @@ export default function FieldManagementPage() {
                 <FieldMenuItem href="/attendance">🕒 حضور الفنيين</FieldMenuItem>
               )}
             </FieldMenu>
+            </div>
           )}
+          <div data-trial-hide className="contents">
           <FieldMenu title="اللوحة والسجلّات">
             {canManage && <FieldMenuItem onClick={() => setTypesModal(true)}>⏱ الأنواع والأوقات</FieldMenuItem>}
             <FieldMenuItem onClick={() => setArchiveModal(true)}>🗂️ الأرشيف</FieldMenuItem>
             {canOperate && !isTech && <FieldMenuItem onClick={() => setTrashModal(true)}>🗑️ المحذوفة</FieldMenuItem>}
           </FieldMenu>
+          </div>
         </div>
       )}
 
@@ -1175,7 +1200,7 @@ export default function FieldManagementPage() {
 
       {/* قائمة التطبيق الأنيقة (تظهر داخل التطبيق فقط عبر CSS) — تجمع المكاتب والأدوات */}
       {offices.length > 0 && (
-        <div data-app-only>
+        <div data-app-only data-trial-hide>
           <FieldAppMenu
             offices={offices}
             officeId={officeId}

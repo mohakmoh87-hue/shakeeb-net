@@ -64,15 +64,20 @@ export default function AppBarHandle() {
   if (!has) return null;
 
   return (
-    <button
-      type="button"
-      onClick={() => setOpen((v) => !v)}
-      aria-expanded={open}
-      aria-label={open ? "إخفاء الخيارات" : "إظهار الخيارات"}
-      className="app-bar-handle"
-    >
-      <span className="app-bar-grip" aria-hidden="true" />
-      <span>{open ? "إخفاء الخيارات" : "الخيارات"}</span>
-    </button>
+    <>
+      {/* طلب محمد 2026-08-19: «عند الضغط على اي مكان في الشاشة تنطوي خيارات تلقائيا» —
+          طبقةٌ شفّافةٌ تحت الورقة تلتقط أيَّ لمسةٍ خارجَها فتطويها */}
+      {open && <div className="app-bar-backdrop" onClick={() => setOpen(false)} aria-hidden="true" />}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={open ? "إخفاء الخيارات" : "إظهار الخيارات"}
+        className="app-bar-handle"
+      >
+        <span className="app-bar-grip" aria-hidden="true" />
+        <span>{open ? "إخفاء الخيارات" : "الخيارات"}</span>
+      </button>
+    </>
   );
 }
