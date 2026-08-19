@@ -108,7 +108,13 @@ export async function POST(request: Request) {
       await tx.moneyTx.updateMany({ where: { id: { in: owned.map((r) => r.id) } }, data: { settledAt: null, settledTxId: null } });
       reverted = owned.length;
       for (const [stx, amount] of byTx) {
-        const s = await tx.moneyTx.findUnique({ where: { id: stx }, select: { id: true, moneyIn: true, moneyOut: true, notes: true } });
+        // 🔴 عالٍ · قفلُ صفِّ التسديدة (اصطاده الفحصُ العدائيّ 2026-08-19): إرجاعان متزامنان
+        //   لقيدَين من **نفس التسديدة** كانا يقرآن `signed` نفسَه (findUnique بلا قفل) ويكتبان
+        //   القيمةَ المطلقة ⇒ يضيع أحدُ الإنقاصَين فتبقى التسديدةُ منتفخةً بمالٍ لا يقابله قيد.
+        //   الآن: `FOR UPDATE` يقفل الصفَّ فيتسلسل الإرجاعان — الثاني يقرأ القيمةَ بعد الأوّل.
+        const locked = await tx.$queryRaw<{ moneyIn: number | null; moneyOut: number | null; notes: string | null }[]>`
+          SELECT "moneyIn", "moneyOut", notes FROM money_tx WHERE id = ${stx} FOR UPDATE`;
+        const s = locked[0] ? { id: stx, moneyIn: locked[0].moneyIn, moneyOut: locked[0].moneyOut, notes: locked[0].notes } : null;
         if (!s) continue;
 
         // ===== ب-٠٠ · الحرجة ٣: التسديدةُ تُلغى **إن خلت من القيود** لا إن بلغ رقمُها صفراً =====

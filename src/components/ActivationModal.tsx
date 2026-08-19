@@ -296,12 +296,21 @@ export default function ActivationModal({
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "فشل التفعيل"); return; }
       announceMoneyChanged(); // بطاقات الرئيسية (التقرير/المصروفات/المبيع) تتحدّث فوراً
-      // طباعة مباشرة بلا فتح أي تاب: أمر طباعة صامتة تلتقطه حاسبة مكتب المشترك فوراً
+      // 🔴 عالٍ · الطباعةُ لم تعد صامتةً (اصطاده الفحصُ العدائيّ 2026-08-19):
+      //   كانت `void fetch(...).catch(() => {})` ثمّ onDone فوراً ⇒ فشلُ الطباعة أو انقطاعُ
+      //   حاسبةِ المكتب لا يُقال أبداً، ومسارُ التفعيل (وصلٌ ماليّ) هو الأكثرُ استخداماً وحدَه
+      //   الأخرس. الآن: يُنتظَر ردُّ الطباعة ويُبلَّغ إن تعذّرت — **بلا منعِ الإغلاق** (المالُ
+      //   حُفظ سلفاً، فالطباعةُ تالية). كنمط صفحة الفواتير التي تفحص ok/workerOnline.
       if (print && data.entryId) {
-        void fetch("/api/print", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ kind: "subscription", id: data.entryId }),
-        }).catch(() => {});
+        try {
+          const pr = await fetch("/api/print", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind: "subscription", id: data.entryId }),
+          });
+          const pd = await pr.json().catch(() => ({}));
+          if (!pr.ok) alert(`✓ حُفظ التفعيل — لكن تعذّرت الطباعة: ${pd.error ?? "خطأ"}`);
+          else if (pd.workerOnline === false) alert("✓ حُفظ التفعيل — حاسبةُ المكتب غير متصلةٍ للطباعة الآن، سيُطبع الوصلُ عند تشغيلها");
+        } catch { alert("✓ حُفظ التفعيل — تعذّر إرسالُ أمر الطباعة (تحقّق من الاتصال)"); }
       }
       onDone();
     } catch {

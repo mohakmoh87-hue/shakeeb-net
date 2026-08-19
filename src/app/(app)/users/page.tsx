@@ -103,7 +103,10 @@ export default function UsersPage() {
   async function remove(u: User) {
     if (!confirm("حذف هذا المستخدم؟")) return;
     const res = await fetch(`/api/users/${u.id}`, { method: "DELETE" });
+    // 🔴 عالٍ · كان الخطأُ يُبتلَع (لا else): مديرٌ يضغط حذفَ حسابه هو فيردّ الخادمُ «لا يمكنك
+    //   حذفُ حسابك الحالي» ولا تظهر — فيظنّ الزرَّ معطوباً. الآن: يُعرَض سببُ الرفض.
     if (res.ok) load();
+    else { const d = await res.json().catch(() => ({})); setError(d.error ?? "تعذّر حذفُ المستخدم"); }
   }
 
   if (!me) return <div className="p-6 text-slate-400">جاري التحميل...</div>;

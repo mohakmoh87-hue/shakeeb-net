@@ -353,28 +353,40 @@ export default function FieldManagementPage() {
       technicianId: tech?.id ?? null, assignee: tech?.name ?? null,
       dueDate: cardDue || null,
     };
-    setCardText(""); setCardTech(""); setCardDue(""); setCardKind(cardTypes[0]?.name ?? "صيانة");
+    // 🔴 عالٍ · لا تُمحَ الحقولُ ولا يُبتلَع الخطأُ (اصطاده الفحصُ العدائيّ 2026-08-19):
+    //   كان يُصفَّر الإدخالُ **قبل** الإرسال وبلا else ⇒ فشلٌ (جلسةٌ منتهية · عمودٌ حُذف ·
+    //   منعُ صلاحيّة) يمحو نصَّ البطاقة بلا رسالة، فيضيع طلبُ العمل ويظنُّه المستخدمُ حُفظ.
+    //   الآن: التصفيرُ بعد النجاح، وelse يعرض سببَ الخادم (كنمط addCardType أعلاه).
     const r = await fetch("/api/field/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    if (r.ok) { const c = await r.json(); setCards((x) => [...x, c]); }
+    if (r.ok) {
+      const c = await r.json();
+      setCards((x) => [...x, c]);
+      setCardText(""); setCardTech(""); setCardDue(""); setCardKind(cardTypes[0]?.name ?? "صيانة");
+    } else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّرت إضافةُ البطاقة — لم تُحفَظ، وبياناتُك باقية"); }
   }
   async function addList() {
     const name = newList.trim();
     if (!name || !board) return;
-    setNewList("");
     const r = await fetch("/api/field/lists", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boardId: board.id, name }) });
-    if (r.ok) { const l = await r.json(); setLists((x) => [...x, l]); }
+    if (r.ok) { const l = await r.json(); setLists((x) => [...x, l]); setNewList(""); }
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّرت إضافةُ العمود — لم يُحفَظ، والاسمُ باقٍ"); }
   }
   async function renameList(l: List) {
     const name = prompt("اسم العمود:", l.name);
     if (name == null) return;
     setLists((x) => x.map((y) => (y.id === l.id ? { ...y, name } : y)));
-    await fetch("/api/field/lists", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: l.id, name }) });
+    const r = await fetch("/api/field/lists", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: l.id, name }) });
+    // فشلٌ (مشاهدةٌ فقط · جلسة) ⇒ تراجعٌ بإعادة التحميل من الخادم (مصدرُ الحقيقة) + رسالة
+    if (!r.ok) { const d = await r.json().catch(() => ({})); load(officeId); alert(d.error ?? "تعذّرت إعادةُ التسمية"); }
   }
   async function deleteList(l: List) {
     if (!confirm(`حذف العمود «${l.name}» وكل بطاقاته؟`)) return;
     setLists((x) => x.filter((y) => y.id !== l.id));
     setCards((x) => x.filter((c) => c.listId !== l.id));
-    await fetch(`/api/field/lists?id=${l.id}`, { method: "DELETE" });
+    const r = await fetch(`/api/field/lists?id=${l.id}`, { method: "DELETE" });
+    // 🔴 عالٍ · كان الحذفُ متفائلاً بلا فحص: فشلٌ (مشاهدةٌ فقط) يُخفي العمودَ من الشاشة
+    //   وهو باقٍ في الخادم فيعود بأوّل تحديث. الآن: تراجعٌ بإعادة التحميل + رسالة.
+    if (!r.ok) { const d = await r.json().catch(() => ({})); load(officeId); alert(d.error ?? "تعذّر حذفُ العمود — ما زال قائماً"); }
   }
   // ===== محرّك السحب (لمس وفأرة بواجهة Pointer واحدة) =====
   const DRAG_HOLD_MS = 200; // ما دونه سحبٌ عرضي، وما فوقه انتظارٌ ثقيل
@@ -631,9 +643,14 @@ export default function FieldManagementPage() {
       ? `حذف هذه البطاقة؟\n\n⚠️ هي منجزة ولم تُحصَّل — سينقص تحصيل ${sel.assignee ?? "الفني"} بمقدار ${pending.toLocaleString("en-US")} د.ع، وتبقى فاتورتها وقبضها في التقارير.`
       : "حذف هذه البطاقة؟";
     if (!confirm(msg)) return;
+    const removed = sel; // للتراجع إن فشل الحذف
     setCards((x) => x.filter((c) => c.id !== sel.id));
     const id = sel.id; setSel(null);
-    await fetch(`/api/field/cards?id=${id}`, { method: "DELETE" });
+    // 🔴 عالٍ · كان الحذفُ متفائلاً بلا فحص: التأكيدُ يُحذّر من إنقاصِ تحصيلِ الفنيّ، ثمّ
+    //   يفشل الحذفُ (جلسةٌ · مشاهدةٌ فقط) فتختفي البطاقةُ من الشاشة وهي باقيةٌ في الخادم —
+    //   فيبني المديرُ قرارَه على تحصيلٍ لم يتغيّر. الآن: تراجعٌ بإعادة التحميل + رسالة.
+    const r = await fetch(`/api/field/cards?id=${id}`, { method: "DELETE" });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); load(officeId); alert(d.error ?? `تعذّر حذفُ البطاقة «${removed.title}» — ما زالت قائمةً والتحصيلُ لم يتغيّر`); }
   }
   // ↩️ إلغاء إنجاز بطاقة لم تُحصَّل: تعود للانتظار في عمودها، ويسقط مبلغها من تحصيل
   // الفني ومن عدّ بطاقاته في كشف الراتب. أمّا فاتورة مبيعها وقبضها فيبقيان — فالمال

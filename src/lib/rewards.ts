@@ -110,11 +110,17 @@ export async function redeemReward(
   const discount = Math.min(bal, Math.max(0, Math.round(opts.billAmount)));
   if (discount <= 0) return null;
   const balanceAfter = bal - discount;
-  await tx.subscriber.update({
-    where: { id: opts.subscriberId },
+  // 🔴 عالٍ · خصمٌ ذرّيّ (اصطاده الفحصُ العدائيّ 2026-08-19):
+  //   كان يُقرأ الرصيدُ ثمّ يُكتَب `rewardBalance: balanceAfter` (قيمةٌ مطلقة) ⇒ فاتورتان
+  //   متزامنتان تقرآن نفسَ الرصيد، تخصمان مرّتَين، وتكتبان القيمةَ النهائيّةَ مرّةً ⇒ الوكيلُ
+  //   يخسر خصماً لا يقابله رصيد. الآن: `decrement` ذرّيٌّ بشرطِ `rewardBalance >= discount`
+  //   مع فحصِ العدّ — فإن سبقنا خصمٌ متزامنٌ نقص الرصيدَ، لا يُطابق الشرطُ فيُرفَض الخصمُ الثاني.
+  const claimed = await tx.subscriber.updateMany({
+    where: { id: opts.subscriberId, rewardBalance: { gte: discount } },
     // أي سحب (كلي أو جزئي) يصفّر عدّاد التراكم — يستأنف المنح بكود جديد حتى حد الـ10
-    data: { rewardBalance: balanceAfter, rewardCode: balanceAfter > 0 ? sub?.rewardCode ?? null : null, rewardGrantCount: 0 },
+    data: { rewardBalance: { decrement: discount }, rewardCode: balanceAfter > 0 ? sub?.rewardCode ?? null : null, rewardGrantCount: 0 },
   });
+  if (claimed.count !== 1) return null; // سبقنا خصمٌ متزامنٌ استنفد الرصيد — لا خصمَ مزدوج
   await tx.rewardLog.create({
     data: {
       agentId: opts.agentId ?? null, towerId: opts.towerId ?? null, subscriberId: opts.subscriberId,
