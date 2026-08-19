@@ -147,7 +147,14 @@ export async function runExpiringReminder(
         templateType: "expiring",
         dedupKey: messageDedupKey(office?.agentId ?? null, sub.id, "expiring"),
       },
-    }).catch(() => { /* اصطدامُ الفهرس (سباقٌ نادرٌ عبر عمليّتَين) = سُجّلت اليومَ سلفاً */ });
+    }).catch((e) => {
+      // اصطدامُ فهرس التكرار (سباقٌ نادر) = سُجّلت اليومَ سلفاً — صمتٌ مقصود.
+      // 🔴 حادثة الشدن ٣: أيُّ فشلٍ آخرَ هنا يعني «أُرسلت رسالةٌ ولن يبقى لها سجلّ»
+      //   (عميلُ Prisma قديمٌ مثلاً) — وهذا لا يجوز أن يُبتلَع: يُصرَخ به فيلتقطه سجلُّ
+      //   الحاسبة (📜) وملخّصُ الأعطال في تقرير المدير.
+      const m = e instanceof Error ? e.message : String(e);
+      if (!/unique|dedup/i.test(m)) console.error(`[reminder] 🔴 أُرسلت رسالةٌ بلا سجلّ (${sub.netUser ?? sub.id}):`, m.slice(0, 200));
+    });
     res.ok ? sent++ : failed++;
     if (sub.towerId != null) {
       const m = res.ok ? offSent : offFailed;
@@ -256,7 +263,11 @@ export async function runDebtReminder(
         templateType: "debts",
         dedupKey: messageDedupKey(office?.agentId ?? null, sub.id, "debts"),
       },
-    }).catch(() => { /* اصطدامُ الفهرس = مطالبةُ اليوم سُجّلت سلفاً */ });
+    }).catch((e) => {
+      // اصطدامُ الفهرس = مطالبةُ اليوم سُجّلت سلفاً؛ وأيُّ فشلٍ آخرَ = رسالةٌ بلا سجلّ — يُصرَخ به (حادثة الشدن ٣)
+      const m = e instanceof Error ? e.message : String(e);
+      if (!/unique|dedup/i.test(m)) console.error(`[debts] 🔴 أُرسلت مطالبةٌ بلا سجلّ (${sub.netUser ?? sub.id}):`, m.slice(0, 200));
+    });
     res.ok ? sent++ : failed++;
   }
   return { sent, failed };
