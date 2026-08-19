@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ChampionEmoji from "@/components/ChampionEmoji";
+import WaStatusBadge from "@/components/WaStatusBadge";
 import { hasTrialSkin } from "@/components/trialSkin";
 
 // ═════════ 🧪 مربّعُ «إدارة الفنيّين» في رئيسيّة النموذج (شاشة أ) ═════════
@@ -14,15 +15,23 @@ import { hasTrialSkin } from "@/components/trialSkin";
 // 🛡️ لا يعمل إلّا تحت علَم التجربة: بلا الكعكة يرجع null قبل أيّ جلبٍ — فصفرُ
 //    كلفةٍ وصفرُ أثرٍ على الإنتاج. والبياناتُ من مساراتٍ قائمةٍ معزولةٍ بالجلسة
 //    أصلاً (board/achievements/stats) — لا مسارَ جديدَ ولا عزلَ جديد.
-export default function TrialFmCard() {
-  const [on, setOn] = useState(false);
-  const [done, setDone] = useState(0);
-  const [left, setLeft] = useState(0);
-  const [odoo, setOdoo] = useState(0);
-  const [leader, setLeader] = useState<{ name: string; points: number } | null>(null);
-  const [subs, setSubs] = useState<{ total: number; active: number } | null>(null);
+export type TrialFmDemo = {
+  done: number; left: number; odoo: number;
+  leader: { name: string; points: number } | null;
+  subs: { total: number; active: number } | null;
+};
+
+// demo: صفحةُ المعاينة /trial/preview تمرّر أرقاماً جاهزةً فتُرسم البطاقةُ بلا جلبٍ ولا علَم
+export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
+  const [on, setOn] = useState(!!demo);
+  const [done, setDone] = useState(demo?.done ?? 0);
+  const [left, setLeft] = useState(demo?.left ?? 0);
+  const [odoo, setOdoo] = useState(demo?.odoo ?? 0);
+  const [leader, setLeader] = useState<{ name: string; points: number } | null>(demo?.leader ?? null);
+  const [subs, setSubs] = useState<{ total: number; active: number } | null>(demo?.subs ?? null);
 
   useEffect(() => {
+    if (demo) return; // المعاينةُ ببياناتها — لا جلب
     if (!hasTrialSkin()) return; // الإنتاجُ يقف هنا — لا جلبَ ولا رسم
     // الإظهارُ داخل ردّ الجلب لا في جسم التأثير (قاعدة set-state-in-effect) —
     // والبطاقةُ بلا بياناتها لا معنى لها أصلاً فلا خسارةَ في الانتظار
@@ -52,7 +61,7 @@ export default function TrialFmCard() {
         setSubs({ total, active });
       })
       .catch(() => {});
-  }, []);
+  }, [demo]);
 
   if (!on) return null;
 
@@ -62,6 +71,8 @@ export default function TrialFmCard() {
 
   return (
     <div data-trial-fm className="tfm">
+      {/* مؤشّرُ الواتساب فوق كلّ شيء — أعلى الرقمَين (طلب محمد 2026-08-19) */}
+      <div className="tfm-wa"><WaStatusBadge /></div>
       {subs && (
         <Link href="/all-subscribers" className="tfm-subs" title="اضغط لفتح قائمة المشتركين">
           <span><i className="tfm-dot" style={{ background: "#a5e3ff" }} />{fmt(subs.total)}</span>

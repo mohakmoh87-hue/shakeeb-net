@@ -111,13 +111,18 @@ export default function DailyReportCard({
         <h2>التقرير اليومي</h2>
         {/* مؤشِّرُ واتساب المكاتب — نُقل إلى هنا (طلبُ محمد): الزرُّ الجديد في شريط
             المشتركين كان سيُزيحه يساراً. ويقول **لماذا** يحتاجه كلُّ مكتبٍ منقطع. */}
-        <WaStatusBadge />
-        <Link className="obtn" href="/receipts" style={{ textDecoration: "none" }}>سجل الوصولات</Link>
+        {/* 🧪 في التجربة ينتقل المؤشّر فوق مربّع إدارة الفنيّين (طلب محمد 2026-08-19)
+            وزرُّ سجلّ الوصولات يكفي مكانُه في العمود الأيسر — فيُخفيان هنا بالعلامة */}
+        <span data-trial-hide><WaStatusBadge /></span>
+        <span data-trial-hide><Link className="obtn" href="/receipts" style={{ textDecoration: "none" }}>سجل الوصولات</Link></span>
       </div>
       <div style={{ padding: "0 16px 6px", fontSize: 11, color: "var(--muted)" }}>{formatDate(new Date())}</div>
 
       {isAdmin && (
-        <div className="rtabs">
+        // 🧪 data-trial-hide: تبويباتُ الأزرار تختفي في تطبيق التجربة وتحلّ محلَّها القائمةُ
+        //    المنسدلة أدناه (طلب محمد 2026-08-19: «الاجمالي والمكاتب قائمة منسدلة واحدة»).
+        //    في المتصفّح/الإنتاج: التبويباتُ كما هي والقائمةُ مخفيّةٌ تماماً — صفرُ فرق.
+        <div className="rtabs" data-trial-hide>
           <button className={`rtab ${sel === "all" ? "on" : ""}`} onClick={() => { setSel("all"); setUserSel("all"); }}>📊 الإجمالي</button>
           {towers.map((t) => (
             <button key={t.id} className={`rtab ${sel === t.id ? "on" : ""}`} onClick={() => { setSel(t.id); setUserSel("all"); }}>
@@ -125,6 +130,19 @@ export default function DailyReportCard({
             </button>
           ))}
         </div>
+      )}
+      {isAdmin && (
+        <select
+          className="trial-picker"
+          aria-label="اختيار المكتب — الإجمالي أو مكتب محدّد"
+          value={sel === "all" ? "all" : String(sel)}
+          onChange={(e) => { const v = e.target.value; setSel(v === "all" ? "all" : Number(v)); setUserSel("all"); }}
+        >
+          <option value="all">📊 الإجمالي — كلّ المكاتب</option>
+          {towers.map((t) => (
+            <option key={t.id} value={String(t.id)}>{t.name ?? `#${t.id}`}</option>
+          ))}
+        </select>
       )}
 
       {/* مكتبٌ فيه مستخدمان+ : تبويب اختيار المستخدم — يرى المدير حساب كلّ مستخدمٍ وحده */}
@@ -158,15 +176,17 @@ export default function DailyReportCard({
       <div className="sumbar" onClick={() => openDrill("total")} style={{ cursor: "pointer", ...(loading ? { opacity: .5 } : {}) }} title="اضغط لعرض كل حركات اليوم">
         <b>{fmt(data.total)} د.ع</b>
         <span>
-          المجموع{isAdmin && sel !== "all" ? ` — ${towers.find((t) => t.id === sel)?.name ?? ""}` : isAdmin ? " (كل المكاتب)" : ""}
-          {showUserTabs && userSel !== "all" ? ` — ${officeUsers.find((u) => u.id === userSel)?.name ?? ""}` : ""}
+          {/* 🧪 في التجربة تكفي «المجموع» وحدَها (طلب محمد) — فالقائمةُ المنسدلةُ فوقها تقول السياق */}
+          المجموع<span data-trial-hide>{isAdmin && sel !== "all" ? ` — ${towers.find((t) => t.id === sel)?.name ?? ""}` : isAdmin ? " (كل المكاتب)" : ""}
+          {showUserTabs && userSel !== "all" ? ` — ${officeUsers.find((u) => u.id === userSel)?.name ?? ""}` : ""}</span>
         </span>
       </div>
 
       {/* حساب الماستر — مستقل تماماً، لا يدخل ضمن المجموع أعلاه */}
       <div className="masterbar" onClick={() => openDrill("master")} style={{ cursor: "pointer", ...(loading ? { opacity: .5 } : {}) }} title="اضغط لعرض حركات الماستر اليوم">
         <b>{fmt(data.masterIn)} د.ع</b>
-        <span>🅜 حساب الماستر (مستقل)</span>
+        {/* 🧪 في التجربة تكفي «ماستر» (طلب محمد: «حساب ماستر مستقل يكفي كتابة ماستر») */}
+        <span><span data-trial-hide>🅜 حساب الماستر (مستقل)</span><span data-trial-show>ماستر</span></span>
       </div>
 
       {/* التفصيلُ بالعارض المشترك: يوزرُ المشترك واسمُه ووقتُه بالثانية — ونفسُه يُستعمَل
