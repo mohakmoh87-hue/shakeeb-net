@@ -20,7 +20,7 @@ jobs:
       - name: تشغيل نسخة المالك الكاملة عند وقتها
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          APP_BASE_URL: https://shakeebnet.com # كان سرّاً يشير إلى أزور القديمة — ثُبّت هنا بعد النقل إلى Railway (2026-08-20)
         run: |
           set -euo pipefail
           # النقطة تردّ {"started":true} فوراً وتعمل بعد الردّ (علاج 502 مهلة الوسيط 2026-08-20)

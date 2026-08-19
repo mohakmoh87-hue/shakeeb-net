@@ -26,7 +26,7 @@ jobs:
       - name: تحرير اتصالات القاعدة عند الضغط
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          APP_BASE_URL: https://shakeebnet.com # كان سرّاً يشير إلى أزور القديمة — ثُبّت هنا بعد النقل إلى Railway (2026-08-20)
         run: |
           set -euo pipefail
           code=$(curl -s -o /tmp/resp -w "%{http_code}" -m 60 "$APP_BASE_URL/api/cron/db-guard" \

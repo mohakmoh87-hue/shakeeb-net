@@ -28,7 +28,7 @@ jobs:
       - name: قياسُ Railway وإرسالُه
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          APP_BASE_URL: https://shakeebnet.com # كان سرّاً يشير إلى أزور القديمة — ثُبّت هنا بعد النقل إلى Railway (2026-08-20)
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: 9f5bbeb9-12d4-47b3-a0d5-520d8fd12f37
         run: |

@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: إيقاظ الخادم (الحاوية تنام عند الخمول)
         env:
-          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          APP_BASE_URL: https://shakeebnet.com # كان سرّاً يشير إلى أزور القديمة — ثُبّت هنا بعد النقل إلى Railway (2026-08-20)
         run: |
           set -uo pipefail
           for i in $(seq 1 10); do
@@ -41,7 +41,7 @@ jobs:
       - name: المهام الليلية (بصمات + أرشيف + نسخ احتياطية + تنبيهات الخطة)
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          APP_BASE_URL: https://shakeebnet.com # كان سرّاً يشير إلى أزور القديمة — ثُبّت هنا بعد النقل إلى Railway (2026-08-20)
         run: |
           set -uo pipefail
           ok=0
@@ -58,7 +58,7 @@ jobs:
       - name: مزامنة SAS — مكتب واحد لكل نداء (تفادياً لمهلة البوابة)
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          APP_BASE_URL: https://shakeebnet.com # كان سرّاً يشير إلى أزور القديمة — ثُبّت هنا بعد النقل إلى Railway (2026-08-20)
         run: |
           set -uo pipefail
           code=$(curl -s -o /tmp/list -w "%{http_code}" --max-time 120 \
