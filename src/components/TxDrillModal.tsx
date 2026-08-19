@@ -171,7 +171,7 @@ export default function TxDrillModal({
           {busy && !d ? <div className="p-10 text-center text-slate-400">جاري التحميل...</div>
           : !d || d.rows.length === 0 ? <div className="p-10 text-center text-slate-400">لا حركاتَ في هذا السطر</div>
           : (
-            <table className="w-full text-right text-sm">
+            <table data-drill className="w-full text-right text-sm">
               <thead className="sticky top-0 bg-slate-50 text-slate-600">
                 <tr>
                   <th className="p-2.5 font-bold">الوقت</th>

@@ -18,7 +18,8 @@ import { hasTrialSkin } from "@/components/trialSkin";
 export type TrialFmDemo = {
   done: number; left: number; odoo: number;
   leader: { name: string; points: number } | null;
-  subs: { total: number; active: number } | null;
+  // تصحيح محمد 2026-08-19: الرقمان هما الفعّالون والمتّصلون — لا الكلّيّ
+  subs: { active: number; online: number | null } | null;
 };
 
 // demo: صفحةُ المعاينة /trial/preview تمرّر أرقاماً جاهزةً فتُرسم البطاقةُ بلا جلبٍ ولا علَم
@@ -28,7 +29,7 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
   const [left, setLeft] = useState(demo?.left ?? 0);
   const [odoo, setOdoo] = useState(demo?.odoo ?? 0);
   const [leader, setLeader] = useState<{ name: string; points: number } | null>(demo?.leader ?? null);
-  const [subs, setSubs] = useState<{ total: number; active: number } | null>(demo?.subs ?? null);
+  const [subs, setSubs] = useState<{ active: number; online: number | null } | null>(demo?.subs ?? null);
 
   useEffect(() => {
     if (demo) return; // المعاينةُ ببياناتها — لا جلب
@@ -54,11 +55,14 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!d?.offices) return;
-        let total = 0, active = 0;
-        for (const o of Object.values(d.offices as Record<string, { total?: number; active?: number }>)) {
-          total += Number(o?.total ?? 0); active += Number(o?.active ?? 0);
+        // تصحيح محمد: الفعّالون والمتّصلون (لا الكلّيّ) — والمتّصلون قد يغيبون عن الرفعة
+        // السحابيّة لبعض المكاتب فيُجمَع الموجودُ منهم ويُعرَض «—» إن غاب الكلُّ
+        let active = 0, online = 0, onlineKnown = false;
+        for (const o of Object.values(d.offices as Record<string, { active?: number; online?: number | null }>)) {
+          active += Number(o?.active ?? 0);
+          if (o?.online != null) { online += Number(o.online); onlineKnown = true; }
         }
-        setSubs({ total, active });
+        setSubs({ active, online: onlineKnown ? online : null });
       })
       .catch(() => {});
   }, [demo]);
@@ -74,9 +78,9 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
       {/* مؤشّرُ الواتساب فوق كلّ شيء — أعلى الرقمَين (طلب محمد 2026-08-19) */}
       <div className="tfm-wa"><WaStatusBadge /></div>
       {subs && (
-        <Link href="/all-subscribers" className="tfm-subs" title="اضغط لفتح قائمة المشتركين">
-          <span><i className="tfm-dot" style={{ background: "#a5e3ff" }} />{fmt(subs.total)}</span>
-          <span><i className="tfm-dot" style={{ background: "#86efac" }} />{fmt(subs.active)}</span>
+        <Link href="/all-subscribers" className="tfm-subs" title="الفعّالون والمتّصلون — اضغط لفتح قائمة المشتركين">
+          <span title="المشتركون الفعّالون"><i className="tfm-dot" style={{ background: "#86efac" }} />{fmt(subs.active)}</span>
+          <span title="المتّصلون الآن"><i className="tfm-dot" style={{ background: "#a5e3ff" }} />{subs.online == null ? "—" : fmt(subs.online)}</span>
         </Link>
       )}
       <Link href="/field-management" className="tfm-main" title="اضغط لفتح إدارة الفنيّين">

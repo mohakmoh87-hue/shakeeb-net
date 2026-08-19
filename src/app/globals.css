@@ -973,27 +973,9 @@ html[data-app-trial] [role="menu"] { display: flex !important; flex-direction: c
    طلبُ محمد: «ارجع القائمة لتظهر من اليمين» بعد أن جرّب اليسار. */
 html[data-app-trial] [data-app-drawer] { width: 75vw !important; max-width: 75vw !important; }
 
-/* ---- ٨) التراصُّ فوق شريط تنقّل الهاتف (بلاغ محمد 2026-08-19) ----
-   «القائمة تنطوي وخلفها زران واحد هو الرئيسية»: الزرّان هما شريطُ تنقّل الموقع
-   السفليُّ («الرئيسيّة» و«التقرير» — AppShell z-40) وكان المقبضُ والورقةُ يجلسان
-   فوقه فيتزاحمان. فالرصُّ الآن طبقات: التنقّلُ في القاع دائماً → المقبضُ فوقه →
-   والورقةُ تنفتح فوقهما. ولا يسري إلّا حيث يظهر التنقّلُ أصلاً: شاشةُ هاتفٍ
-   (md:hidden = تحت 768px) ولغير الفنيّ (الفنيُّ بلا واجهة موقعٍ فلا شريطَ له). */
-@media (max-width: 767.98px) {
-  html[data-app-trial]:not([data-app-role="tech"]) .app-bar-handle {
-    bottom: calc(2.9rem + env(safe-area-inset-bottom));
-    padding-bottom: 0.4rem; /* مساحةُ الإيماءة يحملها شريطُ التنقّل تحتَه */
-  }
-  html[data-app-trial]:not([data-app-role="tech"]) [data-app-bar] {
-    bottom: calc(2.9rem + env(safe-area-inset-bottom));
-    padding-bottom: calc(0.55rem + 2.6rem);
-  }
-  /* والفراغُ أسفل المحتوى يتّسع للطبقتَين: التنقّل + المقبض */
-  html[data-app-trial]:not([data-app-role="tech"]) body:has([data-app-bar]) main,
-  html[data-app-trial]:not([data-app-role="tech"]) body:has([data-app-bar]) [data-app-fullheight] {
-    padding-bottom: calc(6.2rem + env(safe-area-inset-bottom)) !important;
-  }
-}
+/* ---- ٨) (أُلغي 2026-08-19) كان تراصّاً فوق شريط تنقّل الهاتف — ثمّ طلب محمد حذفَ
+   الشريط نفسِه في التجربة («زري اسفل الشاشة الرئيسية والتقرير لا اريدهما»)
+   فسقطت الحاجةُ إلى التراصّ، والمقبضُ عاد إلى قاع الشاشة (قاعدته في القسم ١). */
 
 /* ---- ٩) ثوبُ النموذج المعتمَد («واجهات تطبيق شكيب» — طلبُ محمد 2026-08-19) ----
    «هذه التعديلات اللتي اتفقنا عليها فلماذا لا اراها كلها والرئيسية ايضا مثلها».
@@ -1289,3 +1271,56 @@ html[data-app-trial] .sumbar { padding: 5px 11px !important; }
 html[data-app-trial] .sumbar b { font-size: 13px; }
 html[data-app-trial] .masterbar { padding: 4px 11px !important; }
 html[data-app-trial] .masterbar b { font-size: 12px; }
+
+/* ---- ١٥) ملءُ الشاشة وتثبيتُ أقسام الرئيسيّة (طلبات محمد 2026-08-19 مساءً) ----
+   «اريد التطبيق ملئ الشاشة · زرا الرئيسيّة والتقرير لا اريدهما · لا تمريرَ في
+   الرئيسيّة · الشاشةُ ثلاثةُ أقسامٍ ثابتةٍ لا يأخذ قسمٌ من مساحة قسمٍ آخر». */
+
+/* شريطُ التنقّل السفليّ يُحذف من التجربة كلِّها — وفراغُه (pb-[84px] في main) يعود
+   بقدرِ مقبض الورقة وحدَه */
+html[data-app-trial] [data-app-tabs] { display: none !important; }
+@media (max-width: 767.98px) {
+  html[data-app-trial] main { padding-bottom: 3rem !important; }
+}
+
+/* رؤوسُ «الفئة · العدد · الواصل» الدلاليّةُ تُحذف من تقريرَي الصغير والمكبَّر */
+html[data-app-trial] table.rep thead { display: none !important; }
+
+/* جدولُ التفصيل (المجموع/الماستر/حسابات المدير وغيرها — TxDrillModal المشترك):
+   سطرٌ بسطرٍ بمسافةٍ قليلةٍ جدّاً وإطارٌ مخطّطٌ جميل */
+html[data-app-trial] [data-drill] { border-collapse: collapse; font-size: 11px; }
+html[data-app-trial] [data-drill] th { padding: 4px 6px !important; border: 1px solid rgba(255, 255, 255, .25); }
+html[data-app-trial] [data-drill] td {
+  padding: 3px 6px !important;
+  border: 1px solid #dbe9f6;
+  line-height: 1.5;
+}
+html[data-app-trial] [data-drill] tbody tr:nth-child(even) td { background: #f6faff; }
+html[data-app-trial] [data-drill] td .leading-tight div { display: inline; }
+html[data-app-trial] [data-drill] td .leading-tight div + div::before { content: " · "; color: #94a3b8; }
+
+/* الرئيسيّةُ محبوسةٌ في الشاشة: النصفُ الأعلى قسمان (التقرير | الفنيّون) والأسفلُ
+   قسمٌ واحدٌ (المشتركون) — نِسَبٌ ثابتةٌ مهما اختلف مقاسُ الهاتف، وكلُّ قسمٍ يُمرَّر
+   داخلَ نفسِه ولا يزحف على جاره، ولا تمريرَ للصفحة إطلاقاً */
+@media (max-width: 767.98px) {
+  html[data-app-trial] .nst.nst-fill {
+    height: calc(100dvh - 54px); /* تحت الشريط العلويّ */
+    min-height: 0 !important;
+    overflow: hidden;
+    grid-template-rows: minmax(0, 1.08fr) minmax(0, 1fr);
+    align-content: stretch;
+  }
+  html[data-app-trial] .nst.nst-fill .card:has(table.rep) {
+    min-height: 0; overflow-y: auto; align-self: stretch;
+  }
+  html[data-app-trial] .nst.nst-fill [data-trial-fm] { min-height: 0; overflow-y: auto; }
+  html[data-app-trial] .nst.nst-fill #subs-board {
+    min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  }
+  /* قائمةُ آخر التفعيلات تُمرَّر داخل قسمها — فيظهر منها ما يتّسع لا أكثر */
+  html[data-app-trial] .nst.nst-fill #subs-board .tscroll {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 2.6rem;
+  }
+  /* والصفحةُ نفسُها بلا فراغٍ سفليٍّ يصنع تمريراً */
+  html[data-app-trial] body:has(.nst-fill) main { padding-bottom: 0 !important; }
+}

@@ -23,7 +23,7 @@ export default function TrialPreviewPage() {
       <TrialFmCard demo={{
         done: 3, left: 21, odoo: 1,
         leader: { name: "حسين جبّار", points: 39.8 },
-        subs: { total: 5421, active: 5386 },
+        subs: { active: 5386, online: 3120 },
       }} />
       <div className="row2 max-[1050px]:!grid-cols-1">
         <div className="card" id="subs-board">

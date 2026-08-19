@@ -147,7 +147,9 @@ export default function AppShell({
 
           {/* شريط التنقّل السفلي (الهاتف) */}
           {/* بلا تكرار (طلب محمد): المشتركون ضمن الرئيسية نفسها، والدرج يُفتح من ☰ الأعلى فقط */}
-          <nav className="no-print fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-line bg-surface px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_rgba(0,0,0,.08)] md:hidden" aria-label="تنقّل سريع">
+          {/* 🧪 data-app-tabs: في تطبيق التجربة يُخفى هذا الشريط كلّه (طلب محمد 2026-08-19:
+              «زري اسفل الشاشة الرئيسية والتقرير لا اريدهما») — العلامةُ خاملةٌ في الإنتاج */}
+          <nav data-app-tabs className="no-print fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-line bg-surface px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_rgba(0,0,0,.08)] md:hidden" aria-label="تنقّل سريع">
             <BottomItem icon="🏠" label="الرئيسية" href="/dashboard" />
             <BottomItem icon="📋" label="التقرير" href="/reports/overall" />
           </nav>
