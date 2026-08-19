@@ -58,6 +58,10 @@ export default function StandaloneLock() {
         }
         // فنيٌّ (أو بلا جلسة) ⇒ التطبيقُ شاشةٌ واحدة كما هو
         root.setAttribute("data-app-role", "tech");
+        // 📜 عقدُ محمد (2026-08-19): «لا تغير اي شيء في تسجيل دخول الفني اطلاقا» —
+        //   حتى على جهاز التجربة نفسِه: جلسةُ الفنيّ تُطفئ علَمَ الطراز كلّيّاً فيرى
+        //   الفنيُّ تجربتَه الأصليّةَ حرفيّاً، وكلُّ الجديد يبقى للمدير وحدَه.
+        root.removeAttribute("data-app-trial");
         if (pathname && !pathname.startsWith("/field-management")) router.replace("/field-management");
       })
       .catch(() => { /* تعذّر السؤال ⇒ لا نقفل ولا نفتح: يبقى الحالُ كما هو */ });
