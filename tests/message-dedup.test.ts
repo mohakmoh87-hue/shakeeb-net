@@ -2,10 +2,12 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { messageDedupKey, baghdadDayKey } from "../src/lib/messageDedup";
+import { messageDedupKey, baghdadDayKey, DEDUP_WINDOW_H } from "../src/lib/messageDedup";
 
 // ═════ حارسُ تكرار الرسائل (طلبُ محمد 2026-08-19) ═════
-// «رسالةٌ واحدةٌ من كلّ قالبٍ لكلّ مشتركٍ خلال ٢٤ ساعة … حارسٌ منيعٌ جدّاً.»
+// «رسالةٌ واحدةٌ من كلّ قالبٍ لكلّ مشتركٍ … حارسٌ منيعٌ جدّاً.» — والنافذةُ عُدّلت
+// بطلبه مساءَ اليوم نفسِه: «كل 20 ساعة ولكل القوالب» (لا ٢٤ — كي لا يحجب إرسالُ
+// أمسِ في تمام الساعة إرسالَ اليوم في الساعة نفسِها).
 // الأمنعُ فهرسٌ فريدٌ جزئيٌّ على `dedupKey` — وهذه الاختباراتُ تحرس منطقَ المفتاح
 // (فهو أساسُ الفهرس) + تُثبت أنّ العزلَ وتخطّي المكرَّرين مبنيّان في المسارات.
 
@@ -70,6 +72,11 @@ describe("الحارسُ مبنيٌّ في المسارات (لا عرضٌ فق�
     const a = code("src/app/api/subscribers/[id]/activate/route.ts");
     assert.ok(/alreadySentToday\(a\.subscriberId, "activation"/.test(a), "التفعيلُ بلا فحصٍ قبليّ");
     assert.ok(/dedupKey: messageDedupKey\(/.test(a), "التفعيلُ بلا dedupKey");
+  });
+
+  test("نافذةُ الحارس الفرديّ ٢٠ ساعةً لكلّ القوالب (تعديل محمد 2026-08-19)", () => {
+    assert.equal(DEDUP_WINDOW_H, 20, "النافذةُ ليست ٢٠ ساعة");
+    assert.ok(/DEDUP_WINDOW_H \* 3_600_000/.test(code("src/lib/messageDedup.ts")), "alreadySentToday لا يقرأ النافذةَ الموحّدة");
   });
 
   test("طابورُ البثّ يُمحى بعد ٢٠ ساعة لا ٤٨ (طلبُ محمد)", () => {

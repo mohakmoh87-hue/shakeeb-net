@@ -35,16 +35,22 @@ export function messageDedupKey(
   return `${agentId ?? 0}:${subscriberId}:${t}:${baghdadDayKey()}`;
 }
 
-// المساراتُ الفوريّة: هل أُرسِل هذا القالبُ لهذا المشترك خلال ٢٤ ساعة؟ (قبل الإرسال).
+// المساراتُ الفوريّة: هل أُرسِل هذا القالبُ لهذا المشترك خلال النافذة؟ (قبل الإرسال).
 // 🔒 العزلُ محفوظٌ مرّتَين: المشتركُ يتبع وكيلاً واحداً، ويُضاف `agentId` تأكيداً.
 // والحالتان SENT/PENDING تُحسبان «مُرسَلاً»: PENDING رسالةٌ في الطابور ستُرسَل، فعدُّها يمنع
 // إدراجَ ثانيةٍ بجانبها.
+//
+// ⏱️ النافذة ٢٠ ساعةً لا ٢٤ (تعديل محمد 2026-08-19): «اريد المحاولة كل 20 ساعة ولكل
+//   القوالب» — فنافذةُ ٢٤ كانت تجعل إرسالَ أمسِ في تمام الساعة يحجب إرسالَ اليوم في
+//   الساعة نفسِها إن سبقه بثوانٍ. العشرون تعطي هامشَ أربعِ ساعاتٍ للمواعيد الثابتة،
+//   وتوازي عمرَ الطابور (EXPIRE_H=20 في broadcastQueue).
+export const DEDUP_WINDOW_H = 20;
 export async function alreadySentToday(
   subscriberId: number,
   templateType: string,
   agentId: number | null | undefined,
 ): Promise<boolean> {
-  const since = new Date(Date.now() - 24 * 3_600_000);
+  const since = new Date(Date.now() - DEDUP_WINDOW_H * 3_600_000);
   const hit = await prisma.message
     .findFirst({
       where: {
