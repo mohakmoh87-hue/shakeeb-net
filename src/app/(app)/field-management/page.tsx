@@ -782,7 +782,8 @@ export default function FieldManagementPage() {
               بوّابتُه وحسابُه وشارتُه. ومكتبُ اللوحةِ الواحدةِ ⇒ **زرٌّ واحدٌ كما هو اليوم بالضبط**
               (فـ`officePanels` لا يأتي من الخادم إلّا لمكتبِ التعدّد). */}
           {!isTech && officeId != null && (
-            (officePanels[officeId]?.length ?? 0) > 1
+            <span className="trial-dock-odoo contents">
+            {(officePanels[officeId]?.length ?? 0) > 1
               ? officePanels[officeId].map((p, i) => (
                   <OdooConfigButton
                     key={p.id}
@@ -792,18 +793,22 @@ export default function FieldManagementPage() {
                     onChange={() => load(officeId)}
                   />
                 ))
-              : <OdooConfigButton officeId={officeId} officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"} onChange={() => load(officeId)} />
+              : <OdooConfigButton officeId={officeId} officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"} onChange={() => load(officeId)} />}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {canManage && <NotificationsBell />}
+          {/* 🧪 في التجربة ينزل الجرسُ إلى الركن الأيمن السفليّ بجانب «الخيارات»
+              (trial-dock-bell — شفّافةٌ contents في المتصفّح) */}
+          <span className="trial-dock-bell contents">{canManage && <NotificationsBell />}</span>
           {isTech ? (
             <button onClick={techLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
           ) : (
             <>
-              {/* المتصفح: زر الرئيسية · التطبيق: زر خروج (تبديل عبر CSS بلا وميض) */}
-              <button data-site-only onClick={() => router.push("/dashboard")} className="back">← الرئيسية</button>
-              <button data-app-only onClick={userLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
+              {/* المتصفح: زر الرئيسية · التطبيق: زر خروج (تبديل عبر CSS بلا وميض)
+                  🧪 وكلاهما يُحذف في التجربة (طلب محمد: موجودان في القائمة الجانبيّة) */}
+              <button data-site-only data-trial-hide onClick={() => router.push("/dashboard")} className="back">← الرئيسية</button>
+              <button data-app-only data-trial-hide onClick={userLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
             </>
           )}
         </div>

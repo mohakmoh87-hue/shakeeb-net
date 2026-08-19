@@ -1,11 +1,20 @@
 "use client";
 
+import { useId } from "react";
+
 // ===== وجه البطل المتحرّك (طلب محمد 2026-08-05) =====
 // إيموجي حقيقيّ لا يتحرّك — فبنيتُه رسماً متجهاً (SVG) بحركةٍ من CSS: تاجٌ يتمايل،
 // ونظارةٌ تنزلق عن العينين ثم تعود، وغمزةٌ بالعين، وابتسامةُ زهوٍ، وبريقٌ يلمع.
 // بلا صور ولا مكتبات — يعمل في المتصفّح وفي WebView التطبيق سواءً بسواء.
 // ويحترم «تقليل الحركة» في النظام: من أطفأ الحركات يراه ساكناً بلا وميض.
 export default function ChampionEmoji({ size = 22, className = "" }: { size?: number; className?: string }) {
+  // 🔴 بلاغ محمد 2026-08-19: في التطبيق ظهر الوجهُ «خطوطاً زرقاءَ مفرَّغاً» — لأنّ
+  //   نسختَين منه تعيشان معاً (بطاقاتُ الإحصاء المخفيّةُ في التجربة + شارةُ المتصدّر)
+  //   ومعرّفاتُ التدرّجات ثابتة (chFace/chGold) فيحلّها المتصفّح على النسخة الأولى —
+  //   وهي داخل display:none فتسقط التعبئةُ كلُّها. المعرّفاتُ صارت فريدةً لكلّ نسخة.
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const faceId = `chFace${uid}`;
+  const goldId = `chGold${uid}`;
   return (
     <span className={`champ ${className}`} style={{ width: size, height: size, display: "inline-block", lineHeight: 0 }} aria-hidden>
       <style>{`
@@ -33,12 +42,12 @@ export default function ChampionEmoji({ size = 22, className = "" }: { size?: nu
       `}</style>
       <svg viewBox="0 0 64 64" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <radialGradient id="chFace" cx="38%" cy="32%" r="72%">
+          <radialGradient id={faceId} cx="38%" cy="32%" r="72%">
             <stop offset="0%" stopColor="#ffe27a" />
             <stop offset="60%" stopColor="#fdc63f" />
             <stop offset="100%" stopColor="#e89b12" />
           </radialGradient>
-          <linearGradient id="chGold" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={goldId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#ffe89a" />
             <stop offset="55%" stopColor="#f5c53d" />
             <stop offset="100%" stopColor="#d99a10" />
@@ -46,12 +55,12 @@ export default function ChampionEmoji({ size = 22, className = "" }: { size?: nu
         </defs>
 
         {/* الوجه */}
-        <circle cx="32" cy="38" r="20.5" fill="url(#chFace)" stroke="#a86a06" strokeWidth="1.7" />
+        <circle cx="32" cy="38" r="20.5" fill={`url(#${faceId})`} stroke="#a86a06" strokeWidth="1.7" />
 
         {/* التاج */}
         <g className="cr">
-          <path d="M15.5 20.5 L21.5 12 L27 17.5 L32 9 L37 17.5 L42.5 12 L48.5 20.5 Z" fill="url(#chGold)" stroke="#c8830a" strokeWidth="1.3" strokeLinejoin="round" />
-          <rect x="15.5" y="19.8" width="33" height="5.2" rx="2.2" fill="url(#chGold)" stroke="#c8830a" strokeWidth="1.1" />
+          <path d="M15.5 20.5 L21.5 12 L27 17.5 L32 9 L37 17.5 L42.5 12 L48.5 20.5 Z" fill={`url(#${goldId})`} stroke="#c8830a" strokeWidth="1.3" strokeLinejoin="round" />
+          <rect x="15.5" y="19.8" width="33" height="5.2" rx="2.2" fill={`url(#${goldId})`} stroke="#c8830a" strokeWidth="1.1" />
           <circle cx="32" cy="10.2" r="2.1" fill="#fff3c4" stroke="#c8830a" strokeWidth=".9" />
           <circle cx="21.5" cy="13.2" r="1.6" fill="#ff5c7a" />
           <circle cx="42.5" cy="13.2" r="1.6" fill="#5ec3ff" />

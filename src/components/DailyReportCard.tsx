@@ -175,7 +175,8 @@ export default function DailyReportCard({
                 style={{ cursor: "pointer" }} title="اضغط لعرض الحركات المكوّنة لهذا المبلغ">
                 <td>{r.cat}</td>
                 <td className="num">{r.count}</td>
-                <td className="wsl">{r.wasel} <span style={{ opacity: .45, fontSize: 11 }}>↗</span></td>
+                {/* 🧪 السهمُ يُحذف في التجربة (طلب محمد: «علامات اسهم صغيرة اريد مسحها لاعطاء مساحة») */}
+                <td className="wsl">{r.wasel} <span data-trial-hide style={{ opacity: .45, fontSize: 11 }}>↗</span></td>
               </tr>
             ))}
             <tr data-trial-show onClick={() => setBig(true)} style={{ cursor: "pointer" }} title="اضغط للتكبير">

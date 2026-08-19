@@ -33,6 +33,9 @@ const NAV: NavEntry[] = [
       { label: "كروت التفعيل", href: "/cards", perm: "inventory.manage" },
     ],
   },
+  // طلب محمد 2026-08-19: «فاتورة مبيع اخرجها من المصاريف وضعها خارجا اسفل المخزن
+  // وليس داخل اي قائمة» — بندٌ مستقلٌّ ظاهرٌ مباشرةً
+  { kind: "link", icon: "🧾", label: "فاتورة المبيع", href: "/invoices", perm: "inventory.manage" },
   {
     kind: "group", icon: "💵", label: "المصاريف",
     items: [
@@ -40,7 +43,6 @@ const NAV: NavEntry[] = [
       // والمقبوضات وفاتورة مبيع» — كان طريقُهما الوحيدُ بطاقاتِ إحصاء الرئيسيّة.
       // فأُدرجتا في قائمة التنقّل (وهما في نموذج «ب · القائمة» تحت المصاريف أصلاً).
       { label: "المصروفات والمقبوضات", href: "/cashbox", perm: "finance.view" },
-      { label: "فاتورة المبيع", href: "/invoices", perm: "inventory.manage" },
       { label: "انشاء حساب مصروفات", href: "/accounts", perm: "accounts.manage" },
       { label: "سجلّ المكافآت", href: "/rewards", perm: "rewards.config" },
     ],
@@ -239,6 +241,18 @@ function SideNav({ brand, fullName, roleLabel, onNavigate }: {
 
       {/* القائمة */}
       <nav className="flex-1 py-2" aria-label="أقسام البرنامج">
+        {/* 🧪 بندٌ تجريبيٌّ (طلب محمد 2026-08-19): «تحصيل الفنيين خيار في القائمة الجانبيه
+            ويدخلك على صفحة منبثقة» — لا يظهر إلّا تحت العلَم، ويفتح منبثقةَ التحصيل في
+            الرئيسيّة عبر وسم #collect (لوحةُ المشتركين تلتقطه) */}
+        {can("field.manage") || can("finance.view") ? (
+          <button
+            type="button"
+            className="trial-only-navitem flex w-full items-center gap-3 border-r-[3px] border-transparent px-5 py-2.5 text-[13px] text-[#d5e2ef] transition hover:bg-white/5 hover:text-white"
+            onClick={() => go("/dashboard#collect")}
+          >
+            <span className="w-5 text-center">💰</span> تحصيل الفنيين
+          </button>
+        ) : null}
         {NAV.map((entry) => {
           if (entry.kind === "link") {
             if (entry.perm && !can(entry.perm)) return null;

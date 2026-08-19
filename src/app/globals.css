@@ -1617,3 +1617,105 @@ html[data-app-trial] .trial-popable.open > .trial-popcard > * { margin-bottom: 0
 
 /* روابطُ المربّعات (Link كبطاقة) ترث شكلَ .tile */
 html[data-app-trial] .trial-tiles .tile { text-decoration: none; }
+
+/* ---- ٢٢) دفعةُ 2026-08-19 ليلاً الكبرى — رئيسيّةٌ وفنّيّون ----
+   بنودُ محمد: خياراتُ البحث بسطرٍ واحد · جدولُ المشتركين سطرٌ واحدٌ (اسم·عمليات·
+   المزيد·يوزر) بلا تمريرٍ جانبيّ ومنبثقةُ «المزيد» الكبيرة · تحصيلُ الفنيّين من
+   القائمة الجانبيّة منبثقاً · عمودٌ ونصفٌ في الفنيّين · «الخيارات» حبّةٌ وسطى
+   والجرسُ يمينَها وأودو يسارَها. */
+
+/* ٢ · «خيارات» في سطر البحث نفسِه — يضيق حقلُ البحث ولا يلتفّ الصفّ */
+html[data-app-trial] .searchbar { flex-wrap: nowrap; gap: 6px; }
+html[data-app-trial] .searchbar input.sq { min-width: 0; }
+html[data-app-trial] .searchbar .allofc { white-space: nowrap; font-size: 10px; flex: 0 0 auto; }
+
+/* ٦ · الجدول: أربعُ خاناتٍ فقط (الاسم · عمليات+المزيد · اليوزر) بلا تمريرٍ جانبيّ */
+html[data-app-trial] .tbl.subs th:first-child,
+html[data-app-trial] .tbl.subs td.cbcol,
+html[data-app-trial] .tbl.subs th:nth-child(n+5),
+html[data-app-trial] .tbl.subs tbody tr:not(.subrow) td:nth-child(n+5) { display: none; }
+html[data-app-trial] .subs-scroll { overflow-x: hidden; }
+.trial-more { display: none; }
+html[data-app-trial] .trial-more { display: inline-flex; margin-inline-start: 4px; }
+
+/* ٦ · شريطُ خيارات المشترك يصير منبثقةً كبيرةً تجمع الشريطَ والمزيدَ معاً */
+html[data-app-trial] tr.subrow > td { padding: 0 !important; border: 0 !important; }
+html[data-app-trial] tr.subrow .subbar {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 14px;
+  background: rgba(6, 32, 58, .45);
+}
+html[data-app-trial] tr.subrow .sb-row {
+  width: 100%;
+  max-width: 24rem;
+  background: #fff;
+  border-radius: 18px 18px 0 0;
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  box-shadow: 0 16px 44px rgba(6, 32, 58, .5);
+}
+html[data-app-trial] tr.subrow .sb-panel {
+  width: 100%;
+  max-width: 24rem;
+  background: #fff;
+  border-radius: 0 0 18px 18px;
+  padding: 10px 12px 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  border-top: 1px dashed #dbe9f6;
+  box-shadow: 0 16px 44px rgba(6, 32, 58, .5);
+  max-height: 46dvh;
+  overflow-y: auto;
+}
+
+/* ١ (فنيّون) · عمودٌ ونصف — الخطُّ كما هو */
+@media (max-width: 767.98px) {
+  html[data-app-trial] [data-app-col] { width: calc(66.6vw - 24px) !important; }
+}
+
+/* ٣ · «الخيارات» حبّةٌ وسطى لا شريطٌ بعرض الشاشة */
+html[data-app-trial] .trial-opts-fab {
+  inset-inline: auto;
+  inset-inline-start: 50%;
+  transform: translateX(50%);
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  width: auto;
+  padding: 0.5rem 1.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .3);
+  box-shadow: 0 4px 16px rgba(10, 79, 138, .38);
+}
+
+/* ٤ · الجرسُ في الركن الأيمن السفليّ بجانب الخيارات */
+html[data-app-trial] .trial-dock-bell {
+  display: flex;
+  position: fixed;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  inset-inline-start: 10px;
+  z-index: 41;
+}
+/* ٥ · أودو (مفعّل/غير مفعّل) في الركن الأيسر السفليّ */
+html[data-app-trial] .trial-dock-odoo {
+  display: flex;
+  gap: 4px;
+  position: fixed;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  inset-inline-end: 10px;
+  z-index: 41;
+}
+
+/* ١ (رئيسيّة) · بندُ القائمة الجانبيّة التجريبيّ ومنبثقةُ التحصيل */
+.trial-only-navitem { display: none; }
+html[data-app-trial] .trial-only-navitem { display: flex; }
+html[data-app-trial] .trial-collect { max-width: 26rem; }
+html[data-app-trial] .trial-collect .card { border: 0 !important; box-shadow: none !important; background: #fff !important; }

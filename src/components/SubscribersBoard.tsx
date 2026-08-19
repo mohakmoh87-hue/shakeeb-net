@@ -181,6 +181,22 @@ export default function SubscribersBoard() {
   // 🧪 نافذةُ «خيارات» الرئيسيّة في التجربة (طلب محمد 2026-08-19 ليلاً): زرٌّ بجانب البحث
   //    (يسارَ المشاهد، تابعٌ للنصف السفليّ) يفتح منبثقةً بكلّ أزرار hbtns — والشريطُ يُخفى
   const [trialOpts, setTrialOpts] = useState(false);
+  // 🧪 منبثقةُ «تحصيل الفنيّين» (طلب محمد 2026-08-19): تُفتح من بند القائمة الجانبيّة
+  //    عبر الوسم #collect — والشريطُ الأفقيُّ القديم يُخفى في التجربة فيتّسع المشتركون
+  const [collectOpen, setCollectOpen] = useState(false);
+  const inTrial = () => typeof document !== "undefined" && document.documentElement.hasAttribute("data-app-trial");
+  useEffect(() => {
+    const check = () => {
+      if (window.location.hash === "#collect") {
+        setCollectOpen(true);
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+    };
+    // rAF كي لا يُحسب فحصُ الإقلاع setState متزامناً داخل التأثير
+    const raf = requestAnimationFrame(check);
+    window.addEventListener("hashchange", check);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("hashchange", check); };
+  }, []);
   const [extRows, setExtRows] = useState<ExtRow[]>([]);
   const [extSel, setExtSel] = useState<Set<number>>(new Set());
   // دالّةٌ عاديّةٌ لا `useCallback`: المُصرِّفُ يرفض حفظَ التذكير هنا
@@ -627,7 +643,7 @@ export default function SubscribersBoard() {
             {subs.map((s) => {
               const isActive = selectedId === s.id;
               return [
-                <tr key={s.id} onClick={() => selectRow(s)}
+                <tr key={s.id} onClick={() => { if (!inTrial()) selectRow(s); }}
                   className={`clickable ${checked.has(s.id) ? "picked" : ""} ${isActive ? "active" : ""}`}>
                   <td className="cbcol" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" className="cb" checked={checked.has(s.id)} onChange={() => toggleCheck(s.id)} />
@@ -635,6 +651,9 @@ export default function SubscribersBoard() {
                   <td>{s.name}{s.hasLoan && <span className="loan-badge" title="لديه قرض قائم">قرض</span>}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <button className="op" title="عمليات المشترك" onClick={() => { setOpsSub(s); setOpsMsg(""); loadOpsTechs(s.towerId); loadOps(s.towerId); }}>🛠️</button>
+                    {/* 🧪 «المزيد» بجانب عمليات: يفتح المنبثقةَ الكبيرة بكلّ خيارات المشترك
+                        (خياراتُ الشريط + قائمةُ المزيد معاً) — لا وجودَ له في المتصفّح */}
+                    <button className="op trial-more" title="المزيد" onClick={() => { selectRow(s); setMoreMenu(true); }}>⋯</button>
                   </td>
                   <td dir="ltr">{s.netUser ?? "—"}</td>
                   <td className="num" dir="ltr">{s.phone ?? "—"}</td>
@@ -651,7 +670,8 @@ export default function SubscribersBoard() {
                   const d = daysLeft(s.dateTo);
                   return (
                     <tr key={`${s.id}-bar`} className="subrow"><td colSpan={6}>
-                      <div className="subbar">
+                      {/* 🧪 في التجربة يصير الشريطُ منبثقةً كبيرة؛ لمسُ خلفيّتها يغلقها */}
+                      <div className="subbar" onClick={(e) => { if (inTrial() && e.target === e.currentTarget) { setSelectedId(null); setMoreMenu(false); } }}>
                         <div className="sb-row">
                           <button className="sb-act go" disabled={actChecking === s.id} onClick={() => startActivation(s)}>⚡ {actChecking === s.id ? "…" : "تفعيل"}</button>
                           {/* قرض فزعة: يُحاوَل حتى لو لم ينته الاشتراك (طلب محمد) — سوبر سيل هي المرجع الأخير.
@@ -735,8 +755,21 @@ export default function SubscribersBoard() {
         {total > subs.length && <span style={{ color: "var(--orange-d)", fontWeight: 400 }}>🔍 اكتب في البحث لإيجاد الباقي</span>}
       </div>
 
-      {/* تحصيل الفنيين — شريط أفقي أسفل المشتركين (كما في النموذج) */}
-      <FieldSettlementCard />
+      {/* تحصيل الفنيين — شريط أفقي أسفل المشتركين (كما في النموذج)
+          🧪 وفي التجربة يُخفى ويحلّ محلَّه بندُ القائمة الجانبيّة → المنبثقة أدناه */}
+      <div data-trial-hide className="contents"><FieldSettlementCard /></div>
+
+      {collectOpen && (
+        <div className="trial-opts-wrap" onClick={() => setCollectOpen(false)}>
+          <div className="trial-opts trial-collect" onClick={(e) => e.stopPropagation()}>
+            <div className="trial-opts-hd">
+              <b>💰 تحصيل الفنيّين</b>
+              <button type="button" onClick={() => setCollectOpen(false)} aria-label="إغلاق">✕</button>
+            </div>
+            <FieldSettlementCard />
+          </div>
+        </div>
+      )}
 
 
       {/* ===== النوافذ ===== */}

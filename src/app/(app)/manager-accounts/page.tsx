@@ -102,6 +102,15 @@ export default function ManagerAccountsPage() {
   // أ-١٩ · القسمُ المفتوح. ويبدأ على «حركةٌ جديدة» لأنّه مكانُ العمل اليوميّ — فلا
   // تُفتح الصفحةُ فارغةً، ولا تُفتح طويلةً كما كانت.
   const [sec, setSec] = useState<string | null>("tx");
+  // 🧪 طلب محمد 2026-08-19: في التطبيق تُفتح الصفحةُ وكلُّ الأزرار غيرُ مضغوطةٍ
+  //    («ليبقى حجمها صغير وجميل عند الفتح») — والمتصفّحُ يبقى يفتح «حركة جديدة»
+  //    كما اعتاد. (rAF كي لا يُحسب setState متزامناً داخل التأثير)
+  useEffect(() => {
+    if (typeof document !== "undefined" && document.documentElement.hasAttribute("data-app-trial")) {
+      const raf = requestAnimationFrame(() => setSec(null));
+      return () => cancelAnimationFrame(raf);
+    }
+  }, []);
   const [dayRep, setDayRep] = useState<Record<string, number> | null>(null);
   async function openDay(day: string, towerId: number | null) {
     setDayView({ day, towerId });
