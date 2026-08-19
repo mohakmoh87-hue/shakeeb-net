@@ -7,6 +7,11 @@ name: owner-backup
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: "إرسال فوري يتجاوز مانع «مرّة في اليوم» (?force=1)"
+        type: boolean
+        default: false
   schedule:
     - cron: "5 * * * *" # كل ساعة عند الدقيقة 5
 
@@ -21,11 +26,13 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           APP_BASE_URL: https://shakeebnet.com # كان سرّاً يشير إلى أزور القديمة — ثُبّت هنا بعد النقل إلى Railway (2026-08-20)
+          FORCE: ${{ inputs.force && '1' || '0' }}
         run: |
           set -euo pipefail
           # النقطة تردّ {"started":true} فوراً وتعمل بعد الردّ (علاج 502 مهلة الوسيط 2026-08-20)
           # فنجاحُ المهمّة هنا يعني «انطلقت» فقط — والفشلُ الحقيقيّ يصل المالكَ ببريد إنذار.
-          code=$(curl -s --max-time 60 -o /tmp/resp -w "%{http_code}" -X POST "$APP_BASE_URL/api/cron/owner-backup" \
+          qs=""; [ "$FORCE" = "1" ] && qs="?force=1"
+          code=$(curl -s --max-time 60 -o /tmp/resp -w "%{http_code}" -X POST "$APP_BASE_URL/api/cron/owner-backup$qs" \
                  -H "Authorization: Bearer $CRON_SECRET")
           echo "الاستجابة: $code $(cat /tmp/resp)"
           test "$code" = "200"
