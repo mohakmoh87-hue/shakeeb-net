@@ -1929,3 +1929,16 @@ html[data-app-trial] .tfm-wa .wa.down {
 }
 html[data-app-trial] .tfm-wa .wa.up { color: #4ade80 !important; }
 html[data-app-trial] .tfm-wa .wa .wa-d { background: currentColor !important; }
+
+/* النقطةُ الحمراءُ المتوهّجة عند عدم الاتصال — «ضرورية» (محمد 2026-08-19) */
+@keyframes waDotGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(229, 72, 77, .75); }
+  70% { box-shadow: 0 0 0 7px rgba(229, 72, 77, 0); }
+}
+html[data-app-trial] .tfm-wa .wa.down .wa-d {
+  background: #ff5c5c !important;
+  animation: waDotGlow 1.3s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-app-trial] .tfm-wa .wa.down .wa-d { animation: none; box-shadow: 0 0 0 3px rgba(229, 72, 77, .45); }
+}
