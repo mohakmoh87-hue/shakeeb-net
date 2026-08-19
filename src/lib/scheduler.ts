@@ -107,6 +107,9 @@ export async function runExpiringReminder(
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let sent = 0, failed = 0, i = 0;
+  // ═════ حادثة الشدن ٢ (2026-08-19) · عدّادان لكلّ مكتب — للختم المشروط أدناه ═════
+  const offSent = new Map<number, number>();
+  const offFailed = new Map<number, number>();
   for (const sub of recipients) {
     const office = sub.towerId ? officeMap.get(sub.towerId) : null;
     if (office?.waEnabled === "0") continue; // مكتب معطّل الواتساب
@@ -146,12 +149,35 @@ export async function runExpiringReminder(
       },
     }).catch(() => { /* اصطدامُ الفهرس (سباقٌ نادرٌ عبر عمليّتَين) = سُجّلت اليومَ سلفاً */ });
     res.ok ? sent++ : failed++;
+    if (sub.towerId != null) {
+      const m = res.ok ? offSent : offFailed;
+      m.set(sub.towerId, (m.get(sub.towerId) ?? 0) + 1);
+    }
   }
 
-  // ختم "عولج اليوم" على المكاتب المعنيّة (لمنع تكرار طلب الموافقة عند الدخول)
+  // ═════ حادثة الشدن ٢ (2026-08-19) · لا يُختم يومُ مكتبٍ فشل إرسالُه كلُّه ═════
+  // 🔴 كان الختمُ بلا شرط: واتساب الشدن معطوبٌ صباحاً، فجرت موافقةُ 11:40 وفشلت
+  //   46/46 رسالة — وخُتم اليومُ وكأنّه أُرسل، فصمت المُجدولُ في موعده (15:00)
+  //   وصمت طلبُ الموافقة، وضاع تذكيرُ يومٍ كامل.
+  // ⇒ مكتبٌ **أرسل ولو رسالةً واحدة** (أو لا مستحقّين فيه) يُختم كالمعتاد؛ ومكتبٌ
+  //   فشل كلُّ إرساله لا يُختم — ويُفَكّ حجزُ claimDay إن سبق — فيُعاد تلقائيّاً
+  //   (طلبُ الموافقة يعود عند الدخول، والمُجدولُ غداً). ولا خطرَ تكرار: الحارسُ
+  //   الفرديُّ alreadySentToday + فهرسُ dedupKey يحرسان كلَّ مشتركٍ وصلته رسالة.
   const today = baghdadToday();
   if (officeIds && officeIds.length) {
-    await prisma.tower.updateMany({ where: { id: { in: officeIds } }, data: { lastReminderDate: today } });
+    const dead = officeIds.filter((id) => (offFailed.get(id) ?? 0) > 0 && (offSent.get(id) ?? 0) === 0);
+    const okIds = officeIds.filter((id) => !dead.includes(id));
+    if (okIds.length) {
+      await prisma.tower.updateMany({ where: { id: { in: okIds } }, data: { lastReminderDate: today } });
+    }
+    if (dead.length) {
+      // فكُّ الحجز لا يمسّ إلّا ختمَ اليوم نفسِه (سباقٌ آمن): من خُتم بغير اليوم يُترك
+      await prisma.tower.updateMany({
+        where: { id: { in: dead }, lastReminderDate: today },
+        data: { lastReminderDate: null },
+      }).catch(() => { /* فشلُ الفكّ لا يُفشل التقرير — يبقى الختمُ وتُلتقط الحالةُ غداً */ });
+      console.error(`[reminder] ⚠️ فشل إرسالُ التذكير كاملاً لمكاتب ${dead.join(",")} — لم يُختم يومُها وسيُعاد`);
+    }
   }
   return { sent, failed };
 }
