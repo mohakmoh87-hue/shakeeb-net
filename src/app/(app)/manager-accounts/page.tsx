@@ -353,7 +353,7 @@ export default function ManagerAccountsPage() {
 
       {/* البطاقاتُ الرئيسيّة — مكشوفةٌ دائماً، وكلُّها مضغوطة (أ-٦ وسلامة المال) */}
       {!denied && data && (
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div data-acc-cards className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card label="المبلغ الكلي الموجود" value={fmt(data.totalAvailable)} color="text-emerald-700" bg="bg-emerald-50" big onClick={() => setShowTotal(true)} hint="اضغط لتفكيك المعادلة" />
         <Card label="مجموع المبالغ اليومية" value={fmt(data.cumulativeDaily)} color="text-slate-700" bg="bg-slate-50" onClick={openDailyLog} hint="اضغط لعرض السجل اليومي" />
         <Card label="ديون الكارتات" value={fmt(data.cardDebtRemaining)} color={data.cardDebtRemaining <= 0 ? "text-emerald-700" : "text-red-700"} bg={data.cardDebtRemaining <= 0 ? "bg-emerald-50" : "bg-red-50"} onClick={() => setTxQ("كارتات")} hint="اضغط لتصفية السجل على حركاتها" />
@@ -379,7 +379,10 @@ export default function ManagerAccountsPage() {
           ⚠️ ولم يُغيَّر سطرٌ واحدٌ في داخل أيّ قسم — أُعيد ترتيبُها فقط. والكروتُ
           الوهميّةُ إنذارٌ أحمرُ لا يجوز أن يُخفى، فعددُها **على زرّه** ويصير الزرُّ
           أحمرَ حين يكون فيها شيء، فتراه من أوّل نظرةٍ بلا فتحِ القسم. */}
-      <div data-app-bar className="mb-6 flex flex-wrap gap-2">
+      {/* 🧪 مراجعة النموذج (بلاغ محمد 2026-08-19): الأقسامُ تبقى **في الصفحة** شبكةً
+          ثنائيّةً كنموذج «حسابات المدير» (grid2/gbtn) لا في الورقة المطويّة — والورقةُ
+          أدناه تحمل اختصارَ «حركة جديدة» وحدَه (نمط actionbar في النموذج) */}
+      <div data-acc-secs className="mb-6 flex flex-wrap gap-2">
         {([
           ["tx", "💵", "حركةٌ جديدة · المدراء · الرواتب", !denied && !!data, 0],
           ["wa", "💬", "واتساب المكاتب", waOffices.length > 0, 0],
@@ -408,6 +411,16 @@ export default function ManagerAccountsPage() {
             );
           })}
       </div>
+
+      {/* 🧪 ورقةُ التطبيق (تظهر في التجربة وحدَها): اختصارُ الحركة الماليّة أسفل الشاشة
+          كنموذج actionbar — الضغطُ يفتح قسمَ «حركة جديدة» بصرفه وقبضه وتحويله */}
+      {!denied && data && (
+        <div data-app-bar className="trial-only-bar">
+          <button onClick={() => setSec("tx")} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-extrabold text-white">
+            💵 حركة جديدة — صرف · قبض · تحويل
+          </button>
+        </div>
+      )}
 
       {/* ══════ الأقسام — واحدٌ مفتوحٌ في كلّ مرّة ══════ */}
       {sec === "tx" && !denied && data && (

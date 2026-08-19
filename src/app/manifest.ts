@@ -6,7 +6,10 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "SHAKEEB — إدارة الفنيين",
     short_name: "SHAKEEB",
     description: "تطبيق إدارة الفنيين: الحضور والإجازات والرواتب والإشعارات",
-    start_url: "/field-management",
+    // 🔴 كان "/field-management" فكان تطبيقُ المدير يفتح على شاشة الفنيّين (بلاغ محمد
+    //    2026-08-19). صار "/dashboard": المديرُ يهبط على رئيسيّته، والفنيُّ يقذفه حارسُ
+    //    المسارات (proxy) من /dashboard إلى /field-management فوراً — وجهتُه نفسُها بلا فرق.
+    start_url: "/dashboard",
     scope: "/",
     display: "standalone",
     orientation: "portrait",

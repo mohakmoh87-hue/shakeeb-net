@@ -809,8 +809,11 @@ export default function FieldManagementPage() {
       {/* شريط الأدوات العلوي (طراز المدير بالمتصفح): كان أسفل وسط الشاشة — رُفع للأعلى
           بكل خياراته، بلون خلفية الصفحة وبلا أزرار ملوّنة (تصميم النموذج).
           لوحة الفني بالمتصفح تُبقي شريطها السفلي القديم كما هو حرفياً. */}
+      {/* 🧪 data-app-bar: في تطبيق التجربة ينزل هذا الشريطُ كلُّه (المكاتبُ والقائمتان)
+          إلى ورقة «الخيارات» المطويّة أسفل الشاشة — فيصفو رأسُ الصفحة كنموذج (د).
+          بلاغ محمد 2026-08-19: «صفحة الفنيين تظهر بكثير من الازرار للمدير» */}
       {!isTech && offices.length > 0 && (
-        <div data-site-only className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
+        <div data-site-only data-app-bar className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
           {offices.map((o) => (
             <button
               key={o.id}

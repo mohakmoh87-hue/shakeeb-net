@@ -1055,16 +1055,12 @@ html[data-app-trial] thead th {
    ⚠️ ملاحظةُ التجربة: سحبُ الأعمدة مبنيٌّ على صفٍّ أفقيٍّ، ففي الشبكة الملتفّة قد
    يتصرّف غريباً بين الصفوف — يُعالَج إن ثبت الطرازُ واعتُمد. */
 @media (max-width: 767.98px) {
-  html[data-app-trial] [data-app-board] {
-    display: grid !important;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 5px;
-    overflow-x: hidden !important;
-    overflow-y: auto;
-    align-items: stretch; /* جارا العمود الطويل يتمدّدان إليه فيبقى الصفُّ مستوياً */
-  }
+  /* 🔄 تعديل محمد (2026-08-19 مساءً) يعكس التفافَ الشبكة: «الاعمدة اجعلها عامودين
+     في الصفحة ولا اريد اعمدة في الاسفل — كل الاعمدة عامود جنب عامود وهنالك تمرير
+     جانبي لرؤية باقي الاعمدة» ⇒ الصفُّ الأفقيُّ الأصليُّ يبقى، والعمودُ نصفُ
+     الشاشة فيظهر اثنان معاً والباقي بالتمرير الجانبيّ */
   html[data-app-trial] [data-app-col] {
-    width: auto !important;
+    width: calc(50vw - 22px) !important;
     min-width: 0;
     font-size: 10px;
   }
@@ -1338,4 +1334,48 @@ html[data-app-trial] .tfm-wa .wa {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ---- ١٦) حسابات المدير بثوب النموذج (مراجعة محمد 2026-08-19 مساءً) ----
+   «بقية الصفحات لا تشبه ما اتفقنا عليه في صفحة المعاينة ابدا مثل حسابات المدير»
+   فطُبّق نموذجُ الشاشة: البطاقاتُ مؤشّراتٌ مضغوطةٌ ثلاثيّةُ الصفّ (kpi2b) ·
+   الأقسامُ شبكةٌ ثنائيّةٌ في الصفحة (grid2/gbtn) · وورقةُ الأسفل لاختصار
+   «حركة جديدة» وحدَه. */
+
+/* اختصارُ الورقة: لا وجودَ له خارج التجربة إطلاقاً */
+.trial-only-bar { display: none; }
+html[data-app-trial] .trial-only-bar { display: flex; }
+html[data-app-trial] .trial-only-bar > button { flex: 1 1 auto; }
+
+@media (max-width: 767.98px) {
+  /* البطاقاتُ: ثلاثٌ في الصفّ، حشوٌ وخطٌّ مضغوطان — نمطُ kpis في النموذج */
+  html[data-app-trial] [data-acc-cards] {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 5px !important;
+  }
+  html[data-app-trial] [data-acc-cards] > * {
+    padding: 6px 4px !important;
+    border-radius: 10px !important;
+  }
+  html[data-app-trial] [data-acc-cards] * { font-size: 10px !important; line-height: 1.5 !important; }
+  html[data-app-trial] [data-acc-cards] b,
+  html[data-app-trial] [data-acc-cards] [class*="text-2xl"],
+  html[data-app-trial] [data-acc-cards] [class*="text-xl"],
+  html[data-app-trial] [data-acc-cards] [class*="text-lg"] { font-size: 13px !important; font-weight: 800; }
+
+  /* الأقسامُ: شبكةٌ ثنائيّةٌ بأزرارٍ بيضاءَ حدوديّةٍ (نمط gbtn) */
+  html[data-app-trial] [data-acc-secs] {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+  html[data-app-trial] [data-acc-secs] > button {
+    justify-content: flex-start;
+    padding: 7px 8px !important;
+    font-size: 11px !important;
+    border-radius: 10px !important;
+    min-width: 0;
+    overflow: hidden;
+  }
+  html[data-app-trial] [data-acc-secs] > button > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
