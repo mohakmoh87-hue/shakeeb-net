@@ -1942,3 +1942,11 @@ html[data-app-trial] .tfm-wa .wa.down .wa-d {
 @media (prefers-reduced-motion: reduce) {
   html[data-app-trial] .tfm-wa .wa.down .wa-d { animation: none; box-shadow: 0 0 0 3px rgba(229, 72, 77, .45); }
 }
+
+/* مكتبُ الساسَين (سؤال محمد 2026-08-19): زرّا أودو للوحتَين يتقاسمان خانةَ أودو
+   نفسَها نصفَين متجاورَين — الصفُّ لا يتّسع مليمتراً، ولكلّ لوحةٍ زرُّها وشارتُها */
+html[data-app-trial] .trial-dockbar .td-slot:has(> button:nth-of-type(2)) > button {
+  width: 40px !important;
+  font-size: 9px !important;
+  padding-inline: 2px !important;
+}
