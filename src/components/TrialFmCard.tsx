@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import ChampionEmoji from "@/components/ChampionEmoji";
 import WaStatusBadge from "@/components/WaStatusBadge";
+import AchievementsModal from "@/components/AchievementsModal";
 import { hasTrialSkin } from "@/components/trialSkin";
 
 // ═════════ 🧪 مربّعُ «إدارة الفنيّين» في رئيسيّة النموذج (شاشة أ) ═════════

@@ -55,8 +55,10 @@ export default function WaStatusBadge() {
       <span className="wa-d" />
       {allUp ? "واتساب متصل" : `واتساب غير متصل ${down.length} مكتب`}
       {/* المكتبُ الذي يحتاجه لتقرير المدير وحدَه يُوسَم صريحاً — وهو أكثرُ ما التبس */}
+      {/* 🧪 data-trial-hide: في تطبيق التجربة يُحذف القوسان (طلب محمد 2026-08-19 —
+          كانا يصنعان تمريراً جانبيّاً فوق عمود الفنيّين الضيّق)؛ التفصيلُ باقٍ في الـtitle */}
       {!allUp && down.every((o) => o.need === "manager") && (
-        <span style={{ fontWeight: 400, fontSize: 10, marginInlineStart: 4 }}>(لتقرير المدير)</span>
+        <span data-trial-hide style={{ fontWeight: 400, fontSize: 10, marginInlineStart: 4 }}>(لتقرير المدير)</span>
       )}
     </button>
   );
