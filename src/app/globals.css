@@ -1878,3 +1878,15 @@ html[data-app-trial] .trial-dockbar .td-bell button {
 }
 /* تعويضُ فراغ المحتوى فوق الصفّ الموحَّد */
 html[data-app-trial] body:has(.trial-dockbar) [data-app-fullheight] { padding-bottom: 3.6rem !important; }
+
+/* إنذارُ مهلة أودو في مربّع الرئيسيّة — نبضُ النموذج الهادئ (لا وميضَ حادّاً يُنهك العين) */
+@keyframes tfmAlarm {
+  0%, 100% { background: #fee2e2; color: #b91c1c; }
+  50% { background: rgba(255, 255, 255, .85); color: #e5484d; }
+}
+html[data-app-trial] .tfm-legend .tfm-sla { animation: tfmAlarm 1.25s ease-in-out infinite; }
+html[data-app-trial] .tfm-legend .tfm-sla span,
+html[data-app-trial] .tfm-legend .tfm-sla b { color: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  html[data-app-trial] .tfm-legend .tfm-sla { animation: none; background: #fee2e2; color: #b91c1c; }
+}

@@ -6,6 +6,7 @@ import ChampionEmoji from "@/components/ChampionEmoji";
 import WaStatusBadge from "@/components/WaStatusBadge";
 import AchievementsModal from "@/components/AchievementsModal";
 import { hasTrialSkin } from "@/components/trialSkin";
+import { slaStateOf, type SlaCard } from "@/lib/odooSla";
 
 // ═════════ 🧪 مربّعُ «إدارة الفنيّين» في رئيسيّة النموذج (شاشة أ) ═════════
 //
@@ -29,6 +30,9 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
   const [done, setDone] = useState(demo?.done ?? 0);
   const [left, setLeft] = useState(demo?.left ?? 0);
   const [odoo, setOdoo] = useState(demo?.odoo ?? 0);
+  // ⏳ إنذارُ مهلة أودو في المربّع (فحص محمد 2026-08-19): عددُ التذاكر المفتوحة التي
+  //    تجاوزت عتبةَ الإنذار — بالعتبات الافتراضيّة لأنّ المربّعَ يجمع كلَّ المكاتب
+  const [odooHot, setOdooHot] = useState(0);
   const [leader, setLeader] = useState<{ name: string; points: number } | null>(demo?.leader ?? null);
   // 🔴 لقطة محمد (2026-08-19): «عند الضغط على الفني فهد يفتح صفحة ادارة الفنيين وليس
   //    نافذة انجازات الفنيين كما في السابق» — فالشارةُ تفتح النافذةَ لا الرابط
@@ -45,10 +49,15 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
       .then((d) => {
         setOn(true);
         if (!d?.cards) return;
-        const cards = d.cards as { done?: boolean }[];
+        const cards = d.cards as ({ done?: boolean } & SlaCard)[];
         setDone(cards.filter((c) => c.done).length);
         setLeft(cards.filter((c) => !c.done).length);
         setOdoo(Number(d.odooOpen ?? 0));
+        const now = new Date();
+        setOdooHot(cards.reduce((n, c) => {
+          const lv = slaStateOf(c, now).level;
+          return n + (lv === "danger" || lv === "over" ? 1 : 0);
+        }, 0));
       })
       .catch(() => setOn(true));
     fetch("/api/field/achievements?leader=1")
@@ -96,7 +105,9 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
           <div className="tfm-legend">
             <div><span>منجزة</span><b>{fmt(done)}</b></div>
             <div><span>متبقّية</span><b>{fmt(left)}</b></div>
-            <div><span>تذاكر أودو</span><b>{fmt(odoo)}</b></div>
+            <div className={odooHot > 0 ? "tfm-sla" : undefined} title={odooHot > 0 ? `⏳ ${odooHot} تذكرة تجاوزت مهلةَ سوبر سيل` : undefined}>
+              <span>تذاكر أودو{odooHot > 0 ? " ⏳" : ""}</span><b>{fmt(odoo)}</b>
+            </div>
           </div>
         </div>
         {leader && (
