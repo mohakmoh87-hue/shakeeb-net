@@ -181,9 +181,28 @@ export async function DELETE(
   if (!(await ownsTower(g.session, Number(id)))) {
     return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   }
+  // ═════ حادثة الشدن (2026-08-19): حذفُ مكتبٍ كاملِ البيانات بلا أثرِ تدقيق ═════
+  // حُذف مكتبُ الشدن (٢٤٥٢ مشتركاً و٤٢٧ حركةَ مال) بضغطةٍ فبدا «كلُّ شيءٍ ممسوحاً»،
+  // ولم يعرف أحدٌ الفاعلَ لأنّ الحذف كان صامتاً. فيُسجَّل الآن باسم فاعله ومعه
+  // حجمُ ما أخفى — والحذفُ يبقى تعليمَ علَمٍ عكسيّاً كما هو (البيانات لا تُمسّ).
+  const towerId = Number(id);
+  const [name, subsCount, moneyCount] = await Promise.all([
+    prisma.tower.findUnique({ where: { id: towerId }, select: { name: true } }).then((t) => t?.name ?? String(towerId)),
+    prisma.subscriber.count({ where: { towerId, isDeleted: false } }),
+    prisma.moneyTx.count({ where: { towerId, isDeleted: false } }),
+  ]);
   await prisma.tower.update({
-    where: { id: Number(id) },
+    where: { id: towerId },
     data: { isDeleted: true },
   });
+  await prisma.auditLog.create({
+    data: {
+      userId: g.session?.userId ?? null,
+      action: "TOWER_DELETE",
+      entity: "tower",
+      entityId: String(towerId),
+      details: `حذف مكتب «${name}» — كان يضمّ ${subsCount} مشتركاً و${moneyCount} حركةَ مال (حذفٌ ناعمٌ قابلٌ للإرجاع)`,
+    },
+  }).catch(() => { /* التسجيلُ لا يُفشل الحذف */ });
   return NextResponse.json({ ok: true });
 }

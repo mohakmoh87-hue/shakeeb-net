@@ -141,5 +141,17 @@ export async function POST(request: Request) {
   // ومخزنه يُولد بكتالوج الوكيل كاملاً بكمية صفر — فلا يبدأ مكتبٌ جديد بشاشة مخزنٍ فارغة
   const { ensureOfficeCatalog } = await import("@/lib/itemCatalog");
   await ensureOfficeCatalog(agentId, [created.id], { force: true }).catch(() => {});
+  // ═════ حادثة الشدن (2026-08-19): إنشاءُ مكتبٍ بلا أثرِ تدقيقٍ أعمى التحقيق ═════
+  // حُذف مكتبُ الشدن وأُنشئ بديلٌ فارغٌ باسمه فبدا «كلُّ شيءٍ ممسوحاً» — ولم يعرف
+  // أحدٌ الفاعلَ لأنّ العمليّتَين كانتا بلا تسجيل. فكلُّ إنشاءٍ يُسجَّل باسم فاعله.
+  await prisma.auditLog.create({
+    data: {
+      userId: g.session?.userId ?? null,
+      action: "TOWER_CREATE",
+      entity: "tower",
+      entityId: String(created.id),
+      details: `إنشاء مكتب «${created.name ?? created.id}»`,
+    },
+  }).catch(() => { /* التسجيلُ لا يُفشل الإنشاء */ });
   return NextResponse.json(created, { status: 201 });
 }
