@@ -1561,3 +1561,59 @@ html[data-app-trial] .trial-opts-office {
 html[data-app-trial] .trial-tiles.big { padding-top: 0; gap: 8px; }
 html[data-app-trial] .trial-tiles.big .tile { padding: 14px 6px 11px; border-radius: 14px; font-size: 20px; gap: 5px; }
 html[data-app-trial] .trial-tiles.big .tile > span { font-size: 11.5px; }
+
+/* ---- ٢١) الغلافُ «شفّافٌ في المتصفّح · منبثقٌ في التجربة» + أزرارُه (2026-08-19 ليلاً) ----
+   نمطٌ معمَّم: كتلةٌ ثقيلةُ الأزرار تُلَفّ بـ trial-popable/trial-popcard فتبقى في
+   المتصفّح بمكانها حرفيّاً (display:contents) وتصير في التجربة نافذةً منبثقةً خلف
+   زرّ trial-popbtn — «ترتيب جميل… وانتبه ان لا تحذف شيء». */
+.trial-popable, .trial-popcard { display: contents; }
+.trial-row, .trial-popbtn { display: none; }
+
+html[data-app-trial] .trial-row { display: flex; gap: 6px; margin: 0 0 10px; }
+html[data-app-trial] .trial-popbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  padding: 8px 12px;
+  border-radius: 11px;
+  border: 1.4px solid #bfdcf4;
+  background: linear-gradient(168deg, #f7fbff 0%, #eaf4fd 100%);
+  color: #0d5490;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 1px 4px rgba(13, 84, 144, .10);
+  white-space: nowrap;
+}
+/* زرُّ «خيارات» بجانب بحث الرئيسيّة — عنصرٌ صغيرٌ داخل صفّ البحث، يسارَ المشاهد */
+html[data-app-trial] .searchbar .trial-popbtn { flex: 0 0 auto; padding: 6px 10px; }
+
+html[data-app-trial] .trial-popable { display: none; }
+html[data-app-trial] .trial-popable.open {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: rgba(6, 32, 58, .45);
+}
+html[data-app-trial] .trial-popable.open > .trial-popcard {
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+  max-height: 86dvh;
+  overflow-y: auto;
+  border-radius: 18px;
+  background: #fff;
+  padding: 10px;
+  box-shadow: 0 16px 44px rgba(6, 32, 58, .5);
+  animation: trialExpand .26s cubic-bezier(.16, 1, .3, 1);
+}
+/* البطاقةُ الداخليّة تفقد هامشَها السفليَّ داخل المنبثقة */
+html[data-app-trial] .trial-popable.open > .trial-popcard > * { margin-bottom: 0 !important; }
+
+/* روابطُ المربّعات (Link كبطاقة) ترث شكلَ .tile */
+html[data-app-trial] .trial-tiles .tile { text-decoration: none; }

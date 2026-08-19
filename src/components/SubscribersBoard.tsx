@@ -178,6 +178,9 @@ export default function SubscribersBoard() {
   const [invRows, setInvRows] = useState<InvRow[]>([]);
   // البند ٥ · «تنصيبات خارجيّة» — قائمةٌ للاطّلاع فقط + عدّادٌ على الزرّ
   const [extOpen, setExtOpen] = useState(false);
+  // 🧪 نافذةُ «خيارات» الرئيسيّة في التجربة (طلب محمد 2026-08-19 ليلاً): زرٌّ بجانب البحث
+  //    (يسارَ المشاهد، تابعٌ للنصف السفليّ) يفتح منبثقةً بكلّ أزرار hbtns — والشريطُ يُخفى
+  const [trialOpts, setTrialOpts] = useState(false);
   const [extRows, setExtRows] = useState<ExtRow[]>([]);
   const [extSel, setExtSel] = useState<Set<number>>(new Set());
   // دالّةٌ عاديّةٌ لا `useCallback`: المُصرِّفُ يرفض حفظَ التذكير هنا
@@ -538,8 +541,9 @@ export default function SubscribersBoard() {
     <div className="card" id="subs-board" ref={rootRef}>
       {/* ترويسة النموذج: العنوان + صفّ الأزرار الواحد + «مشترك جديد» وحالة واتساب */}
       <div className="ch">
-        {/* 🧪 في تطبيق التجربة: صفُّ الأزرار يُثبَّت أسفلَ الشاشة ورقةً تُطوى (data-app-bar شفّافة في المتصفّح) */}
-        <div data-app-bar className="hbtns">
+        {/* 🧪 في التجربة يُخفى هذا الصفُّ كاملاً (data-trial-hide) وتحلّ محلَّه نافذةُ
+            «خيارات» المنبثقة من زرٍّ بجانب البحث — المتصفّحُ كما هو حرفيّاً */}
+        <div data-trial-hide className="hbtns">
           {can("subscribers.import") && <Link className="gbtn" href="/subscribers/sas4">🔄 استيراد من SAS4</Link>}
           <Link className="gbtn" href="/debts">📑 ديون المشتركين</Link>
           {can("finance.view") && showLoanDebts && <Link className="gbtn" href="/loan-debts">💳 ديون القروض</Link>}
@@ -577,7 +581,36 @@ export default function SubscribersBoard() {
           <input type="checkbox" className="cb" checked={showAllTowers} onChange={(e) => setShowAllTowers(e.target.checked)} />
           جميع مشتركين المكاتب
         </label>
+        <button type="button" className="trial-popbtn" onClick={() => setTrialOpts(true)}>⚙️ خيارات</button>
       </div>
+
+      {trialOpts && (
+        <div className="trial-opts-wrap" onClick={() => setTrialOpts(false)}>
+          <div className="trial-opts" onClick={(e) => e.stopPropagation()}>
+            <div className="trial-opts-hd">
+              <b>⚙️ خيارات المشتركين</b>
+              <button type="button" onClick={() => setTrialOpts(false)} aria-label="إغلاق">✕</button>
+            </div>
+            <div className="trial-tiles big">
+              <button className="tile" onClick={() => { setTrialOpts(false); openEdit(null); }}>➕<span>مشترك جديد</span></button>
+              <button className="tile" disabled={!selected} style={!selected ? { opacity: .45 } : undefined} onClick={() => { if (selected) { setTrialOpts(false); openEdit(selected); } }}>✏️<span>تعديل المحدَّد</span></button>
+              {can("subscribers.delete") && (
+                <button className="tile" onClick={() => { setTrialOpts(false); setDelMenu(true); }}>🗑️<span>حذف</span></button>
+              )}
+              {can("subscribers.import") && <Link className="tile" href="/subscribers/sas4" onClick={() => setTrialOpts(false)}>🔄<span>استيراد من SAS4</span></Link>}
+              <Link className="tile" href="/debts" onClick={() => setTrialOpts(false)}>📑<span>ديون المشتركين</span></Link>
+              {can("finance.view") && showLoanDebts && <Link className="tile" href="/loan-debts" onClick={() => setTrialOpts(false)}>💳<span>ديون القروض</span></Link>}
+              <Link className="tile" href="/messages/compose" onClick={() => setTrialOpts(false)}>💬<span>رسالة للكل</span></Link>
+              {can("subscribers.delete") && (
+                <button className="tile" onClick={() => { setTrialOpts(false); openArchive(); }}>🗄️<span>المحذوفون</span></button>
+              )}
+              {(can("subscribers.manage") || can("subscribers.import")) && (
+                <button className="tile" onClick={() => { setTrialOpts(false); setExtOpen(true); }}>🏗️<span>تنصيبات خارجية</span>{extRows.length > 0 && <b className="tbadge">{extRows.length}</b>}</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {msg && <div style={{ margin: "0 16px 8px" }} className="rounded-lg bg-ok/10 px-3 py-1.5 text-center text-xs font-semibold text-ok">{msg}</div>}
 

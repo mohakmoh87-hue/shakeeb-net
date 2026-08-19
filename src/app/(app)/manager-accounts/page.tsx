@@ -412,16 +412,6 @@ export default function ManagerAccountsPage() {
           })}
       </div>
 
-      {/* 🧪 ورقةُ التطبيق (تظهر في التجربة وحدَها): اختصارُ الحركة الماليّة أسفل الشاشة
-          كنموذج actionbar — الضغطُ يفتح قسمَ «حركة جديدة» بصرفه وقبضه وتحويله */}
-      {!denied && data && (
-        <div data-app-dock className="trial-only-bar">
-          <button onClick={() => setSec("tx")} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-extrabold text-white">
-            💵 حركة جديدة — صرف · قبض · تحويل
-          </button>
-        </div>
-      )}
-
       {/* ══════ الأقسام — واحدٌ مفتوحٌ في كلّ مرّة ══════ */}
       {sec === "tx" && !denied && data && (
       <>

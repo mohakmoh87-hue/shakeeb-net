@@ -79,6 +79,11 @@ export default function CashboxPage() {
   const [officeId, setOfficeId] = useState<number | "">("");
   // فلتر حساب واحد (نثرية مثلاً) — يسار البحث الحرّ، فالبحث كان يبتلع الشريط كلّه
   const [accFilter, setAccFilter] = useState<number | "">("");
+  // 🧪 ترتيبُ هاتف التجربة (طلب محمد 2026-08-19 ليلاً): «الكثير من الازرار كلها ظاهرة
+  //    وهذا لا يليق بتطبيق هاتف» — كتلتا التصفية والحركة الجديدة تصيران منبثقتَين
+  //    خلف زرَّين، بلا حذفِ أيّ وظيفةٍ (الغلافُ شفّافٌ في المتصفّح display:contents)
+  const [trialFilter, setTrialFilter] = useState(false);
+  const [trialForm, setTrialForm] = useState(false);
   // مفتاح المدى: مطفأ = كل التواريخ (يُشعَل تلقائياً إن وصل الرابط بتاريخ من بطاقة الرئيسية)
   const [dateOn, setDateOn] = useState(false);
   // ===== مكاتب التسديد: ما عليها، وتسديده كلّه أو بعضه =====
@@ -428,8 +433,13 @@ export default function CashboxPage() {
       )}
 
       {/* بحث بالتاريخ (من – إلى) — يشمل اليومين، والإجماليات أعلاه تعكس النتيجة */}
-      {/* 🧪 أُزيلت data-app-bar (مراجعة نموذج محمد 2026-08-19): مرشّحُ التاريخ يبقى
-          داخل الصفحة كما في شاشة «المصروفات والمقبوضات» — لا في الورقة السفليّة */}
+      <div className="trial-row">
+        <button type="button" className="trial-popbtn" onClick={() => setTrialFilter(true)}>🔎 البحث والتصفية</button>
+        <button type="button" className="trial-popbtn" onClick={() => setTrialForm(true)}>➕ حركة جديدة</button>
+      </div>
+
+      <div className={`trial-popable ${trialFilter ? "open" : ""}`} onClick={() => setTrialFilter(false)}>
+      <div className="trial-popcard" onClick={(e) => e.stopPropagation()}>
       <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <DateRangeFilter
           on={dateOn} setOn={setDateOn} from={from} setFrom={setFrom} to={to} setTo={setTo}
@@ -483,9 +493,13 @@ export default function CashboxPage() {
           معروض {sortedTxs.length} من أصل {matched}{matched > sortedTxs.length ? " — ضيّق البحث لرؤية الباقي" : ""}
         </span>
       </div>
+      </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
         {/* نموذج قبض/صرف */}
+        <div className={`trial-popable ${trialForm ? "open" : ""}`} onClick={() => setTrialForm(false)}>
+        <div className="trial-popcard" onClick={(e) => e.stopPropagation()}>
         <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="mb-4 font-bold text-slate-800">حركة جديدة</h3>
           <div className="mb-4 grid grid-cols-2 gap-2">
@@ -553,6 +567,8 @@ export default function CashboxPage() {
             {saving ? "جاري الحفظ..." : type === "in" ? "تسجيل قبض" : "تسجيل صرف"}
           </button>
         </form>
+        </div>
+        </div>
 
         {/* سجل الحركات */}
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
