@@ -340,7 +340,7 @@ export default function SmsTemplatesPage() {
       <PageHeader title="قوالب الرسائل" subtitle="قوالب بتنسيق واتساب (*النص العريض*) بمتغيّرات تُستبدل ببيانات كل مشترك عند الإرسال" />
 
       {/* مبدّل المكتب: قوالب الأحداث معزولة لكل مكتب — قالب المكتب يغلب قالب الوكيل العام */}
-      <div className="mb-4 flex max-w-7xl flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+      <div data-app-bar className="mb-4 flex max-w-7xl flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
         <span className="text-sm font-semibold text-slate-600">🏢 قوالب:</span>
         <select value={officeSel} onChange={(e) => setOfficeSel(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-mynet-blue">
           <option value="">عامة لكل المكاتب (الوكيل)</option>

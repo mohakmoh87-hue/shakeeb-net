@@ -972,3 +972,25 @@ html[data-app-trial] [role="menu"] { display: flex !important; flex-direction: c
 /* ---- ٧) القائمةُ الجانبيّة: ٧٥٪ من العرض ومن اليمين ----
    طلبُ محمد: «ارجع القائمة لتظهر من اليمين» بعد أن جرّب اليسار. */
 html[data-app-trial] [data-app-drawer] { width: 75vw !important; max-width: 75vw !important; }
+
+/* ---- ٨) التراصُّ فوق شريط تنقّل الهاتف (بلاغ محمد 2026-08-19) ----
+   «القائمة تنطوي وخلفها زران واحد هو الرئيسية»: الزرّان هما شريطُ تنقّل الموقع
+   السفليُّ («الرئيسيّة» و«التقرير» — AppShell z-40) وكان المقبضُ والورقةُ يجلسان
+   فوقه فيتزاحمان. فالرصُّ الآن طبقات: التنقّلُ في القاع دائماً → المقبضُ فوقه →
+   والورقةُ تنفتح فوقهما. ولا يسري إلّا حيث يظهر التنقّلُ أصلاً: شاشةُ هاتفٍ
+   (md:hidden = تحت 768px) ولغير الفنيّ (الفنيُّ بلا واجهة موقعٍ فلا شريطَ له). */
+@media (max-width: 767.98px) {
+  html[data-app-trial]:not([data-app-role="tech"]) .app-bar-handle {
+    bottom: calc(2.9rem + env(safe-area-inset-bottom));
+    padding-bottom: 0.4rem; /* مساحةُ الإيماءة يحملها شريطُ التنقّل تحتَه */
+  }
+  html[data-app-trial]:not([data-app-role="tech"]) [data-app-bar] {
+    bottom: calc(2.9rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(0.55rem + 2.6rem);
+  }
+  /* والفراغُ أسفل المحتوى يتّسع للطبقتَين: التنقّل + المقبض */
+  html[data-app-trial]:not([data-app-role="tech"]) body:has([data-app-bar]) main,
+  html[data-app-trial]:not([data-app-role="tech"]) body:has([data-app-bar]) [data-app-fullheight] {
+    padding-bottom: calc(6.2rem + env(safe-area-inset-bottom)) !important;
+  }
+}

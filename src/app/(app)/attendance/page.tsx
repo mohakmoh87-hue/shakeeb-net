@@ -202,7 +202,7 @@ export default function AttendancePage() {
         subtitle={`حضورُ اليوم ${stamped.length} من ${techs.length}${open.length ? ` · ومعلَّقٌ من أيّامٍ سابقة: ${open.length}` : ""}`}
       />
 
-      <div className="mb-4 flex max-w-5xl flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+      <div data-app-bar className="mb-4 flex max-w-5xl flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
         <span className="text-sm font-semibold text-slate-600">المكتب:</span>
         <select value={officeSel} onChange={(e) => setOfficeSel(e.target.value)}
           className="rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-mynet-blue">

@@ -538,7 +538,8 @@ export default function SubscribersBoard() {
     <div className="card" id="subs-board" ref={rootRef}>
       {/* ترويسة النموذج: العنوان + صفّ الأزرار الواحد + «مشترك جديد» وحالة واتساب */}
       <div className="ch">
-        <div className="hbtns">
+        {/* 🧪 في تطبيق التجربة: صفُّ الأزرار يُثبَّت أسفلَ الشاشة ورقةً تُطوى (data-app-bar شفّافة في المتصفّح) */}
+        <div data-app-bar className="hbtns">
           {can("subscribers.import") && <Link className="gbtn" href="/subscribers/sas4">🔄 استيراد من SAS4</Link>}
           <Link className="gbtn" href="/debts">📑 ديون المشتركين</Link>
           {can("finance.view") && showLoanDebts && <Link className="gbtn" href="/loan-debts">💳 ديون القروض</Link>}
