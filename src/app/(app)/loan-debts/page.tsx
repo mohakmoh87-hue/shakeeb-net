@@ -149,7 +149,7 @@ export default function LoanDebtsPage() {
       {/* ═════ طلبُ محمد · مطالبةُ أصحاب القروض: رسالةٌ أو وصلٌ مطبوع ═════
           يظهر الشريطُ عند التحديد فقط فلا يزحم الشاشةَ حين لا حاجة. */}
       {checked.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-mynet-blue/30 bg-sky-50 px-4 py-2.5">
+        <div data-app-bar className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-mynet-blue/30 bg-sky-50 px-4 py-2.5">
           <span className="text-sm font-bold text-slate-700">
             محدَّد: {checked.size}
             {/* رسالةٌ بلا رقمٍ تُحسَب فاشلةً وتُزحم سجلَّ الرسائل — فيُقال العددُ قبل الإرسال */}

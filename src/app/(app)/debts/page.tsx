@@ -202,8 +202,8 @@ export default function DebtsPage() {
           <div className="text-xs text-slate-500">عدد المدينين: {debtors.length}</div>
         </div>
 
-        {/* شريط الإجراءات الجماعية */}
-        <div className="flex items-center gap-2">
+        {/* شريط الإجراءات الجماعية — يُثبَّت أسفلَ الشاشة في التطبيق (data-app-bar) */}
+        <div data-app-bar className="flex items-center gap-2">
           <span className="text-sm text-slate-500">المحدّدون: {checked.size}</span>
           <button onClick={paySelected} disabled={busy || checked.size === 0} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">💵 تسديد المحدّدين</button>
           <button onClick={messageSelected} disabled={busy || checked.size === 0} className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-40">💬 رسالة مطالبة للمحدّدين</button>

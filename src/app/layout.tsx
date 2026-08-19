@@ -51,6 +51,13 @@ export default function RootLayout({
             __html: "try{var w=window,n=navigator;if((w.matchMedia&&w.matchMedia('(display-mode: standalone)').matches)||n.standalone===true||(w.Capacitor&&w.Capacitor.isNativePlatform&&w.Capacitor.isNativePlatform())){document.documentElement.setAttribute('data-app-mode','');}}catch(e){}",
           }}
         />
+        {/* 🧪 علَمُ تجربة الطراز مبكّراً (بلا وميض): كعكةُ trialSkin يضعها هاتفُ محمد وحدَه
+            من صفحة /trial — لا جهازَ في الإنتاج يحملها فلا يتغيّر عندهم شيء (2026-08-19) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "try{if(document.cookie.split('; ').indexOf('trialSkin=1')>-1){document.documentElement.setAttribute('data-app-trial','');}}catch(e){}",
+          }}
+        />
       </head>
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
         <PwaRegister />

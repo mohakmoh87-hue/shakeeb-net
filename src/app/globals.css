@@ -143,8 +143,14 @@ body {
 /* ===== وضع التطبيق: يُفعَّل بـ html[data-app-mode] (PWA مثبّت أو التطبيق الأصلي Capacitor) ===== */
 /* يضبطه سكربت الرأس مبكّراً (بلا وميض) + AppModeInit احتياطاً. التطبيق الأصلي لا يُبلّغ standalone. */
 /* إخفاء واجهة الموقع الكاملة (الشريط العلوي + القائمة المنسدلة) وأي عنصر خاصّ بالموقع */
-html[data-app-mode] [data-site-chrome],
-html[data-app-mode] [data-site-only] { display: none !important; }
+/* 🔑 والإخفاءُ للفنيّ وحدَه (طراز 2026-08-15): «إذا سُجّل بيوزر مدير فيجب الدخولُ إلى
+   كامل الموقع مثل التسجيل العادي». ومديرٌ بلا شريطٍ ولا قائمةٍ = موقعٌ مفتوحٌ لا يُبلَغ
+   منه شيء. فيضع StandaloneLock وسمَ الدور بعد سؤال الخادم، والافتراضُ قبل وصول الجواب
+   هو الإخفاء (سلوكُ التطبيق القديم) فلا يومض شريطٌ ثمّ يختفي.
+   🧪 والوسمُ لا يُكتب اليومَ إلّا تحت علَم التجربة (trialSkin) — فبدونه هذه القاعدة
+   مطابقةٌ حرفيّاً لسلوك الإنتاج القائم. */
+html[data-app-mode]:not([data-app-role="manager"]) [data-site-chrome],
+html[data-app-mode]:not([data-app-role="manager"]) [data-site-only] { display: none !important; }
 /* إظهار عناصر التطبيق */
 html[data-app-mode] [data-app-only] { display: block !important; }
 /* توسيط اللوحة الفارغة داخل التطبيق */
@@ -825,3 +831,144 @@ input[type="number"] { direction: ltr; }
 @media (prefers-reduced-motion: reduce) {
   .guard-alarm, .guard-glyph { animation: none !important; }
 }
+
+/* ============================================================================
+   🧪 جلدُ التطبيق (App Skin) — تخطيطُ الهاتف على صفحات الموقع نفسِها
+   ============================================================================
+   🔑 القرارُ الهندسيّ (طراز 2026-08-15): التطبيقُ **لا يملك صفحاتٍ خاصّةً به**.
+   يعرض صفحةَ الموقع ذاتَها ويُعيد تخطيطَها بالـCSS. وبهذا يكون التطابقُ
+   **بنيويّاً**: كلُّ زرٍّ أو عمودٍ أو نافذةٍ تُضاف للموقع غداً تظهر في التطبيق
+   بلا عمل، ولا يعود ممكناً أن «يسقط» شيءٌ — وهي العلّةُ التي أخرجت ١١٤ فارقاً
+   حين كان النموذجُ يبني صفحاتٍ موازية.
+
+   🧪 مرحلةُ التجربة (2026-08-19): المفتاحُ [data-app-trial] — يضعه سكربتُ الرأس
+   من كعكة trialSkin التي لا يحملها إلّا هاتفُ محمد (صفحة /trial). فالإنتاجُ
+   كلُّه (تطبيقُ الفنيّين وكلُّ PWA) صفرُ فرق. وعند اعتماد الطراز يُستبدل
+   المفتاحُ بـ[data-app-mode] فتنتقل التعديلاتُ نفسُها للتطبيق الحقيقيّ.
+
+   والعلاماتُ التي تفهمها هذه الطبقة (تُوضع في صفحات الموقع، وهي شفّافةٌ فيه):
+     data-app-bar   → شريطُ أزرارٍ يُثبَّت أسفلَ الشاشة في التطبيق
+     data-hint      → نصٌّ إرشاديٌّ يُخفى في التطبيق (موجودٌ في صفحة الحاسبة)
+     data-app-tight → حاوية صفوفٍ تتقارب سطورُها
+   ========================================================================= */
+
+/* ---- ٠) الثيم: أزرقُ شكيب نفسُه (قرارُ محمد في مراجعة النموذج: «باللون الازرق
+   يحاكي الوان الموقع» و«رؤوس كل القوائم بنفس اللون») — فالتجربةُ تُرجِع الأزرقَ
+   فوق كهرمانيّ الإنتاج، والتطبيقُ يختلف عن الموقع بالتخطيط لا باللون. */
+html[data-app-trial] {
+  --mynet-blue: #1c8fe6;
+  --mynet-blue-dark: #0f6fbf;
+  --mynet-blue-deep: #0a4f8a;
+}
+html[data-app-trial] .field-canvas { background: linear-gradient(160deg, #1c8fe6 0%, #0f6fbf 60%, #0a4f8a 100%) !important; }
+
+/* ---- ١) الأزرارُ أسفلَ الشاشة ----
+   طلبُ محمد: «كل الخيارات في جميع الصفحات تكون في اسفل الشاشة». والشريطُ يلتصق
+   بأسفل النافذة فوق المحتوى، ويحترم مساحةَ الإيماءة في أندرويد/iOS. */
+html[data-app-trial] [data-app-bar] {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+  padding: 0.55rem 0.7rem calc(0.55rem + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.93);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid #dbeafe;
+  box-shadow: 0 -6px 20px rgba(15, 111, 191, 0.13);
+}
+/* أزرارُ الشريط تتوزّع بالتساوي فلا يتيه زرٌّ صغيرٌ في الطرف */
+html[data-app-trial] [data-app-bar] > * { flex: 1 1 7.5rem; min-width: 0; }
+/* 🔑 ورقةٌ تُطوى لا شريطٌ ثابت (طلبُ محمد 2026-08-15):
+   «تاخذ ربع الشاشة الاسفل بشكل ثابت ودائم وتخفي خلفها خيارات … ويجب ان يمكن
+   اخفائها وفتحها». فالشريطُ مُثبَّتٌ فوق الصفحة لا في تدفّقها، وثباتُه يحجب
+   الربعَ الأسفل دائماً — وفي حسابات المدير يقع تحته سجلُّ الحركات وأزرارُ
+   الحذف فتصير غيرَ قابلةٍ للبلوغ. فيَنزلق خارجَ الشاشة حتى يُطلَب.
+   والحدُّ ربعُ الشاشة (25vh) بنصّ طلبه، ويُمرَّر داخلَه إن زادت أزرارُه. */
+html[data-app-trial] [data-app-bar] {
+  max-height: 25vh;
+  overflow-y: auto;
+  transform: translateY(calc(100% + 2rem));
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  padding-bottom: calc(0.55rem + env(safe-area-inset-bottom) + 2.6rem);
+}
+html[data-app-trial][data-appbar-open] [data-app-bar] { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  html[data-app-trial] [data-app-bar] { transition: none; }
+}
+
+/* المقبضُ لا وجودَ له خارج التجربة — الشريطُ هناك في تدفّق الصفحة كما هو اليوم */
+.app-bar-handle { display: none; }
+
+/* مقبضُ الفتح/الطيّ — يبقى فوق الشريط في كلتا الحالتَين فلا يُغلَق على نفسه */
+html[data-app-trial] .app-bar-handle {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 41;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0 calc(0.4rem + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #1c8fe6 0%, #0f6fbf 100%);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 -4px 16px rgba(10, 79, 138, 0.28);
+}
+html[data-app-trial] .app-bar-grip {
+  width: 2.1rem;
+  height: 0.24rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+/* 🛡️ وفراغٌ أسفل المحتوى **بقدر المقبض وحدَه** — فالشريطُ مطويٌّ في الأصل ولا
+   يحجب شيئاً، وحين يُفتح فبطلبِ المستخدم ولحظةً واحدة. ويُطبَّق بـ:has فلا
+   يحتاج علامةً ثانيةً في الصفحة: علامةٌ منسيّةٌ واحدةٌ كانت تكفي لإخفاء آخرِ
+   سطرٍ في صفحةٍ كاملة. */
+html[data-app-trial] body:has([data-app-bar]) main,
+html[data-app-trial] body:has([data-app-bar]) [data-app-fullheight] { padding-bottom: 3.4rem !important; }
+
+/* ---- ٢) رؤوسُ القوائم بلونٍ واحد ----
+   طلبُ محمد: «ايضا رؤوس كل الفوائم بنفس اللون» — زرقةُ خلفيّةِ المجموع نفسُها. */
+html[data-app-trial] thead th {
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%) !important;
+  color: #0a4f8a !important;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* ---- ٣) صفوفٌ متقاربة ----
+   طلبُ محمد: «لماذا المساحات الكبيرة بين سطر واخر فالمساحة الوحيدة الفارغة يجب
+   ان تكون بين اخر سطر وبين الازرار في الاسفل». */
+html[data-app-trial] td { padding-block: 0.3rem !important; }
+html[data-app-trial] [data-app-tight] > * + * { margin-top: 0.25rem !important; }
+
+/* ---- ٤) بلا نصوصٍ إرشاديّة ----
+   طلبُ محمد: «ازل الكلمات والسطر الدلالية والكلمات التوضيحية من جميع الصفحات
+   فهي موجودة على صفحة الحاسبة ولا داعي لها في التطبيق». */
+html[data-app-trial] [data-hint] { display: none !important; }
+
+/* ---- ٥) الجداولُ تُمرَّر أفقيّاً ولا تُقَصّ ----
+   شكوى محمد: «كل ما هو موجود في متصفح الحاسبة يجب ان يكون مرئياً في متصفح الهاتف».
+   ⚠️ الحاويةُ هي التي تُمرَّر لا الجدولُ نفسُه: display:block على table يُسقط
+   عرضَ w-full في جداولَ كثيرةٍ هنا فتنكمش إلى عرض محتواها. */
+html[data-app-trial] :is(.overflow-hidden, .overflow-x-hidden, .rounded-xl, .rounded-2xl):has(> table),
+html[data-app-trial] div:has(> table) { overflow-x: auto !important; }
+
+/* ---- ٦) القوائمُ تنفتح رأسيّاً ----
+   طلبُ محمد: «عند فتح قائمة تكون خياراتها من الاعلى الى اسفل وليس واحدة بجانب الاخرى». */
+html[data-app-trial] [role="menu"] { display: flex !important; flex-direction: column !important; }
+
+/* ---- ٧) القائمةُ الجانبيّة: ٧٥٪ من العرض ومن اليمين ----
+   طلبُ محمد: «ارجع القائمة لتظهر من اليمين» بعد أن جرّب اليسار. */
+html[data-app-trial] [data-app-drawer] { width: 75vw !important; max-width: 75vw !important; }

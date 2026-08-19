@@ -7,6 +7,7 @@ import CompletionNotifier from "@/components/CompletionNotifier";
 import StandaloneLock from "@/components/StandaloneLock";
 import PlanBanner from "@/components/PlanBanner";
 import ClientErrorReporter from "@/components/ClientErrorReporter";
+import AppBarHandle from "@/components/AppBarHandle";
 
 // غلاف الصفحات المحمية: شريط أدوات علوي + المحتوى
 export default async function AppLayout({
@@ -23,6 +24,7 @@ export default async function AppLayout({
         <div className="flex min-h-screen flex-col">
           <PlanBanner agentId={tech.agentId ?? null} />
           <ClientErrorReporter />
+          <AppBarHandle />
           <main className="flex-1">{children}</main>
         </div>
       );
@@ -51,6 +53,9 @@ export default async function AppLayout({
 
       {/* في التطبيق المثبّت: يحصر التنقّل بإدارة الفنيين لأي حساب */}
       <StandaloneLock />
+
+      {/* 🧪 مقبضُ شريط الخيارات — لا يظهر إلّا تحت علَم التجربة وفي صفحةٍ تحمل شريطاً فعلاً */}
+      <AppBarHandle />
 
       {/* مُبلّغُ أخطاء الواجهة — كلُّ انهيارٍ في أيّ متصفّحٍ يُسجَّل في سجلّ التدقيق */}
       <ClientErrorReporter />

@@ -195,7 +195,7 @@ export default function CardsPage() {
 
       {view === "available" ? (
         <div>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div data-app-bar className="mb-3 flex flex-wrap items-center gap-2">
             <select value={availFilter} onChange={(e) => setAvailFilter(Number(e.target.value) || "")} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
               <option value="">كل الفئات ({avail.length})</option>
               {stats.map((s) => <option key={s.packageId} value={s.packageId}>{s.name}</option>)}
