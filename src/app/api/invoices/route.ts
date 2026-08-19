@@ -185,6 +185,7 @@ export async function POST(request: Request) {
   const number = (last?.number ?? 0) + 1;
 
   let rewardDiscount = 0;
+    let redeemLogId: number | null = null; // سجلُّ الخصم — يُربط refId بالفاتورة (عالٍ ب)
   let invoice;
   try {
   {
@@ -217,6 +218,7 @@ export async function POST(request: Request) {
         agentId: session?.agentId ?? null, createdByUser: session?.username, createdByName: session?.fullName ?? undefined,
       });
       rewardDiscount = r?.discount ?? 0;
+      redeemLogId = r?.logId ?? null; // يُربط بالفاتورة بعد إنشائها — ليجدَه عكسُ الحذف قطعيّاً
     }
     const netTotal = Math.max(0, total - rewardDiscount); // المستحقّ بعد المكافأة
     // بيع ماستر: كامل (masterAmount=0) أو مختلط «نقدي + ماستر» — يغطّي المجموع تماماً بلا دين
@@ -251,6 +253,10 @@ export async function POST(request: Request) {
         towerId,
       },
     });
+    // 🔗 عالٍ (ب): صفُّ خصم المكافأة يُربط بهذه الفاتورة — فعكسُ حذفها يجده بالمعرّف
+    if (redeemLogId != null) {
+      await tx.rewardLog.update({ where: { id: redeemLogId }, data: { refId: inv.id } }).catch(() => {});
+    }
 
     for (const it of items) {
       await tx.invoiceItem.create({

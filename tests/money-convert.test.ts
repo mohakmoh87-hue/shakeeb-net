@@ -45,7 +45,10 @@ describe("أ-٥/٣ · تحويلُ الوصل بين الماستر والنقد
     // ويُضيفه إلى سطر الماستر معاً.
     const src = read(API);
     assert.ok(/subscriptionEntry\.updateMany[\s\S]{0,200}isMaster: toMaster/.test(src), "قيدُ التفعيل لا يُوسَم — يُعَدُّ المالُ مرّتَين");
-    assert.ok(/invoice\.update[\s\S]{0,120}type: toMaster \? "ماستر" : null/.test(src), "نوعُ الفاتورة لا يتبدّل");
+    // عالٍ (و) 2026-08-19: العودةُ تستدلّ النوعَ (بيع/بيع مباشر) — كتابةُ null كانت
+    // تُسقط الفاتورةَ من التقارير (NOT type=ماستر يستبعد NULL في SQL)
+    assert.ok(/type: toMaster \? "ماستر" : backType/.test(src), "نوعُ الفاتورة لا يتبدّل");
+    assert.ok(!/type: toMaster \? "ماستر" : null/.test(src), "عادت كتابةُ null — الفاتورةُ ستختفي من التقارير");
     assert.ok(/\$transaction/.test(src), "الطرفان بلا معاملة — انقطاعٌ بينهما يترك تناقضاً");
   });
 

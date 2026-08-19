@@ -35,7 +35,7 @@ describe("حرِجة ٣ · دَينُ carry ذرّيٌّ في المسارات �
   const sites: [string, RegExp, string][] = [
     ["src/app/api/subscribers/[id]/activate/route.ts", /carry: \{ increment: fullPaid \? 0 : grandTotal - paid \}/, "التفعيل"],
     ["src/app/api/debts/[id]/pay/route.ts", /carry: \{ decrement: amount \}/, "تسديد الدين"],
-    ["src/app/api/subscriptions/route.ts", /carry: \{ increment: calc\.total - paid \}/, "الاشتراكات"],
+    // (مسارُ الاشتراكات: أُزيل POST الموروثُ كاملاً — عالٍ أ — يُحرَس أدناه بغياب أيّ كتابة)
     ["src/app/api/invoices/route.ts", /carry: \{ increment: remainder \}/, "الفواتير بالدين"],
   ];
   for (const [file, re, label] of sites) {
@@ -52,6 +52,13 @@ describe("حرِجة ٣ · دَينُ carry ذرّيٌّ في المسارات �
       assert.ok(!/data: \{[\s\S]*?\bcarry: (?:newCarry|calc\.newCarry|\(subscriber)/.test(c),
         `${file}: كتابةُ carry مطلقةٌ عادت داخل data:`);
     }
+  });
+});
+
+describe("أ+٣ · مسارُ الاشتراكات الموروث", () => {
+  test("لا كتابةَ carry فيه إطلاقاً (أُزيل POST — عالٍ أ)", () => {
+    const c = code("src/app/api/subscriptions/route.ts");
+    assert.ok(!/carry:/.test(c), "عادت كتابةُ carry في المسار الموروث");
   });
 });
 

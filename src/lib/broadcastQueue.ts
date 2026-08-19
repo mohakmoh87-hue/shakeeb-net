@@ -32,11 +32,45 @@ const EXPIRE_H = 20;            // المنتظرُ فوقها يُختَم فا
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ═════ 🔴 عالٍ (ج) · هدنةُ المكتب المطفأ (المسحُ العدائيّ 2026-08-19) ═════
+// كان الساحبُ يحجز الأقدمَ **عالميّاً**: صفُّ مكتبٍ حاسبتُه مطفأةٌ في رأس الطابور
+// يُحجَز، يُرى «غير مشغّلة»، يُفَكّ، ويُحجَز ثانيةً — إلى الأبد. فتُحجَب رسائلُ
+// **كلّ** المكاتب الأخرى الجاهزةِ خلفه حتى ٢٠ ساعة.
+// 🔑 الآن: مكتبٌ ثبت غيابُه يدخل هدنةً (دقيقة) تُستثنى صفوفُ مشتركيه من الحجز،
+//   فيعبر الطابورُ إلى المكاتب الحيّة فوراً. وصفوفُه **تبقى منتظرةً كما كانت**
+//   (لا تُختَم فشلاً) وتُلتقَط حين تنقضي هدنتُه — بمؤقّتِ إيقاظٍ ذاتيٍّ لأنّ
+//   الركلاتِ الخارجيّةَ (إقلاعٌ/بثٌّ جديد) قد لا تجيء في الوقت المناسب.
+const gq = globalThis as unknown as { __bqCooldown?: Map<number, number>; __bqWake?: boolean };
+function cooldowns(): Map<number, number> {
+  if (!gq.__bqCooldown) gq.__bqCooldown = new Map();
+  return gq.__bqCooldown;
+}
+function activeCooldownOffices(): number[] {
+  const now = Date.now();
+  const m = cooldowns();
+  for (const [k, until] of m) if (until <= now) m.delete(k); // تنظيفُ المنقضي
+  return [...m.keys()];
+}
+
 type Claimed = { id: number; subscriberId: number | null; phone: string | null; text: string; templateType: string | null };
 
-/** حَجزُ أقدمِ صفٍّ معلّقٍ ذرّيّاً — عبارةٌ واحدة، فلا يلتقطه ساحبان أبداً. */
-async function claimNext(): Promise<Claimed | null> {
-  const rows = await prisma.$queryRaw<Claimed[]>`
+/** حَجزُ أقدمِ صفٍّ معلّقٍ ذرّيّاً — عبارةٌ واحدة، فلا يلتقطه ساحبان أبداً.
+ *  ويستثني صفوفَ مكاتبِ الهدنة (حاسباتُها ثبت غيابُها للتوّ) فلا يعلق الطابورُ خلفها.
+ *  🔒 العزلُ كما كان: الساحبُ خادميٌّ يُرسل كلَّ رسالةٍ من جلسة مكتبِ صاحبها. */
+async function claimNext(excludeOffices: number[]): Promise<Claimed | null> {
+  const rows = excludeOffices.length
+    ? await prisma.$queryRaw<Claimed[]>`
+    UPDATE messages SET error = ${CLAIM_MARK}, "updatedAt" = now()
+     WHERE id = (
+       SELECT m.id FROM messages m
+        LEFT JOIN subscribers s ON s.id = m."subscriberId"
+        WHERE m.channel = 'WHATSAPP' AND m.status = 'PENDING' AND m.error = ${QUEUE_MARK}
+          AND (s."towerId" IS NULL OR NOT (s."towerId" = ANY(${excludeOffices})))
+        ORDER BY m.id
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED)
+     RETURNING id, "subscriberId", phone, text, "templateType"`
+    : await prisma.$queryRaw<Claimed[]>`
     UPDATE messages SET error = ${CLAIM_MARK}, "updatedAt" = now()
      WHERE id = (
        SELECT id FROM messages
@@ -83,10 +117,24 @@ async function drainLoop(): Promise<void> {
     return img;
   };
   for (;;) {
-    const job = await claimNext();
-    if (!job) return; // الطابورُ فرغ — ينام حتى ركلةٍ قادمة (بثٌّ جديدٌ أو دوريّةٌ أو إقلاع)
+    const job = await claimNext(activeCooldownOffices());
+    if (!job) {
+      // لا صفَّ قابلاً للحجز. إن كانت ثمّةَ هدنٌ ساريةٌ وصفوفٌ منتظرة، يوقظ الساحبُ
+      // نفسَه عند انقضاء أقربِ هدنةٍ — فلا يعتمد على ركلةٍ خارجيّةٍ قد لا تجيء.
+      const m = cooldowns();
+      if (m.size && !gq.__bqWake) {
+        const waiting = await prisma.message.count({ where: { channel: "WHATSAPP", status: "PENDING", error: QUEUE_MARK } }).catch(() => 0);
+        if (waiting > 0) {
+          const wakeIn = Math.max(5_000, Math.min(...m.values()) - Date.now() + 1_000);
+          gq.__bqWake = true;
+          setTimeout(() => { gq.__bqWake = false; kickBroadcastDrainer("انقضت هدنةُ مكتب"); }, wakeIn);
+        }
+      }
+      return; // ينام حتى ركلةٍ قادمة (بثٌّ جديدٌ أو إيقاظُ هدنةٍ أو إقلاع)
+    }
 
     let outcome: { ok: boolean; error?: string };
+    let jobTowerId: number | null = null; // مكتبُ صاحب الرسالة — لهدنة الغياب
     try {
       if (!job.phone) outcome = { ok: false, error: "لا يوجد رقم هاتف" };
       else {
@@ -95,6 +143,7 @@ async function drainLoop(): Promise<void> {
           ? await prisma.subscriber.findUnique({ where: { id: job.subscriberId }, select: { towerId: true } })
           : null;
         const towerId = sub?.towerId ?? null;
+        jobTowerId = towerId; // لفرع الغياب: هدنةُ المكتب الصحيح
         const office = towerId != null
           ? await prisma.tower.findUnique({ where: { id: towerId }, select: { agentId: true } })
           : null;
@@ -114,6 +163,12 @@ async function drainLoop(): Promise<void> {
     const offline = !outcome.ok && /غير مشغّلة|غير متصل|غير جاهز/.test(outcome.error ?? "");
     if (offline) {
       await releaseClaim(job.id).catch(() => {});
+      if (jobTowerId != null) {
+        // هدنةٌ لهذا المكتب وحدَه — والحلقةُ تكمل فوراً إلى رسائل المكاتب الحيّة
+        cooldowns().set(jobTowerId, Date.now() + OFFLINE_RETRY_MS);
+        continue;
+      }
+      // رسالةٌ بلا مكتبٍ (تقاريرُ بلا مشترك): السلوكُ القديم — نومٌ قصيرٌ ثمّ محاولة
       await sleep(OFFLINE_RETRY_MS);
       continue;
     }

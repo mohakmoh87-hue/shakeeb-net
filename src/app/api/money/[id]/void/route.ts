@@ -3,7 +3,7 @@ import { reverseInvoiceStock } from "@/lib/invoiceReverse";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
-import { reverseRewardGrant } from "@/lib/rewards";
+import { reverseRewardGrant, reverseRewardRedeem } from "@/lib/rewards";
 
 // حذف حركة مالية عكسياً من الصندوق.
 // تسديد دين → يُرجَع الدين للمشترك. حركة يدوية → تُحذف فقط.
@@ -120,6 +120,16 @@ export async function POST(
             });
           }
           await t.subscriptionEntry.update({ where: { id: entry.id }, data: { isDeleted: true } });
+          // ═════ 🔴 عالٍ (هـ) · توائمُ الوصل تُحذف معه (المسحُ العدائيّ 2026-08-19) ═════
+          // التفعيلُ المختلط (نقدي+ماستر) صفّان بنفس sourceId، وكان هذا الفرعُ يحذف
+          // الحركةَ المضغوطةَ وحدَها ⇒ شقُّ الماستر يبقى حيّاً محسوباً في دفتر الماستر
+          // إلى الأبد عن وصلٍ محذوف، وحذفُه المباشرُ محجوبٌ برسالة «احذف الوصل نفسه»
+          // — والوصلُ صار محذوفاً. فتُحذف التوائمُ كلُّها (محاكاةً حرفيّةً لمسار
+          // «سجلّ الوصولات» entries/void الذي يشمل activation/manual/master معاً).
+          await t.moneyTx.updateMany({
+            where: { sourceId: entry.id, sourceType: { in: ["activation", "manual", "master"] }, isDeleted: false },
+            data: { isDeleted: true },
+          });
         }
       }
 
@@ -130,10 +140,17 @@ export async function POST(
       //   وهي حالةُ محمد بالحرف: «حُذفت قطعةٌ من مادةٍ في المبيعات» — فلا هي مبيعةٌ
       //   ولا هي في المخزن. والعلاجُ بنفسِ دالّةِ إبطالِ الفاتورة فلا يتفرّق المسارانِ ثانيةً.
       if (tx.sourceType === "invoice" && tx.sourceId) {
-        const inv = await t.invoice.findUnique({ where: { id: tx.sourceId }, select: { isDeleted: true } });
+        const inv = await t.invoice.findUnique({ where: { id: tx.sourceId }, select: { isDeleted: true, subscriberId: true, towerId: true } });
         if (inv && !inv.isDeleted) {
           const back = await reverseInvoiceStock(t, tx.sourceId);
           if (back.lines > 0) reversedStock = back;
+          // عالٍ (ب) · عكسُ خصم المكافأة هنا أيضاً — فلا يتفرّق المساران (درسُ reverseInvoiceStock)
+          if (inv.subscriberId) {
+            await reverseRewardRedeem(t, {
+              invoiceId: tx.sourceId, subscriberId: inv.subscriberId, towerId: inv.towerId ?? null,
+              agentId: g.session?.agentId ?? null, createdByUser: session?.username,
+            });
+          }
         }
         await t.invoice.updateMany({ where: { id: tx.sourceId, isDeleted: false }, data: { isDeleted: true } });
       }

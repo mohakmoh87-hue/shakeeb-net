@@ -94,11 +94,18 @@ export async function convertMoneyKind(txId: number, userId: number | undefined)
         if (e.count) stamped = `قيدُ التفعيل #${tx.sourceId} صار ${toMaster ? "ماستر" : "عاديّاً"}`;
       }
       if (tx.sourceId != null && (cur === "invoice" || cur === "master-invoice")) {
-        // فاتورةُ الماستر تُعرَف بـ`type = "ماستر"` في التقرير — والعودةُ تُفرّغه فتعود للتقرير
-        const inv = await t.invoice.findUnique({ where: { id: tx.sourceId }, select: { type: true, isDeleted: true } });
+        // فاتورةُ الماستر تُعرَف بـ`type = "ماستر"` في التقرير.
+        // ═════ 🔴 عالٍ (و) · العودةُ لا تكتب null (المسحُ العدائيّ 2026-08-19) ═════
+        // كانت العودةُ تكتب `type: null` — وترشيحاتُ التقارير `NOT { type: "ماستر" }`
+        // تستبعد صفوفَ NULL في SQL (‏NULL <> x تُقيَّم NULL) ⇒ الفاتورةُ المُعادةُ تختفي
+        // من سطر الفواتير في التقرير اليوميّ ومن تقارير المبيعات: مجموعٌ كلّيٌّ يحمل
+        // مالاً لا يُفسّره أيُّ سطر. والنوعُ الأصليُّ يُستدَلّ قطعيّاً من قاعدة الإنشاء
+        // نفسِها (invoices/route.ts): فاتورةُ مشتركٍ = «بيع»، وبلا مشتركٍ = «بيع مباشر».
+        const inv = await t.invoice.findUnique({ where: { id: tx.sourceId }, select: { type: true, isDeleted: true, subscriberId: true } });
         if (inv && !inv.isDeleted) {
-          await t.invoice.update({ where: { id: tx.sourceId }, data: { type: toMaster ? "ماستر" : null } });
-          stamped = `الفاتورة #${tx.sourceId}: النوعُ «${inv.type ?? "—"}» ← «${toMaster ? "ماستر" : "—"}»`;
+          const backType = inv.subscriberId != null ? "بيع" : "بيع مباشر";
+          await t.invoice.update({ where: { id: tx.sourceId }, data: { type: toMaster ? "ماستر" : backType } });
+          stamped = `الفاتورة #${tx.sourceId}: النوعُ «${inv.type ?? "—"}» ← «${toMaster ? "ماستر" : backType}»`;
         }
       }
 

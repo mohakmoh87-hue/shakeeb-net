@@ -3,6 +3,7 @@ import { reverseInvoiceStock } from "@/lib/invoiceReverse";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
+import { reverseRewardRedeem } from "@/lib/rewards"; // عالٍ (ب): عكسُ خصم المكافأة مع حذف الفاتورة
 
 // حذف فاتورة مبيع عكسياً: إلغاء المبلغ من الصندوق + إرجاع المواد للمخزون + حذف الفاتورة
 export async function POST(
@@ -42,6 +43,17 @@ export async function POST(
       //    فاتورة**. فقد كان مسارُ إبطالِ **المال** يحذف الفاتورةَ بسطرٍ واحدٍ بلا إرجاعِ
       //    مخزون، ونسخُ المنطقِ هو ما جعل سلامةَ هذا المسار لا تعني سلامةَ ذاك.
       await reverseInvoiceStock(tx, invoiceId, maintTech);
+
+      // 1.5) 🔴 عالٍ (ب) · إرجاعُ رصيد المكافأة المخصوم في هذه الفاتورة (المسحُ العدائيّ 2026-08-19):
+      //   كانت مرآةُ العكس ناقصةً هذا الاتّجاهَ وحدَه — البضاعةُ ترجع والمالُ يُلغى والدَّينُ
+      //   يُصحَّح، ورصيدُ المكافأة المسحوبُ يضيع إلى الأبد. الدالّةُ تجد صفَّ الخصم بمعرّف
+      //   الفاتورة، وتحرس العكسَ المزدوجَ بنفسها، وتُرجع صفراً بصمتٍ لفواتيرِ ما قبل الربط.
+      if (invoice.subscriberId) {
+        await reverseRewardRedeem(tx, {
+          invoiceId, subscriberId: invoice.subscriberId, towerId: invoice.towerId ?? null,
+          agentId: g.session?.agentId ?? null, createdByUser: session?.username,
+        });
+      }
 
       // 2) إلغاء المبلغ من الصندوق
       // يشمل "master": فاتورة الماستر (والمختلطة) صفّاها يُعكسان معاً

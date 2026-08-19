@@ -103,7 +103,7 @@ export async function redeemReward(
     createdByUser?: string;
     createdByName?: string;
   },
-): Promise<{ discount: number; balanceAfter: number; code: string | null; subscriberName: string | null } | null> {
+): Promise<{ discount: number; balanceAfter: number; code: string | null; subscriberName: string | null; logId: number } | null> {
   const sub = await tx.subscriber.findUnique({ where: { id: opts.subscriberId }, select: { rewardBalance: true, rewardCode: true, name: true } });
   const bal = sub?.rewardBalance ?? 0;
   if (bal <= 0) return null;
@@ -121,14 +121,68 @@ export async function redeemReward(
     data: { rewardBalance: { decrement: discount }, rewardCode: balanceAfter > 0 ? sub?.rewardCode ?? null : null, rewardGrantCount: 0 },
   });
   if (claimed.count !== 1) return null; // سبقنا خصمٌ متزامنٌ استنفد الرصيد — لا خصمَ مزدوج
-  await tx.rewardLog.create({
+  const log = await tx.rewardLog.create({
     data: {
       agentId: opts.agentId ?? null, towerId: opts.towerId ?? null, subscriberId: opts.subscriberId,
       kind: "redeem", amount: discount, code: sub?.rewardCode ?? null, context: opts.context, refId: opts.refId ?? null,
       balanceAfter, subscriberName: sub?.name ?? null, createdByUser: opts.createdByUser ?? null, createdByName: opts.createdByName ?? null,
     },
   });
-  return { discount, balanceAfter, code: sub?.rewardCode ?? null, subscriberName: sub?.name ?? null };
+  return { discount, balanceAfter, code: sub?.rewardCode ?? null, subscriberName: sub?.name ?? null, logId: log.id };
+}
+
+// ═════ 🔴 عالٍ (ب) · عكسُ خصم المكافأة عند حذف الفاتورة (المسحُ العدائيّ 2026-08-19) ═════
+//
+// كانت مرآةُ العكس ناقصةً اتجاهاً: عكسُ **المنح** موجودٌ (reverseRewardGrant أعلاه) وعكسُ
+// **السحب** غائبٌ تماماً — فمشتركٌ استُخدم كودُه في فاتورةٍ ثمّ حُذفت عكسيّاً يفقد رصيدَه
+// كلَّه إلى الأبد (البضاعةُ رجعت والمالُ أُلغي والمكافأةُ وحدَها لا تعود). نمطُ حادثة
+// عليّ سهيل 2026-08-04 نفسُه الذي أُصلح فيه اتّجاهُ المنح وبقي السحبُ مكشوفاً.
+//
+// 🔑 السجلُّ يُربط بالفاتورة: صفُّ الخصم (kind:"redeem") صار يحمل refId = معرّفَ الفاتورة
+//   (يربطه المُنادي بعد إنشائها في نفس المعاملة). فالعكسُ يجده بالمعرّف قطعيّاً.
+// ⚖️ قراران محافظان موثَّقان:
+//   · عدّادُ rewardGrantCount **لا يُستعاد**: صفّره السحبُ وقيمتُه السابقة لم تُخزَّن،
+//     واختراعُ قيمةٍ أسوأُ من تركها — والعدّادُ يضبط إيقاعَ المنح القادم فقط، لا مالاً.
+//   · خصومُ ما قبل هذا النشر (refId فارغ) لا تُعكَس آليّاً — يُسجَّل ذلك في التدقيق
+//     بدل تخمينِ سجلٍّ قد يكون لغير هذه الفاتورة.
+// 🔒 العزل: السجلُّ يُطابَق بالمشترك + الفاتورة، وكلاهما فُحصت ملكيّتُه في المسار المُنادي.
+export async function reverseRewardRedeem(
+  tx: Prisma.TransactionClient,
+  opts: { invoiceId: number; subscriberId: number; towerId: number | null; agentId: number | null; createdByUser?: string },
+): Promise<number> {
+  const redeem = await tx.rewardLog.findFirst({
+    where: { subscriberId: opts.subscriberId, refId: opts.invoiceId, kind: "redeem" },
+    orderBy: { id: "desc" },
+  });
+  if (!redeem || redeem.amount <= 0) return 0;
+  const already = await tx.rewardLog.findFirst({
+    where: { subscriberId: opts.subscriberId, refId: opts.invoiceId, kind: "redeem-reverse" },
+  });
+  if (already) return 0; // عُكِس مسبقاً — لا إرجاعَ مزدوجاً لنفس الفاتورة
+
+  // الإرجاعُ ذرّيّ (increment) — درسُ الحرِجة ٣: لا كتابةَ رصيدٍ مطلقةً من قراءةٍ سابقة
+  await tx.subscriber.update({
+    where: { id: opts.subscriberId },
+    data: { rewardBalance: { increment: redeem.amount } },
+  });
+  const after = await tx.subscriber.findUnique({
+    where: { id: opts.subscriberId },
+    select: { rewardBalance: true, rewardCode: true, name: true },
+  });
+  // الكودُ يُستعاد فقط إن كان السحبُ قد محاه ولم يُمنَح كودٌ جديدٌ بعدَه
+  if (after && !after.rewardCode && redeem.code) {
+    await tx.subscriber.update({ where: { id: opts.subscriberId }, data: { rewardCode: redeem.code } });
+  }
+  await tx.rewardLog.create({
+    data: {
+      agentId: opts.agentId ?? null, towerId: opts.towerId ?? null, subscriberId: opts.subscriberId,
+      kind: "redeem-reverse", amount: redeem.amount, code: redeem.code,
+      context: `${redeem.context ?? "?"}-void`, refId: opts.invoiceId,
+      balanceAfter: after?.rewardBalance ?? 0, subscriberName: after?.name ?? null,
+      createdByUser: opts.createdByUser ?? null,
+    },
+  });
+  return redeem.amount;
 }
 
 const DEFAULT_GRANT_TPL =

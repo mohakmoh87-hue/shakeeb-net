@@ -19,7 +19,49 @@ type WaStore = {
   retries: number; // عدد محاولات إعادة التشغيل عند العُلوق (starting/authenticated)
   qrAt: number | null; // لحظةُ آخرِ رمزِ QR وصل من واتساب — لكشف الرمز المتجمّد
   cooldownUntil: number | null; // هدنةٌ بعد استنفاد المحاولات — تنتهي وحدَها فيُستأنف
+  probedAt: number | null; // آخرُ مسبارِ جهوزيّةٍ حقيقيّ (getState) — لا يُسأل كلَّ نبضة
+  probeFails: number; // فشلان متتاليان قبل الهدم — فمسبارٌ بطيءٌ عابرٌ لا يهدم جلسةً سليمة
 };
+
+// ═════ 🔴 عالٍ (د) · مسبارُ الجهوزيّة الحقيقيّ (المسحُ العدائيّ 2026-08-19) ═════
+// نبضةُ الصحّة كانت تُجدّد ختمَ «متصل» بفحص **المتغيّرِ المخزونِ نفسِه** الذي نحرس من
+// جموده — فإن مات كروميوم بلا حدثِ disconnected (عينُ حادثتَي الشهداء ٣ آب والشدن
+// «Target closed») بقيت الحالةُ «ready» تُوثَّق كذباً كلَّ ٨ ثوانٍ، وكلُّ إرسالٍ يفشل،
+// ولا مخرجَ إلّا إعادةُ تشغيلٍ يدويّة — حالةٌ بالِعةٌ من عائلة رمزِ صميم نفسِها.
+// 🔑 الآن يُسأل **العميلُ نفسُه** (getState بمهلة) كلَّ دقيقة، وبفشلَين متتاليَين يُهدَم
+//   ويُعلَن disconnected فيلتقطه حارسُ الإنعاش فوراً — وملفّاتُ الجلسة على القرص تُعيده
+//   بلا QR. وفشلٌ واحدٌ يوقف تجديدَ الختم فقط (فيصدق الموقعُ «غيرَ متصل» مبكراً).
+const PROBE_EVERY_MS = 60_000;
+const PROBE_TIMEOUT_MS = 8_000;
+async function probeClientAlive(client: WAClient): Promise<boolean> {
+  try {
+    const state = await Promise.race([
+      Promise.resolve(client.getState()),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("probe-timeout")), PROBE_TIMEOUT_MS)),
+    ]);
+    return state === "CONNECTED";
+  } catch { return false; }
+}
+// يفحص جهوزيّةَ مكتبٍ حالتُه «ready» — ويهدم العميلَ الميّتَ بعد فشلَين متتاليَين.
+// يُرجع true إن كانت الجلسةُ جديرةً بتجديد ختمِ «متصل».
+async function ensureReadyIsReal(officeId: number): Promise<boolean> {
+  const st = store(officeId);
+  if (st.state !== "ready" || !st.client) return false;
+  const now = Date.now();
+  if (st.probedAt != null && now - st.probedAt < PROBE_EVERY_MS) return st.probeFails === 0;
+  st.probedAt = now;
+  const ok = await probeClientAlive(st.client);
+  if (ok) { st.probeFails = 0; return true; }
+  st.probeFails += 1;
+  console.log(`[whatsapp] ⚠️ مسبارُ مكتب ${officeId} فشل (${st.probeFails}/2) — الحالةُ «ready» والعميلُ لا يُجيب`);
+  if (st.probeFails >= 2) {
+    console.log(`[whatsapp] 💀 عميلُ مكتب ${officeId} ميّتٌ فعلاً — يُهدَم ويُعاد وصلُه من ملفّاته`);
+    try { st.client.destroy?.().catch(() => {}); } catch { /* تجاهل */ }
+    st.client = null; st.state = "disconnected"; st.qr = null; st.qrAt = null; st.probeFails = 0;
+    publish(officeId);
+  }
+  return false;
+}
 
 // ═════ 🔴 «خطأ» لم تعد نهايةَ الطريق (بلاغُ الشدن 2026-08-15) ═════
 //
@@ -68,7 +110,7 @@ function offices(): Map<number, WaStore> {
 function store(officeId: number): WaStore {
   const m = offices();
   if (!m.has(officeId)) {
-    m.set(officeId, { client: null, state: "disconnected", qr: null, lastError: null, startedAt: null, retries: 0, qrAt: null, cooldownUntil: null });
+    m.set(officeId, { client: null, state: "disconnected", qr: null, lastError: null, startedAt: null, retries: 0, qrAt: null, cooldownUntil: null, probedAt: null, probeFails: 0 });
   }
   return m.get(officeId)!;
 }
@@ -215,7 +257,7 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; st.qrAt = Date.now(); st.retries = 0; st.cooldownUntil = null; publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
   client.on("authenticated", () => { const st = store(officeId); st.qr = null; st.state = "authenticated"; publish(officeId); console.log(`[whatsapp] مكتب ${officeId} تم التوثيق — بانتظار الجهوزية`); });
   client.on("ready", () => {
-    const st = store(officeId); st.qr = null; st.state = "ready"; st.retries = 0; st.cooldownUntil = null;
+    const st = store(officeId); st.qr = null; st.state = "ready"; st.retries = 0; st.cooldownUntil = null; st.probeFails = 0; st.probedAt = null;
     publish(officeId);
     console.log(`[whatsapp] ✅ مكتب ${officeId} جاهز`);
     // البند ٤-ب · تصريفُ طابور «فعّل بنفسه» لحظةَ جهوزيّة الواتساب (نصُّ الطلب:
@@ -355,7 +397,9 @@ export function startWaRequestPoller() {
         // فتبقى «متصل» بينما العميل ميت — وهذا ما رآه محمد في الشهداء (٣ آب): الحاسبة
         // تنبض والحالة ready والإرسال يفشل بـ«انتهت المهلة». الآن الطابع الزمني يتجدّد
         // ما دام العميل جاهزاً فعلاً، والموقع يعتبر ready قديمةً = غير متصل.
-        if (st.state === "ready" && st.client) {
+        // عالٍ (د): الختمُ يُجدَّد فقط إن **أجاب العميلُ نفسُه** (مسبارٌ كلَّ دقيقة) —
+        // لا بفحص المتغيّر المخزون. عميلٌ ميّتٌ يُهدَم بعد فشلَين فيُعاد وصلُه تلقائيّاً.
+        if (await ensureReadyIsReal(boundTower)) {
           await prisma.waSession.updateMany({
             where: { towerId: boundTower },
             data: { state: "ready", hostMachineId: mid ?? undefined },
@@ -384,6 +428,9 @@ export function startWaRequestPoller() {
             continue;
           }
         }
+        // عالٍ (د): قبل عدِّ «ready» حياةً يُسأل العميلُ نفسُه — الميّتُ يُهدَم داخل
+        // المسبار فيصير disconnected ويُلتقَط بالسطر التالي في نفس الدورة
+        if (st.state === "ready" && st.client) await ensureReadyIsReal(id);
         const alive = st.client && (st.state === "ready" || (st.state === "qr" && !qrStuck(st)) || st.state === "authenticated" || st.state === "starting");
         const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
         if (!alive && !recentlyTried) void startWhatsApp(id); // أعد وصل جلسة هذه الحاسبة

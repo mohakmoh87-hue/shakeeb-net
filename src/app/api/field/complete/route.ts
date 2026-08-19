@@ -229,6 +229,7 @@ export async function POST(request: Request) {
   // و«المبيع» أثره المالي الوحيد فاتورة المبيع أدناه — لا مبيعات/نثرية بعد اليوم.
 
   let rewardDiscount = 0;
+  let redeemLogId: number | null = null; // سجلُّ الخصم — يُربط refId بالفاتورة (عالٍ ب)
   let netSale = 0;
   let invoiceId: number | null = null;
   let invoiceNumber: number | null = null;
@@ -240,6 +241,7 @@ export async function POST(request: Request) {
         towerId, agentId: actor.agentId ?? null, createdByUser: String(actor.userId ?? ""), createdByName: actor.name ?? undefined,
       });
       rewardDiscount = r?.discount ?? 0;
+      redeemLogId = r?.logId ?? null; // عالٍ (ب): يُربط بفاتورة الصيانة بعد إنشائها
     }
     // «المبيع» الصافي بعد الخصم = المُحصَّل فعلاً من الزبون عن المواد
     netSale = Math.max(0, saleGross - rewardDiscount);
@@ -292,6 +294,10 @@ export async function POST(request: Request) {
         },
       });
       invoiceId = inv.id;
+      // 🔗 عالٍ (ب): توحيدُ الربط — refId يصير معرّفَ الفاتورة (كان cardId ولا قارئَ له)
+      if (redeemLogId != null) {
+        await tx.rewardLog.update({ where: { id: redeemLogId }, data: { refId: inv.id } }).catch(() => {});
+      }
       for (let i = 0; i < soldInfo.length; i++) {
         const s = soldInfo[i];
         await tx.invoiceItem.create({
