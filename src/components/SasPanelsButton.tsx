@@ -17,7 +17,12 @@ type Panel = {
 };
 type Quota = { quota: number; used: number; remaining: number; usedTowerIds: number[] };
 
-export default function SasPanelsButton({ towerId, towerName, onChange }: { towerId: number; towerName: string; onChange?: () => void }) {
+// onVisibleChange: يُخبر صفحةَ المكاتب هل الزرُّ ظاهرٌ فعلاً — فحين يُخفي نفسَه
+// (مكتبُ ساسٍ واحدٍ بلا حصّة) تُعيد الصفحةُ حقولَ الساس/الديلر القديمةَ إلى النموذج.
+// 🔴 بلاغ محمد 2026-08-19: «قمت باخفاء معلومات المكتب بساس واحد حيث لا يمكن رؤيتها
+// لتعديلها» — النموذجُ كان يقول «عدّل من الزرّ أعلاه» والزرُّ غيرُ موجودٍ أصلاً لهذه
+// المكاتب. فصار مصدرُ قرار الظهور واحداً (هنا) والصفحةُ تتبعه — محرِّرٌ واحدٌ دائماً.
+export default function SasPanelsButton({ towerId, towerName, onChange, onVisibleChange }: { towerId: number; towerName: string; onChange?: () => void; onVisibleChange?: (visible: boolean) => void }) {
   const [open, setOpen] = useState(false);
   const [panels, setPanels] = useState<Panel[]>([]);
   const [quota, setQuota] = useState<Quota | null>(null);
@@ -38,9 +43,16 @@ export default function SasPanelsButton({ towerId, towerName, onChange }: { towe
   const load = useCallback(() => {
     fetch(`/api/towers/${towerId}/panels`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && !d.error) { setPanels(d.panels ?? []); setQuota(d.quota ?? null); setCounts(d.counts ?? {}); } })
+      .then((d) => {
+        if (d && !d.error) {
+          setPanels(d.panels ?? []); setQuota(d.quota ?? null); setCounts(d.counts ?? {});
+          // الشرطُ نفسُه الذي يُخفي الزرَّ أدناه حرفيّاً — مصدرٌ واحدٌ للقرار
+          const q = d.quota as Quota | null;
+          onVisibleChange?.(!!q && !(((d.panels ?? []) as Panel[]).length <= 1 && q.remaining <= 0));
+        }
+      })
       .catch(() => {});
-  }, [towerId]);
+  }, [towerId, onVisibleChange]);
   useEffect(() => { if (open) load(); }, [open, load]);
   // الحصّةُ تُقرأ قبل الفتح كي لا يظهر الزرُّ لمن لا حصّةَ له
   useEffect(() => { load(); }, [load]);

@@ -55,6 +55,10 @@ export default function OfficesPage() {
 
   const [offices, setOffices] = useState<Office[]>([]);
   const [sel, setSel] = useState<Office | null>(null);
+  // 🔴 بلاغ محمد 2026-08-19: مكتبُ الساس الواحد فقد حقولَه («لا يمكن رؤيتها لتعديلها»)
+  // لأنّ زرَّ اللوحات يُخفي نفسَه له والنموذجُ يُحيل عليه. فالزرُّ يُبلغ ظهورَه الفعليّ
+  // (onVisibleChange) والحقولُ القديمة تعود **حين لا زرَّ** — محرِّرٌ واحدٌ ظاهرٌ دائماً.
+  const [panelsUi, setPanelsUi] = useState(false);
   const [form, setForm] = useState<Partial<Office>>(empty);
   const [editing, setEditing] = useState(false);
   const [msg, setMsg] = useState("");
@@ -127,8 +131,8 @@ export default function OfficesPage() {
     );
   }
 
-  function pick(o: Office) { setSel(o); setForm({ ...o }); setEditing(false); setMsg(""); }
-  function addNew() { setSel(null); setForm({ ...empty }); setEditing(true); setMsg(""); }
+  function pick(o: Office) { setSel(o); setForm({ ...o }); setEditing(false); setMsg(""); setPanelsUi(false); }
+  function addNew() { setSel(null); setForm({ ...empty }); setEditing(true); setMsg(""); setPanelsUi(false); }
   const set = (k: keyof Office, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
   // التقاط موقع المكتب من موقع الجهاز الحالي (يُفتح من الهاتف عند المكتب)
   function captureLocation() {
@@ -146,9 +150,12 @@ export default function OfficesPage() {
     const res = await fetch(sel ? `/api/towers/${sel.id}` : "/api/towers", {
       method: sel ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      // تُحذف حقولُ الساس/الديلر من الحمولة: لم تعد تُحرَّر هنا، وإرسالُ قيمها القديمة
-      // العالقة في الحالة كان سيطمس ما حُفظ للتوّ من نافذة اللوحات (عائلةُ علّة المرآة).
-      body: JSON.stringify(Object.fromEntries(Object.entries(form).filter(([k]) => !["loginUrl", "username", "password", "loanUser", "loanPass"].includes(k)))),
+      // حين تُحرَّر اللوحاتُ من نافذتها (panelsUi): تُحذف حقولُ الساس/الديلر من الحمولة —
+      // إرسالُ قيمها القديمة العالقة كان سيطمس ما حُفظ للتوّ هناك (عائلةُ علّة المرآة).
+      // وحين لا نافذةَ (مكتبُ ساسٍ واحد): تُرسَل كاملةً كما كانت دائماً — فهي محرِّرُها الوحيد.
+      body: JSON.stringify(panelsUi
+        ? Object.fromEntries(Object.entries(form).filter(([k]) => !["loginUrl", "username", "password", "loanUser", "loanPass"].includes(k)))
+        : form),
     });
     if (res.ok) {
       const saved = await res.json();
@@ -169,8 +176,9 @@ export default function OfficesPage() {
     try {
       const res = await fetch(`/api/towers/${sel.id}/loan-test`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        // بلا بيانات: يختبر الحسابَ **المخزون** (المسارُ يرتدّ إليه) — فالحقولُ لم تعد هنا
-        body: JSON.stringify({}),
+        // مع نافذة اللوحات: بلا بيانات فيُختبر الحسابُ المخزون. وبلا نافذةٍ (ساسٌ واحد):
+        // تُرسَل قيمُ الحقلَين الظاهرَين — فيُختبر ما يراه المستخدمُ أمامه قبل الحفظ.
+        body: JSON.stringify(panelsUi ? {} : { loanUser: form.loanUser, loanPass: form.loanPass }),
       }).then((r) => r.json());
       setLoanTest(res ? `${res.ok ? "✓" : "✗"} ${res.message ?? ""}` : "تعذّر الاختبار");
     } catch { setLoanTest("تعذّر الاختبار"); }
@@ -223,7 +231,7 @@ export default function OfficesPage() {
                     {/* أ-٢٣ · لوحاتُ الساس/أودو لهذا المكتب — والمكوّنُ **يُخفي نفسَه** إن لم يكن
                         لهذا المكتبِ لوحتان ولا حصّةٌ متبقّية، فلا يراه وكيلٌ بلا إذنٍ ولا يظهر
                         على مكاتبَ أُخرى بعد أن يستهلك مكتبٌ الحصّة (شرط محمد 2026-08-13). */}
-                    {sel && !editing && <SasPanelsButton towerId={sel.id} towerName={sel.name ?? "المكتب"} onChange={load} />}
+                    {sel && !editing && <SasPanelsButton towerId={sel.id} towerName={sel.name ?? "المكتب"} onChange={load} onVisibleChange={setPanelsUi} />}
                     {sel && !editing && <button onClick={() => setEditing(true)} className="rounded-lg bg-slate-100 px-3 py-1 text-sm text-slate-600 hover:bg-slate-200">تعديل</button>}
                   </div>
                 </div>
@@ -235,10 +243,21 @@ export default function OfficesPage() {
                       كانت بياناتُ الساس تُدخَل هنا **وأيضاً** في نافذة «لوحات الساس»
                       لنفس اللوحة الأولى — محرِّران لجسدٍ واحدٍ ومرآةٌ بينهما ناقصة،
                       وهو أصلُ كلّ أعطال «المكتب بساسَين». صار لها محرِّرٌ واحد. */}
-                  <div className="sm:col-span-2 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 text-xs leading-6 text-slate-600">
-                    🛰️ بياناتُ دخول الساس (الرابط · اليوزر · الباسورد){sel ? <> — الحاليّ: <b dir="ltr">{sel.loginUrl ?? "—"}</b> · <b dir="ltr">{sel.username ?? "—"}</b></> : null}
-                    <br />تُعدَّل من زرّ <b>«🛰️ لوحات الساس · أودو»</b> أعلاه — مكانٌ واحدٌ لكلّ اللوحات، الأولى والثانية.
-                  </div>
+                  {/* 🔴 بلاغ 2026-08-19: الإحالةُ على الزرّ صحيحةٌ فقط حين يكون الزرُّ موجوداً.
+                      مكتبُ الساس الواحد (بلا حصّةِ لوحةٍ ثانية) لا زرَّ له ⇒ تعود حقولُه
+                      القديمةُ كما كانت حرفيّاً — «المكتب بساس واحد لا يتغيّر به شيء». */}
+                  {panelsUi ? (
+                    <div className="sm:col-span-2 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 text-xs leading-6 text-slate-600">
+                      🛰️ بياناتُ دخول الساس (الرابط · اليوزر · الباسورد){sel ? <> — الحاليّ: <b dir="ltr">{sel.loginUrl ?? "—"}</b> · <b dir="ltr">{sel.username ?? "—"}</b></> : null}
+                      <br />تُعدَّل من زرّ <b>«🛰️ لوحات الساس · أودو»</b> أعلاه — مكانٌ واحدٌ لكلّ اللوحات، الأولى والثانية.
+                    </div>
+                  ) : (
+                    <>
+                      <F label="رابط لوحة SAS"><I v={form.loginUrl} on={(v) => set("loginUrl", v)} ro={ro} dir="ltr" ph="82.129.22.22" /></F>
+                      <F label="يوزر SAS"><I v={form.username} on={(v) => set("username", v)} ro={ro} dir="ltr" /></F>
+                      <F label="باسورد SAS"><I v={form.password} on={(v) => set("password", v)} ro={ro} dir="ltr" /></F>
+                    </>
+                  )}
                   <F label="نظام التفعيل">
                     <select value={form.activationMode ?? "month"} disabled={ro} onChange={(e) => set("activationMode", e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50">
                       <option value="month">شهر ميلادي</option>
@@ -360,10 +379,17 @@ export default function OfficesPage() {
                     <div className="mt-2 space-y-2">
                       {/* حسابُ الديلر بياناتُ دخولِ مُخدِّمٍ ⇒ يتبع اللوحةَ لا المكتب — يُدخَل
                           من «لوحات الساس» (لكلّ لوحةٍ ديلرُها). والمفتاحُ أعلاه سياسةُ مكتبٍ فيبقى هنا. */}
-                      <div className="rounded-lg bg-amber-100/60 px-3 py-2 text-xs leading-6 text-amber-900">
-                        حسابُ الديلر (اليوزر والكلمة) يُدخَل من زرّ <b>«🛰️ لوحات الساس · أودو»</b> — لكلّ لوحةٍ حسابُها المستقلّ.
-                        {sel?.loanUser ? <> الحاليّ للّوحة الأولى: <b dir="ltr">{sel.loanUser}</b></> : null}
-                      </div>
+                      {panelsUi ? (
+                        <div className="rounded-lg bg-amber-100/60 px-3 py-2 text-xs leading-6 text-amber-900">
+                          حسابُ الديلر (اليوزر والكلمة) يُدخَل من زرّ <b>«🛰️ لوحات الساس · أودو»</b> — لكلّ لوحةٍ حسابُها المستقلّ.
+                          {sel?.loanUser ? <> الحاليّ للّوحة الأولى: <b dir="ltr">{sel.loanUser}</b></> : null}
+                        </div>
+                      ) : (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <F label="اسم مستخدم قروض سوبر سيل"><I v={form.loanUser} on={(v) => set("loanUser", v)} ro={ro} dir="ltr" /></F>
+                          <F label="كلمة مرور القروض"><I v={form.loanPass} on={(v) => set("loanPass", v)} ro={ro} dir="ltr" /></F>
+                        </div>
+                      )}
                       <div className="flex flex-wrap items-center gap-2">
                         <button type="button" disabled={testing} onClick={testLoan} className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50">🔌 اختبار الاتصال</button>
                         {loanTest && <span className={`text-xs ${loanTest.startsWith("✓") ? "text-emerald-700" : loanTest.startsWith("✗") ? "text-red-600" : "text-slate-500"}`}>{loanTest}</span>}
