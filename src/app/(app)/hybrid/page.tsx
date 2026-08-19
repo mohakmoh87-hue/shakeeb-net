@@ -7,6 +7,7 @@ import { usePolling } from "@/lib/usePolling";
 type Worker = {
   id: number; machineId: string; name: string | null; towerId: number | null;
   officeName: string | null; priority: number; approved: boolean; lastSeen: string; online: boolean; isLeader: boolean;
+  lastLog: string | null; // رقابة(أ): آخرُ أسطرِ نافذة العامل
 };
 type Blocked = { id: number; machineId: string; name: string | null; lastSeen: string; online: boolean };
 type Office = { id: number; name: string | null };
@@ -17,6 +18,7 @@ export default function HybridWorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [blocked, setBlocked] = useState<Blocked[]>([]);
   const [offices, setOffices] = useState<Office[]>([]);
+  const [logOf, setLogOf] = useState<{ id: number; name: string; log: string } | null>(null); // رقابة(أ)
   const [denied, setDenied] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [edits, setEdits] = useState<Record<number, string>>({});
@@ -52,16 +54,20 @@ export default function HybridWorkersPage() {
   }
   async function setApproved(w: Worker, approved: boolean) {
     const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: w.id, approved }) });
+    // متوسّط(٣٦) · كان الفشلُ مبتلَعاً — نقرةٌ لا تفعل شيئاً بلا سبب
     if (r.ok) load();
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر تغييرُ الاعتماد"); }
   }
   async function remove(w: Worker) {
     if (!confirm(`حذف الحاسبة «${w.name ?? w.machineId}»؟\nستُخفى نهائياً ولن تعود للظهور. يمكنك رفع الحظر عنها لاحقاً من قسم «الحاسبات المحظورة».`)) return;
     const r = await fetch(`/api/hybrid/workers?id=${w.id}`, { method: "DELETE" });
     if (r.ok) load();
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر الحذف"); } // متوسّط(٣٦)
   }
   async function unblock(b: Blocked) {
     const r = await fetch("/api/hybrid/workers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: b.id, blocked: false }) });
     if (r.ok) load();
+    else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّر رفعُ الحظر"); } // متوسّط(٣٦)
   }
   async function hardDelete(b: Blocked) {
     if (!confirm(`حذف الحاسبة «${b.name ?? b.machineId}» نهائيّاً؟\n\nتُمحى من القائمة تماماً (لا مجرّد حظر). إن كان الجهاز ما زال يعمل فسيُسجّل نفسه من جديد كحاسبةٍ بانتظار الاعتماد — فلا تعتمِدها.\n\nلا يمكن التراجع.`)) return;
@@ -98,7 +104,7 @@ export default function HybridWorkersPage() {
               <tr>
                 <th className="p-3">اسم الحاسبة</th><th className="p-3">المكتب</th><th className="p-3">الأولوية</th>
                 <th className="p-3">الاعتماد</th><th className="p-3">الاتصال</th><th className="p-3">القائد</th>
-                <th className="p-3">آخر ظهور</th><th className="p-3"></th>
+                <th className="p-3">آخر ظهور</th><th className="p-3">السجلّ</th><th className="p-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -149,11 +155,30 @@ export default function HybridWorkersPage() {
                   </td>
                   <td className="p-3">{w.isLeader ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">👑 القائد</span> : "—"}</td>
                   <td className="p-3 text-slate-500" dir="ltr">{fmtTime(w.lastSeen)}</td>
+                  {/* رقابة(أ) 2026-08-19 · سجلُّ نافذة العامل — يُقرأ من هنا بدل الوقوف أمام حاسبة المكتب */}
+                  <td className="p-3">
+                    {w.lastLog
+                      ? <button onClick={() => setLogOf(logOf?.id === w.id ? null : { id: w.id, name: w.name ?? w.machineId, log: w.lastLog! })} className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200">📜 السجلّ</button>
+                      : <span className="text-xs text-slate-300">—</span>}
+                  </td>
                   <td className="p-3"><button onClick={() => remove(w)} className="rounded bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100">حذف</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* رقابة(أ) · نافذةُ سجلّ الحاسبة — «النافذة صامتة» لم تعد تشلّ التشخيص */}
+      {logOf && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setLogOf(null)}>
+          <div className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <b className="text-slate-800">📜 سجلُّ «{logOf.name}» — آخرُ الأسطر (يتجدّد مع كلّ نبضة)</b>
+              <button onClick={() => setLogOf(null)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100">✕</button>
+            </div>
+            <pre dir="ltr" className="max-h-[70vh] overflow-auto whitespace-pre-wrap bg-slate-900 p-4 text-[11px] leading-5 text-emerald-200">{logOf.log}</pre>
+          </div>
         </div>
       )}
 

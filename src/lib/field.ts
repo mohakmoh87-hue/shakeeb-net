@@ -302,11 +302,17 @@ export async function approvedTimeLeaveFor(
   technicianId: number, dayKey: string | null | undefined,
 ): Promise<{ startMin: number; endMin: number } | null> {
   if (!dayKey) return null;
-  const l = await prisma.leave.findFirst({
+  // متوسّط(٢٤) · كان `.catch(() => null)` يحوّل **فشلَ القاعدة** إلى «لا إجازة» — فيُخصَم
+  // من راتب فنيٍّ وقتٌ أذن به المديرُ فعلاً. المالُ الخاطئ أسوأُ من فشلٍ صريح: تُعاد
+  // المحاولةُ مرّةً، وفشلُ الثانية يُرمى عمداً (حسابٌ توقّف خيرٌ من راتبٍ منقوص).
+  const q = () => prisma.leave.findFirst({
     where: { technicianId, dayKey, kind: "time", status: "approved", isDeleted: false },
     select: { startMin: true, endMin: true },
     orderBy: { id: "desc" },
-  }).catch(() => null);
+  });
+  let l;
+  try { l = await q(); }
+  catch { await new Promise((r) => setTimeout(r, 1000)); l = await q(); }
   return l?.startMin != null && l.endMin != null ? { startMin: l.startMin, endMin: l.endMin } : null;
 }
 

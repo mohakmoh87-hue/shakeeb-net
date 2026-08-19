@@ -96,6 +96,13 @@ async function renderJobHtml(kind: string, refId: number, agentId: number | null
 //  ازدواجَ الطبع مع مستطلِع الـ٥ ثوانٍ مهما تداخلا)
 export async function processJob(job: { id: number; kind: string; refId: number; agentId: number | null; towerId: number | null }): Promise<void> {
   // التقاط ذرّي: الفائز الوحيد يقلب pending → printing (يمنع طباعة مزدوجة بين حاسبتين)
+  // متوسّط(٢١) · «printing» لم تعد حالةً بالِعة: عمليّةٌ ماتت وسط الطبع كانت تترك
+  // الأمرَ printing إلى الأبد بلا أيّ مسار تعافٍ — فلا يُطبع ولا يفشل. الآن: العالقُ
+  // فوق ١٠ دقائق يعود pending فيلتقطه المستطلِعُ التالي (idempotent — الالتقاطُ ذرّيّ).
+  await prisma.printJob.updateMany({
+    where: { status: "printing", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } },
+    data: { status: "pending" },
+  }).catch(() => {});
   const claimed = await prisma.printJob.updateMany({
     where: { id: job.id, status: "pending" },
     data: { status: "printing" },

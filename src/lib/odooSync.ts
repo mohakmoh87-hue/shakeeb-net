@@ -260,7 +260,7 @@ async function runPull(): Promise<void> {
           }
         }
       } catch (e) {
-        sessionCache.delete(o.id);
+        sessionCache.delete(o.panelId ?? o.id); // متوسّط(٢٠): المفتاحُ نفسُه الذي خُزنت به — كان o.id فتبقى جلسةُ اللوحة الميّتة محبوسةً حتى انقضاء عمرها
         await saveOdooState(o, { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) }).catch(() => {});
       }
     }
@@ -331,7 +331,7 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
     let s: OdooSession;
     try { s = await officeSession(o); }
     catch (e) {
-      sessionCache.delete(o.id);
+      sessionCache.delete(o.panelId ?? o.id); // متوسّط(٢٠): المفتاحُ نفسُه الذي خُزنت به — كان o.id فتبقى جلسةُ اللوحة الميّتة محبوسةً حتى انقضاء عمرها
       await saveOdooState(o, { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) }).catch(() => {});
       continue;
     }
@@ -565,7 +565,7 @@ async function runSlaSweep(): Promise<void> {
       let s: OdooSession;
       try { s = await officeSession(o); }
       catch (e) {
-        sessionCache.delete(o.id);
+        sessionCache.delete(o.panelId ?? o.id); // متوسّط(٢٠): المفتاحُ نفسُه الذي خُزنت به — كان o.id فتبقى جلسةُ اللوحة الميّتة محبوسةً حتى انقضاء عمرها
         await saveOdooState(o, { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) }).catch(() => {});
         continue; // الإنذار يبقى مشتعلاً — لم يُبلَّغ أودو
       }

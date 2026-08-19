@@ -39,16 +39,29 @@ export async function runAutoCheckout(opts?: { resetSupport?: boolean }): Promis
     // إن كان مُعاراً (دعم) والدخول بمكتبٍ آخر: تُنسب بصمة الخروج لمكتب الدعم
     const outTower = t.supportTowerId != null && t.supportTowerId !== rec.towerId ? t.supportTowerId : null;
     // إغلاق ذرّي مشروط بأن السجل ما زال مفتوحاً — يمنع الغرامة المكرّرة إن تسابق التدارك والكرون
-    const upd = await prisma.attendance.updateMany({ where: { id: rec.id, checkOut: null }, data: { checkOut: checkoutAt, checkoutBy: "auto", checkOutTowerId: outTower, ...calc } }).catch(() => ({ count: 0 }));
-    if (!upd || upd.count === 0) continue; // أُغلق من عمليةٍ أخرى — تفادي التكرار
-
-    // غرامة نسيان بصمة الخروج: تُنشأ «معلّقة» فلا تُخصم حتى يقرّرها المدير في نافذة المراجعة
+    // متوسّط(٢٣) · الإغلاقُ والغرامةُ معاملةٌ واحدة: كان الإغلاقُ الذرّيُّ يستهلك فرصتَه
+    // ثمّ تُنشأ الغرامةُ منفصلةً بـcatch فارغ — ففشلُها يضيّعها صامتةً **إلى الأبد**
+    // (السجلُّ أُغلق فلا إعادةَ أبداً). الآن: إن فشل أيُّ طرفٍ رُجع الكلُّ فتُعاد المحاولةُ
+    // في الدورة القادمة، وشرطُ checkOut: null داخل المعاملة يبقي منعَ التكرار كما هو.
     const penalty = t.missedCheckoutPenalty ?? 0;
-    if (penalty > 0) {
-      await prisma.adjustment.create({
-        data: { technicianId: rec.technicianId, agentId: t.agentId, towerId: t.towerId, kind: "deduction", source: "missed-checkout", amount: penalty, reason: `غرامة نسيان بصمة الخروج (${rec.dayKey})`, status: "pending", dayKey: rec.dayKey ?? todayKey },
-      }).catch(() => {});
+    let updCount = 0;
+    try {
+      await prisma.$transaction(async (tx) => {
+        const upd = await tx.attendance.updateMany({ where: { id: rec.id, checkOut: null }, data: { checkOut: checkoutAt, checkoutBy: "auto", checkOutTowerId: outTower, ...calc } });
+        updCount = upd.count;
+        if (upd.count === 0) return; // أُغلق من عمليةٍ أخرى — تفادي التكرار
+        // الغرامة «معلّقة» فلا تُخصم حتى يقرّرها المدير في نافذة المراجعة
+        if (penalty > 0) {
+          await tx.adjustment.create({
+            data: { technicianId: rec.technicianId, agentId: t.agentId, towerId: t.towerId, kind: "deduction", source: "missed-checkout", amount: penalty, reason: `غرامة نسيان بصمة الخروج (${rec.dayKey})`, status: "pending", dayKey: rec.dayKey ?? todayKey },
+          });
+        }
+      });
+    } catch (e) {
+      console.error(`[auto-checkout] تعذّر إغلاقُ سجلّ الفنيّ #${rec.technicianId} (${rec.dayKey}) — يُعاد في الدورة القادمة:`, e instanceof Error ? e.message : e);
+      continue;
     }
+    if (updCount === 0) continue;
     // إنهاء الدعم إن كان الفني مُعاراً (يعود لمكتبه بنهاية الدوام)
     if (t.supportTowerId != null) await endSupport(rec.technicianId).catch(() => {});
     void notify({ agentId: t.agentId, towerId: t.towerId, type: "checkout", title: "خروج تلقائي", body: `${t.name}: خروج تلقائي (نسيان البصمة)${penalty > 0 ? ` — غرامة ${penalty.toLocaleString("en-US")}` : ""}`, refType: "technician", refId: rec.technicianId });

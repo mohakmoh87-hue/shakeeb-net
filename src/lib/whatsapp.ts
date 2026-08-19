@@ -430,7 +430,18 @@ export function startWaRequestPoller() {
         }
         // عالٍ (د): قبل عدِّ «ready» حياةً يُسأل العميلُ نفسُه — الميّتُ يُهدَم داخل
         // المسبار فيصير disconnected ويُلتقَط بالسطر التالي في نفس الدورة
-        if (st.state === "ready" && st.client) await ensureReadyIsReal(id);
+        if (st.state === "ready" && st.client) {
+          // متوسّط(١٩) · كانت غيرُ المربوطة لا تجدّد ختمَ ready إطلاقاً ⇒ الموقعُ يعرض
+          // مكاتبَها «غير متصل» دائماً بعد ٥ دقائق (حارسُ الطزاجة). الآن تجدّده — **بعد
+          // مسبارٍ صادقٍ** (عالٍ د) ولمِلْكها فقط (hostMachineId = هذه الحاسبة) فلا تدهس
+          // ملكيّةَ حاسبةٍ أخرى.
+          if (await ensureReadyIsReal(id) && mid) {
+            await prisma.waSession.updateMany({
+              where: { towerId: id, hostMachineId: mid },
+              data: { state: "ready" },
+            }).catch(() => {});
+          }
+        }
         const alive = st.client && (st.state === "ready" || (st.state === "qr" && !qrStuck(st)) || st.state === "authenticated" || st.state === "starting");
         const recentlyTried = st.startedAt != null && Date.now() - st.startedAt < 60_000;
         if (!alive && !recentlyTried) void startWhatsApp(id); // أعد وصل جلسة هذه الحاسبة
@@ -470,7 +481,16 @@ export async function logoutWhatsApp(officeId: number): Promise<void> {
   s.startedAt = null;
   deleteSessionDir(officeId); // امسح كل أثر للجلسة فور الفصل
   // الفصل يُلغي ملكية الجلسة — الربط القادم يحدّد المالكة الجديدة (أول من يصل ready)
-  await prisma.waSession.update({ where: { towerId: officeId }, data: { hostMachineId: null } }).catch(() => {});
+  // متوسّط(٢٩) · كان فشلُ التحرير مبتلَعاً: تبقى ملكيّةُ الجلسة (والطباعةُ التابعةُ لها)
+  // لحاسبةٍ فُكّ ربطُها. يُعاد حتى ٣ مرّاتٍ ويُصرَخ إن فشلت كلُّها.
+  {
+    let freed = false;
+    for (let i = 0; i < 3 && !freed; i++) {
+      try { await prisma.waSession.update({ where: { towerId: officeId }, data: { hostMachineId: null } }); freed = true; }
+      catch { await new Promise((r) => setTimeout(r, 1500)); }
+    }
+    if (!freed) console.error(`[whatsapp] 🔴 تعذّر تحريرُ ملكيّة جلسة مكتب ${officeId} — الطباعةُ قد تبقى منسوبةً لحاسبةٍ مفكوكة`);
+  }
   publish(officeId); // انشر "disconnected" للسحابة فوراً
 }
 

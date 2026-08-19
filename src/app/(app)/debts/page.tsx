@@ -34,12 +34,15 @@ export default function DebtsPage() {
     if (!window.confirm(`مسح دين ${ids.length} مشترك؟ سيُصفّر الدين نهائياً.`)) return;
     setBusy(true); setBanner("");
     let done = 0;
+    const failed: string[] = [];
     for (const id of ids) {
       const res = await fetch(`/api/debts/${id}/clear`, { method: "POST" });
       if (res.ok) done++;
+      else failed.push(debtors.find((x) => x.id === id)?.name ?? `#${id}`);
     }
     setBusy(false);
-    setBanner(`تم مسح دين ${done} مشترك`);
+    // متوسّط(٣٨) · الإخفاقاتُ الجزئيّة كانت تُطوى في عدّاد النجاح — دَينٌ بقي ولا أحدَ يعلم مَن صاحبُه
+    setBanner(`تم مسح دين ${done} مشترك` + (failed.length ? ` — ⚠️ فشل ${failed.length}: ${failed.slice(0, 5).join("، ")}${failed.length > 5 ? "…" : ""}` : ""));
     load();
   }
 
@@ -116,6 +119,7 @@ export default function DebtsPage() {
     if (!window.confirm(`تسجيل تسديد كامل الدين لـ ${ids.length} مشترك؟`)) return;
     setBusy(true); setBanner("");
     let done = 0;
+    const failedPay: string[] = [];
     for (const id of ids) {
       const d = debtors.find((x) => x.id === id);
       if (!d?.carry) continue;
@@ -124,9 +128,10 @@ export default function DebtsPage() {
         body: JSON.stringify({ amount: d.carry }),
       });
       if (res.ok) done++;
+      else failedPay.push(d.name ?? `#${id}`);
     }
     setBusy(false);
-    setBanner(`تم تسجيل تسديد ${done} مشترك`);
+    setBanner(`تم تسجيل تسديد ${done} مشترك` + (failedPay.length ? ` — ⚠️ فشل ${failedPay.length}: ${failedPay.slice(0, 5).join("، ")}${failedPay.length > 5 ? "…" : ""}` : "")); // متوسّط(٣٨)
     load();
   }
 

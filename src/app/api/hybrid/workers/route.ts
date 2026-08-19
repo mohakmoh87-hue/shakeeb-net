@@ -33,6 +33,7 @@ export async function GET() {
       officeName: w.towerId != null ? tn.get(w.towerId) ?? null : null,
       priority: w.priority, approved: w.approved, lastSeen: w.lastSeen,
       online: isOnline(w.lastSeen), isLeader: leader === w.machineId,
+      lastLog: w.lastLog ?? null, // رقابة(أ): سجلُّ نافذة العامل — للمدير (المسارُ محروسٌ hybrid.manage)
     })),
     // الحاسبات المحظورة (المحذوفة) — لرفع الحظر عند الحاجة
     blocked: blockedWorkers.map((w) => ({

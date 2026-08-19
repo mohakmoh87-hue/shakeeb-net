@@ -180,6 +180,11 @@ export async function PATCH(request: Request) {
   if (data.towerId != null && tech.accountId) {
     await prisma.account.update({ where: { id: tech.accountId }, data: { towerId: newTowerId } }).catch(() => {});
   }
+  // متوسّط(٣١) · إعادةُ التسمية كانت تترك نسخةَ الاسم في حساب الموظف الماليّ على القديم —
+  // فكشوفُ الرواتب والذمم تحمل اسماً لم يعد اسمَه. المرآةُ تكتمل: الاسمُ يُواكَب كالمكتب.
+  if (typeof data.name === "string" && data.name.trim() && tech.accountId) {
+    await prisma.account.update({ where: { id: tech.accountId }, data: { name: data.name.trim() } }).catch(() => {});
+  }
   return NextResponse.json({ ok: true });
 }
 

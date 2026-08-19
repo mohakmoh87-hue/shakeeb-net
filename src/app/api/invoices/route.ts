@@ -182,7 +182,9 @@ export async function POST(request: Request) {
     orderBy: { number: "desc" },
     select: { number: true },
   });
-  const number = (last?.number ?? 0) + 1;
+  // متوسّط(٣٢) · «أكبرُ رقمٍ + ١» بلا ذرّيّةٍ: فاتورتان متزامنتان تأخذان نفسَ الرقم.
+  // الرقمُ يُعاد حسمُه داخل المعاملة تحت قفلٍ استشاريٍّ (أدناه) — وهذا تقديرٌ أوّليّ فقط.
+  let number = (last?.number ?? 0) + 1;
 
   let rewardDiscount = 0;
     let redeemLogId: number | null = null; // سجلُّ الخصم — يُربط refId بالفاتورة (عالٍ ب)
@@ -211,6 +213,14 @@ export async function POST(request: Request) {
     }
   }
     invoice = await prisma.$transaction(async (tx) => {
+    // متوسّط(٣٢) · قفلٌ استشاريٌّ يُسلسل توليدَ رقم الفاتورة داخل المعاملة: متزامنان
+    // يصطفّان هنا فيقرأ الثاني بعد إدراج الأوّل — لا رقمَ مكرَّراً أبداً، بلا فهرسٍ
+    // جديدٍ ولا هجرة (القفلُ يُفَكّ تلقائيّاً بنهاية المعاملة).
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(823001)`;
+    {
+      const freshLast = await tx.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } });
+      number = (freshLast?.number ?? 0) + 1;
+    }
     // خصم كود المكافأة أولاً (بحدّ الإجمالي، يبقى الباقي للمشترك)
     if (rewardEligible && subscriber) {
       const r = await redeemReward(tx, {

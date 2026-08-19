@@ -202,7 +202,7 @@ export async function POST(request: Request) {
     // 🔒 المشتركُ من مكاتبِ هذا الوكيل — وإلّا فتصحيحٌ عابرٌ للوكلاء
     const towers = await prisma.tower.findMany({ where: { agentId }, select: { id: true } });
     const sub = await prisma.subscriber.findFirst({
-      where: { id: row.subscriberId, towerId: { in: towers.map((t) => t.id) } }, select: { id: true },
+      where: { id: row.subscriberId, towerId: { in: towers.map((t) => t.id) } }, select: { id: true, dateTo: true },
     });
     if (!sub) return NextResponse.json({ error: "المشتركُ ليس ضمن مكاتبك" }, { status: 404 });
     const entry = await prisma.subscriptionEntry.findFirst({
@@ -212,6 +212,12 @@ export async function POST(request: Request) {
     if (!entry?.dateFrom) return NextResponse.json({ error: "لا قيدَ تفعيلٍ لتصحيحه" }, { status: 404 });
     const newTo = new Date(entry.dateFrom.getTime() + days * 86400_000);
     await prisma.subscriptionEntry.update({ where: { id: entry.id }, data: { dateTo: newTo } });
+    // متوسّط(٣٠) · النسختان كانتا تفترقان: يُصحَّح تاريخُ الوصل ويبقى تاريخُ المشترك الحيُّ
+    // القديمَ (وعليه تعمل المزامنةُ والتذكيراتُ والتقارير). إن كان تاريخُ المشترك مأخوذاً
+    // من هذا الوصل بعينه (يطابق قيمتَه القديمة) صُحّح معه — وإلّا فلا يُمَسّ.
+    if (sub.dateTo != null && entry.dateTo != null && sub.dateTo.getTime() === entry.dateTo.getTime()) {
+      await prisma.subscriber.update({ where: { id: sub.id }, data: { dateTo: newTo } });
+    }
     await prisma.deletedCardLog.updateMany({
       where: { id, agentId, handledAt: null },
       data: {

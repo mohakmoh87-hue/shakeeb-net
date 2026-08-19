@@ -281,6 +281,8 @@ export async function POST(request: Request) {
       const diff = netSale - scaled.reduce((a, b) => a + b, 0);
       if (scaled.length) scaled[scaled.length - 1] += diff;
 
+      // متوسّط(٣٢) · نفسُ قفل ترقيم الفواتير (823001) — فلا تتصادم فاتورةُ صيانةٍ مع فاتورةِ بيعٍ متزامنة
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(823001)`;
       const last = await tx.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } });
       invoiceNumber = (last?.number ?? 0) + 1;
       const inv = await tx.invoice.create({

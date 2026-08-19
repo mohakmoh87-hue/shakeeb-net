@@ -173,10 +173,22 @@ async function drainLoop(): Promise<void> {
       continue;
     }
 
-    await prisma.message.update({
-      where: { id: job.id },
-      data: { status: outcome.ok ? "SENT" : "FAILED", error: outcome.ok ? null : (outcome.error ?? "تعذّر الإرسال") },
-    }).catch(() => {});
+    // متوسّط(٢٢) · مهلةُ المُرحِّل والتنفيذُ جارٍ: الرسالةُ قد تكون **وصلت فعلاً** —
+    // لا يُعاد إرسالُها (خطرُ التكرار أسوأ) لكنّ الختمَ يقول الحقيقةَ صراحةً بدل «فاشلة».
+    const unconfirmed = !outcome.ok && /التنفيذ جارٍ/.test(outcome.error ?? "");
+    // متوسّط(٢٥) · ختمُ النتيجة كان مبتلَعَ الفشل بـcatch فارغ: لو فشل الختمُ بقي الصفُّ
+    // «قيد الإرسال» وأعاده recover بعد ١٠ دقائق ⇒ **رسالةٌ مكرَّرةٌ للمشترك**. فيُعاد
+    // الختمُ حتى ٣ مرّاتٍ بمهلة، ويُصرَخ في السجلّ إن فشلت كلُّها (نافذةُ الخطر تضيق جدّاً).
+    const stampData = {
+      status: outcome.ok ? ("SENT" as const) : ("FAILED" as const),
+      error: outcome.ok ? null : (unconfirmed ? `⚠️ غيرُ مؤكَّدة: ${outcome.error}` : (outcome.error ?? "تعذّر الإرسال")),
+    };
+    let stamped = false;
+    for (let attempt = 0; attempt < 3 && !stamped; attempt++) {
+      try { await prisma.message.update({ where: { id: job.id }, data: stampData }); stamped = true; }
+      catch { await sleep(2_000); }
+    }
+    if (!stamped) console.error(`[broadcast] 🔴 تعذّر ختمُ الرسالة #${job.id} ثلاثاً — قد يُعيدها recover فتتكرّر`);
     await sleep(GAP_MS);
   }
 }

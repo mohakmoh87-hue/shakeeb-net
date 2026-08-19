@@ -61,7 +61,10 @@ export default function DailyReportCard({
     setLoading(true);
     fetch(`/api/reports/daily?towerId=${sel}${uq}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setData(d); })
+      // متوسّط(٢٧) · الفشلُ كان صامتاً: تبقى أرقامُ المكتب السابق معروضةً باسم المكتب
+      // الجديد — أخطرُ أنواع الكذب في تقريرٍ ماليّ. الآن يُقال صراحةً وتبقى القراءةُ للسابق.
+      .then((d) => { if (d) setData(d); else alert("تعذّر جلبُ تقرير هذا المكتب — الأرقامُ المعروضةُ ما زالت للتبويب السابق"); })
+      .catch(() => alert("تعذّر جلبُ تقرير هذا المكتب — الأرقامُ المعروضةُ ما زالت للتبويب السابق"))
       .finally(() => setLoading(false));
   }, [sel, isAdmin, uq]);
 

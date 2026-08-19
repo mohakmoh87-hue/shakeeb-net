@@ -78,6 +78,30 @@ export function startHybridAgent() {
   const id = getMachineId();
   const name = os.hostname();
   const towerId = process.env.WORKER_TOWER_ID ? Number(process.env.WORKER_TOWER_ID) : null;
+
+  // ═════ رقابة(أ) 2026-08-19 · سجلُّ نافذة العامل يُرفَع مع النبضة ═════
+  // «النافذةُ صامتةٌ لا أستطيع رؤيتها» شلّ تشخيصَ حادثة الشدن كاملةً. الآن تُلتقَط آخرُ
+  // أسطرِ الكونسول في حلقةٍ (بلا مساسٍ بالمخرَج الأصليّ) وتُكتب مع كلّ نبضةٍ فتُقرأ من
+  // صفحة «حواسيب النظام الهجين» — أيُّ عطلٍ قادمٍ يُشخَّص من الموقع في دقيقة.
+  const gLog = globalThis as unknown as { __waLogRing?: string[]; __waLogPatched?: boolean };
+  if (!gLog.__waLogPatched) {
+    gLog.__waLogPatched = true;
+    gLog.__waLogRing = [];
+    const ring = gLog.__waLogRing;
+    const stamp = () => new Date(Date.now() + 3 * 3_600_000).toISOString().slice(11, 19); // توقيت بغداد
+    for (const level of ["log", "warn", "error"] as const) {
+      const orig = console[level].bind(console);
+      console[level] = (...args: unknown[]) => {
+        try {
+          const line = args.map((a) => (typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })())).join(" ");
+          ring.push(`[${stamp()}] ${line}`.slice(0, 300));
+          if (ring.length > 60) ring.splice(0, ring.length - 60);
+        } catch { /* الالتقاطُ لا يُعطّل الطباعةَ الأصليّة أبداً */ }
+        orig(...args);
+      };
+    }
+  }
+  const lastLogText = () => (gLog.__waLogRing ?? []).join("\n").slice(-4000);
   let loggedOk = false;
 
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -88,7 +112,7 @@ export function startHybridAgent() {
         where: { machineId: id },
         // ربط المكتب: env WORKER_TOWER_ID (إن وُجد) يُثبّت/يُصحّح الربط في القاعدة؛
         // وإلا يبقى ما ضبطه المدير مركزياً (لا يُدهَس بـnull عند غياب الـenv)
-        update: { lastSeen: new Date(), name, ...(towerId != null ? { towerId } : {}), ...(printers ? { printers } : {}) },
+        update: { lastSeen: new Date(), name, lastLog: lastLogText(), ...(towerId != null ? { towerId } : {}), ...(printers ? { printers } : {}) },
         create: { machineId: id, name, towerId, lastSeen: new Date(), ...(printers ? { printers } : {}) },
         select: { agentId: true, approved: true, blocked: true, towerId: true },
       });

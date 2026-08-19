@@ -302,7 +302,9 @@ async function resyncSequence(tx: typeof prisma, table: string) {
   await tx.$executeRawUnsafe(
     `SELECT setval(pg_get_serial_sequence($1,'id'), GREATEST((SELECT COALESCE(MAX(id),1) FROM "${table}"),1))
      WHERE pg_get_serial_sequence($1,'id') IS NOT NULL`, table,
-  ).catch(() => {});
+  // متوسّط(٢٨) · كان الفشلُ مبتلَعاً: استعادةٌ «تنجح» ثمّ تنفجر الإدراجاتُ لاحقاً بتعارض
+  // معرّفاتٍ لا يُعرف مصدرُه. الصراخُ باسم الجدول يجعل التشخيصَ فوريّاً.
+  ).catch((e) => console.error(`[backup] 🔴 تعذّر ضبطُ تسلسل «${table}» — إدراجاتُه القادمة قد تتعارض:`, e instanceof Error ? e.message : e));
 }
 
 // استرجاع كامل (استبدال): يمسح بيانات الوكيل الحالية ويُدرج بيانات الملف تحت الوكيل الهدف

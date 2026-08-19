@@ -376,7 +376,42 @@ export async function runManagerDailyReport(
         continue;
       }
     }
-    const text = await dailyReportText(office.name ?? "المكتب", office.id, targetDay); // تقرير هذا المكتب لليوم المحدّد
+    let text = await dailyReportText(office.name ?? "المكتب", office.id, targetDay); // تقرير هذا المكتب لليوم المحدّد
+    // ═════ رقابة(ب) 2026-08-19 · ملخّصُ أعطال اليوم يركب تقريرَ المدير القائم ═════
+    // «رسالةٌ كلَّ صباح: كم خطأً وقع وأين» — بلا قناةِ إرسالٍ جديدة: يُلحَق بالتقرير
+    // اليوميّ نفسِه فيرث عزلَه (وكيلُ المكتب حصراً) وقناتَه ومواعيدَه وختمَ تكراره.
+    // 🔒 العزل: أخطاءُ الواجهة تُعَدّ لمستخدمي هذا الوكيل، والرسائلُ الفاشلة بـagentId،
+    //    والمكاتبُ الساقطة من مكاتب الوكيل — لا شيءَ يعبر بين مستأجرَين.
+    try {
+      const agentId = office.agentId ?? -1;
+      const dayStart = new Date(targetDay); dayStart.setTime(Date.parse(dayStr + "T00:00:00+03:00"));
+      const dayEnd = new Date(dayStart.getTime() + 24 * 3_600_000);
+      const agentUsers = await prisma.user.findMany({ where: { agentId }, select: { id: true } });
+      const uids = agentUsers.map((u) => u.id);
+      const [uiErrors, failedMsgs, agentTowers] = await Promise.all([
+        uids.length ? prisma.auditLog.count({ where: { action: "CLIENT_ERROR", userId: { in: uids }, createdAt: { gte: dayStart, lt: dayEnd } } }) : 0,
+        prisma.message.count({ where: { agentId, status: "FAILED", date: { gte: dayStart, lt: dayEnd } } }),
+        prisma.tower.findMany({ where: { agentId, isDeleted: false }, select: { id: true, name: true } }),
+      ]);
+      const sessions = await prisma.waSession.findMany({ where: { towerId: { in: agentTowers.map((t) => t.id) } }, select: { towerId: true, state: true, updatedAt: true } });
+      const stale = 5 * 60_000;
+      const downNames = agentTowers
+        .filter((t) => { const ss = sessions.find((x) => x.towerId === t.id); return !ss || ss.state !== "ready" || Date.now() - ss.updatedAt.getTime() > stale; })
+        .map((t) => t.name ?? `#${t.id}`);
+      if (uiErrors > 0 || failedMsgs > 0 || downNames.length > 0) {
+        text += `
+
+🩺 ملخّصُ الأعطال:`;
+        if (uiErrors > 0) text += `
+· أخطاءُ شاشاتٍ اليوم: ${uiErrors} (تفاصيلُها في سجلّ التدقيق)`;
+        if (failedMsgs > 0) text += `
+· رسائلُ واتساب فشلت اليوم: ${failedMsgs} (سجلُّ الرسائل)`;
+        if (downNames.length > 0) text += `
+· مكاتبُ واتسابها غيرُ متصلٍ الآن: ${downNames.slice(0, 5).join("، ")}${downNames.length > 5 ? "…" : ""}`;
+      }
+    } catch (e) {
+      console.error("[scheduler] تعذّر بناءُ ملخّص الأعطال — يُرسل التقريرُ بدونه:", e instanceof Error ? e.message : e);
+    }
     const res = await sendViaProvider("WHATSAPP", phone, text, office.id); // من واتساب هذا المكتب
     await prisma.message.create({
       data: {
@@ -557,7 +592,7 @@ export function startScheduler() {
       for (const o of waOffs) {
         import("@/lib/selfActivatedNotice")
           .then((m) => m.drainSelfActivatedQueue(o.id))
-          .catch(() => {});
+          .catch((e) => console.error("[scheduler] طابور «فعّل بنفسه» سقط صامتاً:", e instanceof Error ? e.message : e)); // متوسّط(٢٦)
       }
     }
     // (أُزيل تقرير المدير عبر واتساب — حلقة زائدة؛ المدير يرى تقارير كل الأيّام في «حسابات المدير».)
@@ -574,7 +609,7 @@ export function startScheduler() {
     if (Number(nowHM.slice(3)) % 10 === 0) {
       import("@/lib/cardDeleteGuard")
         .then((m) => m.inspectPendingDeletedCards(30, wAgent))
-        .catch(() => {});
+        .catch((e) => console.error("[scheduler] دورةُ حارس المال سقطت صامتةً:", e instanceof Error ? e.message : e)); // متوسّط(٢٦)
     }
     // ⛔ **مسحُ كلِّ الكروت في الساس أُلغي (قرارُ محمد 2026-08-14)**: «طريقةُ فحصِ الكروت
     //    مشكلةٌ كبيرة لأنّه **يزيد الفاتورة**. يكفي أنّ الحارسَ يشتغل عند حذفِ كارتٍ فيأخذ

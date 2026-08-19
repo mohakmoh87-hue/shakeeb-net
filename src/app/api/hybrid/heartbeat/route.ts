@@ -22,17 +22,28 @@ export async function POST(request: Request) {
 
   let nodeNumber = existing?.nodeNumber ?? null;
   if (nodeNumber == null) {
-    // تعيين رقم عقدة فريد (السحابة=0؛ الحواسيب تبدأ من 1) لنظام المعرّفات المُنطَّقة
-    const agg = await prisma.hybridWorker.aggregate({ _max: { nodeNumber: true } });
-    nodeNumber = (agg._max.nodeNumber ?? 0) + 1;
+    // متوسّط(٣٣) · «أكبرُ رقمٍ + ١» صار تحت قفلٍ استشاريٍّ **يشمل الكتابةَ نفسَها**:
+    // حاسبتان جديدتان تنبضان معاً كانتا تأخذان نفسَ رقم العقدة ⇒ نطاقُ معرّفاتٍ واحدٌ
+    // لجهازَين. القفلُ يمتدّ من القراءة إلى upsert فلا يقرأ الثاني إلّا بعد كتابة الأوّل.
+    nodeNumber = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(823002)`;
+      const agg = await tx.hybridWorker.aggregate({ _max: { nodeNumber: true } });
+      const nn = (agg._max.nodeNumber ?? 0) + 1;
+      await tx.hybridWorker.upsert({
+        where: { machineId },
+        update: { lastSeen: new Date(), nodeNumber: nn, ...(towerId != null ? { towerId } : {}) },
+        create: { machineId, name, towerId, nodeNumber: nn, lastSeen: new Date() }, // approved=false افتراضياً
+      });
+      return nn;
+    });
+  } else {
+    await prisma.hybridWorker.upsert({
+      where: { machineId },
+      // لا نُحدّث الاسم عند النبضة حتى يبقى الاسم الذي حدّده المدير؛ الاسم يُضبط عند الإنشاء فقط
+      update: { lastSeen: new Date(), nodeNumber, ...(towerId != null ? { towerId } : {}) },
+      create: { machineId, name, towerId, nodeNumber, lastSeen: new Date() }, // approved=false افتراضياً
+    });
   }
-
-  await prisma.hybridWorker.upsert({
-    where: { machineId },
-    // لا نُحدّث الاسم عند النبضة حتى يبقى الاسم الذي حدّده المدير؛ الاسم يُضبط عند الإنشاء فقط
-    update: { lastSeen: new Date(), nodeNumber, ...(towerId != null ? { towerId } : {}) },
-    create: { machineId, name, towerId, nodeNumber, lastSeen: new Date() }, // approved=false افتراضياً
-  });
 
   const approved = existing?.approved ?? false;
   // قائد وكيل هذه الحاسبة فقط

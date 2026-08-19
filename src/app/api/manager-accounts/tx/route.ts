@@ -111,10 +111,13 @@ export async function DELETE(request: Request) {
   // حذفُه فقط إن كان يشير إلينا بالمثل (تبادلٌ يقطع الالتباس) — وضمن نفس الوكيل حصراً.
   const row = await prisma.managerTx.findFirst({ where: { id, isDeleted: false, agentId }, select: { id: true, notes: true } });
   if (!row) return NextResponse.json({ ok: true }); // محذوفٌ سلفاً أو ليس لوكيلك — لا شيءَ يُفعل
-  const pairId = Number(row.notes?.match(/زوج #(\d+)/)?.[1] ?? NaN);
-  if (Number.isFinite(pairId)) {
+  // متوسّط(٣٤) · كانت **أوّلُ** علامةٍ وحدَها تُقرأ: نصُّ مستخدمٍ يحمل «زوج #س» قبل
+  // العلامة الحقيقيّة كان يحجبها ⇒ يُحذف شقٌّ واحدٌ من تحويلٍ حقيقيّ فيختلّ الدفتران.
+  // الآن تُجرَّب كلُّ العلامات، والتبادلُ (كلٌّ يشير للآخر) يبقى الفيصلَ القاطع.
+  const pairIds = [...(row.notes ?? "").matchAll(/زوج #(\d+)/g)].map((m) => Number(m[1])).filter((x) => Number.isFinite(x));
+  for (const pairId of pairIds) {
     const other = await prisma.managerTx.findFirst({ where: { id: pairId, isDeleted: false, agentId }, select: { id: true, notes: true } });
-    const mutual = other && Number(other.notes?.match(/زوج #(\d+)/)?.[1] ?? NaN) === row.id;
+    const mutual = other && [...(other.notes ?? "").matchAll(/زوج #(\d+)/g)].some((m) => Number(m[1]) === row.id);
     if (mutual) {
       await prisma.managerTx.updateMany({ where: { id: { in: [row.id, other.id] }, agentId }, data: { isDeleted: true } });
       return NextResponse.json({ ok: true, pairDeleted: other.id });

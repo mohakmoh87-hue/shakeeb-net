@@ -181,6 +181,8 @@ export default function OfficesPage() {
     if (!window.confirm(`حذف المكتب "${o.name}"؟`)) return;
     const res = await fetch(`/api/towers/${o.id}`, { method: "DELETE" });
     if (res.ok) { if (sel?.id === o.id) { setSel(null); setForm(empty); } load(); }
+    // متوسّط(٣٧) · رفضُ الخادم (403 عزلٌ/صلاحية) كان يُبتلَع — نقرةٌ بلا أثرٍ ولا سبب
+    else { const d = await res.json().catch(() => ({})); setMsg(d.error ?? "تعذّر حذفُ المكتب"); }
   }
 
   const ro = !!sel && !editing;
