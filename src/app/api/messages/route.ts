@@ -7,6 +7,7 @@ import { getSession } from "@/lib/auth";
 import { renderTemplate, sendViaProvider, type Channel } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { QUEUE_MARK } from "@/lib/broadcastQueue"; // علامةُ صفوف طابور البثّ (درعُها من مقصلة المجدول)
+import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // حارسُ تكرار الرسائل (طلبُ محمد 2026-08-19)
 
 const schema = z.object({
   channel: z.enum(["SMS", "WHATSAPP", "TELEGRAM"]).default("SMS"),
@@ -197,6 +198,15 @@ export async function POST(request: Request) {
 
     // تفعيل واتساب المكتب = رسائل المشتركين فقط: إن كان مُطفأً لا تصل أي رسالة لأي مشترك (حتى الفردية)
     if (channel === "WHATSAPP" && office?.waEnabled === "0") continue;
+
+    // ═════ حارسُ التكرار — للبثّ لا للفرديّ (طلبُ محمد 2026-08-19) ═════
+    // الإرسالُ الفرديُّ (target="one") متعمَّدٌ فلا يُدَّدَع. أمّا البثُّ (كلّ/قسم) فرسالةٌ
+    // واحدةٌ لكلّ قالبٍ لكلّ مشتركٍ في اليوم. وهذا الفحصُ **قبل** الإرسال (المسارُ الفوريّ
+    // يُرسل ثمّ يُسجّل)؛ والفهرسُ الفريدُ على `dedupKey` يبقى شبكةَ أمان.
+    if (channel === "WHATSAPP" && target !== "one" &&
+        await alreadySentToday(sub.id, (templateType || "bulk"), session?.agentId)) {
+      continue; // أُرسِل هذا القالبُ لهذا المشترك خلال ٢٤ ساعة — لا يُكرَّر
+    }
     if (i > 0 && channel === "WHATSAPP") await sleep(GAP_MS);
 
     // اسم المكتب في القالب = اسم مكتب المشترك (الثوابت تتغيّر حسب المكتب)
@@ -225,8 +235,12 @@ export async function POST(request: Request) {
         error: result.error ?? null,
         createdByUser: session?.username,
         agentId: session?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
+        // القالبُ ومفتاحُ التكرار — للبثّ فقط (الفرديُّ بلا مفتاحٍ فلا يُقيَّد)
+        ...(target !== "one"
+          ? { templateType: templateType ?? "bulk", dedupKey: messageDedupKey(session?.agentId, sub.id, templateType) }
+          : {}),
       },
-    });
+    }).catch(() => { /* اصطدامُ الفهرس الفريد (سباقٌ نادر) = الرسالةُ سُجّلت سلفاً اليوم */ });
     if (result.ok) sent++;
     else failed++;
   }
@@ -270,22 +284,28 @@ export async function POST(request: Request) {
           // 🛡️ علامةُ الطابور في error — درعُ الصفّ من مقصلة «محاولة واحدة» على الحاسبات،
           // وبها يلتقطه الساحبُ. و`templateType` ليقرأ الساحبُ صورةَ القالب لحظةَ الإرسال.
           error: QUEUE_MARK,
-          templateType: templateType ?? null,
+          templateType: templateType ?? "bulk",
+          // 🔒 مفتاحُ التكرار المنيع: الفهرسُ الفريدُ الجزئيّ + `skipDuplicates` أدناه ⇒
+          //    مشتركٌ نال هذا القالبَ اليومَ لا يُصطَفُّ ثانيةً، فلا يُرسَل أصلاً. أمنعُ ما يكون.
+          dedupKey: messageDedupKey(session?.agentId, sub.id, templateType),
           createdByUser: session?.username, agentId: session?.agentId ?? null,
         };
       });
     if (!rows.length) return NextResponse.json({ error: "لا يوجد مستلمون مطابقون (واتساب مكاتبهم مُطفأ)" }, { status: 400 });
-    await prisma.message.createMany({ data: rows });
+    // skipDuplicates ⇒ ON CONFLICT DO NOTHING على الفهرس الفريد: الصفُّ المكرَّرُ يُتخطّى ذرّيّاً
+    const ins = await prisma.message.createMany({ data: rows, skipDuplicates: true });
+    const skipped = rows.length - ins.count; // كم مشتركاً نال هذا القالبَ اليومَ سلفاً فلم يُكرَّر
     await prisma.auditLog.create({
       data: {
         userId: session?.userId, action: "SEND_MESSAGE", entity: "message",
-        details: `${channel} - ${target} - اصطفّ ${rows.length} في طابور البثّ (يُستأنف تلقائيّاً)`,
+        details: `${channel} - ${target} - اصطفّ ${ins.count} في طابور البثّ${skipped ? ` (تُخطّي ${skipped} أُرسل لهم اليومَ سلفاً)` : ""} (يُستأنف تلقائيّاً)`,
       },
     }).catch(() => {});
     const { kickBroadcastDrainer } = await import("@/lib/broadcastQueue");
     kickBroadcastDrainer("بثّ جديد");
     // نفسُ عقد الردّ الخلفيّ القائم — فلا تتغيّر أيُّ واجهةٍ تنادي هذا المسار
-    return NextResponse.json({ ok: true, background: true, queued: rows.length, total: rows.length });
+    // العددُ الفعليُّ المُصطفّ (بعد تخطّي المكرَّرين) — لا عددُ المطابقين، فالواجهةُ تقول الحقيقة
+    return NextResponse.json({ ok: true, background: true, queued: ins.count, total: ins.count, skipped });
   }
 
   // إرسالٌ صامتٌ في الخلفيّة: نُعيد الردّ فوراً ونُكمل الحلقة مفصولةً عن الطلب

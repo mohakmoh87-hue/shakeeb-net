@@ -14,7 +14,8 @@ const ROUTE = "src/app/api/messages/route.ts";
 describe("ب-٢ · طابور البثّ الجماعيّ", () => {
   test("🔑 المستلمون يُكتبون صفوفاً PENDING **قبل** أيّ إرسال — فالمتبقّي محفوظٌ مهما حدث", () => {
     const src = read(ROUTE);
-    assert.ok(/message\.createMany\(\{ data: rows \}\)/.test(src), "لا اصطفافَ مسبقاً — عادت حلقةُ الذاكرة");
+    // skipDuplicates أُضيف لحارس التكرار (2026-08-19) — الاصطفافُ المسبقُ قائمٌ كما هو
+    assert.ok(/message\.createMany\(\{ data: rows, skipDuplicates: true \}\)/.test(src), "لا اصطفافَ مسبقاً — عادت حلقةُ الذاكرة");
     assert.ok(/kickBroadcastDrainer/.test(src), "المسارُ لا يركل الساحب");
   });
 
@@ -39,7 +40,8 @@ describe("ب-٢ · طابور البثّ الجماعيّ", () => {
     const src = read(Q);
     assert.ok(/"templateType"/.test(src), "الحَجزُ لا يُرجع نوعَ القالب");
     assert.ok(/imageFor\(job\.templateType/.test(src), "الساحبُ لا يُحمّل صورةَ القالب");
-    assert.ok(/templateType: templateType \?\? null/.test(read(ROUTE)), "الإدراجُ لا يحفظ نوعَ القالب");
+    // «bulk» بدل null لحارس التكرار (2026-08-19) — القالبُ ما زال يُحفَظ على الصفّ
+    assert.ok(/templateType: templateType \?\? "bulk"/.test(read(ROUTE)), "الإدراجُ لا يحفظ نوعَ القالب");
   });
 
   test("📴 حاسبةُ المكتب مطفأة ⇒ الصفُّ يبقى منتظراً لا فاشلاً — البثُّ يُستأنف حين تعود", () => {

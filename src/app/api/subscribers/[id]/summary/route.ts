@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 import { formatDate } from "@/lib/format";
+import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // حارسُ تكرار الرسائل (طلبُ محمد 2026-08-19)
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,12 @@ export async function POST(
   const tpl = await getEffectiveTemplateFull("subSummary", office?.agentId ?? session?.agentId ?? null, subscriber.towerId);
   if (!tpl) return NextResponse.json({ error: "قالب «ملخص الاشتراك» معطَّل — فعّله من قوالب الرسائل" }, { status: 400 });
 
+  // 🔒 حارسُ التكرار (طلبُ محمد 2026-08-19): ملخّصٌ واحدٌ لكلّ مشتركٍ في اليوم.
+  const dedupAgent = office?.agentId ?? session?.agentId ?? null;
+  if (await alreadySentToday(subscriber.id, "subSummary", dedupAgent)) {
+    return NextResponse.json({ error: "أُرسل ملخّصُ هذا المشترك اليومَ مسبقاً — رسالةٌ واحدةٌ من كلّ قالبٍ في اليوم" }, { status: 409 });
+  }
+
   const pkg = subscriber.packageId
     ? await prisma.package.findUnique({ where: { id: subscriber.packageId }, select: { name: true, priceDinar: true } })
     : null;
@@ -62,8 +69,10 @@ export async function POST(
       createdByUser: session?.username,
       // عزل: بلا الوكيل تغيب رسالةُ الملخّص عن سجلّ صاحبها (قِيس ١١٨ رسالةً كذلك في ٣ ساعات)
       agentId: office?.agentId ?? session?.agentId ?? null,
+      templateType: "subSummary", // حارسُ التكرار
+      dedupKey: messageDedupKey(dedupAgent, subscriber.id, "subSummary"),
     },
-  });
+  }).catch(() => { /* اصطدامُ الفهرس (سباقٌ نادر): الرسالةُ أُرسلت وسُجّلت سلفاً — لا نُفشل */ });
   if (!res.ok) return NextResponse.json({ error: res.error ?? "تعذّر الإرسال" }, { status: 502 });
   return NextResponse.json({ ok: true });
 }

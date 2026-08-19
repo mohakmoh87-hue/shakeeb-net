@@ -28,7 +28,7 @@ export const QUEUE_MARK = "📤 في طابور البثّ";
 const CLAIM_MARK = "⏳ قيد الإرسال";
 const GAP_MS = 10_000;          // فاصلُ مكافحة الحظر بين رسالةٍ وأخرى (كما كان)
 const OFFLINE_RETRY_MS = 60_000; // الحاسبةُ مطفأة: هدأةٌ قبل المحاولة التالية
-const EXPIRE_H = 48;            // المنتظرُ فوقها يُختَم فاشلاً
+const EXPIRE_H = 20;            // المنتظرُ فوقها يُختَم فاشلاً — ٢٠ ساعة (طلبُ محمد 2026-08-19: «يُمحى بعد ٢٠ ساعة لا ٤٨»)
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

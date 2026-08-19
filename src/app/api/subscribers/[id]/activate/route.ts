@@ -7,6 +7,7 @@ import { getSession } from "@/lib/auth";
 import { computeDateTo } from "@/lib/subscription";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
+import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // حارسُ تكرار الرسائل (طلبُ محمد 2026-08-19)
 import { sasBaseUrl, sasLogin, sasFetchUser } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
 import { credsOfSubscriber } from "@/lib/sasPanel";
@@ -366,6 +367,10 @@ async function sendActivationMessage(a: {
     const tplText = await getEffectiveTemplateFull("activation", office?.agentId ?? null, a.officeId);
     if (!tplText) return; // معطَّل أو لا قالب
 
+    // 🔒 حارسُ التكرار (طلبُ محمد 2026-08-19): رسالةُ تفعيلٍ واحدةٌ لكلّ مشتركٍ في اليوم —
+    //    تفعيلٌ ثانٍ لنفس المشترك في اليوم نفسِه لا يُرسل رسالةً ثانية.
+    if (await alreadySentToday(a.subscriberId, "activation", office?.agentId ?? null)) return;
+
     const text = renderTemplate(tplText.text, {
       name: a.name,
       netUser: a.netUser,
@@ -392,9 +397,11 @@ async function sendActivationMessage(a: {
         error: res.error ?? (res.imageError ? `أُرسلت بلا صورة — ${res.imageError}` : null),
         createdByUser: a.createdByUser,
         agentId: office?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل (من مكتب المشترك المقروء أعلاه)
+        templateType: "activation", // حارسُ التكرار
+        dedupKey: messageDedupKey(office?.agentId ?? null, a.subscriberId, "activation"),
       },
     });
   } catch {
-    // لا نُفشل التفعيل بسبب رسالة
+    // لا نُفشل التفعيل بسبب رسالة (ومنه اصطدامُ الفهرس الفريد في سباقٍ نادر)
   }
 }
