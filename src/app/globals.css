@@ -1185,3 +1185,39 @@ html[data-app-trial] .tfm-receipts {
   box-shadow: 0 2px 7px rgba(13, 84, 144, .28);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* ---- ١٢) قالبُ الصفحات الداخليّة العامّ (من شاشات النموذج الداخليّة) ----
+   كلُّ صفحات النموذج الداخليّة تشترك في: شريطِ أفعالٍ سفليٍّ بأزرارٍ تمتدّ
+   بالتساوي (.actionbar/.tb2) وفواصلِ أقسامٍ زرقاءَ بخطٍّ متلاشٍ (.sec2).
+   فتُعمَّم هنا على كلّ صفحةٍ تحت التجربة بلا وسمٍ إضافيّ. */
+
+/* أزرارُ الورقة السفليّة تمتدّ بالتساوي كأزرار actionbar في النموذج */
+html[data-app-trial] [data-app-bar] > button,
+html[data-app-trial] [data-app-bar] > a {
+  flex: 1 1 auto;
+  text-align: center;
+  justify-content: center;
+  border-radius: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* فواصلُ الأقسام: عنوانٌ أزرقُ صغيرٌ يليه خطٌّ يتلاشى (نمط .sec2) */
+@media (max-width: 767.98px) {
+  html[data-app-trial] main h3 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #0d5490;
+  }
+  html[data-app-trial] main h3::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to left, #cfe4f7, transparent);
+  }
+}
