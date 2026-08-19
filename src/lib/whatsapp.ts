@@ -33,14 +33,26 @@ type WaStore = {
 //   بلا QR. وفشلٌ واحدٌ يوقف تجديدَ الختم فقط (فيصدق الموقعُ «غيرَ متصل» مبكراً).
 const PROBE_EVERY_MS = 60_000;
 const PROBE_TIMEOUT_MS = 8_000;
-async function probeClientAlive(client: WAClient): Promise<boolean> {
+// ═════ 🔴 بلاغ محمد 2026-08-20: «بعض جلسات الواتساب تهدم بلا سبب» ═════
+// الجاني «Navigating frame was detached»: صفحةُ واتساب تتنقّل داخليّاً بين الحين
+// والحين، وgetState لحظتَها يرمي أخطاءَ **عابرةً** (frame detached · execution
+// context destroyed) لا تعني موتَ العميل — وكان المسبارُ يعدّها فشلاً، وفشلان
+// متتاليان يهدمان جلسةً حيّةً سليمة. صار المسبارُ ثلاثيَّ الدرجات:
+//   alive = CONNECTED · transient = خطأُ تنقّلٍ عابرٌ (لا يُحتسب ولا يُجدَّد الختم)
+//   dead = مهلةٌ أو Target closed أو حالةٌ غيرُ متصلة (يُحتسب نحو الهدم كالسابق)
+type ProbeResult = "alive" | "transient" | "dead";
+const TRANSIENT_PROBE_RE = /navigating frame was detached|frame was detached|execution context was destroyed|cannot find context with specified id/i;
+async function probeClientAlive(client: WAClient): Promise<ProbeResult> {
   try {
     const state = await Promise.race([
       Promise.resolve(client.getState()),
       new Promise<never>((_, rej) => setTimeout(() => rej(new Error("probe-timeout")), PROBE_TIMEOUT_MS)),
     ]);
-    return state === "CONNECTED";
-  } catch { return false; }
+    return state === "CONNECTED" ? "alive" : "dead";
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    return TRANSIENT_PROBE_RE.test(m) ? "transient" : "dead";
+  }
 }
 // يفحص جهوزيّةَ مكتبٍ حالتُه «ready» — ويهدم العميلَ الميّتَ بعد فشلَين متتاليَين.
 // يُرجع true إن كانت الجلسةُ جديرةً بتجديد ختمِ «متصل».
@@ -50,8 +62,14 @@ async function ensureReadyIsReal(officeId: number): Promise<boolean> {
   const now = Date.now();
   if (st.probedAt != null && now - st.probedAt < PROBE_EVERY_MS) return st.probeFails === 0;
   st.probedAt = now;
-  const ok = await probeClientAlive(st.client);
-  if (ok) { st.probeFails = 0; return true; }
+  const probe = await probeClientAlive(st.client);
+  if (probe === "alive") { st.probeFails = 0; return true; }
+  if (probe === "transient") {
+    // خطأُ تنقّلٍ عابر: لا يُحتسب فشلاً ولا يُهدَم شيء — وجلسةٌ كانت سليمةً تُبقي
+    // ختمَها حتى الدورة القادمة (فلا «غير متصل» كاذبةً على وميضِ تنقّل)
+    console.log(`[whatsapp] ⏳ مسبارُ مكتب ${officeId}: تنقّلٌ عابرٌ في الصفحة — لا يُحتسب`);
+    return st.probeFails === 0;
+  }
   st.probeFails += 1;
   console.log(`[whatsapp] ⚠️ مسبارُ مكتب ${officeId} فشل (${st.probeFails}/2) — الحالةُ «ready» والعميلُ لا يُجيب`);
   if (st.probeFails >= 2) {
