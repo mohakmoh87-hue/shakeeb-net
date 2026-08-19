@@ -44,6 +44,16 @@ export default function StandaloneLock() {
         if (r.ok) {
           // مستخدمٌ حقيقيّ (مدير/موظّف) ⇒ التطبيقُ يفتح كلَّ الموقع، وتظهر قائمةُ التنقّل
           root.setAttribute("data-app-role", "manager");
+          // 🔴 بلاغ محمد 2026-08-19: «لازال يوجهني الى ادارة الفنيين وليس الرئيسية» —
+          //   الأيقونةُ المثبَّتةُ تحمل start_url القديم (/field-management) وكروم يُحدّث
+          //   البيانَ بكسل. فأوّلُ هبوطٍ في الجلسة إن كان مديراً على صفحة الفنيّين
+          //   يُحوَّل للرئيسيّة **مرّةً واحدة** — وتنقّلُه إليها بعد ذلك حرٌّ لا يُمَسّ.
+          try {
+            if (!sessionStorage.getItem("trialEntryDone")) {
+              sessionStorage.setItem("trialEntryDone", "1");
+              if (pathname === "/field-management") router.replace("/dashboard");
+            }
+          } catch { /* تخزينُ الجلسة محجوبٌ؟ نتجاهل — يبقى السلوكُ القديم */ }
           return;
         }
         // فنيٌّ (أو بلا جلسة) ⇒ التطبيقُ شاشةٌ واحدة كما هو
