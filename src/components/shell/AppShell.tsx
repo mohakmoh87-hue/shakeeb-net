@@ -241,18 +241,6 @@ function SideNav({ brand, fullName, roleLabel, onNavigate }: {
 
       {/* القائمة */}
       <nav className="flex-1 py-2" aria-label="أقسام البرنامج">
-        {/* 🧪 بندٌ تجريبيٌّ (طلب محمد 2026-08-19): «تحصيل الفنيين خيار في القائمة الجانبيه
-            ويدخلك على صفحة منبثقة» — لا يظهر إلّا تحت العلَم، ويفتح منبثقةَ التحصيل في
-            الرئيسيّة عبر وسم #collect (لوحةُ المشتركين تلتقطه) */}
-        {can("field.manage") || can("finance.view") ? (
-          <button
-            type="button"
-            className="trial-only-navitem flex w-full items-center gap-3 border-r-[3px] border-transparent px-5 py-2.5 text-[13px] text-[#d5e2ef] transition hover:bg-white/5 hover:text-white"
-            onClick={() => go("/dashboard#collect")}
-          >
-            <span className="w-5 text-center">💰</span> تحصيل الفنيين
-          </button>
-        ) : null}
         {NAV.map((entry) => {
           if (entry.kind === "link") {
             if (entry.perm && !can(entry.perm)) return null;
@@ -270,7 +258,19 @@ function SideNav({ brand, fullName, roleLabel, onNavigate }: {
           if (items.length === 0) return null;
           const activeInside = items.some((it) => pathname === it.href);
           return (
-            <details key={entry.label} open={activeInside} className="group/g">
+            <div key={entry.label} className="contents">
+            {/* 🧪 «تحصيل الفنيين» فوق مجموعة «النظام» (تصحيح محمد 2026-08-19: «فوق كلمة
+                النظام وليس راس القائمة») — تجريبيٌّ يفتح منبثقةَ التحصيل عبر #collect */}
+            {entry.label === "النظام" && (can("field.manage") || can("finance.view")) && (
+              <button
+                type="button"
+                className="trial-only-navitem flex w-full items-center gap-3 border-r-[3px] border-transparent px-5 py-2.5 text-[13px] text-[#d5e2ef] transition hover:bg-white/5 hover:text-white"
+                onClick={() => go("/dashboard#collect")}
+              >
+                <span className="w-5 text-center">💰</span> تحصيل الفنيين
+              </button>
+            )}
+            <details open={activeInside} className="group/g">
               <summary className="flex cursor-pointer list-none items-center gap-3 border-r-[3px] border-transparent px-5 py-2.5 text-[13px] text-[#d5e2ef] transition hover:bg-white/5 hover:text-white [&::-webkit-details-marker]:hidden">
                 <span className="w-5 text-center">{entry.icon}</span> {entry.label}
                 <span className="mr-auto text-[10px] opacity-60 transition group-open/g:rotate-180">▾</span>
@@ -289,6 +289,7 @@ function SideNav({ brand, fullName, roleLabel, onNavigate }: {
                 })}
               </div>
             </details>
+            </div>
           );
         })}
 

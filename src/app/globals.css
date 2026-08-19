@@ -1719,3 +1719,162 @@ html[data-app-trial] .trial-dock-odoo {
 html[data-app-trial] .trial-only-navitem { display: flex; }
 html[data-app-trial] .trial-collect { max-width: 26rem; }
 html[data-app-trial] .trial-collect .card { border: 0 !important; box-shadow: none !important; background: #fff !important; }
+
+/* ---- ٢٣) دفعةُ لقطتَي الفجر (2026-08-19/20) ----
+   الرئيسيّة: عمليات+المزيد جنباً إلى جنب · الاسمُ يُقصّ · «الكل» في ترويسة اليوزر ·
+   منبثقةُ الثلاث نقاط أسطرٌ نموذجيّةٌ متساوية · صفرُ تمرير.
+   الفنيّون: صفُّ أدواتٍ موحَّدٌ (أودو · الخيارات · تتبع · 🔔) بمستطيلٍ جامعٍ
+   وارتفاعٍ واحدٍ وعرضٍ متساوٍ والجرسُ أنحف. */
+
+/* عمليات + ⋯المزيد بجانب بعض — والصفوفُ تنضغط فيتّسع المعروض */
+html[data-app-trial] .tbl.subs tbody tr:not(.subrow) td:nth-child(3) {
+  white-space: nowrap;
+  text-align: center;
+}
+html[data-app-trial] .tbl.subs tbody tr:not(.subrow) td:nth-child(3) .op {
+  display: inline-flex;
+  vertical-align: middle;
+}
+/* الاسمُ الطويل يُقصّ بسطرٍ واحد */
+html[data-app-trial] .tbl.subs tbody tr:not(.subrow) td:nth-child(2) {
+  max-width: 44vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[data-app-trial] .tbl.subs tbody tr:not(.subrow) td { padding-block: 4px !important; }
+
+/* «الكل» في ترويسة اليوزر — صغيرةٌ لا توسّع العمود */
+.trial-allchk { display: none; }
+html[data-app-trial] .trial-allchk {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-inline-start: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+html[data-app-trial] .trial-allchk .cb { width: 13px; height: 13px; }
+
+/* منبثقةُ الثلاث نقاط: أسطرٌ نموذجيّةٌ منسّقةٌ بأحجامٍ متساوية */
+html[data-app-trial] tr.subrow .sb-row { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 14px 12px 10px; }
+html[data-app-trial] tr.subrow .sb-row > * {
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+html[data-app-trial] tr.subrow .sb-sep { display: none; }
+html[data-app-trial] tr.subrow .sb-row .sb-chip {
+  justify-content: space-between;
+  padding: 0 10px;
+  background: #f2f8fe;
+  border: 1px solid #cfe4f7;
+  color: #0d5490;
+}
+html[data-app-trial] tr.subrow .sb-row .sb-chip b { font-size: 13px; }
+/* العنوانُ وحالةُ الساس يمتدّان صفّاً كاملاً */
+html[data-app-trial] tr.subrow .sb-row .sb-chip[title*="العنوان"],
+html[data-app-trial] tr.subrow .sb-row .sb-chip[title*="الساس"] { grid-column: 1 / -1; }
+/* زرُّ الإغلاق دائرةٌ في الزاوية لا سطرٌ في الشبكة */
+html[data-app-trial] tr.subrow .sb-row .sb-x {
+  position: absolute;
+  top: -12px;
+  inset-inline-start: -6px;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: #fff;
+  color: #64748b;
+  box-shadow: 0 2px 8px rgba(6, 32, 58, .35);
+  margin: 0;
+}
+html[data-app-trial] tr.subrow .sb-panel .sb-act {
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* صفُّ أدوات الفنيّين الموحَّد — مستطيلٌ جامعٌ يضمّ الأربعة */
+.trial-dockbar { display: none; }
+html[data-app-trial] .trial-dockbar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  z-index: 41;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1.6px solid #1c8fe6;
+  box-shadow: 0 0 0 3px rgba(28, 143, 230, .12), 0 6px 20px rgba(10, 79, 138, .30);
+}
+html[data-app-trial] .trial-dockbar .td-slot {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+/* الارتفاعُ الموحَّد = ارتفاع «الخيارات»، والعرضُ متساوٍ للثلاثة والجرسُ أنحف */
+html[data-app-trial] .trial-dockbar .td-slot,
+html[data-app-trial] .trial-dockbar .td-btn { height: 40px; }
+html[data-app-trial] .trial-dockbar .td-btn {
+  width: 84px;
+  border: 0;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #1c8fe6 0%, #0f6fbf 100%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+/* أزرارُ أودو داخل الصفّ تتشكّل بنفس القالب */
+html[data-app-trial] .trial-dockbar .td-slot > button,
+html[data-app-trial] .trial-dockbar .td-slot > a {
+  width: 84px !important;
+  height: 40px !important;
+  margin: 0 !important;
+  border-radius: 11px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 11px !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* الجرس: أنحفُ من البقيّة بارتفاعهم */
+html[data-app-trial] .trial-dockbar .td-bell { width: 46px; }
+html[data-app-trial] .trial-dockbar .td-bell > * ,
+html[data-app-trial] .trial-dockbar .td-bell button {
+  width: 100% !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+}
+/* تعويضُ فراغ المحتوى فوق الصفّ الموحَّد */
+html[data-app-trial] body:has(.trial-dockbar) [data-app-fullheight] { padding-bottom: 3.6rem !important; }

@@ -593,7 +593,8 @@ export default function SubscribersBoard() {
           onKeyDown={(e) => e.key === "Enter" && load(query, showAllTowers)}
           placeholder="بحث بالاسم أو رقم الهاتف أو اليوزر أو اسم المكتب"
         />
-        <label className="allofc">
+        {/* 🧪 في التجربة تُخفى العبارةُ الطويلة وينتقل الصندوقُ إلى ترويسة «اليوزر» باسم «الكل» */}
+        <label className="allofc" data-trial-hide>
           <input type="checkbox" className="cb" checked={showAllTowers} onChange={(e) => setShowAllTowers(e.target.checked)} />
           جميع مشتركين المكاتب
         </label>
@@ -636,7 +637,14 @@ export default function SubscribersBoard() {
           <thead>
             <tr>
               <th className="cbcol"><input type="checkbox" className="cb" title="تحديد الكل" checked={subs.length > 0 && checked.size === subs.length} onChange={toggleCheckAll} /></th>
-              <th>اسم المشترك</th><th>عمليات</th><th>اليوزر</th><th>رقم الهاتف</th><th>المكتب</th>
+              <th>اسم المشترك</th><th>عمليات</th>
+              <th>اليوزر
+                <label className="trial-allchk" title="جميع مشتركي المكاتب">
+                  <input type="checkbox" className="cb" checked={showAllTowers} onChange={(e) => setShowAllTowers(e.target.checked)} />
+                  الكل
+                </label>
+              </th>
+              <th>رقم الهاتف</th><th>المكتب</th>
             </tr>
           </thead>
           <tbody>

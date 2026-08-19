@@ -107,8 +107,10 @@ export function FieldTrackerProvider({ enabled, children }: { enabled: boolean; 
       {children}
       {enabled && techs.length > 0 && (
         <>
-          {/* زر عائم على الهاتف/التطبيق — يفتح النافذة الكبيرة */}
-          <button onClick={() => setBig(true)} className="fixed bottom-24 right-4 z-[45] flex items-center gap-1.5 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-xl active:scale-95 md:hidden">
+          {/* زر عائم على الهاتف/التطبيق — يفتح النافذة الكبيرة
+              🧪 يُخفى في التجربة (data-trial-hide) ويفتحه زرُّ صفّ الأدوات الموحَّد بالحدث */}
+          <TrialTrackOpener onOpen={() => setBig(true)} />
+          <button data-trial-hide onClick={() => setBig(true)} className="fixed bottom-24 right-4 z-[45] flex items-center gap-1.5 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-xl active:scale-95 md:hidden">
             📍 تتبع {ctx.activeCount > 0 && <span className="rounded-full bg-white/25 px-1.5 text-[11px]">{ctx.activeCount}</span>}
           </button>
 
@@ -236,4 +238,16 @@ function BigModal({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
       </div>
     </div>
   );
+}
+
+// 🧪 جسرُ صفّ الأدوات الموحَّد في التجربة: زرُّ «تتبع» في الصفّ يبثّ الحدثَ
+// trial:openTrack وهذا المكوّنُ (داخل سياق المتتبّع) يلتقطه فيفتح النافذةَ الكبيرة.
+// لا أثرَ له خارج التجربة — لا يرسم شيئاً ومستمعُه خامل.
+function TrialTrackOpener({ onOpen }: { onOpen: () => void }) {
+  useEffect(() => {
+    const h = () => onOpen();
+    window.addEventListener("trial:openTrack", h);
+    return () => window.removeEventListener("trial:openTrack", h);
+  }, [onOpen]);
+  return null;
 }

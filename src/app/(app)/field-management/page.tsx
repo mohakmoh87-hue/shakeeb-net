@@ -782,7 +782,7 @@ export default function FieldManagementPage() {
               بوّابتُه وحسابُه وشارتُه. ومكتبُ اللوحةِ الواحدةِ ⇒ **زرٌّ واحدٌ كما هو اليوم بالضبط**
               (فـ`officePanels` لا يأتي من الخادم إلّا لمكتبِ التعدّد). */}
           {!isTech && officeId != null && (
-            <span className="trial-dock-odoo contents">
+            <span data-trial-hide className="contents">
             {(officePanels[officeId]?.length ?? 0) > 1
               ? officePanels[officeId].map((p, i) => (
                   <OdooConfigButton
@@ -800,7 +800,7 @@ export default function FieldManagementPage() {
         <div className="flex items-center gap-2">
           {/* 🧪 في التجربة ينزل الجرسُ إلى الركن الأيمن السفليّ بجانب «الخيارات»
               (trial-dock-bell — شفّافةٌ contents في المتصفّح) */}
-          <span className="trial-dock-bell contents">{canManage && <NotificationsBell />}</span>
+          <span data-trial-hide className="contents">{canManage && <NotificationsBell />}</span>
           {isTech ? (
             <button onClick={techLogout} className="rounded-lg bg-white/20 px-3 py-1.5 text-sm text-white hover:bg-white/30">خروج ⏻</button>
           ) : (
@@ -1190,10 +1190,22 @@ export default function FieldManagementPage() {
         <div className="contents">
         {!isTech && (
           <div className="contents">
-            <button type="button" className="trial-opts-fab" onClick={() => setTrialOpts(true)}>
-              <span className="app-bar-grip" aria-hidden="true" />
-              <span>الخيارات</span>
-            </button>
+            <div className="trial-dockbar">
+              {officeId != null && (
+                <span className="td-slot">
+                  {(officePanels[officeId]?.length ?? 0) > 1
+                    ? officePanels[officeId].map((p, i) => (
+                        <OdooConfigButton key={p.id} officeId={officeId} panelId={p.id}
+                          officeName={`${offices.find((o) => o.id === officeId)?.name ?? "المكتب"} · ${p.label || `لوحة ${i + 1}`}`}
+                          onChange={() => load(officeId)} />
+                      ))
+                    : <OdooConfigButton officeId={officeId} officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"} onChange={() => load(officeId)} />}
+                </span>
+              )}
+              <button type="button" className="td-slot td-btn" onClick={() => setTrialOpts(true)}>⚙️ الخيارات</button>
+              <button type="button" className="td-slot td-btn" onClick={() => window.dispatchEvent(new Event("trial:openTrack"))}>📍 تتبع</button>
+              {canManage && <span className="td-slot td-bell"><NotificationsBell /></span>}
+            </div>
             {trialOpts && (
               <div className="trial-opts-wrap" onClick={() => setTrialOpts(false)}>
                 <div className="trial-opts" onClick={(e) => e.stopPropagation()}>
