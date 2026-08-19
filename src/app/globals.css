@@ -1064,3 +1064,39 @@ html[data-app-trial] thead th {
   html[data-app-trial] .card:has(table.rep) .sumbar { margin: 9px 10px 0; }
   html[data-app-trial] .card:has(table.rep) .masterbar { margin: 7px 10px 10px; }
 }
+
+/* ---- ١٠) إدارةُ الفنيّين بثوب النموذج (طلبُ محمد 2026-08-19) ----
+   «صفحة ادارة الفنيين ادخلها ايضا فهذا تطبيق تجريبي ولن يمس العمل الحي».
+   نموذجُها: شبكةُ أعمدةٍ **ثلاثةٌ في الصفّ تلتفّ** — لا تمريرَ جانبيّاً (التمريرُ
+   الجانبيُّ في صفحةٍ عربيّةٍ يضيع: البدايةُ يميناً والإصبعُ يسحب يساراً) · الأعمدةُ
+   بيضاءُ بإطارٍ سماويّ · ولا كلمةَ تحت كلمة (nowrap + حذف).
+   ⚠️ ملاحظةُ التجربة: سحبُ الأعمدة مبنيٌّ على صفٍّ أفقيٍّ، ففي الشبكة الملتفّة قد
+   يتصرّف غريباً بين الصفوف — يُعالَج إن ثبت الطرازُ واعتُمد. */
+@media (max-width: 767.98px) {
+  html[data-app-trial] [data-app-board] {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    overflow-x: hidden !important;
+    overflow-y: auto;
+    align-items: stretch; /* جارا العمود الطويل يتمدّدان إليه فيبقى الصفُّ مستوياً */
+  }
+  html[data-app-trial] [data-app-col] {
+    width: auto !important;
+    min-width: 0;
+    font-size: 10px;
+  }
+  html[data-app-trial] [data-app-col] * { min-width: 0; }
+  /* رأسُ العمود وبنودُ البطاقة: سطرٌ واحدٌ مهما ضاق — يتقلّص بالحذف لا بالنزول */
+  html[data-app-trial] [data-app-col] .font-bold,
+  html[data-app-trial] [data-app-col] [class*="truncate"] {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* رأسُ العمود أنحف على الهاتف */
+  html[data-app-trial] [data-app-col] > div:first-child { padding: 4px 6px; }
+}
+/* الأعمدةُ بيضاءُ بإطارٍ سماويٍّ (نمط .col في النموذج) — بكلّ المقاسات تحت التجربة */
+html[data-app-trial] [data-app-col] {
+  background: #fff !important;
+  border: 1px solid #cfe4f7 !important;
+}

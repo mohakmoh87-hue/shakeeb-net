@@ -871,6 +871,7 @@ export default function FieldManagementPage() {
       {/* الأعمدة */}
       <div
         ref={boardRef}
+        data-app-board
         data-empty={lists.length === 0 ? "1" : undefined}
         style={drag ? { touchAction: "none" } : undefined}
         className="flex min-w-0 flex-1 items-start gap-3 overflow-x-auto"
@@ -901,6 +902,7 @@ export default function FieldManagementPage() {
           return (
             <Fragment key={l.id}>
             <div
+              data-app-col
               data-list-id={l.id}
               style={dragThisList
                 ? { width: 0, minWidth: 0, marginInlineEnd: -12, opacity: 0, overflow: "hidden", pointerEvents: "none", transition: "all .18s cubic-bezier(.2,.8,.2,1)" }
@@ -1054,7 +1056,7 @@ export default function FieldManagementPage() {
         {lists.length > 0 && (() => {
           const doneCards = cards.filter((c) => c.done).sort((a, b) => String(b.completedAt ?? "").localeCompare(String(a.completedAt ?? "")));
           return (
-            <div className={`flex max-h-full w-[280px] shrink-0 flex-col rounded-xl shadow-lg ${isTech ? "bg-emerald-50 ring-1 ring-emerald-200" : "border border-line bg-surface-2"}`}>
+            <div data-app-col className={`flex max-h-full w-[280px] shrink-0 flex-col rounded-xl shadow-lg ${isTech ? "bg-emerald-50 ring-1 ring-emerald-200" : "border border-line bg-surface-2"}`}>
               <div className={`flex items-center justify-between px-3 py-2 ${isTech ? "" : "rounded-t-[11px]"}`}
                 style={!isTech ? { background: "var(--cat-done)" } : undefined}>
                 <span className={`font-bold ${isTech ? "text-emerald-800" : "text-white"}`}>✅ المنجزة <span className={`text-xs font-normal ${isTech ? "text-emerald-500" : "text-white/75"}`}>({doneCards.length})</span></span>
@@ -1087,7 +1089,7 @@ export default function FieldManagementPage() {
 
         {/* أ-٢ · إضافة عمود — للمدير ولمستخدم المكتب (حسمه محمد 2026-08-14) */}
         {canEditLists && (
-          <div className={`w-[280px] shrink-0 rounded-xl p-2 ${isTech ? "bg-white/20" : "border border-dashed border-line bg-surface"}`}>
+          <div data-app-col className={`w-[280px] shrink-0 rounded-xl p-2 ${isTech ? "bg-white/20" : "border border-dashed border-line bg-surface"}`}>
             <input value={newList} onChange={(e) => setNewList(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addList()} placeholder="+ إضافة عمود جديد" className={`w-full rounded-lg px-3 py-2 text-sm outline-none ${isTech ? "bg-white/90" : "border border-line bg-surface"}`} />
             {newList.trim() && <button onClick={addList} className="mt-1 w-full rounded-lg bg-white py-1.5 text-sm font-semibold text-mynet-blue">إضافة العمود</button>}
           </div>
