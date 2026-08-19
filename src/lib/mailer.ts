@@ -1,4 +1,11 @@
 import nodemailer from "nodemailer";
+import dns from "node:dns";
+
+// 🔴 حاويةُ Railway تحلّ smtp.gmail.com إلى IPv6 ولا مسارَ خارجيّاً له ⇒
+// «connect ENETUNREACH 2607:f8b0:…:587» — فكانت نسخةُ المالك الكاملة تفشل من الموقع
+// **دائماً** (بينما نسخُ الوكلاء تصل لأنّها تُرسَل من حاسبات المكاتب). تقديمُ IPv4 يحلّها،
+// ولا يمسّ العناوينَ الداخليّةَ ذاتَ AAAA فقط (كقاعدة railway.internal) إذ لا A لها يُقدَّم.
+try { dns.setDefaultResultOrder("ipv4first"); } catch { /* بيئات لا تدعمها — الافتراضيّ يبقى */ }
 
 // إرسال البريد عبر SMTP (Gmail افتراضياً). يُضبط بمتغيّرات البيئة:
 //   SMTP_USER  = إيميل الحساب المُرسِل (مثال: yourname@gmail.com)
