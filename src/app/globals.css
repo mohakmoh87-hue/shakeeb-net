@@ -994,3 +994,73 @@ html[data-app-trial] [data-app-drawer] { width: 75vw !important; max-width: 75vw
     padding-bottom: calc(6.2rem + env(safe-area-inset-bottom)) !important;
   }
 }
+
+/* ---- ٩) ثوبُ النموذج المعتمَد («واجهات تطبيق شكيب» — طلبُ محمد 2026-08-19) ----
+   «هذه التعديلات اللتي اتفقنا عليها فلماذا لا اراها كلها والرئيسية ايضا مثلها».
+   فهذه ترجمةُ نظامِ النموذج البصريّ على أصناف الصفحات القائمة نفسِها:
+   التقريرُ اليوميُّ مربّعٌ أزرقُ مدموجٌ أبيضُ النصّ ومجموعُه لوحٌ أبيضُ مقلوبُ
+   التباين · الصناديقُ البيضاء بإطارٍ أزرقَ متوهّجٍ (نمط .fm/.acts في النموذج) ·
+   ورؤوسُ الجداول بتدرّج الزرقة نفسِه بنصٍّ أبيض. */
+
+/* التقريرُ اليوميّ = المربّعُ الأزرقُ المدموج (يُميَّز بجدوله table.rep) */
+html[data-app-trial] .card:has(table.rep) {
+  background: linear-gradient(135deg, #1c8fe6 0%, #0d5490 100%) !important;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, .20);
+  box-shadow: 0 3px 10px rgba(13, 84, 144, .30);
+  --muted: #dceeff; /* سطرُ التاريخ وكلُّ ما يقرأ المتغيّر يبيضّ معه */
+}
+html[data-app-trial] .card:has(table.rep) .ch { color: #fff; }
+html[data-app-trial] .card:has(table.rep) table.rep td {
+  color: #dceeff;
+  border-top: 1px dashed rgba(255, 255, 255, .22);
+}
+html[data-app-trial] .card:has(table.rep) table.rep td.wsl,
+html[data-app-trial] .card:has(table.rep) table.rep b { color: #fff; font-weight: 800; }
+/* المجموعُ يبقى الأبرز: لوحٌ أبيضُ بنصٍّ أزرقَ عميق — انقلابُ التباين يُثبّت المرتبة */
+html[data-app-trial] .sumbar {
+  background: #fff !important;
+  color: #0d5490 !important;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .22);
+}
+/* الماستر — شريطٌ مستقلٌّ منقّطُ الإطار فوق الأزرق (كما في النموذج حرفيّاً) */
+html[data-app-trial] .card:has(table.rep) .masterbar {
+  background: rgba(255, 255, 255, .15) !important;
+  border: 1px dashed rgba(255, 255, 255, .45) !important;
+  color: #fff !important;
+}
+/* تبويباتُ المكاتب/المستخدمين فوق الأزرق: ألواحٌ شفّافةٌ والمُختارُ أبيضُ مقلوب */
+html[data-app-trial] .card:has(table.rep) .rtab {
+  background: rgba(255, 255, 255, .16);
+  border-color: rgba(255, 255, 255, .34);
+  color: #fff;
+}
+html[data-app-trial] .card:has(table.rep) .rtab.on { background: #fff; border-color: #fff; color: #0d5490; }
+
+/* الصناديقُ البيضاء (المشتركون وسواه): إطارٌ أزرقُ متوهّجٌ وأرضيّةٌ سماويّةٌ خفيفة */
+html[data-app-trial] .card:not(:has(table.rep)) {
+  background: linear-gradient(168deg, #f7fbff 0%, #eaf4fd 100%);
+  border: 1.6px solid #1c8fe6;
+  box-shadow: 0 0 0 3px rgba(28, 143, 230, .10), 0 2px 6px rgba(13, 84, 144, .10);
+}
+/* بطاقاتُ الإحصاء: الإطارُ الأزرقُ نفسُه (والداكنةُ تبقى داكنةً كما في النموذج) */
+html[data-app-trial] .stat:not(.dark) {
+  border: 1.6px solid #1c8fe6;
+  box-shadow: 0 0 0 3px rgba(28, 143, 230, .10), 0 2px 6px rgba(13, 84, 144, .10);
+}
+
+/* رؤوسُ الجداول: تدرّجُ الزرقة بنصٍّ أبيض (table.mini في النموذج) — يغلب القاعدةَ
+   الفاتحةَ في القسم ٢ أعلاه لأنّه أسفلَها في الملفّ */
+html[data-app-trial] thead th {
+  background: linear-gradient(135deg, #1c8fe6, #0d5490) !important;
+  color: #fff !important;
+}
+
+/* تكثيفُ الهاتف: بطاقاتُ الإحصاء والبحثُ يضيقان كما في إطار النموذج */
+@media (max-width: 767.98px) {
+  html[data-app-trial] .nst .stats { gap: 6px; }
+  html[data-app-trial] .nst .stat { padding: 8px 10px; border-radius: 10px; }
+  html[data-app-trial] .searchbar { margin: 2px 8px 8px; padding: 5px 9px; }
+  html[data-app-trial] .card:has(table.rep) .sumbar { margin: 9px 10px 0; }
+  html[data-app-trial] .card:has(table.rep) .masterbar { margin: 7px 10px 10px; }
+}
