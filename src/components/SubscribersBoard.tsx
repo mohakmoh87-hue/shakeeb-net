@@ -192,10 +192,14 @@ export default function SubscribersBoard() {
         history.replaceState(null, "", window.location.pathname + window.location.search);
       }
     };
+    // 🔴 بلاغ محمد: الضغطُ من القائمة وهو على الرئيسيّة لا يفتح شيئاً — توجيهُ Next لنفس
+    //   الصفحة بوسمٍ لا يُطلق hashchange ⇒ حدثٌ مباشرٌ trial:collect يُبثّ من القائمة
+    const direct = () => setCollectOpen(true);
     // rAF كي لا يُحسب فحصُ الإقلاع setState متزامناً داخل التأثير
     const raf = requestAnimationFrame(check);
     window.addEventListener("hashchange", check);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener("hashchange", check); };
+    window.addEventListener("trial:collect", direct);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("hashchange", check); window.removeEventListener("trial:collect", direct); };
   }, []);
   const [extRows, setExtRows] = useState<ExtRow[]>([]);
   const [extSel, setExtSel] = useState<Set<number>>(new Set());
@@ -661,7 +665,7 @@ export default function SubscribersBoard() {
                     <button className="op" title="عمليات المشترك" onClick={() => { setOpsSub(s); setOpsMsg(""); loadOpsTechs(s.towerId); loadOps(s.towerId); }}>🛠️</button>
                     {/* 🧪 «المزيد» بجانب عمليات: يفتح المنبثقةَ الكبيرة بكلّ خيارات المشترك
                         (خياراتُ الشريط + قائمةُ المزيد معاً) — لا وجودَ له في المتصفّح */}
-                    <button className="op trial-more" title="المزيد" onClick={() => { selectRow(s); setMoreMenu(true); }}>⋯</button>
+                    <button className="op trial-more" title="المزيد" onClick={() => { selectRow(s); setMoreMenu(false); }}>⋯</button>
                   </td>
                   <td dir="ltr">{s.netUser ?? "—"}</td>
                   <td className="num" dir="ltr">{s.phone ?? "—"}</td>
@@ -681,6 +685,7 @@ export default function SubscribersBoard() {
                       {/* 🧪 في التجربة يصير الشريطُ منبثقةً كبيرة؛ لمسُ خلفيّتها يغلقها */}
                       <div className="subbar" onClick={(e) => { if (inTrial() && e.target === e.currentTarget) { setSelectedId(null); setMoreMenu(false); } }}>
                         <div className="sb-row">
+                          <div className="trial-sub-name">{s.name}</div>
                           <button className="sb-act go" disabled={actChecking === s.id} onClick={() => startActivation(s)}>⚡ {actChecking === s.id ? "…" : "تفعيل"}</button>
                           {/* قرض فزعة: يُحاوَل حتى لو لم ينته الاشتراك (طلب محمد) — سوبر سيل هي المرجع الأخير.
                               يظهر في مكتبٍ مفعَّل، لمن يملك تفعيل الاشتراكات، وبلا قرضٍ قائم. */}
@@ -698,6 +703,7 @@ export default function SubscribersBoard() {
                           {officeRewardsOn(s.towerId) && <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>}
                           {/* مبلغ الاشتراك = سعر فئة المشترك (طلب محمد) */}
                           <span className="sb-chip c-sub">مبلغ الاشتراك <b>{fmt(packages.find((p) => p.id === s.packageId)?.priceDinar ?? 0)}</b></span>
+                          <span className="sb-chip trial-only-chip" title="يوزر المشترك">اليوزر <b dir="ltr">{s.netUser ?? "—"}</b></span>
                           {/* العنوان (ادرس 1 من الساس) — كان يُجلب ويُخزَّن ولا يُعرَض إلا داخل نموذج
                               التعديل، فبدا كأنّ المزامنة لا تجلبه (بلاغ محمد 2026-08-09) */}
                           {s.address && <span className="sb-chip" title="العنوان (ادرس 1 من الساس)">📍 <b>{s.address}</b></span>}

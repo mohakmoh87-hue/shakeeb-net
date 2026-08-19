@@ -1781,9 +1781,8 @@ html[data-app-trial] tr.subrow .sb-row .sb-chip {
   color: #0d5490;
 }
 html[data-app-trial] tr.subrow .sb-row .sb-chip b { font-size: 13px; }
-/* العنوانُ وحالةُ الساس يمتدّان صفّاً كاملاً */
-html[data-app-trial] tr.subrow .sb-row .sb-chip[title*="العنوان"],
-html[data-app-trial] tr.subrow .sb-row .sb-chip[title*="الساس"] { grid-column: 1 / -1; }
+/* العنوانُ وحدَه يمتدّ صفّاً كاملاً — و«متصل» بحجم أخواتها (تصويب محمد) */
+html[data-app-trial] tr.subrow .sb-row .sb-chip[title*="العنوان"] { grid-column: 1 / -1; }
 /* زرُّ الإغلاق دائرةٌ في الزاوية لا سطرٌ في الشبكة */
 html[data-app-trial] tr.subrow .sb-row .sb-x {
   position: absolute;
@@ -1950,3 +1949,19 @@ html[data-app-trial] .trial-dockbar .td-slot:has(> button:nth-of-type(2)) > butt
   font-size: 9px !important;
   padding-inline: 2px !important;
 }
+
+/* منبثقةُ المشترك — تصويبات محمد (2026-08-19 ليلاً): اسمُه متوسّطاً أعلى ·
+   «متصل» بحجم أخواتها تحت مبلغ الاشتراك · «اليوزر» تحت كود المكافأة */
+.trial-sub-name, .trial-only-chip { display: none; }
+html[data-app-trial] tr.subrow .trial-sub-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  grid-column: 1 / -1;
+  height: auto;
+  padding: 2px 0 4px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #0d5490;
+}
+html[data-app-trial] tr.subrow .trial-only-chip { display: flex; }

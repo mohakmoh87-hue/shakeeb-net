@@ -265,7 +265,11 @@ function SideNav({ brand, fullName, roleLabel, onNavigate }: {
               <button
                 type="button"
                 className="trial-only-navitem flex w-full items-center gap-3 border-r-[3px] border-transparent px-5 py-2.5 text-[13px] text-[#d5e2ef] transition hover:bg-white/5 hover:text-white"
-                onClick={() => go("/dashboard#collect")}
+                onClick={() => {
+                  // على الرئيسيّة: توجيهُ نفس الصفحة بوسمٍ لا يُطلق hashchange ⇒ حدثٌ مباشر
+                  if (window.location.pathname === "/dashboard") { onNavigate(); window.dispatchEvent(new Event("trial:collect")); }
+                  else go("/dashboard#collect");
+                }}
               >
                 <span className="w-5 text-center">💰</span> تحصيل الفنيين
               </button>
