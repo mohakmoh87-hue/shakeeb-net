@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { prisma } from "@/lib/prisma";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { dailyReportText, computeDailyReport } from "@/lib/dailyReport";
+import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // خاتمة الأصل ٢ (2026-08-19)
 import { formatDate } from "@/lib/format";
 
 // مجدول المهام: يعمل داخل عملية الخادم (توقيت العراق).
@@ -128,6 +129,11 @@ export async function runExpiringReminder(
       code: sub.rewardCode, balance: sub.rewardBalance ?? 0, // كود/رصيد الخصم (فارغ لمن لا رصيد له)
       office: office?.name ?? (await fallbackOfficeFor(office?.agentId ?? null)),
     });
+    // ═════ خاتمةُ الأصل ٢ (2026-08-19) · تذكيرُ الانتهاء تحت مظلّة فهرس التكرار ═════
+    // claimDay يحرس **المكتبَ** من دورتَي مُجدولٍ — لكنّ الزرَّ اليدويَّ (send-expiring)
+    // يتعمّد تجاوزَه، فمُجدولٌ ثمّ زرٌّ (أو ضغطتان) = رسالتان لنفس المشترك. الحارسُ
+    // الفرديُّ يسدّها: فحصٌ قبل الإرسال + dedupKey على السجلّ (الفهرسُ الفريدُ شبكةُ أمان).
+    if (await alreadySentToday(sub.id, "expiring", office?.agentId ?? null)) continue;
     const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image); // واتساب مكتب المشترك + صورةُ القالب
     await prisma.message.create({
       data: {
@@ -135,8 +141,10 @@ export async function runExpiringReminder(
         status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
         createdByUser: "scheduler",
         agentId: office?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
+        templateType: "expiring",
+        dedupKey: messageDedupKey(office?.agentId ?? null, sub.id, "expiring"),
       },
-    });
+    }).catch(() => { /* اصطدامُ الفهرس (سباقٌ نادرٌ عبر عمليّتَين) = سُجّلت اليومَ سلفاً */ });
     res.ok ? sent++ : failed++;
   }
 
@@ -210,14 +218,19 @@ export async function runDebtReminder(
       code: sub.rewardCode, balance: sub.rewardBalance ?? 0,
       office: office?.name ?? (await fallbackOfficeFor(office?.agentId ?? null)),
     });
+    // خاتمةُ الأصل ٢ · مطالبةُ ديونٍ واحدةٌ لكلّ مشتركٍ في اليوم — عبر كلّ المسارات
+    // (المُجدولُ هنا + زرُّ صفحة الديون الذي يمرّ بـ/api/messages المحروسِ سلفاً).
+    if (await alreadySentToday(sub.id, "debts", office?.agentId ?? null)) continue;
     const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image);
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
         status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: "scheduler",
         agentId: office?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
+        templateType: "debts",
+        dedupKey: messageDedupKey(office?.agentId ?? null, sub.id, "debts"),
       },
-    });
+    }).catch(() => { /* اصطدامُ الفهرس = مطالبةُ اليوم سُجّلت سلفاً */ });
     res.ok ? sent++ : failed++;
   }
   return { sent, failed };
