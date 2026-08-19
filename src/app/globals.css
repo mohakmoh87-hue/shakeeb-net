@@ -1307,11 +1307,14 @@ html[data-app-trial] [data-drill] td .leading-tight div + div::before { content:
     height: calc(100dvh - 54px); /* تحت الشريط العلويّ */
     min-height: 0 !important;
     overflow: hidden;
-    grid-template-rows: minmax(0, 1.08fr) minmax(0, 1fr);
+    /* 🔴 لقطة محمد (2026-08-19): الصفُّ العلويُّ كان نصفَ الشاشة فيترك التقريرُ فراغاً
+       أزرقَ تحته. صار auto: العمودُ الأيسر (حتى «سجلّ الوصولات») هو المسطرةُ —
+       والتقريرُ لا يشارك في القياس (height:0 أدناه) بل يتمدّد لمطابقته ويُمرَّر داخليّاً */
+    grid-template-rows: auto minmax(0, 1fr);
     align-content: stretch;
   }
   html[data-app-trial] .nst.nst-fill .card:has(table.rep) {
-    min-height: 0; overflow-y: auto; align-self: stretch;
+    height: 0; min-height: 100%; overflow-y: auto; align-self: stretch;
   }
   html[data-app-trial] .nst.nst-fill [data-trial-fm] { min-height: 0; overflow-y: auto; }
   html[data-app-trial] .nst.nst-fill #subs-board {
@@ -1323,4 +1326,13 @@ html[data-app-trial] [data-drill] td .leading-tight div + div::before { content:
   }
   /* والصفحةُ نفسُها بلا فراغٍ سفليٍّ يصنع تمريراً */
   html[data-app-trial] body:has(.nst-fill) main { padding-bottom: 0 !important; }
+}
+
+/* حارسُ فيض شارة الواتساب فوق عمود الفنيّين — لا تمريرَ جانبيّاً أبداً (لقطة محمد) */
+html[data-app-trial] .tfm-wa { overflow: hidden; }
+html[data-app-trial] .tfm-wa .wa {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

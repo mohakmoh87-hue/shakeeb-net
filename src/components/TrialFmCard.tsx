@@ -30,6 +30,9 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
   const [left, setLeft] = useState(demo?.left ?? 0);
   const [odoo, setOdoo] = useState(demo?.odoo ?? 0);
   const [leader, setLeader] = useState<{ name: string; points: number } | null>(demo?.leader ?? null);
+  // 🔴 لقطة محمد (2026-08-19): «عند الضغط على الفني فهد يفتح صفحة ادارة الفنيين وليس
+  //    نافذة انجازات الفنيين كما في السابق» — فالشارةُ تفتح النافذةَ لا الرابط
+  const [rankOpen, setRankOpen] = useState(false);
   const [subs, setSubs] = useState<{ active: number; online: number | null } | null>(demo?.subs ?? null);
 
   useEffect(() => {
@@ -97,14 +100,22 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
           </div>
         </div>
         {leader && (
-          <div className="tfm-badge">
+          // الشارةُ داخل رابط البطاقة ⇒ توقفُ التصعيدَ والانتقالَ وتفتح نافذةَ الإنجازات
+          <button
+            type="button"
+            className="tfm-badge"
+            style={{ width: "100%", border: 0, cursor: "pointer" }}
+            title="اضغط لفتح إنجازات الفنيّين"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRankOpen(true); }}
+          >
             <ChampionEmoji size={30} />
             <span className="tfm-nm">{leader.name}</span>
             <span className="tfm-pill">{leader.points.toLocaleString("en-US", { maximumFractionDigits: 1 })}</span>
-          </div>
+          </button>
         )}
       </Link>
       <Link href="/receipts" className="tfm-receipts" title="اضغط لفتح سجلّ الوصولات">سجلّ الوصولات</Link>
+      {rankOpen && <AchievementsModal onClose={() => setRankOpen(false)} />}
     </div>
   );
 }
