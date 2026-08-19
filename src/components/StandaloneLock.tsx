@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { isAppMode } from "@/lib/appMode";
-import { hasTrialSkin } from "@/components/trialSkin";
 
 // في التطبيق (PWA مثبّت أو التطبيق الأصلي): يحصر التنقّل بإدارة الفنيين لأي حساب.
 // المتصفح العادي غير متأثّر (الموقع كامل للمدير/الموظف).
@@ -28,14 +27,10 @@ export default function StandaloneLock() {
   const router = useRouter();
   useEffect(() => {
     if (!isAppMode()) return;
-    if (!hasTrialSkin()) {
-      // ── سلوك الإنتاج الحالي (بلا علَم التجربة) — لا يُمَسّ ──
-      if (pathname && !pathname.startsWith("/field-management")) {
-        router.replace("/field-management");
-      }
-      return;
-    }
-    // ── سلوك الطراز الجديد (هاتف التجربة وحدَه) ──
+    // 📜 اعتمادُ الطراز (عقد محمد 2026-08-19): في وضع التطبيق يُحسم كلُّ شيءٍ بالدور من
+    //   الخادم دائماً — الفنيُّ محصورٌ بلا ثوبٍ (تجربتُه القديمة حرفيّاً)، والمديرُ حرٌّ
+    //   بالثوب الكامل. لا مسارَ «قديمَ» بعدُ: مصيرُ الفنيّ في الفرعَين واحدٌ (القذفُ
+    //   لصفحته) فسلوكُه لم يتغيّر ذرّة.
     let alive = true;
     fetch("/api/me")
       .then((r) => {
@@ -44,6 +39,21 @@ export default function StandaloneLock() {
         if (r.ok) {
           // مستخدمٌ حقيقيّ (مدير/موظّف) ⇒ التطبيقُ يفتح كلَّ الموقع، وتظهر قائمةُ التنقّل
           root.setAttribute("data-app-role", "manager");
+          // مديرٌ مسجَّلٌ من قبل الاعتماد (لا كعكةَ عنده): تُزرع الكعكةُ الآن ويُشعل
+          //   الوسمُ فوراً — وأوّلُ مرّةٍ فقط تُنعَش الصفحةُ ليكتمل الثوبُ من رأسه،
+          //   فلا إعادةَ تنصيبٍ ولا إعادةَ دخول (شرطا محمد ٢ و٣).
+          try {
+            if (!document.cookie.split("; ").includes("appSkin=1")) {
+              document.cookie = "appSkin=1; Max-Age=31536000; Path=/; SameSite=Lax";
+              root.setAttribute("data-app-trial", "");
+              if (!sessionStorage.getItem("appSkinBoot")) {
+                sessionStorage.setItem("appSkinBoot", "1");
+                window.location.reload();
+                return;
+              }
+            }
+          } catch { /* كعكاتٌ محجوبة؟ الوسمُ يوضع أدناه على كلّ حال */ }
+          root.setAttribute("data-app-trial", "");
           // 🔴 بلاغ محمد 2026-08-19: «لازال يوجهني الى ادارة الفنيين وليس الرئيسية» —
           //   الأيقونةُ المثبَّتةُ تحمل start_url القديم (/field-management) وكروم يُحدّث
           //   البيانَ بكسل. فأوّلُ هبوطٍ في الجلسة إن كان مديراً على صفحة الفنيّين

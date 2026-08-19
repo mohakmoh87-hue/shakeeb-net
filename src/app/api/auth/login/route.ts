@@ -55,7 +55,10 @@ export async function POST(request: Request) {
       const sessionToken = crypto.randomUUID();
       await prisma.technician.update({ where: { id: tech.id }, data: { sessionToken } });
       await setTechSession({ kind: "technician", technicianId: tech.id, name: tech.name, username: tech.username ?? "", agentId: tech.agentId, towerId: tech.towerId, sessionToken });
-      return NextResponse.json({ ok: true, redirect: "/field-management" });
+      // 📜 عقد الاعتماد: دخولُ الفنيّ يمحو كعكةَ الثوب — «لا تغير اي شيء في دخول الفني اطلاقا»
+      const techRes = NextResponse.json({ ok: true, redirect: "/field-management" });
+      techRes.cookies.set("appSkin", "0", { maxAge: 31536000, path: "/", sameSite: "lax" });
+      return techRes;
     }
     return NextResponse.json({ error: "اسم المستخدم أو كلمة السر غير صحيحة" }, { status: 401 });
   }
@@ -123,5 +126,10 @@ export async function POST(request: Request) {
   });
 
   // توجيه حسب الدور: المالك للوحته، وغيره للوحة التحكم
-  return NextResponse.json({ ok: true, redirect: user.isOwner ? "/owner" : "/dashboard" });
+  // 📜 اعتمادُ طراز التطبيق (عقد محمد 2026-08-19): كعكةُ appSkin تُشعل ثوبَ التطبيق
+  //   لجلسات المستخدمين (مدير/موظّف) — **وسريانُها مشروطٌ بوضع التطبيق في العميل**
+  //   فلا تغيّر متصفّحَ الحاسبة شيئاً. وليست صلاحيّةً: ستايلٌ محض.
+  const res = NextResponse.json({ ok: true, redirect: user.isOwner ? "/owner" : "/dashboard" });
+  res.cookies.set("appSkin", "1", { maxAge: 31536000, path: "/", sameSite: "lax" });
+  return res;
 }

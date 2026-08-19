@@ -51,11 +51,13 @@ export default function RootLayout({
             __html: "try{var w=window,n=navigator;if((w.matchMedia&&w.matchMedia('(display-mode: standalone)').matches)||n.standalone===true||(w.Capacitor&&w.Capacitor.isNativePlatform&&w.Capacitor.isNativePlatform())){document.documentElement.setAttribute('data-app-mode','');}}catch(e){}",
           }}
         />
-        {/* 🧪 علَمُ تجربة الطراز مبكّراً (بلا وميض): كعكةُ trialSkin يضعها هاتفُ محمد وحدَه
-            من صفحة /trial — لا جهازَ في الإنتاج يحملها فلا يتغيّر عندهم شيء (2026-08-19) */}
+        {/* 📜 اعتمادُ طراز التطبيق (عقد محمد 2026-08-19): الوسمُ data-app-trial يُشعَل
+            مبكّراً (بلا وميض) **حصراً حين يجتمع شرطان**: وضعُ التطبيق (PWA/أصليّ — لا
+            متصفّحَ حاسبةٍ أبداً) + كعكةُ appSkin=1 التي لا يضعها إلّا دخولُ مدير/موظّف
+            (ودخولُ الفنيّ يمحوها). كعكةُ trialSkin القديمة تُقبل بديلاً للاستمراريّة. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: "try{if(document.cookie.split('; ').indexOf('trialSkin=1')>-1){document.documentElement.setAttribute('data-app-trial','');}}catch(e){}",
+            __html: "try{var w=window,n=navigator,app=((w.matchMedia&&w.matchMedia('(display-mode: standalone)').matches)||n.standalone===true||(w.Capacitor&&w.Capacitor.isNativePlatform&&w.Capacitor.isNativePlatform()));var c=document.cookie.split('; ');if(app&&c.indexOf('appSkin=0')===-1&&(c.indexOf('appSkin=1')>-1||c.indexOf('trialSkin=1')>-1)){document.documentElement.setAttribute('data-app-trial','');}}catch(e){}",
           }}
         />
       </head>

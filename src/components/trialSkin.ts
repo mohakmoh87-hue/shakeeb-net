@@ -12,19 +12,15 @@
 // إلى [data-app-mode] (والسلوكان في StandaloneLock/login يفقدان شرطَ العلَم)
 // فتنتقل التعديلاتُ نفسُها للتطبيق الحقيقيّ — بلا نقلِ كودٍ ولا إعادةِ بناء.
 
+// 📜 بعد الاعتماد (2026-08-19): مصدرُ الحقيقة هو الوسمُ نفسُه على <html> — يضعه سكربتُ
+//   الرأس (وضعُ تطبيقٍ + كعكةُ appSkin لمدير) أو StandaloneLock، فيقرؤه الجميعُ من مكانٍ واحد.
 export function hasTrialSkin(): boolean {
   if (typeof document === "undefined") return false;
   try {
-    return document.cookie.split("; ").includes("trialSkin=1");
+    return document.documentElement.hasAttribute("data-app-trial");
   } catch {
     return false;
   }
 }
 
-export function setTrialSkin(on: boolean): void {
-  if (typeof document === "undefined") return;
-  // سنةٌ كاملة — التجربةُ تمتدّ أيّاماً ولا تسقط بإغلاق التطبيق
-  document.cookie = on
-    ? "trialSkin=1; Max-Age=31536000; Path=/; SameSite=Lax"
-    : "trialSkin=; Max-Age=0; Path=/; SameSite=Lax";
-}
+// (أُزيلت setTrialSkin مع حذف صفحة /trial عند الاعتماد — الإشعالُ صار بدخول المدير)

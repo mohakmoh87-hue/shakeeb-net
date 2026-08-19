@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import InstallApp from "@/components/InstallApp";
-import { isAppMode } from "@/lib/appMode";
-import { hasTrialSkin } from "@/components/trialSkin";
 
 // صفحة تسجيل الدخول بالطراز الجديد (رموز .nst من النموذج المعتمد) — المنطق كما هو:
 // دخول + نسيت كلمة السر + تجربة أسبوع + الصفحة التعريفية + رقم التواصل + تثبيت التطبيق.
@@ -57,11 +55,10 @@ export default function LoginPage() {
         setError(data.error ?? "فشل تسجيل الدخول");
         return;
       }
-      // في التطبيق (PWA مثبّت أو التطبيق الأصلي): يبقى الجميع على إدارة الفنيين. وإلا التوجيه حسب الدور.
-      // 🧪 وتحت علَم التجربة (طراز 2026-08-15): تُحتَرم وجهةُ الخادم — فالخادمُ يعرف الدورَ
-      //    ويقولُه (الفنيُّ يُردّ بـ/field-management والمديرُ بوجهته)، والحصرُ يبقى على
-      //    الفنيّ وحدَه يفرضه StandaloneLock بسؤال /api/me. بلا العلَم: السلوكُ الحاليُّ حرفيّاً.
-      window.location.href = (isAppMode() && !hasTrialSkin()) ? "/field-management" : (data.redirect ?? "/dashboard");
+      // 📜 اعتمادُ الطراز (2026-08-19): وجهةُ الخادم تُحترم دائماً — فهو يعرف الدور:
+      //    الفنيُّ يُردّ بـ/field-management (فيبقى محصوراً كما كان حرفيّاً) والمديرُ
+      //    برئيسيّته. والحصرُ اللاحقُ يفرضه StandaloneLock بسؤال /api/me.
+      window.location.href = data.redirect ?? "/dashboard";
     } catch {
       setError("تعذّر الاتصال بالخادم");
     } finally {
