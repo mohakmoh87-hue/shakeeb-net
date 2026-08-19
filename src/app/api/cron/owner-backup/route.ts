@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { sendOwnerFullBackup } from "@/lib/backupJob";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +24,14 @@ export async function POST(request: Request) {
   // يُرسل، ثم لا يُرسل ثانيةً. فتصل النسخة كل يوم مضموناً، وإن تقدّم وقتها أو تأخّر.
   // والوقت المضبوط يبقى تفضيلاً معروضاً في حساب المالك لا شرطاً يمنع الإرسال.
 
-  const r = await sendOwnerFullBackup({ skipDedup: force });
-  return NextResponse.json(r);
+  // ═════ الردُّ فوراً والعملُ بعده (علاج 502 — 2026-08-20) ═════
+  // التصديرُ والإرسال يستغرقان دقائق، ووسيطُ Railway يقطع أيَّ ردٍّ يتأخّر ~٤٥ ثانية
+  // بـ502 فارغة — فكانت مهمّةُ GitHub تحمرّ **كلَّ ساعة** والخادمُ يُكمل خلفها بصمت.
+  // `after` يُنجز العملَ بعد إرسال الردّ؛ ومانعُ الازدواج داخل sendOwnerFullBackup يبقى
+  // هو الحارس، والفشلُ يصرخ في السجلّ وببريد إنذارٍ صغيرٍ للمالك (مرّةً في اليوم).
+  after(async () => {
+    const r = await sendOwnerFullBackup({ skipDedup: force });
+    if (!r.ok) console.error(`[backup] نسخة المالك (cron): ${r.error}`);
+  });
+  return NextResponse.json({ started: true });
 }

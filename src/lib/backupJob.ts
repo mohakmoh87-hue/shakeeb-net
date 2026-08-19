@@ -118,24 +118,91 @@ export async function sendOwnerFullBackup(opts?: { skipDedup?: boolean }): Promi
     }
   }
 
-  const { gz, filename, tableCount, rowCount } = await exportFullSystemBackup();
-  const today = new Date().toISOString().slice(0, 10);
-  const r = await sendMail({
-    to,
-    subject: `نسخة النظام الكاملة — كل الوكلاء — ${today}`,
-    text:
-      `مرفق ملف نسخة كاملة للنظام بأكمله بتاريخ ${today} (${tableCount} جدولاً، ${rowCount} صفّاً).\n` +
-      `يضمّ كل الوكلاء وحساباتهم وكروتهم وكل تفاصيلهم.\n\n` +
+  // ═════ 🔴 «باكاب كامل النظام لا يصل ويفشل» (بلاغُ محمد 2026-08-20) ═════
+  // منذ 16 آب فشلت **كلُّ** المحاولات، والعلامةُ بقيت على 2026-08-15 — أي أنّ التصديرَ
+  // كان يكتمل و`sendMail` هو الذي يرفض، والخطأُ لا يسجَّل في أيّ مكان. والجاني حجمُ
+  // المرفق: القاعدةُ ١٠١MB وملفُّها المضغوط تخطّى حدَّ Gmail (٢٥MB **بعد** ترميز base64
+  // الذي يضخّم ١٫٣٧× ⇒ الحدُّ الفعليّ ~١٨MB gz). فالعلاج ثلاثيّ:
+  //   ١) التقسيم: أجزاءٌ ≤ ١٥MB لكلٍّ بريدُه — تُجمَع عند الحاجة بأمرٍ واحدٍ مرفقٍ في النصّ.
+  //   ٢) الصراخ: فشلُ الإرسال يُسجَّل ويُرسَل عنه **بريدُ إنذارٍ صغير** (مرّةً في اليوم) —
+  //      فبريدُ محمد هو الشاشةُ الوحيدة التي يراقبها فعلاً.
+  //   ٣) فكُّ الحجز في finally لا بعد `sendMail` وحدَه — كان الانفجارُ في التصدير يُبقي
+  //      اليومَ محجوزاً فتصمت بقيّةُ الدورات وكأنّ النسخةَ أُرسلت.
+  const PART_MAX = 15 * 1024 * 1024;
+  try {
+    const { gz, filename, tableCount, rowCount } = await exportFullSystemBackup();
+    const today = new Date().toISOString().slice(0, 10);
+    const sizeMb = (gz.length / 1048576).toFixed(1);
+    const parts = Math.max(1, Math.ceil(gz.length / PART_MAX));
+    const keepNote =
       `احتفظ بهذا الملف جيّداً. لاستعادة كل شيء على نظام/دومين جديد: راجع docs/RECOVERY.md في حقيبة النجاة، ` +
-      `أو من حساب المالك ← «استعادة نسخة كاملة» وارفع هذا الملف (يستبدل كل البيانات الحالية).`,
-    attachments: [{ filename, content: gz, contentType: "application/gzip" }],
-  });
-
-  // العلامةُ خُتمت سلفاً في الحجز (أعلاه) — فلا شيءَ يُكتَب هنا عند النجاح. وعند الفشل
-  // يُفَكّ الحجزُ فتُعاد المحاولةُ في الدورة القادمة: يومٌ بلا نسخةٍ أخطرُ من بريدٍ مكرَّر،
-  // وفشلُ `sendMail` يعني أنّ خادمَ البريد **لم يقبل** الرسالة.
-  if (!r.ok && claimedRow) {
-    await prisma.systemSetting.update({ where: { id: claimedRow.id }, data: { value: claimedRow.prev } }).catch(() => {});
+      `أو من حساب المالك ← «استعادة نسخة كاملة» وارفع هذا الملف (يستبدل كل البيانات الحالية).`;
+    if (parts === 1) {
+      const r = await sendMail({
+        to,
+        subject: `نسخة النظام الكاملة — كل الوكلاء — ${today}`,
+        text:
+          `مرفق ملف نسخة كاملة للنظام بأكمله بتاريخ ${today} (${tableCount} جدولاً، ${rowCount} صفّاً، ${sizeMb}MB).\n` +
+          `يضمّ كل الوكلاء وحساباتهم وكروتهم وكل تفاصيلهم.\n\n${keepNote}`,
+        attachments: [{ filename, content: gz, contentType: "application/gzip" }],
+      });
+      if (!r.ok) throw new Error(r.error ?? "خادم البريد رفض الرسالة");
+    } else {
+      // أسماءُ الأجزاء وأمرُ جمعها يُبنيان مرّةً ويُرفَقان في **كلّ** جزء — فلو وصل جزءٌ
+      // وضاع بريدُ غيرِه بقيت التعليماتُ كاملةً بين يدَي محمد.
+      const partNames = Array.from({ length: parts }, (_, i) => `${filename}.part${i + 1}of${parts}`);
+      const joinCmd = `copy /b ${partNames.map((n) => `"${n}"`).join("+")} "${filename}"`;
+      for (let i = 0; i < parts; i++) {
+        const r = await sendMail({
+          to,
+          subject: `نسخة النظام الكاملة — الجزء ${i + 1} من ${parts} — ${today}`,
+          text:
+            `النسخة الكاملة بتاريخ ${today} (${tableCount} جدولاً، ${rowCount} صفّاً، ${sizeMb}MB) أكبر من حدّ المرفق الواحد، ` +
+            `فقُسّمت ${parts} أجزاء — هذا الجزء ${i + 1}.\n\n` +
+            `للاستعادة: نزّل الأجزاء كلّها في مجلد واحد ثم اجمعها ملفاً واحداً بأمرٍ واحد في CMD:\n${joinCmd}\n` +
+            `ثم ارفع «${filename}» الناتج في «استعادة نسخة كاملة».\n\n${keepNote}`,
+          attachments: [{ filename: partNames[i], content: gz.subarray(i * PART_MAX, (i + 1) * PART_MAX), contentType: "application/octet-stream" }],
+        });
+        if (!r.ok) throw new Error(`فشل إرسال الجزء ${i + 1}/${parts}: ${r.error ?? "خادم البريد رفض الرسالة"}`);
+      }
+    }
+    console.log(`[backup] ✅ نسخة المالك الكاملة أُرسلت (${tableCount} جدولاً، ${rowCount} صفّاً، ${sizeMb}MB في ${parts} ${parts === 1 ? "رسالة" : "أجزاء"})`);
+    return { ok: true, tables: tableCount, rows: rowCount };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[backup] 🔴 فشلت نسخة المالك الكاملة: ${msg}`);
+    // فكُّ الحجز فتُعاد المحاولةُ في الدورة القادمة: يومٌ بلا نسخةٍ أخطرُ من بريدٍ مكرَّر
+    if (claimedRow) {
+      await prisma.systemSetting.update({ where: { id: claimedRow.id }, data: { value: claimedRow.prev } }).catch(() => {});
+    }
+    await notifyOwnerBackupFailure(to, msg, todayKey);
+    return { ok: false, error: msg };
   }
-  return { ok: r.ok, tables: tableCount, rows: rowCount, error: r.error };
+}
+
+// بريدُ إنذارٍ صغيرٌ (بلا مرفق) عند فشل النسخة الكاملة — **مرّةً واحدةً في اليوم** كي لا
+// تتحوّل إعاداتُ المحاولة الساعيّةُ ٢٤ رسالةَ إزعاج. حَجزُ اليوم بنمط المقارنة-والتبديل نفسِه.
+async function notifyOwnerBackupFailure(to: string, reason: string, todayKey: string): Promise<void> {
+  try {
+    const last = await prisma.systemSetting.findFirst({
+      where: { type: "lastOwnerBackupFailDate" }, select: { id: true, value: true }, orderBy: { id: "asc" },
+    });
+    if (last?.value === todayKey) return;
+    if (last) {
+      const won = await prisma.systemSetting.updateMany({ where: { id: last.id, value: last.value }, data: { value: todayKey } });
+      if (won.count !== 1) return;
+    } else {
+      await prisma.systemSetting.create({ data: { type: "lastOwnerBackupFailDate", value: todayKey } });
+    }
+    await sendMail({
+      to,
+      subject: `⚠️ فشلت نسخة النظام الكاملة اليوم — ${todayKey}`,
+      text:
+        `تعذّر إرسال نسخة النظام الكاملة.\nالسبب: ${reason}\n\n` +
+        `ستُعاد المحاولة تلقائياً كل ساعة، وإن نجحت لاحقاً وصلتك النسخة كالمعتاد. ` +
+        `إن تكرّر هذا الإنذار أياماً متتالية فأخبر الدعم.`,
+    });
+  } catch (e) {
+    console.error("[backup] تعذّر حتى إرسال إنذار الفشل:", e instanceof Error ? e.message : e);
+  }
 }

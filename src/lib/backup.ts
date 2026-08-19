@@ -1,4 +1,5 @@
 import { gzipSync, gunzipSync, createGzip } from "node:zlib";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 // ===== النسخ الاحتياطي والاسترجاع لكل وكيل (عزل المستأجر) =====
@@ -113,7 +114,6 @@ export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: 
   // 🔑 والعلاج بثّيّ: مجرى gzip يُكتَب إليه **صفحةً صفحة**، فذروةُ الذاكرة تصير
   //   صفحةً واحدةً (٢٠٠٠ صفّ) مهما كبرت القاعدة — لا القاعدةَ كلَّها. والناتجُ
   //   المضغوطُ وحدَه يُجمَّع لأنّ البريدَ يحتاجه مرفقاً، وهو أصغرُ بمراتب.
-  const realTables = await allRealTables();
   const PAGE = 2000;
   let rowCount = 0;
   let tableCount = 0;
@@ -130,6 +130,13 @@ export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: 
       gzip.once("error", rej);
     });
 
+  // ═════ 🔒 لقطةٌ متّسقة (REPEATABLE READ) — علاجُ إنذار «نسخةٌ ناقصة» الكاذب ═════
+  // التصديرُ يستغرق دقائقَ والقاعدةُ حيّةٌ تُدرِج طوالَها (رسائل، سجلّات تدقيق…).
+  // فحارسُ الاكتمال أدناه كان يَعُدّ **بعد** الجولة فيجد صفوفاً وُلدت أثناءها ⇒ يصرخ
+  // «نسخةٌ ناقصة» على نسخةٍ سليمة. داخل معاملةِ لقطةٍ واحدة يقرأ العدُّ والترقيمُ
+  // الصورةَ ذاتَها المجمّدة، فيصير الحارسُ صادقاً والنسخةُ متّسقةً زمنيّاً بأكملها.
+  await prisma.$transaction(async (tx) => {
+  const realTables = await allRealTables(tx as typeof prisma);
   await put('{"version":' + BACKUP_VERSION + ',"full":true,"exportedAt":' + JSON.stringify(new Date().toISOString()) + ',"tables":{');
   for (const t of realTables) {
     if (FULL_EXCLUDE.has(t) || !SAFE_IDENT.test(t)) continue;
@@ -141,7 +148,7 @@ export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: 
     for (;;) {
       // ⚠️ ترتيبٌ ثابتٌ شرطُ صحّةِ الترقيم: بلا ORDER BY قد يُعيد Postgres صفّاً مرّتَين
       //    ويُسقط آخرَ بين صفحتَين — أي نسخةٌ ناقصةٌ **بلا أيّ خطأ يظهر**.
-      const rows = await prisma.$queryRawUnsafe<Row[]>(
+      const rows = await tx.$queryRawUnsafe<Row[]>(
         'SELECT * FROM "' + t + '" ORDER BY 1 OFFSET ' + offset + " LIMIT " + PAGE,
       );
       if (rows.length === 0) break;
@@ -157,9 +164,9 @@ export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: 
     await put("]");
     // 🛡️ حارسُ الاكتمال: الترقيمُ بـOFFSET يعتمد ترتيبَ العمود الأوّل. فلو لم يكن
     //    مُميِّزاً في جدولٍ ما، أمكن نظريّاً أن يتكرّر صفٌّ ويسقط آخرُ **بلا خطأ يظهر**
-    //    — أي نسخةٌ ناقصةٌ يُكتشَف نقصُها يومَ الكارثة وحدَه. فيُقارَن المعدودُ بالحقيقيّ،
-    //    وأيُّ فارقٍ يُسقط النسخةَ بصوتٍ عالٍ بدل أن يمرّ صامتاً.
-    const [{ n }] = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+    //    — أي نسخةٌ ناقصةٌ يُكتشَف نقصُها يومَ الكارثة وحدَه. فيُقارَن المعدودُ بالحقيقيّ
+    //    (على اللقطة نفسِها)، وأيُّ فارقٍ يُسقط النسخةَ بصوتٍ عالٍ بدل أن يمرّ صامتاً.
+    const [{ n }] = await tx.$queryRawUnsafe<{ n: bigint }[]>(
       'SELECT count(*)::bigint AS n FROM "' + t + '"',
     );
     if (Number(n) !== tableRows) {
@@ -169,6 +176,7 @@ export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: 
     }
   }
   await put("}}");
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 900000, maxWait: 15000 });
   gzip.end();
   await finished;
 
@@ -271,8 +279,8 @@ async function deleteAgentData(tx: typeof prisma, agentId: number) {
 const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 // أسماء كل جداول القاعدة الحقيقية (قائمة بيضاء للاسترجاع)
-async function allRealTables(): Promise<Set<string>> {
-  const rows = await prisma.$queryRawUnsafe<{ table_name: string }[]>(
+async function allRealTables(client: typeof prisma = prisma): Promise<Set<string>> {
+  const rows = await client.$queryRawUnsafe<{ table_name: string }[]>(
     `SELECT table_name::text AS table_name FROM information_schema.tables WHERE table_schema='public'`,
   );
   return new Set(rows.map((r) => r.table_name));
