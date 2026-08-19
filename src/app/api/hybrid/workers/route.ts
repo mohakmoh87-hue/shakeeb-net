@@ -15,7 +15,8 @@ export async function GET() {
   const [workers, blockedWorkers, leader, towers] = await Promise.all([
     // تُخفى المحظورة (المحذوفة) فلا تعود للظهور رغم استمرار نبضتها
     prisma.hybridWorker.findMany({ where: { blocked: false, OR: [{ agentId }, { agentId: null }] }, orderBy: [{ priority: "asc" }, { id: "asc" }] }),
-    prisma.hybridWorker.findMany({ where: { blocked: true, OR: [{ agentId }, { agentId: null }] }, orderBy: [{ id: "asc" }] }),
+    // المصروفةُ (dismissedAt) تبقى محظورةً في القاعدة لكنّها تختفي من القائمة (طلبُ محمد)
+    prisma.hybridWorker.findMany({ where: { blocked: true, dismissedAt: null, OR: [{ agentId }, { agentId: null }] }, orderBy: [{ id: "asc" }] }),
     computeLeaderMachineId(agentId),
     prisma.tower.findMany({ where: { isDeleted: false, agentId }, select: { id: true, name: true } }),
   ]);
@@ -98,9 +99,15 @@ export async function DELETE(request: Request) {
   const agentId = g.session?.agentId ?? null;
 
   if (hard) {
-    // حذفٌ نهائيّ — للمحظورة حصراً (تُحظر أولاً ثم تُحذف نهائيّاً)، ضمن عزل الوكيل.
-    const res = await prisma.hybridWorker.deleteMany({
+    // ═════ صرفٌ نهائيّ لا مسح (طلبُ محمد 2026-08-19) ═════
+    // «المحذوفةُ تعود بأوّل نبضةٍ فأستطيع تفعيلها — ابقاؤها محظورةً خيرٌ من مسحها.»
+    // فالمسحُ الفعليُّ (deleteMany) كان يُزيل الصفَّ، ونبضةُ الجهاز الحيّ تُعيد إنشاءَه
+    // سليماً (blocked=false) فيصير قابلاً للتفعيل. الآن يُصرَف: يبقى **محظوراً** ويُوسَم
+    // dismissedAt، فتُحدّثه النبضةُ محظوراً (لا تُحييه أبداً) ويختفي من قائمة المحظور.
+    // 🔒 العزلُ محفوظ: مقصورٌ على المحظورة التي تتبع الوكيلَ أو بلا مالك.
+    const res = await prisma.hybridWorker.updateMany({
       where: { id, blocked: true, OR: [{ agentId }, { agentId: null }] },
+      data: { blocked: true, approved: false, dismissedAt: new Date() },
     });
     if (res.count === 0) return NextResponse.json({ error: "الحاسبة غير محظورة أو لا تتبع حسابك" }, { status: 403 });
     return NextResponse.json({ ok: true, hard: true });

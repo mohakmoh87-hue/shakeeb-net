@@ -153,7 +153,17 @@ if ($cfg -and $cfg.databaseUrl) {
     $keep += ("AUTH_SECRET=" + (-join ($chars | Get-Random -Count 48 | ForEach-Object { [char]$_ })))
   }
   if (-not ($keep | Where-Object { $_ -match '^RUN_WORKER=' })) { $keep += "RUN_WORKER=1" }
-  if (-not ($keep | Where-Object { $_ -match '^MACHINE_ID=' })) { $keep += ("MACHINE_ID=" + [guid]::NewGuid().ToString()) }
+  # ═════ مُعرِّفٌ ثابتٌ للجهاز — لا عشوائيٌّ لكلّ تنصيب (طلبُ محمد 2026-08-19) ═════
+  # «التنصيبُ يعطي حاسبتَين»: كان [guid]::NewGuid يولّد مُعرِّفاً جديداً لكلّ تنصيبٍ بلا env
+  # سابق ⇒ تنصيبان على نفس الجهاز = صفّان. الآن يُؤخَذ MachineGuid الثابتُ من سجلّ ويندوز
+  # (ثابتٌ ما دام الويندوز مثبّتاً) ⇒ إعادةُ التنصيب على نفس الجهاز تُعيد المُعرِّفَ نفسَه
+  # فتُحدّث الصفَّ القائمَ ولا تُنشئ ثانياً. والاحتياطُ عشوائيٌّ إن تعذّرت قراءةُ السجلّ.
+  # 🔒 والحاسباتُ القائمةُ غيرُ متأثّرة: يُحفَظ MACHINE_ID الموجودُ في env دائماً (الشرطُ أعلاه).
+  if (-not ($keep | Where-Object { $_ -match '^MACHINE_ID=' })) {
+    $mid = try { (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid -ErrorAction Stop).MachineGuid } catch { $null }
+    if (-not $mid) { $mid = [guid]::NewGuid().ToString() }
+    $keep += ("MACHINE_ID=" + $mid)
+  }
   $lines = @(("DATABASE_URL=" + $db))
   if ($cfg.caB64) { $lines += ("DB_SSL_CA_B64=" + $cfg.caB64) }
   $lines += $keep
