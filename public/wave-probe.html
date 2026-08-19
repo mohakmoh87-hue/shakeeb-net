@@ -30,6 +30,18 @@ button.big{background:#047857}
 <div class="steps" id="hint" hidden>✓ نُسخ الرقم — يفتح Wave الآن.<br>إن هبط على «ميتنك»: افتح تبويبَ <b>الاتصال</b> ← اضغط مطوّلاً على خانة الرقم ← <b>لصق</b> ← اتصل.</div>
 </div>
 
+<div class="card" style="border-color:#c7d2fe;background:#eef2ff"><b>🍏 قسمُ الآيفون — يُجرَّب من سفاري على آيفون حصراً</b>
+<p>مَن يملك آيفون يدخل من المتصفّح بلا تطبيق، وطريقُ فتح التطبيقات هناك مختلفٌ كلّيّاً. اضغط الأزرارَ بالترتيب: إن ظهرت رسالة «Safari cannot open the page» فالبابُ مقفل؛ وإن فُتح Wave فأخبرنا <b>على أيّ شاشةٍ فُتح</b>.</p>
+<button class="btn" onclick="iosTry('wave://')">آيفون ١ · wave://‎</button>
+<div style="height:.5rem"></div>
+<button class="btn" onclick="iosTry('wave://call?number=07701234567')">آيفون ٢ · wave://call برقم</button>
+<div style="height:.5rem"></div>
+<button class="btn" onclick="iosTry('gswave://')">آيفون ٣ · gswave://‎</button>
+<div style="height:.5rem"></div>
+<button class="btn big" id="goIos">🎯 آيفون ٤ · انسخ الرقم ثمّ افتح Wave</button>
+<div class="steps" id="hintIos" hidden>✓ نُسخ 07701234567 — إن لم يُفتح Wave تلقائيّاً افتحه بيدك من شاشتك الرئيسيّة، ثمّ في خانة الرقم: ضغطٌ مطوّل ← لصق ← اتصال.<br><b>السؤالان:</b> هل فُتح Wave من الزرّ أصلاً؟ وهل قبلت خانةُ الرقم اللصق؟</div>
+</div>
+
 <div class="card"><b>بابٌ لم يُجرَّب ١ · wave:// فارغٌ تماماً</b>
 <p>بلا أيّ مسارٍ أو معاملات — قد يعامله التطبيقُ كفتحٍ عاديٍّ فيهبط على الرئيسيّة.</p>
 <a class="btn" href="intent://#Intent;scheme=wave;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-empty;end">جرّب</a></div>
@@ -41,6 +53,14 @@ button.big{background:#047857}
 <div class="note">📌 <b>الفحصُ الحاسم داخل Wave:</b> في لوحة الطلب اضغط مطوّلاً على خانة الرقم — <b>هل يظهر «لصق»؟</b> إن لم يقبل اللصقَ سقطت فكرةُ النسخ كلُّها.<br><br>ولمحاكاة تجربةِ <b>التطبيق</b> (الأفضل): انسخ رقماً يدويّاً ثمّ افتح Wave <b>من أيقونته</b> — هذا حرفيّاً ما سيفعله الزرُّ هناك.<br>صفحةٌ مؤقّتة — تُحذف بعد القرار.</div>
 </div>
 <script>
+function iosTry(u) { location.href = u; }
+document.getElementById("goIos").addEventListener("click", function () {
+  var b = this, h = document.getElementById("hintIos");
+  navigator.clipboard.writeText("07701234567").then(function () {
+    h.hidden = false; b.textContent = "✓ نُسخ — محاولةُ فتح Wave…";
+    setTimeout(function () { location.href = "wave://"; }, 1400);
+  }).catch(function () { h.hidden = false; h.textContent = "تعذّر النسخُ تلقائيّاً — انسخ 07701234567 يدويّاً ثمّ افتح Wave بيدك."; });
+});
 document.getElementById("go").addEventListener("click", function () {
   var b = this, h = document.getElementById("hint");
   navigator.clipboard.writeText("07701234567").then(function () {
