@@ -4,47 +4,52 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>مختبرُ Wave — الجولة ٢</title>
+<title>تجربةُ زرّ Wave — الجولة ٣</title>
 <style>
 body{background:#f6f8fb;color:#0f172a;font-family:"Segoe UI",Tahoma,system-ui,sans-serif;direction:rtl;margin:0;padding:1.6rem 1rem;line-height:1.9}
 .wrap{max-width:30rem;margin:0 auto}
 h1{font-size:1.25rem;margin:0 0 .2rem}
-.sub{color:#64748b;font-size:.85rem;margin-bottom:1.2rem}
-.ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:.8rem;padding:.6rem .9rem;font-size:.83rem;margin-bottom:1rem}
-.card{background:#fff;border:1px solid #dbe3ee;border-radius:1rem;padding:.9rem 1rem;margin-bottom:.8rem}
-.card b{display:block;margin-bottom:.4rem;font-size:.92rem}
-a.btn,button.btn{display:block;width:100%;text-align:center;background:#0f6fbf;color:#fff;text-decoration:none;font-weight:700;border:0;border-radius:.7rem;padding:.65rem;font-size:.95rem;cursor:pointer}
+.sub{color:#64748b;font-size:.85rem;margin-bottom:1.1rem}
+.card{background:#fff;border:1px solid #dbe3ee;border-radius:1rem;padding:1rem 1.1rem;margin-bottom:.9rem}
+.card b{display:block;margin-bottom:.35rem}
+.card p{margin:.1rem 0 .6rem;font-size:.82rem;color:#64748b}
+a.btn,button.btn{display:block;width:100%;text-align:center;background:#0f6fbf;color:#fff;text-decoration:none;font-weight:800;border:0;border-radius:.75rem;padding:.85rem;font-size:1.05rem;cursor:pointer}
+button.big{background:#047857}
+.steps{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:.7rem;padding:.5rem .8rem;font-size:.8rem;color:#166534;margin-top:.6rem}
 .note{font-size:.8rem;color:#64748b;border-top:1px dashed #dbe3ee;margin-top:1rem;padding-top:.8rem}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>☎️ مختبرُ Wave — الجولة ٢</h1>
-<div class="ok">✅ ثبت من الجولة الأولى: الحزمةُ <b dir="ltr">com.grandstream.ucm</b> والتطبيقُ يفتح بروابط <b dir="ltr">wave://</b> — لكن على شاشة الاجتماعات.</div>
-<div class="sub">نبحث الآن عن الرابط الذي يفتح <b>شاشةَ الاتصال والرقمُ 07701234567 مكتوبٌ فيها</b> (أو يتّصل مباشرة). اضغط الأزرارَ بالترتيب وأبلغ عن كلٍّ: «اجتماعات» أم «طلبٌ بالرقم» أم «رجعتني للصفحة».</div>
+<h1>☎️ تجربةُ زرّ Wave بنفسك</h1>
+<div class="sub">هذه محاكاةُ الزرّ النهائيّ من المتصفّح. (فتحُ Wave على واجهته الرئيسيّة مباشرةً حكرٌ على التطبيق الأصليّ — المتصفّحُ ممنوعٌ منه، فتجربتُه بمحاكاة الأيقونة يدويّاً.)</div>
 
-<div class="card"><b>١ · wave://call</b>
-<a class="btn" href="intent://call?number=07701234567#Intent;scheme=wave;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-1;end">جرّب</a></div>
-
-<div class="card"><b>٢ · wave://dial</b>
-<a class="btn" href="intent://dial?number=07701234567#Intent;scheme=wave;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-2;end">جرّب</a></div>
-
-<div class="card"><b>٣ · wave://الرقم مباشرةً</b>
-<a class="btn" href="intent://07701234567#Intent;scheme=wave;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-3;end">جرّب</a></div>
-
-<div class="card"><b>٤ · sip: موجَّهاً إلى Wave حصراً</b>
-<a class="btn" href="intent://07701234567#Intent;scheme=sip;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-4;end">جرّب</a></div>
-
-<div class="card"><b>٥ · tel: موجَّهاً إلى Wave حصراً</b>
-<a class="btn" href="intent://07701234567#Intent;scheme=tel;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-5;end">جرّب</a></div>
-
-<div class="card"><b>٦ · أمرُ «اطلب» الرسميّ (ACTION_DIAL) إلى Wave</b>
-<a class="btn" href="intent://07701234567#Intent;scheme=tel;action=android.intent.action.DIAL;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-6;end">جرّب</a></div>
-
-<div class="card"><b>٧ · الاحتياطُ العمليّ: نسخٌ + فتحُ Wave معاً</b>
-<button class="btn" onclick="navigator.clipboard.writeText('07701234567').then(()=>{location.href='intent://open#Intent;scheme=wave;package=com.grandstream.ucm;end'})">انسخ وافتح Wave</button></div>
-
-<div class="note">هبطتَ هنا ورأيت <b>#miss-N</b> في العنوان؟ ذلك الرقمُ بابٌ غيرُ موجود.<br>📌 وما زال اسمُ التطبيق في متجر Play (أو رابطُ صفحته) يفيدنا للتوثيق.<br>صفحةٌ مؤقّتة — تُحذف بعد الحسم.</div>
+<div class="card"><b>🎯 التجربةُ الكاملة — كما سيكون سطرُ «Wave» في قائمة الاتصال</b>
+<p>ضغطةٌ واحدة: تنسخ الرقمَ وتفتح Wave. ثمّ داخل Wave: تبويبُ الاتصال ← لصقٌ ← اتصال.</p>
+<button class="btn big" id="go">☎️ اتصال بـ 07701234567 عبر Wave</button>
+<div class="steps" id="hint" hidden>✓ نُسخ الرقم — يفتح Wave الآن.<br>إن هبط على «ميتنك»: افتح تبويبَ <b>الاتصال</b> ← اضغط مطوّلاً على خانة الرقم ← <b>لصق</b> ← اتصل.</div>
 </div>
+
+<div class="card"><b>بابٌ لم يُجرَّب ١ · wave:// فارغٌ تماماً</b>
+<p>بلا أيّ مسارٍ أو معاملات — قد يعامله التطبيقُ كفتحٍ عاديٍّ فيهبط على الرئيسيّة.</p>
+<a class="btn" href="intent://#Intent;scheme=wave;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-empty;end">جرّب</a></div>
+
+<div class="card"><b>بابٌ لم يُجرَّب ٢ · grandstream://</b>
+<p>بعضُ تطبيقات الشركة تُسجّل اسمَها العامَّ بابَين.</p>
+<a class="btn" href="intent://dial?number=07701234567#Intent;scheme=grandstream;package=com.grandstream.ucm;S.browser_fallback_url=https%3A%2F%2Fshakeebnet.com%2Fwave-probe.html%23miss-gs;end">جرّب</a></div>
+
+<div class="note">📌 <b>الفحصُ الحاسم داخل Wave:</b> في لوحة الطلب اضغط مطوّلاً على خانة الرقم — <b>هل يظهر «لصق»؟</b> إن لم يقبل اللصقَ سقطت فكرةُ النسخ كلُّها.<br><br>ولمحاكاة تجربةِ <b>التطبيق</b> (الأفضل): انسخ رقماً يدويّاً ثمّ افتح Wave <b>من أيقونته</b> — هذا حرفيّاً ما سيفعله الزرُّ هناك.<br>صفحةٌ مؤقّتة — تُحذف بعد القرار.</div>
+</div>
+<script>
+document.getElementById("go").addEventListener("click", function () {
+  var b = this, h = document.getElementById("hint");
+  navigator.clipboard.writeText("07701234567").then(function () {
+    h.hidden = false; b.textContent = "✓ نُسخ — يفتح Wave…";
+    setTimeout(function () {
+      location.href = "intent://open#Intent;scheme=wave;package=com.grandstream.ucm;end";
+    }, 1400);
+  }).catch(function () { h.hidden = false; h.textContent = "تعذّر النسخُ تلقائيّاً — انسخ 07701234567 يدويّاً ثمّ افتح Wave."; });
+});
+</script>
 </body>
 </html>
