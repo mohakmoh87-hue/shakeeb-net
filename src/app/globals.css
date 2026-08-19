@@ -1266,11 +1266,14 @@ html[data-app-trial] .trial-expand .masterbar {
   margin: 6px 2px 2px;
 }
 
-/* «قلل ارتفاع مربعي المجموع والماستر» — في الصغير والمكبَّر معاً */
-html[data-app-trial] .sumbar { padding: 5px 11px !important; }
-html[data-app-trial] .sumbar b { font-size: 13px; }
-html[data-app-trial] .masterbar { padding: 4px 11px !important; }
-html[data-app-trial] .masterbar b { font-size: 12px; }
+/* «قلل ارتفاع مربعي المجموع والماستر» — في الصغير والمكبَّر معاً
+   (وتصغيرٌ عموديٌّ ثانٍ بطلب محمد 2026-08-19 مساءً: «تصغير المستطيل عاموديا قليلا بعد») */
+html[data-app-trial] .sumbar { padding: 2px 10px !important; }
+html[data-app-trial] .sumbar b { font-size: 12px; }
+html[data-app-trial] .sumbar span { font-size: 10px; }
+html[data-app-trial] .masterbar { padding: 1px 10px !important; }
+html[data-app-trial] .masterbar b { font-size: 11px; }
+html[data-app-trial] .masterbar span { font-size: 10px; }
 
 /* ---- ١٥) ملءُ الشاشة وتثبيتُ أقسام الرئيسيّة (طلبات محمد 2026-08-19 مساءً) ----
    «اريد التطبيق ملئ الشاشة · زرا الرئيسيّة والتقرير لا اريدهما · لا تمريرَ في
