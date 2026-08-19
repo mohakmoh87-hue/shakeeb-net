@@ -1100,3 +1100,88 @@ html[data-app-trial] [data-app-col] {
   background: #fff !important;
   border: 1px solid #cfe4f7 !important;
 }
+
+/* ---- ١١) رئيسيّةُ النموذج حرفيّاً (شاشة أ — تصحيحُ محمد 2026-08-19) ----
+   «هل حقا انت فحصت الصفحة الرئيسية من الرابط؟ لا تشبهها باي شيء».
+   فأُعيد بناءُ الترتيب على تركيب النموذج نفسِه: النصفُ الأعلى عمودان —
+   يمينٌ: المربّعُ الأزرقُ المدموج (التقرير) · يسارٌ: إدارةُ الفنيّين (حلقةٌ
+   ووسائلُ ومتصدّر) وتحته «سجلّ الوصولات» — ثمّ قائمةُ المشتركين بعرض الشاشة.
+   وبطاقاتُ الإحصاء الأربع ليست في النموذج فتُخفى، وعدداها يسكنان شريطَ
+   المشتركين أعلى مربّع الفنيّين. */
+@media (max-width: 767.98px) {
+  /* الجذرُ شبكةٌ بمناطقَ مسمّاة — و«الأوّلُ يميناً» في RTL فالتقريرُ العمودُ الأوّل */
+  html[data-app-trial] .nst.nst-fill {
+    display: grid !important;
+    grid-template-columns: 1.1fr 1fr;
+    grid-template-areas: "rep fm" "board board";
+    gap: 8px !important;
+    align-content: start;
+    padding: 8px !important;
+  }
+  /* row2 يذوب فيشارك ولداه (المشتركون والتقرير) في شبكة الجذر مباشرةً */
+  html[data-app-trial] .nst.nst-fill .row2 { display: contents !important; }
+  html[data-app-trial] .nst.nst-fill .stats { display: none !important; }
+  html[data-app-trial] .nst.nst-fill [data-trial-fm] { grid-area: fm; min-width: 0; }
+  html[data-app-trial] .nst.nst-fill .card:has(table.rep) { grid-area: rep; min-width: 0; align-self: start; }
+  html[data-app-trial] .nst.nst-fill #subs-board { grid-area: board; min-width: 0; }
+  /* المربّعُ المدموجُ مضغوطٌ كما في النموذج */
+  html[data-app-trial] .card:has(table.rep) .ch { padding: 8px 9px 2px; }
+  html[data-app-trial] .card:has(table.rep) table.rep { font-size: 10.5px; }
+  html[data-app-trial] .card:has(table.rep) .rtab { font-size: 9px; padding: 2.5px 7px; }
+}
+
+/* مربّعُ الفنيّين — لبناتُ النموذج (fm/ring/legend/badge39/receipts) */
+[data-trial-fm] { display: none; } /* خارجَ العلَم لا وجودَ له إطلاقاً (والمكوّنُ أصلاً يرجع null) */
+html[data-app-trial] [data-trial-fm] {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+}
+html[data-app-trial] .tfm-subs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3px; text-align: center;
+  background: linear-gradient(135deg, #1c8fe6 0%, #0d5490 100%);
+  border: 1px solid rgba(255, 255, 255, .22); border-radius: 10px;
+  padding: 5px 4px; color: #fff; font-weight: 800; font-size: 12px;
+  text-decoration: none; box-shadow: 0 2px 7px rgba(13, 84, 144, .28);
+}
+html[data-app-trial] .tfm-subs span { display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; }
+html[data-app-trial] .tfm-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+html[data-app-trial] .tfm-main {
+  display: block; text-decoration: none; color: inherit; border-radius: 12px; padding: 8px;
+  background: linear-gradient(168deg, #f7fbff 0%, #eaf4fd 100%);
+  border: 1.6px solid #1c8fe6;
+  box-shadow: 0 0 0 3px rgba(28, 143, 230, .10), 0 2px 6px rgba(13, 84, 144, .10);
+}
+html[data-app-trial] .tfm-main h4 { margin: 0 0 6px; font-size: 12px; font-weight: 800; color: #0d5490; }
+html[data-app-trial] .tfm-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+html[data-app-trial] .tfm-ring {
+  width: 57px; height: 57px; border-radius: 50%; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 3px 8px rgba(13, 84, 144, .20);
+}
+html[data-app-trial] .tfm-ring i {
+  width: 40px; height: 40px; border-radius: 50%; background: #fff; font-style: normal;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 800; color: #0d5490;
+  box-shadow: inset 0 1px 3px rgba(13, 84, 144, .14);
+}
+html[data-app-trial] .tfm-legend { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 10px; }
+html[data-app-trial] .tfm-legend div {
+  display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  background: rgba(255, 255, 255, .78); border-radius: 6px; padding: 2px 6px; min-width: 0;
+}
+html[data-app-trial] .tfm-legend span { color: #31536f; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html[data-app-trial] .tfm-legend b { font-size: 12px; color: #0d5490; flex: 0 0 auto; }
+html[data-app-trial] .tfm-badge {
+  margin-top: 7px; border-radius: 13px; padding: 4px 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  background: linear-gradient(135deg, #1c8fe6 0%, #146fbc 55%, #0d5490 100%);
+  box-shadow: 0 2px 7px rgba(13, 84, 144, .32), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+html[data-app-trial] .tfm-nm { color: #eaf5ff; font-size: 10.5px; font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html[data-app-trial] .tfm-pill { background: rgba(255, 255, 255, .94); color: #0d5490; font-weight: 800; font-size: 11.5px; border-radius: 999px; padding: 1px 10px; flex: 0 0 auto; }
+html[data-app-trial] .tfm-receipts {
+  display: block; text-align: center; text-decoration: none;
+  background: linear-gradient(135deg, #1c8fe6 0%, #0d5490 100%); color: #fff;
+  border-radius: 11px; padding: 7px 6px; font-weight: 800; font-size: 11.5px;
+  box-shadow: 0 2px 7px rgba(13, 84, 144, .28);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
