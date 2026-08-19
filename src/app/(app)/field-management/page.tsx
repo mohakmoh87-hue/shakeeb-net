@@ -181,6 +181,9 @@ export default function FieldManagementPage() {
   const [typesModal, setTypesModal] = useState(false);
   const [archiveModal, setArchiveModal] = useState(false);
   const [trashModal, setTrashModal] = useState(false); // سلّة محذوفات البطاقات
+  // 🧪 نافذةُ «الخيارات» المنبثقة في تطبيق التجربة (طلب محمد 2026-08-19: «نافذة منبثقة
+  //    جميله والمربعات اكبر قليلا وفوقهن اختيار المكتب بقائمة منسدلة»)
+  const [trialOpts, setTrialOpts] = useState(false);
   const [achModal, setAchModal] = useState(false); // إنجازات الفنيين (للمدير)
   // ===== مرتبة الفني في تطبيقه (طلب محمد 2026-08-05) =====
   // الفني كان يعمل بلا أن يعرف أين هو من زملائه — والمسابقة بلا لوحة نتائج ليست مسابقة.
@@ -813,7 +816,7 @@ export default function FieldManagementPage() {
           إلى ورقة «الخيارات» المطويّة أسفل الشاشة — فيصفو رأسُ الصفحة كنموذج (د).
           بلاغ محمد 2026-08-19: «صفحة الفنيين تظهر بكثير من الازرار للمدير» */}
       {!isTech && offices.length > 0 && (
-        <div data-site-only data-app-bar className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
+        <div data-site-only data-trial-hide className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
           {offices.map((o) => (
             <button
               key={o.id}
@@ -825,28 +828,7 @@ export default function FieldManagementPage() {
               {o.name ?? `مكتب ${o.id}`}
             </button>
           ))}
-          <span className="mx-1 h-5 w-px bg-line" data-trial-hide />
-          {/* 🧪 مربّعاتُ التجربة (طلب محمد 2026-08-19): «لا اريد اي خيار بقائمة منسدلة —
-              الافضل مربعات لكل خيار موجود» — كلُّ بنود القائمتَين مربّعاتٌ مسطّحةٌ جميلة.
-              لا وجودَ لها في المتصفّح (.trial-tiles معدومةٌ خارج التجربة) والقائمتان
-              المنسدلتان تُخفيان في التجربة (data-trial-hide أدناه) — لا ازدواج */}
-          <div className="trial-tiles">
-            {(canManage || canOperate) && (
-              <button className="tile" onClick={() => setTechModal(true)}>👷<span>الفنيون ({technicians.length})</span></button>
-            )}
-            {canManage && (
-              <button className="tile" onClick={() => setLeaveModal(true)}>📅<span>الإجازات</span>{leavePending > 0 && <b className="tbadge">{leavePending}</b>}</button>
-            )}
-            {canManage && (
-              <button className="tile" onClick={() => setDedModal(true)}>💠<span>الخصومات</span>{dedPending > 0 && <b className="tbadge">{dedPending}</b>}</button>
-            )}
-            {canManage && <button className="tile" onClick={() => setAchModal(true)}>🏅<span>إنجازات الفنيين</span></button>}
-            {officeId != null && <button className="tile" onClick={() => setSupportModal(true)}>🤝<span>دعم مؤقت</span></button>}
-            {canManage && !isTech && <button className="tile" onClick={() => router.push("/attendance")}>🕒<span>حضور الفنيين</span></button>}
-            {canManage && <button className="tile" onClick={() => setTypesModal(true)}>⏱<span>الأنواع والأوقات</span></button>}
-            <button className="tile" onClick={() => setArchiveModal(true)}>🗂️<span>الأرشيف</span></button>
-            {canOperate && !isTech && <button className="tile" onClick={() => setTrashModal(true)}>🗑️<span>المحذوفة</span></button>}
-          </div>
+          <span className="mx-1 h-5 w-px bg-line" />
           {/* ═════ البند ١٠ · قوائمُ منسدلةٌ بدل صفٍّ من تسعة أزرار (طلبُ محمد 2026-08-14) ═════
               بنصّه: «كثرت الأزرارُ للقائمة العلويّة جدّاً ⇒ قوائمُ منسدلةٌ ٢ أو ٣ مجموعات
               بحسب كلّ فئةٍ واختصاص، وعنوانُ القائمة يخصّ ما بداخلها».
@@ -1200,6 +1182,52 @@ export default function FieldManagementPage() {
 
       {/* قائمة التطبيق الأنيقة (تظهر داخل التطبيق فقط عبر CSS) — تجمع المكاتب والأدوات */}
       {offices.length > 0 && (
+        <div className="contents">
+        {!isTech && (
+          <div className="contents">
+            <button type="button" className="trial-opts-fab" onClick={() => setTrialOpts(true)}>
+              <span className="app-bar-grip" aria-hidden="true" />
+              <span>الخيارات</span>
+            </button>
+            {trialOpts && (
+              <div className="trial-opts-wrap" onClick={() => setTrialOpts(false)}>
+                <div className="trial-opts" onClick={(e) => e.stopPropagation()}>
+                  <div className="trial-opts-hd">
+                    <b>⚙️ الخيارات</b>
+                    <button type="button" onClick={() => setTrialOpts(false)} aria-label="إغلاق">✕</button>
+                  </div>
+                  {offices.length > 0 && (
+                    <select
+                      className="trial-opts-office"
+                      value={officeId ?? ""}
+                      onChange={(e) => switchOffice(Number(e.target.value))}
+                      aria-label="اختيار المكتب"
+                    >
+                      {offices.map((o) => <option key={o.id} value={o.id}>🏢 {o.name ?? `مكتب ${o.id}`}</option>)}
+                    </select>
+                  )}
+                  <div className="trial-tiles big">
+                    {(canManage || canOperate) && (
+                      <button className="tile" onClick={() => { setTrialOpts(false); setTechModal(true); }}>👷<span>الفنيون ({technicians.length})</span></button>
+                    )}
+                    {canManage && (
+                      <button className="tile" onClick={() => { setTrialOpts(false); setLeaveModal(true); }}>📅<span>الإجازات</span>{leavePending > 0 && <b className="tbadge">{leavePending}</b>}</button>
+                    )}
+                    {canManage && (
+                      <button className="tile" onClick={() => { setTrialOpts(false); setDedModal(true); }}>💠<span>الخصومات</span>{dedPending > 0 && <b className="tbadge">{dedPending}</b>}</button>
+                    )}
+                    {canManage && <button className="tile" onClick={() => { setTrialOpts(false); setAchModal(true); }}>🏅<span>إنجازات الفنيين</span></button>}
+                    {officeId != null && <button className="tile" onClick={() => { setTrialOpts(false); setSupportModal(true); }}>🤝<span>دعم مؤقت</span></button>}
+                    {canManage && !isTech && <button className="tile" onClick={() => { setTrialOpts(false); router.push("/attendance"); }}>🕒<span>حضور الفنيين</span></button>}
+                    {canManage && <button className="tile" onClick={() => { setTrialOpts(false); setTypesModal(true); }}>⏱<span>الأنواع والأوقات</span></button>}
+                    <button className="tile" onClick={() => { setTrialOpts(false); setArchiveModal(true); }}>🗂️<span>الأرشيف</span></button>
+                    {canOperate && !isTech && <button className="tile" onClick={() => { setTrialOpts(false); setTrashModal(true); }}>🗑️<span>المحذوفة</span></button>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <div data-app-only data-trial-hide>
           <FieldAppMenu
             offices={offices}
@@ -1216,6 +1244,7 @@ export default function FieldManagementPage() {
             onDeductions={() => setDedModal(true)}
             onSupport={() => setSupportModal(true)}
           />
+        </div>
         </div>
       )}
 
