@@ -1249,3 +1249,43 @@ html[data-app-trial] .trial-picker option { color: #0d5490; background: #fff; }
 
 /* مؤشّرُ الواتساب أعلى عمود الفنيّين */
 html[data-app-trial] .tfm-wa { display: flex; justify-content: center; min-width: 0; }
+
+/* ---- ١٤) التقريرُ المكبَّر + تقصيرُ الشريطَين + سطرُ «مصروف مقبوض» (2026-08-19) ----
+   شاشةُ (ج · التقريرُ يتقدّم) من النموذج: البطاقةُ الصغيرة زرُّ تكبيرٍ واحد،
+   والمكبَّرُ ينبثق من مكانها (transform-origin أعلى اليمين) بحلقةٍ بيضاءَ وظلٍّ
+   عميق، وما خلفَه لا يختفي ولا يبهت، والضغطُ خارجَه يُعيده — وفيه وحدَه تُضغَط
+   الأسطرُ فتُفصَّل. */
+html[data-app-trial] tr[data-trial-show] { display: table-row; }
+.trial-bd, .trial-expand { display: none; }
+html[data-app-trial] .trial-bd { display: block; position: fixed; inset: 0; z-index: 44; background: transparent; }
+html[data-app-trial] .trial-expand {
+  display: flex; flex-direction: column;
+  position: fixed; inset-inline: 10px; top: 64px; height: auto; max-height: 62dvh; z-index: 45;
+  overflow: auto; border-radius: 14px; padding: 9px;
+  background: linear-gradient(135deg, #1c8fe6 0%, #0d5490 100%);
+  color: #fff;
+  outline: 2px solid rgba(255, 255, 255, .75); outline-offset: 1px;
+  box-shadow: 0 12px 34px rgba(6, 32, 58, .46), 0 0 0 1px rgba(13, 84, 144, .30);
+  transform-origin: top right;
+  animation: trialExpand .3s cubic-bezier(.16, 1, .3, 1);
+}
+@keyframes trialExpand { from { transform: scale(.5); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { html[data-app-trial] .trial-expand { animation: none; } }
+html[data-app-trial] .trial-expand table.rep { width: 100%; }
+html[data-app-trial] .trial-expand table.rep td {
+  color: #dceeff; border-top: 1px dashed rgba(255, 255, 255, .22); cursor: pointer; padding-block: 4px;
+}
+html[data-app-trial] .trial-expand table.rep td.wsl { color: #fff; font-weight: 800; }
+html[data-app-trial] .trial-expand .sumbar { margin: 8px 2px 0; }
+html[data-app-trial] .trial-expand .masterbar {
+  background: rgba(255, 255, 255, .15) !important;
+  border: 1px dashed rgba(255, 255, 255, .45) !important;
+  color: #fff !important;
+  margin: 6px 2px 2px;
+}
+
+/* «قلل ارتفاع مربعي المجموع والماستر» — في الصغير والمكبَّر معاً */
+html[data-app-trial] .sumbar { padding: 5px 11px !important; }
+html[data-app-trial] .sumbar b { font-size: 13px; }
+html[data-app-trial] .masterbar { padding: 4px 11px !important; }
+html[data-app-trial] .masterbar b { font-size: 12px; }

@@ -52,6 +52,10 @@ export default function DailyReportCard({
   const [data, setData] = useState<DailyReport>(initial);
   const [loading, setLoading] = useState(false);
   const [drill, setDrill] = useState<string | null>(null); // الصنفُ المضغوط — والجلبُ داخل العارض
+  // 🧪 التقريرُ المكبَّر (شاشة ج في النموذج): في التجربة البطاقةُ الصغيرةُ كلُّها زرُّ
+  //    تكبيرٍ واحد — «لا تُرى تفاصيلُ شيءٍ إلّا وهو كبير» — والأسطرُ تُضغَط في المكبَّر وحدَه.
+  const [big, setBig] = useState(false);
+  const inTrial = () => typeof document !== "undefined" && document.documentElement.hasAttribute("data-app-trial");
   const first = useRef(true);
 
   useEffect(() => {
@@ -162,18 +166,28 @@ export default function DailyReportCard({
         <table className="rep">
           <thead><tr><th>الفئة</th><th>العدد</th><th>الواصل</th></tr></thead>
           <tbody>
+            {/* 🧪 في التجربة: مبيعاتُ المخزن والمقبوضاتُ والمصروفاتُ تُخفى من الصغير (طلب محمد
+                2026-08-19) ويحلّ محلَّها سطرُ «مصروف مقبوض» بفرق الرقمَين، والضغطُ يكبّر لا يفصّل */}
             {rows.map((r) => (
-              <tr key={r.cat} onClick={() => openDrill(r.kind)} style={{ cursor: "pointer" }} title="اضغط لعرض الحركات المكوّنة لهذا المبلغ">
+              <tr key={r.cat}
+                data-trial-hide={["sale", "other", "expenses"].includes(r.kind) ? "" : undefined}
+                onClick={() => (inTrial() ? setBig(true) : openDrill(r.kind))}
+                style={{ cursor: "pointer" }} title="اضغط لعرض الحركات المكوّنة لهذا المبلغ">
                 <td>{r.cat}</td>
                 <td className="num">{r.count}</td>
                 <td className="wsl">{r.wasel} <span style={{ opacity: .45, fontSize: 11 }}>↗</span></td>
               </tr>
             ))}
+            <tr data-trial-show onClick={() => setBig(true)} style={{ cursor: "pointer" }} title="اضغط للتكبير">
+              <td>مصروف مقبوض</td>
+              <td className="num"></td>
+              <td className="wsl">{fmt(data.otherIn - data.expenses)}</td>
+            </tr>
           </tbody>
         </table>
       </div>
 
-      <div className="sumbar" onClick={() => openDrill("total")} style={{ cursor: "pointer", ...(loading ? { opacity: .5 } : {}) }} title="اضغط لعرض كل حركات اليوم">
+      <div className="sumbar" onClick={() => (inTrial() ? setBig(true) : openDrill("total"))} style={{ cursor: "pointer", ...(loading ? { opacity: .5 } : {}) }} title="اضغط لعرض كل حركات اليوم">
         <b>{fmt(data.total)} د.ع</b>
         <span>
           {/* 🧪 في التجربة تكفي «المجموع» وحدَها (طلب محمد) — فالقائمةُ المنسدلةُ فوقها تقول السياق */}
@@ -183,11 +197,52 @@ export default function DailyReportCard({
       </div>
 
       {/* حساب الماستر — مستقل تماماً، لا يدخل ضمن المجموع أعلاه */}
-      <div className="masterbar" onClick={() => openDrill("master")} style={{ cursor: "pointer", ...(loading ? { opacity: .5 } : {}) }} title="اضغط لعرض حركات الماستر اليوم">
+      <div className="masterbar" onClick={() => (inTrial() ? setBig(true) : openDrill("master"))} style={{ cursor: "pointer", ...(loading ? { opacity: .5 } : {}) }} title="اضغط لعرض حركات الماستر اليوم">
         <b>{fmt(data.masterIn)} د.ع</b>
         {/* 🧪 في التجربة تكفي «ماستر» (طلب محمد: «حساب ماستر مستقل يكفي كتابة ماستر») */}
         <span><span data-trial-hide>🅜 حساب الماستر (مستقل)</span><span data-trial-show>ماستر</span></span>
       </div>
+
+      {/* 🧪 التقريرُ المكبَّر (شاشة ج): ينبثق من مكان البطاقة بحلقةٍ بيضاء، وما خلفه يبقى
+          مرئيّاً بلا تعتيم، والضغطُ خارجَه يُعيده — وفيه وحدَه كلُّ الأسطر وكلُّها تُفصَّل */}
+      {big && (
+        <>
+          <div className="trial-bd" onClick={() => setBig(false)} title="اضغط خارجَه ليعود صغيراً" />
+          <div className="trial-expand">
+            {isAdmin && (
+              <select
+                className="trial-picker" style={{ margin: "0 0 5px", width: "100%" }}
+                aria-label="اختيار المكتب"
+                value={sel === "all" ? "all" : String(sel)}
+                onChange={(e) => { const v = e.target.value; setSel(v === "all" ? "all" : Number(v)); setUserSel("all"); }}
+              >
+                <option value="all">📊 الإجمالي — كلّ المكاتب</option>
+                {towers.map((t) => <option key={t.id} value={String(t.id)}>{t.name ?? `#${t.id}`}</option>)}
+              </select>
+            )}
+            <div style={loading ? { opacity: .5 } : undefined}>
+              <table className="rep">
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.cat} onClick={() => openDrill(r.kind)} title="اضغط لعرض الحركات المكوّنة لهذا المبلغ">
+                      <td>{r.cat}</td>
+                      <td className="num">{r.count}</td>
+                      <td className="wsl">{r.wasel}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="sumbar" onClick={() => openDrill("total")} style={{ cursor: "pointer" }}>
+                <b>{fmt(data.total)} د.ع</b><span>المجموع</span>
+              </div>
+              <div className="masterbar" onClick={() => openDrill("master")} style={{ cursor: "pointer" }}>
+                <b>{fmt(data.masterIn)} د.ع</b><span>ماستر</span>
+              </div>
+            </div>
+            <div style={{ textAlign: "center", fontSize: 10, opacity: .85, paddingTop: 4 }}>كلُّ سطرٍ يُضغَط فيُظهر حركاتِه</div>
+          </div>
+        </>
+      )}
 
       {/* التفصيلُ بالعارض المشترك: يوزرُ المشترك واسمُه ووقتُه بالثانية — ونفسُه يُستعمَل
           في نافذة يومٍ سابقٍ بحسابات المدير، فلا تعريفَين لسطرٍ واحد. */}
