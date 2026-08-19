@@ -1915,3 +1915,17 @@ html[data-app-trial] .tbl.subs .op {
   vertical-align: middle;
 }
 html[data-app-trial] .tbl.subs .trial-more { font-size: 18px; padding-bottom: 6px !important; }
+
+/* شارةُ الواتساب في الرئيسيّة: مستطيلٌ أزرقُ كمستطيل المشتركين في الحالتَين —
+   غيرُ متصل: كتابةٌ حمراءُ وخطٌّ أحمرُ على جانبه الأيمن · متصل: كتابةٌ خضراءُ فقط */
+html[data-app-trial] .tfm-wa .wa {
+  background: linear-gradient(135deg, #1c8fe6 0%, #0d5490 100%) !important;
+  border: 1px solid rgba(255, 255, 255, .22) !important;
+  box-shadow: 0 2px 7px rgba(13, 84, 144, .28);
+}
+html[data-app-trial] .tfm-wa .wa.down {
+  color: #ff7b7b !important;
+  border-inline-start: 4px solid #e5484d !important; /* الجانبُ الأيمن في RTL */
+}
+html[data-app-trial] .tfm-wa .wa.up { color: #4ade80 !important; }
+html[data-app-trial] .tfm-wa .wa .wa-d { background: currentColor !important; }
