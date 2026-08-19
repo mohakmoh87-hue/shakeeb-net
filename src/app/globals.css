@@ -1865,16 +1865,28 @@ html[data-app-trial] .trial-dockbar .td-slot > a {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* الجرس: أنحفُ من البقيّة بارتفاعهم */
+/* الجرس: أنحفُ من البقيّة بارتفاعهم — التشكيلُ لزرّ الفتح وحدَه، ولوحتُه المنبثقةُ حرّة
+   (🔴 كانت القاعدةُ العريضة .td-bell button تضرب لوحةَ الإشعارات وزرَّ إغلاقها فتتضخّم
+   ولا تُغلَق — بلاغ محمد 2026-08-19 مساءً) */
 html[data-app-trial] .trial-dockbar .td-bell { width: 46px; }
-html[data-app-trial] .trial-dockbar .td-bell > * ,
-html[data-app-trial] .trial-dockbar .td-bell button {
+html[data-app-trial] .trial-dockbar .td-bell > button:first-of-type {
   width: 100% !important;
   height: 40px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   margin: 0 !important;
+}
+/* لوحاتُ الجرس وأودو المنبثقةُ من داخل الصفّ: غطاءٌ كاملُ الشاشة وبطاقةٌ لا تتجاوزها */
+html[data-app-trial] .trial-dockbar :is(.td-bell, .td-slot) .fixed {
+  position: fixed !important;
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+}
+html[data-app-trial] .trial-dockbar :is(.td-bell, .td-slot) .fixed > div {
+  max-height: 88dvh !important;
+  overflow-y: auto !important;
 }
 /* تعويضُ فراغ المحتوى فوق الصفّ الموحَّد */
 html[data-app-trial] body:has(.trial-dockbar) [data-app-fullheight] { padding-bottom: 3.6rem !important; }
@@ -1890,3 +1902,16 @@ html[data-app-trial] .tfm-legend .tfm-sla b { color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   html[data-app-trial] .tfm-legend .tfm-sla { animation: none; background: #fee2e2; color: #b91c1c; }
 }
+
+/* أزرارُ عمليات و⋯المزيد: الرمزُ في مركز دائرته تماماً (لقطة محمد الثالثة) */
+html[data-app-trial] .tbl.subs .op {
+  width: 34px;
+  height: 34px;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  vertical-align: middle;
+}
+html[data-app-trial] .tbl.subs .trial-more { font-size: 18px; padding-bottom: 6px !important; }
