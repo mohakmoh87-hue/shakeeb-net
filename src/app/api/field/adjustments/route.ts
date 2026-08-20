@@ -32,6 +32,15 @@ export async function POST(request: Request) {
     },
   });
   await notify({ agentId: t.agentId, towerId: t.towerId, type: "deduction", title: parsed.data.kind === "bonus" ? "مكافأة يدوية" : "خصم يدوي", body: `${t.name}: ${parsed.data.kind === "bonus" ? "مكافأة" : "خصم"} ${parsed.data.amount.toLocaleString("en-US")} — ${parsed.data.reason}`, refType: "adjustment", refId: adj.id });
+  // ═════ إشعارُ هاتف **الفنيّ نفسِه** بالمبلغ والسبب (طلب محمد 2026-08-20) ═════
+  // كان الإشعارُ أعلاه يذهب لجرس المدير وحدَه، والفنيُّ لا يعلم بخصمه/مكافأته إلّا إن فتح
+  // التطبيقَ وبحث. القناةُ هي قناةُ أ-٢٢ نفسُها (إسنادُ البطاقات) — أفضلُ جهدٍ: فنيٌّ بلا
+  // رمزِ إشعاراتٍ يُتخطّى بصمتاً، والفشلُ لا يُفشل الحفظَ (الخصمُ محفوظٌ قبلها).
+  const { sendPushToTechnician } = await import("@/lib/push");
+  void sendPushToTechnician(t.id, {
+    title: parsed.data.kind === "bonus" ? "💰 مكافأة جديدة" : "⚠️ خصم جديد",
+    body: `${parsed.data.kind === "bonus" ? "مكافأة" : "خصم"} ${parsed.data.amount.toLocaleString("en-US")} د.ع — السبب: ${parsed.data.reason}`,
+  });
   return NextResponse.json({ ok: true, adjustment: adj });
 }
 
