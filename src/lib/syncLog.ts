@@ -27,8 +27,11 @@ type StatePayload = {
   phone?: string | null; address?: string | null; packageName?: string | null; sasDateTo?: Date | null;
 };
 
-/** صفُّ حالةٍ (info/install): يُحدَّث الحيُّ، ويُحترم المتجاهَلُ ما لم تتغيّر بصمتُه. */
-async function upsertStateRow(kind: "info" | "install", p: StatePayload, changes: InfoChange[] | null): Promise<void> {
+/** صفُّ حالةٍ (info/install): يُحدَّث الحيُّ، ويُحترم المتجاهَلُ ما لم تتغيّر بصمتُه.
+ *  يرجع true حين يستحقّ الصفُّ **رسالةً تلقائيّة** (طلب محمد 2026-08-20): رُصد لأوّل
+ *  مرّةٍ وله هاتف، أو كان معلّقاً بلا هاتفٍ فوصل هاتفُه الآن (رصدُ المرحلة ١ بلا هاتفٍ
+ *  ثمّ تُكمله المرحلة ٢ به — فبلا هذا الشرط لا تُرسَل رسالةُ التنصيب أبداً لهؤلاء). */
+async function upsertStateRow(kind: "info" | "install", p: StatePayload, changes: InfoChange[] | null): Promise<boolean> {
   try {
     const fp = fingerprint(p);
     const data = {
@@ -41,13 +44,16 @@ async function upsertStateRow(kind: "info" | "install", p: StatePayload, changes
     const rows = await prisma.syncLog.findMany({
       where: { towerId: p.towerId, sasId: p.sasId, kind },
       orderBy: { id: "desc" }, take: 5,
-      select: { id: true, status: true, snapshot: true },
+      select: { id: true, status: true, snapshot: true, phone: true },
     });
     const pending = rows.find((r) => r.status === "pending");
-    if (pending) { await prisma.syncLog.update({ where: { id: pending.id }, data }); return; }
+    if (pending) {
+      await prisma.syncLog.update({ where: { id: pending.id }, data });
+      return !(pending.phone ?? "").trim() && !!(p.phone ?? "").trim();
+    }
     const ignored = rows.find((r) => r.status === "ignored");
     if (ignored) {
-      if (ignored.snapshot === fp) return; // لم يتغيّر شيءٌ منذ تجاهله — يبقى صامتاً
+      if (ignored.snapshot === fp) return false; // لم يتغيّر شيءٌ منذ تجاهله — يبقى صامتاً
       // تغيّرت بياناتُه بعد التجاهل ⇒ يظهر «تحديثَ معلومات» فقط (قرار محمد ج٣)
       if (kind === "install") {
         const infoOpen = await prisma.syncLog.findFirst({
@@ -58,15 +64,17 @@ async function upsertStateRow(kind: "info" | "install", p: StatePayload, changes
         else await prisma.syncLog.create({ data: { ...data, kind: "info", changes: JSON.stringify(diffs) } });
         // وتُحدَّث بصمةُ التجاهل كي لا يتوالد صفُّ info مع كلّ دورة
         await prisma.syncLog.update({ where: { id: ignored.id }, data: { snapshot: fp } });
-        return;
+        return false;
       }
       // info متجاهَل وتغيّرت القيم ⇒ يُفتح من جديد بالتغييرات الجديدة
       await prisma.syncLog.update({ where: { id: ignored.id }, data: { ...data, status: "pending", snapshot: null } });
-      return;
+      return false;
     }
     await prisma.syncLog.create({ data: { ...data, kind } });
+    return !!(p.phone ?? "").trim(); // رُصد لأوّل مرّةٍ — رسالةٌ إن كان له هاتف
   } catch (e) {
     if (!tableMissing(e)) console.error("[sync-log] تعذّر تسجيل صفّ حالة:", e instanceof Error ? e.message : e);
+    return false;
   }
 }
 
@@ -85,9 +93,10 @@ export async function recordInfoDiff(p: StatePayload & { subscriberId: number },
   await upsertStateRow("info", p, changes);
 }
 
-/** تنصيبٌ/إعادةُ شركةٍ (تبويب ٢) — subscriberId فارغٌ للجديد غير المحفوظ */
-export async function recordInstall(p: StatePayload): Promise<void> {
-  await upsertStateRow("install", p, null);
+/** تنصيبٌ/إعادةُ شركةٍ (تبويب ٢) — subscriberId فارغٌ للجديد غير المحفوظ.
+ *  يرجع true إن استحقّ الرصدُ رسالةَ «تنصيبات خارجية» التلقائيّة (أوّلُ ظهورٍ بهاتف). */
+export async function recordInstall(p: StatePayload): Promise<boolean> {
+  return upsertStateRow("install", p, null);
 }
 
 /** حدثُ تفعيلٍ (تبويب ٣ ذاتيّ · تبويب ٤ صفحة بلا وصل) — صفٌّ لكلّ تفعيلة */

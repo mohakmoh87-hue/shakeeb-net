@@ -11,6 +11,7 @@ import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
 import { recordInfoDiff, recordInstall, recordActivationEvent, resolveEventIfReceipted, isCabinetManager, isOfferPackage, type InfoChange } from "@/lib/syncLog";
+import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 // ============================================================================
 // المزامنة اليومية مع SAS — نسخة مطوّرة على مرحلتين متتاليتين لكل مكتب:
@@ -262,6 +263,10 @@ async function runOfficeSyncInner(
     return d != null && !isNaN(d.getTime()) && d >= start && d <= end;
   });
 
+  // 📋 جيك بوكسا «إرسال رسائل تلقائي» لتبويبَي سجلّ المزامنة (طلب محمد 2026-08-20) —
+  // يُقرآن مرّةً لكلّ مزامنةٍ، والافتراضيُّ إيقافُ الاثنين (فالإرسال يدويٌّ من النافذة)
+  const autoMsg = await getSyncAutoMsgFlags(office.agentId);
+
   // ===================== المرحلة 1: كروت وتفعيلات الأمس =====================
   const events: SyncEvent[] = [];
   let internal = 0, external = 0, phantom = 0, markedUsed = 0, duplicates = 0;
@@ -377,7 +382,9 @@ async function runOfficeSyncInner(
     // باسم حساب المكتب — فالقاعدةُ صحيحةٌ على بياناتٍ حقيقيّة لا افتراضاً.
     // 🔑 والختمُ بتاريخ الانتهاء الناتج لا بلحظة الإرسال: المزامنةُ تُعيد قراءةَ تفعيلاتِ
     //    الأمس في **كلّ دورة**، فبلا ذلك تُرسَل الرسالةُ كلَّ دورةٍ إلى الأبد.
-    if (!managerMatch && a.newExpiration) {
+    // 📋 وصارت مشروطةً بجيك بوكس «إرسال رسائل تلقائي» في تبويب «تفعيل خارجي» (طلب محمد
+    // 2026-08-20، والافتراضيُّ إيقاف) — وبلا صحٍّ يُرسَل يدويّاً من النافذة بنفس القالب.
+    if (autoMsg.self && !managerMatch && a.newExpiration) {
       const selfActDate = new Date(a.newExpiration);
       if (!isNaN(selfActDate.getTime())) {
         const { notifySelfActivated } = await import("@/lib/selfActivatedNotice");
@@ -594,11 +601,18 @@ async function runOfficeSyncInner(
         // 2026-08-20): يُرصَد في تبويب «تنصيب خارجي» بكامل بياناته، و«حفظ» بيد صاحب
         // الصلاحيّة يستورده (بلا وصل)، و«تجاهل» يخفيه حتى تتغيّر بياناتُه (فيعود «تحديثَ
         // معلومات» وتحديثُه يستورده كاملاً). حلّ محلَّ toImport/createMany القديمَين.
-        await recordInstall({
+        const fresh = await recordInstall({
           agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: null,
           netUser: u.username, name: u.name, phone: u.phone, address: u.address,
           packageName: u.packageName, sasDateTo: validDate,
         });
+        // 📋 رسالةُ «تنصيبات خارجية» التلقائيّة — أوّلُ رصدٍ بهاتفٍ وجيك بوكس التبويب مفعَّل
+        if (fresh && autoMsg.install) {
+          await sendSyncLogMessage("install", {
+            towerId: officeId, subscriberId: null, phone: u.phone,
+            netUser: u.username, name: u.name, packageName: u.packageName, sasDateTo: validDate,
+          });
+        }
         continue;
       }
       // ═════ 📋 سجلّ المزامنة (قرار محمد 2026-08-20): «تمديدُ التاريخ وحدَه يبقى تلقائيّاً» ═════
@@ -624,11 +638,17 @@ async function runOfficeSyncInner(
         // 🏷️ إعادةٌ للخدمة (تصنيف محمد ٦): قائمٌ تحوّلت باقتُه في الساس إلى باقة عرضٍ —
         // يُرصَد في تبويب «تنصيب خارجي» (تجاهُلاً فقط — فهو محفوظٌ عندنا سلفاً)
         if (isOfferPackage(u.packageName) && p.packageId != null && !isOfferPackage(oursPkgName)) {
-          await recordInstall({
+          const fresh = await recordInstall({
             agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: p.id,
             netUser: u.username, name: u.name, phone: u.phone, address: u.address,
             packageName: u.packageName, sasDateTo: validDate,
           });
+          if (fresh && autoMsg.install) {
+            await sendSyncLogMessage("install", {
+              towerId: officeId, subscriberId: p.id, phone: u.phone,
+              netUser: u.username, name: u.name, packageName: u.packageName, sasDateTo: validDate,
+            });
+          }
         }
       }
       // صاحب قرضٍ قائم ⇒ لا تلمسه المزامنة إطلاقاً (لا تاريخ ولا باقة ولا عدّ) حتى يُسدَّد

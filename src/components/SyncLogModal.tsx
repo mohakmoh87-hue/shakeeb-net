@@ -52,14 +52,35 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
   const [sortAsc, setSortAsc] = useState(false);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [plusFor, setPlusFor] = useState<number | null>(null); // قائمة «+» المفتوحة (تبويب ٤)
+  // جيك بوكسا «إرسال رسائل تلقائي» (تبويبا ٢ و٣) — الافتراضيُّ إيقافُ الاثنين (قرار محمد)
+  const [autoMsg, setAutoMsg] = useState<{ self: boolean; install: boolean }>({ self: false, install: false });
 
   const load = useCallback(() => {
     fetch("/api/sync-log")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) { setRows(Array.isArray(d.rows) ? d.rows : []); setCanEdit(d.canEdit === true); } })
+      .then((d) => {
+        if (d) {
+          setRows(Array.isArray(d.rows) ? d.rows : []); setCanEdit(d.canEdit === true);
+          if (d.autoMsg) setAutoMsg({ self: d.autoMsg.self === true, install: d.autoMsg.install === true });
+        }
+      })
       .catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // حفظُ جيك بوكس التبويب الحاليّ (يظهر للجميع، والتبديلُ لصاحب الصلاحيّة — والخادمُ يحرسه)
+  async function toggleAuto(kind: "self" | "install", on: boolean) {
+    setAutoMsg((v) => ({ ...v, [kind]: on })); // تفاؤليّاً — ويُسترجع من الخادم عند الفشل
+    try {
+      const r = await fetch("/api/sync-log", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "autoMsg", kind, on }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.autoMsg) setAutoMsg({ self: d.autoMsg.self === true, install: d.autoMsg.install === true });
+      else { setAutoMsg((v) => ({ ...v, [kind]: !on })); setMsg(d.error ?? "تعذّر حفظ الخيار"); }
+    } catch { setAutoMsg((v) => ({ ...v, [kind]: !on })); setMsg("تعذّر الاتصال بالخادم"); }
+  }
 
   const counts = useMemo(() => {
     const c: Record<Kind, number> = { info: 0, install: 0, self: 0, sas: 0 };
@@ -99,7 +120,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
     else { setSortKey(k); setSortAsc(true); }
   }
 
-  async function act(ids: number[], action: "apply" | "ignore" | "activate" | "debt") {
+  async function act(ids: number[], action: "apply" | "ignore" | "activate" | "debt" | "message") {
     if (!ids.length || busy) return;
     setBusy(true); setMsg(""); setPlusFor(null);
     try {
@@ -144,6 +165,16 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
 
         {/* البحث والتصفية */}
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+          {/* جيك بوكس أعلى تبويبَي ٢ و٣ (طلب محمد): صحٌّ ⇒ رسالةُ القالب تلقائيّاً لحظةَ
+              الرصد، وبلا صحٍّ ⇒ تحديدٌ يدويٌّ وزرُّ الإرسال. الافتراضيُّ: غيرُ مفعَّل. */}
+          {(tab === "install" || tab === "self") && (
+            <label className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] font-bold ${autoMsg[tab] ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"} ${canEdit ? "cursor-pointer" : "opacity-60"}`}
+              title={`قالب «${tab === "install" ? "تنصيبات خارجية" : "تفعيلات خارجية"}» — يُعدَّل من صفحة قوالب الرسائل`}>
+              <input type="checkbox" className="h-4 w-4" checked={autoMsg[tab]} disabled={!canEdit || busy}
+                onChange={(e) => void toggleAuto(tab, e.target.checked)} />
+              إرسال رسائل تلقائي
+            </label>
+          )}
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="بحث: اسم · هاتف · باقة · يوزر · كلمة"
             className="min-w-[220px] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-mynet-blue" />
           <label className="flex items-center gap-1 text-[12px] text-slate-500">من<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="max-w-[150px] rounded-lg border border-slate-300 px-2 py-1 text-sm" /></label>
@@ -158,6 +189,14 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                 className="rounded-lg bg-slate-500 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-slate-600 disabled:opacity-50">✖ تجاهل المحدَّد</button>
             </>
           )}
+          {/* الإرسالُ اليدويّ (بلا صحِّ التلقائيّ أو فوقه): تحديدُ واحدٍ أو مجموعةٍ ثمّ إرسال */}
+          {canEdit && (tab === "install" || tab === "self") && (
+            <>
+              <div className="flex-1" />
+              <button onClick={() => void act([...sel], "message")} disabled={busy || sel.size === 0}
+                className="rounded-lg bg-mynet-blue px-3.5 py-1.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50">📨 إرسال رسالة للمحدَّد ({sel.size})</button>
+            </>
+          )}
         </div>
         {msg && <div className={`mx-4 mt-2 rounded-lg px-3 py-1.5 text-sm ${msg.startsWith("✓") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{msg}</div>}
 
@@ -169,7 +208,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-white shadow-sm">
                 <tr>
-                  {tab === "info" && canEdit && (
+                  {tab !== "sas" && canEdit && (
                     <th className="p-2"><input type="checkbox" checked={allSel} title="الكل"
                       onChange={() => setSel(allSel ? new Set() : new Set(view.map((r) => r.id)))} /></th>
                   )}
@@ -190,7 +229,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
               <tbody>
                 {view.map((r) => (
                   <tr key={r.id} className="border-t border-slate-100 align-top hover:bg-slate-50/60">
-                    {tab === "info" && canEdit && (
+                    {tab !== "sas" && canEdit && (
                       <td className="p-2 text-center"><input type="checkbox" checked={sel.has(r.id)}
                         onChange={() => setSel((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
                     )}

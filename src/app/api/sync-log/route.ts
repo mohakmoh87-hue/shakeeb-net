@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { guard, agentTowerIds } from "@/lib/guard";
+import { getSyncAutoMsgFlags, setSyncAutoMsgFlag, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 export const dynamic = "force-dynamic";
 
@@ -45,9 +46,12 @@ export async function GET() {
     // صلاحيّة التعديل — تُبلَّغ للواجهة لتُظهر/تُخفي الأزرار (والخادمُ يحرسها في POST حكماً)
     const g = await guard("syncLog.update");
     const canEdit = !g.error;
+    // جيك بوكسا «إرسال رسائل تلقائي» (تبويبا التنصيب والتفعيل الخارجيَّين)
+    const autoMsg = await getSyncAutoMsgFlags(session.agentId ?? null);
     const tName = new Map(towerRows.map((t) => [t.id, t.name ?? `#${t.id}`]));
     return NextResponse.json({
       canEdit,
+      autoMsg,
       towers: towerRows,
       rows: rows.map((r) => {
         const s = r.subscriberId != null ? subById.get(r.subscriberId) : undefined;
@@ -71,10 +75,18 @@ export async function GET() {
   }
 }
 
-const postSchema = z.object({
-  ids: z.array(z.coerce.number().int().positive()).min(1, "لم تُحدَّد سطور"),
-  action: z.enum(["apply", "ignore", "activate", "debt"]),
-});
+const postSchema = z.union([
+  z.object({
+    ids: z.array(z.coerce.number().int().positive()).min(1, "لم تُحدَّد سطور"),
+    action: z.enum(["apply", "ignore", "activate", "debt", "message"]),
+  }),
+  // جيك بوكس «إرسال رسائل تلقائي» — لكلّ تبويبٍ علَمُه، والافتراضيُّ إيقاف (قرار محمد)
+  z.object({
+    action: z.literal("autoMsg"),
+    kind: z.enum(["self", "install"]),
+    on: z.boolean(),
+  }),
+]);
 
 function fingerprint(r: { name: string | null; phone: string | null; address: string | null; packageName: string | null; sasDateTo: Date | null }): string {
   return JSON.stringify([r.name ?? "", r.phone ?? "", r.address ?? "", r.packageName ?? "", r.sasDateTo ? r.sasDateTo.toISOString().slice(0, 10) : ""]);
@@ -87,6 +99,14 @@ export async function POST(request: Request) {
   const session = g.session!;
   const parsed = postSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
+
+  // ═══ جيك بوكس «إرسال رسائل تلقائي» — حفظُ علَم الوكيل (بلا سطور) ═══
+  if (parsed.data.action === "autoMsg") {
+    if (session.agentId == null) return NextResponse.json({ error: "لا وكيلَ للجلسة" }, { status: 400 });
+    const flags = await setSyncAutoMsgFlag(session.agentId, parsed.data.kind, parsed.data.on);
+    return NextResponse.json({ ok: true, autoMsg: flags });
+  }
+
   const { ids, action } = parsed.data;
   const towers = await agentTowerIds(session);
   const who = session.fullName ?? session.username;
@@ -109,6 +129,26 @@ export async function POST(request: Request) {
             data: { status: "ignored", snapshot: fingerprint(r), handledBy: who, handledAt: new Date() },
           });
           done++; continue;
+        }
+
+        // ═══ إرسالُ رسالة القالب يدويّاً (تبويبا التنصيب والتفعيل الخارجيَّين) ═══
+        // لا يمسّ حالةَ الصفّ: يبقى معلّقاً حتى يُقرَّر (تحديث/تجاهل/تفعيل/دين)
+        if (action === "message") {
+          if (r.kind !== "self" && r.kind !== "install") { rejected.push(`سطر #${r.id} ليس تنصيباً ولا تفعيلاً خارجيّاً`); continue; }
+          const res = await sendSyncLogMessage(r.kind, {
+            towerId: r.towerId, subscriberId: r.subscriberId, phone: r.phone,
+            netUser: r.netUser, name: r.name, packageName: r.packageName, sasDateTo: r.sasDateTo,
+          });
+          if (res === "sent" || res === "queued") {
+            await prisma.syncLog.update({
+              where: { id: r.id },
+              data: { note: `📨 أُرسلت الرسالة${res === "queued" ? " (بالطابور حتى يتّصل واتساب المكتب)" : ""} — ${who}` },
+            }).catch(() => {});
+            done++;
+          } else {
+            rejected.push(`«${r.name ?? r.netUser ?? `#${r.id}`}»: ${res === "skipped" ? "القالبُ معطَّل أو واتساب المكتب/المشترك مُطفأ" : "لا رقمَ هاتفٍ له"}`);
+          }
+          continue;
         }
 
         if (action === "apply") {

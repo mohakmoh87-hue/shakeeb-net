@@ -570,7 +570,8 @@ export default function SubscribersBoard() {
                 🔑 وهو **للاطّلاع فقط**: يعرض ما رصدَته المزامنةُ من تنصيبات الشركة، و«تجاهل»
                    يُخرجه من القائمة ولا يمسّ المشتركَ بشيء. */}
             {/* 📋 العرضُ للجميع (قرار محمد) — والأفعالُ داخلَه بصلاحيّة «تحديث سجل المزامنة» */}
-            <button className="gbtn" onClick={() => setExtOpen(true)} title="ما رصدته المزامنة: تغييراتٌ وتنصيباتٌ وتفعيلاتٌ بانتظار قرارك">
+            {/* شريطُه الخارجيُّ يومض أحمرَ ما دام في أيّ تبويبٍ شيءٌ معلّق (طلب محمد) */}
+            <button className={`gbtn${syncCount > 0 ? " sync-blink" : ""}`} onClick={() => setExtOpen(true)} title="ما رصدته المزامنة: تغييراتٌ وتنصيباتٌ وتفعيلاتٌ بانتظار قرارك">
               🔄 سجلّ المزامنة{syncCount > 0 ? ` (${syncCount})` : ""}
             </button>
           </span>
@@ -616,7 +617,7 @@ export default function SubscribersBoard() {
                 <button className="tile" onClick={() => { setTrialOpts(false); openArchive(); }}>🗄️<span>المحذوفون</span></button>
               )}
               {(can("subscribers.manage") || can("subscribers.import")) && (
-                <button className="tile" onClick={() => { setTrialOpts(false); setExtOpen(true); }}>🔄<span>سجلّ المزامنة</span>{syncCount > 0 && <b className="tbadge">{syncCount}</b>}</button>
+                <button className={`tile${syncCount > 0 ? " sync-blink" : ""}`} onClick={() => { setTrialOpts(false); setExtOpen(true); }}>🔄<span>سجلّ المزامنة</span>{syncCount > 0 && <b className="tbadge">{syncCount}</b>}</button>
               )}
             </div>
           </div>
