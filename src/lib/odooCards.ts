@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendCardRaisedMessage } from "@/lib/cardRaisedMessage";
 import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
-import { bgIsSet, type OdooTicket } from "@/lib/odoo";
+import { bgIsSet, odooTicketRefDate, type OdooTicket } from "@/lib/odoo";
 import { odooDateToUtc } from "@/lib/odooSla";
 
 // ===== بطاقات تذاكر أودو في لوحة إدارة الفنيين — يعيد استعمال TaskCard/TaskList القائمين =====
@@ -53,7 +53,9 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket,
         // مهلة سوبر سيل: مرجع العدّاد زمنُ أودو نفسه (مُطبَّعاً UTC — نصّه بلا منطقة)، ولحظة السحب
         // لمهلة الرؤية وبوّابة التسليح، والهاتف عموداً صريحاً (لا استخراجاً بـregex من الوصف).
         odooPanelId: panelId, // أ-٢٣ · لوحةُ أودو التي جاءت منها — يمنع التنفيذَ المزدوج
-        odooCreatedAt: odooDateToUtc(ticket.createDate),
+        // 📅 قاعدة محمد 2026-08-21: الأساين ديت إن وُجد وإلّا الكرييشن ديت — فالمهلةُ
+        // تُحسب من لحظة إسناد التذكرة للمكتب لا من لحظة فتحها لدى سوبر سيل
+        odooCreatedAt: odooDateToUtc(odooTicketRefDate(ticket)),
         odooFetchedAt: new Date(),
         odooPhone: ticket.phone ?? null,
       },
@@ -91,7 +93,7 @@ export async function refreshOdooCard(cardId: number, ticket: OdooTicket): Promi
   if (req !== card.usernameRequired) data.usernameRequired = req;
   // ترقيعٌ كسول لبطاقات ما قبل ميزة المهلة: تُملأ حقول الاحتساب من التذكرة عند أوّل تحديث.
   if (card.odooCreatedAt == null) {
-    const cd = odooDateToUtc(ticket.createDate);
+    const cd = odooDateToUtc(odooTicketRefDate(ticket));
     if (cd) data.odooCreatedAt = cd;
   }
   // ⚠️ **بوّابة التسليح**: odooFetchedAt هي ما يُقارَن بلحظة التشعيل، فلو ملأناها بـ«الآن» لبدت

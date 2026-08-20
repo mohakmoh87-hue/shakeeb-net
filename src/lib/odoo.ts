@@ -64,6 +64,9 @@ export interface OdooTicket {
   stageName: string;
   assignedUid: number | null; // user_id الحقيقيّ (للتصنيف)
   createDate: string | null;
+  // 📅 تاريخُ الإسناد (Assign Date في بوّابة أودو — قِيس حيّاً على /my/tickets 2026-08-21):
+  // قاعدةُ محمد النصّيّة: «إذا وجد اساين ديت في التكت يؤخذ، واذا لم يجد فياخذ الكرييشن ديت»
+  assignDate: string | null;
   phone: string | null;
   customerName: string | null;
   fdt: string | null;
@@ -262,6 +265,9 @@ export async function odooFetchOpenTickets(session: OdooSession, sinceId: number
   // الهاتف partner_phone/partner_mobile (لا phone)، واليوزر bg (لا bg_field)، وfdt/fat أعداد مباشرة.
   const fields = [
     "id", "name", "stage_id", "user_id", "create_date",
+    // assign_date: عمودُ «Assign Date» الظاهرُ في بوّابة تذاكرهم — وإن غاب عن نسختهم
+    // يوماً أسقطه searchReadResilient بلا كسر (fallback للكرييشن ديت تلقائيّاً)
+    "assign_date",
     "partner_name", "partner_phone", "partner_mobile",
     "bg", "fdt", "fat", "access_token",
     "task_type", "issue_type",
@@ -276,6 +282,7 @@ export async function odooFetchOpenTickets(session: OdooSession, sinceId: number
       stageName: m2oLabel(r.stage_id) ?? "",
       assignedUid: m2oId(r.user_id),
       createDate: strOrNull(r.create_date),
+      assignDate: strOrNull(r.assign_date),
       phone: strOrNull(r.partner_phone) ?? strOrNull(r.partner_mobile),
       customerName: strOrNull(r.partner_name),
       fdt: r.fdt != null && r.fdt !== false && Number(r.fdt) > 0 ? String(r.fdt) : null,
@@ -297,10 +304,15 @@ export async function odooReadTicket(session: OdooSession, ticketId: number): Pr
   if (!r) return null;
   return {
     id: Number(r.id), name: String(r.name ?? ""), stageName: m2oLabel(r.stage_id) ?? "",
-    assignedUid: m2oId(r.user_id), createDate: null, phone: null, customerName: null,
+    assignedUid: m2oId(r.user_id), createDate: null, assignDate: null, phone: null, customerName: null,
     fdt: null, fat: null, bg: strOrNull(r.bg), accessToken: strOrNull(r.access_token),
     issueType: null, typeName: null,
   };
+}
+
+/** 📅 تاريخُ التذكرة المرجعيّ (قاعدة محمد 2026-08-21): الأساين ديت إن وُجد وإلّا الكرييشن ديت */
+export function odooTicketRefDate(t: Pick<OdooTicket, "createDate" | "assignDate">): string | null {
+  return (t.assignDate ?? "").trim() ? t.assignDate : t.createDate;
 }
 
 // ===== أفعال الكتابة (مسارات البوّابة الملتقَطة) =====
