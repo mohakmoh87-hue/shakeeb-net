@@ -3,12 +3,16 @@ import { createSign } from "node:crypto";
 // ═════ ☁️ نسخة المالك الكاملة إلى Google Drive (قرار محمد 2026-08-20) ═════
 // Railway يحجب SMTP نهائيّاً فالبريدُ من الموقع مستحيل — أمّا HTTPS فمفتوح، وواجهةُ
 // درايف كلُّها HTTPS ⇒ الموقعُ يرفع النسخةَ بنفسه بلا كرونٍ ولا بريد.
-// المصادقة: «حساب خدمة» غوغل (JWT موقَّع RS256 بمفتاحه ← رمزُ وصولٍ ساعة) — بلا مكتبات
-// خارجيّة: التوقيعُ بـnode:crypto والنداءاتُ بـfetch.
-// البيئة المطلوبة (يهيّئها محمد مرّةً واحدة):
-//   GDRIVE_SA_B64   = ملف JSON لحساب الخدمة (client_email + private_key) بترميز base64
-//   GDRIVE_FOLDER_ID = معرّف مجلّد درايف المُشارَك مع إيميل حساب الخدمة (محرِّراً)
-// غيابُهما = الميزةُ خامدة (configured() ترجع false ولا يُحجَز يومٌ فتبدأ فورَ التهيئة).
+// ═════ 🔴 المصادقة برمز تحديث حساب محمد لا بحساب الخدمة (قِيس حيّاً 2026-08-21) ═════
+// أوّلُ رفعةٍ فشلت بنصّ غوغل الحرفيّ: «Service Accounts do not have storage quota» —
+// غوغل ألغت مساحةَ حسابات الخدمة نهائيّاً، وحلّاها (Shared Drives / Delegation) كلاهما
+// يتطلّب Workspace مدفوعاً. ⇒ الرفعُ بهويّة **حساب محمد نفسِه** (مالكِ المجلّد ومساحتِه
+// 15GB) عبر OAuth refresh token يُصنع مرّةً واحدةً ولا يبلى (التطبيق «In production»).
+// البيئة (الأحدثُ يغلب):
+//   GDRIVE_OAUTH_CLIENT_ID / GDRIVE_OAUTH_CLIENT_SECRET / GDRIVE_REFRESH_TOKEN  ← المعتمد
+//   GDRIVE_SA_B64  ← مسار حساب الخدمة القديم (يبقى سقوطاً لو أعادت غوغل المساحةَ يوماً)
+//   GDRIVE_FOLDER_ID = معرّف مجلّد ShakeebNet-Backups
+// غيابُ التهيئة = خمولٌ هادئ (configured() ترجع false ولا يُحجَز يومٌ فتبدأ فورَ التهيئة).
 
 const KEEP_COPIES = 30; // تدويرٌ تلقائيّ: تبقى أحدثُ ٣٠ نسخةً وتُحذف الأقدم (~200MB سقفاً)
 
@@ -23,12 +27,34 @@ function readSA(): SA | null {
   } catch { return null; }
 }
 
+type OAuthCreds = { clientId: string; clientSecret: string; refreshToken: string };
+function readOAuth(): OAuthCreds | null {
+  const clientId = (process.env.GDRIVE_OAUTH_CLIENT_ID ?? "").trim();
+  const clientSecret = (process.env.GDRIVE_OAUTH_CLIENT_SECRET ?? "").trim();
+  const refreshToken = (process.env.GDRIVE_REFRESH_TOKEN ?? "").trim();
+  return clientId && clientSecret && refreshToken ? { clientId, clientSecret, refreshToken } : null;
+}
+
 export function driveConfigured(): boolean {
-  return !!(readSA() && process.env.GDRIVE_FOLDER_ID);
+  return !!((readOAuth() ?? readSA()) && process.env.GDRIVE_FOLDER_ID);
 }
 
 const b64url = (s: Buffer | string) =>
   (typeof s === "string" ? Buffer.from(s) : s).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+// رمزُ وصولٍ من رمز التحديث (هويّةُ حساب محمد) — طازجٌ لكلّ رفعةٍ يوميّة (أبسط من كاش)
+async function accessTokenFromRefresh(o: OAuthCreds): Promise<string> {
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token", refresh_token: o.refreshToken,
+      client_id: o.clientId, client_secret: o.clientSecret,
+    }).toString(),
+  });
+  const d = (await r.json().catch(() => ({}))) as { access_token?: string; error_description?: string; error?: string };
+  if (!r.ok || !d.access_token) throw new Error(`رمز تحديث درايف رُفض: ${d.error_description ?? d.error ?? r.status}`);
+  return d.access_token;
+}
 
 // رمزُ وصولٍ من JWT حساب الخدمة — يكفي لساعة، ونطلبه طازجاً لكلّ رفعةٍ يوميّة (أبسط من كاش)
 async function accessToken(sa: SA): Promise<string> {
@@ -52,10 +78,12 @@ async function accessToken(sa: SA): Promise<string> {
 
 // رفع الملف إلى المجلّد + تدوير القديم. يرمي خطأً عربيّاً واضحاً عند أيّ فشل.
 export async function uploadBackupToDrive(gz: Buffer, filename: string): Promise<{ fileId: string; rotatedOut: number }> {
+  const oauth = readOAuth();
   const sa = readSA();
   const folderId = process.env.GDRIVE_FOLDER_ID;
-  if (!sa || !folderId) throw new Error("درايف غير مهيّأ (GDRIVE_SA_B64 / GDRIVE_FOLDER_ID)");
-  const token = await accessToken(sa);
+  if ((!oauth && !sa) || !folderId) throw new Error("درايف غير مهيّأ (GDRIVE_REFRESH_TOKEN أو GDRIVE_SA_B64 / GDRIVE_FOLDER_ID)");
+  // هويّةُ حساب محمد أوّلاً — حسابُ الخدمة بلا مساحةٍ منذ قرار غوغل (انظر رأس الملفّ)
+  const token = oauth ? await accessTokenFromRefresh(oauth) : await accessToken(sa!);
   const auth = { Authorization: `Bearer ${token}` };
 
   // رفعٌ متعدّد الأجزاء: البياناتُ الوصفيّة (الاسم والمجلّد) + المحتوى في طلبٍ واحد
