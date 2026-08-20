@@ -58,14 +58,20 @@ type Claimed = { id: number; subscriberId: number | null; phone: string | null; 
  *  ويستثني صفوفَ مكاتبِ الهدنة (حاسباتُها ثبت غيابُها للتوّ) فلا يعلق الطابورُ خلفها.
  *  🔒 العزلُ كما كان: الساحبُ خادميٌّ يُرسل كلَّ رسالةٍ من جلسة مكتبِ صاحبها. */
 async function claimNext(excludeOffices: number[]): Promise<Claimed | null> {
+  // ⚠️ NOT EXISTS لا LEFT JOIN (إصلاح 2026-08-20 — حادثة بثّ عليّ البياتي): الصيغةُ
+  // القديمةُ كانت `LEFT JOIN … FOR UPDATE` وPostgres يرفضها بالحرف («FOR UPDATE cannot
+  // be applied to the nullable side of an outer join») ⇒ **كان الساحبُ يسقط لحظةَ أوّلِ
+  // هدنةٍ** وتوقظه الدوريّةُ ليسقطَ ثانيةً — فتجمّد الطابورُ كلُّه (169 رسالةً) خلف مكتبٍ
+  // واحدٍ يعيد تشغيلَ حاسبته. والدلالةُ مطابقةٌ تماماً: بلا مشتركٍ أو مكتبُه ليس في الهدنة.
   const rows = excludeOffices.length
     ? await prisma.$queryRaw<Claimed[]>`
     UPDATE messages SET error = ${CLAIM_MARK}, "updatedAt" = now()
      WHERE id = (
        SELECT m.id FROM messages m
-        LEFT JOIN subscribers s ON s.id = m."subscriberId"
         WHERE m.channel = 'WHATSAPP' AND m.status = 'PENDING' AND m.error = ${QUEUE_MARK}
-          AND (s."towerId" IS NULL OR NOT (s."towerId" = ANY(${excludeOffices})))
+          AND NOT EXISTS (
+            SELECT 1 FROM subscribers s
+             WHERE s.id = m."subscriberId" AND s."towerId" = ANY(${excludeOffices}))
         ORDER BY m.id
         LIMIT 1
         FOR UPDATE SKIP LOCKED)
