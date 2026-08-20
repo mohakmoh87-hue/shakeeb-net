@@ -237,6 +237,20 @@ export async function POST(request: Request) {
               ]);
             } else {
               // تطبيقُ بيانات الساس على القائم — الباقةُ المعروفة تُربَط، والمجهولةُ لا تمسّ باقتَه
+              // 📅 وفرقُ الأيّام (زيادةً أو نقصاً — قرار محمد 2026-08-21): يُطبَّق فقط إن كان
+              // مرصوداً في تغييرات الصفّ، وبحارس قرضٍ لحظةَ التطبيق (قد اقترض بعد الرصد —
+              // وأيّامُ القرض الوهميّةُ لا يجوز أن يدهسها تاريخُ الساس)
+              let applyDate = false;
+              try {
+                const chs = r.changes ? (JSON.parse(r.changes) as { f?: string }[]) : [];
+                applyDate = r.sasDateTo != null && chs.some((c) => c.f === "dateTo");
+              } catch { /* تغييراتٌ غيرُ مقروءة ⇒ لا مساسَ بالتاريخ */ }
+              if (applyDate) {
+                const loan = await prisma.loanDebt.findFirst({
+                  where: { subscriberId: r.subscriberId, isDeleted: false }, select: { id: true },
+                });
+                if (loan) applyDate = false;
+              }
               await prisma.subscriber.update({
                 where: { id: r.subscriberId },
                 data: {
@@ -244,6 +258,7 @@ export async function POST(request: Request) {
                   ...(r.name?.trim() ? { name: r.name } : {}),
                   ...(r.address?.trim() ? { address: r.address } : {}),
                   ...(pkgId != null ? { packageId: pkgId } : {}),
+                  ...(applyDate ? { dateTo: r.sasDateTo, expiredNoticeAt: null } : {}),
                 },
               });
               await prisma.auditLog.create({ data: { userId: session.userId, action: "SYNC_LOG_APPLY", entity: "subscriber", entityId: String(r.subscriberId), details: `سجلّ المزامنة: تحديث بيانات «${r.name ?? r.netUser}» من الساس — ${r.changes ?? ""}` } }).catch(() => {});

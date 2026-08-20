@@ -12,7 +12,7 @@ import { prisma } from "./prisma";
 // ⚠️ كلُّ الدوالّ «أفضلُ جهدٍ» ولا تُفشل المزامنةَ أبداً — وغيابُ الجدول (P2021 قبل لصق
 // محمد الـSQL) صمتٌ تامّ فالميزةُ خامدةٌ حتى التهيئة.
 
-export type InfoChange = { f: "phone" | "name" | "address" | "package"; label: string; old: string; new: string };
+export type InfoChange = { f: "phone" | "name" | "address" | "package" | "dateTo"; label: string; old: string; new: string };
 
 const tableMissing = (e: unknown) =>
   typeof e === "object" && e != null && "code" in e && (e as { code?: string }).code === "P2021";

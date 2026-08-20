@@ -84,8 +84,11 @@ describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلف�
     const api = fs.readFileSync(path.join(ROOT, "src/app/api/sync-log/route.ts"), "utf8");
     assert.match(api, /dateTo: r\.sasDateTo/, "الاستيرادُ من السجلّ بلا أيّام الساس");
     assert.match(api, /packageId: matcher\.match\(r\.packageName\)/, "الباقةُ لا تُطابَق عند الاستيراد من السجلّ");
-    // والتخطّي (`skippedPkg`) باقٍ مشروطاً بوجود المشترك (`p`) — للقائم لا للجديد
-    assert.match(src, /if \(\(u\.packageName \?\? ""\)\.trim\(\) && sasPkgId == null\) \{ skippedPkg\+\+; continue; \}/,
-      "شرطُ تخطّي الباقة تغيّر — أعِد التحقّق أنّه لا يمسّ الرصدَ الجديد");
+    // 📅 قاعدةُ الأيّام (قرار محمد 2026-08-21 المصحَّح): مجهولُ الباقة وحدَه يُمدَّد
+    // تلقائيّاً للأمام، ومعلومُها يُرصَد فرقُ أيّامه (زيادةً ونقصاً) والتطبيقُ يدويّ
+    assert.match(src, /if \(sasPkgId == null\) \{\s*\r?\n\s*if \(validDate && sasDateIsLater\(p\.dateTo, validDate\)\)/,
+      "مجهولُ الباقة لم يعد يُمدَّد تلقائيّاً — وقرارُ محمد أن يُمدَّد");
+    assert.match(src, /f: "dateTo"/, "فرقُ الأيّام لمعلوم الباقة لا يُرصَد في تحديث المعلومات");
+    assert.match(src, /نقص أيّام/, "النقصانُ لا يُرصَد — ومحمد طلب رصدَ الزيادة والنقصان معاً");
   });
 });

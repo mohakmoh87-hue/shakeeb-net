@@ -482,7 +482,10 @@ export default function SmsTemplatesPage() {
           <div className="mt-3">
             <div className="mb-1 text-xs font-semibold text-slate-500">أدرج حقلاً (يُدرج السطر كاملاً «اسم الحقل : القيمة»):</div>
             <div className="flex flex-wrap gap-1.5">
-              {FIELDS.map((f) => (
+              {/* ⚠️ قالبا سجلّ المزامنة بلا تاريخ انتهاءٍ أبداً (قرار محمد 2026-08-21):
+                  التاريخُ لحظةَ الرصد خاطئٌ حتماً (عرضُ ١٠ أيّامٍ قبل الأيّام الحقيقيّة)
+                  — فزرُّ إدراجه يُخفى، والمُرسِلُ يمحو أيَّ سطرِ تاريخٍ كُتب يدويّاً */}
+              {FIELDS.filter((f) => !(["selfActivated", "externalInstall"].includes(selType) && f.line.includes("{تاريخ_الانتهاء}"))).map((f) => (
                 <button key={f.label} type="button" onClick={() => insertAtCursor(f.line, true)}
                   className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">
                   {f.label}

@@ -1,7 +1,6 @@
 import { prisma } from "./prisma";
 import { getEffectiveTemplateFull } from "./smsTemplates";
 import { renderTemplate, sendViaProvider } from "./messaging";
-import { formatDate } from "./format";
 import { baghdadDayKey } from "./messageDedup";
 
 // ═════ 📋 رسائل سجلّ المزامنة — تبويبا «تفعيل خارجي» و«تنصيب خارجي» (طلب محمد 2026-08-20) ═════
@@ -132,9 +131,13 @@ export async function sendSyncLogMessage(
     }
     if (!phone) return "failed"; // لا رقمَ إطلاقاً — تُبلَّغ الواجهةُ برفضٍ مقروء
 
-    const text = renderTemplate(tpl.text, {
+    // ⚠️ قالبا سجلّ المزامنة **بلا تاريخ انتهاءٍ أبداً** (قرار محمد 2026-08-21): تاريخُ
+    // لحظةِ الرصد خاطئٌ حتماً للتنصيبات (عرضُ ١٠ أيّامٍ قبل إضافة الأيّام الحقيقيّة) —
+    // فأيُّ سطرٍ فيه متغيّرُ التاريخ يُمحى من النصّ حتى لو كتبه أحدٌ يدويّاً في القالب.
+    const tplText = tpl.text.split(/\r?\n/).filter((l) => !/\{(تاريخ_الانتهاء|dateTo)\}/.test(l)).join("\n");
+    const text = renderTemplate(tplText, {
       name: p.name, netUser: p.netUser, phone,
-      package: pkgName, dateTo: p.sasDateTo ? formatDate(p.sasDateTo) : "",
+      package: pkgName, dateTo: "",
       carry, remaining: carry,
       office: office.name ?? "",
     });

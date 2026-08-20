@@ -653,6 +653,20 @@ async function runOfficeSyncInner(
         if (sv(u.packageName) && sasPkgIdForDiff !== p.packageId) {
           diffs.push({ f: "package", label: "الباقة", old: oursPkgName, new: sv(u.packageName) });
         }
+        // 📅 فرقُ الأيّام لمعلوم الباقة (قرار محمد 2026-08-21 المصحَّح): زيادةً **ونقصاً**
+        // يُرصَد هنا والتطبيقُ يدويٌّ حصراً من التبويب — التمديدُ التلقائيُّ بقي لمجهول
+        // الباقة وحدَه (أدناه). وصاحبُ القرض مستثنى: أيّامُه الوهميّةُ ليست فرقاً يُعرَض.
+        if (sasPkgIdForDiff != null && !loanSubIds.has(p.id) && validDate) {
+          const oday = p.dateTo ? p.dateTo.toISOString().slice(0, 10) : "";
+          const nday = validDate.toISOString().slice(0, 10);
+          if (oday !== nday) {
+            diffs.push({
+              f: "dateTo",
+              label: !p.dateTo || validDate > p.dateTo ? "تاريخ الانتهاء (زيادة أيّام)" : "تاريخ الانتهاء (نقص أيّام)",
+              old: oday || "—", new: nday,
+            });
+          }
+        }
         await recordInfoDiff({
           agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: p.id,
           netUser: u.username, name: u.name, phone: u.phone, address: u.address,
@@ -677,22 +691,23 @@ async function runOfficeSyncInner(
       // صاحب قرضٍ قائم ⇒ لا تلمسه المزامنة إطلاقاً (لا تاريخ ولا باقة ولا عدّ) حتى يُسدَّد
       // بالتفعيل العاديّ فيُمحى قرضه ويعود طبيعيّاً.
       if (loanSubIds.has(p.id)) continue;
-      // 🔓 التمديدُ للأمام **قبل** حارس الباقة المجهولة (قرار محمد 2026-08-21 — حالةُ
-      // المنصَّب بباقة عرضٍ ١٠ أيّامٍ ثمّ تضيف الشركةُ ٥٠): التمديدُ لا يضرّ أبداً (لا
-      // يُقصّر تاريخاً ولا يمسّ مالاً)، وحجبُه عن مجهولي الباقة كان يُبقيهم بأيّامهم
-      // القديمة فتصلهم رسالةُ انتهاءٍ كاذبةٌ والساسُ ممدِّدُهم أصلاً.
-      if (validDate && sasDateIsLater(p.dateTo, validDate)) {
-        // البند ٤-أ · وتُمسَح رايةُ «أُبلِغ بانتهائه» هنا أيضاً: هذا المسارُ هو ما يرصد
-        // **التفعيلَ من الساس** (المشتركُ فعّل بنفسه من التطبيق)، فبقاءُ الرايةِ يمنع
-        // رسالتَه في انتهائه القادم إلى الأبد — والتفعيلُ من البرنامج يمسحها في مساره.
-        await prisma.subscriber.update({ where: { id: p.id }, data: { dateTo: validDate, expiredNoticeAt: null } });
-        dateFixed++;
-      }
-
-      // فئته في الساس غير معروفة عندنا ⇒ لا شيءَ آخر يُمَسّ (باقته/عدّه) — يُحصى للتقرير.
+      // 📅 قاعدةُ الأيّام (قرار محمد 2026-08-21 المصحَّح — انقلابُ الأدوار):
+      //   · **معلومُ الباقة**: لا لمسَ تلقائيّاً إطلاقاً — فرقُ أيّامه (زيادةً ونقصاً) دُفع
+      //     أعلاه إلى تبويب «تحديث معلومات» والتطبيقُ بيد صاحب الصلاحيّة حصراً.
+      //   · **مجهولُ الباقة** (باقةُ عرضٍ/غيرُ مضافة/بلا اسم): يُمدَّد تلقائيّاً **للأمام
+      //     فقط** — حالةُ المنصَّب بعرض ١٠ أيّامٍ ثمّ تضيف الشركةُ ٥٠ (لا تقصيرَ أبداً).
       const sasPkgId = matcher.match(u.packageName);
-      if ((u.packageName ?? "").trim() && sasPkgId == null) { skippedPkg++; continue; }
-
+      if (sasPkgId == null) {
+        if (validDate && sasDateIsLater(p.dateTo, validDate)) {
+          // البند ٤-أ · وتُمسَح رايةُ «أُبلِغ بانتهائه» مع التمديد — فبقاؤها يمنع رسالةَ
+          // انتهائه القادمَ إلى الأبد (التطبيقُ اليدويُّ لمعلوم الباقة يمسحها في مساره).
+          await prisma.subscriber.update({ where: { id: p.id }, data: { dateTo: validDate, expiredNoticeAt: null } });
+          dateFixed++;
+        }
+        // مسمّاةٌ ومجهولةٌ عندنا ⇒ تُحصى للتقرير (بلا اسمٍ أصلاً لا تُحصى — لا فئةَ لها)
+        if ((u.packageName ?? "").trim()) skippedPkg++;
+        continue;
+      }
       checked++;
     }
 
