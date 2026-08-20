@@ -44,11 +44,18 @@ export async function GET(request: Request) {
   }
 
   // الموقع (أو عاملٌ غير قائد): سجّل طلب اتصال ليلتقطه القائد، واقرأ آخر حالة/QR نشرها في السحابة
-  await prisma.waSession.upsert({
-    where: { towerId: officeId },
-    update: { requestedAt: new Date() },
-    create: { towerId: officeId, requestedAt: new Date(), state: "starting" },
-  });
+  // ⚠️ SQL خامٌ عمداً (بلاغ محمد 2026-08-20 — مكتب المهندس): `upsert` بريزما كان يقفز
+  // بـ`updatedAt` مع كلّ فتحٍ للصفحة، فتفسد نضارةُ الحالة التي تُقاس به — فظهر للمكتب
+  // «الحالة متصل قديمة منذ ٠ دقيقة» (طازجةٌ وقديمةٌ في جملةٍ واحدة) بدل الخطأ الحقيقيّ.
+  // الطلبُ (`requestedAt`) لمسةُ قارئٍ لا تغييرُ حالةٍ — فلا تمسّ ختمَ الحالة.
+  const touched = await prisma.$executeRaw`UPDATE wa_sessions SET "requestedAt" = now() WHERE "towerId" = ${officeId}`;
+  if (touched === 0) {
+    await prisma.waSession.upsert({
+      where: { towerId: officeId },
+      update: { requestedAt: new Date() },
+      create: { towerId: officeId, requestedAt: new Date(), state: "starting" },
+    });
+  }
   const sess = await prisma.waSession.findUnique({ where: { towerId: officeId } });
 
   // ===== الحالة المنشورة قد تكون **مجمّدة** (تصحيح 2026-08-05) =====

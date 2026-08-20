@@ -508,7 +508,7 @@ async function runOfficeSyncInner(
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
       where: { towerId: officeId, ...panelWhere, isDeleted: false, sasId: { not: null } },
-      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true },
+      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
 
@@ -594,6 +594,15 @@ async function runOfficeSyncInner(
       // لا يمسّ تاريخاً ولا باقةً ولا مالاً، فلا يُحجب عن صاحب قرضٍ ولا عن مشتركٍ فئتُه مجهولة.
       if (u.address && u.address !== p.address) {
         await prisma.subscriber.update({ where: { id: p.id }, data: { address: u.address } });
+      }
+      // ═════ 🔴 ردمُ الهاتف الفارغ من الساس (بلاغ محمد 2026-08-20 — مكتب الرسالة) ═════
+      // مشتركٌ استُورد يومَ كانت خانةُ هاتفه في الساس فارغةً ثم ملأها المكتبُ لاحقاً كان
+      // يبقى عندنا **بلا رقمٍ للأبد** (المزامنةُ تصحّح العنوانَ والباقةَ ذاتيّاً — والهاتفُ
+      // وحدَه كان منسيّاً) ⇒ ٣٦ تذكيراً فشل «لا يوجد رقم هاتف» وأرقامُهم في الساس موجودة.
+      // القاعدة: **يُملأ الفارغُ فقط ولا يُكتَب فوق رقمٍ قائم** — فالبرنامجُ قد يحمل رقماً
+      // صحّحه المديرُ يدويّاً، والساسُ لا يغلبه. وهو بيانُ تواصلٍ محضٌ قبل كلّ حارسٍ كالعنوان.
+      if (!(p.phone ?? "").trim() && (u.phone ?? "").trim()) {
+        await prisma.subscriber.update({ where: { id: p.id }, data: { phone: u.phone } });
       }
       // صاحب قرضٍ قائم ⇒ لا تلمسه المزامنة إطلاقاً (لا تاريخ ولا باقة ولا عدّ) حتى يُسدَّد
       // بالتفعيل العاديّ فيُمحى قرضه ويعود طبيعيّاً.
