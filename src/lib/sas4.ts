@@ -323,19 +323,53 @@ async function fetchAnyPage(
 // يستخدم بحث SAS بالبِن (search) الذي يجد التفعيل ولو وقع خارج نافذة المزامنة (يُفعَّل الكارت
 // في يومٍ ويُعلَّم مستخدماً في البرنامج في يومٍ آخر — نمط مكاتب الريسيلر الكبيرة). يُعيد صف
 // التفعيل عند الوجود وإلا null. لا يرمي استثناءً كي لا يُسقِط المزامنة عند تعثّر استعلام واحد.
+// ═════ 🔎 مسبارُ السيريال — نتيجةٌ صريحةٌ تُفرّق «غيرُ موجود» عن «تعذّر الفحص» ═════
+// (تدقيقُ محمد 2026-08-21: «هل بحثُ الكروت واحداً تلو الآخر موثوق؟») — ثلاثةُ عيوبٍ
+// كانت في الصيغة القديمة، وكلُّها تُنتج **«لم يُوجد» كاذباً**:
+//   ١· صفحةٌ واحدةٌ بعشرين صفّاً فقط: بحثُ الساس يطابق أيَّ حقلٍ (اسم/يوزر/رقم)، فصفُّ
+//      السيريال المطلوب قد يقع خارج العشرين الأولى فلا يُرى أصلاً.
+//   ٢· مطابقةٌ حرفيّةٌ صارمة: فارقُ مسافةٍ أو شرطةٍ أو رقمٍ يعود عدداً (فتسقط الأصفارُ
+//      البادئة) يكفي لإسقاط التطابق.
+//   ٣· `catch` يبتلع عطلَ الشبكة فيبدو كأنّ الكارتَ غيرُ مستخدَم — وهذا أخطرُها، لأنّ
+//      الدفترَ كان سيختمه «غير مستخدَم» ويمتنع عن إعادة فحصه أسبوعاً كاملاً.
+const pinKey = (v: unknown): string => String(v ?? "").trim().toLowerCase().replace(/[\s-]/g, "");
+const digitsOnly = (v: unknown): string => String(v ?? "").replace(/\D/g, "");
+const samePin = (a: unknown, b: unknown): boolean => {
+  const ka = pinKey(a), kb = pinKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  const da = digitsOnly(a), db = digitsOnly(b);
+  return !!da && da === db; // أصفارٌ بادئةٌ سقطت أو صيغةٌ مختلفة
+};
+
+export type SerialProbe = { ok: boolean; hit: SasActivation | null };
+
+/** يبحث عن تفعيلةِ سيريالٍ في شجرة الحساب كاملةً (search يغطّي الحساباتِ الفرعيّة).
+ *  `ok:false` تعني **تعذّر الفحصُ** لا «غيرُ موجود» — فلا يُبنى عليها حكمٌ سلبيّ أبداً. */
+export async function sasProbeSerial(base: string, token: string, serial: string): Promise<SerialProbe> {
+  const s = (serial ?? "").trim();
+  if (!s) return { ok: true, hit: null };
+  const PAGE = 100, MAX_PAGES = 3; // حتى ٣٠٠ صفّاً من نتائج البحث — أوسع بخمس عشرة مرّةً من القديم
+  try {
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const j = await fetchAnyPage(base, token, "index/activations", page, PAGE, { search: s });
+      const rows: Record<string, unknown>[] = j?.data ?? [];
+      if (!rows.length) break;
+      const hit = rows.find((r) => samePin((r as { pin?: unknown }).pin, s));
+      if (hit) return { ok: true, hit: normalizeActivation(hit) };
+      const total = Number(j?.total ?? 0);
+      if (rows.length < PAGE || (total && page * PAGE >= total)) break;
+    }
+    return { ok: true, hit: null };
+  } catch {
+    return { ok: false, hit: null }; // عطلُ شبكةٍ/جلسة — لا يُقرأ «غيرَ مستخدَم»
+  }
+}
+
 export async function sasSearchActivation(
   base: string, token: string, serial: string,
 ): Promise<SasActivation | null> {
-  const s = (serial ?? "").trim();
-  if (!s) return null;
-  try {
-    const j = await fetchAnyPage(base, token, "index/activations", 1, 20, { search: s });
-    const rows: Record<string, unknown>[] = j?.data ?? [];
-    const hit = rows.find((r) => String((r as { pin?: unknown }).pin ?? "").trim() === s);
-    return hit ? normalizeActivation(hit) : null;
-  } catch {
-    return null;
-  }
+  return (await sasProbeSerial(base, token, serial)).hit;
 }
 
 // جلب تفعيلات يوم محدّد من تقرير التفعيلات (index/activations).

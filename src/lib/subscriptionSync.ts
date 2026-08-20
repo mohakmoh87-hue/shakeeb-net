@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers, sasSearchActivation,
+  sasProbeSerial,
   sasFetchActivationsSince,
   type SasActivation,
 } from "@/lib/sas4";
@@ -1073,7 +1074,8 @@ export async function runFullCardAudit(
   const agentId = office.agentId ?? -1;
   const cards = await prisma.rechargeCard.findMany({
     where: { agentId },
-    select: { id: true, serial: true, useDate: true, subscriberId: true },
+    // `number` يُجلَب للبحث الاحتياطيّ: بعضُ الدفعات يُسجّل الساسُ رقمَها لا سيريالَها
+    select: { id: true, serial: true, useDate: true, subscriberId: true, number: true },
     orderBy: { id: "asc" },
   });
 
@@ -1155,7 +1157,7 @@ export async function runFullCardAudit(
   // مرشَّحو الوهميّة — تُجمَع ثمّ يُحكَم عليها **بعد** تقييم صلاحيّة الأدلّة (أدناه)
   const candidates: { cardId: number; serial: string; subLabel: string; usedAt: string; subscriberId: number | null; netUser: string | null }[] = [];
   // 🔎 كروتٌ «متاحةٌ» عندنا ولم تُذكر في قائمة تفعيلات المكتب — تُبحَث بسيريالها فرداً فرداً
-  const availUnmatched: { id: number; serial: string }[] = [];
+  const availUnmatched: { id: number; serial: string; number: string | null }[] = [];
 
   // 2) المطابقة المحلّية — بلا أي استعلام SAS إضافي
   let i = 0;
@@ -1173,7 +1175,7 @@ export async function runFullCardAudit(
       // متاح بالبرنامج: هل استُخدم في SAS؟ (وجوده في التفعيلات كافٍ — لا حكم سلبي هنا)
       res.checkedAvailable++;
       // 🔎 لم تُذكر تفعيلتُه في قائمة المكتب ⇒ يُبحَث عنه **بسيرياله** لاحقاً (أدناه)
-      if (!hit) { availUnmatched.push({ id: c.id, serial }); continue; }
+      if (!hit) { availUnmatched.push({ id: c.id, serial, number: c.number ?? null }); continue; }
       const when = hit.createdAt ? new Date(hit.createdAt) : new Date();
       // 🔑 الربطُ **باليوزر أوّلاً ثمّ بالرقم** (بلاغ محمد 2026-08-21): رقمُ الساس قد يكون
       // مغلوطاً على صفٍّ (حالة bg-7-4-2@mu) فيُربَط الكارتُ بمشتركٍ خاطئ أو لا يُربَط —
@@ -1251,12 +1253,21 @@ export async function runFullCardAudit(
       while (true) {
         const i = next++;
         if (i >= due.length) break;
-        const { id, serial } = due[i];
+        const { id, serial, number } = due[i];
+        // يُبحَث بالسيريال في كلّ لوحة، ثمّ **برقم الكارت** إن اختلف (بعضُ الدفعات يُسجّل
+        // الساسُ رقمَها لا سيريالَها) — وأيُّ تعذّرٍ في أيّ محاولةٍ يُلغي الحكمَ السلبيّ.
         let found: SasActivation | null = null;
-        for (const s of sessions) {
-          found = await sasSearchActivation(s.base, s.token, serial);
-          if (found) break;
+        let probeOk = true;
+        const keys = [serial, ...(number && number.trim() && number.trim() !== serial ? [number.trim()] : [])];
+        outer: for (const key of keys) {
+          for (const s of sessions) {
+            const pr = await sasProbeSerial(s.base, s.token, key);
+            if (!pr.ok) { probeOk = false; continue; }
+            if (pr.hit) { found = pr.hit; break outer; }
+          }
         }
+        // 🛑 تعذّر الفحصُ ولم نجد ⇒ لا حكمَ ولا ختمَ في الدفتر (يُعاد في الجولة القادمة)
+        if (!found && !probeOk) continue;
         if (!found) {
           // ليس مستخدَماً في الساس فعلاً ⇒ يُختَم في الدفتر كي لا يُبحَث كلَّ ليلة
           await prisma.cardSasCheck.upsert({
