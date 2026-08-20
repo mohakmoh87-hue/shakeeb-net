@@ -564,123 +564,8 @@ const STEP_LABEL: Record<string, string> = {
   report: "جاري إرسال التقرير للمدير...",
 };
 
-// ═════ أ-٢١ · سجلُّ تدقيق المزامنة: ما تغيّر في الساس (اسم/هاتف/يوزر) — بمراجعةٍ وقرار ═════
-type AuditRow = { subscriberId: number; subName: string | null; netUser: string | null; field: string; label: string; ours: string; sas: string };
-type AuditData = { count: number; groups: Record<string, AuditRow[]> };
-const auditRowKey = (r: AuditRow) => `${r.subscriberId}|${r.field}|${r.sas}`;
-
-function SyncAuditButton({ officeId, refreshTick }: { officeId: number; refreshTick: number }) {
-  const [data, setData] = useState<AuditData | null>(null);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [sel, setSel] = useState<Set<string>>(new Set());
-
-  const load = useCallback(() => {
-    fetch(`/api/offices/${officeId}/sync-audit`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && !d.error) setData(d); })
-      .catch(() => {});
-  }, [officeId]);
-  // يُحسب حيّاً عند فتح الصفحة وبعد كلّ مزامنة — وما طُبِّق يختفي من نفسه
-  useEffect(() => { load(); }, [load, refreshTick]);
-
-  if (!data || data.count === 0) return null; // الزرُّ يظهر فقط إن وُجدت فروق (نصّ الطلب)
-
-  const rows = Object.values(data.groups).flat();
-  const toggle = (k: string) => setSel((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
-  const allSelected = sel.size === rows.length && rows.length > 0;
-
-  async function act(action: "apply" | "ignore") {
-    const items = rows.filter((r) => sel.has(auditRowKey(r))).map((r) => ({ subscriberId: r.subscriberId, field: r.field, sasValue: r.sas }));
-    if (!items.length) { setMsg("حدّد سطراً واحداً على الأقل"); return; }
-    setBusy(true); setMsg("");
-    const res = await fetch(`/api/offices/${officeId}/sync-audit`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, items }),
-    });
-    const d = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) { setMsg(d.error ?? "فشل التنفيذ"); return; }
-    const rej = (d.rejected ?? []) as { reason: string }[];
-    setMsg(action === "apply"
-      ? `✓ حُدِّث ${d.applied ?? 0}${rej.length ? ` — ورُفض ${rej.length}: ${rej.map((x) => x.reason).join(" · ")}` : ""}`
-      : `✓ أُهمل ${d.ignored ?? 0} — لن يظهر ثانيةً (إلّا إن تغيّرت قيمة الساس لقيمةٍ أجدّ)`);
-    setSel(new Set());
-    load();
-  }
-
-  return (
-    <>
-      <button onClick={() => setOpen(true)}
-        className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">
-        🔍 سجل التدقيق <span className="rounded-full bg-amber-600 px-1.5 text-[11px] font-extrabold text-white">{data.count}</span>
-      </button>
-      {open && (
-        // قاعدةُ محمد (أ-٦): لا تُغلَق بالضغط على فراغٍ ولا بـEsc — بعلامة ✕ حصراً
-        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/60 p-3">
-          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-start justify-between border-b border-slate-200 bg-amber-50 px-5 py-4">
-              <div>
-                <h3 className="text-lg font-extrabold text-slate-800">🔍 سجلّ تدقيق المزامنة</h3>
-                <p className="mt-0.5 text-sm text-slate-600">{data.count} تغييراً في الساس بانتظار قرارك — التحديثُ يكتب قيمةَ الساس عندنا، والإهمالُ يُخفيه للأبد (ما لم يتغيّر مجدَّداً)</p>
-              </div>
-              <button onClick={() => setOpen(false)} aria-label="إغلاق"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-2xl text-slate-500 shadow-sm hover:bg-slate-200">✕</button>
-            </div>
-            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-2.5">
-              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-600">
-                <input type="checkbox" checked={allSelected}
-                  onChange={() => setSel(allSelected ? new Set() : new Set(rows.map(auditRowKey)))} />
-                تحديد الكل
-              </label>
-              <div className="flex-1" />
-              <button onClick={() => void act("apply")} disabled={busy}
-                className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60">✔ تحديث المحدَّد</button>
-              <button onClick={() => void act("ignore")} disabled={busy}
-                className="rounded-lg bg-slate-500 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-slate-600 disabled:opacity-60">✖ إهمال المحدَّد</button>
-            </div>
-            {msg && <div className={`mx-5 mt-2 rounded-lg px-3 py-1.5 text-sm ${msg.startsWith("✓") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>{msg}</div>}
-            <div className="overflow-auto px-5 py-3">
-              {(["phone", "name", "netUser"] as const).map((f) => {
-                const list = data.groups[f] ?? [];
-                if (!list.length) return null;
-                return (
-                  <div key={f} className="mb-4">
-                    <div className="mb-1.5 text-sm font-extrabold text-slate-700">
-                      {list.length} {f === "phone" ? "تغيّر هاتفُهم" : f === "name" ? "تغيّر اسمُهم" : "تغيّر يوزرُهم"}
-                    </div>
-                    <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-                      {list.map((r) => {
-                        const k = auditRowKey(r);
-                        return (
-                          <label key={k} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-slate-50">
-                            <input type="checkbox" checked={sel.has(k)} onChange={() => toggle(k)} />
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-[15px] font-bold text-slate-800">
-                                {r.subName ?? "؟"} {r.netUser && <span className="font-mono text-[13px] font-semibold text-indigo-600" dir="ltr">({r.netUser})</span>}
-                              </div>
-                              <div className="mt-0.5 text-[15px]" dir="auto">
-                                <span className="text-slate-500">{r.label}: </span>
-                                <b className="text-red-600" dir="ltr">{r.ours || "—"}</b>
-                                <span className="mx-1.5 text-slate-400">←</span>
-                                <b className="text-emerald-700" dir="ltr">{r.sas}</b>
-                              </div>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
+// (أ-٢١ «سجلّ تدقيق المزامنة» أُزيل 2026-08-20 — حلّ محلَّه «سجلّ المزامنة»
+// الموحَّدُ في الرئيسيّة بتبويباته الأربعة، مخزَّناً لا محسوباً حيّاً من الساس.)
 
 function OfficeSync({ officeId }: { officeId: number }) {
   const [busy, setBusy] = useState(false);
@@ -688,7 +573,6 @@ function OfficeSync({ officeId }: { officeId: number }) {
   const [prog, setProg] = useState<{ label: string; done: number; total: number } | null>(null);
   const [res, setRes] = useState<SyncRes | null>(null);
   const [cards, setCards] = useState<CardsRes | null>(null);
-  const [auditTick, setAuditTick] = useState(0); // أ-٢١ · يُعاد حسابُ سجلّ التدقيق بعد كلّ مزامنة
   const alive = useRef(true); // يوقف المتابعة عند مغادرة الصفحة
 
   const fetchStatus = useCallback(
@@ -711,7 +595,7 @@ function OfficeSync({ officeId }: { officeId: number }) {
         await new Promise((r) => setTimeout(r, 4000));
         continue;
       }
-      if (st?.state === "done") { setRes(st.sync ?? null); setCards(st.cards ?? null); setAuditTick((n) => n + 1); }
+      if (st?.state === "done") { setRes(st.sync ?? null); setCards(st.cards ?? null); }
       else if (st?.state === "error") { setRes({ error: st.error ?? "فشلت المزامنة" } as SyncRes); setCards(null); }
       setProg(null);
       setBusy(false);
@@ -750,8 +634,7 @@ function OfficeSync({ officeId }: { officeId: number }) {
       <div className="mb-1 flex items-center justify-between">
         <h3 className="font-bold text-slate-800">مزامنة الاشتراكات (شاملة: كروت الأمس + تصحيح التواريخ + فحص كل الكروت)</h3>
         <div className="flex items-center gap-2">
-          {/* أ-٢١ · بجانب زرّ المزامنة (حدّده محمد) — يظهر فقط إن وُجدت فروقٌ وعليه عددُها */}
-          <SyncAuditButton officeId={officeId} refreshTick={auditTick} />
+          {/* (زرّ سجلّ التدقيق أُزيل — ما ترصده المزامنةُ يظهر في «سجلّ المزامنة» بالرئيسيّة) */}
           <button onClick={sync} disabled={busy} className="rounded-lg bg-mynet-blue px-4 py-1.5 text-sm font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
             {busy ? STEP_LABEL[step] ?? "جاري المزامنة..." : "🔄 مزامنة الآن"}
           </button>

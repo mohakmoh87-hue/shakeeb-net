@@ -19,12 +19,14 @@ const ROOT = process.cwd();
 const SRC = () => fs.readFileSync(path.join(ROOT, "src/lib/subscriptionSync.ts"), "utf8");
 
 describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلفاً", () => {
-  test("🛡️ الحرسُ **قبل** الإنشاء لا بعده", () => {
+  test("🛡️ الحرسُ **قبل** الرصد لا بعده", () => {
+    // (منذ سجلّ المزامنة 2026-08-20: «الإنشاء» صار «رصداً» recordInstall — والحرسُ باقٍ
+    //  قبله كي لا يظهر يوزرٌ مكرَّرٌ في تبويب «تنصيب خارجي» فيستورده صاحبُ الصلاحيّة صفّاً ثانياً)
     const src = SRC();
     const guardAt = src.indexOf("progByUser.has(uKey)");
-    const pushAt = src.indexOf("toImport.push({");
     assert.ok(guardAt > -1, "لا حرسَ على تكرار اليوزر");
-    assert.ok(pushAt > -1 && guardAt < pushAt, "الحرسُ بعد الإنشاء ⇒ لا يمنع شيئاً");
+    const recordAt = src.indexOf("recordInstall({", guardAt);
+    assert.ok(recordAt > -1 && guardAt < recordAt, "الحرسُ بعد الرصد ⇒ لا يمنع شيئاً");
     assert.match(src, /if \(uKey && progByUser\.has\(uKey\)\) \{\s*\r?\n\s*dupUserSkipped\+\+;\s*\r?\n\s*continue;/,
       "الحرسُ لا يتخطّى الصفَّ فعلاً");
   });
@@ -61,16 +63,20 @@ describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلف�
     assert.match(src, /يوزرٌ موجودٌ سلفاً فلم يُستورَد \(يحتاج قرارك\)/, "لا سطرَ في تقرير المدير");
   });
 
-  test("وباقةُ العروض المجهولةُ لا تمنع الاستيراد — والأيّامُ من الساس", () => {
-    // طلبُ محمد (البند ٥ نقطة ١) — وقياسُ الشيفرة أثبت أنّه **يعمل سلفاً**: التخطّي
-    // (`skippedPkg`) يخصّ المشتركَ **القائم** لا الجديد. فلا تُبنى ميزةٌ موجودةٌ.
+  test("وباقةُ العروض المجهولةُ لا تمنع الرصدَ ولا الاستيراد — والأيّامُ من الساس", () => {
+    // طلبُ محمد (البند ٥ نقطة ١). منذ سجلّ المزامنة: الجديدُ **يُرصَد** بتاريخ الساس
+    // كاملاً، والاستيرادُ الفعليُّ في مسار «حفظ» بالسجلّ — وكلاهما لا تمنعه باقةٌ مجهولة.
     const src = SRC();
-    const i = src.indexOf("toImport.push({");
-    const block = src.slice(i, i + 400);
-    assert.match(block, /dateTo: validDate/, "الجديدُ يُستورَد بلا أيّام");
-    assert.match(block, /packageId: matcher\.match\(u\.packageName\)/, "الباقةُ لا تُطابَق عند الاستيراد");
-    // والتخطّي مشروطٌ بوجود المشترك (`p`) — أي أنّه للقائم لا للجديد
+    const guardAt = src.indexOf("progByUser.has(uKey)");
+    const block = src.slice(src.indexOf("recordInstall({", guardAt), src.indexOf("recordInstall({", guardAt) + 400);
+    assert.match(block, /sasDateTo: validDate/, "الجديدُ يُرصَد بلا تاريخ الساس");
+    assert.match(block, /packageName: u\.packageName/, "الباقةُ لا تُرصَد مع التنصيب");
+    // ومسارُ «حفظ» يستورد بتاريخ الساس ويطابق الباقةَ (والمجهولةُ تُترك فارغةً لا مانعةً)
+    const api = fs.readFileSync(path.join(ROOT, "src/app/api/sync-log/route.ts"), "utf8");
+    assert.match(api, /dateTo: r\.sasDateTo/, "الاستيرادُ من السجلّ بلا أيّام الساس");
+    assert.match(api, /packageId: matcher\.match\(r\.packageName\)/, "الباقةُ لا تُطابَق عند الاستيراد من السجلّ");
+    // والتخطّي (`skippedPkg`) باقٍ مشروطاً بوجود المشترك (`p`) — للقائم لا للجديد
     assert.match(src, /if \(\(u\.packageName \?\? ""\)\.trim\(\) && sasPkgId == null\) \{ skippedPkg\+\+; continue; \}/,
-      "شرطُ تخطّي الباقة تغيّر — أعِد التحقّق أنّه لا يمسّ الاستيراد الجديد");
+      "شرطُ تخطّي الباقة تغيّر — أعِد التحقّق أنّه لا يمسّ الرصدَ الجديد");
   });
 });

@@ -3,76 +3,126 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-// ═════ البند ٥ · «تنصيبات خارجية» — للاطّلاع فقط (طلبُ محمد) ═════
+// ═════ 📋 «سجلّ المزامنة» الموحَّد — حلّ محلَّ «تنصيبات خارجية» (قرار محمد 2026-08-20) ═════
 //
-// بنصّه: «أريد معرفةَ كم مشتركاً قامت الشركةُ بتنصيبه بلا علمي، ويمكنني تحديدُ ما أشاء
-// من هذه القائمة واختيارُ **تجاهل** لمسحهم منها — **وهذه القائمةُ للاطّلاع فقط وليس
-// شيءٌ آخر**».
-//
-// 🔴 وأخطرُ قرارٍ فيه كان قد يُفسدها كلَّها: **`createdByUser='sync'` لا يصلح إشارةً**.
-//   قِيس على الإنتاج: **١٩٤٩١** مشتركاً أنشأتهم المزامنة، وأكثرُهم استيرادُ النقل الأوّل
-//   (ولا `createdAt` على المشترك يُفرّق القديمَ من الجديد). فقائمةٌ بـ١٩٤٩١ صفّاً ضجيجٌ
-//   يُخفي الخبر. ⇒ وسمٌ يُكتب **من الآن فصاعداً** و**بلا ردم**: تبدأ فارغةً (قِيس: صفر).
+// بنصّه: أربعةُ تبويبات (تحديث معلومات · تنصيب خارجي · تفعيل خارجي · تفعيلات ساس)،
+// العرضُ للمدير والمستخدم، والتعديلُ لصاحب صلاحيّة «تحديث سجل المزامنة» (ضمن المال)
+// حصراً. المزامنةُ صارت **راصدةً**: لا استيرادَ تلقائيّاً ولا كتابةَ معلوماتٍ — تمديدُ
+// التاريخ للأمام وحدَه بقي تلقائيّاً. (هذا الملفُّ ورث اسمَ حارس «تنصيبات خارجية».)
 
 const ROOT = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
-const API = () => read("src/app/api/subscribers/external-installs/route.ts");
+const API = () => read("src/app/api/sync-log/route.ts");
 
-describe("البند ٥ · تنصيبات خارجية", () => {
-  test("🔴 الإشارةُ وسمٌ مخصَّصٌ لا `createdByUser='sync'`", () => {
-    const api = API();
-    assert.match(api, /extInstallAt: \{ not: null \}/, "القائمةُ لا تعتمد الوسمَ المخصَّص");
-    assert.equal(/createdByUser:\s*"sync"/.test(api), false,
-      "القائمةُ تعتمد createdByUser ⇒ ١٩٤٩١ صفّاً من استيراد النقل الأوّل");
-    // والوسمُ يُكتب في **كلا** مساري إنشاء المزامنة — ولو وُسِم أحدُهما لَغابت نصفُ الحالات
-    const sync = read("src/lib/subscriptionSync.ts");
-    assert.equal((sync.match(/extInstallAt: new Date\(\)/g) ?? []).length, 2,
-      "مسارا الإنشاء في المزامنة ليسا موسومَين كلاهما");
-  });
-
-  test("«للاطّلاع فقط» قيدٌ في الشيفرة: لا حذفَ ولا مساسَ بمالٍ أو تاريخ", () => {
-    const api = API();
-    // «تجاهل» يكتب **وسماً واحداً** ولا شيءَ غيرَه
-    assert.match(api, /data: \{ extIgnoredAt: new Date\(\) \}/, "التجاهلُ يكتب أكثرَ من الوسم");
-    // ⚠️ والحكمُ على **مسار الكتابة** لا على الملفّ كلِّه: `dateTo` يظهر في `select`
-    //   قراءةً للعرض — والقراءةُ ليست مساساً. (أوّلُ صياغةٍ لهذا التأكيد فحصت الملفَّ
-    //   كلَّه فأدانت قراءةً بريئة — ودرسُه: حرسٌ فضفاضٌ يُدين الصحيحَ ثمّ يُسكَت.)
-    const post = api.slice(api.indexOf("export async function POST"));
-    for (const forbidden of ["delete", "carry:", "dateTo:", "moneyTx", "isDeleted: true"]) {
-      assert.equal(post.includes(forbidden), false, `مسارُ الكتابة يمسّ ما لا يجوز: ${forbidden}`);
-    }
-    // ولا كتابةَ إلّا واحدةً في المسار كلِّه
-    assert.equal((post.match(/prisma\.\w+\.(update|updateMany|delete|deleteMany|create|createMany)/g) ?? []).length, 1,
-      "مسارُ التجاهل يكتب أكثرَ من مرّة");
-  });
-
-  test("🔒 العزلُ في **جملة التحديث** لا في فحصٍ سابقٍ وحدَه", () => {
-    const api = API();
-    // معرّفٌ لمشترك وكيلٍ آخرَ يُمرَّر في الطلب يجب ألّا يُصيب صفّاً
-    assert.match(api, /where: \{ id: \{ in: parsed\.data\.ids \}, towerId: \{ in: towers \}/,
-      "التجاهلُ بلا شرطِ المكتب في جملة التحديث ⇒ يمسّ مشتركَ وكيلٍ آخر");
-    assert.match(api, /agentTowerIds/, "لا تحديدَ لمكاتب الوكيل");
-    // وطلبُ مكتبٍ لا يتبع الوكيل يُرفَض صريحاً
-    assert.match(api, /المكتب لا يتبع حسابك/, "لا رفضَ لمكتبٍ أجنبيّ");
-  });
-
-  test("سقفٌ على حجم الطلب — فلا تُمرَّر آلافُ المعرّفات في نداءٍ واحد", () => {
-    assert.match(API(), /\.min\(1\)\.max\(500\)/, "قائمةُ المعرّفات بلا حدّ");
-  });
-
-  test("الزرُّ في مكانه المحفوظ بجانب «مشترك جديد» وبصلاحيّة", () => {
+describe("📋 سجلّ المزامنة الموحَّد", () => {
+  test("🪦 الميزةُ القديمة أُزيلت كاملةً — لا مسارَين يتنازعان الحقيقة", () => {
+    // «تنصيبات خارجية» و«سجل التدقيق» القديمان حُذفا؛ بقاءُ أيٍّ منهما = قائمتان تعرضان
+    // الشيءَ نفسَه بحالتَين مختلفتَين
+    assert.equal(fs.existsSync(path.join(ROOT, "src/app/api/subscribers/external-installs/route.ts")), false,
+      "مسارُ «تنصيبات خارجية» القديم ما زال حيّاً");
+    assert.equal(fs.existsSync(path.join(ROOT, "src/app/api/offices/[id]/sync-audit/route.ts")), false,
+      "مسارُ «سجل التدقيق» القديم (أ-٢١) ما زال حيّاً");
     const board = read("src/components/SubscribersBoard.tsx");
-    const newAt = board.indexOf("+ مشترك جديد");
-    const btnAt = board.indexOf("تنصيبات خارجية");
-    assert.ok(newAt > -1 && btnAt > newAt && btnAt - newAt < 900, "الزرُّ ليس بجانب «مشترك جديد»");
-    assert.match(board, /can\("subscribers\.manage"\) \|\| can\("subscribers\.import"\)/, "الزرُّ بلا صلاحيّة");
-    // وعدّادُه يُقرأ من الصفوف نفسِها — لا حالةٌ ثانيةٌ تتأخّر عن أصلها
-    assert.match(board, /extRows\.length > 0 \? ` \(\$\{extRows\.length\}\)` : ""/, "العدّادُ من حالةٍ مكرَّرة");
+    assert.match(board, /سجلّ المزامنة/, "زرُّ سجلّ المزامنة غائبٌ عن الشاشة الرئيسيّة");
+    assert.match(board, /import SyncLogModal from "@\/components\/SyncLogModal"/, "النافذةُ غيرُ مركّبة");
+    // والعدّادُ من الجلب نفسِه لا من حالةٍ مزدوجة
+    assert.match(board, /syncCount > 0 \? ` \(\$\{syncCount\}\)` : ""/, "عدّادُ الزرّ غائب");
   });
 
-  test("القائمةُ الفارغةُ تشرح نفسَها — فلا تُقرأ كعطب", () => {
-    // قائمةٌ فارغةٌ بلا تفسيرٍ تُقرأ «الميزةُ لا تعمل»، والحقيقةُ أنّها ترصد من الآن
-    assert.match(read("src/components/SubscribersBoard.tsx"), /من الآن فصاعداً/,
-      "الفارغةُ بلا تفسيرٍ لماذا هي فارغة");
+  test("🔒 POST بصلاحيّة «تحديث سجل المزامنة» حصراً — والعرضُ للجميع", () => {
+    const api = API();
+    // العرضُ (GET) بجلسةٍ فقط، والأفعالُ (POST) خلف الصلاحيّة — قرارُ محمد نصّاً
+    const post = api.slice(api.indexOf("export async function POST"));
+    assert.match(post, /guard\("syncLog\.update"\)/, "POST بلا صلاحيّة syncLog.update");
+    assert.ok(post.indexOf('guard("syncLog.update")') < post.indexOf("prisma."),
+      "الحرسُ بعد أوّل نداءِ قاعدةٍ — لا قبله");
+    // والصلاحيّةُ معرَّفةٌ ضمن مجموعة المال بالاسم الذي أملاه محمد
+    const rbac = read("src/lib/rbac.ts");
+    assert.match(rbac, /"syncLog\.update"/, "المفتاحُ غائبٌ عن rbac");
+    assert.match(rbac, /تحديث سجل المزامنة/, "الاسمُ العربيُّ الذي أملاه محمد غائب");
+  });
+
+  test("🔒 العزلُ في **جملة الجلب** بالمعرّفات — معرّفٌ غريبٌ يسقط ولا يُنفَّذ", () => {
+    const api = API();
+    assert.match(api, /where: \{ id: \{ in: ids \}, towerId: \{ in: towers\.length \? towers : \[-1\] \}, status: "pending" \}/,
+      "صفوفُ POST بلا شرطِ مكاتب الوكيل في SQL");
+    assert.match(api, /agentTowerIds/, "لا تحديدَ لمكاتب الوكيل");
+    // وGET كذلك
+    assert.match(api, /where: \{ towerId: \{ in: towers \}, status: "pending" \}/, "GET بلا عزل");
+  });
+
+  test("💰 «إضافة تفعيل بوصل» و«إضافة دين» — المالُ بقرارات محمد الثلاثة", () => {
+    const api = API();
+    // (١) الوصلُ بيوم الضغط لا بيوم تفعيلة الساس
+    assert.match(api, /date: now, dateFrom: now/, "الوصلُ ليس بيوم الضغط");
+    // (٢) المبلغُ سعرُ باقة البرنامج — ويُرفَض من لا باقةَ له أو سعرُها صفر
+    assert.match(api, /pkg\?\.priceDinar/, "المبلغُ ليس من باقة البرنامج");
+    assert.match(api, /حدّد باقتَه وسعرَها أوّلاً/, "لا رفضَ لمن بلا باقةٍ مسعَّرة");
+    // (٣) بلا سحب كارت — لا نداءَ ساسٍ في المسار كلِّه
+    assert.equal(/sasFetch|sas4|index\/activation/.test(api), false, "المسارُ يسحب كارتاً من الساس");
+    // الدَّينُ لا يقبض: moneyIn صفرٌ ويرتفع carry، وحركةُ الصندوق للوصل وحدَه
+    assert.match(api, /moneyIn: isDebt \? 0 : price/, "الدَّينُ يقبض مالاً");
+    assert.match(api, /carry: \{ increment: isDebt \? price : 0 \}/, "الدَّينُ لا يرفع carry ذرّيّاً");
+    assert.match(api, /if \(!isDebt\) \{/, "حركةُ الصندوق غيرُ مشروطةٍ بالوصل");
+    // والأثرُ الماليُّ كلُّه في معاملةٍ واحدة (قاعدة carry الذرّيّ)
+    assert.match(api, /\$transaction/, "الوصلُ والحركةُ خارج معاملة");
+    // «يحدث أيّام هذا المشترك»: التاريخُ الأبعدُ فقط — لا تقصيرَ لأيّام أحد
+    assert.match(api, /r\.sasDateTo > sub\.dateTo/, "قد يُقصَّر تاريخُ مشتركٍ قائم");
+  });
+
+  test("«حفظ/تحديث» بلا وصلٍ إطلاقاً — قرارا محمد ج٢ وج٣", () => {
+    // مسارُ apply (استيراد جديدٍ أو تطبيقُ معلومات) لا يقترب من المال
+    const api = API();
+    const applyAt = api.indexOf('if (action === "apply")');
+    const sasAt = api.indexOf("// activate | debt");
+    const apply = api.slice(applyAt, sasAt);
+    for (const forbidden of ["moneyTx", "subscriptionEntry", "wasel", "carry"]) {
+      assert.equal(apply.includes(forbidden), false, `مسارُ التحديث يمسّ المال: ${forbidden}`);
+    }
+    // واليوزرُ الفيصل: لا صفَّ ثانياً ليوزرٍ قائم
+    assert.match(apply, /يوزرُه موجودٌ سلفاً/, "استيرادُ السجلّ بلا حرسِ تكرار اليوزر");
+  });
+
+  test("🕊️ المزامنةُ راصدةٌ: لا استيرادَ تلقائيّاً ولا كتابةَ معلومات — والتاريخُ للأمام وحدَه", () => {
+    const sync = read("src/lib/subscriptionSync.ts");
+    // الاستيرادُ الجماعيُّ وملءُ الباقات حُذفا (الاسمان في الشيفرة الحيّة لا التعليقات)
+    assert.equal(/toImport\.push|pkgFixQueue\.push|const toImport|const pkgFixQueue/.test(sync), false,
+      "بقايا الاستيراد التلقائيّ حيّة");
+    // الجديدُ يُرصَد تنصيباً والفروقُ تُرصَد معلوماتٍ
+    assert.match(sync, /recordInstall\(/, "الجديدُ لا يُرصَد");
+    assert.match(sync, /recordInfoDiff\(/, "فروقُ المعلومات لا تُرصَد");
+    // وتمديدُ التاريخ **للأمام فقط** هو الكتابةُ الوحيدةُ الباقية على المشترك
+    assert.match(sync, /sasDateIsLater\(p\.dateTo, validDate\)/, "التمديدُ التلقائيُّ للأمام زال — وهو قرارُ محمد أن يبقى");
+  });
+
+  test("🪟 النافذةُ منتصفَ الشاشة 80% ولا تُغلق إلّا بـ✕ — شرطُ محمد الثابت", () => {
+    const modal = read("src/components/SyncLogModal.tsx");
+    assert.match(modal, /h-\[80vh\] w-\[80vw\]/, "ليست 80% من الشاشة");
+    assert.match(modal, /items-center justify-center/, "ليست منتصفَ الشاشة");
+    // الطبقةُ الخلفيّة **بلا onClick** — الإغلاقُ بزرّ ✕ حصراً
+    const overlayAt = modal.indexOf('fixed inset-0 z-[130]');
+    const overlayLine = modal.slice(modal.lastIndexOf("<div", overlayAt), modal.indexOf(">", overlayAt));
+    assert.equal(overlayLine.includes("onClick"), false, "النقرُ على الفراغ يُغلق — ومحمد اشترط ✕ حصراً");
+    assert.match(modal, /aria-label="إغلاق"/, "زرُّ ✕ غائب");
+    // والتبويباتُ الأربعةُ بأسمائها
+    for (const t of ["تحديث معلومات", "تنصيب خارجي", "تفعيل خارجي", "تفعيلات ساس"]) {
+      assert.ok(modal.includes(t), `تبويب «${t}» غائب`);
+    }
+  });
+
+  test("🔐 الحاسباتُ تكتب السجلَّ ⇒ GRANT + سياسةُ عزلٍ (قاعدةُ «كتابة جديدة = GRANT + سياسة»)", () => {
+    const script = read("scripts/add-sync-log.mjs");
+    assert.match(script, /GRANT SELECT, INSERT, UPDATE ON sync_log TO agent_worker/, "لا GRANT للحاسبات");
+    assert.match(script, /GRANT USAGE, SELECT ON SEQUENCE sync_log_id_seq TO agent_worker/, "INSERT بلا حقّ التسلسل يفشل");
+    assert.match(script, /CREATE POLICY rls_sync_log/, "لا سياسةَ عزل");
+    // وملفُّ السياسات المرجعيُّ يحملها (حارسُ rls-coverage يقرؤه)
+    assert.match(read("prisma/rls/03-policies.sql"), /rls_sync_log/, "السياسةُ غائبةٌ عن الملفّ المرجعيّ");
+  });
+
+  test("😴 قبل لصق الـSQL: خمولٌ هادئ لا انفجار (P2021)", () => {
+    const api = API();
+    assert.match(api, /P2021/, "المسارُ ينفجر إن غاب الجدول");
+    assert.match(api, /dormant: true/, "GET لا يُعلن الخمول");
+    assert.match(read("src/lib/syncLog.ts"), /P2021/, "محرّكُ الرصد ينفجر إن غاب الجدول — فتسقط المزامنةُ كلُّها");
   });
 });

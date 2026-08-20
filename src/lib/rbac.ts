@@ -13,6 +13,7 @@ export type Permission =
   | "accounts.manage" // إنشاء حسابات المصروفات
   | "receipts.void" // حذف وصل (مع عكس المبلغ)
   | "manager.accounts" // حسابات المدير
+  | "syncLog.update" // تحديث سجل المزامنة (العرضُ للجميع — الأفعالُ لصاحبها. قرار محمد 2026-08-20)
   // ٣ · المخزن والمبيع
   | "inventory.manage" // المخزن والفواتير وكروت التفعيل
   | "cards.delete" // حذف كروت التفعيل (+ إصلاح الكروت الوهمية)
@@ -62,6 +63,7 @@ export const PERMISSION_GROUPS: { title: string; items: { key: Permission; label
       { key: "accounts.manage", label: "إنشاء حسابات المصروفات" },
       { key: "receipts.void", label: "حذف وصل (مع عكس المبلغ)" },
       { key: "manager.accounts", label: "حسابات المدير" },
+      { key: "syncLog.update", label: "تحديث سجل المزامنة" },
     ],
   },
   {

@@ -9,6 +9,8 @@ import { formatDate } from "@/lib/format";
 import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
+// 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
+import { recordInfoDiff, recordInstall, recordActivationEvent, resolveEventIfReceipted, isCabinetManager, isOfferPackage, type InfoChange } from "@/lib/syncLog";
 
 // ============================================================================
 // المزامنة اليومية مع SAS — نسخة مطوّرة على مرحلتين متتاليتين لكل مكتب:
@@ -262,7 +264,8 @@ async function runOfficeSyncInner(
 
   // ===================== المرحلة 1: كروت وتفعيلات الأمس =====================
   const events: SyncEvent[] = [];
-  let internal = 0, external = 0, phantom = 0, markedUsed = 0, duplicates = 0, imported = 0;
+  let internal = 0, external = 0, phantom = 0, markedUsed = 0, duplicates = 0;
+  const imported = 0; // 📋 الاستيراد التلقائيّ أُلغي (سجلّ المزامنة) — يبقى صفراً للتقرير
   // كم مرّةً منع حارسُ اليوزر إنشاءَ صفٍّ ثانٍ في هذا المسار (يُبلَّغ في تقرير المزامنة)
   let dupUserPhase1 = 0;
 
@@ -334,31 +337,15 @@ async function runOfficeSyncInner(
       }
     }
     if (!sub) {
+      // ═════ 📋 لا استيرادَ تلقائيّاً (قرار محمد 2026-08-20): يُرصَد في تبويب «تنصيب
+      // خارجي» بسجلّ المزامنة، والحفظُ بيد صاحب الصلاحيّة. (السيناريو 7 القديم أُلغي.)
       const newDate = a.newExpiration ? new Date(a.newExpiration) : null;
-      try {
-        const created = await prisma.subscriber.create({
-          data: {
-            name: a.name, netUser: a.username, sasId: a.sasUserId, towerId: officeId, sasPanelId: panelId,
-            dateTo: newDate && !isNaN(newDate.getTime()) ? newDate : null, createdByUser: "sync",
-            // البند ٥ · تنصيبٌ خارجيٌّ رصدَته المزامنة (المسارُ الثاني للإنشاء — ولو
-            // وُسِم أحدُهما وحدَه لَغابت نصفُ الحالات عن القائمة بلا أن يظهر خطأ)
-            extInstallAt: new Date(),
-          },
-        });
-        sub = { id: created.id, sasId: a.sasUserId, name: a.name, netUser: a.username };
-        imported++;
-        events.push({ scenario: 7, subscriber: a.name ?? a.username, detail: "استيراد مشترك جديد من SAS" });
-      } catch {
-        // القيد الفريد (towerId, sasId): مزامنة متزامنة أنشأته للتو — نجلبه بدل إنشاء نسخة مكرّرة
-        const existing = await prisma.subscriber.findFirst({
-          where: { towerId: officeId, ...panelWhere, sasId: a.sasUserId, isDeleted: false },
-          select: { id: true, sasId: true, name: true, netUser: true },
-        });
-        if (!existing) continue; // فشل إنشاء حقيقي — نتخطّى هذا التفعيل بلا إسقاط المزامنة
-        sub = existing;
-      }
-      subBySasId.set(a.sasUserId, sub);
-      subById.set(sub.id, sub);
+      await recordInstall({
+        agentId: office.agentId ?? -1, towerId: officeId, sasId: a.sasUserId, subscriberId: null,
+        netUser: a.username, name: a.name, phone: null, address: null,
+        packageName: null, sasDateTo: newDate && !isNaN(newDate.getTime()) ? newDate : null,
+      });
+      continue;
     }
 
     if (card) {
@@ -395,6 +382,34 @@ async function runOfficeSyncInner(
       if (!isNaN(selfActDate.getTime())) {
         const { notifySelfActivated } = await import("@/lib/selfActivatedNotice");
         await notifySelfActivated(sub.id, selfActDate);
+      }
+    }
+
+    // ═════ 📋 أحداث سجلّ المزامنة (تبويبا ٣ و٤ — 2026-08-20) ═════
+    // منجر = اسمُ الصفحة وبلا وصلٍ بنفس اليوم ⇒ «تفعيلات ساس» (تبويب ٤ بخيارَي +تفعيل/+دين)
+    // منجر = كابينة FDT ⇒ «تفعيل خارجي» (تبويب ٣) — ديلر/شركة: لا حدثَ (خارج التبويبات)
+    const actAt = a.createdAt ? new Date(a.createdAt) : null;
+    if (actAt && !isNaN(actAt.getTime())) {
+      const newExp = a.newExpiration ? new Date(a.newExpiration) : null;
+      const evBase = {
+        agentId: office.agentId ?? -1, towerId: officeId, sasId: a.sasUserId, subscriberId: sub.id,
+        netUser: a.username ?? sub.netUser, name: a.name ?? sub.name,
+        amount: Math.round(a.price || 0), activatedAt: actAt,
+        sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
+      };
+      if (managerMatch) {
+        // «بلا وصلٍ بنفس التاريخ» — نافذةُ ±١٢ ساعة تغطّي فوارقَ التوقيت حول منتصف الليل
+        const receipt = await prisma.subscriptionEntry.findFirst({
+          where: {
+            subscriberId: sub.id, isDeleted: false,
+            date: { gte: new Date(actAt.getTime() - 12 * 3600_000), lte: new Date(actAt.getTime() + 12 * 3600_000) },
+          },
+          select: { id: true },
+        });
+        if (!receipt) await recordActivationEvent("sas", evBase);
+        else await resolveEventIfReceipted(officeId, a.sasUserId, actAt);
+      } else if (isCabinetManager(a.managerUsername)) {
+        await recordActivationEvent("self", evBase);
       }
     }
   }
@@ -500,7 +515,8 @@ async function runOfficeSyncInner(
   // تجلب كل مشتركي الساس (500/صفحة مع تأخير)، فتقوم بأمرين:
   //  (أ) استيراد كل مشترك موجود في الساس وغير موجود في البرنامج (استيراد شامل — السيناريو 7 لكامل القاعدة).
   //  (ب) تصحيح تاريخ الانتهاء بصمت للمشتركين الموجودين عند اختلافه (السيناريوهان 4 و5).
-  let checked = 0, dateFixed = 0, phase2Imported = 0, phase2Failed = false, skippedPkg = 0, pkgFixed = 0;
+  let checked = 0, dateFixed = 0, phase2Failed = false, skippedPkg = 0;
+  const phase2Imported = 0, pkgFixed = 0; // 📋 صفران منذ سجلّ المزامنة (الاستيراد/الربط يدويّان)
   // البند ٥ · مشتركٌ في الساس يوزرُه موجودٌ عندنا بصفٍّ آخر ⇒ لم يُستورَد (منعُ التكرار)
   let dupUserSkipped = 0;
   let phase2Error = "";
@@ -508,7 +524,7 @@ async function runOfficeSyncInner(
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
       where: { towerId: officeId, ...panelWhere, isDeleted: false, sasId: { not: null } },
-      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true },
+      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true, name: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
 
@@ -552,14 +568,13 @@ async function runOfficeSyncInner(
     // عربية) عبر PackageMatcher، **وبعزل الوكيل** (كانت تقارن بباقات كل الوكلاء — خلل عزل).
     // مشتركٌ فئته في الساس غير معروفة ⇒ لا يُمَسّ إطلاقاً (بطلب صريح: فئة مجهولة = اتركه كما هو)
     const matcher = await matcherForOffice(officeId);
+    // 📋 أسماءُ باقات البرنامج (لعرض «القديم» في تغييرات الباقة داخل سجلّ المزامنة)
+    const pkgRows = await prisma.package.findMany({
+      where: { agentId: office.agentId ?? -1, isDeleted: false }, select: { id: true, name: true },
+    });
+    const pkgNameById = new Map(pkgRows.map((x) => [x.id, x.name ?? `#${x.id}`]));
 
-    const toImport: {
-      name: string | null; netUser: string | null; phone: string | null; address: string | null;
-      sasId: number; towerId: number; sasPanelId: number | null; dateTo: Date | null; createdByUser: string;
-      packageId: number | null;
-      extInstallAt: Date; // البند ٥ · لحظةُ رصد المزامنة له (تنصيبٌ خارجيّ)
-    }[] = [];
-    const pkgFixQueue = new Map<number, number[]>(); // باقة ← مشتركون بلا باقة يُربطون بها
+    // (toImport وpkgFixQueue أُزيلتا — الرصدُ في سجلّ المزامنة والتطبيقُ يدويّ. 2026-08-20)
 
     for (const u of allUsers) {
       const p = progBySasId.get(u.sasId);
@@ -575,34 +590,46 @@ async function runOfficeSyncInner(
           dupUserSkipped++;
           continue;
         }
-        // مشترك في الساس غير موجود بالبرنامج → استيراد شامل **مع باقته وسعرها**.
-        // (كان packageId غائباً تماماً هنا فيولد كل مشتركي المزامنة بلا باقة وسعرٍ صفر —
-        //  العطل الذي رصده محمد 2026-08-02، وأوضح مثاله وكيل جاكوار.)
-        // 🔑 وباقةُ العروض المجهولةُ لا تمنع الاستيراد: `packageId` يصير `null` **والأيّامُ
-        //   تُؤخَذ من الساس** (`dateTo: validDate`) — وهو ما طلبه محمد في البند ٥ نقطة ١،
-        //   وقياسُ الشيفرة أثبت أنّه **يعمل سلفاً**: التخطّي (`skippedPkg`) يخصّ القائمَ
-        //   لا الجديد. فلا تُبنى ميزةٌ موجودة.
-        toImport.push({
-          name: u.name, netUser: u.username, phone: u.phone, address: u.address,
-          sasId: u.sasId, towerId: officeId, sasPanelId: panelId, dateTo: validDate, createdByUser: "sync",
-          extInstallAt: new Date(), // البند ٥ · تنصيبٌ خارجيٌّ رصدَته المزامنة — للاطّلاع
-          packageId: matcher.match(u.packageName), // موجودة فقط — لا تُنشأ باقات جديدة أبداً
+        // ═════ 📋 مشترك جديد في الساس ⇒ **لا استيرادَ تلقائيّاً بعد اليوم** (قرار محمد
+        // 2026-08-20): يُرصَد في تبويب «تنصيب خارجي» بكامل بياناته، و«حفظ» بيد صاحب
+        // الصلاحيّة يستورده (بلا وصل)، و«تجاهل» يخفيه حتى تتغيّر بياناتُه (فيعود «تحديثَ
+        // معلومات» وتحديثُه يستورده كاملاً). حلّ محلَّ toImport/createMany القديمَين.
+        await recordInstall({
+          agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: null,
+          netUser: u.username, name: u.name, phone: u.phone, address: u.address,
+          packageName: u.packageName, sasDateTo: validDate,
         });
         continue;
       }
-      // «ادرس 1» من الساس (طلب محمد 2026-08-09): **قبل كلّ حارس** — العنوان بيانُ تواصلٍ محضٌ
-      // لا يمسّ تاريخاً ولا باقةً ولا مالاً، فلا يُحجب عن صاحب قرضٍ ولا عن مشتركٍ فئتُه مجهولة.
-      if (u.address && u.address !== p.address) {
-        await prisma.subscriber.update({ where: { id: p.id }, data: { address: u.address } });
-      }
-      // ═════ 🔴 ردمُ الهاتف الفارغ من الساس (بلاغ محمد 2026-08-20 — مكتب الرسالة) ═════
-      // مشتركٌ استُورد يومَ كانت خانةُ هاتفه في الساس فارغةً ثم ملأها المكتبُ لاحقاً كان
-      // يبقى عندنا **بلا رقمٍ للأبد** (المزامنةُ تصحّح العنوانَ والباقةَ ذاتيّاً — والهاتفُ
-      // وحدَه كان منسيّاً) ⇒ ٣٦ تذكيراً فشل «لا يوجد رقم هاتف» وأرقامُهم في الساس موجودة.
-      // القاعدة: **يُملأ الفارغُ فقط ولا يُكتَب فوق رقمٍ قائم** — فالبرنامجُ قد يحمل رقماً
-      // صحّحه المديرُ يدويّاً، والساسُ لا يغلبه. وهو بيانُ تواصلٍ محضٌ قبل كلّ حارسٍ كالعنوان.
-      if (!(p.phone ?? "").trim() && (u.phone ?? "").trim()) {
-        await prisma.subscriber.update({ where: { id: p.id }, data: { phone: u.phone } });
+      // ═════ 📋 سجلّ المزامنة (قرار محمد 2026-08-20): «تمديدُ التاريخ وحدَه يبقى تلقائيّاً» ═════
+      // كانت المزامنةُ تكتب العنوانَ مباشرةً (ادرس 1) وتردم الهاتفَ الفارغَ وتملأ الباقةَ
+      // الفارغة — كلُّ ذلك صار **رصداً** في تبويب «تحديث معلومات» والتطبيقُ بيد صاحب
+      // صلاحيّة «تحديث سجل المزامنة». الرصدُ قبل كلّ حارسٍ (بياناتُ تواصلٍ تُرى حتى لصاحب قرض).
+      {
+        const diffs: InfoChange[] = [];
+        const sv = (x: string | null | undefined) => (x ?? "").trim();
+        if (sv(u.phone) && sv(u.phone) !== sv(p.phone)) diffs.push({ f: "phone", label: "الهاتف", old: sv(p.phone) || "—", new: sv(u.phone) });
+        if (sv(u.name) && sv(u.name) !== sv(p.name)) diffs.push({ f: "name", label: "الاسم", old: sv(p.name) || "—", new: sv(u.name) });
+        if (sv(u.address) && sv(u.address) !== sv(p.address)) diffs.push({ f: "address", label: "العنوان", old: sv(p.address) || "—", new: sv(u.address) });
+        const sasPkgIdForDiff = matcher.match(u.packageName);
+        const oursPkgName = p.packageId != null ? (pkgNameById.get(p.packageId) ?? `#${p.packageId}`) : "—";
+        if (sv(u.packageName) && sasPkgIdForDiff !== p.packageId) {
+          diffs.push({ f: "package", label: "الباقة", old: oursPkgName, new: sv(u.packageName) });
+        }
+        await recordInfoDiff({
+          agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: p.id,
+          netUser: u.username, name: u.name, phone: u.phone, address: u.address,
+          packageName: u.packageName, sasDateTo: validDate,
+        }, diffs);
+        // 🏷️ إعادةٌ للخدمة (تصنيف محمد ٦): قائمٌ تحوّلت باقتُه في الساس إلى باقة عرضٍ —
+        // يُرصَد في تبويب «تنصيب خارجي» (تجاهُلاً فقط — فهو محفوظٌ عندنا سلفاً)
+        if (isOfferPackage(u.packageName) && p.packageId != null && !isOfferPackage(oursPkgName)) {
+          await recordInstall({
+            agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: p.id,
+            netUser: u.username, name: u.name, phone: u.phone, address: u.address,
+            packageName: u.packageName, sasDateTo: validDate,
+          });
+        }
       }
       // صاحب قرضٍ قائم ⇒ لا تلمسه المزامنة إطلاقاً (لا تاريخ ولا باقة ولا عدّ) حتى يُسدَّد
       // بالتفعيل العاديّ فيُمحى قرضه ويعود طبيعيّاً.
@@ -611,14 +638,6 @@ async function runOfficeSyncInner(
       // (لا تاريخ انتهاء ولا أيام متبقية) — يُحصى فقط للتقرير.
       const sasPkgId = matcher.match(u.packageName);
       if ((u.packageName ?? "").trim() && sasPkgId == null) { skippedPkg++; continue; }
-      // فئته معروفة: نملأ باقته إن كانت فارغة عندنا (تصحيح ذاتي للسجلات القديمة).
-      // تُجمَّع ثم تُكتب دفعةً واحدة لكل باقة بعد الحلقة — الكتابة صفّاً صفّاً هنا كانت
-      // تكلّف ~86 مللي ثانية للصفّ (عشرون دقيقة بالتشغيل الأول على تجمّع اتصالين).
-      if (sasPkgId != null && p.packageId == null) {
-        const arr = pkgFixQueue.get(sasPkgId) ?? [];
-        arr.push(p.id);
-        pkgFixQueue.set(sasPkgId, arr);
-      }
 
       // فئته معروفة → تمديد التاريخ للأمام فقط: إن كان تاريخ الساس أبعد من تاريخ
       // البرنامج نضبطه مثل الساس؛ وإن كان تاريخ البرنامج أبعد (أو مساوياً) لا نغيّر شيئاً.
@@ -632,23 +651,9 @@ async function runOfficeSyncInner(
       }
     }
 
-    // استيراد جماعي دفعة واحدة (خفيف على قاعدة البيانات).
-    // skipDuplicates: القيد الفريد (towerId, sasId) يمنع تكرار مشترك بنفس المكتب —
-    // مزامنتان متزامنتان كانتا تُنشئان نسخاً مكرّرة (سبب 2,675 مجموعة مكرّرة تاريخياً)
-    if (toImport.length) {
-      const res = await prisma.subscriber.createMany({ data: toImport, skipDuplicates: true });
-      phase2Imported = res.count;
-    }
-    // ربط باقات المشتركين القائمين الفارغة — دفعة واحدة لكل باقة (استعلامات معدودة)
-    for (const [pid, ids] of pkgFixQueue) {
-      for (let i = 0; i < ids.length; i += 500) {
-        const r = await prisma.subscriber.updateMany({
-          where: { id: { in: ids.slice(i, i + 500) }, packageId: null }, // أمان: لا نلمس من له باقة
-          data: { packageId: pid },
-        });
-        pkgFixed += r.count;
-      }
-    }
+    // 📋 الاستيرادُ الجماعيُّ وملءُ الباقات الفارغة **انتقلا إلى سجلّ المزامنة** (2026-08-20):
+    // «حفظ» في تبويب التنصيب يستورد، و«تحديث» في تبويب المعلومات يربط الباقة — بيد
+    // صاحب صلاحيّة «تحديث سجل المزامنة» لا تلقائيّاً. (toImport/pkgFixQueue حُذفتا.)
   } catch (e) {
     // 🔴 **كان `catch {}` أعمى** (بلاغُ صميم 2026-08-13): يُرفَع `failed: true` **بلا أيّ
     // سبب**، فيرى الوكيلُ «خطأً» لا يدلّ على شيء ولا نعرف نحن أين تعثّر. وقد وقع فعلاً:

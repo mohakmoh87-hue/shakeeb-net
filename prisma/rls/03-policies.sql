@@ -394,6 +394,14 @@ CREATE POLICY rls_map_point_proposals ON map_point_proposals TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
+-- 📋 سجلّ المزامنة الموحَّد (2026-08-20) — تكتبه المزامنةُ من الحاسبات (agent_worker)
+-- فالمنحُ والسياسةُ واجبان: SELECT/INSERT/UPDATE + عزلُ agentId.
+ALTER TABLE sync_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_sync_log ON sync_log;
+CREATE POLICY rls_sync_log ON sync_log TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 -- 📬 الرسائل الداخليّة المنبثقة (2026-08-20) — يقرؤها ويكتبها الموقعُ وحدَه، لكنّ
 -- العزل لا يكون مشروطاً: السياسةُ تسدّ أيَّ وصولِ عاملٍ مستقبليٍّ من يومه الأوّل.
 ALTER TABLE internal_messages ENABLE ROW LEVEL SECURITY;

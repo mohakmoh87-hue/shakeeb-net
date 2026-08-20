@@ -1670,3 +1670,38 @@ model InternalMessage {
   @@index([fromUserId])
   @@map("internal_messages")
 }
+
+// ═════ 📋 سجلّ المزامنة الموحَّد (ميزة محمد الكبرى — 2026-08-20) ═════
+// المزامنةُ تحوّلت من «مُطبِّقٍ صامت» إلى «راصدٍ يكتب هنا» (قرار محمد: تمديدُ التاريخ
+// وحدَه يبقى تلقائيّاً). أربعةُ أنواع: info (تغيّر بيانات) · install (تنصيب/إعادة شركة) ·
+// self (فعّل لنفسه — منجر FDT) · sas (تفعيل صفحةٍ بلا وصل). العرضُ للجميع والأفعالُ
+// بصلاحيّة syncLog.update («تحديث سجل المزامنة» ضمن المال).
+model SyncLog {
+  id           Int       @id @default(autoincrement())
+  agentId      Int // عزل المستأجر
+  towerId      Int
+  kind         String // info | install | self | sas
+  subscriberId Int? // فارغٌ لتنصيبٍ لم يُحفَظ عندنا بعد
+  sasId        Int?
+  netUser      String?
+  name         String?
+  phone        String?
+  address      String?
+  packageName  String? // اسم باقة الساس نصّاً
+  sasDateTo    DateTime? // انتهاء الساس لحظة الرصد
+  amount       Int? // مبلغ تفعيلة الساس (عرضاً — الوصل بسعر باقة البرنامج)
+  activatedAt  DateTime? // وقت التفعيلة (لأنواع self/sas)
+  changes      String? // JSON [{f,label,old,new}] لنوع info
+  status       String    @default("pending") // pending | done | ignored
+  snapshot     String? // بصمةُ قيم الساس لحظةَ التجاهل — تغيّرها لاحقاً يفتح صفَّ info جديداً
+  note         String? // ماذا فُعل (وصل يدويّ لاحق، استيراد…)
+  handledBy    String?
+  handledAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+
+  @@index([towerId, kind, status])
+  @@index([agentId, status])
+  @@index([sasId, kind, status])
+  @@map("sync_log")
+}
