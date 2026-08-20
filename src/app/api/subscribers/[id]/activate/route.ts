@@ -30,6 +30,9 @@ const schema = z.object({
   note: z.string().nullable().optional(), // ملاحظة الوصل → notes
   dueDate: z.string().nullable().optional(), // موعد التسديد → nextDate
   paymentMethod: z.string().nullable().optional(), // طريقة الدفع → operation
+  // 🛡️ حارسُ «اليوزر المختلف» (طلب محمد 2026-08-21): إقرارٌ صريحٌ بأنّ يوزرَ صاحبِ
+  // sasId في الساس مختلفٌ عن يوزرنا — بدونه يُرفَض التفعيلُ عند ثبوت الاختلاف
+  confirmUserMismatch: z.boolean().default(false),
 });
 
 // تفعيل مشترك: استهلاك الكارت + تسجيل الاشتراك + الواصل/الدين + تمديد الانتهاء
@@ -51,7 +54,7 @@ export async function POST(
       { status: 400 },
     );
   }
-  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride, master, masterAmount, activationAccountId, note, dueDate, paymentMethod } = parsed.data;
+  const { packageId, cardId, paid, months, totalOverride, delivery, dateToOverride, master, masterAmount, activationAccountId, note, dueDate, paymentMethod, confirmUserMismatch } = parsed.data;
   // موعد التسديد (اختياري) — يُخزَّن في nextDate
   const dueDateParsed = dueDate ? new Date(dueDate) : null;
   const nextDate = dueDateParsed && !isNaN(dueDateParsed.getTime()) ? dueDateParsed : null;
@@ -107,6 +110,36 @@ export async function POST(
   // «عند تفعيل مشتركٍ تابعٍ لمكتبٍ واحدٍ يكون دخولُ الساس على مكتبٍ واحد، وإن كان اثنين فيدخل
   // على اثنَين». والسقوطُ إن لم تكن له لوحة: لوحةُ المكتب الأولى ثمّ أعمدتُه = السلوكُ القديم.
   const sasCreds = await credsOfSubscriber(subscriberId);
+
+  // ═════ 🛡️ حارسُ «اليوزر المختلف» — الخادمُ يحكم لا الواجهة (طلب محمد 2026-08-21) ═════
+  // حالة bg-7-4-2@mu: sasId معكوسٌ يفتح صفحةَ الساس على يوزرٍ آخر (bg-7-5-1@mu) والتفعيلُ
+  // كان يمضي بلا اعتراضٍ — والمالُ يُقيَّد لغير صاحبه. نصُّه: «الحارس هو لليوزر تحديداً
+  // وليس شيء آخر». يُقارَن يوزرُ صاحبِ الرقم في الساس بيوزرنا؛ اختلافٌ مُثبَتٌ بلا إقرارٍ
+  // صريحٍ (صحِّ النافذة) ⇒ رفضٌ 409. تعذُّرُ القراءةِ لا يحجب (لا يُعطَّل مكتبٌ لعطلِ
+  // اتّصالٍ عابر — الحجبُ للاختلاف المُثبَت حصراً، والواجهةُ فحصت قبلنا أيضاً).
+  if (subscriber.sasId && (subscriber.netUser ?? "").trim() && sasCreds && !(await sasHostBlocked(sasCreds.loginUrl))) {
+    try {
+      const base = sasBaseUrl(sasCreds.loginUrl);
+      const token = await sasLogin(base, sasCreds.username, sasCreds.password);
+      const who = await sasFetchUser(base, token, subscriber.sasId);
+      const sasUser = (who?.username ?? "").trim();
+      if (sasUser && sasUser.toLowerCase() !== subscriber.netUser!.trim().toLowerCase()) {
+        if (!confirmUserMismatch) {
+          return NextResponse.json({
+            error: `⚠️ يوزرُ الساس لهذا الربط «${sasUser}» يختلف عن يوزر المشترك «${subscriber.netUser}» — لا تفعيلَ قبل الإقرار بالاختلاف`,
+            userMismatch: true, sasUser, ourUser: subscriber.netUser,
+          }, { status: 409 });
+        }
+        // أقرّ صراحةً — يُوثَّق في التدقيق (أثرٌ لحارس المال إن ذهب مالٌ ليوزرٍ مختلف)
+        await prisma.auditLog.create({
+          data: {
+            userId: session?.userId, action: "ACTIVATE_USER_MISMATCH_CONFIRMED", entity: "subscriber", entityId: String(subscriberId),
+            details: `تفعيلٌ بإقرار اختلاف اليوزر: يوزرنا «${subscriber.netUser}» ↔ يوزر الساس «${sasUser}» (sasId=${subscriber.sasId})`,
+          },
+        }).catch(() => {});
+      }
+    } catch { /* تعذّرت القراءة — لا حجبَ على عطل اتصال */ }
+  }
 
   // نظام المكافآت: يُمنح كود عند التفعيل إن كان مفعّلاً للمكتب وللباقة مبلغ مكافأة.
   // انقطاع التجديد (اشتراك منتهٍ قبل هذا التفعيل) يُصفّر الرصيد المتراكم قبل المنح الجديد.

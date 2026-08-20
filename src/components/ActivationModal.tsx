@@ -94,6 +94,21 @@ export default function ActivationModal({
   const [actOffice, setActOffice] = useState(false); // «مكتب تفعيل»: واصل كامل + مصروف على الحساب
   const [actAccountId, setActAccountId] = useState<number | "">(""); // الحساب المختار
   const [actAccounts, setActAccounts] = useState<{ id: number; name: string | null }[]>([]); // حسابات «مكتب تفعيل»
+  // ═════ 🛡️ حارسُ «اليوزر المختلف» (طلب محمد 2026-08-21 — حالة bg-7-4-2@mu) ═════
+  // صفحةُ الساس تُفتح بالرقم (sasId) — فرقمٌ معكوسٌ يفتح يوزراً آخر والمالُ يذهب لغير
+  // صاحبه. يُسأل الخادمُ عن يوزرِ صاحبِ الرقم: اختلافٌ ⇒ إنذارٌ أحمرُ يحجب سحبَ الكارت
+  // والحفظَ حتى صحِّ الإقرار. (والخادمُ يعيد الفحصَ حكماً في مسار التفعيل — 409 بدونه.)
+  const [sasIdent, setSasIdent] = useState<{ checked: boolean; match: boolean; ourUser?: string | null; sasUser?: string | null } | null>(null);
+  const [mismatchOk, setMismatchOk] = useState(false);
+  useEffect(() => {
+    if (!subscriber.sasId) return;
+    fetch(`/api/subscribers/${subscriber.id}/sas-identity`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && typeof d.match === "boolean") setSasIdent(d); })
+      .catch(() => {});
+  }, [subscriber.id, subscriber.sasId]);
+  // الحجبُ عند اختلافٍ **مُثبَت** بلا إقرار — تعذُّرُ الفحص لا يحجب (عطلُ اتصالٍ لا يعطّل مكتباً)
+  const mismatchBlock = sasIdent?.checked === true && sasIdent.match === false && !mismatchOk;
 
   // جلب حسابات «مكتب التفعيل» (المُعلَّمة isActivationOffice) لعرضها في القائمة المنسدلة
   useEffect(() => {
@@ -272,6 +287,7 @@ export default function ActivationModal({
   async function confirm(print = false) {
     setError("");
     if (!packageId) { setError("اختر الفئة"); return; }
+    if (mismatchBlock) { setError("يوزرُ الساس مختلفٌ عن يوزر المشترك — ضع صحَّ الإقرار أعلى النافذة أوّلاً"); return; }
     if (actOffice && !actAccountId) { setError("اختر «مكتب التفعيل» من القائمة"); return; }
     if (mixed && masterPart > grandTotal) { setError("مبلغ الماستر أكبر من المجموع"); return; }
     setSaving(true);
@@ -291,10 +307,15 @@ export default function ActivationModal({
           master,
           activationAccountId: actOffice && actAccountId ? actAccountId : null,
           note: note || null,
+          confirmUserMismatch: mismatchOk, // 🛡️ إقرارُ اختلاف اليوزر — الخادمُ يرفض بدونه عند الاختلاف
         }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "فشل التفعيل"); return; }
+      if (!res.ok) {
+        // 🛡️ الخادمُ أثبت اختلافَ اليوزر (وربّما فشل فحصُ الواجهة لعطلٍ عابر) ⇒ يظهر الإنذار
+        if (data.userMismatch) { setSasIdent({ checked: true, match: false, ourUser: data.ourUser, sasUser: data.sasUser }); setMismatchOk(false); }
+        setError(data.error ?? "فشل التفعيل"); return;
+      }
       announceMoneyChanged(); // بطاقات الرئيسية (التقرير/المصروفات/المبيع) تتحدّث فوراً
       // 🔴 عالٍ · الطباعةُ لم تعد صامتةً (اصطاده الفحصُ العدائيّ 2026-08-19):
       //   كانت `void fetch(...).catch(() => {})` ثمّ onDone فوراً ⇒ فشلُ الطباعة أو انقطاعُ
@@ -348,10 +369,27 @@ export default function ActivationModal({
 
         <div className="sh-body">
           <div className="fpane">
+            {/* 🛡️ اختلافُ اليوزر بين البرنامج والساس — لا سحبَ ولا تفعيلَ قبل الإقرار */}
+            {sasIdent?.checked === true && sasIdent.match === false && (
+              <div className="mb-2 rounded-xl border-2 border-red-500 bg-red-50 px-3 py-2">
+                <div className="text-[13px] font-extrabold leading-6 text-red-700">
+                  ⚠️ صفحةُ الساس مفتوحةٌ على يوزرٍ مختلف!
+                </div>
+                <div className="text-[12px] leading-6 text-red-700">
+                  يوزر البرنامج: <b dir="ltr">{sasIdent.ourUser}</b> · يوزر الساس لهذا الربط: <b dir="ltr">{sasIdent.sasUser}</b>
+                  <br />أيُّ تفعيلٍ أو كارتٍ الآن سيذهب لحساب <b dir="ltr">{sasIdent.sasUser}</b> في الساس — تأكّد قبل المتابعة.
+                </div>
+                <label className="mt-1 flex cursor-pointer items-center gap-2 text-[12px] font-bold text-red-800">
+                  <input type="checkbox" className="h-4 w-4" checked={mismatchOk} onChange={(e) => setMismatchOk(e.target.checked)} />
+                  أُدرك أنّ اليوزرَين مختلفان وأوافق على المتابعة رغم ذلك
+                </label>
+              </div>
+            )}
             {/* 1) البطاقة والسيريال */}
             <div className="cbox">
               <div className="cbox-row">
-                <button className="pull" onClick={pullCard} disabled={loadingCard || !packageId}>{loadingCard ? "..." : "🎴 سحب بطاقة"}</button>
+                <button className="pull" onClick={pullCard} disabled={loadingCard || !packageId || mismatchBlock}
+                  title={mismatchBlock ? "يوزرُ الساس مختلف — ضع صحَّ الإقرار أوّلاً" : undefined}>{loadingCard ? "..." : "🎴 سحب بطاقة"}</button>
                 {/* السيريالُ قابلٌ للتحديد باللمس — على iOS يبقى هذا آخرَ طريقٍ مضمونٍ للنسخ */}
                 <div className="ser" style={{ userSelect: "all", WebkitUserSelect: "all" }}>{card?.serial ?? "— — — —"}</div>
                 <button className="cpy" onClick={() => copy(card?.serial ?? null)} title="نسخ السيريال">{copied ? "✓" : "📋"}</button>
@@ -467,8 +505,8 @@ export default function ActivationModal({
 
             {/* 7) الأزرار */}
             <div className="acts">
-              <button className="bs b1" onClick={() => confirm(true)} disabled={saving}>💾 حفظ وطباعة</button>
-              <button className="bs b2" onClick={() => confirm(false)} disabled={saving}>{saving ? "جاري..." : "✅ حفظ و اغلاق"}</button>
+              <button className="bs b1" onClick={() => confirm(true)} disabled={saving || mismatchBlock} title={mismatchBlock ? "يوزرُ الساس مختلف — ضع صحَّ الإقرار أوّلاً" : undefined}>💾 حفظ وطباعة</button>
+              <button className="bs b2" onClick={() => confirm(false)} disabled={saving || mismatchBlock} title={mismatchBlock ? "يوزرُ الساس مختلف — ضع صحَّ الإقرار أوّلاً" : undefined}>{saving ? "جاري..." : "✅ حفظ و اغلاق"}</button>
               <button className="bs b3 wide" onClick={releaseAndClose}>اغلاق</button>
             </div>
           </div>

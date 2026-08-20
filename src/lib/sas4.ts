@@ -246,7 +246,7 @@ export async function sasFetchUser(
   base: string,
   token: string,
   sasId: number,
-): Promise<{ expiration: string | null; loanBalance: number; debtDays: number } | null> {
+): Promise<{ expiration: string | null; loanBalance: number; debtDays: number; username: string | null } | null> {
   try {
     const res = await undiciFetch(base + "user/" + sasId, {
       method: "GET",
@@ -261,6 +261,9 @@ export async function sasFetchUser(
       expiration: (u.expiration as string) || null,
       loanBalance: Number(u.loan_balance ?? 0),
       debtDays: Number(u.debt_days ?? 0),
+      // 🛡️ يوزرُ صاحبِ هذا الرقم في الساس — عمودُ حارسِ «اليوزر المختلف» (حالة bg-7-4-2
+      // 2026-08-21: sasId معكوسٌ يفتح صفحةَ يوزرٍ آخرَ والمالُ كاد يذهب لحسابه)
+      username: typeof u.username === "string" && u.username.trim() ? u.username : null,
     };
   } catch {
     return null;
