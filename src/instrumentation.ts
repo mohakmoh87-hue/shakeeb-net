@@ -16,6 +16,17 @@ export async function register() {
     // دوريّةُ أمانٍ كلَّ ٥ دقائق: صفوفٌ أُعيدت للطابور يدويّاً (أو حُرِّرت من حجزٍ عالق)
     // تُلتقط بلا انتظار بثٍّ جديد — والركلُ رخيصٌ: لا شيءَ في الطابور ⇒ خروجٌ فوريّ.
     setInterval(() => void kick("دوريّة"), 5 * 60_000);
+
+    // ⏰ الكرون الداخليّ (2026-08-20 — بديلُ مهمّة GitHub الليليّة المحذوفة بقرار محمد):
+    // بصمةُ الخروج بوقتِ كلِّ فنيّ + الكتلةُ الليليّة + نسخةُ المالك إلى درايف.
+    const cronKick = async (reason: string) => {
+      try {
+        const { kickInternalCron } = await import("@/lib/internalCron");
+        kickInternalCron(reason);
+      } catch (e) { console.error("[internal-cron] تعذّر البدء:", e instanceof Error ? e.message : e); }
+    };
+    setTimeout(() => void cronKick("إقلاع الموقع"), 30_000);
+    setInterval(() => void cronKick("دوريّة"), 5 * 60_000);
   }
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.RUN_WORKER === "1") {
     // ═════ ب-١/الأصل ٣ · القفلُ **أوّلاً** (2026-08-13) ═════

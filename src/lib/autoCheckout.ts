@@ -12,14 +12,29 @@ function scheduledCheckout(checkIn: Date, shiftEnd: string | null): Date {
   return new Date(bgMidnightUtc + endMin * 60 * 1000);
 }
 
-// بصمة خروج تلقائية لمن نسي الخروج: بعد منتصف الليل، كل حضور بلا خروج ليومٍ سابق
-// يُغلَق بوقت الخروج المثبّت (بلا إضافي) + خصم غرامة النسيان + إنهاء الدعم إن وُجد.
+// ═════ لحظةُ استحقاق الإغلاق لكلّ فنيّ (طلب محمد 2026-08-20) ═════
+// القاعدة: «أوّلُ حلولٍ للساعة المختارة **بعد بصمة دخوله**» — بها يقبل الوقتُ ما بعد
+// منتصف الليل ويستقيم الدوامُ الليليُّ العابرُ له بلا حالاتٍ خاصّة:
+//   دخل 09:00 ووقتُه 22:00 ⇒ مساءَ اليوم نفسِه · دخل 09:00 ووقتُه 00:15 ⇒ فجرَ الغد
+//   دخل 22:00 (دوامٌ ليليّ) ووقتُه 07:00 ⇒ صباحَ الغد.
+function dueAt(checkIn: Date, autoCheckoutTime: string | null): Date {
+  const min = parseHHMM(autoCheckoutTime) ?? 15; // فاسدُ الصيغة ⇒ 00:15 (السلوك الليليّ القديم)
+  const b = new Date(checkIn.getTime() + 3 * 3600 * 1000); // يوم بغداد لبصمة الدخول
+  const bgMidnightUtc = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate(), 0, 0, 0) - 3 * 3600 * 1000;
+  const sameDay = bgMidnightUtc + min * 60 * 1000;
+  return new Date(sameDay > checkIn.getTime() ? sameDay : sameDay + 24 * 3600 * 1000);
+}
+
+// بصمة خروج تلقائية لمن نسي الخروج — **بوقتِ كلِّ فنيٍّ المضبوط** (autoCheckoutTime):
+// تمرّ دورةُ الموقع الداخليّة كلَّ ٥ دقائق فتُغلق كلَّ حضورٍ بلا خروجٍ **بلغ استحقاقَه**
+// بوقت الخروج المثبّت (بلا إضافي) + خصم غرامة النسيان + إنهاء الدعم إن وُجد.
 // resetSupport (المهمة الليلية 00:15 فقط): يُنهي أيضاً **كل** دعم نشط (يوم كامل أو بطاقات)
 // عند بدء اليوم الجديد — لا يُمرَّر من تدارك الإقلاع/التشغيل اليدوي كي لا يُنهي دعم اليوم نفسه.
 export async function runAutoCheckout(opts?: { resetSupport?: boolean }): Promise<{ closed: number; supportEnded: number }> {
   const todayKey = baghdadDayKey(new Date());
+  const now = Date.now();
   const stale = await prisma.attendance.findMany({
-    where: { checkIn: { not: null }, checkOut: null, dayKey: { not: null, lt: todayKey } },
+    where: { checkIn: { not: null }, checkOut: null, dayKey: { not: null } },
     take: 500,
   });
 
@@ -28,9 +43,11 @@ export async function runAutoCheckout(opts?: { resetSupport?: boolean }): Promis
     if (!rec.checkIn) continue;
     const t = await prisma.technician.findUnique({
       where: { id: rec.technicianId },
-      select: { name: true, agentId: true, towerId: true, supportTowerId: true, shiftStart: true, shiftEnd: true, entryGraceMin: true, exitGraceMin: true, lateRatePerMin: true, overtimeRatePerMin: true, missedCheckoutPenalty: true },
+      select: { name: true, agentId: true, towerId: true, supportTowerId: true, shiftStart: true, shiftEnd: true, entryGraceMin: true, exitGraceMin: true, lateRatePerMin: true, overtimeRatePerMin: true, missedCheckoutPenalty: true, autoCheckoutTime: true },
     });
     if (!t) continue;
+    // لم تحِن ساعةُ هذا الفنيّ بعد ⇒ يُترك مفتوحاً (قد يبصم خروجَه بنفسه فيأخذ إضافيَّه)
+    if (now < dueAt(rec.checkIn, t.autoCheckoutTime).getTime()) continue;
     const checkoutAt = scheduledCheckout(rec.checkIn, t.shiftEnd);
     // ومعه الإجازةُ الزمنيّةُ المعتمدةُ لذلك اليوم — فلا يُخصَم وقتٌ أذن به المديرُ (طلبُ محمد)
     const { approvedTimeLeaveFor } = await import("@/lib/field");

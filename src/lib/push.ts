@@ -58,6 +58,32 @@ export async function sendPushToAgent(agentId: number | null, payload: PushPaylo
   }
 }
 
+// ═════ إشعارُ **مستخدمٍ واحدٍ بعينه** (لنسخة المالك على درايف — 2026-08-20) ═════
+// خبرُ نسخة النظام الكاملة شأنُ المالك وحدَه: لا يُبثّ لوكيلٍ ولا لبقيّة مستخدمي وكيله،
+// بل لأجهزة حسابٍ واحدٍ محدَّدٍ بالمعرِّف (Web Push + FCM) — على نمط نظيرتَيه أعلاه وأدناه.
+export async function sendPushToUser(userId: number | null, payload: PushPayload): Promise<void> {
+  if (userId == null) return;
+  if (ensureConfigured()) {
+    const subs = await prisma.pushSubscription.findMany({ where: { userId } });
+    const data = JSON.stringify(payload);
+    await Promise.all(subs.map(async (s) => {
+      try {
+        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, data);
+      } catch (e: unknown) {
+        const code = (e as { statusCode?: number })?.statusCode;
+        if (code === 404 || code === 410) await prisma.pushSubscription.delete({ where: { id: s.id } }).catch(() => {});
+      }
+    }));
+  }
+  if (fcmEnabled()) {
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, fcmToken: true } });
+    if (u?.fcmToken) {
+      const r = await sendFcmNotification(u.fcmToken, payload.title, payload.body);
+      if (r.invalidToken) await prisma.user.update({ where: { id: u.id }, data: { fcmToken: null } }).catch(() => {});
+    }
+  }
+}
+
 // ═════ أ-٢٢ · إشعارُ **الفنيّ** على هاتفه (طلب محمد 2026-08-12) ═════
 // «عند توجيه بطاقةٍ على فنيّ يجب أن يذهب إشعارٌ إلى هاتفه… لأنّ الفنيَّ الآن يضطرّ إلى
 // فتح التطبيق في كلّ مرّةٍ ليبحث عن بطاقاتٍ جديدة.»

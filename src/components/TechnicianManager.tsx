@@ -9,9 +9,10 @@ type Tech = {
   towerId?: number | null; extraTowerIds?: number[]; isSupport?: boolean; isExtra?: boolean;
   salary?: number | null; shiftStart?: string | null; shiftEnd?: string | null; ownCardsOnly?: boolean; seeDeliveryCards?: boolean; canAddCards?: boolean;
   entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null; missedCheckoutPenalty?: number | null;
+  autoCheckoutTime?: string | null;
 };
 type Form = Record<string, string>;
-const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", seeDeliveryCards: "", canAddCards: "1", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0" };
+const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", seeDeliveryCards: "", canAddCards: "1", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0", autoCheckoutTime: "00:15" };
 
 // إدارة الفنيين للمدير: إضافة/تعديل بكل الإعدادات + حذف نهائي + بصمة خروج يدوية.
 export default function TechnicianManager({ officeId, officeName, onClose, onChange }: { officeId: number | null; officeName: string; onClose: () => void; onChange: () => void }) {
@@ -49,6 +50,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
       entryGraceMin: String(t.entryGraceMin ?? 0), exitGraceMin: String(t.exitGraceMin ?? 0),
       lateRatePerMin: String(t.lateRatePerMin ?? 0), overtimeRatePerMin: String(t.overtimeRatePerMin ?? 0), paidLeavesPerMonth: String(t.paidLeavesPerMonth ?? 0),
       missedCheckoutPenalty: String(t.missedCheckoutPenalty ?? 0),
+      autoCheckoutTime: t.autoCheckoutTime ?? "00:15",
     });
     setExtraSel(new Set(t.extraTowerIds ?? []));
     setEditHome(t.towerId ?? officeId);
@@ -126,6 +128,9 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
               <L label="سعر دقيقة الخصم"><I v={f.lateRatePerMin} on={(v) => set("lateRatePerMin", v)} num /></L>
               <L label="سعر دقيقة الإضافي"><I v={f.overtimeRatePerMin} on={(v) => set("overtimeRatePerMin", v)} num /></L>
               <L label="غرامة نسيان الخروج"><I v={f.missedCheckoutPenalty} on={(v) => set("missedCheckoutPenalty", v)} num /></L>
+              {/* وقتُ الخروج التلقائي لكلّ فنيّ (طلب محمد 2026-08-20) — يقبل ما بعد منتصف
+                  الليل: القاعدة «أوّلُ حلولٍ للساعة بعد بصمة دخوله». المختومُ يبقى نهايةَ دوامه. */}
+              <L label="وقت الخروج التلقائي"><I v={f.autoCheckoutTime} on={(v) => set("autoCheckoutTime", v)} time /></L>
             </div>
 
             {/* «رؤية بطاقاته فقط» — الخانة التي كانت ناقصة (تصحيح 2026-08-05).

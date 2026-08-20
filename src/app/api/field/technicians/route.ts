@@ -65,7 +65,7 @@ export async function GET(request: Request) {
       shiftStart: t.shiftStart, shiftEnd: t.shiftEnd, entryGraceMin: t.entryGraceMin, exitGraceMin: t.exitGraceMin,
       ownCardsOnly: t.ownCardsOnly, seeDeliveryCards: t.seeDeliveryCards, canAddCards: t.canAddCards,
       lateRatePerMin: t.lateRatePerMin, overtimeRatePerMin: t.overtimeRatePerMin, paidLeavesPerMonth: t.paidLeavesPerMonth,
-      missedCheckoutPenalty: t.missedCheckoutPenalty,
+      missedCheckoutPenalty: t.missedCheckoutPenalty, autoCheckoutTime: t.autoCheckoutTime,
     };
   });
   return NextResponse.json({ technicians, officeId, isManager });
@@ -87,6 +87,10 @@ function readFields(b: Record<string, unknown>) {
     lateRatePerMin: num(b.lateRatePerMin) ?? 0, overtimeRatePerMin: num(b.overtimeRatePerMin) ?? 0,
     paidLeavesPerMonth: num(b.paidLeavesPerMonth) ?? 0,
     missedCheckoutPenalty: num(b.missedCheckoutPenalty) ?? 0,
+    // وقتُ الخروج التلقائي لكلّ فنيّ (2026-08-20) — صيغةٌ فاسدة/فارغة ⇒ الافتراضيّ 00:15
+    autoCheckoutTime: /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(b.autoCheckoutTime ?? "").trim())
+      ? String(b.autoCheckoutTime).trim()
+      : "00:15",
   };
 }
 
