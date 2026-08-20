@@ -14,6 +14,17 @@ type Row = {
   createdByUser: string | null; office: string | null;
 };
 type Office = { id: number; name: string | null };
+// القوالب الفعّالة من /api/sms-templates/effective — سُلَّم مكتب ← وكيل ← افتراضيّ + القوالب
+// الحرّة (بلاغ محمد 2026-08-20: نافذةُ الرسالة هنا كانت نصّاً حرّاً بلا قائمة قوالب أصلاً؛
+// النمطُ منقولٌ حرفيّاً من صفحة «كلّ المشتركين» — وقراءةُ صفوف القاعدة وحدَها تُظهرها فارغة).
+type Tpl = { key: string; type: string; text: string; scope: "office" | "agent" | "default" | "custom" };
+const SCOPE_TAG: Record<string, string> = { office: " — قالب المكتب", agent: " — قالب الوكيل", default: " — افتراضيّ", custom: "" };
+const TPL_NAMES: Record<string, string> = {
+  activation: "تفعيل الاشتراك", expiring: "تذكير قبل الانتهاء", debtPaid: "تسديد دين",
+  debts: "مطالبة بالديون", maintenance: "الصيانة/التنصيب", reward: "منح المكافأة",
+  rewardUsed: "استخدام المكافأة", subSummary: "ملخص الاشتراك (وصل)", noAnswer: "ميجاوب (لم يرد)",
+  loan: "قرض فزعة", other: "أخرى (عام)",
+};
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
 
 export default function LoanDebtsPage() {
@@ -38,6 +49,21 @@ export default function LoanDebtsPage() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [tpls, setTpls] = useState<Tpl[]>([]);
+  const [tplErr, setTplErr] = useState(""); // سببُ عدم ظهور القوالب (يُعرَض بدل الصمت)
+
+  // القوالب الفعّالة — تُجلب لمكتب العرض (تخصيص المكتب يغلب قالب الوكيل)
+  const loadTpls = useCallback(() => {
+    const qs = office !== "all" ? `?officeId=${office}` : "";
+    fetch(`/api/sms-templates/effective${qs}`)
+      .then(async (r) => {
+        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error ?? `خطأ ${r.status}`); }
+        return r.json();
+      })
+      .then((d) => { setTpls(Array.isArray(d?.templates) ? d.templates : []); setTplErr(""); })
+      .catch((e) => { setTpls([]); setTplErr((e as Error).message || "تعذّر جلب القوالب"); });
+  }, [office]);
+  useEffect(() => { loadTpls(); }, [loadTpls]);
 
   useEffect(() => {
     // فلتر المكتب للمدير فقط — يجلب مكاتب وكيله (نفس عزل /api/towers)
@@ -181,8 +207,24 @@ export default function LoanDebtsPage() {
             <p className="mb-3 text-xs text-slate-500">
               تُرسَل لـ{withPhone} مشتركاً عبر واتساب المكتب، بفاصلِ عشرِ ثوانٍ بين رسالةٍ وأخرى — بالخلفيّة.
             </p>
+            {/* قوالبُ الرسائل كلُّها — اختيارُ قالبٍ يملأ النصَّ ويبقى قابلاً للتعديل قبل الإرسال */}
+            {tpls.length > 0 ? (
+              <select onChange={(e) => { const t = tpls.find((x) => x.key === e.target.value); if (t?.text) setText(t.text); }}
+                className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                <option value="">— اختر قالباً جاهزاً ({tpls.length}) —</option>
+                {tpls.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {TPL_NAMES[t.type] ?? t.type}{SCOPE_TAG[t.scope] ?? ""}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                {tplErr ? `تعذّر جلب القوالب: ${tplErr}` : "لا قوالب متاحة — أنشئها من صفحة «قوالب الرسائل»، أو اكتب النصّ يدويّاً أدناه."}
+              </div>
+            )}
             <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5}
-              placeholder="مثال: تحيّةً طيّبة، بقي عليكم مبلغُ القرض. نرجو تسديدَه عند أقرب فرصة."
+              placeholder={"نصّ الرسالة… يمكنك استعمال {اسم_المشترك} {اسم_المستخدم} {تاريخ_الانتهاء} {العنوان}"}
               className="mb-3 w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm leading-6" />
             <div className="flex gap-2">
               <button onClick={sendMessages} disabled={busy || !text.trim()}
