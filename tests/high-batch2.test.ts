@@ -38,8 +38,12 @@ describe("ج · هدنةُ المكتب المطفأ في طابور البثّ"
   const Q = "src/lib/broadcastQueue.ts";
   test("الحجزُ يستثني مكاتبَ الهدنة ورسائلُ بلا مشتركٍ تُحجَز دائماً", () => {
     const c = code(Q);
-    assert.ok(/LEFT JOIN subscribers s ON s\.id = m\."subscriberId"/.test(c), "لا ربطَ بالمكتب في الحجز");
-    assert.ok(/s\."towerId" IS NULL OR NOT \(s\."towerId" = ANY\(/.test(c), "الاستثناءُ يحجب رسائلَ بلا مشترك");
+    // ⚠️ الصيغةُ NOT EXISTS لا LEFT JOIN (إصلاح 2026-08-20): القديمةُ كانت
+    // `LEFT JOIN … FOR UPDATE` وPostgres يرفضها فيموت الساحبُ لحظةَ أوّلِ هدنة —
+    // تجمّد بثُّ 169 رسالةً خلفها. NOT EXISTS تعطي الدلالةَ نفسَها بلا وجهٍ خارجيّ:
+    // رسالةٌ بلا مشتركٍ لا تُطابق الوجودَ فتُحجَز دائماً، ومكتبُ الهدنة يُستثنى.
+    assert.ok(/NOT EXISTS \(\s*SELECT 1 FROM subscribers s\s*WHERE s\.id = m\."subscriberId" AND s\."towerId" = ANY\(/.test(c), "استثناءُ الهدنة زال من الحجز");
+    assert.ok(!/LEFT JOIN[\s\S]{0,300}FOR UPDATE(?! OF)/.test(c), "عاد FOR UPDATE فوق وجهٍ خارجيٍّ — الصيغةُ التي تقتل الساحب");
   });
   test("الغيابُ هدنةٌ للمكتب وحدَه — والصفُّ يبقى منتظراً (لا FAILED)", () => {
     const c = code(Q);
