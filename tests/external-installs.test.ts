@@ -76,7 +76,9 @@ describe("📋 سجلّ المزامنة الموحَّد", () => {
     const applyAt = api.indexOf('if (action === "apply")');
     const sasAt = api.indexOf("// activate | debt");
     const apply = api.slice(applyAt, sasAt);
-    for (const forbidden of ["moneyTx", "subscriptionEntry", "wasel", "carry"]) {
+    // (`carry: 0` بداءةُ الماليّة النظيفة للبديل في الاستبدال — ليست قبضاً ولا ديناً؛
+    //  الممنوعُ هو الوصلُ والحركةُ ورفعُ الدين)
+    for (const forbidden of ["moneyTx", "subscriptionEntry", "wasel", "carry: { increment"]) {
       assert.equal(apply.includes(forbidden), false, `مسارُ التحديث يمسّ المال: ${forbidden}`);
     }
     // واليوزرُ الفيصل: لا صفَّ ثانياً ليوزرٍ قائم

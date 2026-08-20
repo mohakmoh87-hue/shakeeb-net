@@ -34,7 +34,7 @@ export async function GET() {
     const subs = subIds.length
       ? await prisma.subscriber.findMany({
           where: { id: { in: subIds } },
-          select: { id: true, phone: true, packageId: true, dateTo: true },
+          select: { id: true, phone: true, packageId: true, dateTo: true, sasId: true },
         })
       : [];
     const subById = new Map(subs.map((s) => [s.id, s]));
@@ -63,6 +63,7 @@ export async function GET() {
           changes: r.changes ? (JSON.parse(r.changes) as unknown) : null,
           createdAt: r.createdAt,
           oursPhone: s?.phone ?? null,
+          oursSasId: s?.sasId ?? null,
           oursPackage: s?.packageId != null ? (pkgById.get(s.packageId)?.name ?? null) : null,
           oursPrice: s?.packageId != null ? (pkgById.get(s.packageId)?.priceDinar ?? null) : null,
           oursDateTo: s?.dateTo ?? null,
@@ -176,20 +177,77 @@ export async function POST(request: Request) {
             });
             await prisma.auditLog.create({ data: { userId: session.userId, action: "SYNC_LOG_IMPORT", entity: "subscriber", entityId: String(created.id), details: `سجلّ المزامنة: استيراد «${r.name ?? r.netUser}» (بلا وصل) — مكتب #${r.towerId}` } }).catch(() => {});
           } else {
-            // تطبيقُ بيانات الساس على القائم — الباقةُ المعروفة تُربَط، والمجهولةُ لا تمسّ باقتَه
             const { matcherForOffice } = await import("@/lib/packageMatch");
             const matcher = await matcherForOffice(r.towerId);
             const pkgId = matcher.match(r.packageName);
-            await prisma.subscriber.update({
+            const old = await prisma.subscriber.findUnique({
               where: { id: r.subscriberId },
-              data: {
-                ...(r.phone?.trim() ? { phone: r.phone } : {}),
-                ...(r.name?.trim() ? { name: r.name } : {}),
-                ...(r.address?.trim() ? { address: r.address } : {}),
-                ...(pkgId != null ? { packageId: pkgId } : {}),
+              select: {
+                id: true, name: true, netUser: true, note: true, sasId: true, sasPanelId: true,
+                groupId: true, packageId: true, address: true, sector: true, towerId: true, isDeleted: true,
+                wifiUser: true, wifiPass: true, userNano: true, passNano: true, ipNano: true,
+                ftth: true, mac: true, subPassword: true, cardCode: true,
               },
             });
-            await prisma.auditLog.create({ data: { userId: session.userId, action: "SYNC_LOG_APPLY", entity: "subscriber", entityId: String(r.subscriberId), details: `سجلّ المزامنة: تحديث بيانات «${r.name ?? r.netUser}» من الساس — ${r.changes ?? ""}` } }).catch(() => {});
+            if (!old || old.isDeleted || old.towerId !== r.towerId) { rejected.push(`مشترك سطر #${r.id} غير موجود`); continue; }
+            // 🏷️ تنصيبٌ على يوزرِ تاركِ خدمةٍ (حسابُ ساسٍ جديدٌ على يوزرٍ قائم) ⇒ **استبدالُ
+            // مشتركٍ كامل** بنفس دلالة خاصيّة «↔️ استبدال المشترك» حرفيّاً (قرار محمد 2026-08-21):
+            // القديم أرشيفٌ حيٌّ كاملُ التاريخ ودينُه يبقى عليه، يوزرُه يوسم «#سابق» وربطُ
+            // الساس يُفكّ، وواتسابُه يبقى مفعّلاً عمداً (حملات الاسترجاع)؛ والجديدُ يأخذ
+            // اليوزرَ النظيفَ ولوحةَ ومكانَ وجهازَ السابق وماليّةً نظيفة.
+            const isReplace = r.kind === "install" && r.sasId != null && old.sasId !== r.sasId;
+            if (isReplace) {
+              const cleanUser = (old.netUser ?? "").trim();
+              if (!cleanUser) { rejected.push(`«${old.name ?? r.netUser}» بلا يوزر — لا يصحّ الاستبدال`); continue; }
+              const iq = new Date(Date.now() + 3 * 60 * 60 * 1000);
+              const stamp = `${iq.getUTCFullYear()}${String(iq.getUTCMonth() + 1).padStart(2, "0")}${String(iq.getUTCDate()).padStart(2, "0")}-${String(iq.getUTCHours()).padStart(2, "0")}${String(iq.getUTCMinutes()).padStart(2, "0")}`;
+              const day = `${String(iq.getUTCDate()).padStart(2, "0")}/${String(iq.getUTCMonth() + 1).padStart(2, "0")}/${iq.getUTCFullYear()}`;
+              await prisma.$transaction([
+                prisma.subscriber.update({
+                  where: { id: old.id },
+                  data: {
+                    netUser: `${cleanUser}#سابق-${stamp}`,
+                    sasId: null,
+                    state: "سابق",
+                    note: `${old.note ? `${old.note}\n` : ""}[استبدال ${day} — سجلّ المزامنة] ترك الخدمة وحلّ محله «${r.name ?? "مشترك جديد"}» على اليوزر «${cleanUser}»`,
+                  },
+                }),
+                prisma.subscriber.create({
+                  data: {
+                    name: r.name ?? "مشترك جديد", phone: r.phone,
+                    netUser: cleanUser, sasId: r.sasId, towerId: old.towerId,
+                    sasPanelId: old.sasPanelId, groupId: old.groupId,
+                    packageId: pkgId ?? old.packageId,
+                    dateTo: r.sasDateTo, dateFrom: new Date(),
+                    address: old.address, sector: old.sector,
+                    wifiUser: old.wifiUser, wifiPass: old.wifiPass,
+                    userNano: old.userNano, passNano: old.passNano, ipNano: old.ipNano,
+                    ftth: old.ftth, mac: old.mac, subPassword: old.subPassword, cardCode: old.cardCode,
+                    waEnabled: true, carry: 0, rewardBalance: 0, rewardGrantCount: 0,
+                    createdByUser: session.username, createdByName: session.fullName,
+                    note: `استبدال ${day} (سجلّ المزامنة): أخذ اليوزر «${cleanUser}» من المشترك السابق «${old.name ?? "—"}»`,
+                  },
+                }),
+                prisma.auditLog.create({
+                  data: {
+                    userId: session.userId, action: "REPLACE_SUBSCRIBER", entity: "subscriber", entityId: String(old.id),
+                    details: `سجلّ المزامنة: استبدال على اليوزر «${cleanUser}» — السابق «${old.name ?? "—"}» (بقي بسجله ودينه) ← الجديد «${r.name ?? "—"}» (هاتف ${r.phone ?? "—"}، باقة ${r.packageName ?? "—"}، انتهاء ${r.sasDateTo ? r.sasDateTo.toISOString().slice(0, 10) : "—"})`,
+                  },
+                }),
+              ]);
+            } else {
+              // تطبيقُ بيانات الساس على القائم — الباقةُ المعروفة تُربَط، والمجهولةُ لا تمسّ باقتَه
+              await prisma.subscriber.update({
+                where: { id: r.subscriberId },
+                data: {
+                  ...(r.phone?.trim() ? { phone: r.phone } : {}),
+                  ...(r.name?.trim() ? { name: r.name } : {}),
+                  ...(r.address?.trim() ? { address: r.address } : {}),
+                  ...(pkgId != null ? { packageId: pkgId } : {}),
+                },
+              });
+              await prisma.auditLog.create({ data: { userId: session.userId, action: "SYNC_LOG_APPLY", entity: "subscriber", entityId: String(r.subscriberId), details: `سجلّ المزامنة: تحديث بيانات «${r.name ?? r.netUser}» من الساس — ${r.changes ?? ""}` } }).catch(() => {});
+            }
           }
           await prisma.syncLog.update({ where: { id: r.id }, data: { status: "done", handledBy: who, handledAt: new Date() } });
           done++; continue;

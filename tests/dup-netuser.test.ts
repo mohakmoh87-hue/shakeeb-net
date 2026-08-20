@@ -19,16 +19,24 @@ const ROOT = process.cwd();
 const SRC = () => fs.readFileSync(path.join(ROOT, "src/lib/subscriptionSync.ts"), "utf8");
 
 describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلفاً", () => {
-  test("🛡️ الحرسُ **قبل** الرصد لا بعده", () => {
-    // (منذ سجلّ المزامنة 2026-08-20: «الإنشاء» صار «رصداً» recordInstall — والحرسُ باقٍ
-    //  قبله كي لا يظهر يوزرٌ مكرَّرٌ في تبويب «تنصيب خارجي» فيستورده صاحبُ الصلاحيّة صفّاً ثانياً)
+  test("🛡️ الحرسُ **قبل** الرصد لا بعده — واليوزرُ المعادُ يُرصَد مربوطاً لا صفّاً ثانياً", () => {
+    // (منذ 2026-08-21 بقرار محمد: تنصيبُ الشركة على يوزرِ تاركِ خدمةٍ لم يعد يُبتلَع —
+    //  يُرصَد في «تنصيب خارجي» **مربوطاً بالصفّ القديم** subscriberId، و«تحديث» هناك
+    //  ينفّذ استبدالَ مشتركٍ كاملاً. والحرسُ باقٍ: لا صفَّ ثانياً يُنشأ ليوزرٍ قائمٍ أبداً.)
     const src = SRC();
-    const guardAt = src.indexOf("progByUser.has(uKey)");
+    const guardAt = src.indexOf("progByUser.get(uKey)");
     assert.ok(guardAt > -1, "لا حرسَ على تكرار اليوزر");
-    const recordAt = src.indexOf("recordInstall({", guardAt);
-    assert.ok(recordAt > -1 && guardAt < recordAt, "الحرسُ بعد الرصد ⇒ لا يمنع شيئاً");
-    assert.match(src, /if \(uKey && progByUser\.has\(uKey\)\) \{\s*\r?\n\s*dupUserSkipped\+\+;\s*\r?\n\s*continue;/,
-      "الحرسُ لا يتخطّى الصفَّ فعلاً");
+    const linked = src.slice(guardAt, guardAt + 1400);
+    assert.match(linked, /dupUserSkipped\+\+;/, "عدُّ التقرير ضاع");
+    assert.match(linked, /recordInstall\(\{[\s\S]{0,220}subscriberId: oldByUser\.id/,
+      "اليوزرُ المعادُ لا يُرصَد مربوطاً بالصفّ القديم");
+    assert.match(linked, /continue;/, "الحرسُ لا يتخطّى الاستيرادَ فعلاً");
+    // ومسارُ التحديث في السجلّ ينفّذ الاستبدالَ الكاملَ بدلالة خاصيّة الاستبدال نفسِها
+    const api = fs.readFileSync(path.join(ROOT, "src/app/api/sync-log/route.ts"), "utf8");
+    assert.match(api, /old\.sasId !== r\.sasId/, "لا تمييزَ ليوزرٍ معادٍ عن إعادةِ خدمةٍ عاديّة");
+    assert.match(api, /#سابق-/, "القديمُ لا يوسم «سابق» — سيتصادم اليوزران");
+    assert.match(api, /carry: 0/, "الجديدُ يرث دينَ التارك — والماليّةُ يجب أن تبدأ نظيفة");
+    assert.match(api, /REPLACE_SUBSCRIBER/, "لا أثرَ تدقيقٍ للاستبدال");
   });
 
   test("المطابقةُ **بحرفٍ صغيرٍ ومقصوص** — فاليوزرُ نفسُه بحالةِ أحرفٍ مختلفةٍ ليس جديداً", () => {
@@ -67,7 +75,8 @@ describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلف�
     // طلبُ محمد (البند ٥ نقطة ١). منذ سجلّ المزامنة: الجديدُ **يُرصَد** بتاريخ الساس
     // كاملاً، والاستيرادُ الفعليُّ في مسار «حفظ» بالسجلّ — وكلاهما لا تمنعه باقةٌ مجهولة.
     const src = SRC();
-    const guardAt = src.indexOf("progByUser.has(uKey)");
+    const guardAt = src.indexOf("progByUser.get(uKey)");
+    assert.ok(guardAt > -1, "مرساةُ الحرس ضاعت");
     const block = src.slice(src.indexOf("recordInstall({", guardAt), src.indexOf("recordInstall({", guardAt) + 400);
     assert.match(block, /sasDateTo: validDate/, "الجديدُ يُرصَد بلا تاريخ الساس");
     assert.match(block, /packageName: u\.packageName/, "الباقةُ لا تُرصَد مع التنصيب");

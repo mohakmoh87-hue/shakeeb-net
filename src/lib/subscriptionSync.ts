@@ -599,8 +599,25 @@ async function runOfficeSyncInner(
         //   آخرَ (بـ`sasId` مختلفٍ — أعادت الشركةُ تنصيبَه) لا يُنشأ له صفٌّ ثانٍ.
         //   يُحصى ويُبلَّغ، والقرارُ في حالته بيد محمد لا بيد المزامنة.
         const uKey = (u.username ?? "").trim().toLowerCase();
-        if (uKey && progByUser.has(uKey)) {
+        const oldByUser = uKey ? progByUser.get(uKey) : undefined;
+        if (oldByUser) {
+          // 🏷️ (قرار محمد 2026-08-21) تنصيبُ الشركة على يوزرِ تاركِ خدمةٍ لم يعد يُبتلَع
+          //   بصمت: يُرصَد في تبويب «تنصيب خارجي» **مربوطاً بالصفّ القديم** الحامل اليوزر،
+          //   و«تحديث» هناك ينفّذ استبدالَ مشتركٍ كاملاً (كخاصيّة الاستبدال اليدويّة نفسِها:
+          //   القديم أرشيفٌ حيٌّ بوسم «سابق» ودينُه عليه، والجديدُ يأخذ اليوزرَ والمكان).
+          //   يبقى العدُّ للتقرير، ولا صفَّ ثانٍ يُنشأ أبداً (الحرسُ قائم).
           dupUserSkipped++;
+          const fresh = await recordInstall({
+            agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: oldByUser.id,
+            netUser: u.username, name: u.name, phone: u.phone, address: u.address,
+            packageName: u.packageName, sasDateTo: validDate,
+          });
+          if (fresh && autoMsg.install) {
+            await sendSyncLogMessage("install", {
+              towerId: officeId, sasId: u.sasId, subscriberId: null, phone: u.phone,
+              netUser: u.username, name: u.name, packageName: u.packageName, sasDateTo: validDate,
+            });
+          }
           continue;
         }
         // ═════ 📋 مشترك جديد في الساس ⇒ **لا استيرادَ تلقائيّاً بعد اليوم** (قرار محمد
@@ -660,14 +677,10 @@ async function runOfficeSyncInner(
       // صاحب قرضٍ قائم ⇒ لا تلمسه المزامنة إطلاقاً (لا تاريخ ولا باقة ولا عدّ) حتى يُسدَّد
       // بالتفعيل العاديّ فيُمحى قرضه ويعود طبيعيّاً.
       if (loanSubIds.has(p.id)) continue;
-      // موجود → لكن إن كانت فئته في الساس غير معروفة عندنا ⇒ لا أي تعديل عليه
-      // (لا تاريخ انتهاء ولا أيام متبقية) — يُحصى فقط للتقرير.
-      const sasPkgId = matcher.match(u.packageName);
-      if ((u.packageName ?? "").trim() && sasPkgId == null) { skippedPkg++; continue; }
-
-      // فئته معروفة → تمديد التاريخ للأمام فقط: إن كان تاريخ الساس أبعد من تاريخ
-      // البرنامج نضبطه مثل الساس؛ وإن كان تاريخ البرنامج أبعد (أو مساوياً) لا نغيّر شيئاً.
-      checked++;
+      // 🔓 التمديدُ للأمام **قبل** حارس الباقة المجهولة (قرار محمد 2026-08-21 — حالةُ
+      // المنصَّب بباقة عرضٍ ١٠ أيّامٍ ثمّ تضيف الشركةُ ٥٠): التمديدُ لا يضرّ أبداً (لا
+      // يُقصّر تاريخاً ولا يمسّ مالاً)، وحجبُه عن مجهولي الباقة كان يُبقيهم بأيّامهم
+      // القديمة فتصلهم رسالةُ انتهاءٍ كاذبةٌ والساسُ ممدِّدُهم أصلاً.
       if (validDate && sasDateIsLater(p.dateTo, validDate)) {
         // البند ٤-أ · وتُمسَح رايةُ «أُبلِغ بانتهائه» هنا أيضاً: هذا المسارُ هو ما يرصد
         // **التفعيلَ من الساس** (المشتركُ فعّل بنفسه من التطبيق)، فبقاءُ الرايةِ يمنع
@@ -675,6 +688,12 @@ async function runOfficeSyncInner(
         await prisma.subscriber.update({ where: { id: p.id }, data: { dateTo: validDate, expiredNoticeAt: null } });
         dateFixed++;
       }
+
+      // فئته في الساس غير معروفة عندنا ⇒ لا شيءَ آخر يُمَسّ (باقته/عدّه) — يُحصى للتقرير.
+      const sasPkgId = matcher.match(u.packageName);
+      if ((u.packageName ?? "").trim() && sasPkgId == null) { skippedPkg++; continue; }
+
+      checked++;
     }
 
     // 📋 الاستيرادُ الجماعيُّ وملءُ الباقات الفارغة **انتقلا إلى سجلّ المزامنة** (2026-08-20):

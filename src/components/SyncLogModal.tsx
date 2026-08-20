@@ -17,7 +17,12 @@ type Row = {
   sasDateTo: string | null; amount: number | null; activatedAt: string | null;
   changes: Change[] | null; createdAt: string;
   oursPhone: string | null; oursPackage: string | null; oursPrice: number | null; oursDateTo: string | null;
+  oursSasId: number | null;
 };
+
+// تنصيبٌ على يوزرِ تاركِ خدمة (حسابُ ساسٍ جديدٌ على يوزرٍ قائم) ⇒ «تحديث» يستبدل المشتركَ
+// كخاصيّة «↔️ استبدال المشترك» نفسِها (قرار محمد 2026-08-21) — فالزرُّ يقول ذلك بمسمّاه
+const isReplaceRow = (r: Row) => r.kind === "install" && r.subscriberId != null && r.sasId != null && r.oursSasId !== r.sasId;
 
 const KINDS = [
   { key: "info", label: "تحديث معلومات", icon: "📝" },
@@ -252,6 +257,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                     <td className="max-w-[220px] truncate p-2 font-semibold text-slate-800">
                       {r.name ?? "—"}
                       {r.subscriberId == null && <span className="mr-1 rounded bg-sky-100 px-1.5 text-[10px] font-bold text-sky-700">جديد</span>}
+                      {isReplaceRow(r) && <span className="mr-1 rounded bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700" title="تنصيبٌ على يوزر مشتركٍ تاركٍ للخدمة — التحديث يستبدله كاملاً والقديم يبقى أرشيفاً بدينه">يوزر معاد</span>}
                     </td>
                     <td className="p-2 text-slate-600" dir="ltr">{r.netUser ?? "—"}</td>
                     {tab === "info" ? (
@@ -296,7 +302,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                         {/* تنصيبٌ جديد: «حفظ» يستورده بلا وصل · قائمٌ (إعادة/ذاتيّ/ساس): «تحديث» */}
                         <button onClick={() => void act([r.id], "apply")} disabled={busy}
                           className="ml-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[12px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
-                          {tab === "install" && r.subscriberId == null ? "💾 حفظ" : "✔ تحديث"}
+                          {tab === "install" && r.subscriberId == null ? "💾 حفظ" : isReplaceRow(r) ? "↔️ استبدال" : "✔ تحديث"}
                         </button>
                         <button onClick={() => void act([r.id], "ignore")} disabled={busy}
                           className="rounded-lg bg-slate-200 px-2.5 py-1 text-[12px] font-bold text-slate-600 hover:bg-slate-300 disabled:opacity-50">تجاهل</button>
