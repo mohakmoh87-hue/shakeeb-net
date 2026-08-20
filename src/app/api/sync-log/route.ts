@@ -136,7 +136,8 @@ export async function POST(request: Request) {
         if (action === "message") {
           if (r.kind !== "self" && r.kind !== "install") { rejected.push(`سطر #${r.id} ليس تنصيباً ولا تفعيلاً خارجيّاً`); continue; }
           const res = await sendSyncLogMessage(r.kind, {
-            towerId: r.towerId, subscriberId: r.subscriberId, phone: r.phone,
+            towerId: r.towerId, sasId: r.sasId, activatedAt: r.activatedAt,
+            subscriberId: r.subscriberId, phone: r.phone,
             netUser: r.netUser, name: r.name, packageName: r.packageName, sasDateTo: r.sasDateTo,
           });
           if (res === "sent" || res === "queued") {
@@ -145,6 +146,9 @@ export async function POST(request: Request) {
               data: { note: `📨 أُرسلت الرسالة${res === "queued" ? " (بالطابور حتى يتّصل واتساب المكتب)" : ""} — ${who}` },
             }).catch(() => {});
             done++;
+          } else if (res === "duplicate") {
+            // حارسُ التكرار الفيزيائيُّ صدّها — أُرسلت له سلفاً (أو في الطابور) عن نفس الحدث
+            rejected.push(`«${r.name ?? r.netUser ?? `#${r.id}`}»: أُرسلت له سلفاً — مانعُ التكرار`);
           } else {
             rejected.push(`«${r.name ?? r.netUser ?? `#${r.id}`}»: ${res === "skipped" ? "القالبُ معطَّل أو واتساب المكتب/المشترك مُطفأ" : "لا رقمَ هاتفٍ له"}`);
           }

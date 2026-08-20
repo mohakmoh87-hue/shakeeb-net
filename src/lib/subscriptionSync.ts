@@ -384,11 +384,17 @@ async function runOfficeSyncInner(
     //    الأمس في **كلّ دورة**، فبلا ذلك تُرسَل الرسالةُ كلَّ دورةٍ إلى الأبد.
     // 📋 وصارت مشروطةً بجيك بوكس «إرسال رسائل تلقائي» في تبويب «تفعيل خارجي» (طلب محمد
     // 2026-08-20، والافتراضيُّ إيقاف) — وبلا صحٍّ يُرسَل يدويّاً من النافذة بنفس القالب.
+    // 📨 وعبر طابور سجلّ المزامنة الدائم (2026-08-21): لا يُمسَح، وحارسُ dedupKey الفيزيائيُّ
+    // يجعل إعادةَ قراءةِ تفعيلات الأمس كلَّ دورةٍ بلا أثرٍ — الرسالةُ واحدةٌ للحدث مهما تكرّر.
     if (autoMsg.self && !managerMatch && a.newExpiration) {
       const selfActDate = new Date(a.newExpiration);
       if (!isNaN(selfActDate.getTime())) {
-        const { notifySelfActivated } = await import("@/lib/selfActivatedNotice");
-        await notifySelfActivated(sub.id, selfActDate);
+        await sendSyncLogMessage("self", {
+          towerId: officeId, sasId: a.sasUserId,
+          activatedAt: a.createdAt ? new Date(a.createdAt) : null,
+          subscriberId: sub.id, netUser: a.username ?? sub.netUser, name: a.name ?? sub.name,
+          sasDateTo: selfActDate,
+        });
       }
     }
 
@@ -609,7 +615,7 @@ async function runOfficeSyncInner(
         // 📋 رسالةُ «تنصيبات خارجية» التلقائيّة — أوّلُ رصدٍ بهاتفٍ وجيك بوكس التبويب مفعَّل
         if (fresh && autoMsg.install) {
           await sendSyncLogMessage("install", {
-            towerId: officeId, subscriberId: null, phone: u.phone,
+            towerId: officeId, sasId: u.sasId, subscriberId: null, phone: u.phone,
             netUser: u.username, name: u.name, packageName: u.packageName, sasDateTo: validDate,
           });
         }
@@ -645,7 +651,7 @@ async function runOfficeSyncInner(
           });
           if (fresh && autoMsg.install) {
             await sendSyncLogMessage("install", {
-              towerId: officeId, subscriberId: p.id, phone: u.phone,
+              towerId: officeId, sasId: u.sasId, subscriberId: p.id, phone: u.phone,
               netUser: u.username, name: u.name, packageName: u.packageName, sasDateTo: validDate,
             });
           }

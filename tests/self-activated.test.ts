@@ -78,9 +78,10 @@ describe("البند ٤-ب · فعّل بنفسه", () => {
 
   test("الكشفُ في المزامنة مشروطٌ بأنّ المُفعِّلَ ليس حسابَ المكتب", () => {
     const sync = read("src/lib/subscriptionSync.ts");
-    // (2026-08-20: صار مشروطاً أيضاً بجيك بوكس «إرسال رسائل تلقائي» — والافتراضيُّ إيقاف)
+    // (2026-08-20: صار مشروطاً أيضاً بجيك بوكس «إرسال رسائل تلقائي» — والافتراضيُّ إيقاف.
+    //  2026-08-21: والإرسالُ عبر طابور سجلّ المزامنة الدائم لا notifySelfActivated القديم)
     assert.match(sync, /if \(autoMsg\.self && !managerMatch && a\.newExpiration\)/, "الكشفُ غيرُ مشروطٍ بالمُفعِّل أو فُقد شرطُ الجيك بوكس");
-    assert.match(sync, /notifySelfActivated\(sub\.id, selfActDate\)/, "لا نداءَ للمُبلِّغ");
+    assert.match(sync, /sendSyncLogMessage\("self", \{\s*\r?\n\s*towerId: officeId, sasId: a\.sasUserId,/, "لا نداءَ لمُرسِل طابور السجلّ");
     // والقاعدةُ نفسُها: مطابقةُ اسم الحساب بحروفٍ صغيرةٍ ومقصوصة
     assert.match(sync, /\(a\.managerUsername \?\? ""\)\.trim\(\)\.toLowerCase\(\) === officeUser/, "قاعدةُ التفريق تغيّرت");
   });

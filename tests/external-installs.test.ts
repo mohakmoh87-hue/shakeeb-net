@@ -122,6 +122,26 @@ describe("📋 سجلّ المزامنة الموحَّد", () => {
     assert.match(read("prisma/rls/03-policies.sql"), /rls_sync_log/, "السياسةُ غائبةٌ عن الملفّ المرجعيّ");
   });
 
+  test("📨 طابورُ الرسائل دائمٌ لا يُمسَح — وحارسُ تكرارٍ فيزيائيّ (نصّ محمد 2026-08-21)", () => {
+    const q = read("src/lib/syncAutoMsg.ts");
+    // «لا يمسح ابدا»: لا حذفَ صفوفٍ من القاعدة — التعذُّرُ يُعيد للطابور لا يمحو ولا يختم فشلاً
+    // (⚠️ والحكمُ على حذف القاعدة حصراً: `draining.delete` حذفُ عنصرِ Set بريءٌ — لا يُدان)
+    assert.equal(/prisma\.message\.delete|\.deleteMany\(/.test(q), false, "الطابورُ يمسح رسائلَ — ومحمد اشترط ألّا تُمسَح أبداً");
+    assert.equal(/status: "FAILED"/.test(q), false, "صفٌّ يُختَم فاشلاً فيموت — والمطلوبُ انتظارُ الحاسبة");
+    // «حارس يمنع التكرار بأي شكل»: مفتاحٌ فريدٌ في القاعدة (فهرس dedupKey الجزئيّ) + صدُّ P2002
+    assert.match(q, /dedupKey: syncMsgDedupKey\(/, "الإدراجُ بلا مفتاح منع التكرار");
+    assert.match(q, /P2002/, "اصطدامُ الفهرس الفريد لا يُلتقط ⇒ ينفجر بدل «duplicate»");
+    // والحَجزُ قبل الأثر: الإدراجُ أوّلاً ثمّ حَجزٌ ذرّيٌّ قبل أيّ إرسال
+    assert.match(q, /where: \{ id: rowId, status: "PENDING", error: SYNC_MSG_MARK \}/, "إرسالٌ بلا حَجزٍ ذرّيّ");
+    // «يرسل فور اشتغال الحاسبة»: التصريفُ معلّقٌ على جهوزيّة الواتساب وعلى دورة المجدول
+    assert.match(read("src/lib/whatsapp.ts"), /drainSyncMsgQueue\(officeId\)/, "لا تصريفَ عند جهوزيّة واتساب الحاسبة");
+    assert.match(read("src/lib/scheduler.ts"), /drainSyncMsgQueue\(o\.id\)/, "لا تصريفَ دوريّاً");
+    // 🔒 والعزل: صفوفُ المكتب تُلتقط بمفتاحها (المكتبُ جزءٌ منه) — يشمل الجددَ بلا subscriberId
+    assert.match(q, /startsWith: `synclog:self:t\$\{towerId\}:`/, "تصريفٌ بلا عزلِ مكتبٍ في المفتاح");
+    // والحَجزُ الميّتُ (انهيارٌ وسط الإرسال) يُحرَّر — فلا صفَّ يخلد محجوزاً بلا إرسال
+    assert.match(q, /STALE_CLAIM_MS/, "لا تحريرَ لحَجزٍ مات صاحبُه");
+  });
+
   test("😴 قبل لصق الـSQL: خمولٌ هادئ لا انفجار (P2021)", () => {
     const api = API();
     assert.match(api, /P2021/, "المسارُ ينفجر إن غاب الجدول");

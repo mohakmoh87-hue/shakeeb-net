@@ -2,18 +2,35 @@ import { prisma } from "./prisma";
 import { getEffectiveTemplateFull } from "./smsTemplates";
 import { renderTemplate, sendViaProvider } from "./messaging";
 import { formatDate } from "./format";
+import { baghdadDayKey } from "./messageDedup";
 
 // ═════ 📋 رسائل سجلّ المزامنة — تبويبا «تفعيل خارجي» و«تنصيب خارجي» (طلب محمد 2026-08-20) ═════
 //
 // بنصّه: قالبٌ لكلّ تبويب («تفعيلات خارجية» = selfActivated · «تنصيبات خارجية» =
-// externalInstall)، وفي أعلى كلّ تبويبٍ جيك بوكس «إرسال رسائل تلقائي»: صحٌّ ⇒ تصل
-// الرسالةُ تلقائيّاً لحظةَ الرصد، وبلا صحٍّ ⇒ يدويّاً بتحديد واحدٍ أو مجموعةٍ وضغط إرسال.
-// **والافتراضيُّ للاثنين: غيرُ مفعَّل** (نصُّه الحرفيّ 2026-08-20).
+// externalInstall)، وجيك بوكس «إرسال رسائل تلقائي» لكلّ تبويب (**الافتراضيُّ إيقاف**)،
+// وبلا صحٍّ إرسالٌ يدويٌّ بالتحديد.
 //
+// ═════ 🔒 «طابورٌ خاصٌّ لا يُمسَح أبداً + حارسٌ يمنع التكرار بأيّ شكل» (نصُّه 2026-08-21) ═════
+// المزامنةُ الليليّةُ تعمل من الموقع **والحاسباتُ مطفأة** — فالرسالةُ التي تتعذّر:
+//   · تدخل صفَّ `messages` بعلامة SYNC_MSG_MARK في `error` (فتُرى في سجلّ الرسائل).
+//   · **لا تُمسَح أبداً** (لا TTL — بخلاف طابور ٤-ب القديم ذي الـ٢٤ ساعة): تنتظر حتى
+//     تشتغل حاسبةُ مكتبها فيصرّفها `drainSyncMsgQueue` (يُنادى عند جهوزيّة الواتساب
+//     وفي دورة المجدول).
+//   · حارسُ التكرار **فيزيائيٌّ لا برمجيّ**: `dedupKey` فريدٌ في القاعدة (فهرس 2026-08-19
+//     الجزئيّ) بمفتاح `synclog:{نوع}:t{مكتب}:s{sasId}:{يوم بغداد للحدث}` — فمهما تسابقت
+//     مزامنةُ الموقع مع مزامنة الحاسبة، أو أُعيدت قراءةُ تفعيلات الأمس كلَّ دورة، أو ضُغط
+//     زرُّ الإرسال اليدويّ مرّتَين: **الإدراجُ الثاني يصطدم بالفهرس ولا توجد رسالةٌ ثانية**.
+//   · و«الحَجزُ قبل الأثر» (درسُ تكرار الشدن): الصفُّ يُدرَج **قبل** أيّ إرسال، والإرسالُ
+//     لا يجري إلّا لمن حجز الصفَّ ذرّيّاً — فلا نافذةَ بين الإرسال والتسجيل يدخل منها تكرار.
+const SYNC_MSG_MARK = "📨 في طابور رسائل سجلّ المزامنة";
+const CLAIM_MARK = "⏳ قيد الإرسال (سجلّ المزامنة)";
+const GAP_MS = 10_000;   // فاصلُ مكافحة الحظر — نفسُ فاصل ساحب البثّ
+const BATCH = 30;        // سقفُ الدورة الواحدة والباقي في التالية
+const STALE_CLAIM_MS = 10 * 60_000; // حَجزٌ مات صاحبُه (انهيارٌ وسط الإرسال) يُحرَّر بعدها
+
 // 🔑 أين يُخزَّن الجيك بوكس؟ صفُّ إعدادٍ **في جدول القوالب نفسِه** بنوعٍ يبدأ بـ«__»
 //   (سابقة SEED_MARK): كلُّ قوائم القوالب تستثني هذه السابقةَ أصلاً فلا يظهر لأحد،
-//   والحاسباتُ تملك قراءةَ sms_templates سلفاً (منحٌ وسياسةُ RLS قائمان) — فالمزامنةُ
-//   على الحاسبة ترى العلَم بلا عمودٍ جديدٍ ولا SQL يُلصَق.
+//   والحاسباتُ تملك قراءةَ sms_templates سلفاً (منحٌ وسياسةُ RLS قائمان).
 const FLAGS_TYPE = "__syncAutoMsg";
 
 export type SyncAutoMsgFlags = { self: boolean; install: boolean };
@@ -43,6 +60,10 @@ export async function setSyncAutoMsgFlag(agentId: number, kind: "self" | "instal
 
 export type SyncMsgPayload = {
   towerId: number;
+  /** هويّةُ الحدث في الساس — عمودُ مفتاح منع التكرار */
+  sasId: number | null;
+  /** وقتُ التفعيلة (لأحداث التفعيل) — يومُها البغداديُّ جزءٌ من مفتاح التكرار */
+  activatedAt?: Date | null;
   subscriberId?: number | null;
   /** هاتفُ الساس إن وُجد — وإلّا يُقرأ هاتفُ المشترك المحفوظ */
   phone?: string | null;
@@ -52,25 +73,43 @@ export type SyncMsgPayload = {
   sasDateTo?: Date | null;
 };
 
+const isUniqueClash = (e: unknown) =>
+  typeof e === "object" && e != null && "code" in e && (e as { code?: string }).code === "P2002";
+
+/** مفتاحُ منع التكرار الفيزيائيّ — لكلّ (نوع·مكتب·حساب ساس·يوم الحدث) رسالةٌ واحدةٌ لا غير */
+function syncMsgDedupKey(kind: "self" | "install", towerId: number, sasId: number | null, eventAt: Date | null | undefined): string {
+  return `synclog:${kind}:t${towerId}:s${sasId ?? 0}:${baghdadDayKey(eventAt ?? new Date())}`;
+}
+
+/** محاولةُ تسليم صفٍّ محجوزٍ ذرّيّاً: نجاحٌ ⇒ SENT، وتعذُّرٌ ⇒ يعود للطابور (لا يُمسَح ولا يُختَم فاشلاً) */
+async function deliverClaimed(id: number, towerId: number, phone: string, text: string, image?: string | null): Promise<boolean> {
+  const res = await sendViaProvider("WHATSAPP", phone, text, towerId, image);
+  if (res.ok) {
+    await prisma.message.update({ where: { id }, data: { status: "SENT", error: null } }).catch(() => {});
+    return true;
+  }
+  // واتساب المكتب مطفأ (المزامنةُ الليليّة والحاسباتُ طافية) ⇒ يبقى في الطابور للتصريف
+  await prisma.message.update({ where: { id }, data: { status: "PENDING", error: SYNC_MSG_MARK } }).catch(() => {});
+  return false;
+}
+
 /**
- * يُرسل رسالةَ قالبِ التبويب لمشتركٍ واحد. يُنادى من المزامنة (تلقائيّاً حين الصحّ) ومن
- * زرّ الإرسال اليدويّ في النافذة. لا يرمي استثناءً — الرسالةُ مكسبٌ لا واجب.
- *
- * فشلُ الإرسال (واتساب المكتب مطفأ): إن كان للصفّ مشتركٌ محفوظٌ يدخل طابورَ «فعّل
- * بنفسه» القائم (PENDING بوسم createdByUser="sync" — تصرّفه الحاسبةُ حين يعود واتسابُها
- * ويُمسَح بعد ٢٤ ساعة). والجديدُ غيرُ المحفوظ بلا طابورٍ (لا مكتبَ يُنسَب إليه صفُّه) ⇒ "failed".
+ * يُرسل رسالةَ قالبِ التبويب لمشتركٍ واحد — من المزامنة (تلقائيّاً حين الصحّ) ومن زرّ
+ * الإرسال اليدويّ. **الإدراجُ في الطابور أوّلاً** (بحارس التكرار الفيزيائيّ) ثمّ محاولةُ
+ * التسليم الفوريّ؛ فالتعذُّرُ لا يُضيع شيئاً والتكرارُ مستحيلٌ بأيّ شكل.
  */
 export async function sendSyncLogMessage(
   kind: "self" | "install",
   p: SyncMsgPayload,
-): Promise<"sent" | "queued" | "failed" | "skipped"> {
+): Promise<"sent" | "queued" | "duplicate" | "failed" | "skipped"> {
   try {
     const office = await prisma.tower.findUnique({
       where: { id: p.towerId },
       select: { id: true, name: true, agentId: true, waEnabled: true },
     });
     if (!office || office.waEnabled === "0") return "skipped";
-    const tpl = await getEffectiveTemplateFull(kind === "install" ? "externalInstall" : "selfActivated", office.agentId, office.id);
+    const tplType = kind === "install" ? "externalInstall" : "selfActivated";
+    const tpl = await getEffectiveTemplateFull(tplType, office.agentId, office.id);
     if (!tpl) return "skipped"; // القالبُ معطَّل
 
     // الهاتف والباقة: من الساس أوّلاً، ومن صفّ المشترك المحفوظ عند غيابهما
@@ -100,26 +139,94 @@ export async function sendSyncLogMessage(
       office: office.name ?? "",
     });
 
-    const res = await sendViaProvider("WHATSAPP", phone, text, p.towerId, tpl.image);
-    if (res.ok) {
-      await prisma.message.create({
+    // ═══ الحَجزُ قبل الأثر: الإدراجُ أوّلاً، والفهرسُ الفريدُ يصدّ أيَّ تكرار ═══
+    let rowId: number;
+    try {
+      const row = await prisma.message.create({
         data: {
           channel: "WHATSAPP", subscriberId: p.subscriberId ?? null, phone, text,
-          status: "SENT", agentId: office.agentId, createdByUser: "sync",
+          status: "PENDING", error: SYNC_MSG_MARK,
+          agentId: office.agentId, createdByUser: "syncmsg", templateType: tplType,
+          dedupKey: syncMsgDedupKey(kind, p.towerId, p.sasId, p.activatedAt),
         },
-      }).catch(() => {});
-      return "sent";
+        select: { id: true },
+      });
+      rowId = row.id;
+    } catch (e) {
+      if (isUniqueClash(e)) return "duplicate"; // أُرسلت (أو في الطابور) سلفاً — مستحيلٌ تكرارُها
+      throw e;
     }
-    if (p.subscriberId != null) {
-      await prisma.message.create({
-        data: {
-          channel: "WHATSAPP", subscriberId: p.subscriberId, phone, text,
-          status: "PENDING", error: res.error ?? "واتساب المكتب غير متصل — بالطابور",
-          agentId: office.agentId, createdByUser: "sync",
-        },
-      }).catch(() => {});
-      return "queued";
-    }
-    return "failed";
+
+    // محاولةُ التسليم الفوريّ — بعد حَجز الصفّ (نحن مُدرجُه فمُلّاكُه حتى أوّلِ تصريف)
+    const claim = await prisma.message.updateMany({
+      where: { id: rowId, status: "PENDING", error: SYNC_MSG_MARK },
+      data: { error: CLAIM_MARK },
+    });
+    if (claim.count !== 1) return "queued"; // ساحبٌ سبقنا إليه — سيتكفّل به
+    return (await deliverClaimed(rowId, p.towerId, phone, text, tpl.image)) ? "sent" : "queued";
   } catch { return "failed"; }
+}
+
+// ═════ تصريفُ الطابور — «يُرسَل فورَ اشتغال الحاسبة» (يُنادى عند جهوزيّة واتساب المكتب ودوريّاً) ═════
+const draining = new Set<number>(); // حارسُ عدم تراكب الدورات لكلّ مكتب
+
+export async function drainSyncMsgQueue(towerId: number): Promise<{ sent: number; waiting: number }> {
+  const out = { sent: 0, waiting: 0 };
+  if (draining.has(towerId)) return out;
+  draining.add(towerId);
+  try {
+    // حَجزٌ مات صاحبُه (انهيارٌ/إطفاءٌ وسط الإرسال) يُعاد للطابور — فلا صفَّ يخلد محجوزاً
+    await prisma.message.updateMany({
+      where: {
+        status: "PENDING", error: CLAIM_MARK,
+        dedupKey: { startsWith: "synclog:" },
+        updatedAt: { lt: new Date(Date.now() - STALE_CLAIM_MS) },
+      },
+      data: { error: SYNC_MSG_MARK },
+    }).catch(() => {});
+
+    // 🔒 صفوفُ **هذا المكتب** حصراً — المكتبُ جزءٌ من المفتاح فلا حاجةَ لجدول المشتركين
+    //   (ولا يصحّ: رسائلُ الجدد غير المحفوظين بلا subscriberId أصلاً)
+    const mine = await prisma.message.findMany({
+      where: {
+        status: "PENDING", channel: "WHATSAPP", error: SYNC_MSG_MARK,
+        OR: [
+          { dedupKey: { startsWith: `synclog:self:t${towerId}:` } },
+          { dedupKey: { startsWith: `synclog:install:t${towerId}:` } },
+        ],
+      },
+      select: { id: true, phone: true, text: true, templateType: true },
+      orderBy: { id: "asc" },
+      take: BATCH, // والباقي في الدورة التالية (المجدولُ يعود كلَّ دقيقة)
+    });
+    if (!mine.length) return out;
+
+    // صورةُ القالب الفعّالةُ لحظةَ الإرسال (سُلَّم مكتب←وكيل) — تُقرأ مرّةً لكلّ نوعٍ لا لكلّ صفّ
+    const office = await prisma.tower.findUnique({ where: { id: towerId }, select: { agentId: true } });
+    const imageOf = new Map<string, string | null>();
+    for (const t of new Set(mine.map((m) => m.templateType ?? ""))) {
+      if (!t) { imageOf.set(t, null); continue; }
+      const tpl = await getEffectiveTemplateFull(t, office?.agentId ?? null, towerId).catch(() => null);
+      imageOf.set(t, tpl?.image ?? null);
+    }
+
+    let first = true;
+    for (const m of mine) {
+      if (!m.phone) { out.waiting++; continue; } // بلا هاتفٍ لا يُرسَل ولا يُمسَح — قد يُصحَّح لاحقاً
+      // ⏱️ الفاصلُ قبل كلّ رسالةٍ عدا الأولى — فلا رشقةَ تُعرّض الرقم للحظر
+      if (!first) await new Promise((r) => setTimeout(r, GAP_MS));
+      first = false;
+      // الحَجزُ الذرّيُّ قبل الإرسال — حاسبتان متراكبتان لا تُرسلان صفّاً مرّتَين
+      const claim = await prisma.message.updateMany({
+        where: { id: m.id, status: "PENDING", error: SYNC_MSG_MARK },
+        data: { error: CLAIM_MARK },
+      });
+      if (claim.count !== 1) continue;
+      if (await deliverClaimed(m.id, towerId, m.phone, m.text, imageOf.get(m.templateType ?? ""))) out.sent++;
+      else out.waiting++;
+    }
+  } catch { /* الطابورُ لا يُخاطَر بمزامنةٍ أو مجدولٍ لأجله */ } finally {
+    draining.delete(towerId); // يُحرَّر دائماً — وإلّا تجمّد تصريفُ المكتب إلى الأبد
+  }
+  return out;
 }

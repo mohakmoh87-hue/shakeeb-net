@@ -286,6 +286,12 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
         .then((m) => m.drainSelfActivatedQueue(officeId))
         .then((r) => { if (r.sent || r.expired) console.log(`[wa-queue] مكتب ${officeId}: أُرسل ${r.sent} · مُسح ${r.expired} · فشل ${r.failed}`); })
         .catch(() => {});
+      // 📨 وطابورُ رسائل سجلّ المزامنة (طلب محمد 2026-08-21): «يُرسَل فورَ اشتغال
+      // الحاسبة» — لا يُمسَح أبداً، فتفريغُه هنا هو موعدُ وصول ما تراكم ليلاً
+      void import("@/lib/syncAutoMsg")
+        .then((m) => m.drainSyncMsgQueue(officeId))
+        .then((r) => { if (r.sent) console.log(`[syncmsg-queue] مكتب ${officeId}: أُرسل ${r.sent} · باقٍ ${r.waiting}`); })
+        .catch(() => {});
     }, 15_000);
   });
   client.on("auth_failure", (m: string) => { const st = store(officeId); st.state = "error"; st.lastError = `فشل المصادقة: ${m}`; publish(officeId); });

@@ -643,6 +643,11 @@ export function startScheduler() {
         import("@/lib/selfActivatedNotice")
           .then((m) => m.drainSelfActivatedQueue(o.id))
           .catch((e) => console.error("[scheduler] طابور «فعّل بنفسه» سقط صامتاً:", e instanceof Error ? e.message : e)); // متوسّط(٢٦)
+        // 📨 طابورُ رسائل سجلّ المزامنة — دوريّاً أيضاً (لو فشل إرسالٌ عارضٌ بعد الجهوزيّة
+        // فلا حدثَ «ready» جديدٌ يعيد المحاولة؛ الدورةُ ضمانُ الوصول لا ترف)
+        import("@/lib/syncAutoMsg")
+          .then((m) => m.drainSyncMsgQueue(o.id))
+          .catch((e) => console.error("[scheduler] طابور رسائل سجلّ المزامنة سقط صامتاً:", e instanceof Error ? e.message : e));
       }
     }
     // (أُزيل تقرير المدير عبر واتساب — حلقة زائدة؛ المدير يرى تقارير كل الأيّام في «حسابات المدير».)
