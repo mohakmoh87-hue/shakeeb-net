@@ -394,6 +394,14 @@ CREATE POLICY rls_map_point_proposals ON map_point_proposals TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
+-- 📬 الرسائل الداخليّة المنبثقة (2026-08-20) — يقرؤها ويكتبها الموقعُ وحدَه، لكنّ
+-- العزل لا يكون مشروطاً: السياسةُ تسدّ أيَّ وصولِ عاملٍ مستقبليٍّ من يومه الأوّل.
+ALTER TABLE internal_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_internal_messages ON internal_messages;
+CREATE POLICY rls_internal_messages ON internal_messages TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 ALTER TABLE groups         ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE boxes          ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE box_deps       ENABLE ROW LEVEL SECURITY; -- قديمة

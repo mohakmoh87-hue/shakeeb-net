@@ -8,6 +8,7 @@ import StandaloneLock from "@/components/StandaloneLock";
 import PlanBanner from "@/components/PlanBanner";
 import ClientErrorReporter from "@/components/ClientErrorReporter";
 import AppBarHandle from "@/components/AppBarHandle";
+import InternalMsgHost from "@/components/InternalMsgHost";
 
 // غلاف الصفحات المحمية: شريط أدوات علوي + المحتوى
 export default async function AppLayout({
@@ -25,6 +26,8 @@ export default async function AppLayout({
           <PlanBanner agentId={tech.agentId ?? null} />
           <ClientErrorReporter />
           <AppBarHandle />
+          {/* 📬 الرسائل الداخليّة المنبثقة — تظهر للفنيّ فوق بطاقاته ولا تُغلق إلّا بـX */}
+          <InternalMsgHost />
           <main className="flex-1">{children}</main>
         </div>
       );
@@ -53,6 +56,9 @@ export default async function AppLayout({
 
       {/* في التطبيق المثبّت: يحصر التنقّل بإدارة الفنيين لأي حساب */}
       <StandaloneLock />
+
+      {/* 📬 الرسائل الداخليّة المنبثقة — للمستخدم والمدير في كلّ صفحة (والشاشة الرئيسيّة ضمناً) */}
+      <InternalMsgHost />
 
       {/* 🧪 مقبضُ شريط الخيارات — لا يظهر إلّا تحت علَم التجربة وفي صفحةٍ تحمل شريطاً فعلاً */}
       <AppBarHandle />

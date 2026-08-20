@@ -1644,3 +1644,26 @@ model DeletedCardLog {
   @@index([serial])
   @@map("deleted_card_logs")
 }
+
+// ═════ 📬 الرسائل الداخليّة المنبثقة (طلب محمد — نُفّذت 2026-08-20) ═════
+// مدير/مستخدم يُرسل نصّاً حرّاً لفنيٍّ أو مستخدمٍ فيظهر منبثقةً لا تُغلق إلّا بـX،
+// والمستقبِل يردّ فيصل الردُّ المرسِلَ بنفس الآليّة. الفنيُّ لا يُنشئ — يردّ فقط.
+// closedAt هو جوهر «تبقى حتى تُغلق»: الاستطلاع يجلب المفتوحةَ فقط.
+model InternalMessage {
+  id         Int       @id @default(autoincrement())
+  agentId    Int // عزل المستأجر — لا استعلامَ بدونه
+  fromUserId Int?
+  fromTechId Int? // ردود الفنيين فقط
+  toUserId   Int?
+  toTechId   Int?
+  fromName   String // لقطة اسم المرسِل وقت الإرسال (عرضٌ بلا join)
+  text       String
+  replyToId  Int?
+  createdAt  DateTime  @default(now())
+  closedAt   DateTime?
+
+  @@index([toUserId, closedAt])
+  @@index([toTechId, closedAt])
+  @@index([fromUserId])
+  @@map("internal_messages")
+}
