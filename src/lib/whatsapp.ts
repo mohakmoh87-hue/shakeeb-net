@@ -21,6 +21,13 @@ type WaStore = {
   cooldownUntil: number | null; // هدنةٌ بعد استنفاد المحاولات — تنتهي وحدَها فيُستأنف
   probedAt: number | null; // آخرُ مسبارِ جهوزيّةٍ حقيقيّ (getState) — لا يُسأل كلَّ نبضة
   probeFails: number; // فشلان متتاليان قبل الهدم — فمسبارٌ بطيءٌ عابرٌ لا يهدم جلسةً سليمة
+  // ═════ 🩹 سُلَّمُ الشفاء الذاتيّ (حلُّ مكتب المهندس الجذريّ — طلب محمد 2026-08-21) ═════
+  // كان استنفادُ المحاولات يفتح هدنةً ثمّ يعيد المحاولةَ **بنفس الملفّات المعطوبة** إلى
+  // الأبد. الآن كلُّ استنفادٍ متتالٍ يصعّد درجةً: هدنة ← تنظيفُ ذاكرة نسخة واتساب ويب
+  // (.wwebjs_cache — لا تمسّ الربطَ ولا تحتاج QR) ← إعادةُ ضبط الجلسة تلقائيّاً (مرّةً
+  // كلَّ ٢٤ ساعةً حدّاً أقصى) مع إشعارِ مدراء الوكيل أنّ الرمزَ بانتظار المسح.
+  exhaustions: number; // استنفاداتٌ متتالية (تُصفَّر عند ready أو وصول QR حيّ)
+  lastAutoResetAt: number | null; // آخرُ إعادة ضبطٍ تلقائيّة — صمّامُ «مرّة كلّ ٢٤ ساعة»
 };
 
 // ═════ 🔴 عالٍ (د) · مسبارُ الجهوزيّة الحقيقيّ (المسحُ العدائيّ 2026-08-19) ═════
@@ -128,7 +135,7 @@ function offices(): Map<number, WaStore> {
 function store(officeId: number): WaStore {
   const m = offices();
   if (!m.has(officeId)) {
-    m.set(officeId, { client: null, state: "disconnected", qr: null, lastError: null, startedAt: null, retries: 0, qrAt: null, cooldownUntil: null, probedAt: null, probeFails: 0 });
+    m.set(officeId, { client: null, state: "disconnected", qr: null, lastError: null, startedAt: null, retries: 0, qrAt: null, cooldownUntil: null, probedAt: null, probeFails: 0, exhaustions: 0, lastAutoResetAt: null });
   }
   return m.get(officeId)!;
 }
@@ -272,10 +279,10 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   });
 
   client.on("loading_screen", (percent: string, message: string) => { console.log(`[whatsapp] مكتب ${officeId} تحميل ${percent}% ${message ?? ""}`); });
-  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; st.qrAt = Date.now(); st.retries = 0; st.cooldownUntil = null; publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
+  client.on("qr", (qr: string) => { const st = store(officeId); st.qr = qr; st.state = "qr"; st.qrAt = Date.now(); st.retries = 0; st.cooldownUntil = null; st.exhaustions = 0; publish(officeId); console.log(`[whatsapp] ✅ QR جاهز لمكتب ${officeId}`); });
   client.on("authenticated", () => { const st = store(officeId); st.qr = null; st.state = "authenticated"; publish(officeId); console.log(`[whatsapp] مكتب ${officeId} تم التوثيق — بانتظار الجهوزية`); });
   client.on("ready", () => {
-    const st = store(officeId); st.qr = null; st.state = "ready"; st.retries = 0; st.cooldownUntil = null; st.probeFails = 0; st.probedAt = null;
+    const st = store(officeId); st.qr = null; st.state = "ready"; st.retries = 0; st.cooldownUntil = null; st.probeFails = 0; st.probedAt = null; st.exhaustions = 0;
     publish(officeId);
     console.log(`[whatsapp] ✅ مكتب ${officeId} جاهز`);
     // البند ٤-ب · تصريفُ طابور «فعّل بنفسه» لحظةَ جهوزيّة الواتساب (نصُّ الطلب:
@@ -324,10 +331,27 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
     } else {
       // 🔑 هدنةٌ لا نهاية: تُصفَّر الميزانيّةُ الآن وتُضبط مهلة، فإذا انقضت
       //   استُؤنفت المحاولاتُ تلقائيّاً بلا تدخّلٍ من أحد.
+      // 🩹 وسُلَّمُ التصعيد (حلّ المهندس الجذريّ 2026-08-21): الاستنفادُ الثاني المتتالي
+      //   يُنظّف ذاكرةَ نسخة واتساب ويب (فسادُها يُعلّق الإقلاعَ للأبد ولا يُصلحه تكرار)،
+      //   والثالثُ يُعيد ضبطَ الجلسة تلقائيّاً (كزرّ «إعادة ضبط الجلسة» نفسِه) ويُشعر
+      //   مدراءَ الوكيل أنّ رمزَ QR بانتظار المسح — مرّةً كلَّ ٢٤ ساعةً حدّاً أقصى.
       st.state = "error";
       st.retries = 0;
+      st.exhaustions += 1;
       st.cooldownUntil = Date.now() + COOLDOWN_MS;
-      st.lastError = "تعذّر إكمال اتصال الواتساب بعد عدّة محاولات — تُستأنف تلقائياً خلال ١٠ دقائق";
+      if (st.exhaustions === 2) {
+        wipeWebCache();
+        st.lastError = "تعذّر الاتصال مجدّداً — نُظّفت ذاكرةُ نسخة واتساب ويب وتُعاد المحاولة خلال ١٠ دقائق (شفاءٌ ذاتيّ)";
+      } else if (st.exhaustions >= 3 && (st.lastAutoResetAt == null || Date.now() - st.lastAutoResetAt > 24 * 3600_000)) {
+        st.lastAutoResetAt = Date.now();
+        st.exhaustions = 0;
+        st.lastError = "أُعيد ضبطُ الجلسة تلقائيّاً بعد تعطّلٍ متكرّر — رمزُ QR سيظهر خلال دقائق، يُرجى مسحُه";
+        publish(officeId);
+        void autoResetBrokenSession(officeId);
+        return;
+      } else {
+        st.lastError = "تعذّر إكمال اتصال الواتساب بعد عدّة محاولات — تُستأنف تلقائياً خلال ١٠ دقائق";
+      }
       publish(officeId);
     }
   }, STARTUP_TIMEOUT_MS);
@@ -485,6 +509,47 @@ function deleteSessionDir(officeId: number) {
     const dir = path.join(SESSION_DIR, `session-office-${officeId}`);
     if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
   } catch { /* أفضل جهد — قد يبقى قفل مؤقت على ويندوز */ }
+}
+
+// 🩹 تنظيفُ ذاكرة نسخة واتساب ويب (.wwebjs_cache) — لا تمسّ الربطَ ولا تحتاج مسحَ QR.
+// المكتبةُ تحفظ صفحةَ واتساب ويب بنسخها هنا؛ نسخةٌ فاسدةٌ/متعارضةٌ تُعلّق الإقلاعَ على
+// «جاري البدء» إلى الأبد، وإعادةُ المحاولة بنفس الملفّات عبثٌ — هذا كان قفصَ مكتب المهندس.
+function wipeWebCache() {
+  try {
+    const dir = path.join(process.cwd(), ".wwebjs_cache");
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    console.log("[whatsapp] 🩹 نُظّفت ذاكرةُ نسخة واتساب ويب (.wwebjs_cache)");
+  } catch { /* أفضل جهد */ }
+}
+
+// 🩹 الدرجةُ الأخيرة من سُلَّم الشفاء: إعادةُ ضبط الجلسة تلقائيّاً (ما كان يفعله زرُّ
+// «إعادة ضبط الجلسة» يدويّاً) + إشعارُ مدراء الوكيل أنّ الرمزَ بانتظار المسح — فلا يبقى
+// مكتبٌ ميّتاً أيّاماً حتى يلاحظ أحد. لا logout (الجلسةُ معطوبةٌ أصلاً ولا عميلَ حيّ).
+async function autoResetBrokenSession(officeId: number) {
+  const s = store(officeId);
+  if (s.client) { try { await Promise.resolve(s.client.destroy()).catch(() => {}); } catch { /* تجاهل */ } s.client = null; }
+  deleteSessionDir(officeId);
+  wipeWebCache();
+  s.state = "disconnected"; s.qr = null; s.qrAt = null; s.startedAt = null; s.cooldownUntil = null;
+  publish(officeId);
+  console.log(`[whatsapp] 🩹 مكتب ${officeId}: أُعيد ضبطُ الجلسة تلقائيّاً بعد تعطّلٍ متكرّر — بانتظار مسح QR`);
+  // إشعارُ مدراء الوكيل (إشعارٌ داخليٌّ + دفعٌ للهاتف) — أفضلُ جهدٍ لا يعطّل الشفاء
+  try {
+    const office = await prisma.tower.findUnique({ where: { id: officeId }, select: { name: true, agentId: true } });
+    if (office?.agentId != null) {
+      const admins = await prisma.user.findMany({
+        where: { agentId: office.agentId, isAdmin: true, isDeleted: false, isActive: true },
+        select: { id: true },
+      });
+      const title = "واتساب المكتب يحتاج مسحَ QR";
+      const body = `⚠️ واتساب مكتب «${office.name ?? officeId}» تعطّل مراراً فأُعيد ضبطُ جلسته تلقائيّاً — افتح صفحة المكاتب وامسح رمزَ QR لإعادة ربطه`;
+      for (const a of admins) {
+        await prisma.notification.create({ data: { userId: a.id, agentId: office.agentId, towerId: officeId, title, body, type: "wa" } }).catch(() => {});
+        void import("@/lib/push").then((m) => m.sendPushToUser(a.id, { title, body, tag: `wa-reset-${officeId}` })).catch(() => {});
+      }
+    }
+  } catch { /* الإشعارُ مكسبٌ لا شرط */ }
+  void startWhatsApp(officeId); // إقلاعٌ نظيفٌ من الصفر — الرمزُ الجديد يظهر خلال دقائق
 }
 
 // فصل واتساب مكتب: يُلغي الربط على واتساب، يهدم المتصفّح، ويحذف الجلسة المحفوظة

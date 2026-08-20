@@ -42,6 +42,10 @@ function Th({ k, s, children }: { k: string; s: SortCtl; children: React.ReactNo
 export default function SyncLogModal({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [canEdit, setCanEdit] = useState(false);
+  // ⚠️ الشارةُ «عرضٌ فقط» لا تُعرَض إلّا بعد جوابِ الخادم الصريح (بلاغ محمد 2026-08-21:
+  // ظهرت لمديرٍ كامل الصلاحيّة — والسببُ أنّ canEdit يبدأ false وفشلُ الجلب/بطؤه أثناء
+  // نشرةٍ كان يُثبّتها ظلماً). فشلُ الجلب خطأُ اتصالٍ يُقال بمسمّاه لا نقصُ صلاحيّة.
+  const [loadState, setLoadState] = useState<"loading" | "ok" | "error">("loading");
   const [tab, setTab] = useState<Kind>("info");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -55,6 +59,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
   // جيك بوكسا «إرسال رسائل تلقائي» (تبويبا ٢ و٣) — الافتراضيُّ إيقافُ الاثنين (قرار محمد)
   const [autoMsg, setAutoMsg] = useState<{ self: boolean; install: boolean }>({ self: false, install: false });
 
+  // (لا setState متزامنة هنا — الحالةُ تبدأ "loading" أصلاً، وزرُّ الإعادة يعيدها بنفسه)
   const load = useCallback(() => {
     fetch("/api/sync-log")
       .then((r) => (r.ok ? r.json() : null))
@@ -62,9 +67,10 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
         if (d) {
           setRows(Array.isArray(d.rows) ? d.rows : []); setCanEdit(d.canEdit === true);
           if (d.autoMsg) setAutoMsg({ self: d.autoMsg.self === true, install: d.autoMsg.install === true });
-        }
+          setLoadState("ok");
+        } else setLoadState("error");
       })
-      .catch(() => {});
+      .catch(() => setLoadState("error"));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -149,7 +155,13 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
         {/* الرأس + X */}
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3">
           <h3 className="text-lg font-extrabold text-slate-800">🔄 سجلّ المزامنة</h3>
-          {!canEdit && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700">عرضٌ فقط — التعديل لصلاحيّة «تحديث سجل المزامنة»</span>}
+          {loadState === "ok" && !canEdit && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700">عرضٌ فقط — التعديل لصلاحيّة «تحديث سجل المزامنة»</span>}
+          {loadState === "error" && (
+            <span className="flex items-center gap-2 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-600">
+              تعذّر جلب السجلّ — ليست مشكلةَ صلاحيّة
+              <button onClick={() => { setLoadState("loading"); load(); }} className="rounded bg-red-600 px-2 py-0.5 text-white hover:bg-red-700">إعادة المحاولة</button>
+            </span>
+          )}
           <button onClick={onClose} aria-label="إغلاق" className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl text-slate-500 shadow-sm hover:bg-slate-200">✕</button>
         </div>
 
@@ -203,7 +215,11 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
         {/* الجدول */}
         <div className="flex-1 overflow-auto px-4 py-3">
           {view.length === 0 ? (
-            <div className="py-16 text-center text-sm text-slate-400">لا سطورَ في هذا التبويب {q || from ? "(بهذه التصفية)" : "— كلُّ شيءٍ معالَج ✓"}</div>
+            <div className="py-16 text-center text-sm text-slate-400">
+              {loadState === "loading" ? "جارٍ جلبُ السجلّ…"
+                : loadState === "error" ? "تعذّر الاتصال بالخادم — اضغط «إعادة المحاولة» في الأعلى"
+                : <>لا سطورَ في هذا التبويب {q || from ? "(بهذه التصفية)" : "— كلُّ شيءٍ معالَج ✓"}</>}
+            </div>
           ) : (
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-white shadow-sm">
