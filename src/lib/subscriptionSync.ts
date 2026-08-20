@@ -11,7 +11,7 @@ import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
-import { recordInfoDiff, recordInstall, recordActivationEvent, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, isCabinetManager, type InfoChange } from "@/lib/syncLog";
+import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, isOwnCabinet, type InfoChange } from "@/lib/syncLog";
 import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 // ============================================================================
@@ -268,6 +268,15 @@ async function runOfficeSyncInner(
   // يُقرآن مرّةً لكلّ مزامنةٍ، والافتراضيُّ إيقافُ الاثنين (فالإرسال يدويٌّ من النافذة)
   const autoMsg = await getSyncAutoMsgFlags(office.agentId);
 
+  // ♻️ ذاكرةُ هذه الدورة للتصحيح الذاتيّ (شرط محمد 2026-08-21): ما رأيناه فعلاً، وما زال
+  // مؤهَّلاً تنصيباً، وما زال مختلفَ المعلومات. ما رأيناه ولم يعد مؤهَّلاً يُغلَق.
+  const seenSasIds = new Set<number>();
+  const stillInstalls = new Set<number>();
+  const stillDiffering = new Set<number>();
+  // 🗓️ مَن له تفعيلةُ ساسٍ في النافذة (أمس+اليوم) — يُمنَع عنه «فرقُ الأيّام» في تبويب
+  // المعلومات لأنّ تبويبَ تفعيلِه هو بيتُه الصحيح (منعُ الازدواج — مراجعة 2026-08-21)
+  const actedSasIds = new Set<number>();
+
   // ===================== المرحلة 1: كروت وتفعيلات الأمس =====================
   const events: SyncEvent[] = [];
   let internal = 0, external = 0, phantom = 0, markedUsed = 0, duplicates = 0;
@@ -418,48 +427,62 @@ async function runOfficeSyncInner(
       }
     }
 
-    // ═════ 📋 أحداث سجلّ المزامنة (تبويبا ٣ و٤ — 2026-08-20) ═════
-    // منجر = اسمُ الصفحة وبلا وصلٍ بنفس اليوم ⇒ «تفعيلات ساس» (تبويب ٤ بخيارَي +تفعيل/+دين)
-    // منجر = كابينة FDT ⇒ «تفعيل خارجي» (تبويب ٣) — ديلر/شركة: لا حدثَ (خارج التبويبات)
+  }
+
+  // ═════ 📋 أحداث سجلّ المزامنة — تبويبات ٢ و٣ و٤ (مُراجَعةٌ عميقةٌ 2026-08-21) ═════
+  // 🔴 **النافذةُ صارت (الأمس + اليوم)**: كانت الأحداثُ تُقرأ من تفعيلات الأمس وحدَها،
+  //   فتفعيلةُ اليوم لا تصير حدثاً أبداً — وتظهر بدلاً منها «فرقَ أيّام» في تبويب
+  //   المعلومات (حالة bg-63-8-1@res: منجرُها FDT63-RES وظهرت «تحديثَ معلومات»).
+  //   وتقاريرُ السيناريوهات تبقى على الأمس كما كانت (لا تتكرّر).
+  // 🏷️ والتصنيفُ بالمنجر صار ثلاثيّاً مطابقاً لتصنيف محمد:
+  //   · منجر = اسمُ صفحة الساس ⇒ «تفعيلات ساس» (تبويب ٤)
+  //   · منجر = **كابينةُ صاحب اليوزر نفسِه** (FDT+المقطع الأوّل+لاحقة @) ⇒ «تفعيل خارجي» (٣)
+  //   · أيُّ منجرٍ آخرَ (ديلر/شركة) ⇒ «تنصيب خارجي» (٢) بوصفه إعادةَ خدمةٍ من الشركة —
+  //     وكان يسقط في الفراغ فلا يظهر في أيّ تبويب.
+  // 💰 وفي الأنواع الثلاثة: «مقبوضٌ عندي ⇒ ليس خارجيّاً» (وصلٌ ±١٢ ساعة **أو** تاريخُنا
+  //   يغطّي انتهاءَ الساس)، وصاحبُ القرض مستثنًى من الغطاء.
+  for (const a of actsWide) {
     const actAt = a.createdAt ? new Date(a.createdAt) : null;
-    if (actAt && !isNaN(actAt.getTime())) {
-      const newExp = a.newExpiration ? new Date(a.newExpiration) : null;
-      const evBase = {
-        agentId: office.agentId ?? -1, towerId: officeId, sasId: a.sasUserId, subscriberId: sub.id,
-        netUser: a.username ?? sub.netUser, name: a.name ?? sub.name,
-        amount: Math.round(a.price || 0), activatedAt: actAt,
-        sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
-      };
-      // 🧾 **الوصلُ يُغلق البابَين معاً** (بلاغ محمد 2026-08-21): كان تبويب «تفعيل خارجي»
-      // **لا ينظر إلى الوصولات إطلاقاً** بخلاف «تفعيلات ساس» — فتفعيلةٌ قبضتَ ثمنَها
-      // وأصدرتَ وصلَها تبقى معروضةً «خارجيّةً» (قِيس: bg-13-13-7@mu، تفعيلةُ ١٦:١٩ ووصلُها
-      // ٢٠:٤٧ من اليوم نفسِه). فالفحصُ صار واحداً للنوعَين: وصلٌ ضمن ±١٢ ساعة ⇒ لا حدث.
-      const kind: "sas" | "self" | null = managerMatch ? "sas" : (isCabinetManager(a.managerUsername) ? "self" : null);
-      // 💰 **«مغطّى سلفاً» لا يُطالَب به** (بلاغ محمد 2026-08-21 — bg-59-31-2@shu): قبض
-      // ١٠٠ ألفٍ يوم ١٩ لثلاثة أشهرٍ (تاريخُنا 11-19)، ثمّ طبّق كارتَ الشهر الثاني في
-      // الساس يوم ٢٠ (انتهاءُ الساس 09-19) — فظهر «تفعيلَ ساسٍ بلا وصل» وهو مقبوضٌ سلفاً.
-      // القاعدةُ الصحيحة: إن كان تاريخُنا **يغطّي** انتهاءَ الساس الجديدَ فالأيّامُ مدفوعةٌ
-      // عندنا ⇒ لا حدث. وصاحبُ القرض مستثنى (أيّامُه الثلاثون وهميّةٌ لا مقبوضة).
-      // 🔑 **القاعدةُ الأساس بنصّ محمد** (2026-08-21): «إذا المشتركُ لديه وصلُ تفعيلٍ عندي
-      // فلا يُعتبر خارجيّاً أبداً — لأنّ الأساسَ أنّي أخذتُ مبلغَ الوصل من المشترك».
-      // فالاختبارُ اختباران، ونجاحُ أيّهما يعني «مقبوضٌ عندي»: (١) وصلٌ ضمن ±١٢ ساعة من
-      // التفعيلة، أو (٢) تاريخُنا يغطّي انتهاءَ الساس الجديد (دفعةٌ سابقةٌ لأشهرٍ عدّة).
-      // وهامشُ يومٍ يمنع فوارقَ الساعة (تاريخُنا ١٧:٠٠ وانتهاءُ الساس ١٧:١٤ اليومَ نفسَه).
-      const COVER_TOL_MS = 24 * 3600_000;
-      const coveredAlready = !!(newExp && sub.dateTo && sub.dateTo.getTime() >= newExp.getTime() - COVER_TOL_MS && !loanSubIdsP1.has(sub.id));
-      if (kind && coveredAlready) {
-        await resolveEventIfReceipted(officeId, a.sasUserId, actAt); // يُغلق معلّقاً من دورةٍ سابقة
-      } else if (kind) {
-        const receipt = await prisma.subscriptionEntry.findFirst({
-          where: {
-            subscriberId: sub.id, isDeleted: false,
-            date: { gte: new Date(actAt.getTime() - 12 * 3600_000), lte: new Date(actAt.getTime() + 12 * 3600_000) },
-          },
-          select: { id: true },
-        });
-        if (!receipt) await recordActivationEvent(kind, evBase);
-        else await resolveEventIfReceipted(officeId, a.sasUserId, actAt); // يُغلق المعلّقَ من دورةٍ سابقة
-      }
+    if (!actAt || isNaN(actAt.getTime())) continue;
+    let sub = subBySasId.get(a.sasUserId);
+    if (!sub) {
+      const uk = (a.username ?? "").trim().toLowerCase();
+      const byUser = uk ? subByUserPhase1.get(uk) : undefined;
+      if (byUser) sub = byUser;
+    }
+    actedSasIds.add(a.sasUserId); // له تفعيلةٌ في النافذة ⇒ لا يُسجَّل «فرقُ أيّام» في تبويب المعلومات
+    if (!sub) continue; // غيرُ مستوردٍ ⇒ تنصيبٌ جديدٌ ترصده المرحلةُ الثانية بكامل بياناته
+    const mgr = (a.managerUsername ?? "").trim();
+    const managerIsPage = mgr.toLowerCase() === officeUser;
+    const ownCabinet = isOwnCabinet(a.username ?? sub.netUser, mgr);
+    const newExp = a.newExpiration ? new Date(a.newExpiration) : null;
+    const validNewExp = newExp && !isNaN(newExp.getTime()) ? newExp : null;
+    const evBase = {
+      agentId: office.agentId ?? -1, towerId: officeId, sasId: a.sasUserId, subscriberId: sub.id,
+      netUser: a.username ?? sub.netUser, name: a.name ?? sub.name,
+      amount: Math.round(a.price || 0), activatedAt: actAt,
+      sasDateTo: validNewExp,
+    };
+    // «مقبوضٌ عندي» — الغطاءُ بالتاريخ ثمّ الوصلُ بنافذة ±١٢ ساعة
+    const COVER_TOL_MS = 24 * 3600_000;
+    const covered = !!(validNewExp && sub.dateTo && sub.dateTo.getTime() >= validNewExp.getTime() - COVER_TOL_MS && !loanSubIdsP1.has(sub.id));
+    if (covered) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }
+    const receipt = await prisma.subscriptionEntry.findFirst({
+      where: {
+        subscriberId: sub.id, isDeleted: false,
+        date: { gte: new Date(actAt.getTime() - 12 * 3600_000), lte: new Date(actAt.getTime() + 12 * 3600_000) },
+      },
+      select: { id: true },
+    });
+    if (receipt) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }
+    // 💸 القرض (تصنيف محمد ٤): مبلغٌ صفرٌ **وبلا كارت** — يُوسَم كي لا يُصنع له وصلُ بيع
+    const isLoanAct = Math.round(a.price || 0) <= 0 && !(a.pin ?? "").trim();
+    if (managerIsPage || ownCabinet) {
+      await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
+    } else {
+      // ديلر/شركة ⇒ تبويب «تنصيب خارجي» حدثاً مؤرَّخاً (إعادةُ خدمةٍ من الشركة)
+      stillInstalls.add(a.sasUserId);
+      await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });
     }
   }
 
@@ -625,11 +648,7 @@ async function runOfficeSyncInner(
 
     // (toImport وpkgFixQueue أُزيلتا — الرصدُ في سجلّ المزامنة والتطبيقُ يدويّ. 2026-08-20)
 
-    // ♻️ ذاكرةُ هذه الدورة للتصحيح الذاتيّ (شرط محمد 2026-08-21): ما رأيناه فعلاً، وما
-    // زال مؤهَّلاً تنصيباً، وما زال مختلفَ المعلومات. ما رأيناه ولم يعد مؤهَّلاً يُغلَق.
-    const seenSasIds = new Set<number>();
-    const stillInstalls = new Set<number>();
-    const stillDiffering = new Set<number>();
+    // ♻️ (seenSasIds/stillInstalls/stillDiffering مرفوعةٌ لنطاق الدالّة أعلاه)
 
     for (const u of allUsers) {
       seenSasIds.add(u.sasId);
@@ -709,7 +728,8 @@ async function runOfficeSyncInner(
         // 📅 فرقُ الأيّام لمعلوم الباقة (قرار محمد 2026-08-21 المصحَّح): زيادةً **ونقصاً**
         // يُرصَد هنا والتطبيقُ يدويٌّ حصراً من التبويب — التمديدُ التلقائيُّ بقي لمجهول
         // الباقة وحدَه (أدناه). وصاحبُ القرض مستثنى: أيّامُه الوهميّةُ ليست فرقاً يُعرَض.
-        if (sasPkgIdForDiff != null && !loanSubIds.has(p.id) && validDate) {
+        // 🚫 لا فرقَ أيّامٍ لمن له تفعيلةُ ساسٍ في النافذة — بيتُها تبويبُ التفعيل لا المعلومات
+        if (sasPkgIdForDiff != null && !loanSubIds.has(p.id) && validDate && !actedSasIds.has(u.sasId)) {
           const oday = p.dateTo ? p.dateTo.toISOString().slice(0, 10) : "";
           const nday = validDate.toISOString().slice(0, 10);
           if (oday !== nday) {

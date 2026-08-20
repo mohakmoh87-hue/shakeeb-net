@@ -61,6 +61,7 @@ export async function GET() {
           phone: r.phone, address: r.address, packageName: r.packageName,
           sasDateTo: r.sasDateTo, amount: r.amount, activatedAt: r.activatedAt,
           changes: r.changes ? (JSON.parse(r.changes) as unknown) : null,
+          note: r.note,
           createdAt: r.createdAt,
           oursPhone: s?.phone ?? null,
           oursSasId: s?.sasId ?? null,
@@ -157,6 +158,16 @@ export async function POST(request: Request) {
         }
 
         if (action === "apply") {
+          // 🏷️ **«تحديث» على صفّ حدثٍ = «اعتُبر معالَجاً» فقط** (مراجعة 2026-08-21): كان
+          // يمرّ في مسار «تطبيق بيانات على مشتركٍ قائم» فيكتب اسمَ الساس فوق اسمك بلا
+          // داعٍ — والحدثُ ليس تغييرَ معلوماتٍ بل واقعةُ تفعيلٍ تُقرَّر لا تُنسَخ.
+          if (r.kind === "self" || r.kind === "sas") {
+            await prisma.syncLog.update({
+              where: { id: r.id },
+              data: { status: "done", note: `اعتُبر معالَجاً — ${who}`, handledBy: who, handledAt: new Date() },
+            });
+            done++; continue;
+          }
           if (r.subscriberId == null) {
             // تنصيبٌ غير محفوظ («حفظ» في تبويب ٢ أو «تحديث» في تبويب ١ بعد تجاهل تنصيبه):
             // استيرادٌ كاملٌ **بلا وصل** (قرارا محمد ج٢ وج٣) — واليوزرُ الفيصل: لا صفَّ ثانياً
@@ -296,6 +307,12 @@ export async function POST(request: Request) {
 
         // activate | debt — تبويب «تفعيلات ساس» حصراً، والمبلغُ سعرُ باقة البرنامج (قرار محمد)
         if (r.kind !== "sas" || r.subscriberId == null) { rejected.push(`سطر #${r.id} ليس تفعيلَ ساس`); continue; }
+        // 💸 **القرضُ ليس بيعاً** (تصنيف محمد ٤ — مراجعة 2026-08-21): تفعيلةٌ بمبلغ صفرٍ
+        // وبلا كارتٍ هي قرض؛ صناعةُ وصلِ بيعٍ لها بسعر الباقة تُدخل مالاً لم يُقبَض.
+        if (action === "activate" && (r.note ?? "").startsWith("💸 قرض")) {
+          rejected.push(`«${r.name ?? r.netUser}»: تفعيلةُ قرضٍ (صفر بلا كارت) — لا يُصنع لها وصلُ بيع`);
+          continue;
+        }
         const sub = await prisma.subscriber.findUnique({
           where: { id: r.subscriberId },
           select: { id: true, name: true, netUser: true, carry: true, dateTo: true, towerId: true, packageId: true },

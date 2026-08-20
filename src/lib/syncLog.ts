@@ -18,8 +18,10 @@ export type InfoChange = { f: "phone" | "name" | "address" | "package" | "dateTo
 const tableMissing = (e: unknown) =>
   typeof e === "object" && e != null && "code" in e && (e as { code?: string }).code === "P2021";
 
-function fingerprint(p: { name?: string | null; phone?: string | null; address?: string | null; packageName?: string | null; sasDateTo?: Date | null }): string {
-  return JSON.stringify([p.name ?? "", p.phone ?? "", p.address ?? "", p.packageName ?? "", p.sasDateTo ? p.sasDateTo.toISOString().slice(0, 10) : ""]);
+// 🔴 اليوزرُ **داخلَ البصمة** (مراجعة 2026-08-21): كان خارجَها، فصفٌّ تُجوهل ثمّ غيّرت
+// الشركةُ يوزرَه لا تتغيّر بصمتُه ⇒ يبقى مدفوناً — وهو أخطرُ تغييرٍ على الإطلاق.
+function fingerprint(p: { netUser?: string | null; name?: string | null; phone?: string | null; address?: string | null; packageName?: string | null; sasDateTo?: Date | null }): string {
+  return JSON.stringify([(p.netUser ?? "").toLowerCase(), p.name ?? "", p.phone ?? "", p.address ?? "", p.packageName ?? "", p.sasDateTo ? p.sasDateTo.toISOString().slice(0, 10) : ""]);
 }
 
 type StatePayload = {
@@ -100,11 +102,47 @@ export async function recordInstall(p: StatePayload): Promise<boolean> {
   return upsertStateRow("install", p, null);
 }
 
-/** حدثُ تفعيلٍ (تبويب ٣ ذاتيّ · تبويب ٤ صفحة بلا وصل) — صفٌّ لكلّ تفعيلة */
-export async function recordActivationEvent(kind: "self" | "sas", p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date }): Promise<void> {
+/** وسمُ القرض في `note` — تقرؤه الواجهةُ والخادمُ فيمنعان صناعةَ وصلِ بيعٍ له */
+export const LOAN_NOTE = "💸 قرض (مبلغ صفر بلا كارت)";
+
+/** 🏢 تفعيلُ الشركة/الديلر لمشتركٍ قائم = «إعادةُ خدمة» (تصنيف محمد ٦-ب) ⇒ تبويب «تنصيب
+ *  خارجي» حدثاً **مؤرَّخاً**. وكان هذا النوعُ يسقط في الفراغ فلا يظهر في أيّ تبويب:
+ *  المنجرُ ليس صفحةَ المكتب ولا كابينةَ صاحب اليوزر، فلا «تفعيلات ساس» ولا «تفعيل خارجي».
+ *  ⚠️ وكونُه مؤرَّخاً (activatedAt) يستثنيه من التصحيح الذاتيّ للتنصيبات — فلا يُغلَق
+ *     بعد يومٍ لمجرّد أنّ تفعيلتَه خرجت من النافذة؛ يُغلقه الوصلُ أو قرارُك وحدَهما. */
+export async function recordCompanyActivation(
+  p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean; managerName?: string | null },
+): Promise<void> {
   try {
-    const dayStart = new Date(p.activatedAt); dayStart.setHours(dayStart.getHours() - 12);
-    const dayEnd = new Date(p.activatedAt); dayEnd.setHours(dayEnd.getHours() + 12);
+    const from = new Date(p.activatedAt.getTime() - 30 * 60_000);
+    const to = new Date(p.activatedAt.getTime() + 30 * 60_000);
+    const existing = await prisma.syncLog.findFirst({
+      where: { towerId: p.towerId, sasId: p.sasId, kind: "install", activatedAt: { gte: from, lte: to } },
+      select: { id: true },
+    });
+    if (existing) return;
+    await prisma.syncLog.create({
+      data: {
+        agentId: p.agentId, towerId: p.towerId, kind: "install", sasId: p.sasId, subscriberId: p.subscriberId,
+        netUser: p.netUser ?? null, name: p.name ?? null, phone: p.phone ?? null,
+        packageName: p.packageName ?? null, sasDateTo: p.sasDateTo ?? null,
+        amount: p.amount, activatedAt: p.activatedAt,
+        note: p.loan ? LOAN_NOTE : `🏢 تفعيلُ شركة/ديلر${p.managerName ? ` — ${p.managerName}` : ""}`,
+      },
+    });
+  } catch (e) {
+    if (!tableMissing(e)) console.error("[sync-log] تعذّر تسجيل تفعيل شركة:", e instanceof Error ? e.message : e);
+  }
+}
+
+/** حدثُ تفعيلٍ (تبويب ٣ ذاتيّ · تبويب ٤ صفحة بلا وصل) — صفٌّ لكلّ تفعيلة */
+export async function recordActivationEvent(kind: "self" | "sas", p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean }): Promise<void> {
+  try {
+    // ⏱️ **دقّةُ منع التكرار ±٣٠ دقيقة لا ±١٢ ساعة** (مراجعة 2026-08-21): النافذةُ الواسعة
+    // كانت تبتلع **الحدثَ الثاني في اليوم نفسِه** — وهي حالةٌ في تصنيف محمد (نوع ٢: ديلر
+    // ثمّ برنامج). وإعادةُ قراءةِ التفعيلة نفسِها تحمل وقتَها نفسَه فيبقى المنعُ محكماً.
+    const dayStart = new Date(p.activatedAt.getTime() - 30 * 60_000);
+    const dayEnd = new Date(p.activatedAt.getTime() + 30 * 60_000);
     const existing = await prisma.syncLog.findFirst({
       where: { towerId: p.towerId, sasId: p.sasId, kind, activatedAt: { gte: dayStart, lte: dayEnd } },
       select: { id: true },
@@ -116,6 +154,8 @@ export async function recordActivationEvent(kind: "self" | "sas", p: StatePayloa
         netUser: p.netUser ?? null, name: p.name ?? null, phone: p.phone ?? null,
         packageName: p.packageName ?? null, sasDateTo: p.sasDateTo ?? null,
         amount: p.amount, activatedAt: p.activatedAt,
+        // 💸 وسمُ القرض (تصنيف محمد ٤: مبلغٌ صفرٌ وبلا كارت) — تقرؤه الواجهةُ فتمنع «+ تفعيل»
+        ...(p.loan ? { note: LOAN_NOTE } : {}),
       },
     });
   } catch (e) {
@@ -130,7 +170,7 @@ export async function resolveEventIfReceipted(towerId: number, sasId: number, re
     const dayStart = new Date(receiptAt); dayStart.setHours(dayStart.getHours() - 12);
     const dayEnd = new Date(receiptAt); dayEnd.setHours(dayEnd.getHours() + 12);
     await prisma.syncLog.updateMany({
-      where: { towerId, sasId, kind: { in: ["sas", "self"] }, status: "pending", activatedAt: { gte: dayStart, lte: dayEnd } },
+      where: { towerId, sasId, kind: { in: ["sas", "self", "install"] }, status: "pending", activatedAt: { gte: dayStart, lte: dayEnd } },
       data: { status: "done", note: "سُجّل وصلٌ يدويّاً لنفس اليوم", handledAt: new Date() },
     });
   } catch { /* خامد */ }
@@ -148,10 +188,10 @@ export async function reconcileInstalls(towerId: number, seenSasIds: Set<number>
   try {
     const rows = await prisma.syncLog.findMany({
       where: { towerId, kind: "install", status: { in: ["pending", "ignored"] } },
-      select: { id: true, sasId: true },
+      select: { id: true, sasId: true, activatedAt: true },
     });
     const stale = rows
-      .filter((r) => r.sasId != null && seenSasIds.has(r.sasId) && !stillInstalls.has(r.sasId))
+      .filter((r) => r.sasId != null && r.activatedAt == null && seenSasIds.has(r.sasId) && !stillInstalls.has(r.sasId))
       .map((r) => r.id);
     if (!stale.length) return 0;
     await prisma.syncLog.updateMany({
@@ -185,6 +225,24 @@ export async function reconcileInfo(towerId: number, seenSasIds: Set<number>, st
 /** هل المنجرُ كابينةُ مشتركٍ (تفعيلٌ ذاتيّ)؟ قاعدة محمد: FDT<مقطع اليوزر الأوّل>-<لاحقة@> */
 export function isCabinetManager(manager: string | null | undefined): boolean {
   return /^FDT/i.test((manager ?? "").trim());
+}
+
+/** كابينةُ يوزرٍ بعينه بقاعدة محمد: `bg-63-8-1@res` ⇒ `FDT63-RES` (FDT + أوّلِ مقطعٍ رقميٍّ + لاحقةِ @) */
+export function cabinetOf(username: string | null | undefined): string | null {
+  const u = (username ?? "").trim();
+  const m = /^[^-\s]+-(\d+)[^@]*@([A-Za-z0-9]+)/.exec(u);
+  return m ? `FDT${m[1]}-${m[2].toUpperCase()}` : null;
+}
+
+/** 🎯 المنجرُ كابينةُ **صاحب هذا اليوزر** لا أيَّ كابينةٍ (مراجعةُ 2026-08-21): «يبدأ بـFDT»
+ *  وحدَها تَعُدُّ تفعيلَ كابينةٍ أخرى أو حسابٍ يبدأ بـFDT تفعيلاً ذاتيّاً — وهو خطأُ تصنيف.
+ *  وحين يتعذّر اشتقاقُ الكابينة من اليوزر (صيغةٌ غريبة) نسقط إلى القاعدة القديمة. */
+export function isOwnCabinet(username: string | null | undefined, manager: string | null | undefined): boolean {
+  const mgr = (manager ?? "").trim();
+  if (!mgr) return false;
+  const cab = cabinetOf(username);
+  if (!cab) return isCabinetManager(mgr);
+  return mgr.toUpperCase() === cab;
 }
 
 /** هل باقةُ الساس «باقةَ عرض»؟ (علامةُ التنصيب/الإعادة في تصنيف محمد) */

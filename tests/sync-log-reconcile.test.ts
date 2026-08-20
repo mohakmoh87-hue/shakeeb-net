@@ -28,14 +28,23 @@ describe("♻️ سجلّ المزامنة التفاعليّ ودفعةُ ال�
     }
   });
 
-  test("٢ · الوصلُ يُغلق «تفعيل خارجي» كما يُغلق «تفعيلات ساس» — فحصٌ واحدٌ للنوعَين", () => {
+  test("٢ · الوصلُ (أو الغطاءُ بالتاريخ) يُغلق التبويبات الثلاثة — «مقبوضٌ عندي ⇒ ليس خارجيّاً»", () => {
     const src = SYNC();
-    assert.match(src, /const kind: "sas" \| "self" \| null = managerMatch \? "sas" : \(isCabinetManager/,
-      "التصنيفُ لم يُوحَّد — «تفعيل خارجي» قد يعود بلا فحص وصل");
-    assert.match(src, /if \(!receipt\) await recordActivationEvent\(kind, evBase\);/, "الحدثُ يُسجَّل بلا فحص وصلٍ للنوعَين");
-    // والإغلاقُ اللاحق (وصلٌ سُجّل بعد الرصد) يشمل النوعَين
-    assert.match(read("src/lib/syncLog.ts"), /kind: \{ in: \["sas", "self"\] \}, status: "pending"/,
-      "resolveEventIfReceipted ما زال محصوراً بتفعيلات الساس");
+    // التصنيفُ ثلاثيٌّ: صفحة ⇒ ساس · كابينةُ صاحبِه ⇒ ذاتيّ · غيرُهما (ديلر/شركة) ⇒ تنصيب
+    assert.ok(src.includes('await recordActivationEvent(managerIsPage ? "sas" : "self"'), "التصنيفُ بالمنجر غاب");
+    assert.ok(src.includes("await recordCompanyActivation("), "تفعيلُ الشركة/الديلر ما زال يسقط في الفراغ");
+    // ولا حدثَ إن كان مقبوضاً عندنا: غطاءُ التاريخ ثمّ الوصل
+    assert.ok(src.includes("if (covered) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }"), "غطاءُ التاريخ غاب");
+    assert.ok(src.includes("if (receipt) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }"), "فحصُ الوصل غاب");
+    // والإغلاقُ اللاحق يشمل الأنواع الثلاثة (صفوفُ الشركة مؤرَّخةٌ فتدخل بطبيعتها)
+    assert.ok(read("src/lib/syncLog.ts").includes('kind: { in: ["sas", "self", "install"] }, status: "pending"'),
+      "الوصلُ لا يُغلق صفوفَ الشركة المؤرَّخة");
+    // 🎯 والكابينةُ تُطابَق بصاحبها لا بمجرّد «يبدأ بـFDT»
+    assert.ok(read("src/lib/syncLog.ts").includes("export function isOwnCabinet("), "الكابينةُ ما زالت تُقبَل من أيّ حساب يبدأ بـFDT");
+    assert.ok(src.includes("isOwnCabinet(a.username ?? sub.netUser, mgr)"), "التصنيفُ الذاتيّ لا يتحقّق من صاحب الكابينة");
+    // 🗓️ والنافذةُ صارت (الأمس + اليوم) فلا تُصنَّف تفعيلةُ اليوم «تحديثَ معلومات»
+    assert.ok(src.includes("for (const a of actsWide) {"), "الأحداثُ ما زالت على نافذة الأمس وحدَها");
+    assert.ok(src.includes("!actedSasIds.has(u.sasId)"), "فرقُ الأيّام يزدوج مع تبويب التفعيل");
   });
 
   test("٣ · تغيّرُ اليوزر يُرصَد أوّلاً وبالأحمر، ويُطبَّق إعادةَ تسميةٍ بحارس تكرار", () => {

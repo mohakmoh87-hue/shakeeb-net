@@ -15,13 +15,16 @@ type Row = {
   subscriberId: number | null; sasId: number | null; netUser: string | null; name: string | null;
   phone: string | null; address: string | null; packageName: string | null;
   sasDateTo: string | null; amount: number | null; activatedAt: string | null;
-  changes: Change[] | null; createdAt: string;
+  changes: Change[] | null; createdAt: string; note: string | null;
   oursPhone: string | null; oursPackage: string | null; oursPrice: number | null; oursDateTo: string | null;
   oursSasId: number | null;
 };
 
 // تنصيبٌ على يوزرِ تاركِ خدمة (حسابُ ساسٍ جديدٌ على يوزرٍ قائم) ⇒ «تحديث» يستبدل المشتركَ
 // كخاصيّة «↔️ استبدال المشترك» نفسِها (قرار محمد 2026-08-21) — فالزرُّ يقول ذلك بمسمّاه
+// 💸 قرضٌ (مبلغ صفر بلا كارت) · 🏢 تفعيلُ شركةٍ/ديلر — يُقرآن من الملاحظة
+const isLoanRow = (r: Row) => (r.note ?? "").startsWith("💸 قرض");
+const isCompanyRow = (r: Row) => (r.note ?? "").startsWith("🏢");
 const isReplaceRow = (r: Row) => r.kind === "install" && r.subscriberId != null && r.sasId != null && r.oursSasId !== r.sasId;
 
 const KINDS = [
@@ -257,6 +260,8 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                     <td className="max-w-[220px] truncate p-2 font-semibold text-slate-800">
                       {r.name ?? "—"}
                       {r.subscriberId == null && <span className="mr-1 rounded bg-sky-100 px-1.5 text-[10px] font-bold text-sky-700">جديد</span>}
+                      {isLoanRow(r) && <span className="mr-1 rounded bg-violet-100 px-1.5 text-[10px] font-bold text-violet-700" title="تفعيلةٌ بمبلغ صفرٍ وبلا كارت — قرض">قرض</span>}
+                      {isCompanyRow(r) && <span className="mr-1 rounded bg-orange-100 px-1.5 text-[10px] font-bold text-orange-700" title={r.note ?? ""}>شركة/ديلر</span>}
                       {isReplaceRow(r) && <span className="mr-1 rounded bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700" title="تنصيبٌ على يوزر مشتركٍ تاركٍ للخدمة — التحديث يستبدله كاملاً والقديم يبقى أرشيفاً بدينه">يوزر معاد</span>}
                     </td>
                     <td className="p-2 text-slate-600" dir="ltr">{r.netUser ?? "—"}</td>
@@ -291,7 +296,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                       <td className="whitespace-nowrap p-2 font-bold text-amber-700">
                         {num(r.amount)}
                         {/* زرّ «+» بجانب المبلغ (تبويب ٤): إضافة تفعيل (بوصلٍ لتقرير اليوم) أو إضافة دين */}
-                        {tab === "sas" && canEdit && (
+                        {tab === "sas" && canEdit && !isLoanRow(r) && (
                           <span className="relative mr-1.5 inline-block">
                             <button onClick={() => setPlusFor(plusFor === r.id ? null : r.id)} disabled={busy}
                               className="h-6 w-6 rounded-full bg-mynet-blue text-sm font-extrabold text-white hover:opacity-90">+</button>
