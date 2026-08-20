@@ -12,7 +12,8 @@ import { prisma } from "./prisma";
 // ⚠️ كلُّ الدوالّ «أفضلُ جهدٍ» ولا تُفشل المزامنةَ أبداً — وغيابُ الجدول (P2021 قبل لصق
 // محمد الـSQL) صمتٌ تامّ فالميزةُ خامدةٌ حتى التهيئة.
 
-export type InfoChange = { f: "phone" | "name" | "address" | "package" | "dateTo"; label: string; old: string; new: string };
+// 🔴 netUser أخطرُها (تغيّرُ اليوزر في الساس — بلاغ محمد 2026-08-21) ويُعرَض بالأحمر
+export type InfoChange = { f: "phone" | "name" | "address" | "package" | "dateTo" | "netUser"; label: string; old: string; new: string };
 
 const tableMissing = (e: unknown) =>
   typeof e === "object" && e != null && "code" in e && (e as { code?: string }).code === "P2021";
@@ -122,16 +123,63 @@ export async function recordActivationEvent(kind: "self" | "sas", p: StatePayloa
   }
 }
 
-/** وصلٌ ظهر لاحقاً لنفس يوم الحدث (سجّله المستخدم يدويّاً) ⇒ يُختَم الحدثُ من نفسه */
+/** وصلٌ ظهر لاحقاً لنفس يوم الحدث (سجّله المستخدم يدويّاً) ⇒ يُختَم الحدثُ من نفسه.
+ *  يشمل **النوعَين** (تفعيلات ساس · تفعيل خارجي) — فالوصلُ يُغلق البابَين (قرار محمد 2026-08-21). */
 export async function resolveEventIfReceipted(towerId: number, sasId: number, receiptAt: Date): Promise<void> {
   try {
     const dayStart = new Date(receiptAt); dayStart.setHours(dayStart.getHours() - 12);
     const dayEnd = new Date(receiptAt); dayEnd.setHours(dayEnd.getHours() + 12);
     await prisma.syncLog.updateMany({
-      where: { towerId, sasId, kind: "sas", status: "pending", activatedAt: { gte: dayStart, lte: dayEnd } },
+      where: { towerId, sasId, kind: { in: ["sas", "self"] }, status: "pending", activatedAt: { gte: dayStart, lte: dayEnd } },
       data: { status: "done", note: "سُجّل وصلٌ يدويّاً لنفس اليوم", handledAt: new Date() },
     });
   } catch { /* خامد */ }
+}
+
+// ═════ ♻️ السجلُّ تفاعليٌّ: يُصحّح نفسَه في كلّ مزامنة (شرط محمد 2026-08-21) ═════
+// نصُّه: «إذا وجد أنّ شيئاً أُصلح في المزامنة التالية يحدّث نفسه معها ويُبقي ما تبقّى».
+// ثلاثةُ أبواب للإغلاق الذاتيّ، وكلُّها **مشروطةٌ بأنّنا رأينا الحالةَ فعلاً** في هذه
+// الدورة (`seenSasIds`) — فمكتبٌ تعذّرت قراءتُه أو لوحةٌ لم تُمسح لا يُغلق لها صفٌّ بالظنّ:
+//   ١· تنصيبٌ معلّقٌ لم يعد مؤهَّلاً (استُورد صاحبُه · أو زالت القاعدةُ التي ولّدته).
+//   ٢· تحديثُ معلوماتٍ لم يبقَ فيه فرق ⇒ يُغلقه `recordInfoDiff` أصلاً بلا فرق.
+//   ٣· حدثُ تفعيلٍ ظهر له وصلٌ لاحقاً ⇒ يُغلقه `resolveEventIfReceipted`.
+export async function reconcileInstalls(towerId: number, seenSasIds: Set<number>, stillInstalls: Set<number>): Promise<number> {
+  if (!seenSasIds.size) return 0; // لم نرَ شيئاً (مسحٌ فاشل) ⇒ لا نُغلق شيئاً بالظنّ
+  try {
+    const rows = await prisma.syncLog.findMany({
+      where: { towerId, kind: "install", status: { in: ["pending", "ignored"] } },
+      select: { id: true, sasId: true },
+    });
+    const stale = rows
+      .filter((r) => r.sasId != null && seenSasIds.has(r.sasId) && !stillInstalls.has(r.sasId))
+      .map((r) => r.id);
+    if (!stale.length) return 0;
+    await prisma.syncLog.updateMany({
+      where: { id: { in: stale } },
+      data: { status: "done", note: "عولج تلقائيّاً — لم يعد تنصيباً معلّقاً", handledAt: new Date() },
+    });
+    return stale.length;
+  } catch { return 0; }
+}
+
+/** صفوفُ معلوماتٍ معلّقةٌ لمشتركين لم نعد نراهم أو زال موضوعُها ⇒ تُغلق (نفس شرط الرؤية) */
+export async function reconcileInfo(towerId: number, seenSasIds: Set<number>, stillDiffering: Set<number>): Promise<number> {
+  if (!seenSasIds.size) return 0;
+  try {
+    const rows = await prisma.syncLog.findMany({
+      where: { towerId, kind: "info", status: "pending" },
+      select: { id: true, sasId: true },
+    });
+    const stale = rows
+      .filter((r) => r.sasId != null && seenSasIds.has(r.sasId) && !stillDiffering.has(r.sasId))
+      .map((r) => r.id);
+    if (!stale.length) return 0;
+    await prisma.syncLog.updateMany({
+      where: { id: { in: stale } },
+      data: { status: "done", note: "تطابقت البيانات — عولج تلقائيّاً", handledAt: new Date() },
+    });
+    return stale.length;
+  } catch { return 0; }
 }
 
 /** هل المنجرُ كابينةُ مشتركٍ (تفعيلٌ ذاتيّ)؟ قاعدة محمد: FDT<مقطع اليوزر الأوّل>-<لاحقة@> */

@@ -251,9 +251,27 @@ export async function POST(request: Request) {
                 });
                 if (loan) applyDate = false;
               }
+              // 🔴 تغيّرُ اليوزر في الساس ⇒ **إعادةُ تسميةٍ للصفّ نفسِه** (قرار محمد
+              // 2026-08-21): اليوزرُ هو الفيصل، فيُصحَّح اسمُ صفّنا ليطابق الساسَ —
+              // وبحارس تكرارٍ صارم: لو كان الاسمُ الجديد يخصّ صفّاً حيّاً آخرَ رُفض
+              // الصفُّ كلُّه (لا نصنع مكرَّراً جديداً ونحن نُصلح مكرَّراً قديماً).
+              let renameTo: string | null = null;
+              try {
+                const chs = r.changes ? (JSON.parse(r.changes) as { f?: string; new?: string }[]) : [];
+                const nu = chs.find((c) => c.f === "netUser")?.new?.trim();
+                if (nu && nu.toLowerCase() !== (old.netUser ?? "").trim().toLowerCase()) renameTo = nu;
+              } catch { /* تغييراتٌ غيرُ مقروءة ⇒ لا إعادةَ تسمية */ }
+              if (renameTo) {
+                const clash = await prisma.subscriber.findFirst({
+                  where: { towerId: r.towerId, isDeleted: false, netUser: renameTo, id: { not: old.id } },
+                  select: { id: true },
+                });
+                if (clash) { rejected.push(`«${old.netUser}» ← «${renameTo}»: اليوزر الجديد يخصّ مشتركاً آخرَ (#${clash.id}) — يحتاج قرارك`); continue; }
+              }
               await prisma.subscriber.update({
                 where: { id: r.subscriberId },
                 data: {
+                  ...(renameTo ? { netUser: renameTo } : {}),
                   ...(r.phone?.trim() ? { phone: r.phone } : {}),
                   ...(r.name?.trim() ? { name: r.name } : {}),
                   ...(r.address?.trim() ? { address: r.address } : {}),
@@ -261,6 +279,14 @@ export async function POST(request: Request) {
                   ...(applyDate ? { dateTo: r.sasDateTo, expiredNoticeAt: null } : {}),
                 },
               });
+              if (renameTo) {
+                await prisma.auditLog.create({
+                  data: {
+                    userId: session.userId, action: "SYNC_LOG_RENAME_USER", entity: "subscriber", entityId: String(old.id),
+                    details: `سجلّ المزامنة: تصحيحُ يوزرٍ من الساس «${old.netUser}» ← «${renameTo}» (sasId=${r.sasId})`,
+                  },
+                }).catch(() => {});
+              }
               await prisma.auditLog.create({ data: { userId: session.userId, action: "SYNC_LOG_APPLY", entity: "subscriber", entityId: String(r.subscriberId), details: `سجلّ المزامنة: تحديث بيانات «${r.name ?? r.netUser}» من الساس — ${r.changes ?? ""}` } }).catch(() => {});
             }
           }

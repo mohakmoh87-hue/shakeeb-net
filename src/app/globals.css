@@ -1972,3 +1972,19 @@ html[data-app-trial] tr.subrow .trial-sub-name {
   color: #0d5490;
 }
 html[data-app-trial] tr.subrow .trial-only-chip { display: flex; }
+
+/* ═════ 🔒 قفلُ «عناصر التطبيق» خارج التطبيق (بلاغ محمد 2026-08-21) ═════
+   قواعدُ الإخفاء أعلاه كُتبت بصنفٍ واحد (أولويّة 0-1-0)، بينما تنسيقُ الأساس يستعمل
+   صنفَين وثلاثة: `.nst .subs .op { display: grid }` و`.nst .sb-chip { display: inline-flex }`
+   — فكانت تغلبها، وظهر زرُّ ⋯ وشارةُ «اليوزر» **في متصفّح الحاسبة** (قِيس حيّاً: العنصرُ
+   محسوبٌ grid رغم قاعدة none). وقواعدُ الإظهار داخل التطبيق أقوى فلم يظهر العطبُ هناك.
+   ⇒ الإخفاءُ يُشترَط بغياب وسم الطراز صراحةً — فيغلب الأساسَ ولا يمسّ التطبيقَ ذرّة. */
+html:not([data-app-trial]) .trial-picker,
+html:not([data-app-trial]) .trial-only-bar,
+html:not([data-app-trial]) .trial-tiles,
+html:not([data-app-trial]) .trial-more,
+html:not([data-app-trial]) .trial-only-navitem,
+html:not([data-app-trial]) .trial-allchk,
+html:not([data-app-trial]) .trial-dockbar,
+html:not([data-app-trial]) .trial-sub-name,
+html:not([data-app-trial]) .trial-only-chip { display: none !important; }

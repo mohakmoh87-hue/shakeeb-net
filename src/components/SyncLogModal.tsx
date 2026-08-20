@@ -262,13 +262,23 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                     <td className="p-2 text-slate-600" dir="ltr">{r.netUser ?? "—"}</td>
                     {tab === "info" ? (
                       <td className="p-2">
+                        {/* 🔴 تغيّرُ اليوزر أخطرُ التغييرات (طلب محمد: «باللون الأحمر») —
+                            سطرُه كلُّه أحمرُ عريضٌ داخل إطارٍ يميّزه عن بقيّة الفروق */}
                         {(r.changes ?? []).map((c, i) => (
-                          <div key={i} className="text-[12px] leading-6">
-                            <b className="text-slate-600">{c.label}:</b>{" "}
-                            <span className="text-rose-500 line-through">{c.old}</span>{" "}
-                            <span className="text-slate-400">←</span>{" "}
-                            <span className="font-bold text-emerald-700">{c.new}</span>
-                          </div>
+                          c.f === "netUser" ? (
+                            <div key={i} className="my-0.5 rounded-lg border border-red-300 bg-red-50 px-2 py-1 text-[12px] font-extrabold leading-6 text-red-700">
+                              {c.label}:{" "}
+                              <span className="line-through opacity-70" dir="ltr">{c.old}</span>{" "}←{" "}
+                              <span dir="ltr">{c.new}</span>
+                            </div>
+                          ) : (
+                            <div key={i} className="text-[12px] leading-6">
+                              <b className="text-slate-600">{c.label}:</b>{" "}
+                              <span className="text-rose-500 line-through">{c.old}</span>{" "}
+                              <span className="text-slate-400">←</span>{" "}
+                              <span className="font-bold text-emerald-700">{c.new}</span>
+                            </div>
+                          )
                         ))}
                       </td>
                     ) : (

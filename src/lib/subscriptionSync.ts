@@ -10,7 +10,7 @@ import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
-import { recordInfoDiff, recordInstall, recordActivationEvent, resolveEventIfReceipted, isCabinetManager, isOfferPackage, type InfoChange } from "@/lib/syncLog";
+import { recordInfoDiff, recordInstall, recordActivationEvent, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, isCabinetManager, type InfoChange } from "@/lib/syncLog";
 import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 // ============================================================================
@@ -350,6 +350,20 @@ async function runOfficeSyncInner(
         netUser: a.username, name: a.name, phone: null, address: null,
         packageName: null, sasDateTo: newDate && !isNaN(newDate.getTime()) ? newDate : null,
       });
+      // 🎴 **والكارتُ يُعلَّم مستخدماً حتى بلا صاحبٍ معروف** (بلاغ محمد 2026-08-21):
+      // كان `continue` يقفز فوق معالجة الكارت، فكارتٌ استُهلك في الساس ليوزرٍ ليس عندنا
+      // يبقى «متاحاً» في المخزن إلى الأبد فيُسحب مرّةً ثانية. المشتركُ يُربَط لاحقاً عند
+      // استيراده من السجلّ؛ أمّا كونُه مستهلَكاً فحقيقةٌ لا تنتظر أحداً.
+      if (card && !card.useDate) {
+        const when = a.createdAt ? new Date(a.createdAt) : new Date();
+        await prisma.rechargeCard.update({
+          where: { id: card.id },
+          data: { useDate: isNaN(when.getTime()) ? new Date() : when, userName: "sync", reservedBy: null, reservedAt: null },
+        });
+        card.useDate = when;
+        markedUsed++;
+        events.push({ scenario: 3, subscriber: a.username ?? null, pin, detail: "كارتٌ استُهلك ليوزرٍ غير مستوردٍ بعد — عُلّم مستخدماً" });
+      }
       continue;
     }
 
@@ -410,8 +424,12 @@ async function runOfficeSyncInner(
         amount: Math.round(a.price || 0), activatedAt: actAt,
         sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
       };
-      if (managerMatch) {
-        // «بلا وصلٍ بنفس التاريخ» — نافذةُ ±١٢ ساعة تغطّي فوارقَ التوقيت حول منتصف الليل
+      // 🧾 **الوصلُ يُغلق البابَين معاً** (بلاغ محمد 2026-08-21): كان تبويب «تفعيل خارجي»
+      // **لا ينظر إلى الوصولات إطلاقاً** بخلاف «تفعيلات ساس» — فتفعيلةٌ قبضتَ ثمنَها
+      // وأصدرتَ وصلَها تبقى معروضةً «خارجيّةً» (قِيس: bg-13-13-7@mu، تفعيلةُ ١٦:١٩ ووصلُها
+      // ٢٠:٤٧ من اليوم نفسِه). فالفحصُ صار واحداً للنوعَين: وصلٌ ضمن ±١٢ ساعة ⇒ لا حدث.
+      const kind: "sas" | "self" | null = managerMatch ? "sas" : (isCabinetManager(a.managerUsername) ? "self" : null);
+      if (kind) {
         const receipt = await prisma.subscriptionEntry.findFirst({
           where: {
             subscriberId: sub.id, isDeleted: false,
@@ -419,10 +437,8 @@ async function runOfficeSyncInner(
           },
           select: { id: true },
         });
-        if (!receipt) await recordActivationEvent("sas", evBase);
-        else await resolveEventIfReceipted(officeId, a.sasUserId, actAt);
-      } else if (isCabinetManager(a.managerUsername)) {
-        await recordActivationEvent("self", evBase);
+        if (!receipt) await recordActivationEvent(kind, evBase);
+        else await resolveEventIfReceipted(officeId, a.sasUserId, actAt); // يُغلق المعلّقَ من دورةٍ سابقة
       }
     }
   }
@@ -537,7 +553,7 @@ async function runOfficeSyncInner(
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
       where: { towerId: officeId, ...panelWhere, isDeleted: false, sasId: { not: null } },
-      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true, name: true },
+      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true, name: true, netUser: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
 
@@ -589,7 +605,14 @@ async function runOfficeSyncInner(
 
     // (toImport وpkgFixQueue أُزيلتا — الرصدُ في سجلّ المزامنة والتطبيقُ يدويّ. 2026-08-20)
 
+    // ♻️ ذاكرةُ هذه الدورة للتصحيح الذاتيّ (شرط محمد 2026-08-21): ما رأيناه فعلاً، وما
+    // زال مؤهَّلاً تنصيباً، وما زال مختلفَ المعلومات. ما رأيناه ولم يعد مؤهَّلاً يُغلَق.
+    const seenSasIds = new Set<number>();
+    const stillInstalls = new Set<number>();
+    const stillDiffering = new Set<number>();
+
     for (const u of allUsers) {
+      seenSasIds.add(u.sasId);
       const p = progBySasId.get(u.sasId);
       const sasDate = u.expiration ? new Date(u.expiration) : null;
       const validDate = sasDate && !isNaN(sasDate.getTime()) ? sasDate : null;
@@ -607,6 +630,7 @@ async function runOfficeSyncInner(
           //   القديم أرشيفٌ حيٌّ بوسم «سابق» ودينُه عليه، والجديدُ يأخذ اليوزرَ والمكان).
           //   يبقى العدُّ للتقرير، ولا صفَّ ثانٍ يُنشأ أبداً (الحرسُ قائم).
           dupUserSkipped++;
+          stillInstalls.add(u.sasId); // ما زال مؤهَّلاً ⇒ لا يُغلقه التصحيحُ الذاتيّ
           const fresh = await recordInstall({
             agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: oldByUser.id,
             netUser: u.username, name: u.name, phone: u.phone, address: u.address,
@@ -624,6 +648,7 @@ async function runOfficeSyncInner(
         // 2026-08-20): يُرصَد في تبويب «تنصيب خارجي» بكامل بياناته، و«حفظ» بيد صاحب
         // الصلاحيّة يستورده (بلا وصل)، و«تجاهل» يخفيه حتى تتغيّر بياناتُه (فيعود «تحديثَ
         // معلومات» وتحديثُه يستورده كاملاً). حلّ محلَّ toImport/createMany القديمَين.
+        stillInstalls.add(u.sasId); // ما زال غيرَ مستوردٍ ⇒ يبقى في التبويب
         const fresh = await recordInstall({
           agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: null,
           netUser: u.username, name: u.name, phone: u.phone, address: u.address,
@@ -645,6 +670,14 @@ async function runOfficeSyncInner(
       {
         const diffs: InfoChange[] = [];
         const sv = (x: string | null | undefined) => (x ?? "").trim();
+        // 🔴 **تغيّرُ اليوزر في الساس — أخطرُ تغييرٍ على الإطلاق** (بلاغ محمد 2026-08-21):
+        // الشركةُ تُعيد تسميةَ يوزرٍ فيبقى صفُّنا بالاسم القديم بينما رقمُه يشير لصاحبٍ آخر
+        // (حالة bg-7-4-2@mu ← bg-7-5-1@mu)، فتُفتح صفحةُ ساسٍ لغير صاحبها، ويبدو اليوزرُ
+        // الحقيقيُّ «مستورداً سلفاً» فلا يدخل البرنامج أبداً. وكانت المقارنةُ لا تشمل
+        // اليوزرَ إطلاقاً — واليوزرُ هو الفيصلُ الذي لا يُخطئ. يُرصَد أوّلاً وبعلامةٍ حمراء.
+        if (sv(u.username) && sv(u.username).toLowerCase() !== sv(p.netUser).toLowerCase()) {
+          diffs.push({ f: "netUser", label: "🔴 اليوزر تغيّر في الساس", old: sv(p.netUser) || "—", new: sv(u.username) });
+        }
         if (sv(u.phone) && sv(u.phone) !== sv(p.phone)) diffs.push({ f: "phone", label: "الهاتف", old: sv(p.phone) || "—", new: sv(u.phone) });
         if (sv(u.name) && sv(u.name) !== sv(p.name)) diffs.push({ f: "name", label: "الاسم", old: sv(p.name) || "—", new: sv(u.name) });
         if (sv(u.address) && sv(u.address) !== sv(p.address)) diffs.push({ f: "address", label: "العنوان", old: sv(p.address) || "—", new: sv(u.address) });
@@ -667,26 +700,17 @@ async function runOfficeSyncInner(
             });
           }
         }
+        if (diffs.length) stillDiffering.add(u.sasId); // ما زال فرقٌ قائم ⇒ يبقى في التبويب
         await recordInfoDiff({
           agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: p.id,
           netUser: u.username, name: u.name, phone: u.phone, address: u.address,
           packageName: u.packageName, sasDateTo: validDate,
         }, diffs);
-        // 🏷️ إعادةٌ للخدمة (تصنيف محمد ٦): قائمٌ تحوّلت باقتُه في الساس إلى باقة عرضٍ —
-        // يُرصَد في تبويب «تنصيب خارجي» (تجاهُلاً فقط — فهو محفوظٌ عندنا سلفاً)
-        if (isOfferPackage(u.packageName) && p.packageId != null && !isOfferPackage(oursPkgName)) {
-          const fresh = await recordInstall({
-            agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: p.id,
-            netUser: u.username, name: u.name, phone: u.phone, address: u.address,
-            packageName: u.packageName, sasDateTo: validDate,
-          });
-          if (fresh && autoMsg.install) {
-            await sendSyncLogMessage("install", {
-              towerId: officeId, sasId: u.sasId, subscriberId: p.id, phone: u.phone,
-              netUser: u.username, name: u.name, packageName: u.packageName, sasDateTo: validDate,
-            });
-          }
-        }
+        // 🪦 **قاعدةُ «باقة العرض = إعادةُ خدمة» أُلغيت** (قياسٌ حيٌّ 2026-08-21): سوبر سيل
+        // تُسمّي باقاتِها العاديّةَ نفسَها «Offer-50Mbps + (60 Days)» — فكانت القاعدةُ ترمي
+        // **كلَّ مشتركٍ عاديٍّ** في تبويب «تنصيب خارجي» (٨ من ٩ صفوفٍ كانت كاذبةً في قياس
+        // حساب محمد). ولا خسارةَ في إلغائها: إعادةُ الخدمة من الشركة تظهر أصلاً حدثاً في
+        // تبويبَي «تفعيل خارجي/تفعيلات ساس» بمالها وتاريخها — وهو الرصدُ الصحيح.
       }
       // صاحب قرضٍ قائم ⇒ لا تلمسه المزامنة إطلاقاً (لا تاريخ ولا باقة ولا عدّ) حتى يُسدَّد
       // بالتفعيل العاديّ فيُمحى قرضه ويعود طبيعيّاً.
@@ -709,6 +733,16 @@ async function runOfficeSyncInner(
         continue;
       }
       checked++;
+    }
+
+    // ═════ ♻️ التصحيحُ الذاتيُّ للسجلّ (شرط محمد 2026-08-21) ═════
+    // «إذا وجد أنّ شيئاً أُصلح في المزامنة التالية يحدّث نفسه معها ويُبقي ما تبقّى».
+    // يُغلق ما رأيناه هذه الدورةَ ولم يعد مؤهَّلاً: تنصيبٌ استُورد صاحبُه، ومعلوماتٌ تطابقت،
+    // وصفوفٌ ولّدتها قواعدُ أُلغيت (كقاعدة «Offer» الكاذبة). ولا يُغلق ما لم نره.
+    const closedInstalls = await reconcileInstalls(officeId, seenSasIds, stillInstalls);
+    const closedInfo = await reconcileInfo(officeId, seenSasIds, stillDiffering);
+    if (closedInstalls || closedInfo) {
+      console.log(`[sync-log] ♻️ مكتب ${officeId}: أُغلق تلقائيّاً ${closedInstalls} تنصيباً و${closedInfo} تحديثَ معلومات (عولجت)`);
     }
 
     // 📋 الاستيرادُ الجماعيُّ وملءُ الباقات الفارغة **انتقلا إلى سجلّ المزامنة** (2026-08-20):
@@ -1053,6 +1087,13 @@ export async function runFullCardAudit(
     ).map((s) => [s.sasId as number, s]),
   );
 
+  // 🔑 خريطةُ اليوزر (الفيصلُ الذي لا يُخطئ) — تُستعمل قبل خريطة الرقم عند ربط الكارت
+  const subsByUser = new Map(
+    officeSubs
+      .filter((s) => (s.netUser ?? "").trim())
+      .map((s) => [(s.netUser as string).trim().toLowerCase(), s]),
+  );
+
   const res: FullCardsResult = { ...empty };
 
   // ═════ قاعدةُ محمد (2026-08-14): «مستخدَمٌ ثبت بالسيريال لا يُعاد فحصُه ولا يُوسَم أبداً» ═════
@@ -1112,7 +1153,12 @@ export async function runFullCardAudit(
       res.checkedAvailable++;
       if (!hit) continue;
       const when = hit.createdAt ? new Date(hit.createdAt) : new Date();
-      const sub = hit.sasUserId != null ? subsBySasId.get(hit.sasUserId) : null;
+      // 🔑 الربطُ **باليوزر أوّلاً ثمّ بالرقم** (بلاغ محمد 2026-08-21): رقمُ الساس قد يكون
+      // مغلوطاً على صفٍّ (حالة bg-7-4-2@mu) فيُربَط الكارتُ بمشتركٍ خاطئ أو لا يُربَط —
+      // واليوزرُ هو الفيصلُ الذي لا يُخطئ. فإن عرفنا يوزرَ التفعيلة اعتمدناه.
+      const hitUser = (hit.username ?? "").trim().toLowerCase();
+      const sub = (hitUser ? subsByUser.get(hitUser) : null)
+        ?? (hit.sasUserId != null ? subsBySasId.get(hit.sasUserId) : null);
       await prisma.rechargeCard.update({
         where: { id: c.id },
         data: {

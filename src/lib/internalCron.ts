@@ -81,10 +81,23 @@ async function nightlyBlock(todayKey: string): Promise<void> {
     const { runOfficeSyncAll } = await import("./subscriptionSync");
     const offices = await prisma.tower.findMany({ where: { isDeleted: false, syncEnabled: "1" }, select: { id: true }, orderBy: { id: "asc" } });
     let synced = 0, syncFailed = 0;
+    // 🎴 **والجردُ الشاملُ للكروت معها** (بلاغ محمد 2026-08-21): كان `runFullCardAudit`
+    // له مُستدعٍ واحدٌ في البرنامج كلِّه — «المزامنة اليدويّة». فكارتٌ استُهلك في الساس
+    // خارجَ نافذةِ الأمس/اليوم لا يراه أحدٌ حتى يضغط محمد يدويّاً، ويبقى «متاحاً» في
+    // المخزن فيُسحب مرّتَين. الآن يعمل كلَّ ليلةٍ تلقائيّاً بعد مزامنة كلّ مكتب — نافذتُه
+    // ١٢٠ يوماً وكلُّ كروت الوكيل، وفشلُه لا يُسقط الكتلةَ (مكسبٌ لا شرط).
+    const { runFullCardAudit } = await import("./subscriptionSync");
+    let audited = 0, auditMarked = 0;
     for (const o of offices) {
       try { await runOfficeSyncAll(o.id, { notify: false }); synced++; }
       catch (e) { syncFailed++; console.error(`[internal-cron] مزامنةُ المكتب ${o.id} فشلت:`, e instanceof Error ? e.message : e); }
+      try {
+        const ca = await runFullCardAudit(o.id);
+        if (!ca.error) { audited++; auditMarked += ca.markedUsed; }
+        else console.error(`[internal-cron] جردُ كروت المكتب ${o.id}:`, ca.error);
+      } catch (e) { console.error(`[internal-cron] جردُ كروت المكتب ${o.id} سقط:`, e instanceof Error ? e.message : e); }
     }
+    if (audited) console.log(`[internal-cron] 🎴 جردُ الكروت الليليّ: ${audited} مكتباً · عُلّم مستخدماً ${auditMarked}`);
     await finalizeDay(c.rowId, todayKey);
     console.log(`[internal-cron] ✅ الكتلة الليليّة (${todayKey}): دعمٌ أُنهي ${r.supportEnded} · أرشيفٌ نُظّف ${purged} · تنبيهاتُ خطط ${warns.notified} · مزامنة ${synced}/${offices.length}${syncFailed ? ` (فشل ${syncFailed})` : ""}`);
   } catch (e) {
