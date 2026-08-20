@@ -123,7 +123,8 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
   return (
     // ⚠️ لا إغلاقَ بالنقر على الفراغ — بعلامة ✕ حصراً (شرط محمد الثابت)
     <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60">
-      <div className="flex h-[80vh] w-[80vw] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+      {/* 📱 على الهاتف 80% تقصّ التبويبات (بلاغ محمد 2026-08-20) ⇒ شبهُ كاملةٍ هناك، و80% من md فصاعداً */}
+      <div className="flex h-[92vh] w-[96vw] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl md:h-[80vh] md:w-[80vw]">
         {/* الرأس + X */}
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3">
           <h3 className="text-lg font-extrabold text-slate-800">🔄 سجلّ المزامنة</h3>
@@ -132,10 +133,10 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* التبويبات */}
-        <div className="flex gap-1 border-b border-slate-200 px-4 pt-2">
+        <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-2 pt-2 md:px-4">
           {KINDS.map((k) => (
             <button key={k.key} onClick={() => { setTab(k.key); setSel(new Set()); setMsg(""); setPlusFor(null); }}
-              className={`rounded-t-xl px-4 py-2 text-sm font-bold ${tab === k.key ? "border border-b-0 border-slate-200 bg-white text-mynet-blue" : "text-slate-500 hover:text-slate-700"}`}>
+              className={`shrink-0 whitespace-nowrap rounded-t-xl px-2.5 py-2 text-[13px] font-bold md:px-4 md:text-sm ${tab === k.key ? "border border-b-0 border-slate-200 bg-white text-mynet-blue" : "text-slate-500 hover:text-slate-700"}`}>
               {k.icon} {k.label}{counts[k.key] > 0 && <span className={`mr-1.5 rounded-full px-1.5 text-[11px] font-extrabold ${tab === k.key ? "bg-mynet-blue text-white" : "bg-slate-200 text-slate-600"}`}>{counts[k.key]}</span>}
             </button>
           ))}
@@ -145,8 +146,8 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5">
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="بحث: اسم · هاتف · باقة · يوزر · كلمة"
             className="min-w-[220px] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-mynet-blue" />
-          <label className="flex items-center gap-1 text-[12px] text-slate-500">من<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1 text-sm" /></label>
-          <label className="flex items-center gap-1 text-[12px] text-slate-500">إلى<input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1 text-sm" /></label>
+          <label className="flex items-center gap-1 text-[12px] text-slate-500">من<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="max-w-[150px] rounded-lg border border-slate-300 px-2 py-1 text-sm" /></label>
+          <label className="flex items-center gap-1 text-[12px] text-slate-500">إلى<input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="max-w-[150px] rounded-lg border border-slate-300 px-2 py-1 text-sm" /></label>
           {(from || to || q) && <button onClick={() => { setQ(""); setFrom(""); setTo(""); }} className="text-[12px] text-slate-400 hover:text-slate-600">مسح ✕</button>}
           {canEdit && tab === "info" && (
             <>

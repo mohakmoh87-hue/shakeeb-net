@@ -97,7 +97,10 @@ describe("📋 سجلّ المزامنة الموحَّد", () => {
 
   test("🪟 النافذةُ منتصفَ الشاشة 80% ولا تُغلق إلّا بـ✕ — شرطُ محمد الثابت", () => {
     const modal = read("src/components/SyncLogModal.tsx");
-    assert.match(modal, /h-\[80vh\] w-\[80vw\]/, "ليست 80% من الشاشة");
+    // على الحاسوب 80% (شرطُ محمد)، وعلى الهاتف شبهُ كاملةٍ (بلاغُه: 80% تقصّ التبويبات)
+    assert.match(modal, /md:h-\[80vh\] md:w-\[80vw\]/, "ليست 80% من الشاشة على الحاسوب");
+    assert.match(modal, /h-\[92vh\] w-\[96vw\]/, "الهاتفُ بلا مقاسٍ شبهِ كامل — التبويباتُ تُقصّ");
+    assert.match(modal, /overflow-x-auto/, "شريطُ التبويبات لا ينزلق أفقيّاً على الضيّق");
     assert.match(modal, /items-center justify-center/, "ليست منتصفَ الشاشة");
     // الطبقةُ الخلفيّة **بلا onClick** — الإغلاقُ بزرّ ✕ حصراً
     const overlayAt = modal.indexOf('fixed inset-0 z-[130]');
