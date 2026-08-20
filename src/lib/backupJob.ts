@@ -95,40 +95,11 @@ export async function sendOwnerFullBackup(opts?: { skipDedup?: boolean }): Promi
   // مختوماً وما أُرسل شيء، وصمتت بقيّةُ الدورات. الآن يُكتَب الحجزُ `اليوم#pending#وقت`
   // ولا يصير `اليوم` الصريحَ إلّا **بعد** نجاح الإرسال؛ فحجزٌ معلّقٌ جاوز ٣٠ دقيقةً
   // جثّةٌ تُنتزَع منها العهدةُ وتُعاد المحاولة.
-  const PENDING_TTL_MS = 30 * 60 * 1000;
   let claimedRow: { id: number; prev: string | null } | null = null;
   if (!opts?.skipDedup) {
-    const last = await prisma.systemSetting.findFirst({
-      where: { type: "lastOwnerBackupDate" }, select: { id: true, value: true }, orderBy: { id: "asc" },
-    });
-    if (last?.value === todayKey) return { ok: true, error: "أُرسلت اليوم مسبقاً" };
-    if (last?.value?.startsWith(`${todayKey}#pending#`)) {
-      const startedAt = Number(last.value.split("#")[2]);
-      if (Number.isFinite(startedAt) && Date.now() - startedAt < PENDING_TTL_MS) {
-        return { ok: true, error: "محاولةٌ جاريةٌ الآن" };
-      }
-      // عهدةٌ بالية — صاحبُها قُتل؛ تُنتزَع أدناه بالمقارنة-والتبديل نفسِها
-    }
-    if (last) {
-      const won = await prisma.systemSetting.updateMany({
-        where: { id: last.id, value: last.value }, data: { value: `${todayKey}#pending#${Date.now()}` },
-      });
-      if (won.count !== 1) return { ok: true, error: "سبقنا غيرُنا إلى نسخة اليوم" };
-      claimedRow = { id: last.id, prev: last.value };
-    } else {
-      const made = await prisma.systemSetting.create({
-        data: { type: "lastOwnerBackupDate", value: `${todayKey}#pending#${Date.now()}` }, select: { id: true },
-      });
-      // لا فهرسَ فريداً على `type` ⇒ الحسمُ بأصغرِ مُعرِّف، والخاسرُ يحذف صفَّه
-      const all = await prisma.systemSetting.findMany({
-        where: { type: "lastOwnerBackupDate" }, select: { id: true }, orderBy: { id: "asc" },
-      });
-      if (all[0]?.id !== made.id) {
-        await prisma.systemSetting.delete({ where: { id: made.id } }).catch(() => {});
-        return { ok: true, error: "أُرسلت اليوم مسبقاً" };
-      }
-      claimedRow = { id: made.id, prev: null };
-    }
+    const c = await claimOwnerBackupDay(todayKey);
+    if (!c.claimed) return { ok: true, error: c.reason };
+    claimedRow = c.row;
   }
 
   // ═════ 🔴 «باكاب كامل النظام لا يصل ويفشل» (بلاغُ محمد 2026-08-20) ═════
@@ -195,6 +166,60 @@ export async function sendOwnerFullBackup(opts?: { skipDedup?: boolean }): Promi
     await notifyOwnerBackupFailure(to, msg, todayKey);
     return { ok: false, error: msg };
   }
+}
+
+// ═════ حَجزُ يومِ نسخةِ المالك — بعُهدةٍ زمنيّةٍ تَبلى (يشترك فيه مسارُ التنزيل ومسارُ البريد) ═════
+const PENDING_TTL_MS = 30 * 60 * 1000;
+
+export type OwnerBackupClaim =
+  | { claimed: true; row: { id: number; prev: string | null } }
+  | { claimed: false; reason: string };
+
+// يدّعي نسخةَ اليوم ذرّيّاً: `اليوم#pending#وقت` — والعهدةُ الباليةُ (صاحبُها قُتل) تُنتزَع.
+export async function claimOwnerBackupDay(todayKey: string): Promise<OwnerBackupClaim> {
+  const last = await prisma.systemSetting.findFirst({
+    where: { type: "lastOwnerBackupDate" }, select: { id: true, value: true }, orderBy: { id: "asc" },
+  });
+  if (last?.value === todayKey) return { claimed: false, reason: "أُرسلت اليوم مسبقاً" };
+  if (last?.value?.startsWith(`${todayKey}#pending#`)) {
+    const startedAt = Number(last.value.split("#")[2]);
+    if (Number.isFinite(startedAt) && Date.now() - startedAt < PENDING_TTL_MS) {
+      return { claimed: false, reason: "محاولةٌ جاريةٌ الآن" };
+    }
+    // عهدةٌ بالية — تُنتزَع أدناه بالمقارنة-والتبديل نفسِها
+  }
+  if (last) {
+    const won = await prisma.systemSetting.updateMany({
+      where: { id: last.id, value: last.value }, data: { value: `${todayKey}#pending#${Date.now()}` },
+    });
+    if (won.count !== 1) return { claimed: false, reason: "سبقنا غيرُنا إلى نسخة اليوم" };
+    return { claimed: true, row: { id: last.id, prev: last.value } };
+  }
+  const made = await prisma.systemSetting.create({
+    data: { type: "lastOwnerBackupDate", value: `${todayKey}#pending#${Date.now()}` }, select: { id: true },
+  });
+  // لا فهرسَ فريداً على `type` ⇒ الحسمُ بأصغرِ مُعرِّف، والخاسرُ يحذف صفَّه
+  const all = await prisma.systemSetting.findMany({
+    where: { type: "lastOwnerBackupDate" }, select: { id: true }, orderBy: { id: "asc" },
+  });
+  if (all[0]?.id !== made.id) {
+    await prisma.systemSetting.delete({ where: { id: made.id } }).catch(() => {});
+    return { claimed: false, reason: "أُرسلت اليوم مسبقاً" };
+  }
+  return { claimed: true, row: { id: made.id, prev: null } };
+}
+
+// نجاحُ الإرسال (يصل من طلبٍ منفصلٍ — مهمّةُ GitHub تؤكّد بعد قبول البريد):
+// تُستبدَل العهدةُ المعلّقةُ بختم اليوم الصريح. يعيد false إن لم تكن عهدةُ اليوم قائمة.
+export async function finalizeOwnerBackupDay(todayKey: string): Promise<boolean> {
+  const last = await prisma.systemSetting.findFirst({
+    where: { type: "lastOwnerBackupDate" }, select: { id: true, value: true }, orderBy: { id: "asc" },
+  });
+  if (!last?.value?.startsWith(`${todayKey}#pending#`)) return last?.value === todayKey;
+  const won = await prisma.systemSetting.updateMany({
+    where: { id: last.id, value: last.value }, data: { value: todayKey },
+  });
+  return won.count === 1;
 }
 
 // بريدُ إنذارٍ صغيرٌ (بلا مرفق) عند فشل النسخة الكاملة — **مرّةً واحدةً في اليوم** كي لا

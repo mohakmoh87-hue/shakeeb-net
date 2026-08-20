@@ -100,6 +100,15 @@ export type FullBackup = { version: number; full: true; exportedAt: string; tabl
 
 // تصدير النظام بأكمله ككائن + gzip: كل جدول حقيقي بكل صفوفه. ملف واحد يعيد كل شيء تماماً.
 export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: string; tableCount: number; rowCount: number }> {
+  const chunks: Buffer[] = [];
+  const r = await exportFullSystemBackupTo((c) => { chunks.push(c); });
+  return { gz: Buffer.concat(chunks), ...r };
+}
+
+// الصيغة البثّيّة: تدفع المضغوطَ قطعةً قطعةً إلى onChunk فورَ إنتاجها — يستهلكها مسارُ
+// التنزيل (مهمّة GitHub تنزّل وتُرسل بالبريد لأنّ Railway/Hobby يحجب SMTP نهائيّاً)،
+// فتتدفّق البايتات طوالَ التصدير ولا يقطع وسيطُ Railway الردَّ لصمته (~٤٥ ثانية).
+export async function exportFullSystemBackupTo(onChunk: (c: Buffer) => void): Promise<{ filename: string; tableCount: number; rowCount: number }> {
   // ═════ 🔴 «النسخةُ الكاملةُ دائماً تفشل ولا تصل» (بلاغُ محمد 2026-08-19) ═════
   // مهمّةُ GitHub تردّ **502 بعد ~٥١ ثانية** — أي أنّ الخادمَ **سقط أثناء التنفيذ**
   // لا أنّه رفض الطلب. والسببُ أنّ هذه الدالّة كانت تُجسّد القاعدةَ كلَّها في الذاكرة
@@ -119,8 +128,7 @@ export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: 
   let tableCount = 0;
 
   const gzip = createGzip({ level: 6 });
-  const chunks: Buffer[] = [];
-  gzip.on("data", (c: Buffer) => chunks.push(c));
+  gzip.on("data", (c: Buffer) => onChunk(c));
   const finished = new Promise<void>((res, rej) => { gzip.on("end", res); gzip.on("error", rej); });
   // كتابةٌ تحترم ضغطَ المجرى (drain) — وإلّا تراكم غيرُ المضغوط في الذاكرة فعاد العطل
   const put = (str: string): Promise<void> =>
@@ -180,9 +188,8 @@ export async function exportFullSystemBackup(): Promise<{ gz: Buffer; filename: 
   gzip.end();
   await finished;
 
-  const gz = Buffer.concat(chunks);
   const stamp = new Date().toISOString().slice(0, 10);
-  return { gz, filename: `shakeeb-full-${stamp}.json.gz`, tableCount, rowCount };
+  return { filename: `shakeeb-full-${stamp}.json.gz`, tableCount, rowCount };
 }
 
 // فكّ ملف نسخة النظام الكاملة (gzip أو JSON خام) والتحقّق من صحّته

@@ -1,8 +1,8 @@
-# نسخة النظام الكاملة إلى إيميل المالك عند الوقت الذي يحدّده (حساب المالك ← وقت الإرسال).
-# تعمل كل ساعة وتستدعي نقطة محميّة بـCRON_SECRET؛ النقطة نفسها تُرسل فقط حين تطابق ساعة
-# بغداد الساعة المضبوطة (ومرّة واحدة يومياً). مستقلّة تماماً عن حواسيب المكاتب (سحابية).
-# ملاحظة: المهام المجدولة تعمل من الفرع الافتراضي (main) — تُفعَّل عند دمج هذا الملف في main.
-# الأسرار المطلوبة (موجودة): CRON_SECRET + APP_BASE_URL.
+# نسخة النظام الكاملة إلى إيميل المالك — الموقع يُجهّز الملفَّ ويبثّه، وهذه المهمّة تنزّله
+# وتُرسله بالبريد من عامل GitHub ثم تؤكّد. السبب: Railway يحجب SMTP نهائياً على خطة Hobby
+# فالإرسال من الموقع مستحيل، بينما عمّال GitHub مسموح لهم بالبريد (2026-08-20).
+# تعمل كل ساعة؛ الموقع يضمن «مرة واحدة يومياً» بعُهدة حجزٍ تَبلى بعد ٣٠ دقيقة.
+# الأسرار المطلوبة: CRON_SECRET (موجود) + SMTP_USER + SMTP_PASS (نفس قيم Railway).
 name: owner-backup
 
 on:
@@ -22,17 +22,72 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: تشغيل نسخة المالك الكاملة عند وقتها
+      - name: تنزيل النسخة الكاملة وإرسالها بالبريد
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
           APP_BASE_URL: https://shakeebnet.com # كان سرّاً يشير إلى أزور القديمة — ثُبّت هنا بعد النقل إلى Railway (2026-08-20)
           FORCE: ${{ inputs.force && '1' || '0' }}
         run: |
           set -euo pipefail
-          # النقطة تردّ {"started":true} فوراً وتعمل بعد الردّ (علاج 502 مهلة الوسيط 2026-08-20)
-          # فنجاحُ المهمّة هنا يعني «انطلقت» فقط — والفشلُ الحقيقيّ يصل المالكَ ببريد إنذار.
-          qs=""; [ "$FORCE" = "1" ] && qs="?force=1"
-          code=$(curl -s --max-time 60 -o /tmp/resp -w "%{http_code}" -X POST "$APP_BASE_URL/api/cron/owner-backup$qs" \
+          if [ -z "${SMTP_USER:-}" ] || [ -z "${SMTP_PASS:-}" ]; then
+            echo "🔴 أضف السرّين SMTP_USER وSMTP_PASS في Settings → Secrets → Actions (نفس قيمهما في متغيّرات Railway)"
+            exit 1
+          fi
+          qs="download=1"; [ "$FORCE" = "1" ] && qs="$qs&force=1"
+
+          # 1) التنزيل (204 = أُرسلت اليوم مسبقاً — لا عمل)
+          code=$(curl -s --max-time 900 -D /tmp/h -o /tmp/backup.gz -w "%{http_code}" \
+                 -X POST "$APP_BASE_URL/api/cron/owner-backup?$qs" \
                  -H "Authorization: Bearer $CRON_SECRET")
-          echo "الاستجابة: $code $(cat /tmp/resp)"
-          test "$code" = "200"
+          if [ "$code" = "204" ]; then echo "ℹ️ أُرسلت اليوم مسبقاً"; exit 0; fi
+          if [ "$code" != "200" ]; then echo "🔴 فشل التنزيل: $code $(head -c300 /tmp/backup.gz || true)"; exit 1; fi
+
+          # 2) فحص سلامة الملف كاملاً (يرفض المبتور لو قُطع البثّ)
+          gzip -t /tmp/backup.gz
+          FILENAME=$(grep -i '^x-backup-filename:' /tmp/h | tr -d '\r' | awk '{print $2}')
+          TO=$(grep -i '^x-backup-to:' /tmp/h | tr -d '\r' | awk '{print $2}')
+          SIZE=$(du -m /tmp/backup.gz | cut -f1)
+          DATE=$(date -u +%F)
+          echo "✅ نزل الملف: $FILENAME (${SIZE}MB) → $TO"
+
+          # 3) تقسيم تحت حدّ مرفق Gmail (٢٥MB بعد base64 ⇒ ١٥MB خاماً) وإرسال جزءاً جزءاً
+          mkdir -p /tmp/parts && cd /tmp/parts
+          split -b 15m -d -a 1 /tmp/backup.gz part
+          N=$(ls part* | wc -l)
+          JOIN=$(ls part* | sed "s/^/\"$FILENAME./; s/$/\"/" | paste -sd+ -)
+          send_mail() { # $1=subject $2=body-file $3=attach-path $4=attach-name
+            B="=_shk_$RANDOM$RANDOM"
+            SUBJ=$(printf '%s' "$1" | base64 -w0)
+            { printf 'From: %s\nTo: %s\nSubject: =?UTF-8?B?%s?=\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary="%s"\n\n--%s\nContent-Type: text/plain; charset=utf-8\nContent-Transfer-Encoding: 8bit\n\n' "$SMTP_USER" "$TO" "$SUBJ" "$B" "$B"
+              cat "$2"
+              printf '\n--%s\nContent-Type: application/octet-stream; name="%s"\nContent-Disposition: attachment; filename="%s"\nContent-Transfer-Encoding: base64\n\n' "$B" "$4" "$4"
+              base64 "$3"
+              printf '\n--%s--\n' "$B"
+            } > /tmp/mime.txt
+            sed -i 's/$/\r/' /tmp/mime.txt # بروتوكول SMTP يشترط CRLF في نهاية كل سطر
+            curl -s --ssl-reqd --url smtps://smtp.gmail.com:465 \
+                 --mail-from "$SMTP_USER" --mail-rcpt "$TO" \
+                 -u "$SMTP_USER:$SMTP_PASS" -T /tmp/mime.txt --max-time 300
+          }
+          i=0
+          for p in $(ls part*); do
+            i=$((i+1))
+            if [ "$N" = "1" ]; then
+              PN="$FILENAME"; SUBJ="نسخة النظام الكاملة — $DATE"
+              printf 'مرفق ملف نسخة كاملة للنظام بأكمله بتاريخ %s (%sMB).\nيضم كل الوكلاء وحساباتهم وكروتهم وكل تفاصيلهم.\n\nاحتفظ بهذا الملف جيداً. للاستعادة: حساب المالك ← «استعادة نسخة كاملة» وارفع هذا الملف (يستبدل كل البيانات الحالية).\n' "$DATE" "$SIZE" > /tmp/body.txt
+            else
+              PN="$FILENAME.$p"; SUBJ="نسخة النظام الكاملة — الجزء $i من $N — $DATE"
+              printf 'النسخة الكاملة بتاريخ %s (%sMB) أكبر من حدّ المرفق الواحد فقُسّمت %s أجزاء — هذا الجزء %s.\n\nللاستعادة: نزّل الأجزاء كلّها في مجلد واحد ثم اجمعها ملفاً واحداً بأمر واحد في CMD:\ncopy /b %s "%s"\nثم ارفع «%s» الناتج في «استعادة نسخة كاملة».\n' "$DATE" "$SIZE" "$N" "$i" "$JOIN" "$FILENAME" "$FILENAME" > /tmp/body.txt
+            fi
+            send_mail "$SUBJ" /tmp/body.txt "$p" "$PN"
+            echo "📧 أُرسل $PN"
+          done
+
+          # 4) تأكيد الوصول ⇒ يُختَم اليوم في القاعدة
+          ccode=$(curl -s --max-time 60 -o /tmp/confirm -w "%{http_code}" \
+                  -X POST "$APP_BASE_URL/api/cron/owner-backup?confirm=1" \
+                  -H "Authorization: Bearer $CRON_SECRET")
+          echo "التأكيد: $ccode $(cat /tmp/confirm)"
+          test "$ccode" = "200"
