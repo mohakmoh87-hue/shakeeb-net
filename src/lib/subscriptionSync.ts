@@ -286,8 +286,13 @@ async function runOfficeSyncInner(
   // مشتركو هذا المكتب (بالـ sasId) لمعرفة الجدد ومطابقة الكروت
   const officeSubs = await prisma.subscriber.findMany({
     where: { towerId: officeId, ...panelWhere, isDeleted: false },
-    select: { id: true, sasId: true, name: true, netUser: true },
+    select: { id: true, sasId: true, name: true, netUser: true, dateTo: true },
   });
+  // 💰 أصحابُ القروض — تُستثنى أيّامُهم الوهميّةُ من قاعدة «مغطّى» أدناه
+  const loanSubIdsP1 = new Set(
+    (await prisma.loanDebt.findMany({ where: { towerId: officeId, isDeleted: false }, select: { subscriberId: true } }))
+      .map((r) => r.subscriberId),
+  );
   const subBySasId = new Map(officeSubs.filter((s) => s.sasId).map((s) => [s.sasId as number, s]));
   // ═════ 🔴 حرسُ تكرار اليوزر — **للمسار الأوّل أيضاً** (بلاغُ محمد 2026-08-19) ═════
   // للمزامنة **مسارا إنشاء**: هذا (السيناريو ٧ من تفعيلات الأمس) والاستيرادُ الشامل
@@ -298,10 +303,10 @@ async function runOfficeSyncInner(
   // تُفعّله سوبر سيل في الساس فيصل تفعيلٌ بـsasId مختلف ⇒ صفٌّ ثانٍ بـ١٠ أيّام.
   // 🔑 والمطابقةُ باليوزر: **«اليوزرُ هو الفيصلُ الأكبرُ الذي لا يُخطئ»** — فإن وُجد
   //    صفُّه استُعمل هو ولم يُنشأ ثانٍ، فيُسجَّل التفعيلُ على صاحبه الصحيح.
-  const subByUserPhase1 = new Map<string, { id: number; sasId: number | null; name: string | null; netUser: string | null }>();
+  const subByUserPhase1 = new Map<string, { id: number; sasId: number | null; name: string | null; netUser: string | null; dateTo: Date | null }>();
   for (const s of await prisma.subscriber.findMany({
     where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
-    select: { id: true, sasId: true, name: true, netUser: true },
+    select: { id: true, sasId: true, name: true, netUser: true, dateTo: true },
   })) {
     const u = (s.netUser ?? "").trim().toLowerCase();
     if (u && !subByUserPhase1.has(u)) subByUserPhase1.set(u, s);
@@ -429,7 +434,21 @@ async function runOfficeSyncInner(
       // وأصدرتَ وصلَها تبقى معروضةً «خارجيّةً» (قِيس: bg-13-13-7@mu، تفعيلةُ ١٦:١٩ ووصلُها
       // ٢٠:٤٧ من اليوم نفسِه). فالفحصُ صار واحداً للنوعَين: وصلٌ ضمن ±١٢ ساعة ⇒ لا حدث.
       const kind: "sas" | "self" | null = managerMatch ? "sas" : (isCabinetManager(a.managerUsername) ? "self" : null);
-      if (kind) {
+      // 💰 **«مغطّى سلفاً» لا يُطالَب به** (بلاغ محمد 2026-08-21 — bg-59-31-2@shu): قبض
+      // ١٠٠ ألفٍ يوم ١٩ لثلاثة أشهرٍ (تاريخُنا 11-19)، ثمّ طبّق كارتَ الشهر الثاني في
+      // الساس يوم ٢٠ (انتهاءُ الساس 09-19) — فظهر «تفعيلَ ساسٍ بلا وصل» وهو مقبوضٌ سلفاً.
+      // القاعدةُ الصحيحة: إن كان تاريخُنا **يغطّي** انتهاءَ الساس الجديدَ فالأيّامُ مدفوعةٌ
+      // عندنا ⇒ لا حدث. وصاحبُ القرض مستثنى (أيّامُه الثلاثون وهميّةٌ لا مقبوضة).
+      // 🔑 **القاعدةُ الأساس بنصّ محمد** (2026-08-21): «إذا المشتركُ لديه وصلُ تفعيلٍ عندي
+      // فلا يُعتبر خارجيّاً أبداً — لأنّ الأساسَ أنّي أخذتُ مبلغَ الوصل من المشترك».
+      // فالاختبارُ اختباران، ونجاحُ أيّهما يعني «مقبوضٌ عندي»: (١) وصلٌ ضمن ±١٢ ساعة من
+      // التفعيلة، أو (٢) تاريخُنا يغطّي انتهاءَ الساس الجديد (دفعةٌ سابقةٌ لأشهرٍ عدّة).
+      // وهامشُ يومٍ يمنع فوارقَ الساعة (تاريخُنا ١٧:٠٠ وانتهاءُ الساس ١٧:١٤ اليومَ نفسَه).
+      const COVER_TOL_MS = 24 * 3600_000;
+      const coveredAlready = !!(newExp && sub.dateTo && sub.dateTo.getTime() >= newExp.getTime() - COVER_TOL_MS && !loanSubIdsP1.has(sub.id));
+      if (kind && coveredAlready) {
+        await resolveEventIfReceipted(officeId, a.sasUserId, actAt); // يُغلق معلّقاً من دورةٍ سابقة
+      } else if (kind) {
         const receipt = await prisma.subscriptionEntry.findFirst({
           where: {
             subscriberId: sub.id, isDeleted: false,
@@ -1135,6 +1154,8 @@ export async function runFullCardAudit(
 
   // مرشَّحو الوهميّة — تُجمَع ثمّ يُحكَم عليها **بعد** تقييم صلاحيّة الأدلّة (أدناه)
   const candidates: { cardId: number; serial: string; subLabel: string; usedAt: string; subscriberId: number | null; netUser: string | null }[] = [];
+  // 🔎 كروتٌ «متاحةٌ» عندنا ولم تُذكر في قائمة تفعيلات المكتب — تُبحَث بسيريالها فرداً فرداً
+  const availUnmatched: { id: number; serial: string }[] = [];
 
   // 2) المطابقة المحلّية — بلا أي استعلام SAS إضافي
   let i = 0;
@@ -1151,7 +1172,8 @@ export async function runFullCardAudit(
     if (c.useDate == null) {
       // متاح بالبرنامج: هل استُخدم في SAS؟ (وجوده في التفعيلات كافٍ — لا حكم سلبي هنا)
       res.checkedAvailable++;
-      if (!hit) continue;
+      // 🔎 لم تُذكر تفعيلتُه في قائمة المكتب ⇒ يُبحَث عنه **بسيرياله** لاحقاً (أدناه)
+      if (!hit) { availUnmatched.push({ id: c.id, serial }); continue; }
       const when = hit.createdAt ? new Date(hit.createdAt) : new Date();
       // 🔑 الربطُ **باليوزر أوّلاً ثمّ بالرقم** (بلاغ محمد 2026-08-21): رقمُ الساس قد يكون
       // مغلوطاً على صفٍّ (حالة bg-7-4-2@mu) فيُربَط الكارتُ بمشتركٍ خاطئ أو لا يُربَط —
@@ -1202,6 +1224,70 @@ export async function runFullCardAudit(
       usedAt: c.useDate ? new Date(c.useDate).toISOString() : "؟",
       subscriberId: c.subscriberId, netUser: sub.netUser ?? null,
     });
+  }
+
+  // ═════ 🔎 بحثٌ موجَّهٌ بالسيريال للكروت **المتاحة** (بلاغ محمد 2026-08-21) ═════
+  // «كارتٌ مستخدَمٌ في الساس بقي في المتاحة ولم يجده أيُّ شيء» — والسببُ أنّ المطابقةَ
+  // الجماعيّة تعتمد **قائمةَ تفعيلات حساب المكتب**، وهي لا تُظهر ما فُعِّل من حسابٍ فرعيٍّ
+  // أو من تطبيق المشترك (نفسُ سبب إنذارات الوهميّة الكاذبة المقيسة 2026-08-13). فالبحثُ
+  // بالسيريال (search) يغطّي الشجرةَ كاملةً — وكان مقصوراً على المشتبَه بوهميّتها.
+  // 🔒 والكلفةُ محكومة: دفتَرُ `card_sas_checks` يحفظ حكمَ «غيرُ مستخدَم» بختمِ وقتٍ، فلا
+  //    يُعاد بحثُ الكارت نفسِه قبل أسبوع، وسقفُ الجولة ٣٠٠ بحثٍ بأربعة تيّاراتٍ متوازية.
+  if (availUnmatched.length && sessions.length) {
+    const RECHECK_MS = 7 * 86400 * 1000;
+    const MAX_AVAIL_VERIFY = 300;
+    const AV_POOL = 4;
+    const recent = new Map(
+      (await prisma.cardSasCheck.findMany({
+        where: { agentId, verdict: "unused", serial: { in: availUnmatched.map((x) => x.serial) } },
+        select: { serial: true, checkedAt: true },
+      }).catch(() => [])).map((x) => [x.serial, x.checkedAt?.getTime() ?? 0]),
+    );
+    const due = availUnmatched
+      .filter((x) => Date.now() - (recent.get(x.serial) ?? 0) > RECHECK_MS)
+      .slice(0, MAX_AVAIL_VERIFY);
+    let next = 0;
+    const worker = async () => {
+      while (true) {
+        const i = next++;
+        if (i >= due.length) break;
+        const { id, serial } = due[i];
+        let found: SasActivation | null = null;
+        for (const s of sessions) {
+          found = await sasSearchActivation(s.base, s.token, serial);
+          if (found) break;
+        }
+        if (!found) {
+          // ليس مستخدَماً في الساس فعلاً ⇒ يُختَم في الدفتر كي لا يُبحَث كلَّ ليلة
+          await prisma.cardSasCheck.upsert({
+            where: { agentId_serial: { agentId, serial } },
+            create: { agentId, serial, cardId: id, verdict: "unused", checkedAt: new Date() },
+            update: { cardId: id, verdict: "unused", checkedAt: new Date() },
+          }).catch(() => {});
+          continue;
+        }
+        // مستخدَمٌ فعلاً — يُعلَّم ويُربَط **باليوزر أوّلاً** (الرقمُ قد يكذب)
+        const hu = (found.username ?? "").trim().toLowerCase();
+        const owner = (hu ? subsByUser.get(hu) : null) ?? (found.sasUserId != null ? subsBySasId.get(found.sasUserId) : null);
+        const when = found.createdAt ? new Date(found.createdAt) : new Date();
+        await prisma.rechargeCard.update({
+          where: { id },
+          data: {
+            useDate: isNaN(when.getTime()) ? new Date() : when,
+            subscriberId: owner?.id ?? null, userName: "sync",
+            reservedBy: null, reservedAt: null,
+          },
+        }).catch(() => {});
+        res.markedUsed++;
+        res.events.push({
+          scenario: 3, subscriber: owner?.name ?? found.username ?? null, pin: serial,
+          detail: "بحثٌ بالسيريال: الكارت مستخدمٌ في الساس (خارج قائمة المكتب) — حُدّث إلى مستخدم",
+        });
+        await storeProven(id, serial, owner?.id ?? null, owner?.netUser ?? null, found);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(AV_POOL, due.length) }, worker));
+    if (due.length) console.log(`[card-audit] 🔎 مكتب ${officeId}: بُحث بالسيريال عن ${due.length} كارتٍ متاح — عُلّم مستخدماً ${res.markedUsed}`);
   }
 
   // ═════ 🛑 «لا حكمَ بغيابِ دليلٍ لم يثبت أنّه يحضر» (بلاغُ محمد 2026-08-13) ═════
