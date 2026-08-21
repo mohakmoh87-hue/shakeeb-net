@@ -125,7 +125,10 @@ describe("🔁 حالاتُ محمد الخمس", () => {
     const src = SYNC();
     assert.ok(src.includes("async function mergeDuplicateNetUsers("), "لا دمجَ تلقائيّاً للمكرَّرين");
     assert.ok(src.includes("await mergeDuplicateNetUsers(officeId);"), "الدمجُ لا يُنادى");
-    assert.ok(src.includes("if (money.size > 1) continue;"), "🛡️ مجموعةٌ فيها مالٌ بصفَّين قد تُمَسّ");
+    assert.ok(src.includes("if (money.size > 1) { report.skippedMoney++; continue; }"), "🛡️ مجموعةٌ فيها مالٌ بصفَّين قد تُمَسّ");
+    // 🔴 وعطلُ مجموعةٍ واحدةٍ كان يُجهض الحلقةَ كلَّها بصمت (فيبدو أنّ «لا شيء تغيّر»)
+    assert.ok(src.includes("report.errors.push(`${ukey}:"), "عطلُ مجموعةٍ ما زال يُسقط الدمجَ كلَّه بصمت");
+    assert.ok(src.includes("export type MergeReport ="), "الدمجُ بلا تقريرٍ يُقرأ");
     assert.ok(src.includes("const keeper = group.find((g) => money.has(g.id))"), "الباقي ليس صاحبَ المال");
     assert.ok(src.includes("MERGE_DUP_NETUSER"), "الدمجُ بلا أثرِ تدقيق");
   });

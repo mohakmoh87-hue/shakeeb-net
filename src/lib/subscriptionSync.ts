@@ -135,7 +135,9 @@ async function sendOrQueueReport(officeId: number, phone: string, text: string):
 // والقاعدة: **يبقى صاحبُ المال** (وصولاتٌ ⇐ قرضٌ ⇐ باقةٌ ⇐ الأقدم)، ويرث رقمَ الساس الحيَّ
 // (الأكبر) وأبعدَ تاريخِ انتهاءٍ وما ينقصه من باقةٍ/هاتفٍ/عنوان، وتنتقل إليه كروتُ الآخر.
 // 🛡️ ومجموعةٌ فيها **مالٌ في صفَّين** لا تُمَسّ إطلاقاً — تبقى لقرار محمد.
-async function mergeDuplicateNetUsers(officeId: number): Promise<number> {
+export type MergeReport = { groups: number; merged: number; skippedMoney: number; errors: string[] };
+export async function mergeDuplicateNetUsers(officeId: number): Promise<MergeReport> {
+  const report: MergeReport = { groups: 0, merged: 0, skippedMoney: 0, errors: [] };
   try {
     const rows = await prisma.subscriber.findMany({
       where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
@@ -147,9 +149,9 @@ async function mergeDuplicateNetUsers(officeId: number): Promise<number> {
       if (!u || u.includes("#")) continue; // الأرشيفُ الموسومُ (#سابق/#مدموج) خارج المقارنة
       const l = byUser.get(u) ?? []; l.push(r); byUser.set(u, l);
     }
-    let merged = 0;
     for (const [ukey, group] of byUser) {
       if (group.length < 2) continue;
+      report.groups++;
       const ids = group.map((g) => g.id);
       const [entries, loans, cards] = await Promise.all([
         prisma.subscriptionEntry.findMany({ where: { subscriberId: { in: ids }, isDeleted: false }, select: { subscriberId: true } }),
@@ -159,7 +161,7 @@ async function mergeDuplicateNetUsers(officeId: number): Promise<number> {
       const money = new Set<number>();
       for (const e of entries) if (e.subscriberId != null) money.add(e.subscriberId);
       for (const l of loans) money.add(l.subscriberId);
-      if (money.size > 1) continue; // 🛡️ مالٌ في صفَّين ⇒ لا تُمَسّ
+      if (money.size > 1) { report.skippedMoney++; continue; } // 🛡️ مالٌ في صفَّين ⇒ لا تُمَسّ
       const keeper = group.find((g) => money.has(g.id))
         ?? group.find((g) => g.packageId != null)
         ?? group.slice().sort((a, b) => a.id - b.id)[0];
@@ -172,6 +174,7 @@ async function mergeDuplicateNetUsers(officeId: number): Promise<number> {
         return null;
       };
       const stamp = new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10).replace(/-/g, "");
+      try {
       await prisma.$transaction(async (tx) => {
         const moving = cards.filter((c) => c.subscriberId != null && c.subscriberId !== keeper.id).map((c) => c.id);
         if (moving.length) await tx.rechargeCard.updateMany({ where: { id: { in: moving } }, data: { subscriberId: keeper.id } });
@@ -207,15 +210,23 @@ async function mergeDuplicateNetUsers(officeId: number): Promise<number> {
               details: `دمجُ مكرَّرٍ على اليوزر «${ukey}»: #${o.id} ⇐ #${keeper.id} (رقمُ الساس ${bestSas ?? "—"}، مكتب #${officeId})`,
             },
           }).catch(() => {});
-          merged++;
+          report.merged++;
         }
-      });
+      }, { timeout: 20_000 });
+      } catch (e) {
+        // 🔴 عطلُ مجموعةٍ واحدةٍ كان يُجهض الحلقةَ كلَّها بصمت (فيبدو أنّ «لا شيء تغيّر»)
+        report.errors.push(`${ukey}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300));
+      }
     }
-    if (merged) console.log(`[sync] 🔗 مكتب ${officeId}: دُمج ${merged} صفّاً مكرَّراً على اليوزر`);
-    return merged;
+    if (report.merged || report.errors.length) {
+      console.log(`[sync] 🔗 مكتب ${officeId}: مجموعاتٌ ${report.groups} · دُمج ${report.merged} · تُركت لمالٍ مزدوج ${report.skippedMoney} · أعطال ${report.errors.length}`);
+      for (const er of report.errors.slice(0, 5)) console.error("[sync] عطلُ دمج:", er);
+    }
+    return report;
   } catch (e) {
+    report.errors.push(e instanceof Error ? e.message : String(e));
     console.error("[sync] تعذّر دمجُ المكرَّرين:", e instanceof Error ? e.message : e);
-    return 0;
+    return report;
   }
 }
 // قفل تزامن: يمنع تشغيل مزامنتين لنفس المكتب في آن واحد. كان الضغط المتكرّر على
