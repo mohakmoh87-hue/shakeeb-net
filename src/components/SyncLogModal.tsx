@@ -9,7 +9,7 @@ import { formatDate } from "@/lib/format";
 // (اسم · هاتف · باقة · يوزر · كلمة). العرضُ للجميع، والأزرارُ لصاحب صلاحيّة
 // «تحديث سجل المزامنة» وحدَه (canEdit من الخادم — والخادمُ يحرسها حكماً).
 
-type Change = { f: string; label: string; old: string; new: string };
+type Change = { f: string; label: string; old: string; new: string; danger?: boolean };
 type Row = {
   id: number; kind: "info" | "install" | "self" | "sas"; towerId: number; towerName: string;
   subscriberId: number | null; sasId: number | null; netUser: string | null; name: string | null;
@@ -25,6 +25,10 @@ type Row = {
 // 💸 قرضٌ (مبلغ صفر بلا كارت) · 🏢 تفعيلُ شركةٍ/ديلر — يُقرآن من الملاحظة
 const isLoanRow = (r: Row) => (r.note ?? "").startsWith("💸 قرض");
 const isCompanyRow = (r: Row) => (r.note ?? "").startsWith("🏢");
+// ⚠️ صفٌّ خَطِر: يحمل تغييراً تطبيقُه يُتلف بياناتٍ (نقصُ أيّامٍ يتجاوز أسبوعاً — قِيس
+// في حساب محمد نقصٌ يبلغ شهراً). يُبرَز بالأحمر و**يُستثنى من «تحديد الكلّ»** فلا يُطبَّق
+// سهواً في دفعةٍ جماعيّة؛ ويبقى تحديدُه فرديّاً ممكناً لمن أراده عن قصد.
+const isDangerRow = (r: Row) => (r.changes ?? []).some((c) => c.danger);
 const isReplaceRow = (r: Row) => r.kind === "install" && r.subscriberId != null && r.sasId != null && r.oursSasId !== r.sasId;
 
 const KINDS = [
@@ -152,7 +156,9 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
     } catch { setBusy(false); setMsg("تعذّر الاتصال بالخادم"); }
   }
 
-  const allSel = view.length > 0 && view.every((r) => sel.has(r.id));
+  // «تحديد الكلّ» يتجاهل الصفوفَ الخَطِرة صراحةً (بنداً هـ)
+  const bulkable = view.filter((r) => !isDangerRow(r));
+  const allSel = bulkable.length > 0 && bulkable.every((r) => sel.has(r.id));
   const srt: SortCtl = { key: sortKey, asc: sortAsc, by: sortBy };
 
   return (
@@ -234,7 +240,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                 <tr>
                   {tab !== "sas" && canEdit && (
                     <th className="p-2"><input type="checkbox" checked={allSel} title="الكل"
-                      onChange={() => setSel(allSel ? new Set() : new Set(view.map((r) => r.id)))} /></th>
+                      onChange={() => setSel(allSel ? new Set() : new Set(bulkable.map((r) => r.id)))} /></th>
                   )}
                   <Th k="name" s={srt}>الاسم</Th>
                   <Th k="netUser" s={srt}>اليوزر</Th>
@@ -252,7 +258,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
               </thead>
               <tbody>
                 {view.map((r) => (
-                  <tr key={r.id} className="border-t border-slate-100 align-top hover:bg-slate-50/60">
+                  <tr key={r.id} className={`border-t border-slate-100 align-top hover:bg-slate-50/60${isDangerRow(r) ? " bg-rose-50/70" : ""}`}>
                     {tab !== "sas" && canEdit && (
                       <td className="p-2 text-center"><input type="checkbox" checked={sel.has(r.id)}
                         onChange={() => setSel((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
@@ -275,6 +281,13 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                               {c.label}:{" "}
                               <span className="line-through opacity-70" dir="ltr">{c.old}</span>{" "}←{" "}
                               <span dir="ltr">{c.new}</span>
+                            </div>
+                          ) : c.danger ? (
+                            <div key={i} className="my-0.5 rounded-lg border border-rose-400 bg-rose-50 px-2 py-1 text-[12px] font-extrabold leading-6 text-rose-700"
+                              title="نقصُ أيّامٍ كبير — تطبيقُه يقصّ أيّاماً من المشترك. مستثنى من «تحديد الكلّ»">
+                              ⚠️ {c.label}:{" "}
+                              <span className="line-through opacity-70">{c.old}</span>{" "}←{" "}
+                              <span>{c.new}</span>
                             </div>
                           ) : (
                             <div key={i} className="text-[12px] leading-6">

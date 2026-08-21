@@ -366,6 +366,30 @@ export async function sasProbeSerial(base: string, token: string, serial: string
   }
 }
 
+// ═════ 🎯 مسبارُ تفعيلاتِ يوزرٍ بعينه (بلاغ محمد 2026-08-21: bg-53-10-3@shu) ═════
+// المزامنةُ تجلب تفعيلاتِ يومَين فقط (الأمس واليوم) — فمن فُعِّل قبلَهما يظهر عندنا
+// **فرقَ تاريخٍ مجرّداً** في تبويب «تحديث معلومات»، ولا يُعرف أفعّله هو بنفسه أم الشركة
+// أم البرنامج. وبحثُ الساس (search) يطابق اليوزرَ أيضاً — فسؤالٌ موجَّهٌ واحدٌ لكلّ حالةٍ
+// **مشكوكٍ فيها** يكشف المنجرَ والتاريخَ والمبلغَ، فيُصنَّف الصفُّ في تبويبه الصحيح.
+// `ok:false` تعني تعذّر الفحصَ — فيبقى الصفُّ فرقَ تاريخٍ كما كان (لا حكمَ على شكّ).
+export type UserActProbe = { ok: boolean; rows: SasActivation[] };
+export async function sasProbeUserActivations(
+  base: string, token: string, username: string, sasUserId?: number,
+): Promise<UserActProbe> {
+  const q = (username ?? "").trim();
+  if (!q) return { ok: true, rows: [] };
+  const uk = q.toLowerCase();
+  try {
+    const j = await fetchAnyPage(base, token, "index/activations", 1, 100, { search: q });
+    const raw: Record<string, unknown>[] = j?.data ?? [];
+    const rows = raw.map(normalizeActivation).filter((a) =>
+      (a.username ?? "").trim().toLowerCase() === uk || (sasUserId != null && a.sasUserId === sasUserId));
+    rows.sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
+    return { ok: true, rows };
+  } catch {
+    return { ok: false, rows: [] };
+  }
+}
 export async function sasSearchActivation(
   base: string, token: string, serial: string,
 ): Promise<SasActivation | null> {

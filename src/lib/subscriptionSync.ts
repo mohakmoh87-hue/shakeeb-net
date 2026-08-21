@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
   sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers, sasSearchActivation,
-  sasProbeSerial,
+  sasProbeSerial, sasProbeUserActivations,
   sasFetchActivationsSince,
   type SasActivation,
 } from "@/lib/sas4";
@@ -13,6 +13,17 @@ import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCred
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
 import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, isOwnCabinet, type InfoChange } from "@/lib/syncLog";
 import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
+
+// ═════ ✍️ اسمٌ عندنا يحمل ملاحظةً فوق اسم الساس (مراجعةُ محمد 2026-08-21) ═════
+// ٢٩ صفّاً في حسابه كان اسمُنا فيها اسمَ الساس **زائداً ملاحظةً تشغيليّة** («… تحويل
+// لا تفعل»)، فيُرصَد فرقٌ تطبيقُه **يمحو ملاحظتَه**. فما دام اسمُنا يحتوي اسمَ الساس
+// كاملاً فهو الأغنى ولم يأتِ الساسُ بجديدٍ ⇒ لا فرق.
+const nameKey = (x: string | null | undefined) =>
+  String(x ?? "").replace(/[\s.,\-_()·،]+/g, " ").trim().toLowerCase();
+function nameCoversSas(ours: string | null | undefined, sas: string | null | undefined): boolean {
+  const o = nameKey(ours), sn = nameKey(sas);
+  return !!o && !!sn && o.includes(sn);
+}
 
 // ============================================================================
 // المزامنة اليومية مع SAS — نسخة مطوّرة على مرحلتين متتاليتين لكل مكتب:
@@ -273,6 +284,10 @@ async function runOfficeSyncInner(
   const seenSasIds = new Set<number>();
   const stillInstalls = new Set<number>();
   const stillDiffering = new Set<number>();
+  // 🎯 سقفُ المسبار الموجَّه (د): سؤالٌ واحدٌ للساس لكلّ «قفزةِ تاريخٍ» مشكوكٍ فيها.
+  // بسقفٍ يحمي المزامنةَ من دورةٍ أولى ضخمةٍ (مكتبٌ جديدٌ بآلاف الفروق).
+  let dateProbes = 0;
+  const MAX_DATE_PROBES = 120;
   // 🗓️ مَن له تفعيلةُ ساسٍ في النافذة (أمس+اليوم) — يُمنَع عنه «فرقُ الأيّام» في تبويب
   // المعلومات لأنّ تبويبَ تفعيلِه هو بيتُه الصحيح (منعُ الازدواج — مراجعة 2026-08-21)
   const actedSasIds = new Set<number>();
@@ -646,6 +661,55 @@ async function runOfficeSyncInner(
     });
     const pkgNameById = new Map(pkgRows.map((x) => [x.id, x.name ?? `#${x.id}`]));
 
+    // ═════ 🎯 (د) قفزةُ تاريخٍ بلا تفعيلةٍ في النافذة ⇒ سؤالٌ موجَّهٌ للساس ═════
+    // بلاغُ محمد 2026-08-21 (bg-53-10-3@shu «فعّل لنفسه فلماذا يظهر تمديدَ أيّام؟»):
+    // المزامنةُ تجلب تفعيلاتِ يومَين (الأمس واليوم) — فمن فُعِّل قبلَهما لا حدثَ له،
+    // ويظهر **فرقَ تاريخٍ مجرّداً** في «تحديث معلومات»: بلا منجرٍ ولا مبلغٍ ولا تصنيف.
+    // فبدل الظنّ نسأل الساسَ عن هذا اليوزر وحدَه، ونُصنّف بالمنجر كما يُصنَّف أيُّ حدث:
+    //   صفحةُ المكتب ⇒ ساس · كابينةُ صاحبِه ⇒ ذاتيّ · غيرُهما ⇒ تنصيبُ شركة/ديلر.
+    // 💰 وقاعدةُ محمد فوق ذلك كلِّه: **وصلٌ عندي ⇒ ليس خارجيّاً** — فيبقى فرقَ تاريخٍ
+    //    يُطبَّق يدويّاً (المالُ مقبوضٌ، والناقصُ تاريخُنا وحدَه).
+    // ونعودُ false عند أيّ شكّ (تعذّرُ الفحص · لا تفعيلةَ مطابقة) فيبقى الصفُّ كما كان.
+    const classifyDateJump = async (
+      sub: { id: number; netUser: string | null; name: string | null; dateTo: Date | null },
+      sasId: number, username: string | null, nday: string,
+    ): Promise<boolean> => {
+      const probe = await sasProbeUserActivations(base, token, username ?? sub.netUser ?? "", sasId);
+      if (!probe.ok || !probe.rows.length) return false;
+      // التفعيلةُ التي أنتجت تاريخَنا الجديد: انتهاؤها الجديدُ بيومِ التاريخ الجديد نفسِه
+      const hit = probe.rows.find((r) => String(r.newExpiration ?? "").slice(0, 10) === nday);
+      if (!hit) return false;
+      const actAt = hit.createdAt ? new Date(hit.createdAt) : null;
+      if (!actAt || isNaN(actAt.getTime())) return false;
+      const receipt = await prisma.subscriptionEntry.findFirst({
+        where: {
+          subscriberId: sub.id, isDeleted: false,
+          date: { gte: new Date(actAt.getTime() - 12 * 3600_000), lte: new Date(actAt.getTime() + 12 * 3600_000) },
+        },
+        select: { id: true },
+      });
+      if (receipt) return false; // 💰 مقبوضٌ عندي ⇒ ليس خارجيّاً — يبقى فرقَ تاريخٍ يدويّاً
+      const mgr = (hit.managerUsername ?? "").trim();
+      const managerIsPage = mgr.toLowerCase() === officeUser;
+      const ownCabinet = isOwnCabinet(hit.username ?? sub.netUser, mgr);
+      const newExp = hit.newExpiration ? new Date(hit.newExpiration) : null;
+      const evBase = {
+        agentId: office.agentId ?? -1, towerId: officeId, sasId, subscriberId: sub.id,
+        netUser: hit.username ?? sub.netUser, name: hit.name ?? sub.name,
+        amount: Math.round(hit.price || 0), activatedAt: actAt,
+        sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
+      };
+      const isLoanAct = Math.round(hit.price || 0) <= 0 && !(hit.pin ?? "").trim();
+      if (managerIsPage || ownCabinet) {
+        await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
+      } else {
+        stillInstalls.add(sasId);
+        await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });
+      }
+      actedSasIds.add(sasId);
+      return true;
+    };
+
     // (toImport وpkgFixQueue أُزيلتا — الرصدُ في سجلّ المزامنة والتطبيقُ يدويّ. 2026-08-20)
 
     // ♻️ (seenSasIds/stillInstalls/stillDiffering مرفوعةٌ لنطاق الدالّة أعلاه)
@@ -718,11 +782,17 @@ async function runOfficeSyncInner(
           diffs.push({ f: "netUser", label: "🔴 اليوزر تغيّر في الساس", old: sv(p.netUser) || "—", new: sv(u.username) });
         }
         if (sv(u.phone) && sv(u.phone) !== sv(p.phone)) diffs.push({ f: "phone", label: "الهاتف", old: sv(p.phone) || "—", new: sv(u.phone) });
-        if (sv(u.name) && sv(u.name) !== sv(p.name)) diffs.push({ f: "name", label: "الاسم", old: sv(p.name) || "—", new: sv(u.name) });
+        if (sv(u.name) && sv(u.name) !== sv(p.name) && !nameCoversSas(p.name, u.name)) {
+          diffs.push({ f: "name", label: "الاسم", old: sv(p.name) || "—", new: sv(u.name) });
+        }
         if (sv(u.address) && sv(u.address) !== sv(p.address)) diffs.push({ f: "address", label: "العنوان", old: sv(p.address) || "—", new: sv(u.address) });
         const sasPkgIdForDiff = matcher.match(u.packageName);
         const oursPkgName = p.packageId != null ? (pkgNameById.get(p.packageId) ?? `#${p.packageId}`) : "—";
-        if (sv(u.packageName) && sasPkgIdForDiff !== p.packageId) {
+        // 📦 (ب) **لا يُرصَد فرقُ باقةٍ لا يعرف البرنامجُ مقابلَها** (`match` تعود null):
+        // الرصدُ كان يُنتج صفّاً **لا يمكن تطبيقُه أبداً** (البرنامجُ لا يُنشئ باقةً — قاعدةٌ
+        // قديمة)، فيُتجاهل فيُعاد إنشاؤه في المزامنة التالية… دورةٌ لا تنتهي. وباقةٌ
+        // مجهولةٌ تظهر أصلاً في عدّاد `skippedPkg` بتقرير المزامنة — بيتُها الصحيح.
+        if (sv(u.packageName) && sasPkgIdForDiff != null && sasPkgIdForDiff !== p.packageId) {
           diffs.push({ f: "package", label: "الباقة", old: oursPkgName, new: sv(u.packageName) });
         }
         // 📅 فرقُ الأيّام لمعلوم الباقة (قرار محمد 2026-08-21 المصحَّح): زيادةً **ونقصاً**
@@ -733,11 +803,27 @@ async function runOfficeSyncInner(
           const oday = p.dateTo ? p.dateTo.toISOString().slice(0, 10) : "";
           const nday = validDate.toISOString().slice(0, 10);
           if (oday !== nday) {
-            diffs.push({
-              f: "dateTo",
-              label: !p.dateTo || validDate > p.dateTo ? "تاريخ الانتهاء (زيادة أيّام)" : "تاريخ الانتهاء (نقص أيّام)",
-              old: oday || "—", new: nday,
-            });
+            const grew = !p.dateTo || validDate > p.dateTo;
+            // 🎯 (د) الزيادةُ لها سببٌ دائماً — تفعيلةٌ وقعت خارج نافذة اليومَين. نسألُ
+            //    الساسَ عنها فتُصنَّف في تبويبها الصحيح بدل «تمديدِ أيّامٍ» مجهولِ المصدر.
+            //    (النقصُ لا يُسأل عنه: لا تفعيلةَ تُنقص تاريخاً — تصحيحٌ يدويٌّ من الشركة.)
+            let classified = false;
+            if (grew && dateProbes < MAX_DATE_PROBES) {
+              dateProbes++;
+              classified = await classifyDateJump(p, u.sasId, u.username, nday);
+            }
+            if (!classified) {
+              // ⚠️ (هـ) نقصٌ يتجاوز أسبوعاً: تطبيقُه **يقصّ أيّاماً مدفوعةً** من مشترك،
+              //    فيُوسَم خطراً — تُبرزه الواجهةُ بالأحمر وتستثنيه من «تحديد الكلّ».
+              const lostDays = grew || !p.dateTo ? 0
+                : Math.round((p.dateTo.getTime() - validDate.getTime()) / 86400000);
+              diffs.push({
+                f: "dateTo",
+                label: grew ? "تاريخ الانتهاء (زيادة أيّام)" : `تاريخ الانتهاء (نقص أيّام: ${lostDays})`,
+                old: oday || "—", new: nday,
+                ...(lostDays > 7 ? { danger: true } : {}),
+              });
+            }
           }
         }
         if (diffs.length) stillDiffering.add(u.sasId); // ما زال فرقٌ قائم ⇒ يبقى في التبويب

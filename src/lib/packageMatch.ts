@@ -47,6 +47,25 @@ export function pkgWordKey(raw: string | null | undefined): string {
   return pkgTokens(raw).sort().join(" ");
 }
 
+// ═════ 🚀 مفتاحُ السرعة — «Offer-50Mbps + (60 Days)» = «Hero 50Mbps +» (بلاغ محمد 2026-08-21) ═════
+// قِيس على حسابه: **٩٩ من ١٢٥** صفَّ «فرق باقة» كانت الباقةَ نفسَها بأسماءٍ مختلفة —
+// سوبر سيل تسمّيها «Offer-…(60 Days)» وهو يسمّيها «Hero-…». والمُطابِقُ القديم يقارن
+// الكلماتِ كلَّها فيفشل، فيُسجَّل فرقٌ **لا يمكن تطبيقُه** (لا باقةَ مقابلة) ⇒ يتكرّر أبداً.
+// 🔑 والدلالةُ الحقيقيّةُ في الاسم شيئان لا ثالثَ لهما: **الرقمُ (السرعة) وعلامةُ +**.
+//   فما عداهما (اسمُ العلامة · كلمةُ mbps · «(60 Days)» · الشرطات) زخرفةٌ لا تُغيّر الباقة.
+// ⚠️ وحارسُ الأمان نفسُه يبقى: مفتاحٌ يقع عليه أكثرُ من باقةٍ يُسقَط ولا يُطابَق أبداً.
+const DAYS_SUFFIX = /\(?\s*\d+\s*(days?|يوم|ايام)\s*\)?/gi;
+export function pkgSpeedKey(raw: string | null | undefined): string | null {
+  const cleaned = String(raw ?? "").replace(DAYS_SUFFIX, " ");
+  const plus = /\+/.test(cleaned);
+  const n = normalizePkgName(cleaned);
+  if (!n) return null;
+  // أوّلُ رقمٍ يتبعه mbps/mb/m (أو رقمٌ وحيدٌ في الاسم) هو السرعة
+  const m = /(\d+)\s*(mbps|mb|m)\b/.exec(n) ?? /^\D*(\d+)\D*$/.exec(n);
+  if (!m) return null;
+  return `${m[1]}${plus ? "+" : ""}`;
+}
+
 export type PkgRow = { id: number; name: string | null; priceDinar?: number | null };
 
 // فهرس مطابقة لباقات وكيل واحد. **قاعدة الأمان**: أي مفتاح يقع عليه أكثر من باقة
@@ -55,16 +74,20 @@ export type PkgRow = { id: number; name: string | null; priceDinar?: number | nu
 export class PackageMatcher {
   private seq = new Map<string, number>();  // مطابقة بالترتيب (بعد توحيد الفراغات والالتصاق)
   private word = new Map<string, number>(); // مطابقة بلا حساسية للترتيب
+  private speed = new Map<string, number>(); // 🚀 مطابقةٌ بالسرعة وعلامة + (تتجاهل العلامة التجاريّة)
   private ambiguous = new Set<string>();
 
   constructor(packages: PkgRow[]) {
     const seqCount = new Map<string, number>();
     const wordCount = new Map<string, number>();
+    const speedCount = new Map<string, number>();
     for (const p of packages) {
       const s = pkgSeqKey(p.name);
       const w = pkgWordKey(p.name);
       if (s) seqCount.set(s, (seqCount.get(s) ?? 0) + 1);
       if (w) wordCount.set(w, (wordCount.get(w) ?? 0) + 1);
+      const sp = pkgSpeedKey(p.name);
+      if (sp) speedCount.set(sp, (speedCount.get(sp) ?? 0) + 1);
     }
     for (const p of packages) {
       const s = pkgSeqKey(p.name);
@@ -73,6 +96,9 @@ export class PackageMatcher {
       else if (s) this.ambiguous.add(s);
       if (w && (wordCount.get(w) ?? 0) === 1) this.word.set(w, p.id);
       else if (w) this.ambiguous.add(w);
+      const sp = pkgSpeedKey(p.name);
+      // سرعةٌ تحملها باقتان (٥٠ و٥٠+ مثلاً) لا تُطابَق بالسرعة — الالتباسُ يُسقِط لا يُخمِّن
+      if (sp && (speedCount.get(sp) ?? 0) === 1) this.speed.set(sp, p.id);
     }
   }
 
@@ -84,8 +110,13 @@ export class PackageMatcher {
     const direct = this.seq.get(s);
     if (direct != null) return direct;
     const w = pkgWordKey(sasName);
-    if (!w || this.ambiguous.has(w)) return null;
-    return this.word.get(w) ?? null;
+    if (w && !this.ambiguous.has(w)) {
+      const byWord = this.word.get(w);
+      if (byWord != null) return byWord;
+    }
+    // 🚀 المستوى الثالث: السرعةُ وعلامةُ + (Offer-50Mbps + (60 Days) ⇒ Hero 50Mbps +)
+    const sp = pkgSpeedKey(sasName);
+    return sp ? (this.speed.get(sp) ?? null) : null;
   }
 
   // هل اسم فئة SAS معروف لدينا؟ (تُستعمل لقرار «لا تمسّ المشترك ذا الفئة المجهولة»)

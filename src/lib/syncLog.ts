@@ -13,7 +13,8 @@ import { prisma } from "./prisma";
 // محمد الـSQL) صمتٌ تامّ فالميزةُ خامدةٌ حتى التهيئة.
 
 // 🔴 netUser أخطرُها (تغيّرُ اليوزر في الساس — بلاغ محمد 2026-08-21) ويُعرَض بالأحمر
-export type InfoChange = { f: "phone" | "name" | "address" | "package" | "dateTo" | "netUser"; label: string; old: string; new: string };
+// danger: تغييرٌ تطبيقُه يُتلف بياناتٍ (نقصُ أيّامٍ يتجاوز أسبوعاً) — الواجهةُ تُبرزه وتستثنيه من «تحديد الكلّ»
+export type InfoChange = { f: "phone" | "name" | "address" | "package" | "dateTo" | "netUser"; label: string; old: string; new: string; danger?: boolean };
 
 const tableMissing = (e: unknown) =>
   typeof e === "object" && e != null && "code" in e && (e as { code?: string }).code === "P2021";
