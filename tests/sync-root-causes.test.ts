@@ -138,3 +138,13 @@ describe("🔁 حالاتُ محمد الخمس", () => {
     assert.ok(src.includes('action: "PHANTOM_CARD_LINK", entity: "rechargeCard"'), "الوسمُ الكاذبُ يبقى في لوحة المدير");
   });
 });
+
+// 🔴 الفهرسُ الفريدُ (towerId, sasId) — سببُ سقوط ٢٥ مجموعةً من ٢٦ في أوّل تشغيلٍ حيّ
+test("الدمجُ يُفرّغ المكرَّرَ من رقم الساس **قبل** أن يرثه الباقي", () => {
+  const src = fs.readFileSync(path.join(process.cwd(), "src/lib/subscriptionSync.ts"), "utf8");
+  const tx = src.slice(src.indexOf("await prisma.$transaction(async (tx) => {"), src.indexOf("}, { timeout: 20_000 });"));
+  const iOthers = tx.indexOf("for (const o of others) {");
+  const iKeeper = tx.indexOf("where: { id: keeper.id },");
+  assert.ok(iOthers > -1 && iKeeper > -1, "بنيةُ المعاملة تغيّرت");
+  assert.ok(iOthers < iKeeper, "الباقي يرث الرقمَ قبل تفريغ المكرَّر ⇒ ارتطامٌ بالفهرس الفريد");
+});

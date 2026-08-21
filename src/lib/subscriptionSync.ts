@@ -178,18 +178,10 @@ export async function mergeDuplicateNetUsers(officeId: number): Promise<MergeRep
       await prisma.$transaction(async (tx) => {
         const moving = cards.filter((c) => c.subscriberId != null && c.subscriberId !== keeper.id).map((c) => c.id);
         if (moving.length) await tx.rechargeCard.updateMany({ where: { id: { in: moving } }, data: { subscriberId: keeper.id } });
-        await tx.subscriber.update({
-          where: { id: keeper.id },
-          data: {
-            sasId: bestSas ?? keeper.sasId,
-            ...(bestDate && (!keeper.dateTo || bestDate > keeper.dateTo) ? { dateTo: bestDate } : {}),
-            ...(keeper.packageId == null ? { packageId: fill((g) => g.packageId) } : {}),
-            ...(!(keeper.phone ?? "").trim() ? { phone: fill((g) => g.phone) } : {}),
-            ...(!(keeper.address ?? "").trim() ? { address: fill((g) => g.address) } : {}),
-            note: `${keeper.note ? `${keeper.note}
-` : ""}[دمج ${stamp}] ورث رقمَ الساس ${bestSas ?? "—"} من صفٍّ مكرَّرٍ لليوزر نفسِه`,
-          },
-        });
+        // 🔴 **الترتيبُ شرطُ نجاحٍ لا تفصيل** (قِيس على الإنتاج 2026-08-21): على المشتركين
+        //    فهرسٌ فريدٌ (towerId, sasId). فتحديثُ الباقي إلى الرقم الحيِّ **قبل** تفريغه من
+        //    الصفّ المكرَّر يرتطم بالفهرس ⇒ سقطت ٢٥ مجموعةً من ٢٦ صامتةً. فيُفرَّغ المكرَّرُ
+        //    أوّلاً (isDeleted + sasId=null + وسمُ اليوزر) ثمّ يرث الباقي.
         for (const o of others) {
           await tx.subscriber.update({
             where: { id: o.id },
@@ -212,6 +204,18 @@ export async function mergeDuplicateNetUsers(officeId: number): Promise<MergeRep
           }).catch(() => {});
           report.merged++;
         }
+        await tx.subscriber.update({
+          where: { id: keeper.id },
+          data: {
+            sasId: bestSas ?? keeper.sasId,
+            ...(bestDate && (!keeper.dateTo || bestDate > keeper.dateTo) ? { dateTo: bestDate } : {}),
+            ...(keeper.packageId == null ? { packageId: fill((g) => g.packageId) } : {}),
+            ...(!(keeper.phone ?? "").trim() ? { phone: fill((g) => g.phone) } : {}),
+            ...(!(keeper.address ?? "").trim() ? { address: fill((g) => g.address) } : {}),
+            note: `${keeper.note ? `${keeper.note}
+` : ""}[دمج ${stamp}] ورث رقمَ الساس ${bestSas ?? "—"} من صفٍّ مكرَّرٍ لليوزر نفسِه`,
+          },
+        });
       }, { timeout: 20_000 });
       } catch (e) {
         // 🔴 عطلُ مجموعةٍ واحدةٍ كان يُجهض الحلقةَ كلَّها بصمت (فيبدو أنّ «لا شيء تغيّر»)
