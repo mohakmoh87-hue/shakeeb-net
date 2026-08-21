@@ -379,8 +379,8 @@ export default function CardsPage() {
 
       {/* تصحيح سعر مجموعة كروت (للمدير) — لتصحيح سعرٍ أُدخِل خطأً قبل الإضافة */}
       {fixTarget && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setFixTarget(null)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-4" onClick={() => setFixTarget(null)}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="mb-1 text-lg font-bold text-slate-800">تصحيح سعر الكارت</h3>
             <p className="mb-3 text-sm text-slate-500">{fixTarget.count} كارت بسعر {fmt(fixTarget.oldPrice)} د.ع — سيُصحَّح سعرها (يؤثّر في ديون الكارتات).</p>
             <label className="mb-1 block text-sm font-medium text-slate-700">السعر الصحيح لكل كارت</label>

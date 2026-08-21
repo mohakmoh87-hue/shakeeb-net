@@ -186,7 +186,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
     // ⚠️ لا إغلاقَ بالنقر على الفراغ — بعلامة ✕ حصراً (شرط محمد الثابت)
     <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60">
       {/* 📱 على الهاتف 80% تقصّ التبويبات (بلاغ محمد 2026-08-20) ⇒ شبهُ كاملةٍ هناك، و80% من md فصاعداً */}
-      <div className="flex h-[92vh] w-[96vw] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl md:h-[80vh] md:w-[80vw]">
+      <div className="flex h-[92dvh] w-[96vw] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl md:h-[80vh] md:w-[80vw]">
         {/* الرأس + X */}
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3">
           <h3 className="text-lg font-extrabold text-slate-800">🔄 سجلّ المزامنة</h3>

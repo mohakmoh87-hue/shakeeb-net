@@ -1178,8 +1178,8 @@ export default function SubscribersBoard() {
         const at = new Date(info.at).toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
         const until = info.dateTo ? new Date(info.dateTo).toLocaleDateString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", year: "numeric" }) : null;
         return (
-          <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 p-4" onClick={() => setRecentAct(null)}>
-            <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[140] flex items-start justify-center overflow-y-auto bg-black/50 p-4" onClick={() => setRecentAct(null)}>
+            <div className="my-auto max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="mb-2 text-center text-4xl">⚠️</div>
               <div className="mb-1 text-center text-lg font-extrabold text-amber-700">
                 هذا المشترك تم تفعيله {when}
@@ -1210,8 +1210,8 @@ export default function SubscribersBoard() {
 
       {/* نافذة تأكيد قرض فزعة — تعرض الاسم واليوزر صراحةً (يراهما المدير قبل المنح) */}
       {loanSub && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/50 p-4" onClick={() => !loanBusy && setLoanSub(null)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[140] flex items-start justify-center overflow-y-auto bg-black/50 p-4" onClick={() => !loanBusy && setLoanSub(null)}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 text-center text-4xl">💳</div>
             <div className="mb-3 text-center text-lg font-extrabold text-amber-700">منح قرض فزعة؟</div>
             <div className="mb-3 space-y-1 rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900">

@@ -188,3 +188,29 @@ describe("📅 تحديثُ الأيّام من صفّ التفعيل", () => {
     assert.ok(ig.includes('status: "ignored", snapshot: fingerprint(r)'), "التجاهلُ بلا بصمةٍ تُعيده عند تغيّر البيانات");
   });
 });
+
+// ═════ 📐 لا نافذةَ تُقصّ من أعلى وأسفل (بلاغُ محمد 2026-08-21 عن نافذة أودو) ═════
+// نافذةٌ متمركزةٌ رأسيّاً (`items-center`) داخل غطاءٍ `fixed` وصندوقُها بلا سقفِ ارتفاع:
+// حين يطول المحتوى تخرج من الطرفَين، و**الجزءُ العلويُّ لا يُدرَك بالتمرير أبداً** (سلوكُ
+// التمركز المرن). والعلاج: الغطاءُ يمرّر (`overflow-y-auto` + `items-start` + `my-auto`)
+// أو الصندوقُ بسقفٍ وتمريرٍ داخليّ. و**dvh لا vh**: شريطُ متصفّح الهاتف المتحرّك يجعل
+// vh أطولَ من المرئيّ فيُقصّ الأسفلُ في التطبيق.
+test("📐 كلُّ نافذةٍ متمركزةٍ محدودةُ الارتفاع أو غطاؤها يمرّر", () => {
+  const walk = (dir: string): string[] =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = path.join(dir, e.name);
+      return e.isDirectory() ? walk(full) : full.endsWith(".tsx") ? [full] : [];
+    });
+  const offenders: string[] = [];
+  for (const f of walk(path.join(process.cwd(), "src"))) {
+    const lines = fs.readFileSync(f, "utf8").split("\n");
+    lines.forEach((l, i) => {
+      if (!/fixed inset-0/.test(l) || !/items-center|place-items-center/.test(l)) return;
+      if (/overflow-y-auto/.test(l)) return;
+      const box = lines.slice(i + 1, i + 6).join(" ");
+      if (/max-h-|h-\[\d+d?vh\]|logo-sheet|inset-|absolute/.test(box)) return;
+      offenders.push(`${path.relative(process.cwd(), f)}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(offenders, [], `نوافذُ قد تُقصّ من أعلى وأسفل: ${offenders.join(" · ")}`);
+});

@@ -813,8 +813,8 @@ export default function ManagerAccountsPage() {
           خمسة ولا يظهر منها إلا اثنان، فتُطرح تسديدات الكارتات والرواتب وتُضاف
           مقبوضات الإدارة بصمت ولا سبيل لمعرفة لماذا تغيّر الرقم. */}
       {showTotal && data && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowTotal(false)}>
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4" onClick={() => setShowTotal(false)}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-200 bg-emerald-50 px-4 py-3">
               <div>
                 <h3 className="text-lg font-bold text-emerald-800">💰 من أين جاء «المبلغ الكلي الموجود»</h3>

@@ -79,8 +79,8 @@ export default function MapButton({
         🗺️ {loading ? "…" : "خريطة"}
       </button>
       {err && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/40 p-4" onClick={() => { setErr(""); setSent(""); }}>
-          <div className="w-full max-w-xs rounded-2xl bg-white p-5 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto bg-black/40 p-4" onClick={() => { setErr(""); setSent(""); }}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-xs overflow-y-auto rounded-2xl bg-white p-5 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 text-3xl">📍</div>
             <div className="mb-3 text-sm font-semibold text-slate-700">{err}</div>
             {/* عمودٌ ليس على الخريطة: أنت واقفٌ عنده الآن — أرسِله */}

@@ -90,8 +90,8 @@ export default function OdooConfigButton({ officeId, officeName, panelId = null,
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => !busy && setOpen(false)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 text-slate-800 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-4" onClick={() => !busy && setOpen(false)}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 text-slate-800 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 text-center text-lg font-extrabold">🔗 ربط أودو — {officeName}</div>
             <label className="mb-2 flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 p-2.5">
               <input type="checkbox" checked={enabledForm} onChange={(e) => setEnabledForm(e.target.checked)} className="h-4 w-4 accent-emerald-600" />

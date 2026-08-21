@@ -86,7 +86,7 @@ export default function OfficeChat({ officeId, officeName, state, onClose }: { o
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
-      <div className="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="flex h-[90dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* ترويسة */}
         <div className="flex items-center justify-between bg-emerald-600 px-4 py-2 text-white">
           <h3 className="font-bold">💬 واتساب — {officeName}</h3>

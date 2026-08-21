@@ -203,8 +203,8 @@ export default function TechOpsBar({ techName }: { techName: string }) {
 
       {/* دخول متأخّر: سؤال الفني هل نسي البصمة في وقتها؟ */}
       {excusePrompt && (
-        <div className="fixed inset-0 z-[86] flex items-center justify-center bg-black/60 p-5" onClick={() => !excuseBusy && setExcusePrompt(false)}>
-          <div className="w-full max-w-xs rounded-3xl bg-white p-6 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[86] flex items-start justify-center overflow-y-auto bg-black/60 p-5" onClick={() => !excuseBusy && setExcusePrompt(false)}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-xs overflow-y-auto rounded-3xl bg-white p-6 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-1 text-3xl">⏰</div>
             <div className="mb-1 text-base font-extrabold text-slate-800">سجّلت دخولاً متأخّراً</div>
             <p className="mb-5 text-xs leading-relaxed text-slate-500">هل نسيت البصمة في وقتها؟ يمكنك إرسال طلب للمدير لإعفائك من خصم التأخير — يبقى معلّقاً حتى قراره.</p>
@@ -233,8 +233,8 @@ export default function TechOpsBar({ techName }: { techName: string }) {
 
       {/* نافذة تأكيد البصمة ببصمة الهاتف الحقيقية */}
       {bioOpen && (
-        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/60 p-5" onClick={() => !bioBusy && setBioOpen(false)}>
-          <div className="w-full max-w-xs rounded-3xl bg-white p-6 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[85] flex items-start justify-center overflow-y-auto bg-black/60 p-5" onClick={() => !bioBusy && setBioOpen(false)}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-xs overflow-y-auto rounded-3xl bg-white p-6 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-1 text-base font-extrabold text-slate-800">
               {state === "none" ? "تأكيد بصمة الدخول" : "تأكيد بصمة الخروج"}
             </div>

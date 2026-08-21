@@ -201,8 +201,8 @@ export default function LoanDebtsPage() {
 
       {/* نافذةُ نصِّ الرسالة — الإرسالُ بالخلفيّة فلا تنتظر أمام شاشة */}
       {sendOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSendOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" onClick={() => setSendOpen(false)}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="mb-1 font-bold text-slate-800">📨 رسالةٌ لأصحاب القروض</h3>
             <p className="mb-3 text-xs text-slate-500">
               تُرسَل لـ{withPhone} مشتركاً عبر واتساب المكتب، بفاصلِ عشرِ ثوانٍ بين رسالةٍ وأخرى — بالخلفيّة.

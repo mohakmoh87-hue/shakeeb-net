@@ -137,7 +137,7 @@ export default function OverallReport() {
       {/* نافذة قائمة غير المفعّلين + إرسال رسالة */}
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" onClick={() => setOpen(false)}>
-          <div className="flex h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="flex h-[88dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2">
               <h3 className="font-bold text-slate-800">المشتركون الذين لم يفعّلوا ({list.length})</h3>
               <button onClick={() => setOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200">✕</button>

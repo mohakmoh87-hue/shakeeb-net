@@ -28,8 +28,8 @@ export default function ReminderPrompt() {
   }
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4">
+      <div className="my-auto max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
         <div className="mb-2 flex items-center gap-2">
           <span className="text-2xl">⏰</span>
           <h3 className="text-lg font-bold text-slate-800">تذكير انتهاء الاشتراك</h3>

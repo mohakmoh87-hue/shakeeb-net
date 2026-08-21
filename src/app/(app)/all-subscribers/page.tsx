@@ -245,8 +245,8 @@ export default function AllSubscribersPage() {
 
       {/* نافذة إرسال الرسالة */}
       {sendOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4" onClick={() => !busy && setSendOpen(false)}>
-          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-black/50 p-4" onClick={() => !busy && setSendOpen(false)}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 text-center text-lg font-extrabold text-slate-800">📩 إرسال رسالة لـ {checked.size} مشترك</div>
             {tpls.length > 0 ? (
               <select onChange={(e) => { const t = tpls.find((x) => x.key === e.target.value); if (t?.text) setText(t.text); }}

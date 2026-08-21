@@ -715,8 +715,11 @@ input[type="number"] { direction: ltr; }
   border-radius: 9px; padding: 10px 18px; font-size: 13px; font-weight: 800; }
 
 /* ===== نافذة شعار الوكالة (تصميم النموذج) ===== */
+/* 📐 نافذةٌ أطولُ من الشاشة تُقصّ من أعلى وأسفل و**أعلاها لا يُدرَك بالتمرير** (بلاغ محمد
+   2026-08-21 عن نافذة أودو) — فسقفُ ارتفاعٍ وتمريرٌ داخليٌّ لكلّ شيت. وdvh لا vh: شريطُ
+   متصفّح الهاتف المتحرّك يجعل vh أطولَ من المرئيّ فيُقصّ الأسفلُ في التطبيق. */
 .nst .logo-sheet { background: var(--surface); border-radius: 14px; width: 100%; max-width: 360px;
-  box-shadow: var(--sh-lg); overflow: hidden; }
+  box-shadow: var(--sh-lg); overflow-y: auto; max-height: 92dvh; }
 .nst .logo-head { background: linear-gradient(165deg, var(--navy-3), var(--navy)); color: #fff;
   padding: 14px 18px; text-align: center; font-size: 15px; font-weight: 800; }
 .nst .logo-body { padding: 18px; display: grid; gap: 14px; justify-items: center; }
