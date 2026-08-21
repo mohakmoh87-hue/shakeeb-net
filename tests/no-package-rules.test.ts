@@ -75,7 +75,8 @@ describe("🎁 العرضُ يُسكِت تحديثَ المعلومات كلَ�
 
   test("💸 تفعيلةٌ بمبلغ صفرٍ (قرض) لا تُنتج فرقَ تاريخٍ أبداً", () => {
     const src = SRC();
-    assert.ok(src.includes("if (act && Math.round(act.price || 0) <= 0) classified = true;"), "القرضُ ما زال يظهر «تمديدَ أيّام»");
+    assert.ok(src.includes("if (last && Math.round(last.price || 0) <= 0) classified = true;"), "القرضُ ما زال يظهر «تمديدَ أيّام»");
+    // 🔑 وشرطُه **آخرُ تفعيلٍ** لا تفعيلةٌ يطابق تاريخُها (تصحيحُ محمد الحرفيّ 2026-08-21)
     assert.ok(src.includes('kind: { in: ["sas", "self", "install"] }, activatedAt: { not: null } },'), "صفُّ الحدث المختومُ لا يمنع الازدواج");
   });
 
