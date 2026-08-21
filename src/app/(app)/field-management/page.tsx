@@ -35,7 +35,75 @@ type Card = {
   subscriberName?: string | null;
   slaNoteAt?: string | null; slaWaQueuedAt?: string | null; slaWaSentAt?: string | null; slaWaError?: string | null;
 };
+// ═════ 🧰 سجلُّ صيانات مشترك البطاقة — داخل البطاقة نفسِها (طلبُ محمد 2026-08-21) ═════
+// «في كلّ بطاقةٍ تُرفَع يظهر أسفلَها سجلُّ صيانات هذا المشترك، يضغط عليه الفنيُّ أو المديرُ
+//  أو المستخدم فتتمدّد البطاقةُ إلى الأسفل وفيها السجلُّ بتفاصيله».
+// 📱 وشرطُه الصريح: **لا إزاحةَ للكتابة يميناً أو يساراً أو أعلى أو أسفل، ولا تمريرَ
+//    لرؤية التفاصيل** — والفنيُّ يفتحها من تطبيقه (شاشةُ هاتف). ولذلك:
+//   · لا جدولَ ولا أعمدةَ ثابتةَ العرض (الجدولُ هو ما يُزيح النصَّ أفقيّاً على الهاتف).
+//   · كلُّ سطرٍ **بطاقةٌ مستقلّةٌ بعرض الشاشة**، وعناوينُها تلتفّ (`break-words`) والتفاصيل
+//     `whitespace-pre-wrap` — فالنصُّ ينزل سطراً جديداً ولا يخرج أبداً عن الحافّة.
+//   · **بلا `overflow` داخليٍّ ولا ارتفاعٍ أقصى**: تتمدّد البطاقةُ إلى الأسفل كما طلب،
+//     فلا يُطلَب من الفنيّ تمريرُ صندوقٍ داخل صندوق (وتمريرُ النافذة نفسِها كما كان).
+//   · ولا يُجلَب شيءٌ قبل الضغط (فتحُ البطاقة يبقى بسرعته) — والزرُّ يقول العدد بعدها.
+function MaintenanceHistory({ cardId }: { cardId: number }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+  const [logs, setLogs] = useState<MaintLog[]>([]);
+  const [who, setWho] = useState<{ name: string | null; netUser: string | null } | null>(null);
+  const toggle = async () => {
+    if (open) { setOpen(false); return; }
+    setOpen(true);
+    if (state === "loading" || logs.length) return;
+    setState("loading");
+    try {
+      const r = await fetch(`/api/field/maintenance?cardId=${cardId}`);
+      const d = (await r.json()) as { logs?: MaintLog[]; subscriber?: { name: string | null; netUser: string | null } | null; error?: string };
+      if (!r.ok) throw new Error(d.error ?? "تعذّر الجلب");
+      setLogs(d.logs ?? []); setWho(d.subscriber ?? null); setState("idle");
+    } catch { setState("error"); }
+  };
+  return (
+    <div className="mb-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <button onClick={() => void toggle()} className="flex w-full items-center justify-between gap-2 bg-slate-50 px-3 py-2 text-right">
+        <span className="text-xs font-bold text-slate-700">🧰 سجل صيانات هذا المشترك</span>
+        <span className="shrink-0 text-[11px] font-semibold text-slate-400">
+          {state === "loading" ? "…" : logs.length ? `${logs.length} صيانة` : ""} {open ? "▲" : "▼"}
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-1.5 px-2 py-2">
+          {state === "loading" && <div className="py-2 text-center text-[11px] text-slate-400">جارٍ الجلب…</div>}
+          {state === "error" && <div className="py-2 text-center text-[11px] text-rose-600">تعذّر جلب السجل — أعد المحاولة</div>}
+          {state === "idle" && who && (
+            <div className="px-1 pb-1 text-[11px] text-slate-500">
+              <b className="text-slate-700">{who.name ?? "—"}</b>{who.netUser ? <span dir="ltr"> · {who.netUser}</span> : null}
+            </div>
+          )}
+          {state === "idle" && logs.length === 0 && (
+            <div className="py-2 text-center text-[11px] text-slate-400">لا صيانات سابقة لهذا المشترك</div>
+          )}
+          {logs.map((m) => (
+            <div key={m.id} className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+              <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+                <span dir="ltr" className="font-semibold text-slate-500">{fmtDateTime(m.date)}</span>
+                {m.kind && <span className="rounded bg-white px-1.5 py-0.5 font-bold text-slate-600">{m.kind}</span>}
+                {m.technicianName && <span className="font-semibold text-slate-600">👷 {m.technicianName}</span>}
+                {m.durationSec != null && <span className="text-slate-500">⏱ {fmtDuration(m.durationSec)}</span>}
+                {!!m.amount && <b className="text-emerald-700">{Number(m.amount).toLocaleString("en-US")} د.ع</b>}
+              </div>
+              {m.cardTitle && <div className="mb-0.5 break-words text-[11px] font-semibold text-slate-500">{m.cardTitle}</div>}
+              <div className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-slate-700">{m.details}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // أحداث سجل تغييرات البطاقة (JSON داخل حقل history)
+type MaintLog = { id: number; date: string; details: string; technicianName: string | null; cardTitle: string | null; kind: string | null; durationSec: number | null; amount: number | null };
 type CardEvent = { at: string; by: string; text: string };
 const parseHistory = (h?: string | null): CardEvent[] => { try { return h ? (JSON.parse(h) as CardEvent[]) : []; } catch { return []; } };
 // بطاقة أُعيدت من الأرشيف (من سجلها) — لعرض شارة «من الأرشيف» على وجهها
@@ -1466,6 +1534,9 @@ export default function FieldManagementPage() {
             )}
 
             {/* سجل تغييرات البطاقة — كل حدث بوقته وفاعله (تأجيل/تحويل/نقل/إنجاز…) + تاريخ الإنشاء */}
+            {/* 🧰 سجلُّ صيانات المشترك — يظهر بفتح البطاقة، ويتمدّد بالضغط (طلبُ محمد) */}
+            <MaintenanceHistory cardId={sel.id} />
+
             {(parseHistory(sel.history).length > 0 || sel.createdAt) && (
               <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                 <div className="mb-1.5 text-xs font-bold text-slate-600">🕓 سجل التغييرات</div>
