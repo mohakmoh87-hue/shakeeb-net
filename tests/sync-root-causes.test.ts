@@ -40,8 +40,11 @@ describe("🕵️ الأعطالُ الجذريّةُ السبعة", () => {
     // والنافذةُ معزولةٌ بالتوكن لا بالرابط (حسابان على مخدّمٍ واحدٍ لا يريان بعضهما)
     assert.ok(sas.includes("const key = `${base}|${String(token).slice(-24)}|${days}`;"), "ذاكرةُ النافذة غيرُ معزولةٍ بالحساب");
     // ولا يبقى مستدعٍ واحدٌ للبحث المعطَّل في مسارات الكروت
+    // 🔄 **انقلبت الحقيقةُ بالقياس 2026-08-21**: `search` يعمل في الخادم (١٩ صفّاً لمشتركٍ
+    //    بعينه)، والمسحُ الزمنيُّ هو الكاذب (التقريرُ مُجمَّعٌ بالمنجر لا بالتاريخ).
+    //    فالحارسُ صار عكسيّاً: **لا يُبنى حكمٌ على النافذة الزمنيّة في أيّ مسار مزامنة**.
     for (const f of ["src/lib/subscriptionSync.ts", "src/lib/cardSasCheck.ts", "src/lib/cardDeleteGuard.ts"]) {
-      assert.equal(/await sasSearchActivation\(|await sasProbeSerial\(/.test(read(f)), false, `${f} ما زال يستعمل بحثَ الساس المعطَّل`);
+      assert.equal(/sasActivationWindow\(|actWindowFindSerial\(/.test(read(f)), false, `${f} ما زال يبني حكماً على النافذة الزمنيّة الناقصة`);
     }
     // ونافذةٌ ناقصةٌ لا تُقرأ «غيرَ مستخدَم» أبداً
     assert.ok(read("src/lib/cardSasCheck.ts").includes("verdict = !hit && !probedOk"), "الدفترُ يختم «غير موجود» بنافذةٍ ناقصة");
@@ -59,7 +62,7 @@ describe("🕵️ الأعطالُ الجذريّةُ السبعة", () => {
     const src = SYNC();
     assert.ok(src.includes("const EXP_TOL_MS = 12 * 3600_000;"), "لا سماحيّةَ على تاريخ الانتهاء");
     assert.ok(src.includes("if (oday !== nday && !sameExpiry(p.dateTo, validDate)) {"), "فرقُ التاريخ يُرصَد بلا سماحيّة");
-    assert.ok(src.includes("return sameExpiry(e, newSasExp);"), "المُصنِّفُ يطابق التاريخَ حرفيّاً");
+    assert.ok(src.includes("probe.rows.find((r) => sameExpiry(r.newExpiration ? new Date(r.newExpiration) : null, newSasExp))"), "المُصنِّفُ يطابق التاريخَ حرفيّاً");
   });
 
   test("٥ · «تحديث» لا يكتب إلّا ما رُصد — الملاحظاتُ في الأسماء تُصان", () => {

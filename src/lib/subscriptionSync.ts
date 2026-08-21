@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
-  sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers, sasFindSerial,
-  sasActivationWindow, actWindowFindSerial, type ActWindow,
+  sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers,
+  sasProbeSerial, sasUserActivations,
   sasFetchActivationsSince,
   type SasActivation,
 } from "@/lib/sas4";
@@ -472,11 +472,10 @@ async function runOfficeSyncInner(
     if (!u) continue;
     const l = idsByUser.get(u) ?? []; l.push(s.id); idsByUser.set(u, l);
   }
-  // 🪟 نافذةُ التفعيلات المفهرَسة (٣٥ يوماً) — **كسولةٌ**: لا تُجلَب إلّا عند أوّل سؤالٍ
-  // حقيقيّ (فحصُ كارتٍ أو قفزةُ تاريخ)، فالمزامنةُ الهادئةُ لا تدفع ثمنَها. وهي البديلُ
-  // الكاملُ لبحث الساس المعطَّل: تُجاب منها كلُّ الأسئلة بصفر نداءاتٍ إضافيّة.
-  let actWinP: Promise<ActWindow> | null = null;
-  const getActWin = () => (actWinP ??= sasActivationWindow(base, token, 35));
+  // 🪟 **أُلغيت «النافذةُ الزمنيّة»** (قياسُ 2026-08-21): تقريرُ التفعيلات مُجمَّعٌ بالمنجر
+  // لا مرتَّبٌ بالتاريخ (٥٠٠ صفٍّ في الصفحة الأولى كلُّها منجرٌ واحدٌ من ٢٠٢٥-٠١ إلى
+  // ٢٠٢٥-٠٥)، فأيُّ مسحٍ زمنيٍّ يقع في كتلةِ منجرٍ ويظنّ أنّه أتمّ — فيغيب عنه منجرُ
+  // الكابينات كلُّه. والبديلُ المُثبَت: **سؤالٌ موجَّهٌ بالبحث** (يوزراً أو سيريالاً).
   const receiptCache = new Map<string, { at: number[]; to: number[] }>();
   const receiptsOfUser = async (userKey: string, fallbackSubId?: number) => {
     const k = userKey || `#${fallbackSubId ?? 0}`;
@@ -767,9 +766,9 @@ async function runOfficeSyncInner(
     while (true) {
       const i = vNext++;
       if (i >= toVerify.length) break;
-      // 🪟 من النافذة المفهرَسة: بحثُ الساس بالسيريال **لا يعمل** (قياسُ 2026-08-21)،
-      //    ونافذةٌ ناقصةٌ ⇒ يُعدّ «حقيقيّاً» احتياطاً فلا يُنذَر بالوهميّة على شكّ.
-      const pr = actWindowFindSerial(await getActWin(), (toVerify[i].serial ?? "").trim());
+      // 🎴 بحثٌ مباشرٌ بسيريال الكارت (يعمل — والمسحُ الزمنيُّ هو الذي كان يكذب):
+      //    وُجد ⇒ ليس وهميّاً · تعذّر الفحصُ ⇒ **لا حكمَ** فيُعدّ حقيقيّاً احتياطاً.
+      const pr = await sasProbeSerial(base, token, (toVerify[i].serial ?? "").trim());
       if (pr.hit || !pr.ok) realFlags[i] = true;
     }
   };
@@ -923,32 +922,32 @@ async function runOfficeSyncInner(
       sub: { id: number; netUser: string | null; name: string | null; dateTo: Date | null },
       sasId: number, username: string | null, newSasExp: Date | null,
     ): Promise<boolean> => {
-      if (!newSasExp) return false;
-      const win = await getActWin();
       const uKey = (username ?? sub.netUser ?? "").trim().toLowerCase();
-      const cands = [...(win.bySasId.get(sasId) ?? []), ...(uKey ? win.byUser.get(uKey) ?? [] : [])];
-      if (!cands.length) return false; // لا تفعيلةَ في النافذة ⇒ لا حكمَ (يبقى فرقَ تاريخ)
-      // التفعيلةُ التي أنتجت تاريخَنا الجديد: انتهاؤها الجديد يطابق تاريخَ الساس (±١٢ ساعة)
-      const hit = cands.find((r) => {
-        const e = r.newExpiration ? new Date(r.newExpiration) : null;
-        return sameExpiry(e, newSasExp);
-      });
-      if (!hit) return false;
+      if (!uKey) return false;
+      // 🎯 سؤالٌ موجَّهٌ للساس عن هذا اليوزر — بديلُ المسح الزمنيّ الذي ثبت فشلُه
+      const probe = await sasUserActivations(base, token, username ?? sub.netUser ?? "");
+      if (!probe.ok || !probe.rows.length) return false; // تعذّرٌ أو لا تاريخَ ⇒ لا حكم
+      // 💸 **شرطُ القرض الوحيد** (نصُّ محمد): آخرُ تفعيلٍ بمبلغ صفرٍ ⇒ قرضٌ ⇒ يُسكَت عنه
+      const last = probe.rows[0];
+      if (last && Math.round(last.price || 0) <= 0) { actedSasIds.add(sasId); return true; }
+      // التفعيلةُ التي أنتجت تاريخَ الساس الحاليّ (±١٢ ساعة)، وإلّا فآخرُ تفعيلاته
+      const hit = (newSasExp && probe.rows.find((r) => sameExpiry(r.newExpiration ? new Date(r.newExpiration) : null, newSasExp))) || last;
       const actAt = hit.createdAt ? new Date(hit.createdAt) : null;
       if (!actAt || isNaN(actAt.getTime())) return false;
-      // 💰 مقبوضٌ عندي (وصلٌ قريبٌ أو وصلٌ ينتهي بانتهائه) ⇒ ليس خارجيّاً — يبقى فرقَ تاريخ
-      if (await collectedByUs(uKey, sub.id, actAt, newSasExp)) return false;
+      const newExp = hit.newExpiration ? new Date(hit.newExpiration) : null;
+      // 💰 مقبوضٌ عندي (وصلٌ قريبٌ أو وصلٌ ينتهي بانتهائه) ⇒ ليس خارجيّاً — يبقى فرقَ تاريخٍ يدويّاً
+      if (await collectedByUs(uKey, sub.id, actAt, newExp ?? newSasExp)) return false;
       const mgr = (hit.managerUsername ?? "").trim();
+      // 🏷️ منجرُ صفحةِ المكتب ⇒ «تفعيلاتُ ساس» · منجرُ كابينةِ صاحبه ⇒ «تفعيلٌ خارجيّ» · غيرُهما ⇒ شركة
       const managerIsPage = mgr.toLowerCase() === officeUser;
       const ownCabinet = isOwnCabinet(hit.username ?? sub.netUser, mgr);
-      const newExp = hit.newExpiration ? new Date(hit.newExpiration) : null;
       const evBase = {
         agentId: office.agentId ?? -1, towerId: officeId, sasId, subscriberId: sub.id,
         netUser: hit.username ?? sub.netUser, name: hit.name ?? sub.name,
         amount: Math.round(hit.price || 0), activatedAt: actAt,
         sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
       };
-      const isLoanAct = Math.round(hit.price || 0) <= 0; // سعرُ صفرٍ = قرضٌ دائماً (محمد)
+      const isLoanAct = Math.round(hit.price || 0) <= 0;
       if (managerIsPage || ownCabinet) {
         await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
       } else {
@@ -1078,17 +1077,8 @@ async function runOfficeSyncInner(
             //    ولا تغييرَ معلومات — والدليلُ في تقرير التفعيلات نفسِه: سعرُ صفر.
             //    وتُقرَأ من **نافذة التفعيلات المفهرَسة** فلا يهمّ أوقع التفعيلُ في نافذة
             //    اليومَين أم قبلها بشهر.
-            if (!classified && grew) {
-              // 💸 **شرطُ القرض الوحيد** (تصحيحُ محمد 2026-08-21 الحرفيّ): «عند اختلاف
-              //    الأيّام يُفحَص **آخرُ تفعيلٍ له** في تقرير التفعيلات، فإن كان المبلغُ
-              //    صفراً فهو قرض» — لا عددَ أيّامٍ ولا شرطَ كارتٍ ولا مطابقةَ تاريخ.
-              const win = await getActWin();
-              const uk = (u.username ?? p.netUser ?? "").trim().toLowerCase();
-              const cands = [...(win.bySasId.get(u.sasId) ?? []), ...(uk ? win.byUser.get(uk) ?? [] : [])];
-              // النافذةُ مرتَّبةٌ من الأحدث، فأوّلُ ما يقع عليه هو آخرُ تفعيلاته
-              const last = cands.sort((x, y) => String(y.createdAt ?? "").localeCompare(String(x.createdAt ?? "")))[0];
-              if (last && Math.round(last.price || 0) <= 0) classified = true; // قرضٌ صريح
-            }
+            // 🎯 كلُّ اختلافِ تاريخٍ يُسأل عنه الساسُ مباشرةً (زيادةً ونقصاً): مَن المنجر؟
+            //    كم المبلغ؟ فيُصنَّف في تبويبه، أو يتبيّن أنّه قرضٌ (صفر) فيُسكَت عنه.
             // 💰 ونقصُ الأيّام **لا يُرصَد إذا كان تاريخُنا مدفوعاً بوصل** (حالة bg-5-12-11@mu:
             //    وصلُ ٤٥ ألفاً حتى ٢٠-١٠ والساسُ يقول ٣٠-٨ لأنّ الشركةَ تُعطي ١٠ أيّامٍ ثمّ
             //    تُكمل ٥٠). تطبيقُه كان **يقصّ أيّاماً مقبوضةً**، فالسكوتُ عنه هو الصواب.
@@ -1096,7 +1086,7 @@ async function runOfficeSyncInner(
               const paid = await receiptsOfUser((u.username ?? p.netUser ?? "").trim().toLowerCase(), p.id);
               if (paid.to.some((t) => Math.abs(t - p.dateTo!.getTime()) <= RECEIPT_NEAR_MS)) classified = true;
             }
-            if (!classified && grew && dateProbes < MAX_DATE_PROBES) {
+            if (!classified && dateProbes < MAX_DATE_PROBES) {
               dateProbes++;
               classified = await classifyDateJump(p, u.sasId, u.username, validDate);
             }
@@ -1657,7 +1647,7 @@ export async function runFullCardAudit(
         const keys = [serial, ...(number && number.trim() && number.trim() !== serial ? [number.trim()] : [])];
         outer: for (const key of keys) {
           for (const s of sessions) {
-            const pr = await sasFindSerial(s.base, s.token, key);
+            const pr = await sasProbeSerial(s.base, s.token, key);
             if (!pr.ok) { probeOk = false; continue; }
             if (pr.hit) { found = pr.hit; break outer; }
           }
@@ -1744,7 +1734,7 @@ export async function runFullCardAudit(
       const i = vNext++;
       if (i >= toVerify.length) break;
       for (const s of sessions) { // 🔒 لوحاتُ **هذا** المكتب حصراً
-        const hit = (await sasFindSerial(s.base, s.token, toVerify[i].serial)).hit;
+        const hit = (await sasProbeSerial(s.base, s.token, toVerify[i].serial)).hit;
         if (hit) { foundReal[i] = true; foundHit[i] = hit; break; }
       }
     }

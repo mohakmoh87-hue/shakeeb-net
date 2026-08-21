@@ -17,7 +17,7 @@
 //   بالسيريال يجد التفعيل مهما كان تاريخُه ومَن أجراه. وهي التي وجدت ٧٤ من ٧٤ بينما
 //   القائمةُ الجماعيّةُ لم تُظهر واحداً.
 import { prisma } from "@/lib/prisma";
-import { sasBaseUrl, sasLogin, sasFindSerial, type SasActivation } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasProbeSerial, type SasActivation } from "@/lib/sas4";
 import { notify } from "@/lib/notify";
 
 /** حذفٌ بهذا الحجم أو أقلّ يُفحَص **فوراً قبل الردّ** (طلبُ محمد: «يتصرّف الحارسُ فور
@@ -193,7 +193,7 @@ export async function inspectPendingDeletedCards(
         let hit: SasActivation | null = null;
         let probedOk = false; // 🪟 نافذةٌ مكتملة؟ (بحثُ الساس بالسيريال معطَّلٌ — قياسُ 2026-08-21)
         for (const s of list) {
-          const pr = await sasFindSerial(s.base, s.token, serial);
+          const pr = await sasProbeSerial(s.base, s.token, serial);
           if (pr.ok) probedOk = true;
           if (pr.hit) { hit = pr.hit; break; }
         }

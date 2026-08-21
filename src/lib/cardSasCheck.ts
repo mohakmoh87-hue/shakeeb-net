@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { sasBaseUrl, sasLogin, sasFindSerial, type SasActivation } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasProbeSerial, type SasActivation } from "@/lib/sas4";
 
 // ═════ 🔍 «أين هذا الكارت؟» — الفحصُ **قبل** رفعِ الحالة (طلبُ محمد 2026-08-14) ═════
 //
@@ -96,7 +96,7 @@ export async function sweepCardSasChecks(agentId: number, limit = 20): Promise<{
     let probedOk = false;
     try {
       for (const s of sessions) {
-        const pr = await sasFindSerial(s.base, s.token, serial);
+        const pr = await sasProbeSerial(s.base, s.token, serial);
         if (pr.ok) probedOk = true;
         if (pr.hit) { hit = pr.hit; break; }
       }

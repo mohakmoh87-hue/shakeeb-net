@@ -54,7 +54,7 @@ describe("الكروتُ الوهميّة: لا حكمَ بغيابِ دليلٍ
     const src = SRC();
     const audit = src.slice(src.indexOf("export async function runFullCardAudit"));
     const gate = audit.slice(0, audit.indexOf("const evidenceBroken"));
-    assert.match(gate, /sasFindSerial\(s\.base, s\.token/, "الجردُ لا يتحقّق بسيريال الكارت من نافذة التفعيلات");
+    assert.match(gate, /sasProbeSerial\(s\.base, s\.token/, "الجردُ لا يتحقّق بالبحث المباشر بسيريال الكارت");
     // والبحثُ يجري في **كلّ لوحات المكتب** — كارتٌ فُعِّل على الثانية لا يوجد في الأولى
     assert.match(gate, /for \(const s of sessions\)/, "البحثُ لا يمرّ على لوحات المكتب كلِّها");
     // وما وُجد يُحسَب مُثبَتاً — فلا يبقى مشتبَهاً به، **ويُخلَّد إثباتُه** فلا يُفحَص ثانيةً

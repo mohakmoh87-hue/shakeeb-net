@@ -407,6 +407,30 @@ export async function sasFindSerial(base: string, token: string, serial: string,
   return actWindowFindSerial(win, s);
 }
 
+// ═════ 🎯 تفعيلاتُ يوزرٍ بعينه — بالبحث المباشر (القياسُ الفاصل 2026-08-21) ═════
+// ثبت بالقياس على مخدّم سوبر سيل أنّ تقرير التفعيلات **مُجمَّعٌ بالمنجر لا مرتَّبٌ
+// بالتاريخ**: الصفحةُ الأولى (٥٠٠ صفّ) كلُّها `FDT47-SHU` من ٢٠٢٥-٠١ إلى ٢٠٢٥-٠٥.
+// ⇒ أيُّ مسحٍ يعتمد ترتيبَ التاريخ يقع داخل كتلةِ منجرٍ واحدٍ ويظنّ أنّه انتهى، فتغيب
+//   عنه تفعيلاتُ الكابينات كلُّها (وهي «التفعيلاتُ الخارجيّة» بعينها) — وهذا كان سببَ
+//   بقاء تفعيلاتِ الشهداء الذاتيّة في تبويب «تحديث معلومات» ووسمِ كروتٍ حيّةٍ بالوهميّة.
+// 🔑 و`search` **يعمل** (٣ صيغِ ترشيحٍ أخرى فشلت وهذه نجحت): سؤالٌ واحدٌ باليوزر يُعيد
+//    تاريخَه كاملاً بمنجراته وأسعاره وبِناته — فالتصنيفُ يصير على أرضٍ صلبة.
+export type UserActs = { ok: boolean; rows: SasActivation[] };
+export async function sasUserActivations(base: string, token: string, username: string): Promise<UserActs> {
+  const q = (username ?? "").trim();
+  if (!q) return { ok: true, rows: [] };
+  const uk = q.toLowerCase();
+  try {
+    const j = await fetchAnyPage(base, token, "index/activations", 1, 200, { search: q });
+    const raw: Record<string, unknown>[] = j?.data ?? [];
+    const rows = raw.map(normalizeActivation)
+      .filter((a) => (a.username ?? "").trim().toLowerCase() === uk)
+      .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
+    return { ok: true, rows };
+  } catch {
+    return { ok: false, rows: [] }; // عطلُ شبكةٍ — لا يُبنى عليه نفيٌ أبداً
+  }
+}
 export async function sasSearchActivation(
   base: string, token: string, serial: string,
 ): Promise<SasActivation | null> {
@@ -472,7 +496,12 @@ export async function sasFetchActivationsForDay(
   return rows;
 }
 
-// ═════ 🪟 نافذةُ التفعيلات المفهرَسة — بديلُ «البحث» الذي لا يعمل (قياسٌ 2026-08-21) ═════
+// ═════ ⚠️🪟 نافذةُ التفعيلات الزمنيّة — **للتشخيص وحدَه، لا يُبنى عليها حكم** ═════
+// (كُتبت يوم ظننتُ أنّ `search` معطَّل، ثمّ ثبت عكسُه.) وثبت أيضاً أنّ تقرير التفعيلات
+// **مُجمَّعٌ بالمنجر لا مرتَّبٌ بالتاريخ**: أوّلُ ٥٠٠ صفٍّ كلُّها منجرٌ واحدٌ من ٢٠٢٥-٠١
+// إلى ٢٠٢٥-٠٥. ⇒ أيُّ مسحٍ زمنيٍّ يتوقّف داخل كتلةِ منجرٍ ويُعيد صورةً **ناقصةً بصمت**
+// (قِيس: نافذةُ يومَين أعادت ٧٩ صفّاً كلُّها بمنجر حساب المكتب، وأحدثُها أقدمُ من
+//  تفعيلٍ حقيقيٍّ رأيناه في اللوحة). لا تستعملها المزامنةُ إطلاقاً — البديلُ `search`.
 // اختُبر مخدّمُ الساس باثنتَي عشرة صيغةِ ترشيح (search نصّاً وكائناً · filter · filters ·
 // where · user_id · username · keyword): **كلُّها تُتجاهَل** ويعود أقدمُ عشرة صفوفٍ من
 // سبعةٍ وثلاثين ألفاً. فكلُّ ما بُني على `search` كان يمسح تفعيلاتِ ٢٠٢٥ ثمّ يقول «غير
