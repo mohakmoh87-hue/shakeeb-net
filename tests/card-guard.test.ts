@@ -104,7 +104,8 @@ describe("🛡️ حارسُ المال · الكروتُ المحذوفة", () 
     const g = read("src/lib/cardDeleteGuard.ts");
     // العلّةُ التي كانت: `if (row.useDate == null) verdict = "unsold"` **قبل** سؤال الساس
     //   ⇒ كلُّ تنظيفِ مخزنٍ مشروعٍ يصير إنذاراً، وكارتٌ مُفعَّلٌ يحسبه البرنامجُ مخزوناً يمرّ.
-    const idxSas = g.indexOf("sasSearchActivation(s.base");
+    // 🪟 صار السؤالُ من نافذة التفعيلات المفهرَسة (بحثُ الساس بالسيريال مُتجاهَلٌ — قياسُ 2026-08-21)
+    const idxSas = g.indexOf("sasFindSerial(s.base");
     const idxUnused = g.indexOf("row.useDate == null");
     assert.ok(idxSas > 0 && idxUnused > idxSas,
       "يُحكَم على غيرِ المستخدَم قبل سؤال الساس — تنظيفُ المخزن يصير ضجيجاً وأخطرُ حالةٍ تمرّ");

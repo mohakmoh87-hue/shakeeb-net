@@ -17,7 +17,7 @@
 //   بالسيريال يجد التفعيل مهما كان تاريخُه ومَن أجراه. وهي التي وجدت ٧٤ من ٧٤ بينما
 //   القائمةُ الجماعيّةُ لم تُظهر واحداً.
 import { prisma } from "@/lib/prisma";
-import { sasBaseUrl, sasLogin, sasSearchActivation } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasFindSerial, type SasActivation } from "@/lib/sas4";
 import { notify } from "@/lib/notify";
 
 /** حذفٌ بهذا الحجم أو أقلّ يُفحَص **فوراً قبل الردّ** (طلبُ محمد: «يتصرّف الحارسُ فور
@@ -190,10 +190,21 @@ export async function inspectPendingDeletedCards(
           out.critical++;
           continue;
         }
-        let hit: Awaited<ReturnType<typeof sasSearchActivation>> = null;
+        let hit: SasActivation | null = null;
+        let probedOk = false; // 🪟 نافذةٌ مكتملة؟ (بحثُ الساس بالسيريال معطَّلٌ — قياسُ 2026-08-21)
         for (const s of list) {
-          hit = await sasSearchActivation(s.base, s.token, serial);
-          if (hit) break;
+          const pr = await sasFindSerial(s.base, s.token, serial);
+          if (pr.ok) probedOk = true;
+          if (pr.hit) { hit = pr.hit; break; }
+        }
+        if (!hit && !probedOk) {
+          // تعذّر الفحصُ فعلاً (نافذةٌ ناقصة) ⇒ **لا حكمَ**: يبقى معلَّقاً ليُعاد
+          await prisma.deletedCardLog.updateMany({
+            where: { id: row.id, verdict: "pending" },
+            data: { sasInfo: "تعذّر مسحُ نافذة التفعيلات — لم يُفحَص الكارت، أعِد الفحص" },
+          });
+          out.critical++;
+          continue;
         }
         if (!hit) {
           if (row.useDate == null) {

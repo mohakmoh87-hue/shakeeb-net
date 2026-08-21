@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { guard, agentTowerIds } from "@/lib/guard";
 import { getSyncAutoMsgFlags, setSyncAutoMsgFlag, sendSyncLogMessage } from "@/lib/syncAutoMsg";
+import { fingerprint } from "@/lib/syncLog";
 
 export const dynamic = "force-dynamic";
 
@@ -80,7 +81,7 @@ export async function GET() {
 const postSchema = z.union([
   z.object({
     ids: z.array(z.coerce.number().int().positive()).min(1, "لم تُحدَّد سطور"),
-    action: z.enum(["apply", "ignore", "activate", "debt", "message"]),
+    action: z.enum(["apply", "ignore", "activate", "debt", "message", "replace"]),
   }),
   // جيك بوكس «إرسال رسائل تلقائي» — لكلّ تبويبٍ علَمُه، والافتراضيُّ إيقاف (قرار محمد)
   z.object({
@@ -90,9 +91,9 @@ const postSchema = z.union([
   }),
 ]);
 
-function fingerprint(r: { name: string | null; phone: string | null; address: string | null; packageName: string | null; sasDateTo: Date | null }): string {
-  return JSON.stringify([r.name ?? "", r.phone ?? "", r.address ?? "", r.packageName ?? "", r.sasDateTo ? r.sasDateTo.toISOString().slice(0, 10) : ""]);
-}
+// 🔴 **البصمةُ تُستورَد من محرّك السجلّ** ولا تُكتب هنا ثانيةً: كانت نسخةً بخمسة حقولٍ
+// بينما المزامنةُ تحسبها بستّة (أُضيف اليوزر 2026-08-21) ⇒ لا تتطابقان أبداً ⇒ **كلُّ
+// صفٍّ يُتجاهَل يعود في أوّل مزامنة** (بلاغُ محمد). دالّةٌ واحدةٌ لا نسختان.
 
 export async function POST(request: Request) {
   // الأفعالُ حصراً لصاحب «تحديث سجل المزامنة» (قرار محمد: العرضُ للجميع والتعديلُ بصلاحيّة)
@@ -157,7 +158,10 @@ export async function POST(request: Request) {
           continue;
         }
 
-        if (action === "apply") {
+        if (action === "replace" && !(r.subscriberId != null && r.sasId != null && (r.kind === "info" || r.kind === "install"))) {
+          rejected.push(`سطر #${r.id}: الاستبدالُ يحتاج مشتركاً قائماً ورقمَ ساسٍ جديد`); continue;
+        }
+        if (action === "apply" || action === "replace") {
           // 🏷️ **«تحديث» على صفّ حدثٍ = «اعتُبر معالَجاً» فقط** (مراجعة 2026-08-21): كان
           // يمرّ في مسار «تطبيق بيانات على مشتركٍ قائم» فيكتب اسمَ الساس فوق اسمك بلا
           // داعٍ — والحدثُ ليس تغييرَ معلوماتٍ بل واقعةُ تفعيلٍ تُقرَّر لا تُنسَخ.
@@ -206,7 +210,10 @@ export async function POST(request: Request) {
             // القديم أرشيفٌ حيٌّ كاملُ التاريخ ودينُه يبقى عليه، يوزرُه يوسم «#سابق» وربطُ
             // الساس يُفكّ، وواتسابُه يبقى مفعّلاً عمداً (حملات الاسترجاع)؛ والجديدُ يأخذ
             // اليوزرَ النظيفَ ولوحةَ ومكانَ وجهازَ السابق وماليّةً نظيفة.
-            const isReplace = r.kind === "install" && r.sasId != null && old.sasId !== r.sasId;
+            // ↔️ **الاستبدالُ فعلٌ صريحٌ بزرِّه** (بلاغُ محمد 2026-08-21): كان يقع تلقائيّاً
+            // لمجرّد اختلاف رقم الساس — وهي الحالةُ الشائعةُ حين تُعيد الشركةُ إنشاءَ
+            // الحساب — فيؤرشف صفَّك الصحيحَ ويُنشئ صفّاً ثانياً ⇒ **مكرَّرٌ جديدٌ بيدك**.
+            const isReplace = action === "replace";
             if (isReplace) {
               const cleanUser = (old.netUser ?? "").trim();
               if (!cleanUser) { rejected.push(`«${old.name ?? r.netUser}» بلا يوزر — لا يصحّ الاستبدال`); continue; }
@@ -251,11 +258,11 @@ export async function POST(request: Request) {
               // 📅 وفرقُ الأيّام (زيادةً أو نقصاً — قرار محمد 2026-08-21): يُطبَّق فقط إن كان
               // مرصوداً في تغييرات الصفّ، وبحارس قرضٍ لحظةَ التطبيق (قد اقترض بعد الرصد —
               // وأيّامُ القرض الوهميّةُ لا يجوز أن يدهسها تاريخُ الساس)
-              let applyDate = false;
+              const flagged = new Set<string>();
               try {
-                const chs = r.changes ? (JSON.parse(r.changes) as { f?: string }[]) : [];
-                applyDate = r.sasDateTo != null && chs.some((c) => c.f === "dateTo");
-              } catch { /* تغييراتٌ غيرُ مقروءة ⇒ لا مساسَ بالتاريخ */ }
+                for (const c of (r.changes ? (JSON.parse(r.changes) as { f?: string }[]) : [])) if (c.f) flagged.add(c.f);
+              } catch { /* تغييراتٌ غيرُ مقروءة ⇒ لا يُطبَّق شيء */ }
+              let applyDate = r.sasDateTo != null && flagged.has("dateTo");
               if (applyDate) {
                 const loan = await prisma.loanDebt.findFirst({
                   where: { subscriberId: r.subscriberId, isDeleted: false }, select: { id: true },
@@ -279,14 +286,21 @@ export async function POST(request: Request) {
                 });
                 if (clash) { rejected.push(`«${old.netUser}» ← «${renameTo}»: اليوزر الجديد يخصّ مشتركاً آخرَ (#${clash.id}) — يحتاج قرارك`); continue; }
               }
+              // ✍️ **لا يُكتَب إلّا ما رُصد** (مراجعة 2026-08-21): كان يكتب الاسمَ والهاتفَ
+              // والعنوانَ من الساس **دائماً** وإن لم تكن في التغييرات — فصفٌّ اسمُه عندك
+              // «فلان تحويل لا تفعل» (ولا يُرصَد له فرقٌ منذ إصلاح الأمس) كان «تحديث»
+              // على باقته **يمحو ملاحظتَك**. الآن الزرُّ أمينٌ حرفيّاً على ما يعرضه.
+              const has = (f: string) => flagged.has(f);
               await prisma.subscriber.update({
                 where: { id: r.subscriberId },
                 data: {
                   ...(renameTo ? { netUser: renameTo } : {}),
-                  ...(r.phone?.trim() ? { phone: r.phone } : {}),
-                  ...(r.name?.trim() ? { name: r.name } : {}),
-                  ...(r.address?.trim() ? { address: r.address } : {}),
-                  ...(pkgId != null ? { packageId: pkgId } : {}),
+                  ...(has("phone") && r.phone?.trim() ? { phone: r.phone } : {}),
+                  ...(has("name") && r.name?.trim() ? { name: r.name } : {}),
+                  ...(has("address") && r.address?.trim() ? { address: r.address } : {}),
+                  ...(has("package") && pkgId != null ? { packageId: pkgId } : {}),
+                  // 🔗 ربطُ رقم الساس الجديد بصفّك القائم (بديلُ الاستبدال الكاذب)
+                  ...(has("sasLink") && r.sasId != null ? { sasId: r.sasId } : {}),
                   ...(applyDate ? { dateTo: r.sasDateTo, expiredNoticeAt: null } : {}),
                 },
               });

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { sasBaseUrl, sasLogin, sasSearchActivation } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasFindSerial, type SasActivation } from "@/lib/sas4";
 
 // ═════ 🔍 «أين هذا الكارت؟» — الفحصُ **قبل** رفعِ الحالة (طلبُ محمد 2026-08-14) ═════
 //
@@ -90,14 +90,20 @@ export async function sweepCardSasChecks(agentId: number, limit = 20): Promise<{
     const serial = (card.serial ?? "").trim();
     if (!serial) continue;
     out.checked++;
-    let hit: Awaited<ReturnType<typeof sasSearchActivation>> = null;
+    let hit: SasActivation | null = null;
     let verdict: CardVerdict = "not-found";
+    // 🪟 من نافذة التفعيلات المفهرَسة (بحثُ الساس بالسيريال **لا يعمل** — قياسُ 2026-08-21)
+    let probedOk = false;
     try {
       for (const s of sessions) {
-        hit = await sasSearchActivation(s.base, s.token, serial);
-        if (hit) break;
+        const pr = await sasFindSerial(s.base, s.token, serial);
+        if (pr.ok) probedOk = true;
+        if (pr.hit) { hit = pr.hit; break; }
       }
-      verdict = judge(hit?.username ?? null, card.subscriberId != null ? (userOf.get(card.subscriberId) ?? null) : null);
+      // ⛔ لا يُختَم «غيرُ موجود» إلّا بنافذةٍ مكتملة — وإلّا فهو **تعذُّرُ فحصٍ** يُعاد
+      verdict = !hit && !probedOk
+        ? "error"
+        : judge(hit?.username ?? null, card.subscriberId != null ? (userOf.get(card.subscriberId) ?? null) : null);
     } catch { verdict = "error"; }
     if (verdict === "mismatch") out.mismatch++;
     const data = {

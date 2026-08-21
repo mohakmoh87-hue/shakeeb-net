@@ -14,14 +14,19 @@ import { prisma } from "./prisma";
 
 // 🔴 netUser أخطرُها (تغيّرُ اليوزر في الساس — بلاغ محمد 2026-08-21) ويُعرَض بالأحمر
 // danger: تغييرٌ تطبيقُه يُتلف بياناتٍ (نقصُ أيّامٍ يتجاوز أسبوعاً) — الواجهةُ تُبرزه وتستثنيه من «تحديد الكلّ»
-export type InfoChange = { f: "phone" | "name" | "address" | "package" | "dateTo" | "netUser"; label: string; old: string; new: string; danger?: boolean };
+// 🔗 sasLink: رقمُ الساس تغيّر ليوزرٍ قائم (أعادت الشركةُ إنشاءَ الحساب) — تطبيقُه **ربطٌ**
+//    لا استبدال. وكان هذا يُرصَد «تنصيباً خارجيّاً»، و«تحديث» عليه يؤرشف صفَّك ويُنشئ ثانياً.
+export type InfoChange = { f: "phone" | "name" | "address" | "package" | "dateTo" | "netUser" | "sasLink"; label: string; old: string; new: string; danger?: boolean };
 
 const tableMissing = (e: unknown) =>
   typeof e === "object" && e != null && "code" in e && (e as { code?: string }).code === "P2021";
 
 // 🔴 اليوزرُ **داخلَ البصمة** (مراجعة 2026-08-21): كان خارجَها، فصفٌّ تُجوهل ثمّ غيّرت
 // الشركةُ يوزرَه لا تتغيّر بصمتُه ⇒ يبقى مدفوناً — وهو أخطرُ تغييرٍ على الإطلاق.
-function fingerprint(p: { netUser?: string | null; name?: string | null; phone?: string | null; address?: string | null; packageName?: string | null; sasDateTo?: Date | null }): string {
+// ⚠️ **مصدَّرةٌ عمداً**: كان للـAPI نسخةٌ ثانيةٌ منها بخمسة حقولٍ بينما هذه بستّة (أُضيف
+// اليوزر 2026-08-21) ⇒ البصمتان لا تتطابقان أبداً ⇒ **كلُّ صفٍّ تُجاهله يعود في أوّل
+// مزامنة** (بلاغُ محمد). فصارت الدالّةُ واحدةً لا نسختَين.
+export function fingerprint(p: { netUser?: string | null; name?: string | null; phone?: string | null; address?: string | null; packageName?: string | null; sasDateTo?: Date | null }): string {
   return JSON.stringify([(p.netUser ?? "").toLowerCase(), p.name ?? "", p.phone ?? "", p.address ?? "", p.packageName ?? "", p.sasDateTo ? p.sasDateTo.toISOString().slice(0, 10) : ""]);
 }
 
@@ -45,9 +50,14 @@ async function upsertStateRow(kind: "info" | "install", p: StatePayload, changes
       sasDateTo: p.sasDateTo ?? null,
       changes: changes ? JSON.stringify(changes) : null,
     };
+    // 🔴 **صفوفُ الحالة وحدَها** (مراجعة 2026-08-21): تفعيلاتُ الشركة تُخزَّن أيضاً بـ
+    // `kind:"install"` لكنّها **مؤرَّخة** (`activatedAt`)، وكان البحثُ يأخذ آخرَ خمسة صفوفٍ
+    // أيّاً كانت ⇒ خمسُ تفعيلاتِ شركةٍ تحجب صفَّ الحالة فيُنشأ صفٌّ جديدٌ كلَّ مزامنة،
+    // وربّما كُتبت بياناتُ حالةٍ **فوق** صفّ حدثٍ فاختلط النوعان. الآن: غيرُ المؤرَّخة
+    // فقط، وبلا سقفٍ يحجب (المعلَّقُ والمتجاهَلُ واحدٌ لكلّ حالةٍ بطبيعتها).
     const rows = await prisma.syncLog.findMany({
-      where: { towerId: p.towerId, sasId: p.sasId, kind },
-      orderBy: { id: "desc" }, take: 5,
+      where: { towerId: p.towerId, sasId: p.sasId, kind, activatedAt: null, status: { in: ["pending", "ignored"] } },
+      orderBy: { id: "desc" }, take: 10,
       select: { id: true, status: true, snapshot: true, phone: true },
     });
     const pending = rows.find((r) => r.status === "pending");
@@ -201,6 +211,19 @@ export async function reconcileInstalls(towerId: number, seenSasIds: Set<number>
     });
     return stale.length;
   } catch { return 0; }
+}
+
+/** 🪦 رقمُ ساسٍ ماتَ (أعادت الشركةُ إنشاءَ الحساب برقمٍ جديد): صفوفُه المعلّقةُ لن تُرى
+ *  في أيّ مزامنةٍ بعد اليوم — فلا يُغلقها التصحيحُ الذاتيّ (شرطُه الرؤية) وتبقى أبداً.
+ *  تُغلَق هنا لحظةَ اكتشاف الرقم الجديد لليوزر نفسِه. */
+export async function closeDeadSasRows(towerId: number, deadSasId: number | null, newSasId: number): Promise<void> {
+  if (deadSasId == null || deadSasId === newSasId) return;
+  try {
+    await prisma.syncLog.updateMany({
+      where: { towerId, sasId: deadSasId, status: { in: ["pending", "ignored"] } },
+      data: { status: "done", note: `رقمُ الساس تغيّر إلى ${newSasId} — أُغلق تلقائيّاً`, handledAt: new Date() },
+    });
+  } catch { /* خامد */ }
 }
 
 /** صفوفُ معلوماتٍ معلّقةٌ لمشتركين لم نعد نراهم أو زال موضوعُها ⇒ تُغلق (نفس شرط الرؤية) */

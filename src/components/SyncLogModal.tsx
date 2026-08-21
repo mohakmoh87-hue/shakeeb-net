@@ -29,6 +29,9 @@ const isCompanyRow = (r: Row) => (r.note ?? "").startsWith("🏢");
 // في حساب محمد نقصٌ يبلغ شهراً). يُبرَز بالأحمر و**يُستثنى من «تحديد الكلّ»** فلا يُطبَّق
 // سهواً في دفعةٍ جماعيّة؛ ويبقى تحديدُه فرديّاً ممكناً لمن أراده عن قصد.
 const isDangerRow = (r: Row) => (r.changes ?? []).some((c) => c.danger);
+// 🔗 رقمُ الساس تغيّر ليوزرٍ قائم: «تحديث» يربط الرقمَ الجديد بصفّك (لا يُنشئ صفّاً ثانياً)،
+// و«↔️ استبدال» زرٌّ منفصلٌ لحالةِ **تركَ الخدمةَ وحلَّ محلَّه مشتركٌ آخرُ على اليوزر نفسِه**.
+const isLinkRow = (r: Row) => (r.changes ?? []).some((c) => c.f === "sasLink");
 const isReplaceRow = (r: Row) => r.kind === "install" && r.subscriberId != null && r.sasId != null && r.oursSasId !== r.sasId;
 
 const KINDS = [
@@ -138,7 +141,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
     else { setSortKey(k); setSortAsc(true); }
   }
 
-  async function act(ids: number[], action: "apply" | "ignore" | "activate" | "debt" | "message") {
+  async function act(ids: number[], action: "apply" | "ignore" | "activate" | "debt" | "message" | "replace") {
     if (!ids.length || busy) return;
     setBusy(true); setMsg(""); setPlusFor(null);
     try {
@@ -276,7 +279,13 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                         {/* 🔴 تغيّرُ اليوزر أخطرُ التغييرات (طلب محمد: «باللون الأحمر») —
                             سطرُه كلُّه أحمرُ عريضٌ داخل إطارٍ يميّزه عن بقيّة الفروق */}
                         {(r.changes ?? []).map((c, i) => (
-                          c.f === "netUser" ? (
+                          c.f === "sasLink" ? (
+                            <div key={i} className="my-0.5 rounded-lg border border-sky-300 bg-sky-50 px-2 py-1 text-[12px] font-extrabold leading-6 text-sky-800">
+                              {c.label}:{" "}
+                              <span className="line-through opacity-70" dir="ltr">{c.old}</span>{" "}←{" "}
+                              <span dir="ltr">{c.new}</span>
+                            </div>
+                          ) : c.f === "netUser" ? (
                             <div key={i} className="my-0.5 rounded-lg border border-red-300 bg-red-50 px-2 py-1 text-[12px] font-extrabold leading-6 text-red-700">
                               {c.label}:{" "}
                               <span className="line-through opacity-70" dir="ltr">{c.old}</span>{" "}←{" "}
@@ -330,8 +339,21 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                         {/* تنصيبٌ جديد: «حفظ» يستورده بلا وصل · قائمٌ (إعادة/ذاتيّ/ساس): «تحديث» */}
                         <button onClick={() => void act([r.id], "apply")} disabled={busy}
                           className="ml-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[12px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
-                          {tab === "install" && r.subscriberId == null ? "💾 حفظ" : isReplaceRow(r) ? "↔️ استبدال" : "✔ تحديث"}
+                          {tab === "install" && r.subscriberId == null ? "💾 حفظ" : isLinkRow(r) ? "🔗 ربط الرقم" : "✔ تحديث"}
                         </button>
+                        {(isLinkRow(r) || isReplaceRow(r)) && (
+                          <button
+                            onClick={() => {
+                              if (confirm(`استبدالُ مشترك على اليوزر «${r.netUser ?? ""}»:
+
+المشتركُ الحاليُّ يصير أرشيفاً بوسم «سابق» ويبقى دينُه عليه، ويأخذ الجديدُ اليوزرَ ومكانَه.
+
+اضغط «موافق» فقط إن كان المشتركُ القديمُ قد ترك الخدمةَ فعلاً وحلَّ محلَّه شخصٌ آخر.`)) void act([r.id], "replace");
+                            }}
+                            disabled={busy}
+                            className="ml-1 rounded-lg bg-amber-500 px-2.5 py-1 text-[12px] font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                            title="تركَ الخدمةَ وحلَّ محلَّه مشتركٌ آخرُ على اليوزر نفسِه">↔️ استبدال</button>
+                        )}
                         <button onClick={() => void act([r.id], "ignore")} disabled={busy}
                           className="rounded-lg bg-slate-200 px-2.5 py-1 text-[12px] font-bold text-slate-600 hover:bg-slate-300 disabled:opacity-50">تجاهل</button>
                       </td>

@@ -35,7 +35,10 @@ describe("♻️ سجلّ المزامنة التفاعليّ ودفعةُ ال�
     assert.ok(src.includes("await recordCompanyActivation("), "تفعيلُ الشركة/الديلر ما زال يسقط في الفراغ");
     // ولا حدثَ إن كان مقبوضاً عندنا: غطاءُ التاريخ ثمّ الوصل
     assert.ok(src.includes("if (covered) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }"), "غطاءُ التاريخ غاب");
-    assert.ok(src.includes("if (receipt) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }"), "فحصُ الوصل غاب");
+    // 💰 وصار الفحصُ على **اليوزر** (كلّ صفوفه) وبتاريخَين: قربُ الوصل من التفعيل أو
+    //    انتهاءُ الوصل بانتهاء الساس — حالةُ bg-13-6-3@mu (الوصلُ في صفٍّ والرصدُ على آخر).
+    assert.ok(src.includes("if (await collectedByUs(subUserKey, sub.id, actAt, validNewExp)) {"), "فحصُ الوصل غاب");
+    assert.ok(src.includes("await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue;"), "الوصلُ لا يُغلق الحدث");
     // والإغلاقُ اللاحق يشمل الأنواع الثلاثة (صفوفُ الشركة مؤرَّخةٌ فتدخل بطبيعتها)
     assert.ok(read("src/lib/syncLog.ts").includes('kind: { in: ["sas", "self", "install"] }, status: "pending"'),
       "الوصلُ لا يُغلق صفوفَ الشركة المؤرَّخة");

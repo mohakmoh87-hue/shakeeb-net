@@ -390,6 +390,16 @@ export async function sasProbeUserActivations(
     return { ok: false, rows: [] };
   }
 }
+/** 🎴 بحثُ سيريالِ كارتٍ **من النافذة المفهرَسة** — لا يعتمد على `search` المعطَّل.
+ *  `ok:false` ⇒ النافذةُ ناقصةٌ (عطلُ شبكةٍ أو الكارتُ أقدمُ من النافذة) ⇒ **لا يُحكَم**
+ *  بأنّه غيرُ مستخدَم. وهذه هي القاعدةُ التي حمت الدفترَ من ختمٍ كاذبٍ أسبوعاً كاملاً. */
+export async function sasFindSerial(base: string, token: string, serial: string, days = 35): Promise<SerialProbe> {
+  const s = (serial ?? "").trim();
+  if (!s) return { ok: true, hit: null };
+  const win = await sasActivationWindow(base, token, days);
+  return actWindowFindSerial(win, s);
+}
+
 export async function sasSearchActivation(
   base: string, token: string, serial: string,
 ): Promise<SasActivation | null> {
@@ -455,6 +465,68 @@ export async function sasFetchActivationsForDay(
   return rows;
 }
 
+// ═════ 🪟 نافذةُ التفعيلات المفهرَسة — بديلُ «البحث» الذي لا يعمل (قياسٌ 2026-08-21) ═════
+// اختُبر مخدّمُ الساس باثنتَي عشرة صيغةِ ترشيح (search نصّاً وكائناً · filter · filters ·
+// where · user_id · username · keyword): **كلُّها تُتجاهَل** ويعود أقدمُ عشرة صفوفٍ من
+// سبعةٍ وثلاثين ألفاً. فكلُّ ما بُني على `search` كان يمسح تفعيلاتِ ٢٠٢٥ ثمّ يقول «غير
+// موجود»: مسبارُ السيريال · حارسُ حذف الكارت · دفترُ الفحص · تصنيفُ قفزة التاريخ.
+// 🔑 والترقيمُ (page/count) **يعمل** — مُثبَتٌ على الإنتاج. فالبديلُ الصحيح: جلبُ نافذةٍ
+//    زمنيّةٍ واحدةٍ بالترقيم مرّةً، وفهرستُها في الذاكرة بثلاثة مفاتيح (الرقم · اليوزر ·
+//    البِن)، فتُجاب كلُّ الأسئلة منها بصفر نداءاتٍ إضافيّة.
+// ⏱️ وذاكرةٌ مؤقّتة ١٠ دقائق مفتاحُها **التوكن** لا الرابط — فحسابان على مخدّمٍ واحدٍ
+//    لا يريان نافذةَ بعضهما أبداً (عزلُ الوكيل شرطٌ دائم).
+export type ActWindow = {
+  since: Date;
+  complete: boolean;          // false = النافذةُ ناقصةٌ (تعذّر مسحُها كاملةً) ⇒ لا حكمَ سلبيّاً
+  rows: SasActivation[];
+  byUser: Map<string, SasActivation[]>;   // يوزرٌ (حروفٌ صغيرة) ⇒ تفعيلاتُه (الأحدثُ أوّلاً)
+  bySasId: Map<number, SasActivation[]>;
+  byPin: Map<string, SasActivation>;      // سيريالُ الكارت (مطبَّعاً) ⇒ تفعيلتُه
+};
+
+const actWinCache = new Map<string, { at: number; win: ActWindow }>();
+const ACT_WIN_TTL_MS = 10 * 60_000;
+
+export async function sasActivationWindow(
+  base: string, token: string, days = 35,
+): Promise<ActWindow> {
+  const key = `${base}|${String(token).slice(-24)}|${days}`;
+  const hit = actWinCache.get(key);
+  if (hit && Date.now() - hit.at < ACT_WIN_TTL_MS) return hit.win;
+  const since = new Date(Date.now() - days * 86400_000);
+  let rows: SasActivation[] = [], complete = false;
+  try {
+    const r = await sasFetchActivationsSince(base, token, since);
+    rows = r.rows; complete = r.complete;
+  } catch {
+    rows = []; complete = false; // عطلُ شبكةٍ ⇒ نافذةٌ فارغةٌ **غيرُ مكتملة**، لا تُبنى عليها نفي
+  }
+  rows.sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
+  const byUser = new Map<string, SasActivation[]>();
+  const bySasId = new Map<number, SasActivation[]>();
+  const byPin = new Map<string, SasActivation>();
+  for (const a of rows) {
+    const u = (a.username ?? "").trim().toLowerCase();
+    if (u) { const l = byUser.get(u) ?? []; l.push(a); byUser.set(u, l); }
+    const l2 = bySasId.get(a.sasUserId) ?? []; l2.push(a); bySasId.set(a.sasUserId, l2);
+    const pk = pinKey(a.pin);
+    if (pk && !byPin.has(pk)) byPin.set(pk, a);
+    const dk = digitsOnly(a.pin);
+    if (dk && dk !== pk && !byPin.has(dk)) byPin.set(dk, a);
+  }
+  const win: ActWindow = { since, complete, rows, byUser, bySasId, byPin };
+  actWinCache.set(key, { at: Date.now(), win });
+  return win;
+}
+
+/** تفعيلةُ سيريالٍ من النافذة المفهرَسة. `ok:false` = النافذةُ ناقصةٌ ⇒ **لا يُحكَم** بعدمه. */
+export function actWindowFindSerial(win: ActWindow, serial: string): SerialProbe {
+  const s = (serial ?? "").trim();
+  if (!s) return { ok: true, hit: null };
+  const hit = win.byPin.get(pinKey(s)) ?? win.byPin.get(digitsOnly(s)) ?? null;
+  if (hit) return { ok: true, hit };
+  return { ok: win.complete, hit: null };
+}
 // جلب كل تفعيلات SAS منذ تاريخ محدّد — صفحة واحدة كل 500 صفّ بدل استعلام لكل كارت.
 // الفحص الشامل كان يبحث سيريال كل كارت على حدة (423 استعلاماً × ~5 ثوانٍ ≈ 45 دقيقة)؛
 // هذه الدالّة تجلب الكل في ~10 طلبات فتنتهي المطابقة في أقل من دقيقة.

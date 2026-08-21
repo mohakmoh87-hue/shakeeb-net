@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import {
-  sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers, sasSearchActivation,
-  sasProbeSerial, sasProbeUserActivations,
+  sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers, sasFindSerial,
+  sasActivationWindow, actWindowFindSerial, type ActWindow,
   sasFetchActivationsSince,
   type SasActivation,
 } from "@/lib/sas4";
@@ -11,13 +11,25 @@ import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
-import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, isOwnCabinet, type InfoChange } from "@/lib/syncLog";
+import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, closeDeadSasRows, isOwnCabinet, type InfoChange } from "@/lib/syncLog";
 import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 // ═════ ✍️ اسمٌ عندنا يحمل ملاحظةً فوق اسم الساس (مراجعةُ محمد 2026-08-21) ═════
 // ٢٩ صفّاً في حسابه كان اسمُنا فيها اسمَ الساس **زائداً ملاحظةً تشغيليّة** («… تحويل
 // لا تفعل»)، فيُرصَد فرقٌ تطبيقُه **يمحو ملاحظتَه**. فما دام اسمُنا يحتوي اسمَ الساس
 // كاملاً فهو الأغنى ولم يأتِ الساسُ بجديدٍ ⇒ لا فرق.
+// ═════ 🕗 سماحيةُ ١٢ ساعة على تاريخ الانتهاء (قياسٌ حيّ 2026-08-21) ═════
+// الساسُ ينهي الاشتراك **17:00Z** (٢٠:٠٠ بغداد) والبرنامجُ يخزّن **00:00Z**، والمقارنةُ
+// كانت بيوم الـISO ⇒ فرقُ يومٍ **كاذبٌ لكلّ من جاء تاريخُه من عرفٍ مختلف**. وقِيس على
+// حساب محمد: **١٤ من ٣٣** صفَّ تاريخٍ كانت فرقاً مقدارُه **٧ ساعاتٍ بالضبط** لا غير.
+// و١٢ ساعةً تفصل الوهمَ عن الحقيقة: تمديدُ يومٍ حقيقيٍّ فرقُه ١٧ ساعةً فيبقى ظاهراً.
+const EXP_TOL_MS = 12 * 3600_000;
+const sameExpiry = (a: Date | null | undefined, b: Date | null | undefined): boolean =>
+  !!a && !!b && Math.abs(a.getTime() - b.getTime()) <= EXP_TOL_MS;
+
+// 💰 نافذةُ «مقبوضٌ عندي» حول لحظة التفعيل — ٣٦ ساعةً تغطّي وصلاً كُتب صباحَ اليوم التالي
+const RECEIPT_NEAR_MS = 36 * 3600_000;
+
 const nameKey = (x: string | null | undefined) =>
   String(x ?? "").replace(/[\s.,\-_()·،]+/g, " ").trim().toLowerCase();
 function nameCoversSas(ours: string | null | undefined, sas: string | null | undefined): boolean {
@@ -337,6 +349,58 @@ async function runOfficeSyncInner(
     if (u && !subByUserPhase1.has(u)) subByUserPhase1.set(u, s);
   }
   const subById = new Map(officeSubs.map((s) => [s.id, s]));
+  // ═════ 💰 «مقبوضٌ عندي» تُقاس على **اليوزر** لا على صفّ المشترك (العلّةُ الأمّ 2026-08-21) ═════
+  // حالةُ bg-13-6-3@mu بنصّها: صفّان لليوزر نفسِه — أحدُهما تنصيبُ محمد بوصلِه (٣٥ ألفاً)،
+  // والآخرُ أنشأته المزامنةُ القديمة حين أعادت الشركةُ إنشاءَ حساب الساس برقمٍ جديد.
+  // وكلُّ فحوص الوصل كانت تسأل عن `subscriberId` **الصفِّ المرصود** — وهو الفارغُ — فتعمى
+  // عن مالٍ مقبوضٍ فعلاً وتُظهره «خارجيّاً». واليوزرُ هو الفيصلُ الذي لا يُخطئ، فتُجمَع
+  // وصولاتُ **كلّ** صفوفه. (٣٣ يوزراً مكرَّراً في مكاتب محمد يوم القياس.)
+  const idsByUser = new Map<string, number[]>();
+  for (const s of await prisma.subscriber.findMany({
+    where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
+    select: { id: true, netUser: true },
+  })) {
+    const u = (s.netUser ?? "").trim().toLowerCase();
+    if (!u) continue;
+    const l = idsByUser.get(u) ?? []; l.push(s.id); idsByUser.set(u, l);
+  }
+  // 🪟 نافذةُ التفعيلات المفهرَسة (٣٥ يوماً) — **كسولةٌ**: لا تُجلَب إلّا عند أوّل سؤالٍ
+  // حقيقيّ (فحصُ كارتٍ أو قفزةُ تاريخ)، فالمزامنةُ الهادئةُ لا تدفع ثمنَها. وهي البديلُ
+  // الكاملُ لبحث الساس المعطَّل: تُجاب منها كلُّ الأسئلة بصفر نداءاتٍ إضافيّة.
+  let actWinP: Promise<ActWindow> | null = null;
+  const getActWin = () => (actWinP ??= sasActivationWindow(base, token, 35));
+  const receiptCache = new Map<string, { at: number[]; to: number[] }>();
+  const receiptsOfUser = async (userKey: string, fallbackSubId?: number) => {
+    const k = userKey || `#${fallbackSubId ?? 0}`;
+    const cached = receiptCache.get(k);
+    if (cached) return cached;
+    const ids = idsByUser.get(userKey) ?? (fallbackSubId != null ? [fallbackSubId] : []);
+    let out = { at: [] as number[], to: [] as number[] };
+    if (ids.length) {
+      const rows = await prisma.subscriptionEntry.findMany({
+        where: { subscriberId: { in: ids }, isDeleted: false },
+        select: { date: true, dateTo: true },
+        orderBy: { id: "desc" }, take: 60,
+      });
+      out = {
+        at: rows.map((r) => r.date?.getTime() ?? 0).filter(Boolean),
+        to: rows.map((r) => r.dateTo?.getTime() ?? 0).filter(Boolean),
+      };
+    }
+    receiptCache.set(k, out);
+    return out;
+  };
+  /** وصلٌ قريبٌ من لحظة التفعيل، **أو** وصلٌ ينتهي بانتهاء الساس نفسِه (طلب محمد:
+   *  «قارِنْ تاريخَ التفعيل بتاريخ الوصل») — أيُّهما تحقّق فالمالُ مقبوضٌ عندنا. */
+  const collectedByUs = async (
+    userKey: string, subId: number, actAt: Date | null, newExp: Date | null,
+  ): Promise<boolean> => {
+    const r = await receiptsOfUser(userKey, subId);
+    if (actAt && r.at.some((t) => Math.abs(t - actAt.getTime()) <= RECEIPT_NEAR_MS)) return true;
+    if (newExp && r.to.some((t) => Math.abs(t - newExp.getTime()) <= RECEIPT_NEAR_MS)) return true;
+    return false;
+  };
+
 
   // مجموعة (مشترك SAS | بِن) من **النافذة الموسّعة** (الأمس + اليوم) — تُستخدم للتحقّق من
   // «التفعيل الوهمي» فقط. توسيعها يمنع اعتبار كارتٍ حقيقيٍّ وهمياً لمجرّد وقوع تفعيله
@@ -482,14 +546,13 @@ async function runOfficeSyncInner(
     const COVER_TOL_MS = 24 * 3600_000;
     const covered = !!(validNewExp && sub.dateTo && sub.dateTo.getTime() >= validNewExp.getTime() - COVER_TOL_MS && !loanSubIdsP1.has(sub.id));
     if (covered) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }
-    const receipt = await prisma.subscriptionEntry.findFirst({
-      where: {
-        subscriberId: sub.id, isDeleted: false,
-        date: { gte: new Date(actAt.getTime() - 12 * 3600_000), lte: new Date(actAt.getTime() + 12 * 3600_000) },
-      },
-      select: { id: true },
-    });
-    if (receipt) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }
+    // 💰 قاعدةُ محمد بحرفها: «إن كان لديه وصلُ تفعيلٍ عندي فليس خارجيّاً أبداً» —
+    // وتُقاس على **اليوزر** (كلّ صفوفه) وبتاريخَين: قربُ الوصل من التفعيل، أو انتهاءُ
+    // الوصل بانتهاء الساس نفسِه. (كانت على صفٍّ واحدٍ وبنافذة ±١٢ ساعةً وحدَها.)
+    const subUserKey = (a.username ?? sub.netUser ?? "").trim().toLowerCase();
+    if (await collectedByUs(subUserKey, sub.id, actAt, validNewExp)) {
+      await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue;
+    }
     // 💸 القرض (تصنيف محمد ٤): مبلغٌ صفرٌ **وبلا كارت** — يُوسَم كي لا يُصنع له وصلُ بيع
     const isLoanAct = Math.round(a.price || 0) <= 0 && !(a.pin ?? "").trim();
     if (managerIsPage || ownCabinet) {
@@ -548,8 +611,10 @@ async function runOfficeSyncInner(
     while (true) {
       const i = vNext++;
       if (i >= toVerify.length) break;
-      const found = await sasSearchActivation(base, token, (toVerify[i].serial ?? "").trim());
-      if (found) realFlags[i] = true;
+      // 🪟 من النافذة المفهرَسة: بحثُ الساس بالسيريال **لا يعمل** (قياسُ 2026-08-21)،
+      //    ونافذةٌ ناقصةٌ ⇒ يُعدّ «حقيقيّاً» احتياطاً فلا يُنذَر بالوهميّة على شكّ.
+      const pr = actWindowFindSerial(await getActWin(), (toVerify[i].serial ?? "").trim());
+      if (pr.hit || !pr.ok) realFlags[i] = true;
     }
   };
   await Promise.all(Array.from({ length: Math.min(POOL, toVerify.length) }, worker));
@@ -623,14 +688,16 @@ async function runOfficeSyncInner(
     //    والفهرسُ `subscribers_towerId_netUser_idx` **غيرُ فريدٍ** فلا شيءَ يمنع المزيد.
     // ⇒ فلا يُنشأ صفٌّ ليوزرٍ موجودٍ أبداً. والقرارُ في حالته (استبدالٌ كامل؟ دمج؟) بيد
     //   محمد لا بيد المزامنة — فالمزامنةُ **تتوقّف عن الإفساد** ولا تخترع حكماً.
-    const progByUser = new Map<string, { id: number; sasId: number | null }>();
+    // 🔑 بكامل حقوله: صفُّ اليوزر القائم يصير **هو** المرجعَ في المقارنة حين يتغيّر رقمُ ساسه
+    const progByUser = new Map<string, (typeof progSubs)[number]>();
     for (const s of await prisma.subscriber.findMany({
       where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
-      select: { id: true, sasId: true, netUser: true },
+      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true, name: true, netUser: true },
     })) {
       const u = (s.netUser ?? "").trim().toLowerCase();
-      if (u && !progByUser.has(u)) progByUser.set(u, { id: s.id, sasId: s.sasId });
+      if (u && !progByUser.has(u)) progByUser.set(u, s);
     }
+
 
     // أصحاب القروض القائمة في هذا المكتب — المزامنة تتجاهلهم تماماً: لهم 7 أيام حقيقيّة في
     // الساس و30 يوماً وهميّة عندنا؛ ولو زامنّاهم لأفسدنا الأيام الوهميّة (طلب محمد 2026-08-06).
@@ -672,23 +739,23 @@ async function runOfficeSyncInner(
     // ونعودُ false عند أيّ شكّ (تعذّرُ الفحص · لا تفعيلةَ مطابقة) فيبقى الصفُّ كما كان.
     const classifyDateJump = async (
       sub: { id: number; netUser: string | null; name: string | null; dateTo: Date | null },
-      sasId: number, username: string | null, nday: string,
+      sasId: number, username: string | null, newSasExp: Date | null,
     ): Promise<boolean> => {
-      const probe = await sasProbeUserActivations(base, token, username ?? sub.netUser ?? "", sasId);
-      if (!probe.ok || !probe.rows.length) return false;
-      // التفعيلةُ التي أنتجت تاريخَنا الجديد: انتهاؤها الجديدُ بيومِ التاريخ الجديد نفسِه
-      const hit = probe.rows.find((r) => String(r.newExpiration ?? "").slice(0, 10) === nday);
+      if (!newSasExp) return false;
+      const win = await getActWin();
+      const uKey = (username ?? sub.netUser ?? "").trim().toLowerCase();
+      const cands = [...(win.bySasId.get(sasId) ?? []), ...(uKey ? win.byUser.get(uKey) ?? [] : [])];
+      if (!cands.length) return false; // لا تفعيلةَ في النافذة ⇒ لا حكمَ (يبقى فرقَ تاريخ)
+      // التفعيلةُ التي أنتجت تاريخَنا الجديد: انتهاؤها الجديد يطابق تاريخَ الساس (±١٢ ساعة)
+      const hit = cands.find((r) => {
+        const e = r.newExpiration ? new Date(r.newExpiration) : null;
+        return sameExpiry(e, newSasExp);
+      });
       if (!hit) return false;
       const actAt = hit.createdAt ? new Date(hit.createdAt) : null;
       if (!actAt || isNaN(actAt.getTime())) return false;
-      const receipt = await prisma.subscriptionEntry.findFirst({
-        where: {
-          subscriberId: sub.id, isDeleted: false,
-          date: { gte: new Date(actAt.getTime() - 12 * 3600_000), lte: new Date(actAt.getTime() + 12 * 3600_000) },
-        },
-        select: { id: true },
-      });
-      if (receipt) return false; // 💰 مقبوضٌ عندي ⇒ ليس خارجيّاً — يبقى فرقَ تاريخٍ يدويّاً
+      // 💰 مقبوضٌ عندي (وصلٌ قريبٌ أو وصلٌ ينتهي بانتهائه) ⇒ ليس خارجيّاً — يبقى فرقَ تاريخ
+      if (await collectedByUs(uKey, sub.id, actAt, newSasExp)) return false;
       const mgr = (hit.managerUsername ?? "").trim();
       const managerIsPage = mgr.toLowerCase() === officeUser;
       const ownCabinet = isOwnCabinet(hit.username ?? sub.netUser, mgr);
@@ -716,26 +783,37 @@ async function runOfficeSyncInner(
 
     for (const u of allUsers) {
       seenSasIds.add(u.sasId);
-      const p = progBySasId.get(u.sasId);
+      let p = progBySasId.get(u.sasId);
+      // 🔗 يوزرٌ عندنا برقمِ ساسٍ جديد: **ليس تنصيباً** بل رقمُ حسابٍ تغيّر — يُرصَد ربطاً
+      //    في «تحديث معلومات»، والاستبدالُ (تركَ الخدمة وحلَّ محلَّه آخر) صار فعلاً صريحاً
+      //    بزرِّه لا نتيجةً جانبيّةً لزرّ «تحديث» (كان يؤرشف الصفَّ الصحيح ويُنشئ مكرَّراً).
+      let sasLinkDiff: InfoChange | null = null;
       const sasDate = u.expiration ? new Date(u.expiration) : null;
       const validDate = sasDate && !isNaN(sasDate.getTime()) ? sasDate : null;
 
       if (!p) {
-        // 🔴 البند ٥ · **حرسُ تكرار اليوزر قبل الاستيراد**: يوزرٌ موجودٌ عندنا بصفٍّ
-        //   آخرَ (بـ`sasId` مختلفٍ — أعادت الشركةُ تنصيبَه) لا يُنشأ له صفٌّ ثانٍ.
-        //   يُحصى ويُبلَّغ، والقرارُ في حالته بيد محمد لا بيد المزامنة.
+        // 🔗 يوزرٌ عندنا برقمِ ساسٍ جديد ⇒ **ربطٌ** لا تنصيب (بلاغُ محمد 2026-08-21):
+        //    أعادت الشركةُ إنشاءَ حساب الساس (216391 ⇐ 491275 في حالة bg-13-6-3@mu)، فكان
+        //    يُرصَد «تنصيباً خارجيّاً»، و«تحديث» عليه **يؤرشف صفَّك الصحيحَ ويُنشئ ثانياً**.
+        //    الآن: يُصنَّف صفُّه القائمُ مرجعاً، ويُضاف فرقُ «رقم الساس» إلى تحديث المعلومات،
+        //    والاستبدالُ الحقيقيُّ (تركَ الخدمة وحلَّ محلَّه آخر) زرُّه صريحٌ منفصل.
         const uKey = (u.username ?? "").trim().toLowerCase();
         const oldByUser = uKey ? progByUser.get(uKey) : undefined;
         if (oldByUser) {
-          // 🏷️ (قرار محمد 2026-08-21) تنصيبُ الشركة على يوزرِ تاركِ خدمةٍ لم يعد يُبتلَع
-          //   بصمت: يُرصَد في تبويب «تنصيب خارجي» **مربوطاً بالصفّ القديم** الحامل اليوزر،
-          //   و«تحديث» هناك ينفّذ استبدالَ مشتركٍ كاملاً (كخاصيّة الاستبدال اليدويّة نفسِها:
-          //   القديم أرشيفٌ حيٌّ بوسم «سابق» ودينُه عليه، والجديدُ يأخذ اليوزرَ والمكان).
-          //   يبقى العدُّ للتقرير، ولا صفَّ ثانٍ يُنشأ أبداً (الحرسُ قائم).
           dupUserSkipped++;
-          stillInstalls.add(u.sasId); // ما زال مؤهَّلاً ⇒ لا يُغلقه التصحيحُ الذاتيّ
+          p = oldByUser;
+          sasLinkDiff = {
+            f: "sasLink", label: "🔗 رقمُ الساس تغيّر (أعادت الشركةُ إنشاءَ الحساب)",
+            old: String(oldByUser.sasId ?? "—"), new: String(u.sasId),
+          };
+          await closeDeadSasRows(officeId, oldByUser.sasId, u.sasId);
+        } else {
+          // ═════ 📋 مشترك جديد في الساس ⇒ **لا استيرادَ تلقائيّاً** (قرار محمد 2026-08-20):
+          // يُرصَد في تبويب «تنصيب خارجي» بكامل بياناته، و«حفظ» بيد صاحب الصلاحيّة يستورده
+          // (بلا وصل)، و«تجاهل» يخفيه حتى تتغيّر بياناتُه.
+          stillInstalls.add(u.sasId);
           const fresh = await recordInstall({
-            agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: oldByUser.id,
+            agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: null,
             netUser: u.username, name: u.name, phone: u.phone, address: u.address,
             packageName: u.packageName, sasDateTo: validDate,
           });
@@ -747,24 +825,6 @@ async function runOfficeSyncInner(
           }
           continue;
         }
-        // ═════ 📋 مشترك جديد في الساس ⇒ **لا استيرادَ تلقائيّاً بعد اليوم** (قرار محمد
-        // 2026-08-20): يُرصَد في تبويب «تنصيب خارجي» بكامل بياناته، و«حفظ» بيد صاحب
-        // الصلاحيّة يستورده (بلا وصل)، و«تجاهل» يخفيه حتى تتغيّر بياناتُه (فيعود «تحديثَ
-        // معلومات» وتحديثُه يستورده كاملاً). حلّ محلَّ toImport/createMany القديمَين.
-        stillInstalls.add(u.sasId); // ما زال غيرَ مستوردٍ ⇒ يبقى في التبويب
-        const fresh = await recordInstall({
-          agentId: office.agentId ?? -1, towerId: officeId, sasId: u.sasId, subscriberId: null,
-          netUser: u.username, name: u.name, phone: u.phone, address: u.address,
-          packageName: u.packageName, sasDateTo: validDate,
-        });
-        // 📋 رسالةُ «تنصيبات خارجية» التلقائيّة — أوّلُ رصدٍ بهاتفٍ وجيك بوكس التبويب مفعَّل
-        if (fresh && autoMsg.install) {
-          await sendSyncLogMessage("install", {
-            towerId: officeId, sasId: u.sasId, subscriberId: null, phone: u.phone,
-            netUser: u.username, name: u.name, packageName: u.packageName, sasDateTo: validDate,
-          });
-        }
-        continue;
       }
       // ═════ 📋 سجلّ المزامنة (قرار محمد 2026-08-20): «تمديدُ التاريخ وحدَه يبقى تلقائيّاً» ═════
       // كانت المزامنةُ تكتب العنوانَ مباشرةً (ادرس 1) وتردم الهاتفَ الفارغَ وتملأ الباقةَ
@@ -773,6 +833,7 @@ async function runOfficeSyncInner(
       {
         const diffs: InfoChange[] = [];
         const sv = (x: string | null | undefined) => (x ?? "").trim();
+        if (sasLinkDiff) diffs.push(sasLinkDiff); // 🔗 أوّلُ الفروق: رقمُ الحساب نفسُه
         // 🔴 **تغيّرُ اليوزر في الساس — أخطرُ تغييرٍ على الإطلاق** (بلاغ محمد 2026-08-21):
         // الشركةُ تُعيد تسميةَ يوزرٍ فيبقى صفُّنا بالاسم القديم بينما رقمُه يشير لصاحبٍ آخر
         // (حالة bg-7-4-2@mu ← bg-7-5-1@mu)، فتُفتح صفحةُ ساسٍ لغير صاحبها، ويبدو اليوزرُ
@@ -802,7 +863,8 @@ async function runOfficeSyncInner(
         if (sasPkgIdForDiff != null && !loanSubIds.has(p.id) && validDate && !actedSasIds.has(u.sasId)) {
           const oday = p.dateTo ? p.dateTo.toISOString().slice(0, 10) : "";
           const nday = validDate.toISOString().slice(0, 10);
-          if (oday !== nday) {
+          // 🕗 فرقٌ دون ١٢ ساعةً = عرفُ تخزينٍ لا تغييرُ اشتراك (٧ ساعاتٍ بين 17:00Z و00:00Z)
+          if (oday !== nday && !sameExpiry(p.dateTo, validDate)) {
             const grew = !p.dateTo || validDate > p.dateTo;
             // 🎯 (د) الزيادةُ لها سببٌ دائماً — تفعيلةٌ وقعت خارج نافذة اليومَين. نسألُ
             //    الساسَ عنها فتُصنَّف في تبويبها الصحيح بدل «تمديدِ أيّامٍ» مجهولِ المصدر.
@@ -810,7 +872,7 @@ async function runOfficeSyncInner(
             let classified = false;
             if (grew && dateProbes < MAX_DATE_PROBES) {
               dateProbes++;
-              classified = await classifyDateJump(p, u.sasId, u.username, nday);
+              classified = await classifyDateJump(p, u.sasId, u.username, validDate);
             }
             if (!classified) {
               // ⚠️ (هـ) نقصٌ يتجاوز أسبوعاً: تطبيقُه **يقصّ أيّاماً مدفوعةً** من مشترك،
@@ -1367,7 +1429,7 @@ export async function runFullCardAudit(
         const keys = [serial, ...(number && number.trim() && number.trim() !== serial ? [number.trim()] : [])];
         outer: for (const key of keys) {
           for (const s of sessions) {
-            const pr = await sasProbeSerial(s.base, s.token, key);
+            const pr = await sasFindSerial(s.base, s.token, key);
             if (!pr.ok) { probeOk = false; continue; }
             if (pr.hit) { found = pr.hit; break outer; }
           }
@@ -1454,7 +1516,7 @@ export async function runFullCardAudit(
       const i = vNext++;
       if (i >= toVerify.length) break;
       for (const s of sessions) { // 🔒 لوحاتُ **هذا** المكتب حصراً
-        const hit = await sasSearchActivation(s.base, s.token, toVerify[i].serial);
+        const hit = (await sasFindSerial(s.base, s.token, toVerify[i].serial)).hit;
         if (hit) { foundReal[i] = true; foundHit[i] = hit; break; }
       }
     }

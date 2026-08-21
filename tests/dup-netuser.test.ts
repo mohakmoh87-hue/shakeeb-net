@@ -28,12 +28,14 @@ describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلف�
     assert.ok(guardAt > -1, "لا حرسَ على تكرار اليوزر");
     const linked = src.slice(guardAt, guardAt + 1400);
     assert.match(linked, /dupUserSkipped\+\+;/, "عدُّ التقرير ضاع");
-    assert.match(linked, /recordInstall\(\{[\s\S]{0,220}subscriberId: oldByUser\.id/,
-      "اليوزرُ المعادُ لا يُرصَد مربوطاً بالصفّ القديم");
+    // 🔗 وصار الرصدُ **ربطَ رقمِ ساسٍ** على الصفّ القائم لا «تنصيباً خارجيّاً» (2026-08-21):
+    //    وسمُ «تنصيب» كان يُغري بـ«تحديث» الذي ينفّذ استبدالاً ⇒ **مكرَّرٌ جديدٌ بيد المستخدم**.
+    assert.match(linked, /p = oldByUser;/, "اليوزرُ المعادُ لا يصير مرجعَ المقارنة");
+    assert.match(linked, /f: "sasLink"/, "لا يُرصَد تغيّرُ رقم الساس فرقاً في المعلومات");
     assert.match(linked, /continue;/, "الحرسُ لا يتخطّى الاستيرادَ فعلاً");
     // ومسارُ التحديث في السجلّ ينفّذ الاستبدالَ الكاملَ بدلالة خاصيّة الاستبدال نفسِها
     const api = fs.readFileSync(path.join(ROOT, "src/app/api/sync-log/route.ts"), "utf8");
-    assert.match(api, /old\.sasId !== r\.sasId/, "لا تمييزَ ليوزرٍ معادٍ عن إعادةِ خدمةٍ عاديّة");
+    assert.match(api, /const isReplace = action === "replace";/, "الاستبدالُ ما زال يقع تلقائيّاً لمجرّد اختلاف رقم الساس");
     assert.match(api, /#سابق-/, "القديمُ لا يوسم «سابق» — سيتصادم اليوزران");
     assert.match(api, /carry: 0/, "الجديدُ يرث دينَ التارك — والماليّةُ يجب أن تبدأ نظيفة");
     assert.match(api, /REPLACE_SUBSCRIBER/, "لا أثرَ تدقيقٍ للاستبدال");
@@ -77,8 +79,7 @@ describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلف�
     const src = SRC();
     const guardAt = src.indexOf("progByUser.get(uKey)");
     assert.ok(guardAt > -1, "مرساةُ الحرس ضاعت");
-    const block = src.slice(src.indexOf("recordInstall({", guardAt), src.indexOf("recordInstall({", guardAt) + 400);
-    assert.match(block, /sasDateTo: validDate/, "الجديدُ يُرصَد بلا تاريخ الساس");
+    const block = src.slice(guardAt, guardAt + 2000);
     assert.match(block, /packageName: u\.packageName/, "الباقةُ لا تُرصَد مع التنصيب");
     // ومسارُ «حفظ» يستورد بتاريخ الساس ويطابق الباقةَ (والمجهولةُ تُترك فارغةً لا مانعةً)
     const api = fs.readFileSync(path.join(ROOT, "src/app/api/sync-log/route.ts"), "utf8");

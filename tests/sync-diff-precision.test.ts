@@ -51,13 +51,14 @@ describe("🎯 دقّةُ فروق سجلّ المزامنة — البنودُ 
 
   test("د · قفزةُ التاريخ تُسأل عنها الساسُ مباشرةً فتُصنَّف في تبويبها — لا «تمديدٌ» مجهول", () => {
     const sas = read("src/lib/sas4.ts");
-    assert.ok(sas.includes("export async function sasProbeUserActivations("), "لا مسبارَ موجَّهاً ليوزرٍ بعينه");
-    assert.ok(sas.includes("export type UserActProbe = { ok: boolean; rows: SasActivation[] };"), "المسبارُ لا يفرّق العطلَ عن «لا نتيجة»");
+    // 🪟 وصار المصدرُ نافذةً مفهرَسةً لا «بحثاً» (بحثُ الساس مُتجاهَلٌ — قياسُ 2026-08-21)
+    assert.ok(sas.includes("export async function sasActivationWindow("), "لا نافذةَ تفعيلاتٍ مفهرَسة");
+    assert.ok(sas.includes("complete: boolean;"), "النافذةُ لا تفرّق العطلَ عن «لا نتيجة»");
     const src = SYNC();
     assert.ok(src.includes("const classifyDateJump = async ("), "لا تصنيفَ لقفزة التاريخ");
-    assert.ok(src.includes("classified = await classifyDateJump(p, u.sasId, u.username, nday);"), "المُصنِّفُ لا يُنادى من كتلة الفروق");
+    assert.ok(src.includes("classified = await classifyDateJump(p, u.sasId, u.username, validDate);"), "المُصنِّفُ لا يُنادى من كتلة الفروق");
     // 💰 قاعدةُ محمد: وصلٌ عندي ⇒ ليس خارجيّاً
-    assert.ok(src.includes("if (receipt) return false; // 💰 مقبوضٌ عندي"), "المُصنِّفُ يتجاوز قاعدةَ الوصل");
+    assert.ok(src.includes("if (await collectedByUs(uKey, sub.id, actAt, newSasExp)) return false;"), "المُصنِّفُ يتجاوز قاعدةَ الوصل");
     // والتصنيفُ ثلاثيٌّ بالمنجر كما في حلقة الأحداث
     assert.ok(src.includes(`await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });`), "التصنيفُ بالمنجر غاب عن المُصنِّف");
     assert.ok(src.includes("await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });"), "تفعيلُ الشركة غاب عن المُصنِّف");
