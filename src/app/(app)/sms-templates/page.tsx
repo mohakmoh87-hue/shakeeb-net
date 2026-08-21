@@ -17,6 +17,9 @@ type EventTpl = { type: string; text: string; enable: string; officeCustom?: boo
 const IMAGE_MAX_BYTES = 300 * 1024;
 type CustomTpl = { id: number; name: string; text: string; dirty?: boolean };
 type Office = { id: number; name: string | null };
+// 📦 قالبُ باقةٍ واحدة في وضع «حسب الباقة» — نفسُ حقول قالب الحدث + هويّةُ الباقة
+type PkgTpl = { packageId: number; name: string; price: number; text: string; enable: string;
+  officeCustom?: boolean; image?: string | null; imageOwn?: boolean; dirty?: boolean; imageDirty?: boolean };
 
 // القوالب المربوطة بالأحداث (لا تُحذف ولا يُعاد تسميتها — تُعطَّل بمفتاح «مفعّل»)
 const EVENTS: { type: string; name: string; hint: string }[] = [
@@ -152,6 +155,11 @@ export default function SmsTemplatesPage() {
   // عزل القوالب لكل مكتب: "" = قوالب الوكيل العامة، وإلا معرّف المكتب (قالبه يغلب العام)
   const [offices, setOffices] = useState<Office[]>([]);
   const [officeSel, setOfficeSel] = useState<string>("");
+  // ═════ 📦 «تذكير قبل الانتهاء حسب الباقة» (طلبُ محمد 2026-08-21) ═════
+  // قائمةُ الباقات تأتي من الخادم لحظةَ الفتح — فالباقةُ الجديدةُ تظهر من نفسها.
+  const [pkgMode, setPkgMode] = useState(false); // مفتاحُ الوضع (يُطفئ القالبَ القديم)
+  const [pkgs, setPkgs] = useState<PkgTpl[]>([]);
+  const [selPkg, setSelPkg] = useState<number | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
   // قوالب الأحداث تُعاد قراءتها عند تبديل المكتب (قالب المكتب إن وُجد وإلا العام)
@@ -164,6 +172,17 @@ export default function SmsTemplatesPage() {
       setSaved(false);
       // موظف المكتب يُقيَّد بمكتبه من الخادم — نثبّت المبدّل على مكتبه الفعلي
       if (d.officeId != null && String(d.officeId) !== officeSel) setOfficeSel(String(d.officeId));
+    })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeSel]);
+
+  // 📦 قوالبُ الباقات — تُعاد قراءتها مع تبديل المكتب كقوالب الأحداث تماماً
+  useEffect(() => {
+    const qs = officeSel ? `?officeId=${officeSel}` : "";
+    fetch(`/api/sms-templates/by-package${qs}`).then((r) => void (r.ok && r.json().then((d: { master: boolean; packages: PkgTpl[] }) => {
+      setPkgMode(!!d.master);
+      setPkgs(d.packages ?? []);
+      setSelPkg((cur) => cur ?? (d.packages?.[0]?.packageId ?? null));
     })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [officeSel]);
@@ -288,6 +307,32 @@ export default function SmsTemplatesPage() {
 
   async function save() {
     setSaving(true); setSaved(false); setErr("");
+    // 📦 وضعُ «حسب الباقة»: مسارُه المستقلّ — يحفظ المفتاحَ وقوالبَ الباقات الملموسةَ وحدَها
+    if (sel === "bypkg") {
+      const r = await fetch("/api/sms-templates/by-package", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          officeId: officeSel ? Number(officeSel) : null,
+          master: pkgMode,
+          packages: pkgs.filter((k) => k.dirty).map((k) => ({
+            packageId: k.packageId, text: k.text ?? "", enable: k.enable ?? "1",
+            ...(k.imageDirty ? { image: k.image ?? null } : {}),
+          })),
+        }),
+      });
+      setSaving(false);
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setErr(d.error ?? "تعذّر الحفظ"); return; }
+      setSaved(true);
+      setPkgs((list) => list.map((k) => ({ ...k, dirty: false, imageDirty: false })));
+      // 🔒 القفلُ المتبادل يُطبَّق على الخادم — نُعيد قراءةَ القوالب ليظهر أثرُه فوراً
+      const qs = officeSel ? `?officeId=${officeSel}` : "";
+      fetch(`/api/sms-templates/bulk${qs}`).then((r2) => void (r2.ok && r2.json().then((d: { templates: EventTpl[] }) => {
+        const m: Record<string, EventTpl> = {};
+        for (const t of d.templates ?? []) m[t.type] = t;
+        setEvents(m);
+      })));
+      return;
+    }
     // قوالب الأحداث دفعة واحدة (مع المكتب المختار إن وُجد — قالب المكتب يغلب العام).
     // تحت مكتب: تُرسل المخصّصة/المُلغاة فقط — غير المخصّصة تبقى تابعة للقالب العام
     const templates = EVENTS
@@ -317,6 +362,8 @@ export default function SmsTemplatesPage() {
     setSaving(false);
     if (ok) {
       setSaved(true); setCustoms((cs) => cs.map((c) => ({ ...c, dirty: false })));
+      // 🔒 أثرُ القفل المتبادل: تفعيلُ «تذكير قبل الانتهاء» يُطفئ وضعَ الباقات على الخادم
+      if ((events["expiring"]?.enable ?? "1") !== "0" && pkgMode) setPkgMode(false);
       // إعادة القراءة: تعكس حالة التخصيص الفعلية (خاصة بعد «استخدام قالب الوكيل»)
       const qs = officeSel ? `?officeId=${officeSel}` : "";
       const d = await fetch(`/api/sms-templates/bulk${qs}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -377,6 +424,16 @@ export default function SmsTemplatesPage() {
             })}
           </div>
 
+          {/* 📦 صنفٌ مستقلٌّ: قالبٌ لكلّ باقة — وتفعيلُه يُطفئ «تذكير قبل الانتهاء» العامّ */}
+          <div className="mb-1 text-[11px] font-bold text-slate-400">حسب الباقة</div>
+          <div className="mb-3">
+            <button onClick={() => setSel("bypkg")}
+              className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-right text-sm font-semibold transition ${sel === "bypkg" ? "bg-mynet-blue text-white" : "bg-slate-50 text-slate-700 hover:bg-slate-100"}`}>
+              <span className="truncate">📦 تذكير قبل الانتهاء حسب الباقة</span>
+              <span className={`mr-1 h-2 w-2 shrink-0 rounded-full ${pkgMode ? "bg-emerald-400" : "bg-slate-300"}`} title={pkgMode ? "مفعّل" : "معطَّل"} />
+            </button>
+          </div>
+
           <div className="mb-1 text-[11px] font-bold text-slate-400">قوالبي (للإرسال اليدوي)</div>
           <div className="space-y-1">
             {customs.length === 0 && <div className="rounded-lg border border-dashed border-slate-200 px-3 py-2 text-center text-[11px] text-slate-400">لا قوالب مضافة — أضِف قالبك الأول</div>}
@@ -395,6 +452,73 @@ export default function SmsTemplatesPage() {
           </div>
         </div>
 
+        {/* ═════ 📦 لوحةُ «تذكير قبل الانتهاء حسب الباقة» ═════ */}
+        {sel === "bypkg" ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+            <div className="mb-1 text-base font-bold text-slate-800">📦 تذكير قبل الانتهاء حسب الباقة</div>
+            <div className="mb-3 text-xs leading-relaxed text-slate-500">
+              لكلّ باقةٍ نصُّها الخاصّ، ويُرسَل للمشترك قبل انتهائه **حسب باقته** بالتعرّف الآليّ.
+              <b className="text-slate-700"> ومن لا باقةَ له لا يصله تذكيرُ انتهاءٍ إطلاقاً</b> (وبقيّةُ رسائله تصل طبيعيّاً).
+              وباقةٌ تُترَك فارغةً لا تُرسَل لأصحابها.
+            </div>
+            <label className={`mb-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold ${pkgMode ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
+              <input type="checkbox" className="h-4 w-4" checked={pkgMode} onChange={(e) => { setPkgMode(e.target.checked); setSaved(false); }} />
+              تفعيل الوضع «حسب الباقة»
+              <span className="mr-auto text-[11px] font-semibold text-slate-400">تفعيلُه يُطفئ «تذكير قبل الانتهاء» العامّ تلقائيّاً — ولا يعملان معاً أبداً</span>
+            </label>
+            {pkgs.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-slate-400">لا باقات في حسابك بعد — أضِف باقةً من صفحة الباقات ويظهر لها قالبٌ هنا تلقائيّاً</div>
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {pkgs.map((k) => (
+                    <button key={k.packageId} onClick={() => setSelPkg(k.packageId)}
+                      className={`rounded-full px-3 py-1.5 text-[12px] font-bold ${selPkg === k.packageId ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                      {k.name}{k.text?.trim() ? "" : " •"}
+                    </button>
+                  ))}
+                </div>
+                {(() => {
+                  const cur = pkgs.find((k) => k.packageId === selPkg) ?? null;
+                  if (!cur) return null;
+                  const upd = (patch: Partial<PkgTpl>) => {
+                    setSaved(false);
+                    setPkgs((list) => list.map((k) => (k.packageId === cur.packageId ? { ...k, ...patch, dirty: true } : k)));
+                  };
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-bold text-slate-700">{cur.name}{cur.price ? ` — ${cur.price.toLocaleString("en-US")} د.ع` : ""}</div>
+                        <label className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-600">
+                          <input type="checkbox" className="h-4 w-4" checked={cur.enable !== "0"} onChange={(e) => upd({ enable: e.target.checked ? "1" : "0" })} />
+                          مفعّل
+                        </label>
+                      </div>
+                      <textarea
+                        value={cur.text}
+                        onChange={(e) => upd({ text: e.target.value })}
+                        rows={8}
+                        placeholder="اكتب نصَّ التذكير لهذه الباقة… (يقبل نفس الحقول: {اسم_المشترك} · {تاريخ_الانتهاء} · {مبلغ_الاشتراك} …)"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-mynet-blue"
+                        dir="rtl"
+                      />
+                      <div className="rounded-xl bg-[#e5ddd5] p-4">
+                        <div className="mr-auto max-w-full whitespace-pre-wrap rounded-lg rounded-tr-none bg-[#dcf8c6] px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm" dir="rtl">
+                          {cur.image && (
+                            // eslint-disable-next-line @next/next/no-img-element -- data URI محليّة
+                            <img src={cur.image} alt="صورة القالب" className="mb-1.5 max-h-56 w-full rounded-md object-contain" />
+                          )}
+                          {cur.text ? <BoldText text={renderSample(cur.text, (officeSel ? offices.find((o) => String(o.id) === officeSel)?.name : null) ?? me?.agentName ?? null)} /> : <span className="text-slate-400">لا نصَّ لهذه الباقة — لن تُرسَل رسالةٌ لأصحابها</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        ) : (
+        <>
         {/* المحرّر */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-start justify-between gap-2">
@@ -537,6 +661,8 @@ export default function SmsTemplatesPage() {
             القيم أعلاه تجريبية للتوضيح، وتُستبدل ببيانات كل مشترك الحقيقية عند الإرسال. النص بين نجمتين *هكذا* يصل بخط عريض في واتساب.
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

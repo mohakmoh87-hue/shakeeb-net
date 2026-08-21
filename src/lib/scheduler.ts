@@ -4,6 +4,7 @@ import { renderTemplate, sendViaProvider, imageNote } from "@/lib/messaging";
 import { dailyReportText, computeDailyReport } from "@/lib/dailyReport";
 import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // خاتمة الأصل ٢ (2026-08-19)
 import { formatDate } from "@/lib/format";
+import { expiringByPkgOn, expiringPkgType } from "@/lib/smsTemplates"; // 📦 تذكيرُ الانتهاء حسب الباقة
 
 // مجدول المهام: يعمل داخل عملية الخادم (توقيت العراق).
 // يُسجَّل مرة واحدة عبر instrumentation.ts.
@@ -98,8 +99,29 @@ export async function runExpiringReminder(
   };
   // قالب "expiring" لكل (وكيل، مكتب) — يُجلب مرّة ويُخزَّن؛ قالب المكتب يغلب قالب الوكيل
   const tplCache = new Map<string, { text: string; image: string | null } | null>();
-  async function templateFor(agentId: number | null, towerId: number | null): Promise<{ text: string; image: string | null } | null> {
+  // ═════ 📦 وضعُ «حسب الباقة» (طلبُ محمد 2026-08-21) ═════
+  // القالبُ القديمُ يبقى **كما هو حرفيّاً** لمن لم يُفعّل الوضعَ الجديد. ومن فعّله:
+  //   · لكلّ باقةٍ نصُّها الذي كتبه — والتعرّفُ برقم الباقة لا باسمها.
+  //   · **ومن لا باقةَ له لا يصله تذكيرُ انتهاءٍ إطلاقاً** (وبقيّةُ رسائله كما هي).
+  //   · وباقةٌ تُرك محرِّرُها فارغاً ⇒ لا رسالةَ لأصحابها (ولا رجوعَ للقالب العامّ،
+  //     وإلّا صار «حسب الباقة» بلا معنى).
+  const modeCache = new Map<string, boolean>();
+  async function byPkgMode(agentId: number | null, towerId: number | null): Promise<boolean> {
+    if (agentId == null) return false;
+    const key = `${agentId}:${towerId ?? 0}`;
+    if (!modeCache.has(key)) modeCache.set(key, await expiringByPkgOn(agentId, towerId));
+    return modeCache.get(key) ?? false;
+  }
+  async function templateFor(
+    agentId: number | null, towerId: number | null, packageId?: number | null,
+  ): Promise<{ text: string; image: string | null } | null> {
     if (agentId == null) return null;
+    if (await byPkgMode(agentId, towerId)) {
+      if (packageId == null) return null; // بلا باقةٍ ⇒ بلا تذكيرِ انتهاءٍ (نصُّ محمد)
+      const key = `pkg:${agentId}:${towerId ?? 0}:${packageId}`;
+      if (!tplCache.has(key)) tplCache.set(key, await getTemplate(expiringPkgType(packageId), agentId, towerId));
+      return tplCache.get(key) ?? null;
+    }
     const key = `${agentId}:${towerId ?? 0}`;
     if (!tplCache.has(key)) tplCache.set(key, await getTemplate("expiring", agentId, towerId));
     return tplCache.get(key) ?? null;
@@ -116,7 +138,7 @@ export async function runExpiringReminder(
     // ترشيح بأيام مكتب المشترك نفسه (النافذة أعلاه أوسع نافذةٍ بين المكاتب)
     const lim = sub.towerId != null ? officeLimit.get(sub.towerId) : undefined;
     if (lim != null && sub.dateTo && sub.dateTo.getTime() > lim) continue;
-    const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null);
+    const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null, sub.packageId ?? null);
     if (!template) continue; // لا قالب مفعّل لوكيل هذا المكتب
     if (i++ > 0) await sleep(10000); // تأخير 10 ثوانٍ بين رسالة وأخرى
     const text = renderTemplate(template.text, {

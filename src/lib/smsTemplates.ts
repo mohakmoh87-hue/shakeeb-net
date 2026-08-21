@@ -5,6 +5,31 @@ import { prisma } from "./prisma";
 // صف علامة لكل وكيل: زُرعت النصوص الافتراضية له مرة واحدة (يُستثنى من كل القوائم)
 export const SEED_MARK = "__seed_ar_v1";
 
+// ═════ 📦 «تذكير قبل الانتهاء **حسب الباقة**» (طلبُ محمد 2026-08-21) ═════
+// نصُّه: «قالبٌ لكلّ باقةٍ موجودة، وأيُّ باقةٍ تُضاف مستقبلاً يصير لها قالبٌ فيه.
+//  ويُرسَل للمشترك قبل انتهائه **حسب باقته**، ومن ليس لديه باقةٌ لا يصله شيء.
+//  وتفعيلُه يُلغي تفعيلَ القالب القديم تلقائيّاً والعكس — لا يجتمعان أبداً».
+// 🔑 والتخزينُ في `sms_templates` نفسِه فيرث مجّاناً: عزلَ الوكيل · تخصيصَ المكتب ·
+//    الصورةَ · سقفَ حجمها · واسترجاعَ المساحة. `expiringByPkg` مفتاحُ الوضع (enable)،
+//    و`expiringPkg:{packageId}` نصُّ كلّ باقةٍ على حدة.
+export const EXPIRING_BY_PKG = "expiringByPkg";
+export const expiringPkgType = (packageId: number): string => `expiringPkg:${packageId}`;
+
+/** أوضاعُ تذكير الانتهاء: القديمُ العامّ أم الجديدُ حسب الباقة (لا يجتمعان). */
+export async function expiringByPkgOn(agentId: number | null, towerId?: number | null): Promise<boolean> {
+  // سلَّمُ الأولويّة نفسُه: صفُّ المكتب يغلب صفَّ الوكيل — فمكتبٌ يختار وضعَه.
+  if (towerId != null) {
+    const o = await prisma.smsTemplate.findFirst({
+      where: { type: EXPIRING_BY_PKG, agentId: agentId ?? -1, towerId }, select: { enable: true },
+    });
+    if (o) return o.enable === "1";
+  }
+  const a = await prisma.smsTemplate.findFirst({
+    where: { type: EXPIRING_BY_PKG, agentId: agentId ?? -1, towerId: null }, select: { enable: true },
+  });
+  return a?.enable === "1";
+}
+
 // أنواع القوالب المربوطة بالأحداث التلقائية/شبه التلقائية
 export const EVENT_TYPES = [
   "activation", // تفعيل الاشتراك (تلقائي عند التفعيل)

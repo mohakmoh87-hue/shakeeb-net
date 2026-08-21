@@ -119,6 +119,19 @@ export async function POST(request: Request) {
       await prisma.smsTemplate.create({ data: { type: t.type, text: t.text, enable: t.enable, image: t.image?.trim() || null, agentId, towerId: officeId ?? null } });
     }
   }
+  // ═════ 🔒 القفلُ المتبادل مع «تذكير الانتهاء حسب الباقة» (طلبُ محمد 2026-08-21) ═════
+  // «تفعيلُ أحدِهما يُلغي تفعيلَ الآخرِ تلقائيّاً — لا يجتمعان أبداً». والحرسُ هنا
+  // **على الخادم** لا في الواجهة: ضغطتان متزامنتان أو طلبٌ مباشرٌ لا يكسرانه.
+  // ولا يمسّ شيئاً آخرَ: لا يعمل إلّا إن كان `expiring` ضمنَ ما حُفظ في هذا الطلب.
+  const expTouched = parsed.data.templates.find((t) => t.type === "expiring" && !t.reset);
+  if (expTouched && expTouched.enable === "1") {
+    const { EXPIRING_BY_PKG } = await import("@/lib/smsTemplates");
+    const row = await prisma.smsTemplate.findFirst({
+      where: { type: EXPIRING_BY_PKG, agentId: agentId ?? -1, towerId: officeId ?? null },
+    });
+    if (row) await prisma.smsTemplate.update({ where: { id: row.id }, data: { enable: "0" } });
+  }
+
   // ═════ 🧹 «تُحذف الصورةُ القديمة نهائياً» (طلبُ محمد 2026-08-13) ═════
   // تبديلُ الصورة `UPDATE` يجعل القديمةَ **بلا مرجع** — لكنّها **لا تزول من القرص**:
   // بوستغرس يُبقي الصفَّ الميّتَ وقطعَ TOAST القديمة حتى يمرّ عليها الـvacuum. فصورةٌ
