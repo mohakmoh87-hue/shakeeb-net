@@ -11,7 +11,7 @@ import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
-import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, closeDeadSasRows, isOwnCabinet, type InfoChange } from "@/lib/syncLog";
+import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, reconcileEvents, closeDeadSasRows, isOwnCabinet, type InfoChange } from "@/lib/syncLog";
 import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 // ═════ ✍️ اسمٌ عندنا يحمل ملاحظةً فوق اسم الساس (مراجعةُ محمد 2026-08-21) ═════
@@ -128,6 +128,96 @@ async function sendOrQueueReport(officeId: number, phone: string, text: string):
   return res.ok;
 }
 
+// ═════ 🔗 دمجُ المكرَّرين على اليوزر نفسِه — إذنُ محمد الصريح 2026-08-21 ═════
+// «التطابقُ يُحدَّد على أساس اليوزر فقط ويجب إزالةُ التكرار» (وأذِن بلا عرضِ قائمة).
+// نشأ التكرارُ من بابَين أُغلقا اليوم: الاستيرادُ التلقائيُّ القديم حين تُعيد الشركةُ إنشاءَ
+// حساب الساس برقمٍ جديد، و«استبدالُ مشترك» الذي كان ينسخ **الرقمَ الميت** للصفّ الجديد.
+// والقاعدة: **يبقى صاحبُ المال** (وصولاتٌ ⇐ قرضٌ ⇐ باقةٌ ⇐ الأقدم)، ويرث رقمَ الساس الحيَّ
+// (الأكبر) وأبعدَ تاريخِ انتهاءٍ وما ينقصه من باقةٍ/هاتفٍ/عنوان، وتنتقل إليه كروتُ الآخر.
+// 🛡️ ومجموعةٌ فيها **مالٌ في صفَّين** لا تُمَسّ إطلاقاً — تبقى لقرار محمد.
+async function mergeDuplicateNetUsers(officeId: number): Promise<number> {
+  try {
+    const rows = await prisma.subscriber.findMany({
+      where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
+      select: { id: true, netUser: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true, note: true, name: true },
+    });
+    const byUser = new Map<string, typeof rows>();
+    for (const r of rows) {
+      const u = (r.netUser ?? "").trim().toLowerCase();
+      if (!u || u.includes("#")) continue; // الأرشيفُ الموسومُ (#سابق/#مدموج) خارج المقارنة
+      const l = byUser.get(u) ?? []; l.push(r); byUser.set(u, l);
+    }
+    let merged = 0;
+    for (const [ukey, group] of byUser) {
+      if (group.length < 2) continue;
+      const ids = group.map((g) => g.id);
+      const [entries, loans, cards] = await Promise.all([
+        prisma.subscriptionEntry.findMany({ where: { subscriberId: { in: ids }, isDeleted: false }, select: { subscriberId: true } }),
+        prisma.loanDebt.findMany({ where: { subscriberId: { in: ids }, isDeleted: false }, select: { subscriberId: true } }),
+        prisma.rechargeCard.findMany({ where: { subscriberId: { in: ids } }, select: { id: true, subscriberId: true } }),
+      ]);
+      const money = new Set<number>();
+      for (const e of entries) if (e.subscriberId != null) money.add(e.subscriberId);
+      for (const l of loans) money.add(l.subscriberId);
+      if (money.size > 1) continue; // 🛡️ مالٌ في صفَّين ⇒ لا تُمَسّ
+      const keeper = group.find((g) => money.has(g.id))
+        ?? group.find((g) => g.packageId != null)
+        ?? group.slice().sort((a, b) => a.id - b.id)[0];
+      const others = group.filter((g) => g.id !== keeper.id);
+      if (!others.length) continue;
+      const bestSas = group.reduce<number | null>((m, g) => (g.sasId != null && (m == null || g.sasId > m) ? g.sasId : m), null);
+      const bestDate = group.reduce<Date | null>((m, g) => (g.dateTo && (!m || g.dateTo > m) ? g.dateTo : m), null);
+      const fill = <T,>(pick: (g: (typeof group)[number]) => T | null | undefined): T | null => {
+        for (const g of group) { const v = pick(g); if (v != null && String(v).trim() !== "") return v; }
+        return null;
+      };
+      const stamp = new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 10).replace(/-/g, "");
+      await prisma.$transaction(async (tx) => {
+        const moving = cards.filter((c) => c.subscriberId != null && c.subscriberId !== keeper.id).map((c) => c.id);
+        if (moving.length) await tx.rechargeCard.updateMany({ where: { id: { in: moving } }, data: { subscriberId: keeper.id } });
+        await tx.subscriber.update({
+          where: { id: keeper.id },
+          data: {
+            sasId: bestSas ?? keeper.sasId,
+            ...(bestDate && (!keeper.dateTo || bestDate > keeper.dateTo) ? { dateTo: bestDate } : {}),
+            ...(keeper.packageId == null ? { packageId: fill((g) => g.packageId) } : {}),
+            ...(!(keeper.phone ?? "").trim() ? { phone: fill((g) => g.phone) } : {}),
+            ...(!(keeper.address ?? "").trim() ? { address: fill((g) => g.address) } : {}),
+            note: `${keeper.note ? `${keeper.note}
+` : ""}[دمج ${stamp}] ورث رقمَ الساس ${bestSas ?? "—"} من صفٍّ مكرَّرٍ لليوزر نفسِه`,
+          },
+        });
+        for (const o of others) {
+          await tx.subscriber.update({
+            where: { id: o.id },
+            data: {
+              isDeleted: true, sasId: null, state: "مدموج",
+              netUser: `${(o.netUser ?? "").trim()}#مدموج-${stamp}`,
+              note: `${o.note ? `${o.note}
+` : ""}[دمج ${stamp}] صفٌّ مكرَّرٌ لليوزر نفسِه — دُمج في #${keeper.id}`,
+            },
+          });
+          await tx.syncLog.updateMany({
+            where: { subscriberId: o.id, status: { in: ["pending", "ignored"] } },
+            data: { status: "done", note: "دُمج المشتركُ المكرَّر — أُغلق تلقائيّاً", handledAt: new Date() },
+          }).catch(() => {});
+          await tx.auditLog.create({
+            data: {
+              action: "MERGE_DUP_NETUSER", entity: "subscriber", entityId: String(o.id),
+              details: `دمجُ مكرَّرٍ على اليوزر «${ukey}»: #${o.id} ⇐ #${keeper.id} (رقمُ الساس ${bestSas ?? "—"}، مكتب #${officeId})`,
+            },
+          }).catch(() => {});
+          merged++;
+        }
+      });
+    }
+    if (merged) console.log(`[sync] 🔗 مكتب ${officeId}: دُمج ${merged} صفّاً مكرَّراً على اليوزر`);
+    return merged;
+  } catch (e) {
+    console.error("[sync] تعذّر دمجُ المكرَّرين:", e instanceof Error ? e.message : e);
+    return 0;
+  }
+}
 // قفل تزامن: يمنع تشغيل مزامنتين لنفس المكتب في آن واحد. كان الضغط المتكرّر على
 // «مزامنة الآن» يُشغّل نسخاً متوازية تقرأ الحالة نفسها فتُكرّر المعالجة والإرجاع.
 const syncRunning = new Set<number>();
@@ -310,6 +400,9 @@ async function runOfficeSyncInner(
   const imported = 0; // 📋 الاستيراد التلقائيّ أُلغي (سجلّ المزامنة) — يبقى صفراً للتقرير
   // كم مرّةً منع حارسُ اليوزر إنشاءَ صفٍّ ثانٍ في هذا المسار (يُبلَّغ في تقرير المزامنة)
   let dupUserPhase1 = 0;
+
+  // 🔗 دمجُ المكرَّرين أوّلاً — فكلُّ ما بعده يقرأ صفّاً واحداً لكلّ يوزر (إذنُ محمد)
+  await mergeDuplicateNetUsers(officeId);
 
   // كروت **وكيل هذا المكتب فقط** (البِن → الكارت). كان بلا أي فلتر، والمزامنة تكتب على
   // الكارت المطابق (تستهلكه وتنسبه لمشترك) — أي أن مزامنة وكيل قد تستهلك كارت وكيل آخر
@@ -553,8 +646,9 @@ async function runOfficeSyncInner(
     if (await collectedByUs(subUserKey, sub.id, actAt, validNewExp)) {
       await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue;
     }
-    // 💸 القرض (تصنيف محمد ٤): مبلغٌ صفرٌ **وبلا كارت** — يُوسَم كي لا يُصنع له وصلُ بيع
-    const isLoanAct = Math.round(a.price || 0) <= 0 && !(a.pin ?? "").trim();
+    // 💸 القرض (تصحيحُ محمد 2026-08-21): **سعرُ صفرٍ يدلّ دائماً على قرض** — وأُسقط شرطُ
+    //    «بلا كارت»، فحالةُ bg-1-14-2@mu كانت صفراً **بكارت** فمرّت تفعيلاً خارجيّاً.
+    const isLoanAct = Math.round(a.price || 0) <= 0;
     if (managerIsPage || ownCabinet) {
       await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
     } else {
@@ -623,6 +717,32 @@ async function runOfficeSyncInner(
   for (let i = 0; i < toVerify.length; i++) {
     if (realFlags[i]) verifiedReal++;      // تفعيل حقيقي (بتاريخ/حساب فرعي مختلف) — ليس وهمياً
     else suspects.push(toVerify[i]);
+  }
+  // ═════ 🎴 تبرئةُ الكروت التي وُسمت «وهميّةً» ظلماً (بلاغُ محمد 2026-08-21) ═════
+  // وسمُ الوهميّة كان يُكتَب اعتماداً على بحثٍ بالسيريال؛ ومتى أثبتت النافذةُ المفهرَسةُ
+  // أنّ الكارت **مُفعَّلٌ فعلاً** سقط الوسمُ من نفسه — فيُكتَب أثرُ «ربط» يُسقطه من لوحة
+  // «الكروت الوهمية» بلا أيّ ضغطةٍ من المدير (اللوحةُ تُسقط ما رُبط بعد اكتشافه).
+  for (let i = 0; i < toVerify.length; i++) {
+    if (!realFlags[i]) continue;
+    const cid = toVerify[i].id;
+    try {
+      const flagged = await prisma.auditLog.findFirst({
+        where: { action: "SYNC_PHANTOM_VERIFIED", entityId: String(cid), createdAt: { gte: new Date(Date.now() - 120 * 86400_000) } },
+        orderBy: { id: "desc" }, select: { id: true, createdAt: true },
+      });
+      if (!flagged) continue;
+      const cleared = await prisma.auditLog.findFirst({
+        where: { action: "PHANTOM_CARD_LINK", entityId: String(cid), createdAt: { gte: flagged.createdAt } },
+        select: { id: true },
+      });
+      if (cleared) continue;
+      await prisma.auditLog.create({
+        data: {
+          action: "PHANTOM_CARD_LINK", entity: "rechargeCard", entityId: String(cid),
+          details: `المزامنة: أثبتت نافذةُ تفعيلات الساس أنّ السيريال ${(toVerify[i].serial ?? "").trim()} مُستعمَلٌ فعلاً — وسمُ «وهميّ» ساقط`,
+        },
+      });
+    } catch { /* التبرئةُ أفضلُ جهدٍ ولا تُفشل المزامنة */ }
   }
 
   // 🛡️ وضع آمن — إبلاغ فقط بلا أي تغيير على الكارت (يبقى سارياً حتى قرار صريح بإعادة التفعيل التلقائي):
@@ -766,7 +886,7 @@ async function runOfficeSyncInner(
         amount: Math.round(hit.price || 0), activatedAt: actAt,
         sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
       };
-      const isLoanAct = Math.round(hit.price || 0) <= 0 && !(hit.pin ?? "").trim();
+      const isLoanAct = Math.round(hit.price || 0) <= 0; // سعرُ صفرٍ = قرضٌ دائماً (محمد)
       if (managerIsPage || ownCabinet) {
         await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
       } else {
@@ -870,7 +990,24 @@ async function runOfficeSyncInner(
             //    الساسَ عنها فتُصنَّف في تبويبها الصحيح بدل «تمديدِ أيّامٍ» مجهولِ المصدر.
             //    (النقصُ لا يُسأل عنه: لا تفعيلةَ تُنقص تاريخاً — تصحيحٌ يدويٌّ من الشركة.)
             let classified = false;
-            if (grew && dateProbes < MAX_DATE_PROBES) {
+            // 🚫 **لا ازدواجَ بين تبويبَين** (بلاغُ محمد 2026-08-21: bg-1-14-2@mu ظهر في
+            //    «تفعيل خارجي» و«تحديث معلومات» معاً): صفُّ حدثٍ معلَّقٌ لهذا الرقم يعني
+            //    أنّ بيتَ الواقعة تبويبُ التفعيل — فلا يُكرَّر فرقُ أيّامها هنا.
+            if (!classified) {
+              const openEvent = await prisma.syncLog.findFirst({
+                where: { towerId: officeId, sasId: u.sasId, kind: { in: ["sas", "self", "install"] }, status: "pending", activatedAt: { not: null } },
+                select: { id: true },
+              }).catch(() => null);
+              if (openEvent) classified = true;
+            }
+            // 💰 ونقصُ الأيّام **لا يُرصَد إذا كان تاريخُنا مدفوعاً بوصل** (حالة bg-5-12-11@mu:
+            //    وصلُ ٤٥ ألفاً حتى ٢٠-١٠ والساسُ يقول ٣٠-٨ لأنّ الشركةَ تُعطي ١٠ أيّامٍ ثمّ
+            //    تُكمل ٥٠). تطبيقُه كان **يقصّ أيّاماً مقبوضةً**، فالسكوتُ عنه هو الصواب.
+            if (!classified && !grew && p.dateTo) {
+              const paid = await receiptsOfUser((u.username ?? p.netUser ?? "").trim().toLowerCase(), p.id);
+              if (paid.to.some((t) => Math.abs(t - p.dateTo!.getTime()) <= RECEIPT_NEAR_MS)) classified = true;
+            }
+            if (!classified && grew && dateProbes < MAX_DATE_PROBES) {
               dateProbes++;
               classified = await classifyDateJump(p, u.sasId, u.username, validDate);
             }
@@ -929,8 +1066,10 @@ async function runOfficeSyncInner(
     // وصفوفٌ ولّدتها قواعدُ أُلغيت (كقاعدة «Offer» الكاذبة). ولا يُغلق ما لم نره.
     const closedInstalls = await reconcileInstalls(officeId, seenSasIds, stillInstalls);
     const closedInfo = await reconcileInfo(officeId, seenSasIds, stillDiffering);
-    if (closedInstalls || closedInfo) {
-      console.log(`[sync-log] ♻️ مكتب ${officeId}: أُغلق تلقائيّاً ${closedInstalls} تنصيباً و${closedInfo} تحديثَ معلومات (عولجت)`);
+    // 💰 وصفوفُ الأحداث تُصالَح بالوصل **مهما قدُم تفعيلُها** (لا تُشترَط رؤيتُها في النافذة)
+    const closedEvents = await reconcileEvents(officeId, (u, id, at, to) => collectedByUs(u, id, at, to));
+    if (closedInstalls || closedInfo || closedEvents) {
+      console.log(`[sync-log] ♻️ مكتب ${officeId}: أُغلق تلقائيّاً ${closedInstalls} تنصيباً و${closedInfo} تحديثَ معلومات و${closedEvents} حدثَ تفعيلٍ بوصلٍ عندنا`);
     }
 
     // 📋 الاستيرادُ الجماعيُّ وملءُ الباقات الفارغة **انتقلا إلى سجلّ المزامنة** (2026-08-20):

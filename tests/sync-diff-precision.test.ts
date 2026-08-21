@@ -63,7 +63,7 @@ describe("🎯 دقّةُ فروق سجلّ المزامنة — البنودُ 
     assert.ok(src.includes(`await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });`), "التصنيفُ بالمنجر غاب عن المُصنِّف");
     assert.ok(src.includes("await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });"), "تفعيلُ الشركة غاب عن المُصنِّف");
     // ولا يُسأل إلّا عن الزيادة، وبسقف
-    assert.ok(src.includes("if (grew && dateProbes < MAX_DATE_PROBES) {"), "المسبارُ بلا سقفٍ أو يُستدعى للنقص أيضاً");
+    assert.ok(src.includes("if (!classified && grew && dateProbes < MAX_DATE_PROBES) {"), "المسبارُ بلا سقفٍ أو يُستدعى للنقص أيضاً");
   });
 
   test("هـ · نقصُ أيّامٍ يتجاوز أسبوعاً يُوسَم خطراً ويخرج من «تحديد الكلّ»", () => {

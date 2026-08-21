@@ -87,3 +87,51 @@ describe("🕵️ الأعطالُ الجذريّةُ السبعة", () => {
     );
   });
 });
+
+// ═════ 🔁 دفعةُ حالات محمد الخمس (2026-08-21 مساءً) ═════
+// كلُّ حالةٍ منها **مقيسةٌ على صفٍّ حيٍّ في حسابه**، وهذه حراسُها:
+//   bg-5-12-11@mu  · «استبدال مشترك» نسخ رقمَ الساس **الميت** ⇒ مصنعُ التكرار.
+//   bg-59-31-2@shu · وصلُ ثلاثةِ أشهرٍ وتفعيلةُ ساسٍ بشهر ⇒ صفٌّ معلَّقٌ لا يُغلق أبداً.
+//   bg-1-14-2@mu   · قرضٌ (سعرُ صفر) ظهر «تفعيلاً خارجيّاً» **و**«تمديدَ أيّام» معاً.
+//   bg-5-12-11@mu  · نقصُ ٥١ يوماً مقترَحٌ على مشتركٍ وصلُه مدفوعٌ للمدّة الأطول.
+//   bg-13-6-3@mu   · صفّان لليوزر نفسِه ⇒ الدمجُ صار داخل المزامنة (إذنُ محمد).
+describe("🔁 حالاتُ محمد الخمس", () => {
+  test("استبدالُ المشترك ينقل **رقمَ الساس الحيَّ** لا رقمَ الصفّ القديم", () => {
+    const rep = read("src/app/api/subscribers/[id]/replace/route.ts");
+    assert.ok(rep.includes("sasId: sas.sasId ?? old.sasId,"), "الاستبدالُ ما زال ينسخ الرقمَ القديم (وقد يكون ميتاً)");
+  });
+
+  test("صفوفُ الأحداث تُغلَق بالوصل مهما قدُم تفعيلُها", () => {
+    assert.ok(LOG().includes("export async function reconcileEvents("), "لا مصالحةَ لصفوف الأحداث");
+    assert.ok(SYNC().includes("const closedEvents = await reconcileEvents(officeId,"), "المصالحةُ لا تُنادى من المزامنة");
+  });
+
+  test("سعرُ صفرٍ = قرضٌ دائماً، والقرضُ يُسجَّل مختوماً لا معلَّقاً", () => {
+    const src = SYNC();
+    assert.ok(src.includes("const isLoanAct = Math.round(a.price || 0) <= 0;"), "شرطُ «بلا كارت» ما زال يُسقط قروضاً حقيقيّة");
+    assert.ok(LOG().includes('...(p.loan ? { note: LOAN_NOTE, status: "done", handledAt: new Date() } : {}),'), "القرضُ ما زال يُزاحم العملَ في التبويب");
+  });
+
+  test("لا ازدواجَ: فرقُ أيّامٍ لا يُرصَد لمن له صفُّ حدثٍ معلَّق", () => {
+    assert.ok(SYNC().includes('kind: { in: ["sas", "self", "install"] }, status: "pending", activatedAt: { not: null } },'), "لا فحصَ لصفّ حدثٍ قائمٍ قبل رصد فرق الأيّام");
+  });
+
+  test("نقصُ الأيّام لا يُرصَد إذا كان تاريخُنا مدفوعاً بوصل", () => {
+    assert.ok(SYNC().includes("if (!classified && !grew && p.dateTo) {"), "النقصُ يُرصَد بلا سؤالٍ عن الوصل");
+    assert.ok(SYNC().includes("paid.to.some((t) => Math.abs(t - p.dateTo!.getTime()) <= RECEIPT_NEAR_MS)"), "لا مقارنةَ بين انتهاء الوصل وتاريخنا");
+  });
+
+  test("دمجُ المكرَّرين داخل المزامنة — وصاحبُ المال يبقى، ومالٌ في صفَّين لا يُمَسّ", () => {
+    const src = SYNC();
+    assert.ok(src.includes("async function mergeDuplicateNetUsers("), "لا دمجَ تلقائيّاً للمكرَّرين");
+    assert.ok(src.includes("await mergeDuplicateNetUsers(officeId);"), "الدمجُ لا يُنادى");
+    assert.ok(src.includes("if (money.size > 1) continue;"), "🛡️ مجموعةٌ فيها مالٌ بصفَّين قد تُمَسّ");
+    assert.ok(src.includes("const keeper = group.find((g) => money.has(g.id))"), "الباقي ليس صاحبَ المال");
+    assert.ok(src.includes("MERGE_DUP_NETUSER"), "الدمجُ بلا أثرِ تدقيق");
+  });
+
+  test("الكارتُ الذي أثبتت النافذةُ استعمالَه تسقط عنه تهمةُ «الوهميّة» تلقائيّاً", () => {
+    const src = SYNC();
+    assert.ok(src.includes('action: "PHANTOM_CARD_LINK", entity: "rechargeCard"'), "الوسمُ الكاذبُ يبقى في لوحة المدير");
+  });
+});

@@ -165,8 +165,11 @@ export async function recordActivationEvent(kind: "self" | "sas", p: StatePayloa
         netUser: p.netUser ?? null, name: p.name ?? null, phone: p.phone ?? null,
         packageName: p.packageName ?? null, sasDateTo: p.sasDateTo ?? null,
         amount: p.amount, activatedAt: p.activatedAt,
-        // 💸 وسمُ القرض (تصنيف محمد ٤: مبلغٌ صفرٌ وبلا كارت) — تقرؤه الواجهةُ فتمنع «+ تفعيل»
-        ...(p.loan ? { note: LOAN_NOTE } : {}),
+        // 💸 **القرضُ ليس تفعيلاً خارجيّاً** (بلاغُ محمد 2026-08-21: bg-1-14-2@mu): سعرُ صفرٍ
+        //    يعني قرضاً من سوبر سيل، ولا فعلَ عليه إطلاقاً (لا وصلَ ولا دين — يُسدَّد
+        //    بتفعيلٍ عاديٍّ لاحقاً). فيُسجَّل **مختوماً** لا معلَّقاً: أثرٌ يُقرأ في السجلّ
+        //    ولا يُزاحم عملاً حقيقيّاً في التبويب.
+        ...(p.loan ? { note: LOAN_NOTE, status: "done", handledAt: new Date() } : {}),
       },
     });
   } catch (e) {
@@ -194,6 +197,35 @@ export async function resolveEventIfReceipted(towerId: number, sasId: number, re
 //   ١· تنصيبٌ معلّقٌ لم يعد مؤهَّلاً (استُورد صاحبُه · أو زالت القاعدةُ التي ولّدته).
 //   ٢· تحديثُ معلوماتٍ لم يبقَ فيه فرق ⇒ يُغلقه `recordInfoDiff` أصلاً بلا فرق.
 //   ٣· حدثُ تفعيلٍ ظهر له وصلٌ لاحقاً ⇒ يُغلقه `resolveEventIfReceipted`.
+/** 💰 صفوفُ أحداثٍ معلَّقةٌ صار لها وصلٌ عندنا ⇒ تُغلَق — **مهما قدُم تفعيلُها**.
+ *  (بلاغُ محمد 2026-08-21: bg-59-31-2@shu — وصلُ ١٠٠ ألفٍ لثلاثة أشهر وتفعيلةُ ساسٍ
+ *  بشهرٍ واحد؛ وكان الصفُّ يخرج من نافذة اليومَين فلا يُعاد النظرُ فيه أبداً فيبقى
+ *  معلَّقاً للأبد.) الفحصُ هنا **بالقاعدة نفسِها** التي تعمل بها المزامنة: وصلٌ قريبٌ من
+ *  التفعيل أو وصلٌ ينتهي بانتهاء الساس — على مستوى **اليوزر** لا الصفّ. */
+export async function reconcileEvents(
+  towerId: number,
+  collected: (netUser: string, subscriberId: number, actAt: Date | null, sasDateTo: Date | null) => Promise<boolean>,
+): Promise<number> {
+  try {
+    const rows = await prisma.syncLog.findMany({
+      where: { towerId, kind: { in: ["sas", "self", "install"] }, status: "pending", activatedAt: { not: null } },
+      select: { id: true, netUser: true, subscriberId: true, activatedAt: true, sasDateTo: true },
+      take: 500,
+    });
+    const closing: number[] = [];
+    for (const r of rows) {
+      if (r.subscriberId == null) continue; // تنصيبُ يوزرٍ لم يُستورَد بعد — لا وصلَ له أصلاً
+      if (await collected((r.netUser ?? "").trim().toLowerCase(), r.subscriberId, r.activatedAt, r.sasDateTo)) closing.push(r.id);
+    }
+    if (!closing.length) return 0;
+    await prisma.syncLog.updateMany({
+      where: { id: { in: closing } },
+      data: { status: "done", note: "وصلٌ عندنا يغطّيه — أُغلق تلقائيّاً", handledAt: new Date() },
+    });
+    return closing.length;
+  } catch { return 0; }
+}
+
 export async function reconcileInstalls(towerId: number, seenSasIds: Set<number>, stillInstalls: Set<number>): Promise<number> {
   if (!seenSasIds.size) return 0; // لم نرَ شيئاً (مسحٌ فاشل) ⇒ لا نُغلق شيئاً بالظنّ
   try {
