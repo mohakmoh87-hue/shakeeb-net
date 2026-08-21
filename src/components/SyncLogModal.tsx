@@ -288,6 +288,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                     </>
                   )}
                   {(tab === "self" || tab === "sas") && <Th k="amount" s={srt}>مبلغ الساس</Th>}
+                  {(tab === "self" || tab === "sas") && <th className="p-2 text-right text-[12px] font-bold text-slate-500">الأيّام (عندك ← الساس)</th>}
                   <Th k="createdAt" s={srt}>{tab === "self" || tab === "sas" ? "وقت التفعيلة" : "رُصد في"}</Th>
                   <Th k="tower" s={srt}>المكتب</Th>
                   {canEdit && tab !== "info" && <th className="p-2 text-right text-[12px] font-bold text-slate-500">إجراء</th>}
@@ -366,6 +367,16 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                         )}
                       </td>
                     )}
+                    {(tab === "self" || tab === "sas") && (
+                      /* 📅 ما سيفعله زرُّ «تحديث الأيّام» صراحةً: أيّامُك الآن ← تاريخُ الساس */
+                      <td className="whitespace-nowrap p-2 text-[12px]" dir="ltr">
+                        <span className="text-slate-500">{r.oursDateTo ? formatDate(r.oursDateTo) : "—"}</span>
+                        <span className="mx-1 text-slate-400">←</span>
+                        <b className={r.sasDateTo && (!r.oursDateTo || r.sasDateTo > r.oursDateTo) ? "text-emerald-700" : "text-slate-400"}>
+                          {r.sasDateTo ? formatDate(r.sasDateTo) : "—"}
+                        </b>
+                      </td>
+                    )}
                     <td className="whitespace-nowrap p-2 text-slate-500" dir="ltr">{formatDate(r.activatedAt ?? r.createdAt)}</td>
                     <td className="max-w-[120px] truncate p-2 text-slate-500">{r.towerName}</td>
                     {canEdit && tab !== "info" && (
@@ -373,7 +384,15 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                         {/* تنصيبٌ جديد: «حفظ» يستورده بلا وصل · قائمٌ (إعادة/ذاتيّ/ساس): «تحديث» */}
                         <button onClick={() => void act([r.id], "apply")} disabled={busy}
                           className="ml-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[12px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
-                          {tab === "install" && r.subscriberId == null ? "💾 حفظ" : isLinkRow(r) ? "🔗 ربط الرقم" : "✔ تحديث"}
+                          {tab === "install" && r.subscriberId == null
+                            ? "💾 حفظ"
+                            : isLinkRow(r)
+                              ? "🔗 ربط الرقم"
+                              : isLoanRow(r)
+                                ? "✔ اعتُبر معالَجاً"
+                                : (tab === "self" || tab === "sas" || (tab === "install" && r.activatedAt))
+                                  ? "📅 تحديث الأيّام"
+                                  : "✔ تحديث"}
                         </button>
                         {(isLinkRow(r) || isReplaceRow(r)) && (
                           <button

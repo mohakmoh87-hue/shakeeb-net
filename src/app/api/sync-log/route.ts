@@ -167,10 +167,48 @@ export async function POST(request: Request) {
           // 🏷️ **«تحديث» على صفّ حدثٍ = «اعتُبر معالَجاً» فقط** (مراجعة 2026-08-21): كان
           // يمرّ في مسار «تطبيق بيانات على مشتركٍ قائم» فيكتب اسمَ الساس فوق اسمك بلا
           // داعٍ — والحدثُ ليس تغييرَ معلوماتٍ بل واقعةُ تفعيلٍ تُقرَّر لا تُنسَخ.
-          if (r.kind === "self" || r.kind === "sas") {
+          // ═════ 📅 «تحديث» على صفّ تفعيلٍ = **تحديثُ الأيّام** (أمرُ محمد 2026-08-21) ═════
+          // كان يختم الصفَّ ولا يمسّ المشترك إطلاقاً — فيضغط المستخدمُ «تحديث» على تفعيلٍ
+          // خارجيٍّ ولا يتغيّر شيء (حالة bg-63-8-1@res: عنده ٠٨-١٨ والساسُ ٠٩-٢١).
+          // ونصُّه: «التحديثُ في كلّ التبويبات الأربعة يُحدّث ما هو موجودٌ وحسب الحالة».
+          // فحالةُ صفّ التفعيل: **تاريخُ انتهائه من الساس** — ولا شيءَ سواه (لا اسمَ ولا
+          // هاتفَ ولا مال). وثلاثةُ حرّاسٍ ثابتة:
+          //   💸 صفُّ قرضٍ ⇒ لا أيّامَ إطلاقاً (أيّامُ القرض ليست مدفوعة)
+          //   💰 صاحبُ قرضٍ قائمٍ ⇒ أيّامُه الوهميّةُ لا تُدهَس
+          //   ⬆️ تمديدٌ للأمام فقط ⇒ **لا يُقصَّر تاريخُ مشتركٍ أبداً**
+          const isEventRow = r.kind === "self" || r.kind === "sas" || (r.kind === "install" && r.activatedAt != null);
+          if (isEventRow) {
+            let outcome = "اعتُبر معالَجاً";
+            const isLoanRow = (r.note ?? "").startsWith("💸 قرض");
+            if (!isLoanRow && r.subscriberId != null && r.sasDateTo) {
+              const sub = await prisma.subscriber.findUnique({
+                where: { id: r.subscriberId },
+                select: { id: true, dateTo: true, towerId: true, isDeleted: true, name: true, netUser: true },
+              });
+              if (sub && !sub.isDeleted && sub.towerId === r.towerId) {
+                const loan = await prisma.loanDebt.findFirst({
+                  where: { subscriberId: sub.id, isDeleted: false }, select: { id: true },
+                });
+                if (loan) outcome = "صاحبُ قرضٍ — أيّامه لم تُمَسّ";
+                else if (sub.dateTo && r.sasDateTo <= sub.dateTo) outcome = `تاريخُك أبعدُ (${sub.dateTo.toISOString().slice(0, 10)}) — لم يُقصَّر`;
+                else {
+                  await prisma.subscriber.update({
+                    where: { id: sub.id },
+                    data: { dateTo: r.sasDateTo, expiredNoticeAt: null },
+                  });
+                  outcome = `حُدّثت الأيّام حتى ${r.sasDateTo.toISOString().slice(0, 10)}`;
+                  await prisma.auditLog.create({
+                    data: {
+                      userId: session.userId, action: "SYNC_LOG_EVENT_APPLY", entity: "subscriber", entityId: String(sub.id),
+                      details: `سجلّ المزامنة (${r.kind}): تمديدُ أيّام «${sub.name ?? sub.netUser}» إلى ${r.sasDateTo.toISOString().slice(0, 10)} من تفعيلة الساس${r.activatedAt ? ` (${r.activatedAt.toISOString().slice(0, 10)})` : ""}`,
+                    },
+                  }).catch(() => {});
+                }
+              }
+            }
             await prisma.syncLog.update({
               where: { id: r.id },
-              data: { status: "done", note: `اعتُبر معالَجاً — ${who}`, handledBy: who, handledAt: new Date() },
+              data: { status: "done", note: `${outcome} — ${who}`, handledBy: who, handledAt: new Date() },
             });
             done++; continue;
           }

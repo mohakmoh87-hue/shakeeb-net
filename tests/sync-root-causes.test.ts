@@ -151,3 +151,40 @@ test("الدمجُ يُفرّغ المكرَّرَ من رقم الساس **قب
   assert.ok(iOthers > -1 && iKeeper > -1, "بنيةُ المعاملة تغيّرت");
   assert.ok(iOthers < iKeeper, "الباقي يرث الرقمَ قبل تفريغ المكرَّر ⇒ ارتطامٌ بالفهرس الفريد");
 });
+
+// ═════ 📅 «تحديث» في تبويبَي التفعيل يُحدّث الأيّام (أمرُ محمد 2026-08-21) ═════
+// كان يختم الصفَّ ولا يمسّ المشترك: ضغط محمد «تحديث» على تفعيلٍ خارجيٍّ لـbg-63-8-1@res
+// (عنده ٠٨-١٨ والساسُ ٠٩-٢١) فلم يتغيّر شيء. ونصُّه: «التحديثُ في التبويبات الأربعة
+// يُحدّث ما هو موجودٌ وحسب الحالة، والتجاهلُ لا يفعل شيئاً».
+describe("📅 تحديثُ الأيّام من صفّ التفعيل", () => {
+  const API2 = () => read("src/app/api/sync-log/route.ts");
+  test("صفُّ الحدث يُطبّق تاريخَ الساس على المشترك — تمديداً للأمام فقط", () => {
+    const api = API2();
+    assert.ok(api.includes('const isEventRow = r.kind === "self" || r.kind === "sas" || (r.kind === "install" && r.activatedAt != null);'), "لا تمييزَ لصفوف الأحداث في مسار التحديث");
+    assert.ok(api.includes("data: { dateTo: r.sasDateTo, expiredNoticeAt: null },"), "التحديثُ ما زال لا يمسّ أيّامَ المشترك");
+    assert.ok(api.includes("else if (sub.dateTo && r.sasDateTo <= sub.dateTo)"), "قد يُقصَّر تاريخُ مشترك");
+    assert.ok(api.includes("SYNC_LOG_EVENT_APPLY"), "تحديثُ الأيّام بلا أثرِ تدقيق");
+  });
+
+  test("🛡️ القرضُ لا يُحدّث أيّاماً — لا صفّاً ولا صاحبَ قرضٍ قائم", () => {
+    const api = API2();
+    assert.ok(api.includes('const isLoanRow = (r.note ?? "").startsWith("💸 قرض");'), "صفُّ القرض يُطبَّق كغيره");
+    assert.ok(api.includes('if (loan) outcome = "صاحبُ قرضٍ — أيّامه لم تُمَسّ";'), "أيّامُ صاحب القرض الوهميّةُ تُدهَس");
+  });
+
+  test("والواجهةُ تقول ما سيحدث: زرٌّ باسمه وخليّةُ «عندك ← الساس»", () => {
+    const ui = read("src/components/SyncLogModal.tsx");
+    assert.ok(ui.includes('"📅 تحديث الأيّام"'), "الزرُّ لا يقول إنّه يُحدّث الأيّام");
+    assert.ok(ui.includes('"✔ اعتُبر معالَجاً"'), "صفُّ القرض يوهم بأنّه سيُحدّث أيّاماً");
+    assert.ok(ui.includes("الأيّام (عندك ← الساس)"), "لا يظهر للمستخدم ماذا سيتغيّر");
+  });
+
+  test("🚫 والتجاهلُ لا يفعل شيئاً بالبيانات — بصمةٌ وحالةٌ فقط", () => {
+    const api = API2();
+    const ig = api.slice(api.indexOf('if (action === "ignore")'), api.indexOf('if (action === "message")'));
+    for (const forbidden of ["subscriber.update", "subscriptionEntry", "moneyTx", "rechargeCard"]) {
+      assert.equal(ig.includes(forbidden), false, `التجاهلُ يمسّ البيانات: ${forbidden}`);
+    }
+    assert.ok(ig.includes('status: "ignored", snapshot: fingerprint(r)'), "التجاهلُ بلا بصمةٍ تُعيده عند تغيّر البيانات");
+  });
+});
