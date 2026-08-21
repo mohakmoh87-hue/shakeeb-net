@@ -303,6 +303,13 @@ function normalizeActivation(a: Record<string, unknown>): SasActivation {
   };
 }
 
+/** 🔬 نداءٌ خامٌ للتشخيص وحدَه: يُظهر ما يعيده الساسُ لصيغةِ طلبٍ بعينها.
+ *  (سببُ وجوده: تفعيلاتُ الكابينات لا تصل المزامنةَ بينما تراها لوحةُ الساس —
+ *   والفرقُ في **بارامترات الطلب**، فتُجرَّب صيغُها بالقياس لا بالظنّ.) */
+export async function sasRawPost(base: string, token: string, route: string, payload: unknown): Promise<unknown> {
+  const r = await sasPost(base, route, payload, token);
+  try { return JSON.parse(r.text); } catch { return { status: r.status, raw: r.text.slice(0, 200) }; }
+}
 // مساعد عام لجلب صفحة من أي مسار مُرقَّم (index/*) مع إعادة محاولة.
 // extra: بارامترات إضافية تُدمج في الجسم (مثل search للبحث بالبِن).
 async function fetchAnyPage(
