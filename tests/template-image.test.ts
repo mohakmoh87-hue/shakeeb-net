@@ -179,3 +179,30 @@ describe("البند ٣ · صورةُ القالب", () => {
     assert.match(wa, /p\.image\s*\?\?\s*null/, "مُستقبِلُ الترحيل يُهمل الصورة");
   });
 });
+
+// ═════ 🖼️ `MessageMedia` يُحمَّل بنمط الاستيراد المُثبَت — لا بتفكيكٍ ساذج ═════
+// القياسُ الحيُّ 2026-08-21 (رسالةُ محمد #26221): «تعذّر إرسال الصورة: MessageMedia is not
+// a constructor». المكتبةُ CJS وصادراتُها قد تقع تحت `default`، وفي الملفّ نفسِه علاجٌ
+// مكتوبٌ لـ`Client`/`LocalAuth` — وسطرُ الصورة وحدَه كُتب `const { MessageMedia } = await
+// import(...)` فخرج `undefined`. ⇒ **لم تصل صورةٌ واحدةٌ منذ بناء الميزة** والنصُّ يصل.
+describe("🖼️ تحميلُ MessageMedia", () => {
+  const WA = () => read("src/lib/whatsapp.ts");
+  test("لا تفكيكَ ساذجاً لـMessageMedia من الاستيراد", () => {
+    assert.equal(
+      /const \{\s*MessageMedia\s*\}\s*=\s*await import\("whatsapp-web\.js"\)/.test(WA()),
+      false,
+      "عاد التفكيكُ الساذج — يخرج undefined على عامل الحاسبة فتسقط كلُّ صورة",
+    );
+  });
+  test("مُحمِّلٌ يجرّب require ثمّ import ثمّ default ثمّ default.default", () => {
+    const wa = WA();
+    assert.ok(wa.includes("async function loadMessageMedia()"), "لا مُحمِّلَ موحَّداً للصورة");
+    assert.ok(wa.includes('req("whatsapp-web.js")'), "لا محاولةَ require (وهي التي تعمل مع tsx/Node)");
+    assert.ok(wa.includes("pick(wa.default) ?? pick((wa.default as Record<string, unknown>)?.default)"), "لا مراعاةَ لتداخل default");
+  });
+  test("وتعذُّرُ التحميل يُقال باسمه ولا يُسقط الرسالة", () => {
+    const wa = WA();
+    assert.ok(wa.includes('imageNote = "تعذّر تحميل MessageMedia'), "سقوطُ التحميل يمرّ بلا سبب");
+    assert.ok(wa.includes("await client.sendMessage(waId, text);"), "النصُّ لم يعد يُرسَل عند فشل الصورة");
+  });
+});

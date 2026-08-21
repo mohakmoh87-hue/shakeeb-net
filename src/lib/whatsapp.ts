@@ -822,13 +822,48 @@ export async function sendOfficeChat(officeId: number, chatId: string, text: str
 // الصورة (٢٠٢٦-٠٨-١٣) فهي تتجاهل `p.image` وترسل النصَّ وحدَه **بصمتٍ تامّ** — وهو
 // أرجحُ تفسيرٍ لبلاغ «الصورةُ لا تصل». وغيابُ الحقل نفسِه في النتيجة **دليلُ قِدَم**.
 let __buildId: string | null = null;
-function workerBuild(): string {
+async function workerBuild(): Promise<string> {
   if (__buildId) return __buildId;
   const env = process.env.RAILWAY_GIT_COMMIT_SHA;
   if (env) return (__buildId = env.slice(0, 7));
-  try { __buildId = fs.readFileSync(path.join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim().slice(0, 12); }
-  catch { __buildId = "unknown"; }
+  // 🏷️ العاملُ لا يملك `.next/BUILD_ID` (يعمل من المصدر) — وإصدارُه الحقيقيُّ في git،
+  //    وهو ما يقرؤه `reportWorkerVersion` أصلاً منذ 2026-07-29.
+  try {
+    const { execSync } = await import("node:child_process");
+    __buildId = execSync("git rev-parse --short HEAD", { timeout: 15_000 }).toString().trim();
+  } catch { __buildId = "unknown"; }
   return __buildId;
+}
+
+// ═════ 🖼️ تحميلُ `MessageMedia` بنمطِ الاستيراد المُثبَت (قياسٌ حيٌّ 2026-08-21) ═════
+// بلاغُ محمد «الصورةُ لا تصل والنصُّ يصل» — والسببُ ظهر بالحرف في سجلّ رسالته:
+//   «تعذّر إرسال الصورة: MessageMedia is not a constructor»
+// المكتبةُ CJS وصادراتُها تقع أحياناً تحت `default` (أو `default.default`) على عاملِ
+// الحاسبة. وفي هذا الملفّ **علاجٌ مكتوبٌ سلفاً** لـ`Client`/`LocalAuth` (require ⇒ import
+// ⇒ default ⇒ default.default)، لكنّ سطرَ الصورة كُتب ساذجاً `const { MessageMedia } =`
+// فخرج `undefined` ⇒ `new undefined()`. ولهذا **لم تصل صورةٌ واحدةٌ منذ بناء الميزة**
+// بينما النصُّ يصل دائماً (حارسُ «رسالةٌ بلا صورةٍ خيرٌ من لا رسالة» كان يعمل).
+type MediaCtor = new (mime: string, data: string, filename?: string | null) => import("whatsapp-web.js").MessageMedia;
+let __mmCache: MediaCtor | null = null;
+async function loadMessageMedia(): Promise<MediaCtor | null> {
+  if (__mmCache) return __mmCache;
+  const pick = (o: unknown): MediaCtor | null => {
+    const r = o as Record<string, unknown> | null;
+    const c = r?.MessageMedia;
+    return typeof c === "function" ? (c as MediaCtor) : null;
+  };
+  try {
+    const { createRequire } = await import("node:module");
+    const req = createRequire(path.join(process.cwd(), "wa-require.cjs"));
+    const m = pick(req("whatsapp-web.js"));
+    if (m) return (__mmCache = m);
+  } catch { /* نجرّب import أدناه */ }
+  try {
+    const wa = (await import("whatsapp-web.js")) as unknown as Record<string, unknown>;
+    const m = pick(wa) ?? pick(wa.default) ?? pick((wa.default as Record<string, unknown>)?.default);
+    if (m) return (__mmCache = m);
+  } catch { /* غيرُ متاح */ }
+  return null;
 }
 
 async function sendWhatsAppLocal(officeId: number, phone: string, text: string, image?: string | null): Promise<SendResult> {
@@ -849,15 +884,17 @@ async function sendWhatsAppLocal(officeId: number, phone: string, text: string, 
     let imageNote: string | null = null;
     if (image) {
       try {
-        const { MessageMedia } = await import("whatsapp-web.js");
+        const MessageMedia = await loadMessageMedia();
         const m = /^data:([^;]+);base64,(.+)$/.exec(image);
-        if (m) {
+        if (!MessageMedia) {
+          imageNote = "تعذّر تحميل MessageMedia من whatsapp-web.js (interop) — أُرسل النصُّ وحدَه";
+        } else if (m) {
           const media = new MessageMedia(m[1], m[2]);
           await client.sendMessage(waId, media, { caption: text });
           return { ok: true, withImage: true };
         }
         // لا يطابق صيغةَ data URI ⇒ كان يسقط **صامتاً تماماً** قبل اليوم
-        imageNote = `صيغةُ الصورة غير صالحة (لا تبدأ بـdata:…;base64) — طولُها ${image.length}`;
+        else imageNote = `صيغةُ الصورة غير صالحة (لا تبدأ بـdata:…;base64) — طولُها ${image.length}`;
       } catch (e) {
         imageNote = `تعذّر إرسال الصورة: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300);
       }
@@ -1037,7 +1074,7 @@ export function startWaRelayPoller() {
           else if (relayRow.kind === "messages") result = await getOfficeMessages(relayRow.towerId, p.chatId ?? "", p.limit ?? 40);
           else if (relayRow.kind === "send") result = await sendOfficeChat(relayRow.towerId, p.chatId ?? "", p.text ?? "");
           // 🖼️ ونتيجةُ الصورة تُعاد إلى الموقع (لا تبقى في نافذة الحاسبة) فتُكتب في سجلّ الرسائل
-          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true, build: workerBuild(), gotImage: !!p.image, ...(rr.imageError ? { imageError: rr.imageError } : {}), ...(rr.withImage ? { withImage: true } : {}) }; }
+          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true, build: await workerBuild(), gotImage: !!p.image, ...(rr.imageError ? { imageError: rr.imageError } : {}), ...(rr.withImage ? { withImage: true } : {}) }; }
           else if (relayRow.kind === "media") result = await downloadOfficeMedia(relayRow.towerId, p.msgId ?? "");
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
           else if (relayRow.kind === "sas") result = await runSasOp(relayRow.towerId, p.op ?? "", p);
