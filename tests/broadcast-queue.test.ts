@@ -79,3 +79,30 @@ describe("ب-٢ · طابور البثّ الجماعيّ", () => {
     assert.ok(/target !== "one" && recipients\.length > 1/.test(read(ROUTE)), "الفرديُّ صار يصطفّ — فقدَ المستخدمُ نتيجتَه الفوريّة");
   });
 });
+
+// ═════ 🧹 عمرُ الطوابير ٢٤ ساعة (قرارُ محمد 2026-08-21 مساءً) ═════
+// «كلُّ طابورٍ لا يُمسَح أبداً اجعله يُمسَح كلَّ ٢٤ ساعة، ولا تمسّ بقيّةَ الطوابير».
+// وكان طابورا **البثّ** و**سجلّ المزامنة** بلا عمرٍ إطلاقاً: البثُّ لا مُنظِّفَ له، وطابورُ
+// سجلّ المزامنة بُني «لا يُمسَح أبداً» بطلبٍ سابقٍ ثمّ صحّحه محمد. وطابورُ «فعّل بنفسه»
+// كان ٢٤ ساعةً أصلاً — **لا يُمَسّ**، وكذلك أرشيفُ الرسائل (٣ أيّام) وبقيّةُ المسارات.
+describe("🧹 عمرُ الطوابير المفتوحة", () => {
+  const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
+
+  test("طابورُ البثّ يُسقط ما تجاوز ٢٤ ساعة — بوسمَيه حصراً", () => {
+    const src = read("src/lib/broadcastQueue.ts");
+    assert.ok(src.includes("error: { in: [QUEUE_MARK, CLAIM_MARK] },"), "الحذفُ غيرُ مقصورٍ على وسمَي طابور البثّ");
+    assert.ok(src.includes("date: { lt: new Date(Date.now() - 24 * 3600_000) },"), "لا عمرَ للطابور");
+  });
+
+  test("طابورُ سجلّ المزامنة يُسقط ما تجاوز ٢٤ ساعة — بوسمِه ومفتاحِه حصراً", () => {
+    const src = read("src/lib/syncAutoMsg.ts");
+    assert.ok(src.includes("const QUEUE_MAX_AGE_MS = 24 * 3600_000;"), "لا عمرَ محدَّداً للطابور");
+    assert.ok(src.includes("error: { in: [SYNC_MSG_MARK, CLAIM_MARK] },"), "الحذفُ غيرُ مقصورٍ على وسمَي الطابور");
+    assert.ok(src.includes('dedupKey: { startsWith: "synclog:" },'), "الحذفُ غيرُ مقيَّدٍ بمفتاح سجلّ المزامنة");
+  });
+
+  test("🛡️ وما كان يُمسَح سلفاً لم يُمَسّ: «فعّل بنفسه» ٢٤ ساعةً وأرشيفُ الرسائل ٣ أيّام", () => {
+    assert.ok(read("src/lib/selfActivatedNotice.ts").includes("مسحُ ما تجاوز ٢٤ ساعة"), "حارسُ الطابور القديم تغيّر");
+    assert.ok(read("src/lib/scheduler.ts").includes("purgeOldMessages(days = 3)"), "أرشيفُ الرسائل تغيّر");
+  });
+});

@@ -122,6 +122,18 @@ async function drainLoop(): Promise<void> {
     imgCache.set(k, img);
     return img;
   };
+  // ═════ 🧹 عمرُ الطابور ٢٤ ساعة (قرارُ محمد 2026-08-21 مساءً) ═════
+  // «كلُّ طابورٍ لا يُمسَح اجعله يُمسَح كلَّ ٢٤ ساعة». وبثٌّ عالقٌ يوماً كاملاً (واتسابٌ
+  // مقطوعٌ مثلاً) لا يُرسَل بعده: رسالةٌ تصل المشتركَ متأخّرةً يوماً تُربكه ولا تنفعه.
+  // 🔒 والحذفُ مقصورٌ على **صفوف هذا الطابور** بوسمَيه (المنتظرُ والمحجوزُ) حصراً.
+  await prisma.message.deleteMany({
+    where: {
+      channel: "WHATSAPP", status: "PENDING",
+      error: { in: [QUEUE_MARK, CLAIM_MARK] },
+      date: { lt: new Date(Date.now() - 24 * 3600_000) },
+    },
+  }).catch(() => {});
+
   for (;;) {
     const job = await claimNext(activeCooldownOffices());
     if (!job) {

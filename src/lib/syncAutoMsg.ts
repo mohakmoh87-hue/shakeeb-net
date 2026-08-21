@@ -171,6 +171,8 @@ export async function sendSyncLogMessage(
 }
 
 // ═════ تصريفُ الطابور — «يُرسَل فورَ اشتغال الحاسبة» (يُنادى عند جهوزيّة واتساب المكتب ودوريّاً) ═════
+/** عمرُ الطابور الأقصى: ٢٤ ساعةً ثمّ يسقط (قرارُ محمد 2026-08-21) */
+const QUEUE_MAX_AGE_MS = 24 * 3600_000;
 const draining = new Set<number>(); // حارسُ عدم تراكب الدورات لكلّ مكتب
 
 export async function drainSyncMsgQueue(towerId: number): Promise<{ sent: number; waiting: number }> {
@@ -178,6 +180,21 @@ export async function drainSyncMsgQueue(towerId: number): Promise<{ sent: number
   if (draining.has(towerId)) return out;
   draining.add(towerId);
   try {
+    // ═════ 🧹 عمرُ الطابور ٢٤ ساعة (قرارُ محمد 2026-08-21 مساءً) ═════
+    // كان «لا يُمسَح أبداً» بطلبه السابق، ثمّ صحّحه: «كلُّ طابورٍ لا يُمسَح اجعله يُمسَح
+    // كلَّ ٢٤ ساعة». والعلّةُ عمليّةٌ: رسالةُ تفعيلٍ أو تنصيبٍ تصل المشتركَ بعد يومَين
+    // لا معنى لها — بل تُربكه. فما تجاوز يوماً في الطابور يسقط ولا يُرسَل.
+    // 🔒 والحذفُ مقصورٌ على **صفوف هذا الطابور** حصراً (وسمُه + مفتاحُ تكراره)،
+    //    فلا يمسّ سجلَّ الرسائل ولا طابورَ البثّ ولا رسائلَ «فعّل بنفسه».
+    await prisma.message.deleteMany({
+      where: {
+        status: "PENDING", channel: "WHATSAPP",
+        error: { in: [SYNC_MSG_MARK, CLAIM_MARK] },
+        dedupKey: { startsWith: "synclog:" },
+        date: { lt: new Date(Date.now() - QUEUE_MAX_AGE_MS) },
+      },
+    }).catch(() => {});
+
     // حَجزٌ مات صاحبُه (انهيارٌ/إطفاءٌ وسط الإرسال) يُعاد للطابور — فلا صفَّ يخلد محجوزاً
     await prisma.message.updateMany({
       where: {
