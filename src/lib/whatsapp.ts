@@ -817,6 +817,20 @@ export async function sendOfficeChat(officeId: number, chatId: string, text: str
 }
 
 // إرسال محلّي مباشر من عميل واتساب هذه الحاسبة (بلا تمرير) — تستعمله مالكة الجلسة والمُرحِّل.
+// ═════ 🏷️ بصمةُ نسخة حاسبة المكتب — تُرافق نتيجةَ كلّ ترحيلِ إرسال ═════
+// الواتسابُ يُرسَل من حاسبة المكتب لا من السحابة، فإن كانت تشغّل نسخةً أقدمَ من بناء
+// الصورة (٢٠٢٦-٠٨-١٣) فهي تتجاهل `p.image` وترسل النصَّ وحدَه **بصمتٍ تامّ** — وهو
+// أرجحُ تفسيرٍ لبلاغ «الصورةُ لا تصل». وغيابُ الحقل نفسِه في النتيجة **دليلُ قِدَم**.
+let __buildId: string | null = null;
+function workerBuild(): string {
+  if (__buildId) return __buildId;
+  const env = process.env.RAILWAY_GIT_COMMIT_SHA;
+  if (env) return (__buildId = env.slice(0, 7));
+  try { __buildId = fs.readFileSync(path.join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim().slice(0, 12); }
+  catch { __buildId = "unknown"; }
+  return __buildId;
+}
+
 async function sendWhatsAppLocal(officeId: number, phone: string, text: string, image?: string | null): Promise<SendResult> {
   const s = store(officeId);
   if (s.state !== "ready" || !s.client) return { ok: false, error: "واتساب المكتب غير متصل — اربطه من إدارة المكاتب" };
@@ -1023,7 +1037,7 @@ export function startWaRelayPoller() {
           else if (relayRow.kind === "messages") result = await getOfficeMessages(relayRow.towerId, p.chatId ?? "", p.limit ?? 40);
           else if (relayRow.kind === "send") result = await sendOfficeChat(relayRow.towerId, p.chatId ?? "", p.text ?? "");
           // 🖼️ ونتيجةُ الصورة تُعاد إلى الموقع (لا تبقى في نافذة الحاسبة) فتُكتب في سجلّ الرسائل
-          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true, ...(rr.imageError ? { imageError: rr.imageError } : {}), ...(rr.withImage ? { withImage: true } : {}) }; }
+          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true, build: workerBuild(), gotImage: !!p.image, ...(rr.imageError ? { imageError: rr.imageError } : {}), ...(rr.withImage ? { withImage: true } : {}) }; }
           else if (relayRow.kind === "media") result = await downloadOfficeMedia(relayRow.towerId, p.msgId ?? "");
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
           else if (relayRow.kind === "sas") result = await runSasOp(relayRow.towerId, p.op ?? "", p);

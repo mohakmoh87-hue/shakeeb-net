@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@/lib/prisma";
-import { renderTemplate, sendViaProvider } from "@/lib/messaging";
+import { renderTemplate, sendViaProvider, imageNote } from "@/lib/messaging";
 import { dailyReportText, computeDailyReport } from "@/lib/dailyReport";
 import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // خاتمة الأصل ٢ (2026-08-19)
 import { formatDate } from "@/lib/format";
@@ -141,7 +141,7 @@ export async function runExpiringReminder(
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
-        status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+        status: res.ok ? "SENT" : "FAILED", error: imageNote(res),
         createdByUser: "scheduler",
         agentId: office?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
         templateType: "expiring",
@@ -258,7 +258,7 @@ export async function runDebtReminder(
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
-        status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: "scheduler",
+        status: res.ok ? "SENT" : "FAILED", error: imageNote(res), createdByUser: "scheduler",
         agentId: office?.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
         templateType: "debts",
         dedupKey: messageDedupKey(office?.agentId ?? null, sub.id, "debts"),
@@ -381,7 +381,7 @@ export async function runExpiredNotice(
       await prisma.message.create({
         data: {
           channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
-          status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: "scheduler",
+          status: res.ok ? "SENT" : "FAILED", error: imageNote(res), createdByUser: "scheduler",
           agentId: office.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
         },
       });
@@ -466,7 +466,7 @@ export async function runManagerDailyReport(
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", phone, text,
-        status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+        status: res.ok ? "SENT" : "FAILED", error: imageNote(res),
         createdByUser: "scheduler",
         agentId: office.agentId ?? null, // عزل: سجلّ الرسائل يُرشَّح بالوكيل لا باسم المُنشئ
       },

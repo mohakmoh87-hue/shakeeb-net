@@ -3,7 +3,7 @@ import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { appendCardHistory, maybeEndCardSupport, resolveCardActor } from "@/lib/field";
-import { renderTemplate, sendViaProvider } from "@/lib/messaging";
+import { renderTemplate, sendViaProvider, imageNote } from "@/lib/messaging";
 import { formatDate } from "@/lib/format";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
 import { baghdadDayKey } from "@/lib/attendance";
@@ -470,7 +470,7 @@ export async function POST(request: Request) {
           await prisma.message.create({
             data: {
               channel: "WHATSAPP", subscriberId: sub.id, phone: toPhone, text,
-              status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+              status: res.ok ? "SENT" : "FAILED", error: imageNote(res),
               createdByUser: String(actor.userId ?? ""),
               agentId: actor.agentId ?? null, // عزل سجلّ الرسائل بالوكيل
             },

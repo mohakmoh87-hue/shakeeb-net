@@ -55,6 +55,16 @@ export function renderTemplate(
   });
 }
 
+// ═════ 🖼️ سببُ سقوط الصورة — يُكتَب في سجلّ الرسائل لكلّ قالبٍ لا لقالبَين ═════
+// (بلاغُ محمد 2026-08-21: «الصورةُ لا تصل، والرسالةُ تصل»). كان `imageError` يُوثَّق في
+// مسارَين اثنَين فقط من تسعة (التفعيل والملخّص)، فبقيّةُ القوالب تسقط صورتُها **بلا
+// أثرٍ يُقرأ** — فيتعذّر معرفةُ السبب عن بُعد. وهذه دالّةٌ **مضافةٌ لا تُغيّر شيئاً**:
+// نجاحٌ بلا صورةٍ ⇒ `null` كما كان تماماً، ونجاحٌ سقطت صورتُه ⇒ نصُّ السبب.
+export function imageNote(res: { error?: string; imageError?: string }): string | null {
+  if (res.error) return res.error;
+  return res.imageError ? `أُرسلت بلا صورة — ${res.imageError}` : null;
+}
+
 export interface SendResult {
   ok: boolean;
   error?: string;

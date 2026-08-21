@@ -521,6 +521,15 @@ export default function SmsTemplatesPage() {
           <div className="mb-2 text-sm font-semibold text-slate-700">معاينة الرسالة (بيانات تجريبية)</div>
           <div className="rounded-xl bg-[#e5ddd5] p-4">
             <div className="mr-auto max-w-full whitespace-pre-wrap rounded-lg rounded-tr-none bg-[#dcf8c6] px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm" dir="rtl">
+              {/* ═════ 🖼️ الصورةُ **داخل الفقاعة** فوق النصّ (بلاغُ محمد 2026-08-21) ═════
+                  «أعتقد أنّ الصورة لا تصل لأنّها غير مربوطةٍ مع الرسالة أصلاً — لا تظهر في
+                   المعاينة». وكانت المعاينةُ تعرض النصَّ وحدَه فعلاً، والصورةُ في مربّعٍ
+                   منفصلٍ بجانب زرّ الرفع — فلا شيءَ يقول إنّها ستُرسَل معه. وواتسابُ
+                   يعرضها هكذا بالضبط: صورةٌ يعلوها النصُّ تعليقاً في **رسالةٍ واحدة**. */}
+              {curEvent?.image && (
+                // eslint-disable-next-line @next/next/no-img-element -- صورةُ القالب data URI محليّةٌ لا تمرّ بمُحسِّن الصور
+                <img src={curEvent.image} alt="صورة القالب" className="mb-1.5 max-h-56 w-full rounded-md object-contain" />
+              )}
               {curText ? <BoldText text={preview} /> : <span className="text-slate-400">لا يوجد نص بعد — اكتب في المحرّر أو أدرج الحقول</span>}
             </div>
           </div>

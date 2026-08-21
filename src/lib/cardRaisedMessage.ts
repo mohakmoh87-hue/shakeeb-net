@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
-import { renderTemplate, sendViaProvider } from "@/lib/messaging";
+import { renderTemplate, sendViaProvider, imageNote } from "@/lib/messaging";
 
 // ═════ البند ٧ · رسالةٌ للمشترك عند **رفعِ** بطاقةٍ له (طلبُ محمد 2026-08-13) ═════
 // «الآن عند انتهاء الصيانة تصل رسالةٌ للمشترك... ولكن أريد أيضاً أن تصله رسالةٌ ولها
@@ -58,7 +58,7 @@ export async function sendCardRaisedMessage(cardId: number): Promise<void> {
       await prisma.message.create({
         data: {
           channel: "WHATSAPP", phone: card.odooPhone, text,
-          status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+          status: res.ok ? "SENT" : "FAILED", error: imageNote(res),
           createdByUser: "card-raised", agentId: office.agentId ?? null,
         },
       }).catch(() => {});

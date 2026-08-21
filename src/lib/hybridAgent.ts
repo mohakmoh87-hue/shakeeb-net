@@ -1,4 +1,6 @@
 import os from "node:os";
+import nodeFs from "node:fs";
+import nodePath from "node:path";
 import { execFile } from "node:child_process";
 import { prisma } from "@/lib/prisma";
 import { computeLeaderMachineId, acquireLeadership, releaseLeadership } from "@/lib/hybridLeader";
@@ -102,6 +104,13 @@ export function startHybridAgent() {
     }
   }
   const lastLogText = () => (gLog.__waLogRing ?? []).join("\n").slice(-4000);
+  // 🏷️ بصمةُ نسخة هذه الحاسبة في أوّل سطرٍ من سجلّها — تُرفَع مع النبضة إلى `lastLog`
+  // فتُقرأ من الموقع (بلاغُ الصورة 2026-08-21: حاسبةٌ بنسخةٍ قديمةٍ تُرسل النصَّ وحدَه).
+  try {
+    const bid = process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7)
+      ?? nodeFs.readFileSync(nodePath.join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim().slice(0, 12);
+    console.log(`[build] نسخةُ الحاسبة ${bid} — أُقلعت ${new Date().toISOString()}`);
+  } catch { /* بصمةٌ تعذّرت — لا تُعطّل العامل */ }
   let loggedOk = false;
 
   let timer: ReturnType<typeof setInterval> | null = null;

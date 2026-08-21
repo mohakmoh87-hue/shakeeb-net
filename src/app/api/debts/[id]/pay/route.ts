@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
-import { renderTemplate, sendViaProvider } from "@/lib/messaging";
+import { renderTemplate, sendViaProvider, imageNote } from "@/lib/messaging";
 import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 
 const schema = z.object({
@@ -137,7 +137,7 @@ async function sendDebtPaidMessage(a: {
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text,
-        status: res.ok ? "SENT" : "FAILED", error: res.error ?? null,
+        status: res.ok ? "SENT" : "FAILED", error: imageNote(res),
         createdByUser: a.createdByUser ?? null,
         agentId: office?.agentId ?? null, // عزل: سجلُّ الرسائل يُرشَّح بالوكيل — وبلاه تغيب الرسالة عن صاحبها
       },
