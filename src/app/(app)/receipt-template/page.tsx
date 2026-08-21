@@ -331,7 +331,7 @@ function PrintPreview({ t, officeName }: { t: Tpl; officeName: string }) {
     package: ["الباقة", "50 ميكا"],
     months: ["عدد الأشهر", "1"],
     dateFrom: ["من تاريخ", "2026/08/07"],
-    dateTo: ["إلى تاريخ", "2026/09/06", true],
+    dateTo: ["إلى تاريخ", "06/09/2026 17:00", true],
     price: ["قيمة الاشتراك", "25,000 د.ع"],
     moneyIn: ["المبلغ الواصل", "20,000 د.ع"],
     moneyCarry: ["الدين المتبقّي", "5,000 د.ع", true],

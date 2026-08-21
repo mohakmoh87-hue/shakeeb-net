@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatExpiry } from "@/lib/format";
 
 // ═════ 📋 نافذة «سجلّ المزامنة» الموحَّدة (مواصفة محمد 2026-08-20) ═════
 // منبثقةٌ منتصفَ الشاشة بالضبط، 80% من حجمها، لا تُغلق إلّا بـX. أربعةُ تبويبات، وفي
@@ -370,14 +370,16 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
                     {(tab === "self" || tab === "sas") && (
                       /* 📅 ما سيفعله زرُّ «تحديث الأيّام» صراحةً: أيّامُك الآن ← تاريخُ الساس */
                       <td className="whitespace-nowrap p-2 text-[12px]" dir="ltr">
-                        <span className="text-slate-500">{r.oursDateTo ? formatDate(r.oursDateTo) : "—"}</span>
+                        <span className="text-slate-500">{formatExpiry(r.oursDateTo)}</span>
                         <span className="mx-1 text-slate-400">←</span>
                         <b className={r.sasDateTo && (!r.oursDateTo || r.sasDateTo > r.oursDateTo) ? "text-emerald-700" : "text-slate-400"}>
-                          {r.sasDateTo ? formatDate(r.sasDateTo) : "—"}
+                          {formatExpiry(r.sasDateTo)}
                         </b>
                       </td>
                     )}
-                    <td className="whitespace-nowrap p-2 text-slate-500" dir="ltr">{formatDate(r.activatedAt ?? r.createdAt)}</td>
+                    {/* ⏰ وقتُ التفعيل: الصفُّ المؤرَّخُ مصدرُه الساس فيُقرأ بساعة بغداد كما يعرضها
+                        (القاعدةُ وشرحُها في `@/lib/format`)، وصفُّنا نحن لحظةٌ حقيقيّةٌ تبقى كما كانت. */}
+                    <td className="whitespace-nowrap p-2 text-slate-500" dir="ltr">{r.activatedAt ? formatExpiry(r.activatedAt) : formatDate(r.createdAt)}</td>
                     <td className="max-w-[120px] truncate p-2 text-slate-500">{r.towerName}</td>
                     {canEdit && tab !== "info" && (
                       <td className="whitespace-nowrap p-2">

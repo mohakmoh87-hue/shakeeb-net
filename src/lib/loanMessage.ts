@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
-import { formatDate } from "@/lib/format";
+import { formatBaghdadDateTime } from "@/lib/format";
 
 // إرسال رسالة القرض للمشترك — صامت وغير معطِّل (لو فشل يبقى القرض ممنوحاً وتُسجَّل الرسالة FAILED).
 // يُستدعى بـ void بعد نجاح المنح، تماماً كرسالة التفعيل.
@@ -29,7 +29,8 @@ export async function sendLoanMessage(opts: {
       "الاسم": opts.name ?? "",
       "اليوزر": opts.netUser ?? "",
       "المبلغ": Number(opts.amount || 0).toLocaleString("en-US"),
-      "تاريخ_الانتهاء": opts.expiryVirtual ? formatDate(opts.expiryVirtual) : "",
+      // ⏰ انتهاءُ القرض الافتراضيُّ يحسبه البرنامجُ لا الساس ⇒ لحظةٌ حقيقيّةٌ تُعرَض بتوقيت بغداد
+      "تاريخ_الانتهاء": opts.expiryVirtual ? formatBaghdadDateTime(opts.expiryVirtual) : "",
       "المكتب": opts.officeName ?? "SHAKEEB",
     });
     const res = await sendViaProvider("WHATSAPP", opts.phone, text, opts.officeId, tpl.image);

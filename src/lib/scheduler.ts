@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { renderTemplate, sendViaProvider, imageNote } from "@/lib/messaging";
 import { dailyReportText, computeDailyReport } from "@/lib/dailyReport";
 import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // خاتمة الأصل ٢ (2026-08-19)
-import { formatDate } from "@/lib/format";
+import { formatExpiryOrEmpty } from "@/lib/format";
 import { expiringByPkgOn, expiringPkgType } from "@/lib/smsTemplates"; // 📦 تذكيرُ الانتهاء حسب الباقة
 
 // مجدول المهام: يعمل داخل عملية الخادم (توقيت العراق).
@@ -147,7 +147,7 @@ export async function runExpiringReminder(
       address: sub.address, // «ادرس 1» من الساس — يظهر فقط إن أدخله المدير في القالب
       package: sub.packageId ? pkgNameMap.get(sub.packageId) ?? "" : "",
       phone: sub.phone,
-      dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",
+      dateTo: formatExpiryOrEmpty(sub.dateTo),
       carry: sub.carry ?? 0,
       remaining: sub.carry ?? 0,
       price: sub.packageId ? priceMap.get(sub.packageId) ?? 0 : 0,
@@ -267,7 +267,7 @@ export async function runDebtReminder(
     const text = renderTemplate(template.text, {
       name: sub.name, netUser: sub.netUser,
       package: sub.packageId ? pkgNameMap.get(sub.packageId) ?? "" : "",
-      phone: sub.phone, dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",
+      phone: sub.phone, dateTo: formatExpiryOrEmpty(sub.dateTo),
       carry: sub.carry ?? 0, remaining: sub.carry ?? 0,
       price: sub.packageId ? priceMap.get(sub.packageId) ?? 0 : 0,
       code: sub.rewardCode, balance: sub.rewardBalance ?? 0,
@@ -393,7 +393,7 @@ export async function runExpiredNotice(
       const text = renderTemplate(tpl.text, {
         name: sub.name, netUser: sub.netUser,
         package: sub.packageId ? pkgName.get(sub.packageId) ?? "" : "",
-        phone: sub.phone, dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",
+        phone: sub.phone, dateTo: formatExpiryOrEmpty(sub.dateTo),
         carry: sub.carry ?? 0, remaining: sub.carry ?? 0,
         price: sub.packageId ? pkgPrice.get(sub.packageId) ?? 0 : 0,
         code: sub.rewardCode, balance: sub.rewardBalance ?? 0,

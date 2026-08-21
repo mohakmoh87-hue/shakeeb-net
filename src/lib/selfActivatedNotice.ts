@@ -19,7 +19,7 @@
 import { prisma } from "@/lib/prisma";
 import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
-import { formatDate } from "@/lib/format";
+import { formatExpiryOrEmpty } from "@/lib/format";
 
 /** بعدها يُمسَح الصفُّ المعلَّق ولا يُرسَل (نصُّ الطلب: «إن مرّت ٢٤ ساعةً ولم يُفتَح واتساب»). */
 export const SELF_ACT_QUEUE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -90,7 +90,7 @@ export async function notifySelfActivated(
     const text = renderTemplate(tpl.text, {
       name: sub.name, netUser: sub.netUser, phone: sub.phone,
       package: pkg?.name ?? "", price: pkg?.priceDinar ?? 0,
-      dateTo: formatDate(dateTo),
+      dateTo: formatExpiryOrEmpty(dateTo),
       carry: sub.carry ?? 0, remaining: sub.carry ?? 0,
       code: sub.rewardCode, balance: sub.rewardBalance ?? 0,
       office: office.name ?? "",

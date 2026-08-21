@@ -372,14 +372,16 @@ html[data-app-mode] * { -webkit-tap-highlight-color: transparent; }
     font-family: inherit; border-radius: 7px; padding: 6px 11px; font-size: 11px; font-weight: 700; white-space: nowrap;
     line-height: 1.45; transition: border-color .15s, background .15s, color .15s; }
   .sb-act:hover { border-color: var(--navy); color: var(--navy); background: var(--surface-2); }
+  /* تصغيرُ عرض الشريط (طلبُ محمد 2026-08-21): الفراغُ الجانبيُّ كان 26px فصار 11px —
+     والحجمُ واللونُ والظلُّ كما هي، فلا يتغيّر شكلُ الزرّ إلّا بعرضه. */
   .sb-act.go { background: linear-gradient(120deg, #3ad9a8, #18a97c); border-color: #18a97c; color: #fff;
-    font-size: 12.5px; font-weight: 800; letter-spacing: .2px; padding: 5px 26px;
+    font-size: 12.5px; font-weight: 800; letter-spacing: .2px; padding: 5px 11px;
     box-shadow: 0 2px 9px rgba(24,169,124,.36); }
   .sb-act.go:hover { background: linear-gradient(120deg, #2ecb99, #12946c); border-color: #12946c; color: #fff;
     box-shadow: 0 4px 13px rgba(24,169,124,.48); }
   /* زرّ قرض فزعة — عنبريّ كي يتميّز عن «تفعيل» الأخضر */
   .sb-act.loan { background: linear-gradient(120deg, #f7b955, #e0930f); border-color: #e0930f; color: #fff;
-    font-size: 12px; font-weight: 800; padding: 5px 18px; box-shadow: 0 2px 9px rgba(224,147,15,.34); }
+    font-size: 12px; font-weight: 800; padding: 5px 10px; box-shadow: 0 2px 9px rgba(224,147,15,.34); }
   .sb-act.loan:hover { background: linear-gradient(120deg, #f2ad3d, #cc850a); border-color: #cc850a; color: #fff;
     box-shadow: 0 4px 13px rgba(224,147,15,.46); }
   /* وسم «قرض» الثابت بجانب اسم المشترك */

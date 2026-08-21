@@ -6,7 +6,7 @@ import { guard, ownsTower, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { computeDateTo } from "@/lib/subscription";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
-import { formatDate } from "@/lib/format";
+import { formatExpiryOrEmpty } from "@/lib/format";
 import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // حارسُ تكرار الرسائل (طلبُ محمد 2026-08-19)
 import { sasBaseUrl, sasLogin, sasFetchUser } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
@@ -423,7 +423,7 @@ async function sendActivationMessage(a: {
       paid: a.paid,
       remaining: a.remaining,
       carry: a.carry,
-      dateTo: formatDate(a.dateTo),
+      dateTo: formatExpiryOrEmpty(a.dateTo),
       code: a.code, balance: a.balance ?? 0, // كود/رصيد الخصم (فارغ لمن لا رصيد له)
       office: office?.name ?? "SHAKEEB",
     });

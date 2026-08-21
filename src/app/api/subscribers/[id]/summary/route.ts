@@ -4,7 +4,7 @@ import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
-import { formatDate } from "@/lib/format";
+import { formatExpiryOrEmpty } from "@/lib/format";
 import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // حارسُ تكرار الرسائل (طلبُ محمد 2026-08-19)
 
 export const dynamic = "force-dynamic";
@@ -53,7 +53,7 @@ export async function POST(
     price: pkg?.priceDinar ?? 0,
     carry: subscriber.carry ?? 0,
     remaining: subscriber.carry ?? 0,
-    dateTo: subscriber.dateTo ? formatDate(subscriber.dateTo) : "",
+    dateTo: formatExpiryOrEmpty(subscriber.dateTo),
     phone: subscriber.phone,
     code: subscriber.rewardCode, balance: subscriber.rewardBalance ?? 0, // كود/رصيد الخصم
     office: office?.name ?? "SHAKEEB",

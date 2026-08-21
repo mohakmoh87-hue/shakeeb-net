@@ -5,7 +5,7 @@ import Link from "next/link";
 import PageHeader from "@/components/PageHeader";
 import DateRangeFilter from "@/components/DateRangeFilter";
 import PrintButton from "@/components/PrintButton";
-import { formatDate } from "@/lib/format";
+import { formatExpiry } from "@/lib/format";
 
 type Overall = {
   subscribers: { total: number; active: number; expired: number; inactive: number };
@@ -22,7 +22,8 @@ type NotActSub = { id: number; name: string | null; phone: string | null; netUse
 
 const fmt = (n: number) => Number(n).toLocaleString("en-US");
 const iso = (d: Date) => d.toISOString().slice(0, 10);
-const fmtDate = (d: string | null) => formatDate(d);
+// ⏰ تاريخُ الانتهاء بساعته ودقيقته كما في الساس (قاعدةُ القراءة في `@/lib/format`)
+const fmtDate = (d: string | null) => formatExpiry(d);
 
 export default function OverallReport() {
   const firstOfMonth = new Date(new Date().setDate(1));

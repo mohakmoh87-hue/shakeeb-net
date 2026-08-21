@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import { usePermission } from "@/lib/usePermission";
-import { formatDate } from "@/lib/format";
+import { formatExpiry } from "@/lib/format";
 
 // ===== صفحة «كلّ المشتركين» (طلب محمد 2026-08-09) — تُفتح من مربّع المشتركين بالرئيسيّة =====
 // قائمة كلّ المشتركين (كلّ مكتبٍ بمكتبه، والمدير يرى الكلّ) + تحديد بمربّعات + تحديد الكلّ،
@@ -233,7 +233,7 @@ export default function AllSubscribersPage() {
                 <td className="p-2 text-slate-500" dir="ltr">{r.phone ?? "—"}</td>
                 <td className="p-2 text-slate-500">{r.address ?? "—"}</td>
                 <td className="p-2 text-slate-500">{r.packageName ?? "—"}</td>
-                <td className="p-2 text-slate-600" dir="ltr">{r.dateTo ? formatDate(r.dateTo) : "—"}</td>
+                <td className="whitespace-nowrap p-2 text-slate-600" dir="ltr">{formatExpiry(r.dateTo)}</td>
                 <td className={`p-2 font-bold ${r.carry > 0 ? "text-red-600" : "text-slate-400"}`}>{r.carry > 0 ? fmt(r.carry) : "—"}</td>
                 <td className="p-2 text-slate-500">{r.office ?? "—"}</td>
                 {status === "online" && <td className="p-2">{r.online ? <span className="text-emerald-600">🟢 متّصل</span> : "—"}</td>}

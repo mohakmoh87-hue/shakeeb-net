@@ -4,7 +4,7 @@
 import { prisma } from "@/lib/prisma";
 import { getReceiptTemplate, getNoticeTemplate, getDebtTemplate, type ReceiptTemplate } from "@/lib/receiptTemplate";
 import { resolveDims, type PaperDims, type ReceiptBodyKey, type NoticeBodyKey, type DebtBodyKey } from "@/lib/receiptPaper";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatExpiry } from "@/lib/format";
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
 const esc = (s: string | null | undefined) =>
@@ -108,7 +108,7 @@ export async function subscriptionReceiptHtml(entryId: number, agentId: number |
       case "package": return line("الباقة", entry.cardType ?? "—");
       case "months": return line("عدد الأشهر", entry.month ?? "—");
       case "dateFrom": return line("من تاريخ", formatDate(entry.dateFrom));
-      case "dateTo": return line("إلى تاريخ", formatDate(entry.dateTo), true);
+      case "dateTo": return line("إلى تاريخ", formatExpiry(entry.dateTo), true);
       case "price": return line("قيمة الاشتراك", `${fmt(entry.money)} د.ع`);
       case "moneyIn": return line("المبلغ الواصل", `${fmt(entry.moneyIn)} د.ع`);
       case "moneyCarry": return line("الدين المتبقّي", `${fmt(entry.moneyCarry)} د.ع`, true);
@@ -149,7 +149,7 @@ export async function noticeSlipHtml(subscriberId: number, agentId: number | nul
       case "address": return s.address ? line("العنوان", s.address) : "";
       case "package": return line("الباقة", pkg?.name ?? "—");
       case "price": return line("قيمة الاشتراك", `${fmt(pkg?.priceDinar ?? 0)} د.ع`);
-      case "dateTo": return line("تاريخ الانتهاء", formatDate(s.dateTo), true);
+      case "dateTo": return line("تاريخ الانتهاء", formatExpiry(s.dateTo), true);
       case "carry": return line("الدين المتبقّي", `${fmt(s.carry)} د.ع`, true);
       case "office": return line("المكتب", office?.name ?? brand);
       default: return "";

@@ -5,7 +5,7 @@ import ReceiptPrintStyle from "@/components/ReceiptPrintStyle";
 import SilentPrint from "@/components/SilentPrint";
 import { getReceiptTemplate } from "@/lib/receiptTemplate";
 import { getSession } from "@/lib/auth";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatExpiry } from "@/lib/format";
 
 const fmt = (n: number | null | undefined) =>
   n == null ? "0" : Number(n).toLocaleString("en-US");
@@ -89,7 +89,7 @@ export default async function ReceiptPage({
                 case "package": return <Line key={key} label="الباقة" value={entry.cardType ?? "—"} />;
                 case "months": return <Line key={key} label="عدد الأشهر" value={entry.month ?? "—"} />;
                 case "dateFrom": return <Line key={key} label="من تاريخ" value={fmtDate(entry.dateFrom)} />;
-                case "dateTo": return <Line key={key} label="إلى تاريخ" value={fmtDate(entry.dateTo)} bold />;
+                case "dateTo": return <Line key={key} label="إلى تاريخ" value={formatExpiry(entry.dateTo)} bold />;
                 case "price": return <Line key={key} label="قيمة الاشتراك" value={`${fmt(entry.money)} د.ع`} />;
                 case "moneyIn": return <Line key={key} label="المبلغ الواصل" value={`${fmt(entry.moneyIn)} د.ع`} color="text-emerald-600" />;
                 case "moneyCarry": return <Line key={key} label="الدين المتبقّي" value={`${fmt(entry.moneyCarry)} د.ع`} color="text-red-600" bold />;

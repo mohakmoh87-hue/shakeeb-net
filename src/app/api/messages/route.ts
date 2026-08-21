@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, towerScope } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { renderTemplate, sendViaProvider, type Channel } from "@/lib/messaging";
-import { formatDate } from "@/lib/format";
+import { formatExpiryOrEmpty } from "@/lib/format";
 import { QUEUE_MARK } from "@/lib/broadcastQueue"; // علامةُ صفوف طابور البثّ (درعُها من مقصلة المجدول)
 import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // حارسُ تكرار الرسائل (طلبُ محمد 2026-08-19)
 
@@ -216,7 +216,7 @@ export async function POST(request: Request) {
       address: sub.address, // «ادرس 1» من الساس — يظهر فقط إن أدخله المدير في القالب
       package: sub.packageId ? pkgNameMap.get(sub.packageId) ?? "" : "",
       phone: sub.phone,
-      dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",
+      dateTo: formatExpiryOrEmpty(sub.dateTo),
       carry: sub.carry ?? 0,
       remaining: sub.carry ?? 0,
       price: sub.packageId ? priceMap.get(sub.packageId) ?? 0 : 0,
@@ -274,7 +274,7 @@ export async function POST(request: Request) {
           text: renderTemplate(text, {
             name: sub.name, netUser: sub.netUser, address: sub.address,
             package: sub.packageId ? pkgNameMap.get(sub.packageId) ?? "" : "",
-            phone: sub.phone, dateTo: sub.dateTo ? formatDate(sub.dateTo) : "",
+            phone: sub.phone, dateTo: formatExpiryOrEmpty(sub.dateTo),
             carry: sub.carry ?? 0, remaining: sub.carry ?? 0,
             price: sub.packageId ? priceMap.get(sub.packageId) ?? 0 : 0,
             code: sub.rewardCode, balance: sub.rewardBalance ?? 0,

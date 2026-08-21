@@ -7,7 +7,7 @@ import ActivationModal, { type ActSubscriber } from "@/components/ActivationModa
 import AddDebtModal from "@/components/AddDebtModal";
 import MapButton from "@/components/MapButton";
 import PrintNowButton from "@/components/PrintNowButton";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDateTime, formatExpiry, remaining, remainingText } from "@/lib/format";
 import { usePermission } from "@/lib/usePermission";
 import FieldSettlementCard from "@/components/FieldSettlementCard";
 import SyncLogModal from "@/components/SyncLogModal";
@@ -45,13 +45,12 @@ const FIELD_OPS: { key: string; icon: string }[] = [
 ];
 
 const fmt = (n: number | null | undefined) => (n == null ? "0" : Number(n).toLocaleString("en-US"));
+// ⏰ المتبقّي بالساعة والدقيقة (طلبُ محمد 2026-08-21) — كان فرقَ تقاويمَ بين منتصفَي ليلٍ
+//    يبتلع الوقتَ ويبتلع معه إزاحةَ الساس الثلاثيّة. القاعدةُ وشرحُها في `@/lib/format`.
 const daysLeft = (dateTo: string | null) => {
-  if (!dateTo) return 0;
-  const now = new Date();
-  const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const dt = new Date(dateTo);
-  const expMid = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
-  return Math.round((expMid - todayMid) / 86400000);
+  const r = remaining(dateTo);
+  if (!r) return 0;
+  return r.negative ? -r.days - 1 : r.days;
 };
 
 // البند ٥ · صفُّ «تنصيبات خارجيّة». **في نطاق الوحدة لا داخل المكوّن**: نوعٌ داخليٌّ
@@ -685,16 +684,18 @@ export default function SubscribersBoard() {
                             <button className="sb-act loan" onClick={() => { setLoanSub(s); setLoanMsg(""); setLoanVariant("withDays"); }}>💳 قرض</button>
                           )}
                           <span className="sb-sep" />
-                          <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}>الأيام المتبقية <b>{d}</b></span>
+                          {/* ⏰ «المتبقي» يومٌ وساعةٌ ودقيقة (طلبُ محمد 2026-08-21) — والعنوانُ مختصَرٌ لتصغير الشريط */}
+                          <span className={`sb-chip c-days ${d < 0 ? "bad" : d > 7 ? "ok" : ""}`}
+                            title={`ينتهي: ${formatExpiry(s.dateTo)}`}>المتبقي <b>{remainingText(s.dateTo)}</b></span>
                           <button className={`sb-chip c-debt ${(s.carry ?? 0) <= 0 ? "zero" : ""}`} style={{ border: 0, cursor: "pointer", fontFamily: "inherit" }}
                             disabled={(s.carry ?? 0) <= 0}
                             onClick={() => { setPayDebtOpen(true); setPayAmount(""); setPayErr(""); }}
                             title="تسديد دين">
                             الديون <b>{fmt(s.carry)}</b>
                           </button>
-                          {officeRewardsOn(s.towerId) && <span className="sb-chip c-rew">كود المكافأة <b>{fmt(s.rewardBalance)}</b></span>}
-                          {/* مبلغ الاشتراك = سعر فئة المشترك (طلب محمد) */}
-                          <span className="sb-chip c-sub">مبلغ الاشتراك <b>{fmt(packages.find((p) => p.id === s.packageId)?.priceDinar ?? 0)}</b></span>
+                          {officeRewardsOn(s.towerId) && <span className="sb-chip c-rew" title="كود المكافأة">مكافأة <b>{fmt(s.rewardBalance)}</b></span>}
+                          {/* المبلغ = سعر فئة المشترك (طلب محمد) — والعنوانُ مختصَرٌ لتصغير الشريط 2026-08-21 */}
+                          <span className="sb-chip c-sub" title="مبلغ الاشتراك">المبلغ <b>{fmt(packages.find((p) => p.id === s.packageId)?.priceDinar ?? 0)}</b></span>
                           <span className="sb-chip trial-only-chip" title="يوزر المشترك">اليوزر <b dir="ltr">{s.netUser ?? "—"}</b></span>
                           {/* 🪦 شارةُ العنوان أُزيلت من قائمة آخر التفعيلات (قرار محمد 2026-08-21):
                               «حقلُ العنوان لا يجب أن يظهر في قائمة آخر التفعيلات ويظهر فقط في
@@ -881,7 +882,7 @@ export default function SubscribersBoard() {
                         <td className="p-2">{rc.isMaster
                           ? <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-bold text-indigo-700">🅜 ماستر</span>
                           : <span className="text-[11px] text-muted">نقدي</span>}</td>
-                        <td className="p-2" dir="ltr">{formatDate(rc.dateTo)}</td>
+                        <td className="whitespace-nowrap p-2" dir="ltr">{formatExpiry(rc.dateTo)}</td>
                         <td className="p-2"><div className="flex gap-1.5">
                           <PrintNowButton kind="subscription" id={rc.id} />
                           {/* أ-٥/٣ · التحويلُ بين الماستر والنقديّ من سجلّ المشترك (طلبُ محمد) */}
@@ -1176,7 +1177,8 @@ export default function SubscribersBoard() {
         const d = info.days;
         const when = d === 0 ? "اليوم" : d === 1 ? "قبل يوم واحد" : d === 2 ? "قبل يومين" : `قبل ${d} أيام`;
         const at = new Date(info.at).toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-        const until = info.dateTo ? new Date(info.dateTo).toLocaleDateString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", year: "numeric" }) : null;
+        // ⏰ ينتهي في: بساعته ودقيقته كما في الساس (قاعدةُ القراءة في `@/lib/format`)
+        const until = info.dateTo ? formatExpiry(info.dateTo) : null;
         return (
           <div className="fixed inset-0 z-[140] flex items-start justify-center overflow-y-auto bg-black/50 p-4" onClick={() => setRecentAct(null)}>
             <div className="my-auto max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
