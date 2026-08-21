@@ -24,10 +24,29 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const creds = await credsOfTower(towerId);
   if (!creds) return NextResponse.json({ error: "المكتب غير مربوط بـSAS" }, { status: 400 });
-  const user = (new URL(req.url).searchParams.get("user") ?? "").trim().toLowerCase();
+  const sp = new URL(req.url).searchParams;
+  const user = (sp.get("user") ?? "").trim().toLowerCase();
+  // 🔬 صيغةٌ حرّة: تُمرَّر جسمُ الطلب كما هو فتُجرَّب أيُّ بارامتراتٍ بلا نشرٍ جديد
+  const rawBody = sp.get("raw");
 
   const base = sasBaseUrl(creds.loginUrl);
   const token = await sasLogin(base, creds.username, creds.password);
+
+  if (rawBody) {
+    let body: Record<string, unknown> = {};
+    try { body = JSON.parse(rawBody) as Record<string, unknown>; }
+    catch { return NextResponse.json({ error: "raw ليس JSON صالحاً" }, { status: 400 }); }
+    const j = (await sasRawPost(base, token, String(sp.get("route") ?? "index/activations"), body)) as { total?: number; data?: Row[] };
+    const rows: Row[] = Array.isArray(j?.data) ? j.data : [];
+    return NextResponse.json({
+      body, total: j?.total ?? null, rows: rows.length,
+      managers: [...new Set(rows.map((r) => String((r.manager_details as Row | undefined)?.username ?? "—")))].slice(0, 6),
+      dates: rows.slice(0, 3).map((r) => String(r.created_at ?? "")),
+      newest: rows.map((r) => String(r.created_at ?? "")).sort().slice(-1)[0] ?? null,
+      oldest: rows.map((r) => String(r.created_at ?? "")).sort()[0] ?? null,
+      users: [...new Set(rows.map((r) => String((r.user_details as Row | undefined)?.username ?? "—")))].slice(0, 5),
+    });
+  }
 
   const variants: { name: string; route: string; body: Record<string, unknown> }[] = [
     { name: "baseline", route: "index/activations", body: { page: 1, count: 100 } },
