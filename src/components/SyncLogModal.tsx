@@ -65,6 +65,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [q, setQ] = useState("");
+  const [chFilter, setChFilter] = useState<string>(""); // 🔎 نوعُ التغيير المعروض (فارغٌ = الكلّ)
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sortKey, setSortKey] = useState<string>("createdAt");
@@ -110,9 +111,26 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
   }, [rows]);
 
   // التصفية: نصّيّاً (اسم/هاتف/باقة/يوزر/كلمة) وبالتاريخ (يومٌ محدَّد أو بين تاريخين)
+  // ═════ 🔎 مرشِّحُ نوع التغيير (طلبُ محمد 2026-08-21) ═════
+  // «أريد خياراتٍ علويّةً بكلّ ما يظهر من تغييرات، أضغط عليه فيظهر هذا النوعُ فقط» —
+  // فبدل قراءة ٢٤٤ صفّاً بحثاً عن الهواتف، ضغطةٌ واحدةٌ تحصرها. والعدّادُ على كلّ
+  // خيارٍ يقول كم صفّاً فيه، فيُعرَف حجمُ كلّ نوعٍ قبل فتحه.
+  const CH_LABEL: Record<string, string> = {
+    netUser: "🔴 اليوزر", sasLink: "🔗 رقم الساس", phone: "الهاتف", name: "الاسم",
+    address: "العنوان", package: "الباقة", dateTo: "تاريخ الانتهاء",
+  };
+  const chCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of rows.filter((x) => x.kind === "info")) {
+      for (const f of new Set((r.changes ?? []).map((c) => c.f))) m[f] = (m[f] ?? 0) + 1;
+    }
+    return m;
+  }, [rows]);
+
   const view = useMemo(() => {
     const needle = q.trim();
     let list = rows.filter((r) => r.kind === tab);
+    if (chFilter) list = list.filter((r) => (r.changes ?? []).some((c) => c.f === chFilter));
     if (needle) {
       list = list.filter((r) =>
         [r.name, r.netUser, r.phone, r.packageName, r.address, r.towerName, r.oursPackage]
@@ -134,7 +152,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
       }
     };
     return [...list].sort((a, b) => (val(a) > val(b) ? dir : val(a) < val(b) ? -dir : 0));
-  }, [rows, tab, q, from, to, sortKey, sortAsc]);
+  }, [rows, tab, q, from, to, sortKey, sortAsc, chFilter]);
 
   function sortBy(k: string) {
     if (sortKey === k) setSortAsc((v) => !v);
@@ -185,12 +203,28 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
         {/* التبويبات */}
         <div className="flex gap-1 overflow-x-auto border-b border-slate-200 px-2 pt-2 md:px-4">
           {KINDS.map((k) => (
-            <button key={k.key} onClick={() => { setTab(k.key); setSel(new Set()); setMsg(""); setPlusFor(null); }}
+            <button key={k.key} onClick={() => { setTab(k.key); setSel(new Set()); setMsg(""); setPlusFor(null); setChFilter(""); }}
               className={`shrink-0 whitespace-nowrap rounded-t-xl px-2.5 py-2 text-[13px] font-bold md:px-4 md:text-sm ${tab === k.key ? "border border-b-0 border-slate-200 bg-white text-mynet-blue" : "text-slate-500 hover:text-slate-700"}`}>
               {k.icon} {k.label}{counts[k.key] > 0 && <span className={`mr-1.5 rounded-full px-1.5 text-[11px] font-extrabold ${tab === k.key ? "bg-mynet-blue text-white" : "bg-slate-200 text-slate-600"}`}>{counts[k.key]}</span>}
             </button>
           ))}
         </div>
+
+        {/* 🔎 خياراتُ نوع التغيير — تبويبُ «تحديث معلومات» وحدَه (طلبُ محمد) */}
+        {tab === "info" && Object.keys(chCounts).length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-4 pt-2.5">
+            <button onClick={() => setChFilter("")}
+              className={`rounded-full px-3 py-1 text-[12px] font-bold ${!chFilter ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              الكلّ <span className="opacity-80">({rows.filter((r) => r.kind === "info").length})</span>
+            </button>
+            {Object.entries(chCounts).sort((a, b) => b[1] - a[1]).map(([f, n]) => (
+              <button key={f} onClick={() => setChFilter(chFilter === f ? "" : f)}
+                className={`rounded-full px-3 py-1 text-[12px] font-bold ${chFilter === f ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                {CH_LABEL[f] ?? f} <span className="opacity-80">({n})</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* البحث والتصفية */}
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5">

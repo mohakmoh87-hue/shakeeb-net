@@ -25,8 +25,9 @@ describe("♻️ سجلّ المزامنة التفاعليّ ودفعةُ ال�
     //    **لا تُستعمَل لتصنيف تنصيبٍ خارجيّ** (فهي تُطابق باقاتِ سوبر سيل العاديّة).
     assert.equal(/isOfferPackage(u.packageName) *?|isOfferPackage([^)]*) *&& *!p/.test(src), false,
       "قاعدةُ Offer عادت لتصنيف التنصيب — وهي تُطابق باقاتِ سوبر سيل العاديّة");
-    assert.ok(src.includes("const offerOnEmpty = p.packageId == null && isOfferPackage(u.packageName);"),
-      "استعمالُ Offer الوحيدُ المسموحُ (عرضٌ على مشتركٍ بلا باقة) غائب");
+    // (السطرُ أعلاه يكفي — الاستعمالُ صار في موضعٍ واحدٍ يُسكِت الفروقَ لا يُصنّف تنصيباً)
+    assert.ok(src.includes("const sasOffer = isOfferPackage(u.packageName);"),
+      "استعمالُ Offer المسموحُ (إسكاتُ تحديث المعلومات على العرض) غائب");
     // ولا يبقى نداءُ تنصيبٍ لمشتركٍ قائمٍ إلّا في حالة «اليوزر المعاد» (subscriberId: oldByUser.id)
     const installs = src.match(/recordInstall\(\{[\s\S]{0,140}subscriberId: [^,\n]+/g) ?? [];
     for (const m of installs) {

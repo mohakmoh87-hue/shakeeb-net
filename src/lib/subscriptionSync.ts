@@ -968,6 +968,14 @@ async function runOfficeSyncInner(
       {
         const diffs: InfoChange[] = [];
         const sv = (x: string | null | undefined) => (x ?? "").trim();
+        // ═════ 🎁 باقةُ الساس «عرض» ⇒ **لا يُطلَب تحديثُ معلوماتٍ إطلاقاً** (قاعدةُ محمد
+        // 2026-08-21 المكمَّلة): «سواءٌ كان في البرنامج بلا باقةٍ أو بباقةٍ مختلفة — فقط
+        // يُقارَن أينطبق عليه تنصيبٌ خارجيٌّ أم لا». والعلّةُ أنّ بياناتِ فترة العرض
+        // **مؤقّتةٌ بطبيعتها** (باقةٌ وتاريخٌ سيتغيّران بعد انتهائه)، فرصدُها ضجيجٌ يزول.
+        // 🔑 ويُستثنى شيئان لأنّهما ليسا «معلوماتِ مشترك» بل **هويّةُ حسابه**، وبهما وحدَهما
+        //    تعرف المزامنةُ مَن هو: تغيّرُ اليوزر · وتغيّرُ رقم الساس (الذي كان يُنتج
+        //    مشتركين مكرَّرين). وما عداهما يُسكَت عنه ما دام على عرض.
+        const sasOffer = isOfferPackage(u.packageName);
         if (sasLinkDiff) diffs.push(sasLinkDiff); // 🔗 أوّلُ الفروق: رقمُ الحساب نفسُه
         // 🔴 **تغيّرُ اليوزر في الساس — أخطرُ تغييرٍ على الإطلاق** (بلاغ محمد 2026-08-21):
         // الشركةُ تُعيد تسميةَ يوزرٍ فيبقى صفُّنا بالاسم القديم بينما رقمُه يشير لصاحبٍ آخر
@@ -977,11 +985,11 @@ async function runOfficeSyncInner(
         if (sv(u.username) && sv(u.username).toLowerCase() !== sv(p.netUser).toLowerCase()) {
           diffs.push({ f: "netUser", label: "🔴 اليوزر تغيّر في الساس", old: sv(p.netUser) || "—", new: sv(u.username) });
         }
-        if (sv(u.phone) && sv(u.phone) !== sv(p.phone)) diffs.push({ f: "phone", label: "الهاتف", old: sv(p.phone) || "—", new: sv(u.phone) });
-        if (sv(u.name) && sv(u.name) !== sv(p.name) && !nameCoversSas(p.name, u.name)) {
+        if (!sasOffer && sv(u.phone) && sv(u.phone) !== sv(p.phone)) diffs.push({ f: "phone", label: "الهاتف", old: sv(p.phone) || "—", new: sv(u.phone) });
+        if (!sasOffer && sv(u.name) && sv(u.name) !== sv(p.name) && !nameCoversSas(p.name, u.name)) {
           diffs.push({ f: "name", label: "الاسم", old: sv(p.name) || "—", new: sv(u.name) });
         }
-        if (sv(u.address) && sv(u.address) !== sv(p.address)) diffs.push({ f: "address", label: "العنوان", old: sv(p.address) || "—", new: sv(u.address) });
+        if (!sasOffer && sv(u.address) && sv(u.address) !== sv(p.address)) diffs.push({ f: "address", label: "العنوان", old: sv(p.address) || "—", new: sv(u.address) });
         const sasPkgIdForDiff = matcher.match(u.packageName);
         const oursPkgName = p.packageId != null ? (pkgNameById.get(p.packageId) ?? `#${p.packageId}`) : "—";
         // 📦 (ب) **لا يُرصَد فرقُ باقةٍ لا يعرف البرنامجُ مقابلَها** (`match` تعود null):
@@ -991,15 +999,14 @@ async function runOfficeSyncInner(
         // 🎁 **بلا باقةٍ عندنا وباقتُه في الساس «عرض» ⇒ لا يُذكَر** (قاعدةُ محمد الجديدة
         //    2026-08-21): «بعد انقضاء فترة العرض سيُفعَّل بإحدى الباقات، وبقاؤه بلا باقةٍ
         //    لا يؤثّر على شيء». وهذه وحدَها كانت ١٥١ صفّاً في المواصلات.
-        const offerOnEmpty = p.packageId == null && isOfferPackage(u.packageName);
-        if (sv(u.packageName) && !offerOnEmpty && sasPkgIdForDiff != null && sasPkgIdForDiff !== p.packageId) {
+        if (sv(u.packageName) && !sasOffer && sasPkgIdForDiff != null && sasPkgIdForDiff !== p.packageId) {
           diffs.push({ f: "package", label: "الباقة", old: oursPkgName, new: sv(u.packageName) });
         }
         // 📅 فرقُ الأيّام لمعلوم الباقة (قرار محمد 2026-08-21 المصحَّح): زيادةً **ونقصاً**
         // يُرصَد هنا والتطبيقُ يدويٌّ حصراً من التبويب — التمديدُ التلقائيُّ بقي لمجهول
         // الباقة وحدَه (أدناه). وصاحبُ القرض مستثنى: أيّامُه الوهميّةُ ليست فرقاً يُعرَض.
         // 🚫 لا فرقَ أيّامٍ لمن له تفعيلةُ ساسٍ في النافذة — بيتُها تبويبُ التفعيل لا المعلومات
-        if (sasPkgIdForDiff != null && !loanSubIds.has(p.id) && validDate && !actedSasIds.has(u.sasId)) {
+        if (!sasOffer && sasPkgIdForDiff != null && !loanSubIds.has(p.id) && validDate && !actedSasIds.has(u.sasId)) {
           const oday = p.dateTo ? p.dateTo.toISOString().slice(0, 10) : "";
           const nday = validDate.toISOString().slice(0, 10);
           // 🕗 فرقٌ دون ١٢ ساعةً = عرفُ تخزينٍ لا تغييرُ اشتراك (٧ ساعاتٍ بين 17:00Z و00:00Z)
@@ -1014,10 +1021,25 @@ async function runOfficeSyncInner(
             //    أنّ بيتَ الواقعة تبويبُ التفعيل — فلا يُكرَّر فرقُ أيّامها هنا.
             if (!classified) {
               const openEvent = await prisma.syncLog.findFirst({
-                where: { towerId: officeId, sasId: u.sasId, kind: { in: ["sas", "self", "install"] }, status: "pending", activatedAt: { not: null } },
+                where: { towerId: officeId, sasId: u.sasId, kind: { in: ["sas", "self", "install"] }, activatedAt: { not: null } },
                 select: { id: true },
               }).catch(() => null);
-              if (openEvent) classified = true;
+              if (openEvent) classified = true; // بأيّ حالةٍ كان (معلَّقاً أو مختوماً)
+            }
+            // 💸 **آخرُ تفعيلةٍ بمبلغ صفرٍ ⇒ قرضٌ ⇒ لا فرقَ تاريخٍ أبداً** (بلاغُ محمد
+            //    2026-08-21: bg-1-14-2@mu «ومن مثله»): أيّامُ القرض ليست أيّاماً مدفوعةً
+            //    ولا تغييرَ معلومات — والدليلُ في تقرير التفعيلات نفسِه: سعرُ صفر.
+            //    وتُقرَأ من **نافذة التفعيلات المفهرَسة** فلا يهمّ أوقع التفعيلُ في نافذة
+            //    اليومَين أم قبلها بشهر.
+            if (!classified && grew) {
+              const win = await getActWin();
+              const uk = (u.username ?? p.netUser ?? "").trim().toLowerCase();
+              const cands = [...(win.bySasId.get(u.sasId) ?? []), ...(uk ? win.byUser.get(uk) ?? [] : [])];
+              const act = cands.find((r) => {
+                const e = r.newExpiration ? new Date(r.newExpiration) : null;
+                return sameExpiry(e, validDate);
+              });
+              if (act && Math.round(act.price || 0) <= 0) classified = true; // قرضٌ صريح
             }
             // 💰 ونقصُ الأيّام **لا يُرصَد إذا كان تاريخُنا مدفوعاً بوصل** (حالة bg-5-12-11@mu:
             //    وصلُ ٤٥ ألفاً حتى ٢٠-١٠ والساسُ يقول ٣٠-٨ لأنّ الشركةَ تُعطي ١٠ أيّامٍ ثمّ

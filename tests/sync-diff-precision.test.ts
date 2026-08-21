@@ -39,7 +39,7 @@ describe("🎯 دقّةُ فروق سجلّ المزامنة — البنودُ 
   test("ب · لا يُرصَد فرقُ باقةٍ لا يستطيع البرنامجُ تطبيقَه (دورةُ الرصد اللانهائيّة)", () => {
     // (ومنذ قاعدةِ محمد 2026-08-21: باقةُ عرضٍ لمن لا باقةَ له عندنا لا تُرصَد أصلاً)
     assert.ok(
-      SYNC().includes("if (sv(u.packageName) && !offerOnEmpty && sasPkgIdForDiff != null && sasPkgIdForDiff !== p.packageId) {"),
+      SYNC().includes("if (sv(u.packageName) && !sasOffer && sasPkgIdForDiff != null && sasPkgIdForDiff !== p.packageId) {"),
       "ما زال يُسجَّل فرقُ باقةٍ بلا مقابلٍ في البرنامج — صفٌّ لا يُطبَّق فيتكرّر أبداً",
     );
   });

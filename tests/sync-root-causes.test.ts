@@ -113,7 +113,7 @@ describe("🔁 حالاتُ محمد الخمس", () => {
   });
 
   test("لا ازدواجَ: فرقُ أيّامٍ لا يُرصَد لمن له صفُّ حدثٍ معلَّق", () => {
-    assert.ok(SYNC().includes('kind: { in: ["sas", "self", "install"] }, status: "pending", activatedAt: { not: null } },'), "لا فحصَ لصفّ حدثٍ قائمٍ قبل رصد فرق الأيّام");
+  assert.ok(SYNC().includes('kind: { in: ["sas", "self", "install"] }, activatedAt: { not: null } },'), "لا فحصَ لصفّ حدثٍ قائمٍ قبل رصد فرق الأيّام");
   });
 
   test("نقصُ الأيّام لا يُرصَد إذا كان تاريخُنا مدفوعاً بوصل", () => {

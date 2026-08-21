@@ -12,8 +12,8 @@ import { renderTemplate } from "@/lib/messaging";
 describe("🎁 باقةُ العرض لمن لا باقةَ له لا تُرصَد", () => {
   test("الشرطُ في المزامنة صريحٌ ومربوطٌ بفراغ باقتنا", () => {
     const src = fs.readFileSync(path.join(process.cwd(), "src/lib/subscriptionSync.ts"), "utf8");
-    assert.ok(src.includes("const offerOnEmpty = p.packageId == null && isOfferPackage(u.packageName);"), "لا شرطَ لباقة العرض على الفارغ");
-    assert.ok(src.includes("if (sv(u.packageName) && !offerOnEmpty &&"), "الشرطُ لا يمنع الرصد فعلاً");
+    assert.ok(src.includes("const sasOffer = isOfferPackage(u.packageName);"), "لا شرطَ لباقة العرض");
+    assert.ok(src.includes("if (sv(u.packageName) && !sasOffer &&"), "الشرطُ لا يمنع الرصد فعلاً");
   });
 });
 
@@ -46,5 +46,43 @@ describe("💰 لا مبلغَ اشتراكٍ لمن لا باقةَ له — ف
     const m = fs.readFileSync(path.join(process.cwd(), "src/lib/messaging.ts"), "utf8");
     assert.ok(m.includes("const priceMissing = priceKeys.every("), "القاعدةُ ليست في المعبر الموحَّد");
     assert.ok(m.includes('const priceKeys = ["price", "مبلغ_الاشتراك"];'), "المتغيّرانِ العربيُّ والإنكليزيُّ غيرُ مشمولَين معاً");
+  });
+});
+
+// ═════ 🎁 القاعدةُ المكمَّلة: باقةُ عرضٍ ⇒ لا تحديثَ معلوماتٍ إطلاقاً (إملاءُ محمد) ═════
+describe("🎁 العرضُ يُسكِت تحديثَ المعلومات كلَّه", () => {
+  const SRC = () => fs.readFileSync(path.join(process.cwd(), "src/lib/subscriptionSync.ts"), "utf8");
+  test("الهاتفُ والاسمُ والعنوانُ والباقةُ والتاريخُ كلُّها مشروطةٌ بـ«ليس عرضاً»", () => {
+    const src = SRC();
+    assert.ok(src.includes("const sasOffer = isOfferPackage(u.packageName);"), "لا علمَ للمزامنة بأنّ الباقة عرض");
+    for (const [needle, what] of [
+      ["if (!sasOffer && sv(u.phone)", "الهاتف"],
+      ["if (!sasOffer && sv(u.name)", "الاسم"],
+      ["if (!sasOffer && sv(u.address)", "العنوان"],
+      ["if (sv(u.packageName) && !sasOffer &&", "الباقة"],
+      ["if (!sasOffer && sasPkgIdForDiff != null && !loanSubIds.has(p.id)", "تاريخ الانتهاء"],
+    ] as const) {
+      assert.ok(src.includes(needle), `${what} ما زال يُرصَد لمشتركٍ على باقة عرض`);
+    }
+  });
+
+  test("ويبقى استثناءُ الهويّة: اليوزرُ ورقمُ الساس يُرصَدان دائماً", () => {
+    const src = SRC();
+    const block = src.slice(src.indexOf("const sasOffer = isOfferPackage"), src.indexOf("if (diffs.length) stillDiffering"));
+    assert.ok(/f: "netUser"/.test(block), "تغيّرُ اليوزر سقط مع العرض — وهو أخطرُ التغييرات");
+    assert.ok(src.includes("if (sasLinkDiff) diffs.push(sasLinkDiff);"), "ربطُ رقم الساس سقط مع العرض — فتعود المكرَّرات");
+  });
+
+  test("💸 تفعيلةٌ بمبلغ صفرٍ (قرض) لا تُنتج فرقَ تاريخٍ أبداً", () => {
+    const src = SRC();
+    assert.ok(src.includes("if (act && Math.round(act.price || 0) <= 0) classified = true;"), "القرضُ ما زال يظهر «تمديدَ أيّام»");
+    assert.ok(src.includes('kind: { in: ["sas", "self", "install"] }, activatedAt: { not: null } },'), "صفُّ الحدث المختومُ لا يمنع الازدواج");
+  });
+
+  test("🔎 خياراتُ نوع التغيير في الواجهة — بعدّادٍ لكلّ نوع", () => {
+    const ui = fs.readFileSync(path.join(process.cwd(), "src/components/SyncLogModal.tsx"), "utf8");
+    assert.ok(ui.includes("const chCounts = useMemo("), "لا عدّادَ لأنواع التغييرات");
+    assert.ok(ui.includes("if (chFilter) list = list.filter((r) => (r.changes ?? []).some((c) => c.f === chFilter));"), "المرشِّحُ لا يُطبَّق على القائمة");
+    assert.ok(ui.includes("setChFilter(chFilter === f ? \"\" : f)"), "الضغطةُ الثانيةُ لا تُلغي المرشِّح");
   });
 });
