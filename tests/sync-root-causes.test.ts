@@ -62,7 +62,8 @@ describe("🕵️ الأعطالُ الجذريّةُ السبعة", () => {
     const src = SYNC();
     assert.ok(src.includes("const EXP_TOL_MS = 12 * 3600_000;"), "لا سماحيّةَ على تاريخ الانتهاء");
     assert.ok(src.includes("if (oday !== nday && !sameExpiry(p.dateTo, validDate)) {"), "فرقُ التاريخ يُرصَد بلا سماحيّة");
-    assert.ok(src.includes("probe.rows.find((r) => sameExpiry(r.newExpiration ? new Date(r.newExpiration) : null, newSasExp))"), "المُصنِّفُ يطابق التاريخَ حرفيّاً");
+    // (المصدرُ صار \`rows\`: فهرسُ الصفحة المحمَّلة أوّلاً ثمّ البحثُ للنادر — 2026-08-22)
+    assert.ok(src.includes("rows.find((r) => sameExpiry(r.newExpiration ? new Date(r.newExpiration) : null, newSasExp))"), "المُصنِّفُ يطابق التاريخَ حرفيّاً");
   });
 
   test("٥ · «تحديث» لا يكتب إلّا ما رُصد — الملاحظاتُ في الأسماء تُصان", () => {
@@ -116,7 +117,8 @@ describe("🔁 حالاتُ محمد الخمس", () => {
   });
 
   test("لا ازدواجَ: فرقُ أيّامٍ لا يُرصَد لمن له صفُّ حدثٍ معلَّق", () => {
-  assert.ok(SYNC().includes('kind: { in: ["sas", "self", "install"] }, activatedAt: { not: null } },'), "لا فحصَ لصفّ حدثٍ قائمٍ قبل رصد فرق الأيّام");
+  // 🔒 الفحصُ قائمٌ ومُقيَّدٌ بالواقعة نفسِها (تاريخُ الانتهاء الذي أنتجها ±١٢ ساعة) — 2026-08-22
+  assert.ok(SYNC().includes("{ sasDateTo: { gte: expLo, lte: expHi } },"), "لا فحصَ لصفّ حدثٍ قائمٍ قبل رصد فرق الأيّام");
   });
 
   test("نقصُ الأيّام لا يُرصَد إذا كان تاريخُنا مدفوعاً بوصل", () => {

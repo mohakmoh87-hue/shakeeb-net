@@ -437,10 +437,124 @@ export async function sasSearchActivation(
   return (await sasProbeSerial(base, token, serial)).hit;
 }
 
-// جلب تفعيلات يوم محدّد من تقرير التفعيلات (index/activations).
-// يكتشف اتجاه ترتيب SAS تلقائياً (تصاعدي/تنازلي) ويمسح من الطرف الأحدث حتى يتجاوز بداية
-// اليوم — فلا يُفوّت تفعيلات حقيقية مهما كان الترتيب (سبب سابق لإنذارات «الوهمي» الكاذبة).
+// ═════ 🗓️ الجالبُ المرتَّبُ بالتاريخ — أساسُ «الطبقة الثانية» (طلبُ محمد 2026-08-22) ═════
+//
+// 🔴 **العلّةُ التي يُصلحها** (قِيست على الإنتاج 2026-08-21): تقريرُ التفعيلات يعود
+//   افتراضيّاً **مُجمَّعاً بالمنجر** لا مرتَّباً بالتاريخ — أوّلُ ٥٠٠ صفٍّ في الرسالة كلُّها
+//   `FDT34-RES` من 2025-01-14 إلى 2025-06-23، وفي الشهداء كلُّها `FDT47-SHU` من 2025-01-13.
+//   فالمسحُ الزمنيُّ يقف داخل كتلةِ منجرٍ ويظنّ أنّه أتمّ ⇒ **صورةٌ ناقصةٌ بصمت**: نافذةُ
+//   ٥ أيّامٍ أعادت ٩٨ صفّاً في الرسالة و٢٥٢ في الشهداء وقالت «كاملة»، وفيها **صفرُ** صفوفٍ
+//   لأربعة مشتركين ثبت بالبحث أنّهم فُعِّلوا داخلها.
+//
+// ✅ **والحلُّ الذي اقترحه محمد وقِيس فنجح**: التقريرُ يقبل الترتيبَ بالتاريخ — من عشر
+//   صيغٍ جُرّبت نجحت `sortBy: "created_at"` وحدَها. وبها:
+//     • الشهداء: صفحةٌ واحدةٌ (٥٠٠) تغطّي 21/08 22:41 ← 15/08 18:05 = **٦ أيّام**
+//     • الرسالة: صفحةٌ واحدةٌ تغطّي 21/08 21:56 ← 05/08 22:17 = **١٦ يوماً**
+//     • والصفحةُ الثانيةُ تُكمل بلا ثقب (15/08 18:04 مباشرةً بعد 18:05)
+//   ⇒ نافذةُ يومين لا تحتاج إلّا جزءاً من صفحة، ولا تعتمد على العدد الكلّيّ (٣٧ ألفاً في
+//     الشهداء) ولا على تجميع المنجر — **فلا تنكسر بعد سنةٍ ولا بعد عشر**.
+//
+// 🛡️ **وحارسُ الصدق**: إن تجاهل المخدّمُ الترتيبَ يوماً (تحديثُ نسخةٍ مثلاً) تُكشَف
+//   الحالةُ من الصفحة الأولى (ليست تنازليّة) ⇒ **يسقط النداءُ إلى المسح القديم** ويُعلَن
+//   `sorted: false`. فلا يُبنى حكمٌ على نافذةٍ يُظنّ أنّها كاملةٌ وهي ليست كذلك.
+const SORT_BODY = { sortBy: "created_at", sortDir: "desc" } as const;
+
+/** ⏱️ حدُّ مقارنةٍ بتوقيت الساس: أرقامُ `created_at` ساعةُ بغداد وتُقرأ UTC ⇒ يُزاح الحدُّ ٣ ساعات.
+ *  (بلا هذا كانت نافذةُ «اليوم» تقف عند ٢١:٠٠ بغداد فتسقط تفعيلاتُ الليل — قِيس 2026-08-21.) */
+export function sasWindowBound(d: Date): Date {
+  return new Date(d.getTime() + 3 * 60 * 60 * 1000);
+}
+
+/** صفوفُ الصفحة تنازليّةٌ بالتاريخ؟ (حارسُ الصدق — لا يُبنى حكمٌ على ترتيبٍ لم يُطبَّق) */
+function isDescending(rows: Record<string, unknown>[]): boolean {
+  let prev = Infinity;
+  let seen = 0;
+  for (const r of rows) {
+    const c = r.created_at ? new Date(r.created_at as string).getTime() : NaN;
+    if (isNaN(c)) continue;
+    if (c > prev) return false;
+    prev = c; seen++;
+  }
+  return seen > 0;
+}
+
+/**
+ * جلبُ التفعيلات **مرتَّبةً من الأحدث** حتى بلوغ `since` (أو نفاد الصفحات).
+ * يُعيد `sorted: false` إن لم يُطبِّق المخدّمُ الترتيب — فيتولّى المتّصلُ السقوطَ للقديم.
+ */
+async function fetchSortedActivations(
+  base: string, token: string, since: Date,
+  opts: { count?: number; gapMs?: number; maxPages?: number; onPage?: (fetched: number, total: number) => Promise<boolean> | boolean } = {},
+): Promise<{ rows: SasActivation[]; complete: boolean; sorted: boolean }> {
+  const COUNT = opts.count ?? 500;
+  const GAP_MS = opts.gapMs ?? 1200;
+  const MAX_PAGES = opts.maxPages ?? 60;
+  const bound = sasWindowBound(since).getTime();
+
+  const first = await fetchAnyPage(base, token, "index/activations", 1, COUNT, SORT_BODY);
+  const firstData: Record<string, unknown>[] = first.data ?? [];
+  const total: number = first.total ?? firstData.length;
+  if (!firstData.length) return { rows: [], complete: true, sorted: true };
+  if (!isDescending(firstData)) return { rows: [], complete: false, sorted: false };
+
+  const rows: SasActivation[] = [];
+  let reachedOlder = false;
+  const collect = (data: Record<string, unknown>[]) => {
+    for (const r of data) {
+      const c = r.created_at ? new Date(r.created_at as string).getTime() : NaN;
+      if (isNaN(c)) continue;
+      if (c < bound) { reachedOlder = true; continue; }
+      rows.push(normalizeActivation(r));
+    }
+  };
+
+  let pages = 0;
+  const lastPage = Math.max(1, Math.ceil(total / COUNT));
+  const pageDone = async (): Promise<boolean> => {
+    pages++;
+    if (!opts.onPage) return true;
+    return (await opts.onPage(Math.min(pages * COUNT, total), total)) !== false;
+  };
+
+  collect(firstData);
+  if (!(await pageDone())) return { rows, complete: false, sorted: true };
+  for (let page = 2; page <= lastPage && pages < MAX_PAGES && !reachedOlder; page++) {
+    await sleep(GAP_MS);
+    const d: Record<string, unknown>[] = (await fetchAnyPage(base, token, "index/activations", page, COUNT, SORT_BODY)).data ?? [];
+    if (!d.length) break;
+    if (!isDescending(d)) return { rows: [], complete: false, sorted: false }; // انقلب الترتيبُ في منتصف الطريق
+    collect(d);
+    if (!(await pageDone())) return { rows, complete: false, sorted: true };
+  }
+  // كاملةٌ إن بلغنا ما هو أقدمُ من النافذة، أو استنفدنا صفحاتِ التقرير كلَّها
+  return { rows, complete: reachedOlder || pages >= lastPage, sorted: true };
+}
+
 export async function sasFetchActivationsForDay(
+  base: string,
+  token: string,
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<SasActivation[]> {
+  // 🗓️ الطريقُ الأوّل: مرتَّبٌ بالتاريخ (سطرٌ واحدٌ يكفي نافذةَ يومين). وعند تعذّره ⇒ القديم.
+  try {
+    const s = await fetchSortedActivations(base, token, dayStart);
+    if (s.sorted) {
+      const lo = sasWindowBound(dayStart).getTime();
+      const hi = sasWindowBound(dayEnd).getTime();
+      return s.rows.filter((a) => {
+        const c = a.createdAt ? new Date(a.createdAt).getTime() : NaN;
+        return !isNaN(c) && c >= lo && c <= hi;
+      });
+    }
+  } catch { /* تعذّر الترتيبُ ⇒ الطريقُ القديم */ }
+  return legacyFetchActivationsForDay(base, token, dayStart, dayEnd);
+}
+
+// 🕰️ **المسارُ القديم — احتياطيٌّ لا أصليّ**: يكتشف اتجاهَ ترتيب الساس ويمسح من الطرف
+// الأحدث. وعلّتُه معروفةٌ ومقيسة (التقريرُ مُجمَّعٌ بالمنجر فيقف المسحُ داخل كتلة)، فلا
+// يُستعمل إلّا حين يتعذّر الترتيبُ بالتاريخ — وحينها تبقى صورةٌ ناقصةٌ خيراً من لا شيء.
+async function legacyFetchActivationsForDay(
   base: string,
   token: string,
   dayStart: Date,
@@ -455,6 +569,9 @@ export async function sasFetchActivationsForDay(
   if (!total) return [];
   const lastPage = Math.max(1, Math.ceil(total / COUNT));
 
+  // ⏱️ الحدودُ تُزاح ٣ ساعاتٍ لتطابق أرقامَ الساس (شرحُها عند `sasWindowBound`)
+  const lo = sasWindowBound(dayStart);
+  const hi = sasWindowBound(dayEnd);
   const rows: SasActivation[] = [];
   // يجمع صفوف النطاق من صفحة، ويُبلّغ هل ظهرت صفوف أقدم من بداية اليوم (إشارة توقّف)
   const collect = (data: Record<string, unknown>[]): boolean => {
@@ -462,8 +579,8 @@ export async function sasFetchActivationsForDay(
     for (const r of data) {
       const c = r.created_at ? new Date(r.created_at as string) : null;
       if (!c || isNaN(c.getTime())) continue;
-      if (c >= dayStart && c <= dayEnd) rows.push(normalizeActivation(r));
-      if (c < dayStart) sawOlder = true;
+      if (c >= lo && c <= hi) rows.push(normalizeActivation(r));
+      if (c < lo) sawOlder = true;
     }
     return sawOlder;
   };
@@ -473,7 +590,7 @@ export async function sasFetchActivationsForDay(
   const firstData: Record<string, unknown>[] = first.data ?? [];
   const descending = firstData.some((r) => {
     const c = r.created_at ? new Date(r.created_at as string) : null;
-    return c && !isNaN(c.getTime()) && c >= dayStart;
+    return c && !isNaN(c.getTime()) && c >= lo;
   });
 
   if (descending || lastPage === 1) {
@@ -573,6 +690,20 @@ export async function sasFetchActivationsSince(
   since: Date,
   onPage?: (fetched: number, total: number) => Promise<boolean> | boolean,
 ): Promise<{ rows: SasActivation[]; complete: boolean }> {
+  // 🗓️ المرتَّبُ أوّلاً (١٢٠ يوماً ≈ ٢٠ صفحةً في الشهداء)، وعند تعذّره ⇒ المسحُ القديم
+  try {
+    const s = await fetchSortedActivations(base, token, since, { onPage });
+    if (s.sorted) return { rows: s.rows, complete: s.complete };
+  } catch { /* تعذّر الترتيبُ ⇒ الطريقُ القديم */ }
+  return legacyFetchActivationsSince(base, token, since, onPage);
+}
+
+async function legacyFetchActivationsSince(
+  base: string,
+  token: string,
+  since: Date,
+  onPage?: (fetched: number, total: number) => Promise<boolean> | boolean,
+): Promise<{ rows: SasActivation[]; complete: boolean }> {
   const COUNT = 500;
   const GAP_MS = 1200;
   const MAX_PAGES = 60; // حتى 30 ألف تفعيل — أوسع من أي نافذة نستعملها
@@ -582,12 +713,14 @@ export async function sasFetchActivationsSince(
   if (!total) return { rows: [], complete: true };
   const lastPage = Math.max(1, Math.ceil(total / COUNT));
 
+  // ⏱️ الحدُّ مُزاحٌ ٣ ساعاتٍ ليطابق أرقامَ الساس (شرحُها عند `sasWindowBound`)
+  const lo = sasWindowBound(since);
   const rows: SasActivation[] = [];
   let reachedOlder = false; // بلغنا صفوفاً أقدم من النافذة ⇒ لا حاجة للمتابعة
   const collect = (data: Record<string, unknown>[]) => {
     for (const r of data) {
       const c = r.created_at ? new Date(r.created_at as string) : null;
-      if (c && !isNaN(c.getTime()) && c < since) { reachedOlder = true; continue; }
+      if (c && !isNaN(c.getTime()) && c < lo) { reachedOlder = true; continue; }
       rows.push(normalizeActivation(r));
     }
   };
@@ -597,7 +730,7 @@ export async function sasFetchActivationsSince(
   const firstData: Record<string, unknown>[] = first.data ?? [];
   const descending = firstData.some((r) => {
     const c = r.created_at ? new Date(r.created_at as string) : null;
-    return c && !isNaN(c.getTime()) && c >= since;
+    return c && !isNaN(c.getTime()) && c >= lo;
   });
 
   let pages = 0;

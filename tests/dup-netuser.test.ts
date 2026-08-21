@@ -69,7 +69,8 @@ describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلف�
   test("لا يُسكَت عن الحالة: تُبلَّغ في النتيجة وفي تقرير الواتساب", () => {
     const src = SRC();
     assert.match(src, /dupUserSkipped\?: number/, "الحقلُ غائبٌ عن نوع النتيجة");
-    assert.match(src, /phase2: \{[^}]*dupUserSkipped \}/, "العدّادُ لا يُعاد في النتيجة");
+    // (تُطابِق أيضاً بعد إضافة عدّادَي الطبقة الثانية: probesCapped وstolenCards)
+    assert.match(src, /phase2: \{[^}]*dupUserSkipped[,}]/, "العدّادُ لا يُعاد في النتيجة");
     assert.match(src, /يوزرٌ موجودٌ سلفاً فلم يُستورَد \(يحتاج قرارك\)/, "لا سطرَ في تقرير المدير");
   });
 

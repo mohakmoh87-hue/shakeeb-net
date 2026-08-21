@@ -156,7 +156,7 @@ export async function recordCompanyActivation(
 //    ووصلُه = مبلغُ ثلاثة أشهرٍ **ناقص خمسة آلاف** ⇒ حالةٌ بسيطةٌ غيرُ ضارّةٍ إطلاقاً.
 // يُخزَّن بـ`kind:"card"` — نوعٌ **لا تعرضه نافذةُ سجلّ المزامنة** (تبويباتُها أربعةٌ ثابتة)،
 // فلا يُزاحم عملَ المستخدم اليوميّ، ويقرؤه حارسُ المال بتفاصيله وتقييمه.
-export type ExtCardVerdict = "dealer" | "receipted" | "no-receipt";
+export type ExtCardVerdict = "dealer" | "receipted" | "no-receipt" | "stolen";
 export async function recordExternalCardCase(p: {
   agentId: number; towerId: number; sasId: number; subscriberId: number | null;
   netUser: string | null; name: string | null; activatedAt: Date;
@@ -182,6 +182,76 @@ export async function recordExternalCardCase(p: {
     if (!tableMissing(e)) console.error("[sync-log] تعذّر تسجيل حالة كارتٍ خارجيّ:", e instanceof Error ? e.message : e);
   }
 }
+
+// ═════ 🔴🎴 كارتٌ **من المخزن** فُعِّل بلا وصل — «مسروق» (إملاءُ محمد 2026-08-22) ═════
+// نصُّه: «إذا اليوزرُ لم يُفعَّل له وصلٌ في البرنامج فهذا الكارتُ **مسروقٌ من المخزن**».
+// يُخزَّن بنفس نوع الكروت (`card`) فيقرؤه حارسُ المال — لكن بحكمٍ مستقلٍّ `stolen` وعنوانٍ
+// وخطورةٍ خاصّةٍ به هناك. ويُميَّز بمفتاح **السيريال** لا بالمشترك وحدَه: الكارتُ هو الواقعة.
+// ⚠️ ولا يتحرّك مالٌ: بلاغٌ لا قيد. والإغلاقُ الذاتيُّ في `reconcileStolenCards` أدناه.
+export async function recordStolenCardCase(p: {
+  agentId: number; towerId: number; sasId: number; subscriberId: number | null;
+  netUser: string | null; name: string | null; activatedAt: Date;
+  pins: string[]; amount: number; detail: string;
+}): Promise<void> {
+  try {
+    const serial = (p.pins[0] ?? "").trim();
+    // منعُ التكرار بالسيريال نفسِه (قراءةُ التفعيلة تتكرّر كلَّ دورة)
+    const existing = await prisma.syncLog.findFirst({
+      where: { towerId: p.towerId, kind: "card", changes: { contains: `"stolenSerial":"${serial}"` } },
+      select: { id: true, status: true },
+    });
+    const data = {
+      agentId: p.agentId, towerId: p.towerId, kind: "card", sasId: p.sasId,
+      subscriberId: p.subscriberId, netUser: p.netUser ?? null, name: p.name ?? null,
+      amount: Math.round(p.amount || 0), activatedAt: p.activatedAt,
+      note: p.detail,
+      changes: JSON.stringify({ verdict: "stolen", pins: p.pins, stolenSerial: serial }),
+    };
+    if (existing) {
+      // صفٌّ عولج (تُجوهل) لا يُبعَث من جديد — قرارُ المدير يُحترَم
+      if (existing.status !== "pending") return;
+      await prisma.syncLog.update({ where: { id: existing.id }, data });
+    } else {
+      await prisma.syncLog.create({ data });
+    }
+  } catch (e) {
+    if (!tableMissing(e)) console.error("[sync-log] تعذّر تسجيل حالة كارتٍ مسروق:", e instanceof Error ? e.message : e);
+  }
+}
+
+/**
+ * ♻️ الإغلاقُ الذاتيُّ لحالات السرقة: متى ظهر وصلٌ لصاحب الكارت (±٣ أيّامٍ من التفعيل)
+ * تُغلَق الحالةُ وحدَها بلا ضغطةٍ من أحد — وهو شرطُ محمد في كلّ رصدٍ تلقائيّ.
+ */
+export async function reconcileStolenCards(
+  towerId: number,
+  hasReceipt: (netUser: string, subscriberId: number | null, actAt: Date) => Promise<boolean>,
+): Promise<number> {
+  try {
+    const rows = await prisma.syncLog.findMany({
+      where: { towerId, kind: "card", status: "pending", activatedAt: { not: null } },
+      select: { id: true, netUser: true, subscriberId: true, activatedAt: true, changes: true },
+      take: 300,
+    });
+    const closing: number[] = [];
+    for (const r of rows) {
+      let verdict = "";
+      try { verdict = String((JSON.parse(r.changes ?? "{}") as { verdict?: string }).verdict ?? ""); } catch { /* نصٌّ غيرُ مقروء */ }
+      if (verdict !== "stolen" || !r.activatedAt) continue;
+      if (await hasReceipt((r.netUser ?? "").trim().toLowerCase(), r.subscriberId, r.activatedAt)) closing.push(r.id);
+    }
+    if (!closing.length) return 0;
+    await prisma.syncLog.updateMany({
+      where: { id: { in: closing } },
+      data: { status: "done", note: "أُغلق تلقائيّاً: ظهر وصلٌ لصاحب الكارت في نافذة ٣ أيّام" },
+    });
+    return closing.length;
+  } catch (e) {
+    if (!tableMissing(e)) console.error("[sync-log] تعذّر التصحيحُ الذاتيُّ لحالات السرقة:", e instanceof Error ? e.message : e);
+    return 0;
+  }
+}
+
 /** حدثُ تفعيلٍ (تبويب ٣ ذاتيّ · تبويب ٤ صفحة بلا وصل) — صفٌّ لكلّ تفعيلة */
 export async function recordActivationEvent(kind: "self" | "sas", p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean }): Promise<void> {
   try {

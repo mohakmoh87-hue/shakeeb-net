@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import {
   sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers,
   sasProbeSerial, sasUserActivations,
-  sasFetchActivationsSince,
+  sasFetchActivationsSince, sasWindowBound,
   type SasActivation,
 } from "@/lib/sas4";
 import { sendViaProvider } from "@/lib/messaging";
@@ -11,7 +11,7 @@ import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
-import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, reconcileEvents, closeDeadSasRows, recordExternalCardCase, isOwnCabinet, isOfferPackage, type InfoChange } from "@/lib/syncLog";
+import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, reconcileEvents, reconcileStolenCards, closeDeadSasRows, recordExternalCardCase, recordStolenCardCase, isOwnCabinet, isOfferPackage, type InfoChange } from "@/lib/syncLog";
 import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 // ═════ ✍️ اسمٌ عندنا يحمل ملاحظةً فوق اسم الساس (مراجعةُ محمد 2026-08-21) ═════
@@ -61,7 +61,9 @@ export interface SyncResult {
   };
   // البند ٥ · `dupUserSkipped`: مشتركٌ في الساس **يوزرُه موجودٌ عندنا بصفٍّ آخر** فلم
   //   يُستورَد — يُبلَّغ ولا يُسكَت عنه، فالصمتُ يُخفي حالةً تحتاج قرارَ محمد.
-  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean; skippedPkg: number; pkgFixed: number; dupUserSkipped?: number };
+  phase2: { checked: number; dateFixed: number; imported: number; failed: boolean; skippedPkg: number; pkgFixed: number; dupUserSkipped?: number;
+    // 🎯 كم قفزةَ تاريخٍ لم تُصنَّف لأنّ سقفَ السؤال المباشر بلغ حدَّه — **يُعلَن ولا يُبتلَع**
+    probesCapped?: number; stolenCards?: number };
   events: SyncEvent[];
   reportSent: boolean | null; // true=أُرسل، false=مؤجّل (واتساب مقطوع)، null=لا تقرير
   error?: string;
@@ -290,6 +292,8 @@ export async function runOfficeSyncAll(
       checked: sum((r) => r.phase2.checked), dateFixed: sum((r) => r.phase2.dateFixed),
       imported: sum((r) => r.phase2.imported), failed: parts.some((r) => r.phase2.failed),
       skippedPkg: sum((r) => r.phase2.skippedPkg), pkgFixed: sum((r) => r.phase2.pkgFixed),
+      // 🧮 وعدّادا الطبقة الثانية يُجمَعان كغيرهما — فمكتبٌ بلوحتَين يرى المجموعَ لا نصفَه
+      probesCapped: sum((r) => r.phase2.probesCapped ?? 0), stolenCards: sum((r) => r.phase2.stolenCards ?? 0),
     },
     // سطرٌ لكلّ لوحةٍ باسمها — الجوابُ على «هل مرّت على الساسَين؟»
     panels: parts.map((r, i) => ({
@@ -387,9 +391,12 @@ async function runOfficeSyncInner(
   }
   // السيناريوهات المُبلَّغة (تكرار/كارت خارجي/استيراد/تحديث حالة) تبقى على تفعيلات **الأمس**
   // حصراً — كي لا تتكرّر التقارير ولا تظهر «تفعيلات مكرّرة» كاذبة لمن فعّل أمس واليوم.
+  // ⏱️ الحدودُ تُزاح ٣ ساعاتٍ لتطابق أرقامَ الساس (شرحُها عند `sasWindowBound`): بلا ذلك
+  //    كانت نافذةُ «أمس» تنتهي ٢١:٠٠ بغداد فتسقط تفعيلاتُ الليل من كلّ السيناريوهات.
+  const actsLo = sasWindowBound(start), actsHi = sasWindowBound(end);
   const acts = actsWide.filter((a) => {
     const d = a.createdAt ? new Date(a.createdAt) : null;
-    return d != null && !isNaN(d.getTime()) && d >= start && d <= end;
+    return d != null && !isNaN(d.getTime()) && d >= actsLo && d <= actsHi;
   });
 
   // 📋 جيك بوكسا «إرسال رسائل تلقائي» لتبويبَي سجلّ المزامنة (طلب محمد 2026-08-20) —
@@ -404,6 +411,8 @@ async function runOfficeSyncInner(
   // 🎯 سقفُ المسبار الموجَّه (د): سؤالٌ واحدٌ للساس لكلّ «قفزةِ تاريخٍ» مشكوكٍ فيها.
   // بسقفٍ يحمي المزامنةَ من دورةٍ أولى ضخمةٍ (مكتبٌ جديدٌ بآلاف الفروق).
   let dateProbes = 0;
+  let probesCapped = 0;  // قفزاتٌ لم تُصنَّف لبلوغ السقف — تُعلَن في التقرير
+  let stolenCards = 0;   // 🔴 كروتُ المخزن التي فُعِّلت بلا وصل
   const MAX_DATE_PROBES = 120;
   // 🗓️ مَن له تفعيلةُ ساسٍ في النافذة (أمس+اليوم) — يُمنَع عنه «فرقُ الأيّام» في تبويب
   // المعلومات لأنّ تبويبَ تفعيلِه هو بيتُه الصحيح (منعُ الازدواج — مراجعة 2026-08-21)
@@ -424,7 +433,9 @@ async function runOfficeSyncInner(
   // بمجرد تشابه السيريال. عزل مالي حرج اصطاده تدقيق 2026-08-02.
   const cards = await prisma.rechargeCard.findMany({
     where: { agentId: office.agentId ?? -1 },
-    select: { id: true, serial: true, useDate: true, subscriberId: true },
+    // 🕵️ `userName`/`reservedBy`: مَن استهلك الكارتَ في البرنامج (بيعاً أو تفعيلاً) —
+    //    بهما يُفرَّق **المبيعُ** عن **المسروق**، ويُذكَر الاسمُ في حالة السرقة.
+    select: { id: true, serial: true, useDate: true, subscriberId: true, userName: true, reservedBy: true },
   });
   const cardBySerial = new Map(cards.map((c) => [(c.serial ?? "").trim(), c]));
 
@@ -476,22 +487,27 @@ async function runOfficeSyncInner(
   // لا مرتَّبٌ بالتاريخ (٥٠٠ صفٍّ في الصفحة الأولى كلُّها منجرٌ واحدٌ من ٢٠٢٥-٠١ إلى
   // ٢٠٢٥-٠٥)، فأيُّ مسحٍ زمنيٍّ يقع في كتلةِ منجرٍ ويظنّ أنّه أتمّ — فيغيب عنه منجرُ
   // الكابينات كلُّه. والبديلُ المُثبَت: **سؤالٌ موجَّهٌ بالبحث** (يوزراً أو سيريالاً).
-  const receiptCache = new Map<string, { at: number[]; to: number[] }>();
+  const receiptCache = new Map<string, { at: number[]; to: number[]; entries: { at: number; money: number }[] }>();
   const receiptsOfUser = async (userKey: string, fallbackSubId?: number) => {
     const k = userKey || `#${fallbackSubId ?? 0}`;
     const cached = receiptCache.get(k);
     if (cached) return cached;
     const ids = idsByUser.get(userKey) ?? (fallbackSubId != null ? [fallbackSubId] : []);
-    let out = { at: [] as number[], to: [] as number[] };
+    let out = { at: [] as number[], to: [] as number[], entries: [] as { at: number; money: number }[] };
     if (ids.length) {
       const rows = await prisma.subscriptionEntry.findMany({
         where: { subscriberId: { in: ids }, isDeleted: false },
-        select: { date: true, dateTo: true },
+        // 💵 `money` = **قيمةُ الاشتراك** لا الواصل: مشتركٌ فعّلتَه وبقي عليه دَينٌ وصلُه
+        //    موجودٌ ولا يصحّ اتّهامُه (إعلانُ محمد على قاعدة ٩ · 2026-08-22).
+        select: { date: true, dateTo: true, money: true },
         orderBy: { id: "desc" }, take: 60,
       });
       out = {
         at: rows.map((r) => r.date?.getTime() ?? 0).filter(Boolean),
         to: rows.map((r) => r.dateTo?.getTime() ?? 0).filter(Boolean),
+        entries: rows
+          .filter((r) => r.date)
+          .map((r) => ({ at: r.date!.getTime(), money: Math.round(r.money ?? 0) })),
       };
     }
     receiptCache.set(k, out);
@@ -506,6 +522,98 @@ async function runOfficeSyncInner(
     if (actAt && r.at.some((t) => Math.abs(t - actAt.getTime()) <= RECEIPT_NEAR_MS)) return true;
     if (newExp && r.to.some((t) => Math.abs(t - newExp.getTime()) <= RECEIPT_NEAR_MS)) return true;
     return false;
+  };
+
+  // ═════ 🎴 قاعدةُ الوصل للكروت — إملاءُ محمد 2026-08-22 ═════
+  //   ٥· «الكارتُ يُعلَّم مستخدماً إذا فُعِّل في الساس **ووُجد أنّ المشترك نفسَه لديه تفعيلٌ
+  //       ووصلٌ في ±٣ أيّام»**.
+  //   ٦· «وإذا لم يكن لليوزر وصلٌ في البرنامج فهذا الكارتُ **مسروقٌ من المخزن**» — ويشمل
+  //       اليوزرَ غيرَ الموجود عندنا أصلاً، **لأنّ الكارتَ يُعطي باقةً موجودةً دائماً
+  //       والتنصيبُ باقتُه عرضٌ دائماً** (تعليلُ محمد) ⇒ فوجودُ كارتٍ ينفي أن يكون تنصيباً.
+  //   ٩· والمكرَّرُ يُقاس **بالمال**: مجموعُ الوصولات ≥ مجموعُ مبالغ التفعيلات ⇒ طبيعيّ.
+  const CARD_RECEIPT_MS = 3 * 86400_000;  // ±٣ أيّام بين وقتِ تفعيل الساس وتاريخِ وصلنا
+  const STOLEN_GRACE_MS = 24 * 3600_000;  // مهلةُ الورق: لا يُتَّهم أحدٌ قبل مرور يومٍ كامل
+
+  /** وصلٌ لصاحب اليوزر في ±٣ أيّامٍ من وقت التفعيل؟ (وجودُه يكفي — المبلغُ لا يُشترَط) */
+  const receiptNearCard = async (userKey: string, subId: number | null, actAt: Date | null): Promise<boolean> => {
+    if (!actAt || isNaN(actAt.getTime())) return true; // بلا وقتٍ لا يُحكَم — والسكوتُ أسلم
+    const r = await receiptsOfUser(userKey, subId ?? undefined);
+    return r.at.some((t) => Math.abs(t - actAt.getTime()) <= CARD_RECEIPT_MS);
+  };
+
+  /** مجموعُ **قيم** وصولاته في نافذة ±٣ أيّامٍ حول لحظةٍ (لقاعدة «المكرَّر بالمال») */
+  const receiptsSumNear = async (userKey: string, subId: number | null, at: Date): Promise<number> => {
+    const r = await receiptsOfUser(userKey, subId ?? undefined);
+    return r.entries
+      .filter((e) => Math.abs(e.at - at.getTime()) <= CARD_RECEIPT_MS)
+      .reduce((x, e) => x + e.money, 0);
+  };
+
+  /**
+   * 🕵️ هل استهلك الكارتَ **إنسانٌ في البرنامج**؟ (بيعٌ أو تفعيلٌ) — فلا يُتَّهم أحدٌ ظلماً.
+   *  ⚠️ العلّةُ التي يمنعها: مسارُ «بيع كارت» (`recharge-cards/[id]/sell`) يُعلّم الكارتَ
+   *     مستخدماً باسم البائع **بلا وصل اشتراكٍ ولا مشترك** — فكلُّ كارتٍ مبيعٍ يُفعّله
+   *     مشتريه في الساس كان سيُرفَع «سرقةً» كلَّ ليلة. والفاصلُ: مَن استهلكه.
+   */
+  const consumedByHuman = (c: { useDate: Date | null; userName: string | null; subscriberId: number | null }): boolean =>
+    !!c.useDate && !!(c.userName ?? "").trim() && (c.userName ?? "").trim().toLowerCase() !== "sync";
+
+  /**
+   * 🎴 كارتٌ **من مخزننا** ظهر مُفعَّلاً في الساس — الحكمُ في موضعٍ واحدٍ لا في فرعَين:
+   *   ١· يُعلَّم مستخدماً بوقت التفعيل (حمايةٌ لا اتّهام: كي لا يُسحَب ويُباع مرّةً ثانية).
+   *   ٢· ثمّ يُسأل: أله وصلٌ في ±٣ أيّام؟ نعم ⇒ انتهى الأمر · لا ⇒ **حالةُ سرقةٍ** في حارس المال.
+   *   ٣· ومهلةُ الورق ٢٤ ساعة: لا تُرفَع الحالةُ قبلها (وصلُ الليلة يُسجَّل صباحاً).
+   *   ٤· ولا يُتَّهم كارتٌ **استهلكه إنسانٌ في البرنامج** (بيعاً أو تفعيلاً) — ذاك ماله مقبوض.
+   * ⚠️ ولا يتحرّك أيُّ مالٍ هنا إطلاقاً: لا وصلَ يُنشأ، ولا دينَ كارتٍ يُنقَص، ولا دينَ مشترك.
+   */
+  const handleStockCard = async (
+    card: { id: number; serial: string | null; useDate: Date | null; subscriberId: number | null; userName: string | null; reservedBy: number | null },
+    a: SasActivation,
+    pin: string,
+    sub: { id: number; name: string | null; netUser: string | null } | null,
+    netUser: string | null,
+    name: string | null,
+  ): Promise<void> => {
+    const raw = a.createdAt ? new Date(a.createdAt) : new Date();
+    const when = isNaN(raw.getTime()) ? new Date() : raw;
+    const wasHuman = consumedByHuman(card); // يُقرأ **قبل** أن نكتب عليه
+    if (!card.useDate) {
+      await prisma.rechargeCard.update({
+        where: { id: card.id },
+        data: {
+          useDate: when, userName: "sync",
+          ...(sub ? { subscriberId: sub.id } : {}),
+          reservedBy: null, reservedAt: null,
+        },
+      });
+      card.useDate = when; // تحديثٌ محلّيٌّ يمنع إعادة المعالجة في نفس الدورة
+      markedUsed++;
+      events.push({
+        scenario: 3, subscriber: name ?? netUser, pin,
+        detail: sub ? "تحديث حالة الكارت إلى مستخدم" : "كارتٌ استُهلك ليوزرٍ غير مستوردٍ بعد — عُلّم مستخدماً",
+      });
+    }
+    if (wasHuman) return; // بِيع أو فُعِّل بيد إنسانٍ عندنا ⇒ ليس سرقةً
+    const uKey = (netUser ?? "").trim().toLowerCase();
+    if (await receiptNearCard(uKey, sub?.id ?? null, when)) return; // ✅ له وصلٌ ⇒ سليم
+    if (Date.now() - when.getTime() < STOLEN_GRACE_MS) return;      // ⏳ مهلةُ الورق
+    // 🕵️ مَن سحبه: الاسمُ المكتوبُ على الكارت، وإلّا صاحبُ الحجز (رقمُ مستخدمٍ ⇒ يُترجَم اسماً)
+    let puller = (card.userName ?? "").trim();
+    if (!puller || puller.toLowerCase() === "sync") {
+      puller = card.reservedBy != null
+        ? (await prisma.user.findUnique({ where: { id: card.reservedBy }, select: { fullName: true, username: true } })
+            .then((x) => (x?.fullName ?? x?.username ?? "").trim()).catch(() => ""))
+        : "";
+    }
+    await recordStolenCardCase({
+      agentId: office.agentId ?? -1, towerId: officeId, sasId: a.sasUserId,
+      subscriberId: sub?.id ?? null, netUser, name, activatedAt: when,
+      pins: [pin], amount: Math.round(a.price || 0),
+      detail: `🔴 كارتٌ **من مخزنك** (سيريال ${pin}) فُعِّل في الساس ليوزر ${netUser ?? "—"} بمبلغ ${Math.round(a.price || 0)}`
+        + ` بمنجر ${(a.managerUsername ?? "—").trim()} بتاريخ ${when.toISOString().slice(0, 16).replace("T", " ")}`
+        + ` — **ولا وصلَ له عندك في ±٣ أيّام**${puller ? ` · سحبه من المخزن: ${puller}` : ""}${sub ? "" : " · واليوزرُ غيرُ مستوردٍ في البرنامج"}.`,
+    });
+    stolenCards++;
   };
 
 
@@ -523,6 +631,19 @@ async function runOfficeSyncInner(
     const list = actsByUser.get(a.sasUserId) ?? [];
     list.push(a);
     actsByUser.set(a.sasUserId, list);
+  }
+
+  // 🗂️ **فهرسُ تفعيلات النافذة باليوزر** (الطبقةُ الثانية 2026-08-22): الصفحةُ محمَّلةٌ
+  //    أصلاً، فتصنيفُ «قفزة التاريخ» يُقرأ منها بصفر نداءات — وكان يكلّف سؤالاً موجَّهاً
+  //    لكلّ مشترك بسقفٍ صامتٍ عند ١٢٠. الأحدثُ أوّلاً كما يعيده البحثُ تماماً.
+  const actsByUserAll = new Map<string, SasActivation[]>();
+  for (const a of actsWide) {
+    const uk = (a.username ?? "").trim().toLowerCase();
+    if (!uk) continue;
+    const l = actsByUserAll.get(uk) ?? []; l.push(a); actsByUserAll.set(uk, l);
+  }
+  for (const l of actsByUserAll.values()) {
+    l.sort((x, y) => new Date(y.createdAt ?? 0).getTime() - new Date(x.createdAt ?? 0).getTime());
   }
 
   // 🎴 كروتٌ خارجُ المخزن استُعملت في الساس — تُجمَع لكلّ مشترك ثمّ تُحلَّل مرّةً واحدة
@@ -554,35 +675,17 @@ async function runOfficeSyncInner(
         packageName: null, sasDateTo: newDate && !isNaN(newDate.getTime()) ? newDate : null,
       });
       // 🎴 **والكارتُ يُعلَّم مستخدماً حتى بلا صاحبٍ معروف** (بلاغ محمد 2026-08-21):
-      // كان `continue` يقفز فوق معالجة الكارت، فكارتٌ استُهلك في الساس ليوزرٍ ليس عندنا
-      // يبقى «متاحاً» في المخزن إلى الأبد فيُسحب مرّةً ثانية. المشتركُ يُربَط لاحقاً عند
-      // استيراده من السجلّ؛ أمّا كونُه مستهلَكاً فحقيقةٌ لا تنتظر أحداً.
-      if (card && !card.useDate) {
-        const when = a.createdAt ? new Date(a.createdAt) : new Date();
-        await prisma.rechargeCard.update({
-          where: { id: card.id },
-          data: { useDate: isNaN(when.getTime()) ? new Date() : when, userName: "sync", reservedBy: null, reservedAt: null },
-        });
-        card.useDate = when;
-        markedUsed++;
-        events.push({ scenario: 3, subscriber: a.username ?? null, pin, detail: "كارتٌ استُهلك ليوزرٍ غير مستوردٍ بعد — عُلّم مستخدماً" });
-      }
+      // كارتٌ استُهلك في الساس ليوزرٍ ليس عندنا يبقى «متاحاً» في المخزن فيُسحب مرّةً ثانية.
+      // 🔴 **وبقاعدة محمد 2026-08-22 هو سرقةٌ أيضاً**: الكارتُ يُعطي باقةً موجودةً دائماً
+      //    والتنصيبُ باقتُه عرضٌ دائماً ⇒ فكارتٌ من مخزننا ليوزرٍ لا وصلَ له عندنا = مالٌ خرج.
+      if (card) await handleStockCard(card, a, pin, null, a.username ?? null, a.name ?? null);
       continue;
     }
 
     if (card) {
       internal++;
-      // السيناريو 3: الكارت في البرنامج لكنه "غير مستخدم" بينما SAS يعتبره مستخدماً → تحديث
-      if (!card.useDate) {
-        const when = a.createdAt ? new Date(a.createdAt) : new Date();
-        await prisma.rechargeCard.update({
-          where: { id: card.id },
-          data: { useDate: isNaN(when.getTime()) ? new Date() : when, subscriberId: sub.id, userName: "sync" },
-        });
-        card.useDate = when; // تحديث محلي لتفادي إعادة المعالجة
-        markedUsed++;
-        events.push({ scenario: 3, subscriber: sub.name ?? sub.netUser, pin, detail: "تحديث حالة الكارت إلى مستخدم" });
-      }
+      // السيناريو 3 + قاعدتا محمد ٥ و٦ (2026-08-22) — كلُّهما في `handleStockCard`
+      await handleStockCard(card, a, pin, sub, a.username ?? sub.netUser, sub.name ?? null);
     } else if (isCardActivation(a) && managerMatch) {
       // السيناريو 6: Manager يطابق يوزر المكتب لكن الكارت غير موجود بمخزن البرنامج → كارت خارجي
       external++;
@@ -720,21 +823,27 @@ async function runOfficeSyncInner(
   }
 
   // السيناريو 2: تفعيل متكرر في SAS لنفس المشترك بنفس اليوم بينما البرنامج يعرف كارتاً واحداً
+  // 💵 **المكرَّرُ يُقاس بالمال لا بعدد الكروت** (إملاءُ محمد 2026-08-22): «إذا المشتركُ
+  //    مفعَّلٌ بوصلَين، أو وصلٍ واحدٍ مجموعُه هو مبلغُ الوصلَين، فلا يُعلَّم — فهي حالةٌ
+  //    طبيعيّة». وكان العدُّ بعدد الكروت وحدَه يُنتج إنذاراً كاذباً لكلّ من فعّل شهرَين
+  //    بكارتَين ووصلٍ واحد. والحكمُ على **المجموع** لا على سيريالٍ بعينه — فلا يُتَّهم كارتٌ
+  //    ظلماً حين لا يُعرَف أيُّهما لم يُدفَع ثمنُه.
   for (const [sasUserId, list] of actsByUser) {
     const cardActs = list.filter(isCardActivation);
-    if (cardActs.length > 1) {
-      const sub = subBySasId.get(sasUserId);
-      const programUsed = sub
-        ? cards.filter((c) => c.subscriberId === sub.id && withinRange(c.useDate, start, end)).length
-        : 0;
-      if (programUsed <= 1) {
-        duplicates++;
-        events.push({
-          scenario: 2, subscriber: sub?.name ?? list[0]?.username ?? null,
-          detail: `SAS: ${cardActs.length} تفعيلات كارت، البرنامج: ${programUsed}`,
-        });
-      }
-    }
+    if (cardActs.length <= 1) continue;
+    const sub = subBySasId.get(sasUserId);
+    const totalActs = cardActs.reduce((x, a) => x + Math.round(a.price || 0), 0);
+    if (totalActs <= 0) continue; // بلا مالٍ في الميزان لا إنذار (قروضُ الصفر)
+    const times = cardActs.map((a) => (a.createdAt ? new Date(a.createdAt).getTime() : 0)).filter(Boolean);
+    const at = new Date(times.length ? Math.max(...times) : Date.now());
+    const uKey = (list[0]?.username ?? sub?.netUser ?? "").trim().toLowerCase();
+    const paid = await receiptsSumNear(uKey, sub?.id ?? null, at);
+    if (paid >= totalActs) continue; // ✅ وصولاتُه تغطّي تفعيلاتِه ⇒ طبيعيّ
+    duplicates++;
+    events.push({
+      scenario: 2, subscriber: sub?.name ?? list[0]?.username ?? null,
+      detail: `الساس: ${cardActs.length} تفعيلاتِ كارتٍ بمجموع ${totalActs} · وصولاتُك في ±٣ أيّام: ${paid} ⇒ **الفارق ${totalActs - paid}** (السيريالات: ${cardActs.map((a) => (a.pin ?? "—").trim()).join("، ")})`,
+    });
   }
 
   // السيناريو 1: كارت "مستخدم" في البرنامج (أمس) لمشترك هذا المكتب لكن لا تفعيل مقابل في SAS
@@ -924,14 +1033,22 @@ async function runOfficeSyncInner(
     ): Promise<boolean> => {
       const uKey = (username ?? sub.netUser ?? "").trim().toLowerCase();
       if (!uKey) return false;
-      // 🎯 سؤالٌ موجَّهٌ للساس عن هذا اليوزر — بديلُ المسح الزمنيّ الذي ثبت فشلُه
-      const probe = await sasUserActivations(base, token, username ?? sub.netUser ?? "");
-      if (!probe.ok || !probe.rows.length) return false; // تعذّرٌ أو لا تاريخَ ⇒ لا حكم
+      // 🗂️ **من الصفحة المحمَّلة أوّلاً** (الطبقةُ الثانية): تفعيلاتُ النافذة كلُّها في
+      //    الذاكرة، فلا نداءَ ولا سقف. والسؤالُ المباشرُ يبقى **للنادر** وحدَه: مَن وقع
+      //    تفعيلُه قبل النافذة (شهرٌ مضى مثلاً) فلا سطرَ له في الصفحة.
+      let rows = actsByUserAll.get(uKey) ?? [];
+      if (!rows.length) {
+        if (dateProbes >= MAX_DATE_PROBES) { probesCapped++; return false; }
+        dateProbes++;
+        const probe = await sasUserActivations(base, token, username ?? sub.netUser ?? "");
+        if (!probe.ok || !probe.rows.length) return false; // تعذّرٌ أو لا تاريخَ ⇒ لا حكم
+        rows = probe.rows;
+      }
       // 💸 **شرطُ القرض الوحيد** (نصُّ محمد): آخرُ تفعيلٍ بمبلغ صفرٍ ⇒ قرضٌ ⇒ يُسكَت عنه
-      const last = probe.rows[0];
+      const last = rows[0];
       if (last && Math.round(last.price || 0) <= 0) { actedSasIds.add(sasId); return true; }
       // التفعيلةُ التي أنتجت تاريخَ الساس الحاليّ (±١٢ ساعة)، وإلّا فآخرُ تفعيلاته
-      const hit = (newSasExp && probe.rows.find((r) => sameExpiry(r.newExpiration ? new Date(r.newExpiration) : null, newSasExp))) || last;
+      const hit = (newSasExp && rows.find((r) => sameExpiry(r.newExpiration ? new Date(r.newExpiration) : null, newSasExp))) || last;
       const actAt = hit.createdAt ? new Date(hit.createdAt) : null;
       if (!actAt || isNaN(actAt.getTime())) return false;
       const newExp = hit.newExpiration ? new Date(hit.newExpiration) : null;
@@ -1066,11 +1183,30 @@ async function runOfficeSyncInner(
             //    «تفعيل خارجي» و«تحديث معلومات» معاً): صفُّ حدثٍ معلَّقٌ لهذا الرقم يعني
             //    أنّ بيتَ الواقعة تبويبُ التفعيل — فلا يُكرَّر فرقُ أيّامها هنا.
             if (!classified) {
+              // 🔴 **الحارسُ يمنع تكرارَ الحدث نفسِه لا تفعيلاتِ المشترك إلى الأبد**
+              //    (علّةٌ مقيسة 2026-08-22): كان أيُّ صفٍّ قديمٍ مختومٍ لهذا الرقم يُسكِت
+              //    **كلَّ** قفزات التاريخ اللاحقة — فتفعيلُ اليوم لا يُصنَّف ولا يُرصَد
+              //    (حالتا bg-53-10-3@shu وbg-63-8-1@res: فرقُ ٢٤ و٣٤ يوماً بلا صفٍّ في أيّ تبويب).
+              //    الآن: يُطابَق الصفُّ بـ**تاريخ الانتهاء الذي أنتجه** (±١٢ ساعة) — فهو بصمةُ
+              //    الواقعة نفسِها؛ وصفٌّ بلا تاريخٍ يُقبَل حارساً ثلاثةَ أيّامٍ فقط.
+              const expLo = validDate ? new Date(validDate.getTime() - EXP_TOL_MS) : null;
+              const expHi = validDate ? new Date(validDate.getTime() + EXP_TOL_MS) : null;
               const openEvent = await prisma.syncLog.findFirst({
-                where: { towerId: officeId, sasId: u.sasId, kind: { in: ["sas", "self", "install"] }, activatedAt: { not: null } },
+                where: {
+                  towerId: officeId, sasId: u.sasId, kind: { in: ["sas", "self", "install"] },
+                  activatedAt: { not: null },
+                  ...(expLo && expHi
+                    ? {
+                        OR: [
+                          { sasDateTo: { gte: expLo, lte: expHi } },
+                          { sasDateTo: null, activatedAt: { gte: new Date(Date.now() - 3 * 86400_000) } },
+                        ],
+                      }
+                    : {}),
+                },
                 select: { id: true },
               }).catch(() => null);
-              if (openEvent) classified = true; // بأيّ حالةٍ كان (معلَّقاً أو مختوماً)
+              if (openEvent) classified = true; // نفسُ الواقعة (معلَّقةً كانت أو مختومة)
             }
             // 💸 **آخرُ تفعيلةٍ بمبلغ صفرٍ ⇒ قرضٌ ⇒ لا فرقَ تاريخٍ أبداً** (بلاغُ محمد
             //    2026-08-21: bg-1-14-2@mu «ومن مثله»): أيّامُ القرض ليست أيّاماً مدفوعةً
@@ -1086,8 +1222,7 @@ async function runOfficeSyncInner(
               const paid = await receiptsOfUser((u.username ?? p.netUser ?? "").trim().toLowerCase(), p.id);
               if (paid.to.some((t) => Math.abs(t - p.dateTo!.getTime()) <= RECEIPT_NEAR_MS)) classified = true;
             }
-            if (!classified && dateProbes < MAX_DATE_PROBES) {
-              dateProbes++;
+            if (!classified) {
               classified = await classifyDateJump(p, u.sasId, u.username, validDate);
             }
             if (!classified) {
@@ -1147,8 +1282,10 @@ async function runOfficeSyncInner(
     const closedInfo = await reconcileInfo(officeId, seenSasIds, stillDiffering);
     // 💰 وصفوفُ الأحداث تُصالَح بالوصل **مهما قدُم تفعيلُها** (لا تُشترَط رؤيتُها في النافذة)
     const closedEvents = await reconcileEvents(officeId, (u, id, at, to) => collectedByUs(u, id, at, to));
-    if (closedInstalls || closedInfo || closedEvents) {
-      console.log(`[sync-log] ♻️ مكتب ${officeId}: أُغلق تلقائيّاً ${closedInstalls} تنصيباً و${closedInfo} تحديثَ معلومات و${closedEvents} حدثَ تفعيلٍ بوصلٍ عندنا`);
+    // 🎴 وحالاتُ «الكارت المسروق» تُغلق نفسَها متى ظهر وصلٌ لصاحبها (±٣ أيّام)
+    const closedStolen = await reconcileStolenCards(officeId, (u, id, at) => receiptNearCard(u, id, at));
+    if (closedInstalls || closedInfo || closedEvents || closedStolen) {
+      console.log(`[sync-log] ♻️ مكتب ${officeId}: أُغلق تلقائيّاً ${closedInstalls} تنصيباً و${closedInfo} تحديثَ معلومات و${closedEvents} حدثَ تفعيلٍ بوصلٍ عندنا و${closedStolen} حالةَ كارتٍ مسروقٍ ظهر وصلُها`);
     }
 
     // 📋 الاستيرادُ الجماعيُّ وملءُ الباقات الفارغة **انتقلا إلى سجلّ المزامنة** (2026-08-20):
@@ -1168,7 +1305,7 @@ async function runOfficeSyncInner(
   const result: SyncResult = {
     office: officeName,
     phase1: { activations: acts.length, internal, external, phantom, markedUsed, duplicates, imported, verifiedReal, dupUserPhase1 },
-    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg, pkgFixed, dupUserSkipped },
+    phase2: { checked, dateFixed, imported: phase2Imported, failed: phase2Failed, skippedPkg, pkgFixed, dupUserSkipped, probesCapped, stolenCards },
     events, reportSent: null,
     // السببُ يُحمَل إلى الحالة المخزَّنة فتراه الواجهةُ ويُقرأ من القاعدة عند التشخيص
     ...(phase2Error ? { error: phase2Error } : {}),
@@ -1203,6 +1340,9 @@ function buildReportText(r: SyncResult, day: Date, title = "تقرير المز�
 ⚠️ يوزرٌ موجودٌ سلفاً فلم يُستورَد (يحتاج قرارك): ${r.phase2.dupUserSkipped}`;
   if (r.phase2.skippedPkg > 0) text += `⏭️ تُركوا بلا تعديل (فئتهم غير مضافة بالبرنامج): ${r.phase2.skippedPkg} مشترك\n`;
   if (r.phase2.imported > 0) text += `🆕 استيراد شامل من الساس: ${r.phase2.imported} مشترك\n`;
+  // 🔴 حالاتُ الكارت المسروق وسقفُ المسبار — **يُعلَنان ولا يُبتلَعان** (شرطُ محمد: لا صمت)
+  if ((r.phase2.stolenCards ?? 0) > 0) text += `🔴 كروتٌ من مخزنك فُعِّلت بلا وصل (في حارس المال): ${r.phase2.stolenCards}\n`;
+  if ((r.phase2.probesCapped ?? 0) > 0) text += `⏳ قفزاتُ تاريخٍ لم تُصنَّف (بلغ سقفُ السؤال المباشر): ${r.phase2.probesCapped}\n`;
 
   const byScenario = (s: SyncEvent["scenario"]) => r.events.filter((e) => e.scenario === s);
   const s1 = byScenario(1), s3 = byScenario(3), s6 = byScenario(6), s2 = byScenario(2), s7 = byScenario(7);
@@ -1250,6 +1390,8 @@ export interface FullCardsResult {
   markedUsed: number;       // منها وُجدت مستخدمة في SAS فعُلِّمت
   checkedUsed: number;      // كروت مستخدمة (لمشتركي المكتب) فُحصت
   verifiedReal: number;     // منها مؤكّدة في SAS (سليمة)
+  stolen?: number;          // 🔴 كروتُ مخزنٍ فُعِّلت بلا وصلٍ لصاحبها (قاعدةُ محمد 2026-08-22)
+  stolenOld?: number;       // منها أقدمُ من ٣٠ يوماً — تُحصى ولا تُرفَع (كي لا يُغرَق حارسُ المال)
   phantom: number;          // منها لم توجد في SAS ⇒ وهمية جديدة
   errors: number;           // كروت تعذّر فحصها (تعثّر SAS) — لم يُحكم عليها
   aborted: boolean;         // أوقف الفحص مبكراً (إلغاء أو تعثّر SAS)
@@ -1400,7 +1542,7 @@ export async function runFullCardAudit(
   onProgress?: (label: string, done: number, total: number) => Promise<boolean>,
 ): Promise<FullCardsResult> {
   const empty: FullCardsResult = {
-    checkedAvailable: 0, markedUsed: 0, checkedUsed: 0, verifiedReal: 0,
+    checkedAvailable: 0, markedUsed: 0, checkedUsed: 0, verifiedReal: 0, stolen: 0,
     phantom: 0, errors: 0, aborted: false, skippedOld: 0, windowDays: CARD_AUDIT_DAYS, events: [],
   };
   const office = await prisma.tower.findUnique({
@@ -1503,6 +1645,72 @@ export async function runFullCardAudit(
 
   const res: FullCardsResult = { ...empty };
 
+  // ═════ 🎴 قاعدةُ الوصل في الجرد أيضاً (إملاءُ محمد 2026-08-22) ═════
+  // ولماذا هنا أيضاً؟ لأنّ الجردَ الليليَّ يمرّ على **١٢٠ يوماً**، فلو عُلِّم الكارتُ
+  // مستخدماً هنا بصمتٍ لأطفأ أثرَ السرقة الذي ترفعه المزامنةُ اليوميّة — أو لما رُفعت
+  // أصلاً لكارتٍ فُعِّل قبل نافذة اليومين. القاعدةُ واحدةٌ في الموضعَين بلا استثناء.
+  // 🔒 ولا يُتَّهم كارتٌ **مبيعٌ أو مُفعَّلٌ بيد إنسان**: هذا الفرعُ لا يدخله إلّا كارتٌ
+  //    حالتُه «متاح» في البرنامج (‏useDate فارغ) — أي لم يستهلكه أحدٌ عندنا أصلاً.
+  const AUDIT_RECEIPT_MS = 3 * 86400_000;
+  const AUDIT_GRACE_MS = 24 * 3600_000;
+  // ⏳ **سقفُ عمرٍ للحالات في الجرد وحدَه**: نافذتُه ١٢٠ يوماً، فأوّلُ تشغيلٍ بعد النشر كان
+  //    سيرفع تاريخَ المخزن كلَّه دفعةً واحدةً فيُغرِق حارسَ المال. الحديثُ (٣٠ يوماً) يُرفَع،
+  //    والأقدمُ **يُحصى ويُقال عددُه** في التقرير — فلا شيءَ يُبتلَع بصمت.
+  //    (والمزامنةُ اليوميّةُ بلا هذا السقف: نافذتُها يومان أصلاً.)
+  const AUDIT_MAX_AGE_MS = 30 * 86400_000;
+  const auditIdsByUser = new Map<string, number[]>();
+  for (const os of officeSubs) {
+    const uk = (os.netUser ?? "").trim().toLowerCase();
+    if (!uk) continue;
+    const l = auditIdsByUser.get(uk) ?? [];
+    l.push(os.id);
+    auditIdsByUser.set(uk, l);
+  }
+  const auditRecCache = new Map<string, number[]>();
+  const auditHasReceipt = async (userKey: string, subId: number | null, at: Date): Promise<boolean> => {
+    const key = userKey || "#" + String(subId ?? 0);
+    let arr = auditRecCache.get(key);
+    if (!arr) {
+      const ids = auditIdsByUser.get(userKey) ?? (subId != null ? [subId] : []);
+      const rows = ids.length
+        ? await prisma.subscriptionEntry.findMany({
+            where: { subscriberId: { in: ids }, isDeleted: false },
+            select: { date: true }, orderBy: { id: "desc" }, take: 60,
+          })
+        : [];
+      arr = rows.map((r) => r.date?.getTime() ?? 0).filter(Boolean);
+      auditRecCache.set(key, arr);
+    }
+    return arr.some((t) => Math.abs(t - at.getTime()) <= AUDIT_RECEIPT_MS);
+  };
+  /** كارتُ مخزنٍ عُلِّم مستخدماً هنا: أله وصلٌ في ±٣ أيّام؟ وإلّا فحالةُ سرقةٍ في حارس المال */
+  const auditJudge = async (
+    act: SasActivation,
+    serial: string,
+    owner: { id: number; name: string | null; netUser: string | null } | null | undefined,
+    when: Date,
+  ): Promise<void> => {
+    const uKey = String(act.username ?? owner?.netUser ?? "").trim().toLowerCase();
+    if (await auditHasReceipt(uKey, owner?.id ?? null, when)) return;
+    if (Date.now() - when.getTime() < AUDIT_GRACE_MS) return;
+    if (Date.now() - when.getTime() > AUDIT_MAX_AGE_MS) { res.stolenOld = (res.stolenOld ?? 0) + 1; return; }
+    const amount = Math.round(act.price || 0);
+    const who = act.username ?? owner?.netUser ?? "—";
+    const mgr = (act.managerUsername ?? "—").trim();
+    const at = when.toISOString().slice(0, 16).replace("T", " ");
+    await recordStolenCardCase({
+      agentId, towerId: officeId, sasId: act.sasUserId,
+      subscriberId: owner?.id ?? null,
+      netUser: act.username ?? owner?.netUser ?? null,
+      name: act.name ?? owner?.name ?? null,
+      activatedAt: when, pins: [serial], amount,
+      detail: "🔴 كارتٌ **من مخزنك** (سيريال " + serial + ") وجده الجردُ مُفعَّلاً في الساس ليوزر " + who
+        + " بمبلغ " + amount + " بمنجر " + mgr + " بتاريخ " + at
+        + " — **ولا وصلَ له عندك في ±٣ أيّام**.",
+    });
+    res.stolen = (res.stolen ?? 0) + 1;
+  };
+
   // ═════ قاعدةُ محمد (2026-08-14): «مستخدَمٌ ثبت بالسيريال لا يُعاد فحصُه ولا يُوسَم أبداً» ═════
   // الحكمُ الدائم في `card_sas_checks`: كارتٌ وجده الساسُ يوماً (match أو mismatch — كلاهما
   // يعني أنّ الساس يعرفه فليس وهميّاً) يُحتسب مُثبَتاً فوراً بلا أيّ نداءِ ساس. فجردُ مكتبٍ
@@ -1578,6 +1786,7 @@ export async function runFullCardAudit(
         },
       });
       res.markedUsed++;
+      await auditJudge(hit, serial, sub, isNaN(when.getTime()) ? new Date() : when);
       res.events.push({
         scenario: 3, subscriber: sub?.name ?? sub?.netUser ?? null, pin: serial,
         detail: "فحص شامل: الكارت مستخدم في SAS — حُدّث إلى مستخدم",
@@ -1676,6 +1885,7 @@ export async function runFullCardAudit(
           },
         }).catch(() => {});
         res.markedUsed++;
+        await auditJudge(found, serial, owner, isNaN(when.getTime()) ? new Date() : when);
         res.events.push({
           scenario: 3, subscriber: owner?.name ?? found.username ?? null, pin: serial,
           detail: "بحثٌ بالسيريال: الكارت مستخدمٌ في الساس (خارج قائمة المكتب) — حُدّث إلى مستخدم",
@@ -1832,6 +2042,10 @@ function buildManualReportText(sync: SyncResult, cards: FullCardsResult | null):
     } else {
       text += `متاح فُحص: ${cards.checkedAvailable} — حُدّث إلى مستخدم: ${cards.markedUsed}\n`;
       text += `مستخدم فُحص: ${cards.checkedUsed} — سليم: ${cards.verifiedReal} — وهمي جديد: ${cards.phantom}`;
+      if ((cards.stolen ?? 0) > 0) text += `
+🔴 كروتٌ من مخزنك فُعِّلت بلا وصل (حارس المال): ${cards.stolen}`;
+      if ((cards.stolenOld ?? 0) > 0) text += `
+ℹ️ ومثلُها أقدمُ من ٣٠ يوماً لم تُرفَع: ${cards.stolenOld}`;
       if (cards.phantom > 0) text += `\n🛡️ الوهمية تظهر في «الكروت الوهمية» بحسابات المدير لاتخاذ الإجراء.`;
       if (cards.skippedOld > 0) text += `\nℹ️ ${cards.skippedOld} كارت استُخدم قبل نافذة الفحص (${cards.windowDays} يوماً) — لم يُحكم عليه.`;
       if (cards.errors > 0) text += `\n⚠️ تعذّر الحكم على ${cards.errors} كارت.`;
@@ -1895,7 +2109,7 @@ export async function runManualSync(officeId: number): Promise<void> {
       });
     } catch (e) {
       cards = {
-        checkedAvailable: 0, markedUsed: 0, checkedUsed: 0, verifiedReal: 0,
+        checkedAvailable: 0, markedUsed: 0, checkedUsed: 0, verifiedReal: 0, stolen: 0,
         phantom: 0, errors: 0, aborted: false, skippedOld: 0, windowDays: 0, events: [],
         error: (e as Error).message || "فشل فحص الكروت",
       };

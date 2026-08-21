@@ -77,7 +77,10 @@ describe("🎁 العرضُ يُسكِت تحديثَ المعلومات كلَ�
     const src = SRC();
     assert.ok(src.includes("if (last && Math.round(last.price || 0) <= 0) { actedSasIds.add(sasId); return true; }"), "القرضُ ما زال يظهر «تمديدَ أيّام»");
     // 🔑 وشرطُه **آخرُ تفعيلٍ** لا تفعيلةٌ يطابق تاريخُها (تصحيحُ محمد الحرفيّ 2026-08-21)
-    assert.ok(src.includes('kind: { in: ["sas", "self", "install"] }, activatedAt: { not: null } },'), "صفُّ الحدث المختومُ لا يمنع الازدواج");
+    // 🔒 وحارسُ الازدواج ما زال قائماً لكنّه **مُقيَّدٌ بالواقعة نفسِها** (2026-08-22):
+    //    مطابقةُ تاريخ الانتهاء الذي أنتجه الحدث ±١٢ ساعة — فصفٌّ قديمٌ لا يُسكِت تفعيلَ اليوم.
+    assert.ok(src.includes("{ sasDateTo: { gte: expLo, lte: expHi } },"), "صفُّ الحدث لم يعد يمنع الازدواج");
+    assert.ok(src.includes("if (openEvent) classified = true;"), "نتيجةُ الحارس لا تُستعمل");
   });
 
   test("🔎 خياراتُ نوع التغيير في الواجهة — بعدّادٍ لكلّ نوع", () => {
