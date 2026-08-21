@@ -32,7 +32,24 @@ export function renderTemplate(
   for (const [en, ar] of ARABIC_ALIASES) {
     if (all[ar] === undefined && vars[en] !== undefined) all[ar] = vars[en];
   }
-  return template.replace(/\{([\w؀-ۿ]+)\}/g, (_, key) => {
+  // ═════ 💰 «لا مبلغَ لمن لا باقةَ له» — قاعدةُ محمد 2026-08-21 (تسري على كلّ رسالة) ═════
+  // نصُّه: «عند إرسال رسالة انتهاء اشتراكٍ أو أيّ رسالةٍ أخرى لمشتركٍ ليس لديه باقة فلا
+  // يُرسَل له مبلغُ الاشتراك أبداً حتى وإن كان محدَّداً في القالب — كي لا يصله مبلغٌ صفر».
+  // فالسطرُ الحاملُ للمتغيّر **يُنزَع كاملاً** (لا يُترَك «مبلغ الاشتراك : » فارغاً)، وذلك
+  // حين تكون القيمةُ غائبةً أو صفراً — ومصدرُها سعرُ الباقة، فمن بلا باقةٍ بلا سعر.
+  // 🔒 وهذا الموضعُ هو **المعبرُ الوحيدُ** لكلّ القوالب (تفعيل · انتهاء · ملخّص · سجلّ
+  //    المزامنة · المكافآت…) فالقاعدةُ تسري على الجميع بلا تكرارِ منطقٍ في كلّ مُرسِل.
+  const priceKeys = ["price", "مبلغ_الاشتراك"];
+  const priceMissing = priceKeys.every((k) => {
+    const v = all[k];
+    if (v === null || v === undefined || String(v).trim() === "") return true;
+    const n = Number(String(v).replace(/[^\d.-]/g, ""));
+    return Number.isFinite(n) && n <= 0;
+  });
+  const body = priceMissing
+    ? template.split("\n").filter((line) => !priceKeys.some((k) => line.includes(`{${k}}`))).join("\n")
+    : template;
+  return body.replace(/\{([\w؀-ۿ]+)\}/g, (_, key) => {
     const v = all[key];
     return v === null || v === undefined ? "" : String(v);
   });

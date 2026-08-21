@@ -20,7 +20,13 @@ const SYNC = () => read("src/lib/subscriptionSync.ts");
 describe("♻️ سجلّ المزامنة التفاعليّ ودفعةُ الأعطال الستّة", () => {
   test("١ · قاعدةُ «باقة العرض = تنصيب» أُلغيت — لا يُرمى مشتركٌ عاديٌّ في التبويب", () => {
     const src = SYNC();
-    assert.equal(/isOfferPackage\(/.test(src), false, "قاعدةُ Offer ما زالت تُستعمل — وهي تُطابق باقاتِ سوبر سيل العاديّة");
+    // 🎁 وقاعدةُ Offer عادت في **موضعٍ واحدٍ ضيّقٍ فقط** بإملاء محمد 2026-08-21: مَن لا باقةَ
+    //    له عندنا وباقتُه في الساس عرضٌ ⇒ لا يُذكَر في «تحديث معلومات». ويبقى الممنوعُ حرفيّاً:
+    //    **لا تُستعمَل لتصنيف تنصيبٍ خارجيّ** (فهي تُطابق باقاتِ سوبر سيل العاديّة).
+    assert.equal(/isOfferPackage(u.packageName) *?|isOfferPackage([^)]*) *&& *!p/.test(src), false,
+      "قاعدةُ Offer عادت لتصنيف التنصيب — وهي تُطابق باقاتِ سوبر سيل العاديّة");
+    assert.ok(src.includes("const offerOnEmpty = p.packageId == null && isOfferPackage(u.packageName);"),
+      "استعمالُ Offer الوحيدُ المسموحُ (عرضٌ على مشتركٍ بلا باقة) غائب");
     // ولا يبقى نداءُ تنصيبٍ لمشتركٍ قائمٍ إلّا في حالة «اليوزر المعاد» (subscriberId: oldByUser.id)
     const installs = src.match(/recordInstall\(\{[\s\S]{0,140}subscriberId: [^,\n]+/g) ?? [];
     for (const m of installs) {

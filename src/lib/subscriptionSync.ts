@@ -11,7 +11,7 @@ import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
-import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, reconcileEvents, closeDeadSasRows, isOwnCabinet, type InfoChange } from "@/lib/syncLog";
+import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, reconcileEvents, closeDeadSasRows, isOwnCabinet, isOfferPackage, type InfoChange } from "@/lib/syncLog";
 import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 // ═════ ✍️ اسمٌ عندنا يحمل ملاحظةً فوق اسم الساس (مراجعةُ محمد 2026-08-21) ═════
@@ -988,7 +988,11 @@ async function runOfficeSyncInner(
         // الرصدُ كان يُنتج صفّاً **لا يمكن تطبيقُه أبداً** (البرنامجُ لا يُنشئ باقةً — قاعدةٌ
         // قديمة)، فيُتجاهل فيُعاد إنشاؤه في المزامنة التالية… دورةٌ لا تنتهي. وباقةٌ
         // مجهولةٌ تظهر أصلاً في عدّاد `skippedPkg` بتقرير المزامنة — بيتُها الصحيح.
-        if (sv(u.packageName) && sasPkgIdForDiff != null && sasPkgIdForDiff !== p.packageId) {
+        // 🎁 **بلا باقةٍ عندنا وباقتُه في الساس «عرض» ⇒ لا يُذكَر** (قاعدةُ محمد الجديدة
+        //    2026-08-21): «بعد انقضاء فترة العرض سيُفعَّل بإحدى الباقات، وبقاؤه بلا باقةٍ
+        //    لا يؤثّر على شيء». وهذه وحدَها كانت ١٥١ صفّاً في المواصلات.
+        const offerOnEmpty = p.packageId == null && isOfferPackage(u.packageName);
+        if (sv(u.packageName) && !offerOnEmpty && sasPkgIdForDiff != null && sasPkgIdForDiff !== p.packageId) {
           diffs.push({ f: "package", label: "الباقة", old: oursPkgName, new: sv(u.packageName) });
         }
         // 📅 فرقُ الأيّام لمعلوم الباقة (قرار محمد 2026-08-21 المصحَّح): زيادةً **ونقصاً**
