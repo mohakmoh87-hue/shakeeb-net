@@ -47,8 +47,8 @@ describe("📋 سجلّ المزامنة الموحَّد", () => {
     assert.match(api, /where: \{ id: \{ in: ids \}, towerId: \{ in: towers\.length \? towers : \[-1\] \}, status: "pending" \}/,
       "صفوفُ POST بلا شرطِ مكاتب الوكيل في SQL");
     assert.match(api, /agentTowerIds/, "لا تحديدَ لمكاتب الوكيل");
-    // وGET كذلك
-    assert.match(api, /where: \{ towerId: \{ in: towers \}, status: "pending" \}/, "GET بلا عزل");
+    // وGET كذلك (وصار يقصر التبويبات على الأربعة — صفوفُ «card» بيتُها حارسُ المال)
+    assert.match(api, /where: \{ towerId: \{ in: towers \}, status: "pending", kind: \{ in: \["info", "install", "self", "sas"\] \} \}/, "GET بلا عزل");
   });
 
   test("💰 «إضافة تفعيل بوصل» و«إضافة دين» — المالُ بقرارات محمد الثلاثة", () => {

@@ -25,7 +25,9 @@ export async function GET() {
   try {
     const [rows, towerRows] = await Promise.all([
       prisma.syncLog.findMany({
-        where: { towerId: { in: towers }, status: "pending" },
+        // 🎴 «card» = تفعيلٌ بكارتٍ خارج المخزن — بيتُه **حارسُ المال** (إملاءُ محمد
+        //    2026-08-21) لا هذه النافذة، فلا يُرسَل هنا أصلاً.
+        where: { towerId: { in: towers }, status: "pending", kind: { in: ["info", "install", "self", "sas"] } },
         orderBy: { id: "desc" }, take: 2000,
       }),
       prisma.tower.findMany({ where: { id: { in: towers } }, select: { id: true, name: true } }),

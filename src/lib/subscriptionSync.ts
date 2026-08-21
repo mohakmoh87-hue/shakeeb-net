@@ -11,7 +11,7 @@ import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
-import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, reconcileEvents, closeDeadSasRows, isOwnCabinet, isOfferPackage, type InfoChange } from "@/lib/syncLog";
+import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, reconcileEvents, closeDeadSasRows, recordExternalCardCase, isOwnCabinet, isOfferPackage, type InfoChange } from "@/lib/syncLog";
 import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 // ═════ ✍️ اسمٌ عندنا يحمل ملاحظةً فوق اسم الساس (مراجعةُ محمد 2026-08-21) ═════
@@ -526,6 +526,8 @@ async function runOfficeSyncInner(
     actsByUser.set(a.sasUserId, list);
   }
 
+  // 🎴 كروتٌ خارجُ المخزن استُعملت في الساس — تُجمَع لكلّ مشترك ثمّ تُحلَّل مرّةً واحدة
+  const extCards = new Map<string, { sub: { id: number; name: string | null; netUser: string | null }; sasId: number; pins: string[]; at: Date; price: number }>();
   for (const a of acts) {
     const pin = (a.pin ?? "").trim();
     const card = pin ? cardBySerial.get(pin) : undefined;
@@ -586,6 +588,14 @@ async function runOfficeSyncInner(
       // السيناريو 6: Manager يطابق يوزر المكتب لكن الكارت غير موجود بمخزن البرنامج → كارت خارجي
       external++;
       events.push({ scenario: 6, subscriber: sub.name ?? sub.netUser, pin, detail: "تفعيل بكارت خارجي غير موجود بالمخزن" });
+      // 💰 ويُجمَع ليُحلَّل ويُخزَّن في حارس المال بعد الحلقة (إملاءُ محمد: لا حالةَ بلا بيت)
+      const key = `${sub.id}|${a.sasUserId}`;
+      const g = extCards.get(key) ?? { sub, sasId: a.sasUserId, pins: [] as string[], at: a.createdAt ? new Date(a.createdAt) : new Date(), price: 0 };
+      g.pins.push(pin);
+      g.price += Math.round(a.price || 0);
+      const t = a.createdAt ? new Date(a.createdAt) : null;
+      if (t && !isNaN(t.getTime()) && t > g.at) g.at = t;
+      extCards.set(key, g);
     } else if (isCardActivation(a)) {
       // كارت غير معروف من Manager آخر — لا يُبلَّغ عنه هنا (تصحيح التاريخ يتم بالمرحلة 2 بصمت — السيناريو 5)
       external++;
@@ -671,6 +681,43 @@ async function runOfficeSyncInner(
       stillInstalls.add(a.sasUserId);
       await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });
     }
+  }
+
+  // ═════ 🎴💰 تحليلُ الكروت الخارجيّة وتخزينُها في حارس المال (إملاءُ محمد 2026-08-21) ═════
+  // «لو فُحص سجلُّ وصولات المشترك نفسِه لَوُجد أنّ لديه وصلَ تفعيلِ ٣ أشهر… ولو دُقّق
+  //  المبلغُ لَوُجد أنّه مبلغُ ٣ أشهرٍ ناقص ٥ آلاف، وهي حالةُ تفعيل ديلرٍ ٣ أشهر —
+  //  والديلرُ يُفعَّل بكروتٍ خارجيّةٍ **دائماً**». فالتقييمُ يُبنى على الوصل لا على الظنّ.
+  for (const [, g] of extCards) {
+    try {
+      const uk = (g.sub.netUser ?? "").trim().toLowerCase();
+      const r = await receiptsOfUser(uk, g.sub.id);
+      const near = r.at.filter((t) => Math.abs(t - g.at.getTime()) <= RECEIPT_NEAR_MS);
+      const rows = near.length
+        ? await prisma.subscriptionEntry.findMany({
+            where: {
+              subscriberId: { in: idsByUser.get(uk) ?? [g.sub.id] }, isDeleted: false,
+              date: { gte: new Date(g.at.getTime() - RECEIPT_NEAR_MS), lte: new Date(g.at.getTime() + RECEIPT_NEAR_MS) },
+            },
+            select: { id: true, money: true, moneyIn: true, month: true, cardType: true },
+          })
+        : [];
+      const paid = rows.reduce((x, e) => x + Math.round(e.moneyIn ?? 0), 0);
+      const billed = rows.reduce((x, e) => x + Math.round(e.money ?? 0), 0);
+      const months = rows.map((e) => Number(e.month) || 1).reduce((x, m) => x + m, 0);
+      const dealer = g.pins.length >= 2 && rows.length > 0;
+      const verdict = rows.length === 0 ? "no-receipt" : dealer ? "dealer" : "receipted";
+      const money = `وصلٌ ${rows.length ? `#${rows.map((e) => e.id).join("،")} بمبلغ ${billed} (مقبوضٌ ${paid})${months ? ` لـ${months} شهر` : ""}` : "غيرُ موجود"}`;
+      const detail = verdict === "dealer"
+        ? `🤝 تفعيلُ ديلر: ${g.pins.length} كروتٍ من خارج المخزن ليوزر ${g.sub.netUser ?? "—"} — ${money}. والديلرُ يُفعَّل بكروتٍ خارجيّةٍ دائماً، والمالُ مقبوضٌ عندك ⇒ **حالةٌ بسيطةٌ غيرُ ضارّة**.`
+        : verdict === "receipted"
+          ? `🎴 كارتٌ من خارج المخزن (${g.pins.length}) ليوزر ${g.sub.netUser ?? "—"} — ${money}. المالُ مقبوضٌ عندك ⇒ لا ضرر، والسببُ غالباً كارتٌ لم يُسجَّل في المخزن.`
+          : `🔴 ${g.pins.length} كارتٍ من خارج المخزن ليوزر ${g.sub.netUser ?? "—"} **بلا أيّ وصلٍ في نافذة ٣٦ ساعة** — يحتاج تدقيقاً: مَن قبض ثمنَه؟`;
+      await recordExternalCardCase({
+        agentId: office.agentId ?? -1, towerId: officeId, sasId: g.sasId, subscriberId: g.sub.id,
+        netUser: g.sub.netUser, name: g.sub.name, activatedAt: g.at,
+        pins: g.pins, amount: g.price, verdict, detail,
+      });
+    } catch { /* أفضلُ جهدٍ — لا تُفشل المزامنة */ }
   }
 
   // السيناريو 2: تفعيل متكرر في SAS لنفس المشترك بنفس اليوم بينما البرنامج يعرف كارتاً واحداً
@@ -1032,14 +1079,15 @@ async function runOfficeSyncInner(
             //    وتُقرَأ من **نافذة التفعيلات المفهرَسة** فلا يهمّ أوقع التفعيلُ في نافذة
             //    اليومَين أم قبلها بشهر.
             if (!classified && grew) {
+              // 💸 **شرطُ القرض الوحيد** (تصحيحُ محمد 2026-08-21 الحرفيّ): «عند اختلاف
+              //    الأيّام يُفحَص **آخرُ تفعيلٍ له** في تقرير التفعيلات، فإن كان المبلغُ
+              //    صفراً فهو قرض» — لا عددَ أيّامٍ ولا شرطَ كارتٍ ولا مطابقةَ تاريخ.
               const win = await getActWin();
               const uk = (u.username ?? p.netUser ?? "").trim().toLowerCase();
               const cands = [...(win.bySasId.get(u.sasId) ?? []), ...(uk ? win.byUser.get(uk) ?? [] : [])];
-              const act = cands.find((r) => {
-                const e = r.newExpiration ? new Date(r.newExpiration) : null;
-                return sameExpiry(e, validDate);
-              });
-              if (act && Math.round(act.price || 0) <= 0) classified = true; // قرضٌ صريح
+              // النافذةُ مرتَّبةٌ من الأحدث، فأوّلُ ما يقع عليه هو آخرُ تفعيلاته
+              const last = cands.sort((x, y) => String(y.createdAt ?? "").localeCompare(String(x.createdAt ?? "")))[0];
+              if (last && Math.round(last.price || 0) <= 0) classified = true; // قرضٌ صريح
             }
             // 💰 ونقصُ الأيّام **لا يُرصَد إذا كان تاريخُنا مدفوعاً بوصل** (حالة bg-5-12-11@mu:
             //    وصلُ ٤٥ ألفاً حتى ٢٠-١٠ والساسُ يقول ٣٠-٨ لأنّ الشركةَ تُعطي ١٠ أيّامٍ ثمّ

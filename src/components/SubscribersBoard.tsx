@@ -203,7 +203,8 @@ export default function SubscribersBoard() {
   const [syncCount, setSyncCount] = useState(0);
   useEffect(() => {
     fetch("/api/sync-log").then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && Array.isArray(d.rows)) setSyncCount(d.rows.length); })
+      // 🎴 صفوفُ «kind:card» بيتُها حارسُ المال لا هذه النافذة — فلا تُعدّ ولا تُومض
+      .then((d) => { if (d && Array.isArray(d.rows)) setSyncCount(d.rows.filter((r: { kind?: string }) => ["info", "install", "self", "sas"].includes(String(r.kind))).length); })
       .catch(() => {});
   }, []);
 

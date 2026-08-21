@@ -146,6 +146,42 @@ export async function recordCompanyActivation(
   }
 }
 
+// ═════ 🎴💰 «كلُّ حالةٍ لا بيتَ لها ⇒ بيتُها حارسُ المال» (إملاءُ محمد 2026-08-21) ═════
+// حالةُ «جاسم محمد طلال علوان عيساوي»: فُعِّل بثلاثة كروتٍ **كلُّها من خارج المخزن**،
+// فحُسب «تفعيلاً خارجيّاً» و«تفعيلاً مكرَّراً» — ثمّ **لم يُخزَّن في أيّ مكان**: لا في سجلّ
+// المزامنة ولا في حارس المال، بل ذُكر في تقرير مزامنةٍ عابرٍ ثمّ ضاع.
+// ونصُّ محمد: «أيُّ حالةٍ في المزامنة ليس لها مكانٌ تُخزَّن فيه فيجب أن تكون في حارس المال،
+// وتُدقَّق من كلّ النواحي: هل له وصل؟ بكم؟ هل هو ديلر؟ — وتُذكَر التفاصيلُ والتقييم».
+// 🔑 وقاعدتُه في التقييم: **ديلرُ الثلاثة أشهرٍ يُفعَّل دائماً بكروتٍ خارج المخزن**،
+//    ووصلُه = مبلغُ ثلاثة أشهرٍ **ناقص خمسة آلاف** ⇒ حالةٌ بسيطةٌ غيرُ ضارّةٍ إطلاقاً.
+// يُخزَّن بـ`kind:"card"` — نوعٌ **لا تعرضه نافذةُ سجلّ المزامنة** (تبويباتُها أربعةٌ ثابتة)،
+// فلا يُزاحم عملَ المستخدم اليوميّ، ويقرؤه حارسُ المال بتفاصيله وتقييمه.
+export type ExtCardVerdict = "dealer" | "receipted" | "no-receipt";
+export async function recordExternalCardCase(p: {
+  agentId: number; towerId: number; sasId: number; subscriberId: number | null;
+  netUser: string | null; name: string | null; activatedAt: Date;
+  pins: string[]; amount: number; verdict: ExtCardVerdict; detail: string;
+}): Promise<void> {
+  try {
+    const from = new Date(p.activatedAt.getTime() - 12 * 3600_000);
+    const to = new Date(p.activatedAt.getTime() + 12 * 3600_000);
+    const existing = await prisma.syncLog.findFirst({
+      where: { towerId: p.towerId, sasId: p.sasId, kind: "card", activatedAt: { gte: from, lte: to } },
+      select: { id: true },
+    });
+    const data = {
+      agentId: p.agentId, towerId: p.towerId, kind: "card", sasId: p.sasId,
+      subscriberId: p.subscriberId, netUser: p.netUser ?? null, name: p.name ?? null,
+      amount: Math.round(p.amount || 0), activatedAt: p.activatedAt,
+      note: p.detail,
+      changes: JSON.stringify({ verdict: p.verdict, pins: p.pins }),
+    };
+    if (existing) await prisma.syncLog.update({ where: { id: existing.id }, data });
+    else await prisma.syncLog.create({ data });
+  } catch (e) {
+    if (!tableMissing(e)) console.error("[sync-log] تعذّر تسجيل حالة كارتٍ خارجيّ:", e instanceof Error ? e.message : e);
+  }
+}
 /** حدثُ تفعيلٍ (تبويب ٣ ذاتيّ · تبويب ٤ صفحة بلا وصل) — صفٌّ لكلّ تفعيلة */
 export async function recordActivationEvent(kind: "self" | "sas", p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean }): Promise<void> {
   try {
