@@ -239,7 +239,13 @@ describe("⚖️ الحارسُ يقيس الأثرَ الباقي لا لحظة
         // ⚠️ ونافذةُ الأسطر لا تكفي: في مسارِ إبطالِ الفاتورة يقع النداءُ قبل الحذف
         //   بستّةٍ وثلاثين سطراً (بينهما إرجاعُ الصندوق والدَّين) — فالمقياسُ «قبله في
         //   الملفّ» لا «قريباً منه»، وهذا ما تصفه القاعدةُ فعلاً.
-        if (!/isDeleted: true/.test(lines.slice(i, i + 3).join("\n"))) return;
+        const win = lines.slice(i, i + 3).join("\n");
+        if (!/isDeleted: true/.test(win)) return;
+        // ♻️ **استرجاعٌ لا حذف**: مسارُ «سجل الوصولات المحذوفة» يكتب `data: { isDeleted: false }`
+        //   وشرطُ `where: { isDeleted: true }` عنده يعني «لا تُرجِع إلّا المحذوف» — عكسَ الحذف
+        //   تماماً. فالمقياسُ ما تكتبه `data` لا ما ترشِّحه `where`، والقاعدةُ تبقى قاطعةً
+        //   على كلّ حذفٍ حقيقيّ.
+        if (/data:\s*\{[^}]*isDeleted:\s*false/.test(win)) return;
         const before = lines.slice(0, i).join("\n");
         if (!before.includes("reverseInvoiceStock")) offenders.push(`${rel}:${i + 1}`);
       });

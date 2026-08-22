@@ -96,6 +96,24 @@ describe("🗑️ سجلُّ الوصولات المحذوفة · المرحلة
     }
   });
 
+  test("⑦-أ صفرُ لمسٍ لمسارات الحذف الأربعة — شرطُ محمد «لا تؤثّر على الأكواد القائمة»", () => {
+    // الإرجاعُ يشتقّ كلَّ شيءٍ ممّا هو محفوظٌ أصلاً، فلا سطرَ واحدٌ أُضيف إلى مسارات الحذف
+    for (const rel of [
+      "src/app/api/subscription-entries/[id]/void/route.ts",
+      "src/app/api/money/[id]/void/route.ts",
+      "src/app/api/invoices/[id]/void/route.ts",
+      "src/app/api/manager-accounts/tx/route.ts",
+    ]) {
+      const src = read(rel);
+      // المقياسُ ما تكتبه `data` لا ما ترشِّحه `where` (مسارات الحذف تشترط isDeleted: false
+      // في `where` كي لا تحذف محذوفاً — وذاك حذفٌ لا استرجاع)
+      assert.equal(/data:\s*\{\s*isDeleted:\s*false/.test(src), false,
+        `مسارُ حذفٍ صار يكتب استرجاعاً: ${rel}`);
+      assert.equal(src.includes("restoreReceipt"), false, `مسارُ الحذف صار يستورد محرّكَ الإرجاع: ${rel}`);
+      assert.equal(src.includes("receipt_voids"), false, `أُقحم جدولُ لقطةٍ في مسار الحذف: ${rel}`);
+    }
+  });
+
   test("⑦ «مَن حذف ومتى وكيف» يُقرأ من سجلّ التدقيق — ووصلُ الصندوق لا يضيع", () => {
     const lib = LIB();
     assert.match(lib, /action: "VOID_RECEIPT", entity: "subscriptionEntry"/, "قيدُ حذف الوصل غيرُ مقروء");
@@ -106,5 +124,109 @@ describe("🗑️ سجلُّ الوصولات المحذوفة · المرحلة
       "الوصلُ المحذوفُ من الصندوق يظهر بلا «مَن حذف»");
     // وطريقةُ الحذف تُقرأ من نصّ التدقيق كما يكتبه المساران حرفاً
     assert.match(lib, /includes\("بلا تأثير"\)/, "«بلا تأثيرٍ ماليّ» لا تُميَّز");
+  });
+});
+
+// ═════ ♻️ المرحلةُ الثانية: الإرجاع «كأنّه لم يُحذف بكلّ تأثيراته» ═════
+//
+// مسحٌ عدائيٌّ بـ٢٢ عميلاً أحصى ٢١ حالةً يُفسد فيها الإرجاعُ الساذجُ بياناتٍ قائمة.
+// وهذه الحرّاسُ تُثبّت العلاجَ الذي بُني لكلٍّ منها — فلا يسقط في تعديلٍ لاحق.
+
+const ENGINE = () => read("src/app/api/_lib/restoreReceipt.ts");
+const RAPI = () => read("src/app/api/deleted-receipts/restore/route.ts");
+
+describe("♻️ إرجاعُ الوصل المحذوف · المرحلة ٢", () => {
+  test("🔒 الصلاحيّةُ نفسُها، والحرسُ قبل أوّل نداءِ قاعدة، والمانعُ يردّ 409 لا 200", () => {
+    const api = RAPI();
+    assert.match(api, /guard\("receipts\.deleted"\)/, "مسارُ الإرجاع بلا صلاحيّة");
+    const body = api.slice(api.indexOf("export async function POST"));
+    assert.ok(body.indexOf('guard("receipts.deleted")') < body.indexOf("restoreReceipt("),
+      "الحرسُ بعد التنفيذ لا قبله");
+    assert.match(api, /status: res\.ok \? 200 : 409/, "المانعُ يُعاد بحالةِ نجاحٍ كاذبة");
+    // ونوعُ الوثيقة ورقمُها يُتحقَّق منهما قبل أيّ عمل
+    assert.match(api, /DEL_KINDS\.includes\(kind as DelKind\)/, "نوعٌ غريبٌ يمرّ بلا تحقّق");
+  });
+
+  test("🔎 dryRun يعرض الخطّةَ بلا كتابةِ حرف", () => {
+    const eng = ENGINE();
+    // في كلّ فرعٍ: رجوعٌ مبكّرٌ عند dryRun **قبل** فتح المعاملة
+    const branches = eng.split("prisma.$transaction");
+    assert.ok(branches.length >= 5, "أفرعُ الإرجاع الأربعةُ ليست كلُّها في معاملات");
+    for (const b of branches.slice(0, 4)) {
+      assert.match(b, /if \(dryRun/, "فرعٌ يكتب بلا رجوعٍ مبكّرٍ عند dryRun");
+    }
+  });
+
+  test("⛔ الموانعُ التسعةُ حاضرةٌ بأسبابها المكتوبة", () => {
+    const eng = ENGINE();
+    for (const code of [
+      "not_found", "not_deleted", "purged", "duplicate", "card_taken",
+      "salary_locked", "linked_doc_deleted", "invoice_reverse", "sale_reverse", "pair_missing",
+    ]) {
+      assert.ok(eng.includes(`"${code}"`), `المانعُ ${code} غائب`);
+    }
+    // ومانعانِ فقط يقبلان الإقرارَ الصريح — والباقي قاطع
+    assert.match(eng, /code: "duplicate",[\s\S]{0,260}override: true/, "ازدواجُ الوصل صار مانعاً قاطعاً أو بلا إقرار");
+    assert.match(eng, /code: "card_taken",[\s\S]{0,260}override: true/, "سرقةُ الكارت بلا إقرار");
+    assert.match(eng, /code: "salary_locked",[\s\S]{0,260}override: false/, "قفلُ الراتب صار قابلاً للتجاوز");
+  });
+
+  test("💰 المالُ يُحيا بحركات **هذا الحذف** لا بالترشيح — وإلّا أُحيي ما أطفأه إبطالٌ آخر", () => {
+    const eng = ENGINE();
+    assert.match(eng, /SAME_TX_MS = 15_000/, "نافذةُ «نفس المعاملة» غائبة");
+    assert.match(eng, /Math\.abs\(t\.updatedAt\.getTime\(\) - voidAt\) <= SAME_TX_MS/,
+      "حركاتُ المال تُحيا بالترشيح وحدَه ⇒ زيادةُ مالٍ صامتة");
+    // ولا تُحيا حركةٌ دخلت كشفَ راتبٍ أو تسديدَ مكتب
+    assert.match(eng, /salaryStatementId != null \|\| t\.settledAt != null/, "قيدٌ مقفلٌ بكشفٍ يُحيا بلا مانع");
+  });
+
+  test("📅 التاريخُ لا يرجع للوراء أبداً · والدَّينُ بزيادةٍ ذرّيّة", () => {
+    const eng = ENGINE();
+    assert.match(eng, /!sub\?\.dateTo \|\| sub\.dateTo < entry\.dateTo/,
+      "الإرجاعُ قد يُرجع انتهاءَ المشترك إلى الوراء");
+    assert.match(eng, /data\.carry = \{ increment: debtAdded \}/,
+      "الدَّينُ يُكتب مطلقاً لا بزيادةٍ ذرّيّة (يمحوه تفعيلٌ متزامن)");
+  });
+
+  test("🎁 صفُّ عكسِ المكافأة يُحذف عند الإرجاع — وإلّا بقي رصيدٌ ممنوحٌ بلا وصل", () => {
+    const eng = ENGINE();
+    assert.match(eng, /rewardLog\.delete\(\{ where: \{ id: rev\.id \} \}\)/,
+      "صفُّ العكس يبقى ⇒ حذفٌ قادمٌ يظنّ المكافأةَ معكوسةً فلا يعكسها");
+    assert.match(eng, /rewardBalance: \(s\?\.rewardBalance \?\? 0\) \+ rev\.amount/, "الرصيدُ لا يعود");
+    assert.match(eng, /rewardGrantCount: \(s\?\.rewardGrantCount \?\? 0\) \+ 1/, "عدّادُ المنح لا يعود");
+  });
+
+  test("🧾 الفاتورةُ المحذوفةُ بأثرٍ ماليّ **تُمنع** — وقيدُ الصندوق يُوجَّه لوثيقته", () => {
+    const eng = ENGINE();
+    // القياسُ داخل فرع الفاتورة وحدَه — لا في الملفّ كلِّه
+    const invBranch = eng.slice(eng.indexOf('if (kind === "invoice")'), eng.indexOf('if (kind === "money")'));
+    assert.ok(invBranch.length > 200, "فرعُ الفاتورة لم يُعثَر عليه — تغيّرت البنية");
+    assert.match(invBranch, /if \(mode === "reverse"\)/, "فرعُ الفاتورة لا يميّز الحذفَ العكسيّ");
+    assert.match(invBranch, /code: "invoice_reverse"/,
+      "إرجاعُ فاتورةٍ عكسيّةٍ مسموح ⇒ فاتورةٌ فارغةٌ ومخزنٌ سالب");
+    assert.match(eng, /fail\("linked_doc_deleted"/, "قيدُ مالٍ لوثيقةٍ محذوفةٍ يُرجَع وحدَه ⇒ استرجاعٌ نصفيّ");
+    // وزوجُ التحويل: الشقّان معاً أو لا شيء
+    assert.match(eng, /fail\("pair_missing"/, "شقُّ تحويلٍ يُرجَع وحدَه ⇒ مالٌ من العدم");
+    assert.match(eng, /const ids = pairId \? \[id, pairId\] : \[id\]/, "الشقّان لا يُرجَعان في كتابةٍ واحدة");
+  });
+
+  test("🔒 كلُّ كتابةٍ تُعيد شرطَ النطاق — ولا كتابةَ بالمعرّف وحدَه", () => {
+    const eng = ENGINE();
+    const writes = eng.match(/t\.\w+\.update(Many)?\(\{[\s\S]{0,200}?\}\)/g) ?? [];
+    assert.ok(writes.length >= 5, "كتاباتُ الإرجاع أقلُّ من المتوقّع — تغيّرت البنية");
+    for (const w of writes) {
+      const scoped = /\.\.\.scope/.test(w) || /agentId/.test(w) || /where: \{ id: cardId, agentId/.test(w) ||
+        /rewardLog/.test(w) || /subscriber\.update\(\{ where: \{ id: entry\.subscriberId \}/.test(w);
+      assert.ok(scoped, `كتابةٌ بلا شرطِ نطاق:\n${w}`);
+    }
+    // والفشلُ يُبطل كلَّ شيء: الكتابةُ داخل معاملةٍ وترمي إن لم يتغيّر صفّ
+    assert.match(eng, /if \(up\.count === 0\) throw new Error/, "كتابةٌ لا تتحقّق من أنّها أصابت صفّاً");
+  });
+
+  test("📜 كلُّ إرجاعٍ يترك أثراً — RESTORE_RECEIPT بالتفاصيل وبالإقرار إن كان", () => {
+    const eng = ENGINE();
+    const hits = eng.match(/action: "RESTORE_RECEIPT"/g) ?? [];
+    assert.equal(hits.length, 4, `أفرعُ الإرجاع الأربعةُ ليست كلُّها موثَّقة (${hits.length}/4)`);
+    assert.match(eng, /إقرارٌ صريح: \$\{overrides\.join\(","\)\}/, "الإقرارُ الصريحُ لا يُوثَّق");
   });
 });

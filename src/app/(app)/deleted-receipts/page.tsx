@@ -26,6 +26,13 @@ type Data = {
   limit: number; capped: boolean; managerHidden: boolean;
 };
 
+type Block = { code: string; message: string; override: boolean };
+type Plan = {
+  kind: Kind; id: number; title: string; mode: "reverse" | "plain" | null;
+  actions: string[]; blocks: Block[]; notes: { message: string }[];
+  ok: boolean; done?: string[];
+};
+
 const KINDS: { key: "" | Kind; label: string; icon: string }[] = [
   { key: "", label: "الكل", icon: "🗂️" },
   { key: "activation", label: "وصل تفعيل", icon: "📶" },
@@ -51,6 +58,26 @@ export default function DeletedReceiptsPage() {
   const [tower, setTower] = useState("");
   const [q, setQ] = useState("");        // النصُّ المُطبَّق فعلاً
   const [qBox, setQBox] = useState("");  // ما يكتبه المستخدم قبل الضغط
+
+  // ♻️ الإرجاع: تُعرَض الخطّةُ وموانعُها أوّلاً (dryRun) ثمّ يُنفَّذ بضغطةٍ ثانية
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [okd, setOkd] = useState<string[]>([]); // الموانعُ التي أقرّها المستخدم صراحةً
+  const [msg, setMsg] = useState("");
+
+  async function callRestore(kind: Kind, id: number, dryRun: boolean, overrides: string[]) {
+    setPlanBusy(true);
+    try {
+      const r = await fetch("/api/deleted-receipts/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, id, dryRun, overrides }),
+      });
+      return (await r.json()) as Plan & { error?: string };
+    } finally {
+      setPlanBusy(false);
+    }
+  }
 
   const load = useCallback(() => {
     const p = new URLSearchParams();
@@ -213,12 +240,13 @@ export default function DeletedReceiptsPage() {
               <th className="p-3">وقت الحذف</th>
               <th className="p-3">كيف</th>
               <th className="p-3">تفاصيل</th>
+              <th className="p-3">إرجاع</th>
             </tr>
           </thead>
           <tbody>
             {!data || data.rows.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-slate-400">
+                <td colSpan={11} className="p-8 text-center text-slate-400">
                   {busy ? "…" : "لا وصولاتٍ محذوفةً ضمن هذا البحث"}
                 </td>
               </tr>
@@ -254,12 +282,92 @@ export default function DeletedReceiptsPage() {
                     )}
                   </td>
                   <td className="p-3 text-xs text-slate-500">{r.note ?? "—"}</td>
+                  <td className="p-3">
+                    <button
+                      onClick={async () => {
+                        setOkd([]); setMsg("");
+                        const p = await callRestore(r.kind, r.id, true, []);
+                        setPlan(p);
+                      }}
+                      disabled={planBusy}
+                      className="whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      ♻️ إرجاع
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {/* ♻️ نافذةُ الإرجاع: تعرض ما سيقع وما يمنعه **قبل** أيّ كتابة */}
+      {plan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4"
+             onClick={() => setPlan(null)}>
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
+               onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-1 text-lg font-extrabold text-slate-800">♻️ إرجاع وصلٍ محذوف</h3>
+            <p className="mb-4 text-sm font-semibold text-slate-500">{plan.title}</p>
+
+            {plan.actions.length > 0 && (
+              <div className="mb-3 rounded-xl bg-emerald-50 p-3">
+                <div className="mb-1 text-xs font-bold text-emerald-800">ما سيقع عند الضغط:</div>
+                <ul className="list-inside list-disc text-sm text-emerald-900">
+                  {plan.actions.map((a, i) => <li key={i}>{a}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {plan.notes.map((n, i) => (
+              <div key={i} className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">ℹ️ {n.message}</div>
+            ))}
+
+            {plan.blocks.map((b) => (
+              <div key={b.code} className={`mb-2 rounded-lg px-3 py-2 text-sm ${b.override ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-700"}`}>
+                {b.override ? "⚠️" : "⛔"} {b.message}
+                {b.override && (
+                  <label className="mt-2 flex items-center gap-2 text-xs font-bold">
+                    <input
+                      type="checkbox"
+                      checked={okd.includes(b.code)}
+                      onChange={(e) => setOkd((s) => (e.target.checked ? [...s, b.code] : s.filter((x) => x !== b.code)))}
+                    />
+                    أُقرّ بذلك وأريد الإرجاع رغمه (يُوثَّق في سجلّ التدقيق)
+                  </label>
+                )}
+              </div>
+            ))}
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={async () => {
+                  const res = await callRestore(plan.kind, plan.id, false, okd);
+                  if (res.ok) {
+                    setPlan(null);
+                    setMsg(`✅ أُرجع ${plan.title} — ${(res.done ?? []).join(" · ")}`);
+                    load();
+                  } else {
+                    setPlan(res);
+                  }
+                }}
+                disabled={planBusy || plan.blocks.some((b) => !b.override || !okd.includes(b.code))}
+                className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {planBusy ? "…" : "تأكيد الإرجاع"}
+              </button>
+              <button onClick={() => setPlan(null)} className="rounded-lg bg-slate-100 px-5 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200">
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {msg && (
+        <div className="mt-3 rounded-lg bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800">{msg}</div>
+      )}
 
       <p className="mt-3 text-xs text-slate-400">
         «بلا أثرٍ ماليّ» تعني أنّ الوصلَ أُخفي وبقي مبلغُه في الصندوق — راجعها في حارس المال.
