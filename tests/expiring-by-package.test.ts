@@ -56,3 +56,26 @@ describe("📦 تذكيرُ الانتهاء حسب الباقة", () => {
     assert.ok(r.includes("t.image === undefined ? {} : { image: t.image?.trim() || null }"), "غيابُ الحقل لا يعني «لا تمسّها»");
   });
 });
+
+describe("🧩 محرّرُ «حسب الباقة» — بلاغاتُ محمد 2026-08-22", () => {
+  const UI = () => fs.readFileSync(path.join(process.cwd(), "src/app/(app)/sms-templates/page.tsx"), "utf8");
+
+  test("🔴 زرُّ الحفظ حاضرٌ في لوحة الباقات (كان غائباً فلا يُحفَظ ما يُكتَب)", () => {
+    const s = UI();
+    assert.ok(s.includes("حفظ قوالب الباقات"), "لا زرَّ حفظٍ في لوحة الباقات");
+    assert.ok(s.includes("onClick={save}"), "الزرُّ لا يُنادي دالّةَ الحفظ نفسَها");
+  });
+
+  test("🔁 القفلُ المتبادلُ يُرى لحظتَه: تفعيلُ الوضع يُطفئ دائرةَ «تذكير قبل الانتهاء»", () => {
+    const s = UI();
+    assert.ok(s.includes('expiring: { ...(m.expiring ?? { type: "expiring", text: "" }), type: "expiring", enable: on ? "0" : "1" }'),
+      "الدائرةُ لا تتغيّر إلّا بعد الحفظ");
+  });
+
+  test("🏷️ ولكلّ باقةٍ أزرارُ الحقول والمتغيّرات كبقيّة القوالب", () => {
+    const s = UI();
+    assert.ok(s.includes("insertIntoPkg(cur.text"), "لا أزرارَ حقولٍ في محرّر الباقة");
+    assert.ok(s.includes("EXTRA_VARS.expiring"), "لا متغيّراتٍ إضافيّة");
+    assert.ok(s.includes("ref={pkgTaRef}"), "الإدراجُ بلا مرجعٍ لموضع المؤشّر");
+  });
+});

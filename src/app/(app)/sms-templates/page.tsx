@@ -161,6 +161,24 @@ export default function SmsTemplatesPage() {
   const [pkgs, setPkgs] = useState<PkgTpl[]>([]);
   const [selPkg, setSelPkg] = useState<number | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  // 📦 مربّعُ نصّ الباقة له مرجعُه ودالّةُ إدراجه (طلبُ محمد 2026-08-22): كان مربّعاً عارياً
+  //    بلا أزرارِ حقول، فلا يستطيع إدراجَ اسم المشترك ولا تاريخ الانتهاء كبقيّة القوالب.
+  const pkgTaRef = useRef<HTMLTextAreaElement | null>(null);
+  function insertIntoPkg(text: string, snippet: string, fullLine: boolean, apply: (t: string) => void) {
+    const ta = pkgTaRef.current;
+    const pos = ta ? ta.selectionStart : text.length;
+    const before = text.slice(0, pos);
+    const after = text.slice(pos);
+    const nl = String.fromCharCode(10);
+    const ins = (fullLine && before.length > 0 && !before.endsWith(nl) ? nl : "") + snippet;
+    apply(before + ins + after);
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      ta.focus();
+      const q = pos + ins.length;
+      ta.setSelectionRange(q, q);
+    });
+  }
 
   // قوالب الأحداث تُعاد قراءتها عند تبديل المكتب (قالب المكتب إن وُجد وإلا العام)
   useEffect(() => {
@@ -462,7 +480,18 @@ export default function SmsTemplatesPage() {
               وباقةٌ تُترَك فارغةً لا تُرسَل لأصحابها.
             </div>
             <label className={`mb-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-bold ${pkgMode ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
-              <input type="checkbox" className="h-4 w-4" checked={pkgMode} onChange={(e) => { setPkgMode(e.target.checked); setSaved(false); }} />
+              <input type="checkbox" className="h-4 w-4" checked={pkgMode}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setPkgMode(on); setSaved(false);
+                  // 🔁 **القفلُ المتبادلُ يُرى لحظتَه** (طلبُ محمد): دائرةُ «تذكير قبل الانتهاء»
+                  //    تنطفئ فورَ التفعيل وتُضيء فورَ الإلغاء — بلا انتظار حفظٍ ولا إعادةِ قراءة.
+                  //    (والخادمُ يُثبّت الحالةَ نفسَها عند الحفظ، فلا يفترقان.)
+                  setEvents((m) => ({
+                    ...m,
+                    expiring: { ...(m.expiring ?? { type: "expiring", text: "" }), type: "expiring", enable: on ? "0" : "1" },
+                  }));
+                }} />
               تفعيل الوضع «حسب الباقة»
               <span className="mr-auto text-[11px] font-semibold text-slate-400">تفعيلُه يُطفئ «تذكير قبل الانتهاء» العامّ تلقائيّاً — ولا يعملان معاً أبداً</span>
             </label>
@@ -494,7 +523,31 @@ export default function SmsTemplatesPage() {
                           مفعّل
                         </label>
                       </div>
+                      {/* أزرارُ الحقول والمتغيّرات — نفسُها في قوالب الأحداث، وتُدرج بموضع المؤشّر */}
+                      <div>
+                        <div className="mb-1 text-xs font-semibold text-slate-500">أدرج حقلاً (يُدرج السطر كاملاً «اسم الحقل : القيمة»):</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {FIELDS.map((f) => (
+                            <button key={f.label} type="button"
+                              onClick={() => insertIntoPkg(cur.text ?? "", f.line, true, (t) => upd({ text: t }))}
+                              className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">
+                              {f.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mb-1 mt-2 text-xs font-semibold text-slate-500">متغيّرات إضافية (تُدرج كرمز):</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(EXTRA_VARS.expiring ?? []).map((v) => (
+                            <button key={v.token} type="button"
+                              onClick={() => insertIntoPkg(cur.text ?? "", v.token, false, (t) => upd({ text: t }))}
+                              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50">
+                              {v.label} <code className="text-[10px] text-slate-400" dir="ltr">{v.token}</code>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <textarea
+                        ref={pkgTaRef}
                         value={cur.text}
                         onChange={(e) => upd({ text: e.target.value })}
                         rows={8}
@@ -516,6 +569,16 @@ export default function SmsTemplatesPage() {
                 })()}
               </>
             )}
+
+            {/* 🔴 **زرُّ الحفظ كان غائباً عن هذه اللوحة** (بلاغُ محمد 2026-08-22): كان مكتوباً
+                داخل محرّر القوالب العاديّة وحدَه، فمن يكتب نصَّ باقةٍ لا يجد ما يحفظ به.
+                وهو نفسُ الزرّ ونفسُ الدالّة — لا مسارَ ثانٍ ولا سلوكَ مختلف. */}
+            {err && <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</div>}
+            {saved && <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">✓ تم حفظ القوالب</div>}
+            <button onClick={save} disabled={saving}
+              className="mt-4 w-full rounded-lg bg-mynet-blue py-2.5 font-semibold text-white hover:bg-mynet-blue-dark disabled:opacity-60">
+              {saving ? "جاري الحفظ..." : "حفظ قوالب الباقات"}
+            </button>
           </div>
         ) : (
         <>
