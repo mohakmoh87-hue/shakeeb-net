@@ -839,6 +839,13 @@ async function runOfficeSyncInner(
     const uKey = (list[0]?.username ?? sub?.netUser ?? "").trim().toLowerCase();
     const paid = await receiptsSumNear(uKey, sub?.id ?? null, at);
     if (paid >= totalActs) continue; // ✅ وصولاتُه تغطّي تفعيلاتِه ⇒ طبيعيّ
+    // 🤝 **خصمُ الديلر يُسكَت** (قرارُ محمد 2026-08-22 على حالةٍ حيّة): «ديلرُ الثلاثة
+    //    أشهرٍ يُفعَّل بكروتٍ خارجيّةٍ دائماً، ووصلُه مبلغُ ثلاثة أشهرٍ **ناقص خمسة آلاف**».
+    //    وقِيست الحالةُ ليلتَها: حوراء الخفاجي — ٣ كروتٍ بمجموع ١٣٥٬٠٠٠ ووصولاتٌ ١٣٠٬٠٠٠
+    //    ⇒ فارقٌ ٥٬٠٠٠ **بالضبط** = خصمُ الديلر لا مالٌ ناقص. فيُسكَت عنه بشرطَيه:
+    //    كارتان فأكثر (نمطُ الديلر) ووصلٌ موجودٌ فعلاً — وأيُّ فارقٍ آخرَ يبقى إنذاراً.
+    const DEALER_DISCOUNT = 5000;
+    if (paid > 0 && cardActs.length >= 2 && totalActs - paid === DEALER_DISCOUNT) continue;
     duplicates++;
     events.push({
       scenario: 2, subscriber: sub?.name ?? list[0]?.username ?? null,

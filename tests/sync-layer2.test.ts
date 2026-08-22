@@ -162,3 +162,16 @@ describe("🕵️ حارسُ المال يعرض الحكمَ الجديد", () 
     assert.ok(api.includes('kind: { in: ["info", "install", "self", "sas"] }'), "تسرّب نوعُ الكروت إلى النافذة");
   });
 });
+
+describe("🤝 خصمُ الديلر يُسكَت (قرارُ محمد 2026-08-22)", () => {
+  test("كارتان فأكثر + وصلٌ + فارقُ ٥٬٠٠٠ بالضبط ⇒ لا إنذار", () => {
+    const s = SYNC();
+    assert.ok(s.includes("const DEALER_DISCOUNT = 5000;"), "خصمُ الديلر غيرُ معرَّف");
+    assert.ok(s.includes("if (paid > 0 && cardActs.length >= 2 && totalActs - paid === DEALER_DISCOUNT) continue;"), "الخصمُ لا يُسكَت");
+  });
+
+  test("وأيُّ فارقٍ آخرَ يبقى إنذاراً (الشرطُ بالمساواة لا بأقلّ-من)", () => {
+    const s = SYNC();
+    assert.ok(!s.includes("totalActs - paid <= DEALER_DISCOUNT"), "أُسكت كلُّ فارقٍ صغير لا خصمُ الديلر وحدَه");
+  });
+});
