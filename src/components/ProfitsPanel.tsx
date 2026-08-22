@@ -53,7 +53,10 @@ export default function ProfitsPanel() {
   const [rep, setRep] = useState<Report | null>(null);
   const [rules, setRules] = useState<RulesData | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const [mode, setMode] = useState<"current" | "month" | "custom">("current");
+  // 🗓️ وضعان لا ثلاثة (قرارُ محمد 2026-08-22): «شهريّ» افتراضاً على الشهر الحاليّ،
+  //    و«مخصّص» لأيّ تاريخين. وأُلغي «الشهر الجاري» — فنقصُ أرقام هذا الشهر معلومٌ
+  //    ومقبولٌ عنده لأنّ العدّ بدأ اليوم، فلا حاجةَ لوضعٍ ثالثٍ يشرحه.
+  const [mode, setMode] = useState<"month" | "custom">("month");
   const [month, setMonth] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -79,10 +82,8 @@ export default function ProfitsPanel() {
         if (!restored.current) {
           restored.current = true;
           const v = d.view;
-          if (v && v.mode && v.mode !== "current") {
-            if (v.mode === "month" && v.month) { setMonth(v.month); setMode("month"); }
-            else if (v.mode === "custom" && v.from && v.to) { setFrom(v.from); setTo(v.to); setMode("custom"); }
-          }
+          if (v?.mode === "month" && v.month) { setMonth(v.month); setMode("month"); }
+          else if (v?.mode === "custom" && v.from && v.to) { setFrom(v.from); setTo(v.to); setMode("custom"); }
           if (v && Number(v.tower)) setTower(Number(v.tower));
         }
       }
@@ -119,7 +120,15 @@ export default function ProfitsPanel() {
     setBusy(true);
     const r = await fetch("/api/manager/profits", { method: "POST", credentials: "same-origin" });
     setBusy(false);
-    if (r.ok) { setMode("current"); setMsg("✅ بدأ شهرٌ جديد"); void load(); setTimeout(() => setMsg(""), 4000); }
+    // بعد بدء الشهر الجديد: تُعرَض أرقامُه هو (الشهرُ الجاري في التقويم)
+    if (r.ok) {
+      const d = (await r.json().catch(() => null)) as { period?: { from?: string } } | null;
+      if (d?.period?.from) {
+        const f = new Date(d.period.from);
+        setMonth(`${f.getUTCFullYear()}-${String(f.getUTCMonth() + 1).padStart(2, "0")}`);
+      }
+      setMode("month"); setMsg("✅ بدأ شهرٌ جديد"); void load(); setTimeout(() => setMsg(""), 4000);
+    }
   };
 
   const B = rep?.boxes;
@@ -142,7 +151,6 @@ export default function ProfitsPanel() {
       <div className="mb-3 flex flex-wrap items-center gap-2 text-[12px]">
         <span className="font-bold text-slate-700">المدّة:</span>
         {([
-          ["current", "الشهر الجاري", "شهرُك المحاسبيُّ الحاليّ — لا يتبدّل إلّا بضغط «شهر جديد» بعد انقضائه"],
           ["month", "شهريّ", "اختر شهراً فتُضبَط بدايتُه ونهايتُه وحدَهما"],
           ["custom", "مخصّص", "اختر أيَّ تاريخين"],
         ] as const).map(([m, t, tip]) => (
@@ -185,7 +193,7 @@ export default function ProfitsPanel() {
           {rep.warning.replace(/\*\*/g, "")}
         </div>
       )}
-      {rep?.period.ended && mode === "current" && (
+      {rep?.period.ended && (
         <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-800">
           🗓️ انقضى شهرُ هذه الفترة — والأرقامُ الجديدةُ تتراكم محفوظةً. اضغط «شهر جديد» لتظهر.
         </div>
