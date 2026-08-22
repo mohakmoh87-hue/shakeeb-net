@@ -301,17 +301,24 @@ export async function restoreReceipt(
       return fail("salary_locked", "هذه الحركةُ موسومةٌ بكشفِ راتبٍ أو تسديدِ مكتب — إرجاعُها يخلّ بحسابٍ مُقفَل");
     }
 
-    // إن كان الحذفُ عكسيّاً فالوثيقةُ نفسُها حُذفت معه ⇒ الإرجاعُ من الوثيقة لا من مالها
-    if (mode === "reverse" && tx.sourceId && (tx.sourceType === "activation" || tx.sourceType === "invoice")) {
-      const gone =
-        tx.sourceType === "activation"
-          ? await prisma.subscriptionEntry.findFirst({ where: { id: tx.sourceId, isDeleted: true }, select: { id: true } })
-          : await prisma.invoice.findFirst({ where: { id: tx.sourceId, isDeleted: true }, select: { id: true } });
-      if (gone) {
-        return fail("linked_doc_deleted",
-          tx.sourceType === "activation"
-            ? `هذا مالُ وصل تفعيلٍ محذوف (#${tx.sourceId}) — أرجِع الوصلَ نفسَه فيعود مالُه معه`
-            : `هذا مالُ فاتورةٍ محذوفة (#${tx.sourceId}) — أرجِع الفاتورةَ نفسَها`);
+    // 🔴 **العبرةُ بحال الوثيقة الآن لا بطريقة الحذف** (اصطادته تجربةُ dryRun على الإنتاج
+    //   2026-08-22): حين يُحذف الوصلُ تُطفأ حركاتُه **بلا قيدِ تدقيقٍ خاصٍّ بها** ⇒ `mode`
+    //   يخرج `null`، فلو عُلِّق الفحصُ على «عكسيّ» لمرّت أخطرُ الحالات: يعود المبلغُ إلى
+    //   الصندوق ووصلُه ما يزال مخفيّاً ⇒ رقمان لا يتّسقان وحالةٌ حرجةٌ في حارس المال.
+    //   وإن كانت الوثيقةُ **حيّةً** (حُذف قيدُها وحدَه من الصندوق) فالإرجاعُ صحيحٌ ويمرّ.
+    if (tx.sourceId) {
+      const linksEntry = tx.sourceType === "activation" || tx.sourceType === "master" || tx.sourceType === "manual";
+      const linksInvoice = tx.sourceType === "invoice" || tx.sourceType === "master-invoice";
+      if (linksEntry || linksInvoice) {
+        const gone = linksEntry
+          ? await prisma.subscriptionEntry.findFirst({ where: { id: tx.sourceId, isDeleted: true, ...scope }, select: { id: true } })
+          : await prisma.invoice.findFirst({ where: { id: tx.sourceId, isDeleted: true, ...scope }, select: { id: true } });
+        if (gone) {
+          return fail("linked_doc_deleted",
+            linksEntry
+              ? `هذا مالُ وصل تفعيلٍ محذوف (#${tx.sourceId}) — أرجِع الوصلَ نفسَه من هذه الصفحة فيعود مالُه معه`
+              : `هذا مالُ فاتورةٍ محذوفة (#${tx.sourceId}) — أرجِع الفاتورةَ نفسَها`);
+        }
       }
     }
     if (mode === "reverse" && tx.sourceType === "sale") {

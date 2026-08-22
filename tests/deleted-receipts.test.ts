@@ -205,6 +205,13 @@ describe("♻️ إرجاعُ الوصل المحذوف · المرحلة ٢", (
     assert.match(invBranch, /code: "invoice_reverse"/,
       "إرجاعُ فاتورةٍ عكسيّةٍ مسموح ⇒ فاتورةٌ فارغةٌ ومخزنٌ سالب");
     assert.match(eng, /fail\("linked_doc_deleted"/, "قيدُ مالٍ لوثيقةٍ محذوفةٍ يُرجَع وحدَه ⇒ استرجاعٌ نصفيّ");
+    // 🔴 ولا يُعلَّق هذا الفحصُ على طريقة الحذف: حركاتُ الوصل تُطفأ **بلا قيدِ تدقيق**
+    //   فيخرج mode = null — وهي أخطرُ الحالات. (اصطادته تجربةُ dryRun على الإنتاج.)
+    const moneyBranch = eng.slice(eng.indexOf('if (kind === "money")'), eng.indexOf("④"));
+    assert.ok(moneyBranch.length > 200, "فرعُ قيد الصندوق لم يُعثَر عليه");
+    const linkCheck = moneyBranch.slice(moneyBranch.indexOf("if (tx.sourceId)"), moneyBranch.indexOf('fail("linked_doc_deleted"'));
+    assert.equal(/mode === "reverse"/.test(linkCheck), false,
+      "فحصُ الوثيقة المرتبطة معلَّقٌ على «حُذف عكسيّاً» ⇒ يمرّ الاسترجاعُ النصفيّ حين لا قيدَ تدقيقٍ للحركة");
     // وزوجُ التحويل: الشقّان معاً أو لا شيء
     assert.match(eng, /fail\("pair_missing"/, "شقُّ تحويلٍ يُرجَع وحدَه ⇒ مالٌ من العدم");
     assert.match(eng, /const ids = pairId \? \[id, pairId\] : \[id\]/, "الشقّان لا يُرجَعان في كتابةٍ واحدة");
