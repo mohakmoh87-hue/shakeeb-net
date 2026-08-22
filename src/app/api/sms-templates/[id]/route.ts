@@ -10,6 +10,8 @@ const schema = z.object({
     .refine((v) => !(EVENT_TYPES as readonly string[]).includes(v), "هذا الاسم محجوز لقالب تلقائي"),
   text: z.string().nullable().optional(),
   enable: z.string().nullable().optional(),
+  // 🖼️ صورةُ القالب (data URI) — نفسُ سقف قوالب الأحداث (≈٣٠٠ ك.ب ملفّاً أصليّاً)
+  image: z.string().max(400_000, "الصورة أكبر من المسموح (٣٠٠ كيلوبايت)").nullable().optional(),
 });
 
 // القوالب الحرّة فقط (قوالب الأحداث تُدار حصراً عبر bulk — لا تُعاد تسميتها ولا تُحذف من هنا)

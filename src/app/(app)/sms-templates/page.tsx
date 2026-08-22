@@ -15,7 +15,8 @@ type EventTpl = { type: string; text: string; enable: string; officeCustom?: boo
 // الصفّ base64 (تضخيمُ ٣٣٪) و**تُقرأ في كلّ إرسال** على حاسبة المكتب — فصورةُ ٥ ميغا
 // تُثقل كلَّ رسالةٍ لكلّ مشتركٍ إلى الأبد. والخادمُ يحرس السقفَ أيضاً (٤٠٠ ألف حرف).
 const IMAGE_MAX_BYTES = 300 * 1024;
-type CustomTpl = { id: number; name: string; text: string; dirty?: boolean };
+// 🖼️ والقالبُ الحرُّ يحمل صورةً كغيره (بلاغُ محمد 2026-08-22: «كلُّ القوالب بكلّ أنواعها»)
+type CustomTpl = { id: number; name: string; text: string; dirty?: boolean; image?: string | null; imageDirty?: boolean };
 type Office = { id: number; name: string | null };
 // 📦 قالبُ باقةٍ واحدة في وضع «حسب الباقة» — نفسُ حقول قالب الحدث + هويّةُ الباقة
 type PkgTpl = { packageId: number; name: string; price: number; text: string; enable: string;
@@ -218,6 +219,8 @@ export default function SmsTemplatesPage() {
   const curEvent = isEvent ? (events[selType] ?? { type: selType, text: "", enable: "1" }) : null;
   const curCustom = !isEvent ? customs.find((c) => c.id === selId) : null;
   const curText = isEvent ? (curEvent?.text ?? "") : (curCustom?.text ?? "");
+  // 🖼️ صورةُ القالب المعروض — حدثاً كان أو قالباً حرّاً (كانت مقصورةً على الأحداث)
+  const curImg = isEvent ? (curEvent?.image ?? null) : (curCustom?.image ?? null);
   const curName = isEvent ? (EVENTS.find((e) => e.type === selType)?.name ?? selType) : (curCustom?.name ?? "");
   const curHint = isEvent ? (EVENTS.find((e) => e.type === selType)?.hint ?? "") : "قالب حر — يظهر في «القوالب الجاهزة» عند إرسال رسالة يدوية من صفحة الرسائل";
 
@@ -229,12 +232,35 @@ export default function SmsTemplatesPage() {
   };
   // 🖼️ تعيينُ/حذفُ صورة القالب — كالنصّ: التعديلُ تحت مكتبٍ يجعله تخصيصاً لذلك المكتب
   const setImage = (image: string | null) => {
-    if (!isEvent) return;
     setSaved(false);
+    if (!isEvent) { // 🖼️ قالبٌ حرّ: صورتُه صورتُه — لا وراثةَ مكتبٍ فيه
+      setCustoms((cs) => cs.map((c) => (c.id === selId ? { ...c, image, dirty: true, imageDirty: true } : c)));
+      return;
+    }
     setEvents((m) => ({ ...m, [selType]: { ...(m[selType] ?? { type: selType, text: "", enable: "1" }), type: selType,
       text: m[selType]?.text ?? "", enable: m[selType]?.enable ?? "1", image, imageOwn: image != null, imageDirty: true,
       reset: false, ...(officeSel ? { officeCustom: true } : {}) } }));
   };
+
+  // 🖼️ قارئُ صورةِ باقةٍ بعينها — نفسُ الفحوص والسقف، والوجهةُ صفُّ الباقة لا القالب المعروض
+  async function pickPkgImage(file: File | null | undefined, apply: (img: string) => void) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setErr("الملفّ ليس صورة"); return; }
+    if (file.size > IMAGE_MAX_BYTES) {
+      setErr(`الصورة ${Math.round(file.size / 1024)} كيلوبايت — والحدُّ ${IMAGE_MAX_BYTES / 1024} كيلوبايت. اختر صورةً أصغر أو اضغطها.`);
+      return;
+    }
+    setErr("");
+    const dataUri = await new Promise<string | null>((res) => {
+      const fr = new FileReader();
+      fr.onload = () => res(typeof fr.result === "string" ? fr.result : null);
+      fr.onerror = () => res(null);
+      fr.readAsDataURL(file);
+    });
+    if (!dataUri) { setErr("تعذّر قراءة الصورة"); return; }
+    setSaved(false);
+    apply(dataUri);
+  }
 
   async function pickImage(file: File | null | undefined) {
     if (!file) return;
@@ -373,13 +399,14 @@ export default function SmsTemplatesPage() {
     for (const c of customs.filter((x) => x.dirty)) {
       const r2 = await fetch(`/api/sms-templates/${c.id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: c.name, text: c.text }),
+        // 🖼️ الصورةُ تُرسَل إن لُمست فقط — فلا تُمحى صورةٌ قائمةٌ بحفظٍ عابر
+        body: JSON.stringify({ type: c.name, text: c.text, ...(c.imageDirty ? { image: c.image ?? null } : {}) }),
       });
       ok = ok && r2.ok;
     }
     setSaving(false);
     if (ok) {
-      setSaved(true); setCustoms((cs) => cs.map((c) => ({ ...c, dirty: false })));
+      setSaved(true); setCustoms((cs) => cs.map((c) => ({ ...c, dirty: false, imageDirty: false })));
       // 🔒 أثرُ القفل المتبادل: تفعيلُ «تذكير قبل الانتهاء» يُطفئ وضعَ الباقات على الخادم
       if ((events["expiring"]?.enable ?? "1") !== "0" && pkgMode) setPkgMode(false);
       // إعادة القراءة: تعكس حالة التخصيص الفعلية (خاصة بعد «استخدام قالب الوكيل»)
@@ -555,6 +582,38 @@ export default function SmsTemplatesPage() {
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-mynet-blue"
                         dir="rtl"
                       />
+                      {/* 🖼️ صورةٌ لكلّ باقةٍ على حِدة — كانت المعاينةُ تعرضها ولا سبيلَ لرفعها */}
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-xs font-semibold text-slate-600">
+                            صورة مع الرسالة <span className="font-normal text-slate-400">(اختيارية — لهذه الباقة وحدَها)</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <label className="cursor-pointer rounded-lg bg-mynet-blue px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90">
+                              {cur.image ? "تغيير الصورة" : "إضافة صورة"}
+                              <input type="file" accept="image/*" className="hidden"
+                                onChange={(e) => { void pickPkgImage(e.target.files?.[0], (img) => upd({ image: img, imageDirty: true })); e.target.value = ""; }} />
+                            </label>
+                            {cur.image && (
+                              <button onClick={() => upd({ image: null, imageDirty: true })}
+                                className="rounded-lg bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-100">
+                                حذف الصورة
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {cur.image ? (
+                          <div className="flex items-start gap-3">
+                            {/* eslint-disable-next-line @next/next/no-img-element -- data URI محليّة */}
+                            <img src={cur.image} alt="صورة القالب" className="max-h-32 rounded-lg border border-slate-200 bg-white object-contain" />
+                            <div className="text-[11px] text-slate-500">≈ {Math.round((cur.image.length * 3) / 4 / 1024)} كيلوبايت</div>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-slate-400">بلا صورة — تُرسَل الرسالةُ نصّاً فقط</div>
+                        )}
+                      </div>
+
+                      <div className="mb-2 text-sm font-semibold text-slate-700">معاينة الرسالة (بيانات تجريبية)</div>
                       <div className="rounded-xl bg-[#e5ddd5] p-4">
                         <div className="mr-auto max-w-full whitespace-pre-wrap rounded-lg rounded-tr-none bg-[#dcf8c6] px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm" dir="rtl">
                           {cur.image && (
@@ -621,8 +680,9 @@ export default function SmsTemplatesPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-mynet-blue"
           />
 
-          {/* 🖼️ البند ٣ · صورةٌ ترافق الرسالة — تُرسَل **مع النصّ تعليقاً واحداً** لا رسالتَين */}
-          {isEvent && (
+          {/* 🖼️ البند ٣ · صورةٌ ترافق الرسالة — تُرسَل **مع النصّ تعليقاً واحداً** لا رسالتَين.
+              وتشمل **القوالبَ الحرّة** أيضاً منذ 2026-08-22 (كانت لقوالب الأحداث وحدَها). */}
+          {(isEvent || !!curCustom) && (
             <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <div className="text-xs font-semibold text-slate-600">
@@ -631,26 +691,26 @@ export default function SmsTemplatesPage() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <label className="cursor-pointer rounded-lg bg-mynet-blue px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90">
-                    {curEvent?.image ? "تغيير الصورة" : "إضافة صورة"}
+                    {curImg ? "تغيير الصورة" : "إضافة صورة"}
                     <input
                       type="file" accept="image/*" className="hidden"
                       onChange={(e) => { void pickImage(e.target.files?.[0]); e.target.value = ""; }}
                     />
                   </label>
-                  {curEvent?.image && curEvent?.imageOwn && (
+                  {curImg && (isEvent ? curEvent?.imageOwn : true) && (
                     <button onClick={() => setImage(null)} className="rounded-lg bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-100">
                       حذف الصورة
                     </button>
                   )}
                 </div>
               </div>
-              {curEvent?.image ? (
+              {curImg ? (
                 <div className="flex items-start gap-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={curEvent.image} alt="صورة القالب" className="max-h-32 rounded-lg border border-slate-200 bg-white object-contain" />
+                  <img src={curImg} alt="صورة القالب" className="max-h-32 rounded-lg border border-slate-200 bg-white object-contain" />
                   <div className="text-[11px] leading-relaxed text-slate-500">
-                    ≈ {Math.round((curEvent.image.length * 3) / 4 / 1024)} كيلوبايت
-                    {officeSel && !curEvent.imageOwn && (
+                    ≈ {Math.round((curImg.length * 3) / 4 / 1024)} كيلوبايت
+                    {isEvent && officeSel && !curEvent?.imageOwn && (
                       <span className="mt-1 block rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-500">
                         موروثة من القالب العام — لتخصيص صورةٍ لهذا المكتب اضغط «تغيير الصورة»
                       </span>
@@ -713,9 +773,9 @@ export default function SmsTemplatesPage() {
                    المعاينة». وكانت المعاينةُ تعرض النصَّ وحدَه فعلاً، والصورةُ في مربّعٍ
                    منفصلٍ بجانب زرّ الرفع — فلا شيءَ يقول إنّها ستُرسَل معه. وواتسابُ
                    يعرضها هكذا بالضبط: صورةٌ يعلوها النصُّ تعليقاً في **رسالةٍ واحدة**. */}
-              {curEvent?.image && (
+              {curImg && (
                 // eslint-disable-next-line @next/next/no-img-element -- صورةُ القالب data URI محليّةٌ لا تمرّ بمُحسِّن الصور
-                <img src={curEvent.image} alt="صورة القالب" className="mb-1.5 max-h-56 w-full rounded-md object-contain" />
+                <img src={curImg} alt="صورة القالب" className="mb-1.5 max-h-56 w-full rounded-md object-contain" />
               )}
               {curText ? <BoldText text={preview} /> : <span className="text-slate-400">لا يوجد نص بعد — اكتب في المحرّر أو أدرج الحقول</span>}
             </div>

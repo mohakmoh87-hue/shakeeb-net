@@ -168,6 +168,14 @@ export async function drainSelfActivatedQueue(towerId: number): Promise<{ sent: 
     }
     // ٢) إرسالُ الباقي — سقفُ الدورة والباقي في التالية، **وبفاصلٍ بين رسالةٍ وأخرى**
     const pend = ours.filter((m) => m.date >= cutoff).slice(0, SELF_ACT_BATCH);
+    // 🖼️ صورةُ القالب تُقرأ **مرّةً** لهذا المكتب وتُرسَل مع كلّ رسالةٍ في الدورة —
+    //    فصفُّ الطابور يخزّن النصَّ وحدَه، وكانت رسائلُه تصل بلا صورةٍ أبداً (2026-08-22).
+    let queueImage: string | null = null;
+    try {
+      const t = await prisma.tower.findUnique({ where: { id: towerId }, select: { agentId: true } });
+      const tpl = await getEffectiveTemplateFull("selfActivated", t?.agentId ?? null, towerId);
+      queueImage = tpl?.image ?? null;
+    } catch { /* بلا صورةٍ خيرٌ من إسقاط الطابور */ }
     let first = true;
     for (const m of pend) {
       if (!m.phone) { await prisma.message.deleteMany({ where: { id: m.id } }); continue; }
@@ -180,7 +188,7 @@ export async function drainSelfActivatedQueue(towerId: number): Promise<{ sent: 
         data: { status: "SENT", error: null },
       });
       if (claim.count !== 1) continue;
-      const res = await sendViaProvider("WHATSAPP", m.phone, m.text, towerId);
+      const res = await sendViaProvider("WHATSAPP", m.phone, m.text, towerId, queueImage);
       if (res.ok) out.sent++;
       else {
         out.failed++;

@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { renderTemplate, sendViaProvider } from "@/lib/messaging";
+import { renderTemplate, sendViaProvider, imageNote } from "@/lib/messaging";
 
 // ===== نظام مكافآت المشتركين (أكواد خصم) =====
 // عند كل تفعيل يتراكم رصيد مكافأة (= مبلغ الباقة × عدد الأشهر) ويُولَّد كود 8 خانات
@@ -192,6 +192,22 @@ const DEFAULT_USED_TPL =
 
 // جلب قالب مكافأة: قالب المكتب المخصّص أولاً ثم قالب الوكيل العام (عزل المستأجر والمكتب).
 // يعيد null إن كان القالب الغالب معطّلاً صراحةً.
+// 🖼️ يعيد النصَّ **ومعه صورةُ القالب** (بلاغُ محمد 2026-08-22: كلُّ القوالب تقبل صورة)
+async function rewardTemplateFull(type: "reward" | "rewardUsed", agentId: number | null, officeId?: number | null): Promise<{ text: string; image: string | null } | null> {
+  const text = await rewardTemplate(type, agentId, officeId);
+  if (!text) return null;
+  let image: string | null = null;
+  if (officeId != null) {
+    const o = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1, towerId: officeId }, select: { image: true } });
+    image = o?.image?.trim() || null;
+  }
+  if (!image) {
+    const a = await prisma.smsTemplate.findFirst({ where: { type, agentId: agentId ?? -1, towerId: null }, select: { image: true } });
+    image = a?.image?.trim() || null;
+  }
+  return { text, image };
+}
+
 async function rewardTemplate(type: "reward" | "rewardUsed", agentId: number | null, officeId?: number | null): Promise<string | null> {
   const fallback = type === "reward" ? DEFAULT_GRANT_TPL : DEFAULT_USED_TPL;
   if (officeId != null) {
@@ -218,16 +234,16 @@ export async function sendRewardGrantMessage(a: {
     if (a.waEnabled === false || !a.phone) return;
     const office = a.officeId ? await prisma.tower.findUnique({ where: { id: a.officeId }, select: { name: true, waEnabled: true } }) : null;
     if (office?.waEnabled === "0") return;
-    const tpl = await rewardTemplate("reward", a.agentId, a.officeId);
+    const tpl = await rewardTemplateFull("reward", a.agentId, a.officeId);
     if (!tpl) return;
-    const text = renderTemplate(tpl, {
+    const text = renderTemplate(tpl.text, {
       name: a.name, netUser: a.netUser, code: a.code,
       balance: a.balance, granted: a.granted, amount: a.granted,
       office: office?.name ?? "SHAKEEB",
     });
-    const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId);
+    const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId, tpl.image);
     await prisma.message.create({
-      data: { channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text, status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: a.createdByUser },
+      data: { channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text, status: res.ok ? "SENT" : "FAILED", error: res.error ?? imageNote(res), createdByUser: a.createdByUser },
     });
   } catch { /* لا نُفشل التفعيل بسبب رسالة */ }
 }
@@ -242,12 +258,12 @@ export async function sendRewardUsedMessage(a: {
     if (a.waEnabled === false || !a.phone) return;
     const office = a.officeId ? await prisma.tower.findUnique({ where: { id: a.officeId }, select: { name: true, waEnabled: true } }) : null;
     if (office?.waEnabled === "0") return;
-    const tpl = await rewardTemplate("rewardUsed", a.agentId, a.officeId);
+    const tpl = await rewardTemplateFull("rewardUsed", a.agentId, a.officeId);
     if (!tpl) return;
-    const text = renderTemplate(tpl, { name: a.name, amount: a.discount, balance: a.balance, office: office?.name ?? "SHAKEEB" });
-    const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId);
+    const text = renderTemplate(tpl.text, { name: a.name, amount: a.discount, balance: a.balance, office: office?.name ?? "SHAKEEB" });
+    const res = await sendViaProvider("WHATSAPP", a.phone, text, a.officeId, tpl.image);
     await prisma.message.create({
-      data: { channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text, status: res.ok ? "SENT" : "FAILED", error: res.error ?? null, createdByUser: a.createdByUser, agentId: a.agentId ?? null },
+      data: { channel: "WHATSAPP", subscriberId: a.subscriberId, phone: a.phone, text, status: res.ok ? "SENT" : "FAILED", error: res.error ?? imageNote(res), createdByUser: a.createdByUser, agentId: a.agentId ?? null },
     });
   } catch { /* تجاهل */ }
 }

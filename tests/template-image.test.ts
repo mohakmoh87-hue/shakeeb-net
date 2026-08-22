@@ -206,3 +206,35 @@ describe("🖼️ تحميلُ MessageMedia", () => {
     assert.ok(wa.includes("await client.sendMessage(waId, text);"), "النصُّ لم يعد يُرسَل عند فشل الصورة");
   });
 });
+
+describe("🖼️ كلُّ القوالب تقبل صورة (تدقيقُ محمد 2026-08-22)", () => {
+  const rd = (f: string) => fs.readFileSync(path.join(process.cwd(), f), "utf8");
+
+  test("القوالبُ الحرّة («قوالبي») صار لها زرُّ صورةٍ ومسارٌ يقبلها", () => {
+    const ui = rd("src/app/(app)/sms-templates/page.tsx");
+    assert.ok(ui.includes("{(isEvent || !!curCustom) && ("), "كتلةُ الصورة ما زالت للأحداث وحدَها");
+    assert.ok(ui.includes("const curImg = isEvent ?"), "لا مصدرَ موحَّدٌ لصورة القالب");
+    assert.ok(ui.includes("...(c.imageDirty ? { image: c.image ?? null } : {})"), "الحفظُ لا يُرسل صورةَ القالب الحرّ");
+    const api = rd("src/app/api/sms-templates/[id]/route.ts");
+    assert.ok(api.includes("image: z.string().max(400_000"), "المسارُ يرفض الصورة");
+  });
+
+  test("وقوالبُ «حسب الباقة» لكلّ باقةٍ صورتُها ومعاينتُها معنونة", () => {
+    const ui = rd("src/app/(app)/sms-templates/page.tsx");
+    assert.ok(ui.includes("pickPkgImage(e.target.files?.[0]"), "لا زرَّ صورةٍ لباقة");
+    assert.ok(ui.includes("(اختيارية — لهذه الباقة وحدَها)"), "كتلةُ الصورة غائبةٌ عن لوحة الباقات");
+    assert.ok(ui.includes("معاينة الرسالة (بيانات تجريبية)"), "المعاينةُ بلا عنوان");
+  });
+
+  test("ورسالتا المكافأة تُرسَلان بصورة القالب", () => {
+    const r = rd("src/lib/rewards.ts");
+    assert.ok(r.includes("rewardTemplateFull("), "قالبُ المكافأة ما زال نصّاً بلا صورة");
+    assert.ok(!/sendViaProvider\("WHATSAPP", a\.phone, text, a\.officeId\)/.test(r), "بقي إرسالُ مكافأةٍ بلا صورة");
+  });
+
+  test("وطابورُ «فعّل بنفسه» يقرأ صورةَ القالب لحظةَ الإرسال", () => {
+    const s = rd("src/lib/selfActivatedNotice.ts");
+    assert.ok(s.includes("queueImage"), "الطابورُ يُرسل بلا صورة");
+    assert.ok(s.includes('sendViaProvider("WHATSAPP", m.phone, m.text, towerId, queueImage)'), "الصورةُ لا تُمرَّر للمُرسِل");
+  });
+});
