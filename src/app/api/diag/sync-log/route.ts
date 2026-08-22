@@ -26,6 +26,57 @@ export async function GET(req: Request) {
   if (!towers.length) return NextResponse.json({ error: "لا مكاتبَ في حسابك" }, { status: 403 });
 
   const sp = new URL(req.url).searchParams;
+
+  // ═════ 📏 قياسُ «ما أُغلق ولم يُصحَّح» — قبل تغيير سلوكٍ لا بعده ═════
+  // صفوفُ أحداثٍ **مُغلَقة** (اعتُبرت معالَجةً) وتاريخُ الساس فيها ما زال يخالف تاريخَنا
+  // ⇒ هؤلاء هم الذين سيعودون فرقَ أيّامٍ في «تحديث معلومات». يُقاس عددُهم قبل النشر
+  // فلا تُفاجَأ النافذةُ بدفعةٍ مجهولة. قراءةٌ محضة.
+  if (sp.get("stale") === "1") {
+    try {
+      const rows = await prisma.syncLog.findMany({
+        where: {
+          towerId: { in: towers }, kind: { in: ["sas", "self", "install"] },
+          status: { not: "pending" }, activatedAt: { not: null }, sasDateTo: { not: null },
+          subscriberId: { not: null },
+        },
+        orderBy: { id: "desc" }, take: 800,
+        select: { id: true, towerId: true, kind: true, status: true, netUser: true, subscriberId: true, sasDateTo: true, activatedAt: true, handledBy: true, handledAt: true },
+      });
+      const ids = [...new Set(rows.map((r) => r.subscriberId!).filter(Boolean))];
+      const subs = ids.length
+        ? await prisma.subscriber.findMany({ where: { id: { in: ids }, isDeleted: false }, select: { id: true, dateTo: true, netUser: true } })
+        : [];
+      const byId = new Map(subs.map((s) => [s.id, s]));
+      const TOL = 12 * 3600_000;
+      const gain: Record<string, unknown>[] = [];
+      const loss: Record<string, unknown>[] = [];
+      const seen = new Set<number>();
+      for (const r of rows) {
+        const s = r.subscriberId != null ? byId.get(r.subscriberId) : undefined;
+        if (!s?.dateTo || !r.sasDateTo) continue;
+        if (seen.has(s.id)) continue; // أحدثُ صفٍّ لكلّ مشترك يكفي
+        const diff = r.sasDateTo.getTime() - s.dateTo.getTime();
+        if (Math.abs(diff) <= TOL) continue;
+        seen.add(s.id);
+        const row = {
+          netUser: s.netUser, tower: r.towerId, kind: r.kind, status: r.status,
+          عندنا: s.dateTo, الساس: r.sasDateTo, أيّام: Math.round(diff / 86400000),
+          أغلقها: r.handledBy, وقت: r.handledAt,
+        };
+        (diff > 0 ? gain : loss).push(row);
+      }
+      const byTower = (list: Record<string, unknown>[]) => list.reduce((m: Record<string, number>, x) => { const k = String(x.tower); m[k] = (m[k] ?? 0) + 1; return m; }, {});
+      return NextResponse.json({
+        فُحص: rows.length,
+        الساس_أحدث_من_تاريخنا: { عدد: gain.length, حسب_المكتب: byTower(gain), عيّنة: gain.slice(0, 15) },
+        تاريخنا_أحدث_من_الساس: { عدد: loss.length, حسب_المكتب: byTower(loss), عيّنة: loss.slice(0, 8) },
+      });
+    } catch (e) {
+      if (tableMissing(e)) return NextResponse.json({ dormant: true });
+      throw e;
+    }
+  }
+
   const user = (sp.get("user") ?? "").trim();
   const sasId = Number(sp.get("sasId")) || null;
   const limit = Math.min(Math.max(Number(sp.get("limit")) || 40, 1), 200);

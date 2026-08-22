@@ -175,3 +175,24 @@ describe("🤝 خصمُ الديلر يُسكَت (قرارُ محمد 2026-08-2
     assert.ok(!s.includes("totalActs - paid <= DEALER_DISCOUNT"), "أُسكت كلُّ فارقٍ صغير لا خصمُ الديلر وحدَه");
   });
 });
+
+describe("📅 «اعتُبر معالَجاً» لا يبتلع فرقَ الأيّام (قرارُ محمد 2026-08-22)", () => {
+  test("المعلَّقُ وحدَه يُسكِت فرقَ التاريخ — لا كلُّ صفٍّ مُغلَق", () => {
+    const s = SYNC();
+    const i = s.indexOf("const openEvent = await prisma.syncLog.findFirst(");
+    assert.ok(i > 0, "حارسُ الازدواج غائب");
+    const block = s.slice(i, i + 600);
+    assert.ok(block.includes('status: "pending"'), "ما زال أيُّ صفٍّ مُغلَقٍ يُسكِت الفرق");
+    assert.ok(block.includes("sasDateTo: { gte: expLo, lte: expHi }"), "ضاع تقييدُ الحارس بالواقعة");
+  });
+
+  test("والمُطبَّقُ لا يعود: تطابقُ التاريخ يمنع الرصدَ من أصله", () => {
+    assert.ok(SYNC().includes("if (oday !== nday && !sameExpiry(p.dateTo, validDate)) {"), "شرطُ التطابق غاب");
+  });
+
+  test("🔬 والمسبارُ يقيس ما سيعود قبل أن يعود", () => {
+    const d = read("src/app/api/diag/sync-log/route.ts");
+    assert.ok(d.includes('sp.get("stale") === "1"'), "لا وضعَ قياسٍ في المسبار");
+    assert.ok(d.includes('status: { not: "pending" }'), "القياسُ لا يستهدف المُغلَق");
+  });
+});

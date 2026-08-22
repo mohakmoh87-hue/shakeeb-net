@@ -1198,9 +1198,17 @@ async function runOfficeSyncInner(
               //    الواقعة نفسِها؛ وصفٌّ بلا تاريخٍ يُقبَل حارساً ثلاثةَ أيّامٍ فقط.
               const expLo = validDate ? new Date(validDate.getTime() - EXP_TOL_MS) : null;
               const expHi = validDate ? new Date(validDate.getTime() + EXP_TOL_MS) : null;
+              // 🔴 **والحارسُ يمنع الازدواجَ لا يبتلع الفرق** (قرارُ محمد 2026-08-22):
+              //    «اعتُبر معالَجاً» يُغلق صفَّ الحدث **ولا يمسّ التاريخ**، وكان الحارسُ بعدها
+              //    يُسكِت فرقَ الأيّام إلى الأبد — فبقيت تواريخُ مشتركين متأخّرةً ٢٤ و٣١ و٣٤
+              //    يوماً وهم فعّالون (تصلهم رسالةُ انتهاءٍ ظلماً). الآن: **المعلَّقُ وحدَه**
+              //    يُسكِت (فلا يظهر في تبويبَين معاً)، وما أُغلق يعود فرقَ تاريخٍ في
+              //    «تحديث معلومات» تضغط عليه «تحديث» فيُصحَّح. والمُطبَّقُ لا يعود أصلاً —
+              //    فتاريخُنا صار مطابقاً فلا فرقَ يُرصَد.
               const openEvent = await prisma.syncLog.findFirst({
                 where: {
                   towerId: officeId, sasId: u.sasId, kind: { in: ["sas", "self", "install"] },
+                  status: "pending",
                   activatedAt: { not: null },
                   ...(expLo && expHi
                     ? {
