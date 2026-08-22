@@ -41,7 +41,8 @@ describe("♻️ سجلّ المزامنة التفاعليّ ودفعةُ ال�
     assert.ok(src.includes('await recordActivationEvent(managerIsPage ? "sas" : "self"'), "التصنيفُ بالمنجر غاب");
     assert.ok(src.includes("await recordCompanyActivation("), "تفعيلُ الشركة/الديلر ما زال يسقط في الفراغ");
     // ولا حدثَ إن كان مقبوضاً عندنا: غطاءُ التاريخ ثمّ الوصل
-    assert.ok(src.includes("if (covered) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }"), "غطاءُ التاريخ غاب");
+    // (وأُضيف إليه `actedSasIds.add` صراحةً 2026-08-22 — فالإسكاتُ صار في كلّ فرعٍ بحسبه)
+    assert.ok(src.includes("if (covered) { actedSasIds.add(a.sasUserId); await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }"), "غطاءُ التاريخ غاب");
     // 💰 وصار الفحصُ على **اليوزر** (كلّ صفوفه) وبتاريخَين: قربُ الوصل من التفعيل أو
     //    انتهاءُ الوصل بانتهاء الساس — حالةُ bg-13-6-3@mu (الوصلُ في صفٍّ والرصدُ على آخر).
     assert.ok(src.includes("if (await collectedByUs(subUserKey, sub.id, actAt, validNewExp)) {"), "فحصُ الوصل غاب");

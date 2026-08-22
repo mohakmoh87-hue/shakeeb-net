@@ -123,15 +123,16 @@ export const LOAN_NOTE = "💸 قرض (مبلغ صفر بلا كارت)";
  *     بعد يومٍ لمجرّد أنّ تفعيلتَه خرجت من النافذة؛ يُغلقه الوصلُ أو قرارُك وحدَهما. */
 export async function recordCompanyActivation(
   p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean; managerName?: string | null },
-): Promise<void> {
+): Promise<EventOutcome> {
   try {
     const from = new Date(p.activatedAt.getTime() - 30 * 60_000);
     const to = new Date(p.activatedAt.getTime() + 30 * 60_000);
     const existing = await prisma.syncLog.findFirst({
       where: { towerId: p.towerId, sasId: p.sasId, kind: "install", activatedAt: { gte: from, lte: to } },
-      select: { id: true },
+      select: { id: true, status: true },
     });
-    if (existing) return;
+    // كسابقتها: الحالةُ تُقال — فصفٌّ مُغلَقٌ لا بيتَ للواقعة فيه ولا يُسكِت فرقَ الأيّام
+    if (existing) return existing.status === "pending" ? "open" : "closed";
     await prisma.syncLog.create({
       data: {
         agentId: p.agentId, towerId: p.towerId, kind: "install", sasId: p.sasId, subscriberId: p.subscriberId,
@@ -141,8 +142,10 @@ export async function recordCompanyActivation(
         note: p.loan ? LOAN_NOTE : `🏢 تفعيلُ شركة/ديلر${p.managerName ? ` — ${p.managerName}` : ""}`,
       },
     });
+    return "created";
   } catch (e) {
     if (!tableMissing(e)) console.error("[sync-log] تعذّر تسجيل تفعيل شركة:", e instanceof Error ? e.message : e);
+    return "open"; // تعذّرَ التسجيلُ ⇒ لا يُفتَح بابٌ ثانٍ بالخطأ
   }
 }
 
@@ -252,8 +255,16 @@ export async function reconcileStolenCards(
   }
 }
 
+/**
+ * نتيجةُ تسجيل حدث: أُنشئ الآن · موجودٌ **معلَّق** · موجودٌ **مُغلَق**.
+ * 🔑 ولماذا يهمّ التمييز؟ لأنّ صفّاً مُغلَقاً («اعتُبر معالَجاً») **لا بيتَ للواقعة فيه**:
+ *    فلو أسكتنا فرقَ الأيّام بحجّة «بيتُها تبويبُ التفعيل» لضاع الفرقُ إلى الأبد — وهو
+ *    ما وقع فعلاً (ثلاثةُ مشتركين تأخّرت تواريخُهم ٢٤ و٣١ و٣٤ يوماً وهم فعّالون).
+ */
+export type EventOutcome = "created" | "open" | "closed";
+
 /** حدثُ تفعيلٍ (تبويب ٣ ذاتيّ · تبويب ٤ صفحة بلا وصل) — صفٌّ لكلّ تفعيلة */
-export async function recordActivationEvent(kind: "self" | "sas", p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean }): Promise<void> {
+export async function recordActivationEvent(kind: "self" | "sas", p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean }): Promise<EventOutcome> {
   try {
     // ⏱️ **دقّةُ منع التكرار ±٣٠ دقيقة لا ±١٢ ساعة** (مراجعة 2026-08-21): النافذةُ الواسعة
     // كانت تبتلع **الحدثَ الثاني في اليوم نفسِه** — وهي حالةٌ في تصنيف محمد (نوع ٢: ديلر
@@ -262,9 +273,10 @@ export async function recordActivationEvent(kind: "self" | "sas", p: StatePayloa
     const dayEnd = new Date(p.activatedAt.getTime() + 30 * 60_000);
     const existing = await prisma.syncLog.findFirst({
       where: { towerId: p.towerId, sasId: p.sasId, kind, activatedAt: { gte: dayStart, lte: dayEnd } },
-      select: { id: true },
+      select: { id: true, status: true },
     });
-    if (existing) return; // الحدثُ مسجَّلٌ (بأيّ حالة) — لا يتوالد مع كلّ دورة
+    // الحدثُ مسجَّلٌ ⇒ لا يتوالد مع كلّ دورة، لكن **تُقال حالتُه** ليُعرَف أله بيتٌ أم لا
+    if (existing) return existing.status === "pending" ? "open" : "closed";
     await prisma.syncLog.create({
       data: {
         agentId: p.agentId, towerId: p.towerId, kind, sasId: p.sasId, subscriberId: p.subscriberId,
@@ -278,8 +290,10 @@ export async function recordActivationEvent(kind: "self" | "sas", p: StatePayloa
         ...(p.loan ? { note: LOAN_NOTE, status: "done", handledAt: new Date() } : {}),
       },
     });
+    return "created";
   } catch (e) {
     if (!tableMissing(e)) console.error("[sync-log] تعذّر تسجيل حدث تفعيل:", e instanceof Error ? e.message : e);
+    return "open"; // تعذّرَ التسجيلُ ⇒ لا يُفتَح بابٌ ثانٍ بالخطأ
   }
 }
 

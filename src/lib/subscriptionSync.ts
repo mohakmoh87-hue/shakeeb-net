@@ -11,7 +11,7 @@ import { iraqYesterdayRange, iraqTodayRange } from "@/lib/dailyReport";
 import { matcherForOffice } from "@/lib/packageMatch";
 import { credsOfPanel, credsOfTower, panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 // 📋 سجلّ المزامنة (2026-08-20): المزامنةُ ترصد وتكتب في السجلّ، والتطبيقُ بيد صاحب الصلاحيّة
-import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, reconcileEvents, reconcileStolenCards, closeDeadSasRows, recordExternalCardCase, recordStolenCardCase, isOwnCabinet, isOfferPackage, type InfoChange } from "@/lib/syncLog";
+import { recordInfoDiff, recordInstall, recordActivationEvent, recordCompanyActivation, resolveEventIfReceipted, reconcileInstalls, reconcileInfo, reconcileEvents, reconcileStolenCards, closeDeadSasRows, recordExternalCardCase, recordStolenCardCase, isOwnCabinet, isOfferPackage, type InfoChange, type EventOutcome } from "@/lib/syncLog";
 import { getSyncAutoMsgFlags, sendSyncLogMessage } from "@/lib/syncAutoMsg";
 
 // ═════ ✍️ اسمٌ عندنا يحمل ملاحظةً فوق اسم الساس (مراجعةُ محمد 2026-08-21) ═════
@@ -749,8 +749,11 @@ async function runOfficeSyncInner(
       const byUser = uk ? subByUserPhase1.get(uk) : undefined;
       if (byUser) sub = byUser;
     }
-    actedSasIds.add(a.sasUserId); // له تفعيلةٌ في النافذة ⇒ لا يُسجَّل «فرقُ أيّام» في تبويب المعلومات
-    if (!sub) continue; // غيرُ مستوردٍ ⇒ تنصيبٌ جديدٌ ترصده المرحلةُ الثانية بكامل بياناته
+    // 🔑 **الإسكاتُ مشروطٌ بوجود بيتٍ للواقعة** (قرارُ محمد 2026-08-22): «له تفعيلةٌ في
+    //    النافذة ⇒ بيتُها تبويبُ التفعيل» صحيحةٌ **ما دام الصفُّ معلَّقاً**. أمّا صفٌّ
+    //    أُغلق بـ«اعتُبر معالَجاً» فلا بيتَ فيه — وإسكاتُ فرق الأيّام حينها يُضيّعه للأبد.
+    //    فالإضافةُ صارت في كلّ فرعٍ بحسبه، لا واحدةً عمياءَ في رأس الحلقة.
+    if (!sub) { actedSasIds.add(a.sasUserId); continue; } // غيرُ مستوردٍ ⇒ ترصده المرحلةُ الثانية
     const mgr = (a.managerUsername ?? "").trim();
     const managerIsPage = mgr.toLowerCase() === officeUser;
     const ownCabinet = isOwnCabinet(a.username ?? sub.netUser, mgr);
@@ -765,24 +768,28 @@ async function runOfficeSyncInner(
     // «مقبوضٌ عندي» — الغطاءُ بالتاريخ ثمّ الوصلُ بنافذة ±١٢ ساعة
     const COVER_TOL_MS = 24 * 3600_000;
     const covered = !!(validNewExp && sub.dateTo && sub.dateTo.getTime() >= validNewExp.getTime() - COVER_TOL_MS && !loanSubIdsP1.has(sub.id));
-    if (covered) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }
+    if (covered) { actedSasIds.add(a.sasUserId); await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }
     // 💰 قاعدةُ محمد بحرفها: «إن كان لديه وصلُ تفعيلٍ عندي فليس خارجيّاً أبداً» —
     // وتُقاس على **اليوزر** (كلّ صفوفه) وبتاريخَين: قربُ الوصل من التفعيل، أو انتهاءُ
     // الوصل بانتهاء الساس نفسِه. (كانت على صفٍّ واحدٍ وبنافذة ±١٢ ساعةً وحدَها.)
     const subUserKey = (a.username ?? sub.netUser ?? "").trim().toLowerCase();
     if (await collectedByUs(subUserKey, sub.id, actAt, validNewExp)) {
+      actedSasIds.add(a.sasUserId);
       await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue;
     }
     // 💸 القرض (تصحيحُ محمد 2026-08-21): **سعرُ صفرٍ يدلّ دائماً على قرض** — وأُسقط شرطُ
     //    «بلا كارت»، فحالةُ bg-1-14-2@mu كانت صفراً **بكارت** فمرّت تفعيلاً خارجيّاً.
     const isLoanAct = Math.round(a.price || 0) <= 0;
+    let outcome: EventOutcome;
     if (managerIsPage || ownCabinet) {
-      await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
+      outcome = await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
     } else {
       // ديلر/شركة ⇒ تبويب «تنصيب خارجي» حدثاً مؤرَّخاً (إعادةُ خدمةٍ من الشركة)
       stillInstalls.add(a.sasUserId);
-      await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });
+      outcome = await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });
     }
+    // 🔓 صفٌّ مُغلَقٌ سلفاً (وليس قرضاً) ⇒ **لا يُسكِت**: يُترَك فرقُ الأيّام يظهر في «تحديث معلومات»
+    if (outcome !== "closed" || isLoanAct) actedSasIds.add(a.sasUserId);
   }
 
   // ═════ 🎴💰 تحليلُ الكروت الخارجيّة وتخزينُها في حارس المال (إملاءُ محمد 2026-08-21) ═════
@@ -1072,12 +1079,15 @@ async function runOfficeSyncInner(
         sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
       };
       const isLoanAct = Math.round(hit.price || 0) <= 0;
+      let outcome: EventOutcome;
       if (managerIsPage || ownCabinet) {
-        await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
+        outcome = await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
       } else {
         stillInstalls.add(sasId);
-        await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });
+        outcome = await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });
       }
+      // 🔓 الواقعةُ مُغلَقةٌ سلفاً ⇒ **غيرُ مصنَّفة**: يظهر فرقُ التاريخ في «تحديث معلومات»
+      if (outcome === "closed" && !isLoanAct) return false;
       actedSasIds.add(sasId);
       return true;
     };

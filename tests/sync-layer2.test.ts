@@ -196,3 +196,27 @@ describe("📅 «اعتُبر معالَجاً» لا يبتلع فرقَ الأ
     assert.ok(d.includes('status: { not: "pending" }'), "القياسُ لا يستهدف المُغلَق");
   });
 });
+
+describe("🔓 صفُّ حدثٍ مُغلَقٌ لا يُسكِت فرقَ الأيّام (تكملةُ 2026-08-22)", () => {
+  test("تسجيلُ الحدث يقول حالتَه: أُنشئ · معلَّق · مُغلَق", () => {
+    const l = LOG();
+    assert.ok(l.includes('export type EventOutcome = "created" | "open" | "closed";'), "لا نوعَ لنتيجة التسجيل");
+    assert.ok(l.includes('if (existing) return existing.status === "pending" ? "open" : "closed";'), "الحالةُ ما زالت مكتومة");
+  });
+
+  test("وحلقةُ الأحداث تُسكِت فقط حين يكون للواقعة بيت", () => {
+    const s = SYNC();
+    assert.ok(s.includes('if (outcome !== "closed" || isLoanAct) actedSasIds.add(a.sasUserId);'), "الإسكاتُ ما زال أعمى");
+    assert.ok(!s.includes("actedSasIds.add(a.sasUserId); // له تفعيلةٌ في النافذة"), "بقيت الإضافةُ العمياءُ في رأس الحلقة");
+  });
+
+  test("والمُصنِّفُ يُعيد false لواقعةٍ مُغلَقةٍ فيظهر فرقُ التاريخ", () => {
+    assert.ok(SYNC().includes('if (outcome === "closed" && !isLoanAct) return false;'), "المُصنِّفُ ما زال يبتلع المُغلَق");
+  });
+
+  test("💸 والقرضُ يبقى مُسكَتاً في الحالتين", () => {
+    const s = SYNC();
+    assert.ok(s.includes("|| isLoanAct) actedSasIds.add(a.sasUserId);"), "القرضُ قد يظهر فرقَ أيّام");
+    assert.ok(s.includes('if (outcome === "closed" && !isLoanAct)'), "القرضُ قد يُصنَّف غيرَ مصنَّف");
+  });
+});
