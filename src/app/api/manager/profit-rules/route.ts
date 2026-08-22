@@ -14,7 +14,8 @@ export const dynamic = "force-dynamic";
 const tableMissing = (e: unknown) =>
   typeof e === "object" && e != null && "code" in e && (e as { code?: string }).code === "P2021";
 
-const KINDS = ["act", "instIn", "instExt", "deduct"] as const;
+// 💡 استقطاعان منفصلان: `deductIn` للتنصيب داخل المكتب و`deductExt` لخارجه (تصحيحُ محمد)
+const KINDS = ["act", "instIn", "instExt", "deductIn", "deductExt"] as const;
 
 const schema = z.object({
   towerId: z.coerce.number().int().min(0).default(0),   // 0 = عامّ لكلّ المكاتب
@@ -26,7 +27,8 @@ const schema = z.object({
   }).optional(),
   instIn: z.record(z.string(), z.coerce.number().int().min(0)).optional(),
   instExt: z.record(z.string(), z.coerce.number().int().min(0)).optional(),
-  deduct: z.record(z.string(), z.coerce.number().int().min(0)).optional(),
+  deductIn: z.record(z.string(), z.coerce.number().int().min(0)).optional(),
+  deductExt: z.record(z.string(), z.coerce.number().int().min(0)).optional(),
   /** حذفُ قواعدِ هذا النطاق (يعود للوراثة من أعلى) */
   reset: z.boolean().optional(),
 });
@@ -104,7 +106,7 @@ export async function POST(req: Request) {
       }
     }
   }
-  for (const kind of ["instIn", "instExt", "deduct"] as const) {
+  for (const kind of ["instIn", "instExt", "deductIn", "deductExt"] as const) {
     const m = d[kind];
     if (!m) continue;
     for (const [pid, amt] of Object.entries(m)) {

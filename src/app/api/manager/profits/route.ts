@@ -60,6 +60,15 @@ export async function POST() {
   const g = await guard("manager.accounts");
   if (g.error) return g.error;
   const agentId = g.session?.agentId ?? -1;
+  // 🔒 **لا يُبدأ شهرٌ جديدٌ قبل انقضاء الحاليّ** (تصحيحُ محمد 2026-08-22) — والخادمُ يحكم
+  //    لا الواجهةُ وحدَها، فلا يُصفَّر شهرٌ في منتصفه بضغطةٍ سهوٍ أو بنداءٍ مباشر.
+  const cur = await getPeriod(agentId);
+  if (!cur.ended) {
+    return NextResponse.json({
+      error: "لم ينتهِ الشهرُ الحاليُّ بعد — يُفتَح زرُّ «شهر جديد» بعد آخر يومٍ فيه",
+      period: { from: cur.from.toISOString(), to: cur.to.toISOString(), label: cur.label, ended: false },
+    }, { status: 400 });
+  }
   const p = await startNewMonth(agentId);
   return NextResponse.json({
     ok: true,

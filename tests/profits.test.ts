@@ -28,7 +28,8 @@ describe("🧮 قواعدُ الربح — ثلاثُ طبقاتٍ ترث", () =
     { towerId: 6, cabinet: 53, kind: "act", packageId: 9, mode: null, percent: null, amount: 6000 },
     { towerId: 0, cabinet: 0, kind: "instIn", packageId: 9, mode: null, percent: null, amount: 10000 },
     { towerId: 0, cabinet: 0, kind: "instExt", packageId: 9, mode: null, percent: null, amount: 4000 },
-    { towerId: 0, cabinet: 0, kind: "deduct", packageId: 9, mode: null, percent: null, amount: 1500 },
+    { towerId: 0, cabinet: 0, kind: "deductIn", packageId: 9, mode: null, percent: null, amount: 1500 },
+    { towerId: 0, cabinet: 0, kind: "deductExt", packageId: 9, mode: null, percent: null, amount: 3000 },
   ]);
 
   test("العامُّ يسري حين لا أخصَّ منه: ٢٠٪ من ٤٥٬٠٠٠", () => {
@@ -44,9 +45,10 @@ describe("🧮 قواعدُ الربح — ثلاثُ طبقاتٍ ترث", () =
     assert.equal(rules.installProfit(6, 53, 9, false), 10000);
     assert.equal(rules.installProfit(6, 53, 9, true), 4000);
   });
-  test("والاستقطاعُ يسري على نوعَي التنصيب", () => {
-    assert.equal(rules.deduction(6, 53, 9), 1500);
-    assert.equal(rules.deduction(5, 34, 9), 1500);
+  test("والاستقطاعُ **رقمان مختلفان** (تصحيحُ محمد): داخليٌّ ١٬٥٠٠ وخارجيٌّ ٣٬٠٠٠", () => {
+    assert.equal(rules.deduction(6, 53, 9, false), 1500);
+    assert.equal(rules.deduction(6, 53, 9, true), 3000);
+    assert.equal(rules.deduction(5, 34, 9, false), 1500);
   });
   test("بلا قاعدةٍ ⇒ صفرٌ لا خطأ", () => {
     assert.equal(new Rules([]).actPerMonth(6, 53, 9, 45000), 0);
@@ -149,5 +151,22 @@ describe("🖥️ الشاشة", () => {
     assert.ok(p.includes(`["cardprice", "💳", "أسعار الكروت",`), "لم تُغيَّر تسميةُ أسعار الكروت");
     assert.ok(p.includes(`["profits", "📈", "أرباح الشركة", true, 0],`), "زرُّ الأرباح غائب");
     assert.ok(!p.includes("سعر الكارت لكل فئة"), "بقيت التسميةُ القديمة");
+  });
+});
+
+describe("🔒 تصحيحا محمد بعد أوّل نشر (2026-08-22)", () => {
+  test("الاستقطاعُ يُقرأ بنوعَيه لا بنوعٍ واحد", () => {
+    const lib = LIB();
+    assert.ok(lib.includes('external ? "deductExt" : "deductIn"'), "الاستقطاعُ ما زال واحداً");
+    assert.ok(lib.includes("rules.deduction(r.towerId, cabinet, pkg?.id ?? 0, !inside)"), "الحسابُ لا يفرّق بين النوعين");
+    const ui = read("src/components/ProfitsPanel.tsx");
+    assert.ok(ui.includes("deductIn") && ui.includes("deductExt"), "الشاشةُ بخانةِ استقطاعٍ واحدة");
+  });
+
+  test("و«شهر جديد» مقفلٌ حتى ينقضي الشهر — بالخادم لا بالواجهة وحدَها", () => {
+    const api = read("src/app/api/manager/profits/route.ts");
+    assert.ok(api.includes("if (!cur.ended) {"), "الخادمُ يقبل تصفيرَ شهرٍ لم ينتهِ");
+    const ui = read("src/components/ProfitsPanel.tsx");
+    assert.ok(ui.includes("disabled={busy || !canNewMonth}"), "الزرُّ مفتوحٌ في منتصف الشهر");
   });
 });

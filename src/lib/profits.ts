@@ -67,9 +67,13 @@ export class Rules {
   installProfit(towerId: number, cabinet: number, packageId: number, external: boolean): number {
     return Math.round(Number(this.pick(towerId, cabinet, external ? "instExt" : "instIn", packageId)?.amount ?? 0));
   }
-  /** الاستقطاعُ لهذه الباقة — يسري على نوعَي التنصيب ويُطرَح من الصافي */
-  deduction(towerId: number, cabinet: number, packageId: number): number {
-    return Math.round(Number(this.pick(towerId, cabinet, "deduct", packageId)?.amount ?? 0));
+  /**
+   * الاستقطاعُ لهذه الباقة — **رقمان مختلفان** (تصحيحُ محمد 2026-08-22):
+   * «الاستقطاعُ ليس لنوعَي التنصيب، بل التنصيبُ داخل المكتب يختلف عن التنصيب خارجه».
+   * ويُطرَح من الصافي في الحالتين.
+   */
+  deduction(towerId: number, cabinet: number, packageId: number, external: boolean): number {
+    return Math.round(Number(this.pick(towerId, cabinet, external ? "deductExt" : "deductIn", packageId)?.amount ?? 0));
   }
 }
 
@@ -342,7 +346,7 @@ export async function computeProfits(
         installSeen.add(key);
         const inside = sub ? hasReceiptAfter(sub.id, at, INSTALL_RECEIPT_MS) : false;
         const profit = rules.installProfit(r.towerId, cabinet, pkg?.id ?? 0, !inside);
-        const deduct = rules.deduction(r.towerId, cabinet, pkg?.id ?? 0);
+        const deduct = rules.deduction(r.towerId, cabinet, pkg?.id ?? 0, !inside);
         const box = inside ? out.boxes.instIn : out.boxes.instExt;
         box.count++; box.months += 1; box.profit += profit; box.deduct += deduct;
         box.rows.push({

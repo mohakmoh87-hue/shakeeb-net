@@ -69,7 +69,10 @@ export default function ProfitsPanel() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- جلبٌ شبكيٌّ لا ضبطَ حالةٍ متزامن
   useEffect(() => { void load(); void loadRules(); }, [load, loadRules]);
 
+  const canNewMonth = !!rep?.period.ended;
   const newMonth = async () => {
+    // 🔒 لا يُصفَّر شهرٌ في منتصفه (تصحيحُ محمد) — والخادمُ يرفضه أيضاً حكماً
+    if (!canNewMonth) { setMsg("⛔ لم ينتهِ الشهرُ الحاليُّ بعد"); setTimeout(() => setMsg(""), 4000); return; }
     if (!confirm("بدءُ شهرٍ جديد: تُصفَّر الأرقامُ المعروضةُ وتبدأ فترةٌ جديدة.\nولا يُحذَف شيءٌ — القديمُ يبقى بالبحث بين تاريخين. متابعة؟")) return;
     setBusy(true);
     const r = await fetch("/api/manager/profits", { method: "POST", credentials: "same-origin" });
@@ -154,9 +157,10 @@ export default function ProfitsPanel() {
           <div className="text-[11px] opacity-90">{rep?.label ?? "الأرباح"}</div>
           <div className="text-2xl font-extrabold" style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(net)} د.ع</div>
         </div>
-        <button onClick={() => void newMonth()} disabled={busy}
-          className="rounded-lg bg-white/20 px-4 py-2 text-sm font-bold hover:bg-white/30 disabled:opacity-50">
-          🗓️ شهر جديد
+        <button onClick={() => void newMonth()} disabled={busy || !canNewMonth}
+          title={canNewMonth ? "بدءُ شهرٍ جديد" : "يُفتَح بعد انقضاء الشهر الحاليّ"}
+          className="rounded-lg bg-white/20 px-4 py-2 text-sm font-bold hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-40">
+          🗓️ شهر جديد{canNewMonth ? "" : " 🔒"}
         </button>
       </div>
 
@@ -253,7 +257,8 @@ function ScopeEditor(
   const [actPkg, setActPkg] = useState<Record<number, string>>(() => grabInit("act"));
   const [instIn, setInstIn] = useState<Record<number, string>>(() => grabInit("instIn"));
   const [instExt, setInstExt] = useState<Record<number, string>>(() => grabInit("instExt"));
-  const [deduct, setDeduct] = useState<Record<number, string>>(() => grabInit("deduct"));
+  const [deductIn, setDeductIn] = useState<Record<number, string>>(() => grabInit("deductIn"));
+  const [deductExt, setDeductExt] = useState<Record<number, string>>(() => grabInit("deductExt"));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -265,7 +270,7 @@ function ScopeEditor(
     const body = {
       towerId, cabinets: [cabinet], reset,
       act: { mode: actMode, percent: Number(percent) || 0, perPackage: num(actPkg) },
-      instIn: num(instIn), instExt: num(instExt), deduct: num(deduct),
+      instIn: num(instIn), instExt: num(instExt), deductIn: num(deductIn), deductExt: num(deductExt),
     };
     const r = await fetch("/api/manager/profit-rules", {
       method: "POST", credentials: "same-origin",
@@ -308,18 +313,20 @@ function ScopeEditor(
           : <div className="text-[11px] text-slate-500">النسبةُ من <b>سعر بيع الباقة المسجَّل</b> (لا كلفةِ الكارت) × عددِ الأشهر</div>}
       </div>
 
-      {/* 🛠️🏢 التنصيب: رقمان مختلفان، والاستقطاعُ لكليهما */}
+      {/* 🛠️🏢 التنصيب: لكلّ نوعٍ **ربحُه واستقطاعُه** (تصحيحُ محمد: الاستقطاعُ يختلف بينهما) */}
       <div className="rounded-lg border border-slate-200 bg-white p-2">
-        <b className="text-slate-700">🛠️ ربحُ التنصيب الداخليّ</b>
-        <div className="mt-1.5">{grid(instIn, setInstIn, "ربح")}</div>
+        <b className="text-slate-700">🛠️ التنصيبُ داخل المكتب</b>
+        <div className="mt-1.5 text-[11px] text-slate-500">الربحُ لكلّ باقة</div>
+        <div className="mt-1">{grid(instIn, setInstIn, "ربح")}</div>
+        <div className="mt-2 text-[11px] text-slate-500">➖ الاستقطاعُ لكلّ باقة</div>
+        <div className="mt-1">{grid(deductIn, setDeductIn, "استقطاع")}</div>
       </div>
       <div className="rounded-lg border border-slate-200 bg-white p-2">
-        <b className="text-slate-700">🏢 ربحُ التنصيب الخارجيّ</b>
-        <div className="mt-1.5">{grid(instExt, setInstExt, "ربح")}</div>
-      </div>
-      <div className="rounded-lg border border-slate-200 bg-white p-2">
-        <b className="text-slate-700">➖ الاستقطاع (لنوعَي التنصيب)</b>
-        <div className="mt-1.5">{grid(deduct, setDeduct, "استقطاع")}</div>
+        <b className="text-slate-700">🏢 التنصيبُ خارج المكتب</b>
+        <div className="mt-1.5 text-[11px] text-slate-500">الربحُ لكلّ باقة</div>
+        <div className="mt-1">{grid(instExt, setInstExt, "ربح")}</div>
+        <div className="mt-2 text-[11px] text-slate-500">➖ الاستقطاعُ لكلّ باقة</div>
+        <div className="mt-1">{grid(deductExt, setDeductExt, "استقطاع")}</div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
