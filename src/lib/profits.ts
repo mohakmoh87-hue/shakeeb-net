@@ -143,6 +143,23 @@ async function writeSetting(type: string, text: string): Promise<void> {
   else await prisma.systemSetting.create({ data: { type, text } });
 }
 
+// ═════ 💾 «اختيارُ العرض» يثبت على الحساب (طلبُ محمد 2026-08-22) ═════
+// «في كلّ مرّةٍ أخرج وأعود يرجع إلى الفترة الجارية» — فصار الاختيارُ (شهريٌّ أو مخصَّصٌ
+// أو الشهرُ الجاري، ومعه المكتبُ) يُحفَظ **لكلّ مستخدمٍ على حِدة** ويُستعاد عند الفتح.
+// ولماذا على الحساب لا على الجهاز؟ لأنّه يفتحها من الهاتف ومن المتصفّح — فيلزم أن تتبعه.
+export type SavedView = { mode?: string; month?: string; from?: string; to?: string; tower?: number };
+
+export async function getSavedView(userId: number): Promise<SavedView | null> {
+  const txt = await readSetting(`profitView:${userId}`);
+  if (!txt) return null;
+  try { return JSON.parse(txt) as SavedView; } catch { return null; }
+}
+export async function saveView(userId: number, v: SavedView): Promise<void> {
+  await writeSetting(`profitView:${userId}`, JSON.stringify({
+    mode: v.mode ?? "current", month: v.month ?? "", from: v.from ?? "", to: v.to ?? "", tower: Number(v.tower) || 0,
+  }));
+}
+
 export type Period = {
   from: Date; to: Date;
   label: string;

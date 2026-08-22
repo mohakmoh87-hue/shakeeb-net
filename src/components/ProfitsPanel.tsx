@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDate } from "@/lib/format";
 
 // ═════ 📈 أرباحُ الشركة — لوحةٌ للقراءة لا قيدٌ ماليّ (طلبُ محمد 2026-08-22) ═════
@@ -20,12 +20,28 @@ type Report = {
   dormant: boolean; net: number;
   boxes: { actIn: Box; actExt: Box; instIn: Box; instExt: Box };
   period: { from: string; to: string; label: string; ended: boolean; epoch: string };
+  view?: { mode?: string; month?: string; from?: string; to?: string; tower?: number } | null;
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
 type RuleRow = { towerId: number; cabinet: number; kind: string; packageId: number; mode: string | null; percent: number | null; amount: number | null };
 type RulesData = { towers: { id: number; name: string | null }[]; packages: Pkg[]; cabinets: Record<string, number[]>; rules: RuleRow[]; dormant: boolean };
 
 const fmt = (n: number) => Number(n || 0).toLocaleString("en-US");
+// 📅 أشهرُ الاختيار بأسمائها — «أرباحُ الشهر السابع» أوضحُ من خانةٍ خامٍّ بصيغة 2026-07
+const AR_MONTHS = ["الأوّل", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع", "الثامن", "التاسع", "العاشر", "الحادي عشر", "الثاني عشر"];
+function lastMonths(count = 12): { v: string; t: string }[] {
+  const now = new Date(Date.now() + 3 * 3600_000); // بتوقيت بغداد
+  const out: { v: string; t: string }[] = [];
+  for (let i = 0; i < count; i++) {
+    const y = now.getUTCFullYear(), m = now.getUTCMonth() - i;
+    const d = new Date(Date.UTC(y, m, 1));
+    out.push({
+      v: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
+      t: `الشهر ${AR_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`,
+    });
+  }
+  return out;
+}
 const BOXES = [
   { k: "actIn", icon: "⚡", t: "تفعيلات داخل المكتب", unit: "شهر" },
   { k: "actExt", icon: "🌐", t: "تفعيلات خارجية", unit: "شهر" },
@@ -45,6 +61,7 @@ export default function ProfitsPanel() {
   const [msg, setMsg] = useState("");
   const [cfg, setCfg] = useState(false);
   const [tower, setTower] = useState(0); // 0 = كلُّ المكاتب
+  const restored = useRef(false); // استُعيد الاختيارُ المحفوظُ مرّةً واحدةً لا مع كلّ جلب
 
   const load = useCallback(async () => {
     const base = mode === "month" && month ? `month=${month}`
@@ -55,7 +72,20 @@ export default function ProfitsPanel() {
     const t = setTimeout(() => setBusy(true), 150);
     try {
       const r = await fetch(`/api/manager/profits${q ? "?" + q : ""}`, { credentials: "same-origin" });
-      if (r.ok) setRep(await r.json());
+      if (r.ok) {
+        const d = (await r.json()) as Report;
+        setRep(d);
+        // 💾 أوّلُ فتحٍ: يُستعاد اختيارُ العرض المحفوظُ على الحساب (شهريّ/مخصّص + المكتب)
+        if (!restored.current) {
+          restored.current = true;
+          const v = d.view;
+          if (v && v.mode && v.mode !== "current") {
+            if (v.mode === "month" && v.month) { setMonth(v.month); setMode("month"); }
+            else if (v.mode === "custom" && v.from && v.to) { setFrom(v.from); setTo(v.to); setMode("custom"); }
+          }
+          if (v && Number(v.tower)) setTower(Number(v.tower));
+        }
+      }
     } catch { /* صمتٌ — تبقى الأرقامُ السابقة */ }
     finally { clearTimeout(t); setBusy(false); }
   }, [mode, month, from, to, tower]);
@@ -70,6 +100,16 @@ export default function ProfitsPanel() {
   // جلبُ البياناتِ عند الفتح وعند تغيّر المدى — نمطُ بقيّة صفحات المشروع.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- جلبٌ شبكيٌّ لا ضبطَ حالةٍ متزامن
   useEffect(() => { void load(); void loadRules(); }, [load, loadRules]);
+
+  const saveTheView = async () => {
+    const r = await fetch("/api/manager/profits", {
+      method: "PUT", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, month, from, to, tower }),
+    });
+    setMsg(r.ok ? "✅ ثُبِّت هذا العرضُ على حسابك" : "⛔ تعذّر الحفظ");
+    setTimeout(() => setMsg(""), 4000);
+  };
 
   const canNewMonth = !!rep?.period.ended;
   const newMonth = async () => {
@@ -100,22 +140,30 @@ export default function ProfitsPanel() {
 
       {/* ── المدى: جارية · شهريّ · مخصّص ── */}
       <div className="mb-3 flex flex-wrap items-center gap-2 text-[12px]">
-        {([["current", "الفترة الجارية"], ["month", "شهريّ"], ["custom", "مخصّص"]] as const).map(([m, t]) => (
-          <button key={m} onClick={() => setMode(m)}
+        <span className="font-bold text-slate-700">المدّة:</span>
+        {([
+          ["current", "الشهر الجاري", "شهرُك المحاسبيُّ الحاليّ — لا يتبدّل إلّا بضغط «شهر جديد» بعد انقضائه"],
+          ["month", "شهريّ", "اختر شهراً فتُضبَط بدايتُه ونهايتُه وحدَهما"],
+          ["custom", "مخصّص", "اختر أيَّ تاريخين"],
+        ] as const).map(([m, t, tip]) => (
+          <button key={m} onClick={() => setMode(m)} title={tip}
             className={`rounded-lg border px-3 py-1.5 font-bold transition ${mode === m ? "border-mynet-blue bg-mynet-blue text-white" : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`}>
             {t}
           </button>
         ))}
         {mode === "month" && (
-          <input type="month" value={month || rep?.monthValue || ""} onChange={(e) => setMonth(e.target.value)}
-            className="rounded-lg border border-slate-300 px-2 py-1.5" />
+          <select value={month || rep?.monthValue || ""} onChange={(e) => setMonth(e.target.value)}
+            className="rounded-lg border border-mynet-blue/40 bg-blue-50 px-2 py-1.5 font-bold text-slate-700">
+            {lastMonths().map((m) => <option key={m.v} value={m.v}>{m.t}</option>)}
+          </select>
         )}
         {mode === "custom" && (
-          <>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5" />
-            <span className="text-slate-400">←</span>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5" />
-          </>
+          <span className="flex flex-wrap items-center gap-1 rounded-lg border border-mynet-blue/40 bg-blue-50 px-2 py-1">
+            <b className="text-slate-700">من</b>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1" />
+            <b className="text-slate-700">إلى</b>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1" />
+          </span>
         )}
         {/* 🏢 مكتبٌ واحدٌ أو الكلّ */}
         <select value={tower} onChange={(e) => setTower(Number(e.target.value))}
@@ -123,6 +171,11 @@ export default function ProfitsPanel() {
           <option value={0}>كلّ المكاتب</option>
           {(rules?.towers ?? []).map((t) => <option key={t.id} value={t.id}>{t.name ?? `#${t.id}`}</option>)}
         </select>
+        <button onClick={() => void saveTheView()} disabled={busy}
+          title="يُثبِّت هذا الاختيارَ على حسابك فيفتح عليه في كلّ مرّة (وفي الهاتف أيضاً)"
+          className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 font-bold text-emerald-700 hover:bg-emerald-100">
+          💾 حفظُ العرض
+        </button>
         {rep && <span className="text-slate-500">{formatDate(rep.from)} ← {formatDate(rep.to)}</span>}
         {busy && <span className="text-slate-400">…</span>}
       </div>

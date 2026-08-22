@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { guard, agentTowerIds } from "@/lib/guard";
-import { computeProfits, getPeriod, startNewMonth, monthRange, monthLabel, rangeWarning, baghdadParts } from "@/lib/profits";
+import { computeProfits, getPeriod, startNewMonth, monthRange, monthLabel, rangeWarning, baghdadParts, getSavedView, saveView } from "@/lib/profits";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +48,9 @@ export async function GET(req: Request) {
 
   const report = await computeProfits(agentId, scope, from, range.to);
   const bp = baghdadParts(range.from);
+  const view = await getSavedView(g.session?.userId ?? -1);
   return NextResponse.json({
+    view,
     ...report,
     from: from.toISOString(), to: range.to.toISOString(),
     label: range.label, warning: range.warning, mode: range.mode,
@@ -59,6 +61,21 @@ export async function GET(req: Request) {
       label: period.label, ended: period.ended, epoch: period.epoch.toISOString(),
     },
   });
+}
+
+/** 💾 حفظُ اختيار العرض (شهريّ/مخصّص/الجاري + المكتب) على حساب المستخدم — إعدادُ عرضٍ لا مال. */
+export async function PUT(req: Request) {
+  const g = await guard("manager.accounts");
+  if (g.error) return g.error;
+  const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  await saveView(g.session?.userId ?? -1, {
+    mode: typeof b.mode === "string" ? b.mode : "current",
+    month: typeof b.month === "string" ? b.month : "",
+    from: typeof b.from === "string" ? b.from : "",
+    to: typeof b.to === "string" ? b.to : "",
+    tower: Number(b.tower) || 0,
+  });
+  return NextResponse.json({ ok: true });
 }
 
 /** «شهر جديد» — يطوي الفترةَ الحاليّة ويبدأ التالية. إعدادٌ فقط، ولا يمسّ مالاً ولا بياناتٍ. */
