@@ -170,3 +170,17 @@ describe("🔒 تصحيحا محمد بعد أوّل نشر (2026-08-22)", () =>
     assert.ok(ui.includes("disabled={busy || !canNewMonth}"), "الزرُّ مفتوحٌ في منتصف الشهر");
   });
 });
+
+describe("🏢 ترشيحُ مكتبٍ واحد (طلبُ محمد 2026-08-22)", () => {
+  test("الخادمُ يقبل رقمَ مكتبٍ من مكاتبه ويُسقط غيرَه (عزل)", () => {
+    const api = read("src/app/api/manager/profits/route.ts");
+    assert.ok(api.includes("const askTower = Number(sp.get(\"tower\")) || 0;"), "لا ترشيحَ بالمكتب");
+    assert.ok(api.includes("askTower && towers.includes(askTower) ? [askTower] : towers"), "الترشيحُ بلا عزل");
+    assert.ok(api.includes("computeProfits(agentId, scope, from, range.to)"), "الحسابُ لا يحترم الترشيح");
+  });
+  test("والشاشةُ فيها قائمةُ «كلّ المكاتب» وأسماءُ مكاتبه", () => {
+    const ui = read("src/components/ProfitsPanel.tsx");
+    assert.ok(ui.includes("كلّ المكاتب"), "لا قائمةَ مكاتب");
+    assert.ok(ui.includes("tower ? `tower=${tower}` : \"\""), "الاختيارُ لا يُرسَل للخادم");
+  });
+});

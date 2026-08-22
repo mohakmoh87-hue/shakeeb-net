@@ -36,18 +36,24 @@ export async function GET(req: Request) {
   const towers = await agentTowerIds(g.session ?? null);
   const sp = new URL(req.url).searchParams;
 
+  // 🏢 **ترشيحُ مكتب** (طلبُ محمد 2026-08-22): رقمٌ من مكاتبه ⇒ أرقامُ ذلك المكتب وحدَه،
+  //    وبلا رقمٍ ⇒ المجموعُ كما كان. وأيُّ رقمٍ خارج مكاتبه يسقط (عزلٌ لا خيار).
+  const askTower = Number(sp.get("tower")) || 0;
+  const scope = askTower && towers.includes(askTower) ? [askTower] : towers;
+
   const range = await resolveRange(agentId, sp);
   const period = await getPeriod(agentId);
   // 🚧 «يبدأ كلُّ شيءٍ من الآن»: لا يُحسَب ما قبل لحظة التأسيس مهما اتّسع المدى المطلوب
   const from = range.from < period.epoch ? period.epoch : range.from;
 
-  const report = await computeProfits(agentId, towers, from, range.to);
+  const report = await computeProfits(agentId, scope, from, range.to);
   const bp = baghdadParts(range.from);
   return NextResponse.json({
     ...report,
     from: from.toISOString(), to: range.to.toISOString(),
     label: range.label, warning: range.warning, mode: range.mode,
     monthValue: `${bp.y}-${String(bp.m + 1).padStart(2, "0")}`,
+    tower: askTower && towers.includes(askTower) ? askTower : 0,
     period: {
       from: period.from.toISOString(), to: period.to.toISOString(),
       label: period.label, ended: period.ended, epoch: period.epoch.toISOString(),

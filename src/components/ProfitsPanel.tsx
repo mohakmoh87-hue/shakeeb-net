@@ -44,19 +44,21 @@ export default function ProfitsPanel() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [cfg, setCfg] = useState(false);
+  const [tower, setTower] = useState(0); // 0 = كلُّ المكاتب
 
   const load = useCallback(async () => {
-    const q = mode === "month" && month ? `?month=${month}`
-      : mode === "custom" && from && to ? `?from=${from}&to=${to}` : "";
+    const base = mode === "month" && month ? `month=${month}`
+      : mode === "custom" && from && to ? `from=${from}&to=${to}` : "";
+    const q = [base, tower ? `tower=${tower}` : ""].filter(Boolean).join("&");
     // ⏳ مؤشّرُ الانتظار بعد ١٥٠ مل — فلا يومض للنداءات السريعة، ولا يُضبَط تزامنيّاً
     //    داخل الأثر (نمطُ المشروع يمنعه لأنّه يُطلق تصييراً متتالياً).
     const t = setTimeout(() => setBusy(true), 150);
     try {
-      const r = await fetch(`/api/manager/profits${q}`, { credentials: "same-origin" });
+      const r = await fetch(`/api/manager/profits${q ? "?" + q : ""}`, { credentials: "same-origin" });
       if (r.ok) setRep(await r.json());
     } catch { /* صمتٌ — تبقى الأرقامُ السابقة */ }
     finally { clearTimeout(t); setBusy(false); }
-  }, [mode, month, from, to]);
+  }, [mode, month, from, to, tower]);
 
   // 🔄 الجلبُ في أثرٍ واحدٍ عبر دالّةٍ مُذكَّرة — لا ضبطَ حالةٍ مباشرةً داخل الأثر
   const loadRules = useCallback(async () => {
@@ -115,6 +117,12 @@ export default function ProfitsPanel() {
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5" />
           </>
         )}
+        {/* 🏢 مكتبٌ واحدٌ أو الكلّ */}
+        <select value={tower} onChange={(e) => setTower(Number(e.target.value))}
+          className="rounded-lg border border-slate-300 px-2 py-1.5 font-bold">
+          <option value={0}>كلّ المكاتب</option>
+          {(rules?.towers ?? []).map((t) => <option key={t.id} value={t.id}>{t.name ?? `#${t.id}`}</option>)}
+        </select>
         {rep && <span className="text-slate-500">{formatDate(rep.from)} ← {formatDate(rep.to)}</span>}
         {busy && <span className="text-slate-400">…</span>}
       </div>
