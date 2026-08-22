@@ -65,6 +65,7 @@ const NAV: NavEntry[] = [
       { label: "التذاكر", href: "/tickets", perm: "tickets.manage" },
       { label: "قوالب الرسائل", href: "/sms-templates", perm: "templates.manage" },
       { label: "سجل التدقيق", href: "/audit", perm: "audit.view" },
+      { label: "الوصولات المحذوفة", href: "/deleted-receipts", perm: "receipts.deleted" },
       { label: "نسخة احتياطية", href: "/api/backup/export", perm: "backup.manage", external: true },
     ],
   },

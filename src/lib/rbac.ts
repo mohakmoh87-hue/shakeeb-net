@@ -12,6 +12,7 @@ export type Permission =
   | "finance.manage" // تسجيل المصروفات والمقبوضات
   | "accounts.manage" // إنشاء حسابات المصروفات
   | "receipts.void" // حذف وصل (مع عكس المبلغ)
+  | "receipts.deleted" // سجل الوصولات المحذوفة (طلب محمد 2026-08-22)
   | "manager.accounts" // حسابات المدير
   | "syncLog.update" // تحديث سجل المزامنة (العرضُ للجميع — الأفعالُ لصاحبها. قرار محمد 2026-08-20)
   // ٣ · المخزن والمبيع
@@ -62,6 +63,7 @@ export const PERMISSION_GROUPS: { title: string; items: { key: Permission; label
       { key: "finance.manage", label: "تسجيل المصروفات والمقبوضات" },
       { key: "accounts.manage", label: "إنشاء حسابات المصروفات" },
       { key: "receipts.void", label: "حذف وصل (مع عكس المبلغ)" },
+      { key: "receipts.deleted", label: "سجل الوصولات المحذوفة" },
       { key: "manager.accounts", label: "حسابات المدير" },
       { key: "syncLog.update", label: "تحديث سجل المزامنة" },
     ],
