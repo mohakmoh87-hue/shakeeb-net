@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import OfficeChat from "@/components/OfficeChat";
 import MoneyHealthButton from "@/components/MoneyHealthButton";
+import ProfitsPanel from "@/components/ProfitsPanel";
 import InstallComputer from "@/components/InstallComputer";
 import RewardConfig from "@/components/RewardConfig";
 import SalaryModal from "@/components/SalaryModal";
@@ -393,10 +394,11 @@ export default function ManagerAccountsPage() {
           أدناه تحمل اختصارَ «حركة جديدة» وحدَه (نمط actionbar في النموذج) */}
       <div data-acc-secs className="mb-6 flex flex-wrap gap-2">
         {([
-          ["tx", "💵", "حركةٌ جديدة · المدراء · الرواتب", !denied && !!data, 0],
+          ["tx", "💵", "حركةٌ جديدة", !denied && !!data, 0],
           ["wa", "💬", "واتساب المكاتب", waOffices.length > 0, 0],
           ["phantom", "🔴", "الكروت الوهمية", phantomLoaded && !phantomDenied, phantomCards.length],
-          ["cardprice", "💳", "سعر الكارت لكل فئة", !!cardData?.canEdit, 0],
+          ["cardprice", "💳", "أسعار الكروت", !!cardData?.canEdit, 0],
+          ["profits", "📈", "أرباح الشركة", true, 0],
           ["reward", "🎁", "مكافأة التفعيل", true, 0],
           ["install", "💻", "تنصيب حاسبة مكتب", true, 0],
         ] as [string, string, string, boolean, number][])
@@ -697,10 +699,10 @@ export default function ManagerAccountsPage() {
       </>)}
 
       {sec === "cardprice" && (<>
-      {/* تحديد سعر الكارت لكل فئة (للمدير حصراً) — يُطبَّق على الكروت الجديدة فقط */}
+      {/* أسعارُ الكروت لكلّ فئة (للمدير حصراً) — تُطبَّق على الكروت الجديدة فقط */}
       {cardData?.canEdit && (
         <div className="mb-6 max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="mb-1 font-bold text-slate-800">💳 سعر الكارت لكل فئة</h3>
+          <h3 className="mb-1 font-bold text-slate-800">💳 أسعار الكروت</h3>
           <p className="mb-3 text-xs text-slate-500">حدّد سعر شراء الكارت الواحد لكل فئة. يُطبَّق تلقائياً عند إضافة كروت الفئة، وتغييره يشمل الكروت الجديدة فقط.</p>
           {cardData.packages.length === 0 ? <div className="text-sm text-slate-400">لا توجد فئات بعد — أضِفها من صفحة الباقات.</div> : (
             <div className="space-y-2">
@@ -717,6 +719,9 @@ export default function ManagerAccountsPage() {
         </div>
       )}
       </>)}
+
+      {/* 📈 أرباحُ الشركة — لوحةٌ مستقلّةٌ للقراءة (طلبُ محمد 2026-08-22) */}
+      {sec === "profits" && <ProfitsPanel />}
 
       {sec === "reward" && (<>
       {/* مبلغ مكافأة التفعيل لكل باقة (للمدير) */}

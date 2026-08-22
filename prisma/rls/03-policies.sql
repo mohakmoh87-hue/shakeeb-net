@@ -402,6 +402,14 @@ CREATE POLICY rls_sync_log ON sync_log TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
+-- 📈 قواعدُ ربح الشركة (2026-08-22) — إعداداتُ عرضٍ لا قيودٌ ماليّة، يقرؤها ويكتبها
+-- الموقعُ وحدَه. والسياسةُ تُسدّ البابَ من يومه الأوّل: لا يرى وكيلٌ قواعدَ غيرِه أبداً.
+ALTER TABLE profit_rules ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_profit_rules ON profit_rules;
+CREATE POLICY rls_profit_rules ON profit_rules TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 -- 📬 الرسائل الداخليّة المنبثقة (2026-08-20) — يقرؤها ويكتبها الموقعُ وحدَه، لكنّ
 -- العزل لا يكون مشروطاً: السياسةُ تسدّ أيَّ وصولِ عاملٍ مستقبليٍّ من يومه الأوّل.
 ALTER TABLE internal_messages ENABLE ROW LEVEL SECURITY;

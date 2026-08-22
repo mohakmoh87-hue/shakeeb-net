@@ -764,6 +764,8 @@ async function runOfficeSyncInner(
       netUser: a.username ?? sub.netUser, name: a.name ?? sub.name,
       amount: Math.round(a.price || 0), activatedAt: actAt,
       sasDateTo: validNewExp,
+      // 📈 الانتهاءُ **قبل** التفعيلة كما يعطيه تقريرُ الساس — به تُعرَف المدّةُ بالأشهر
+      oldSasDateTo: a.oldExpiration ? new Date(a.oldExpiration) : null,
     };
     // «مقبوضٌ عندي» — الغطاءُ بالتاريخ ثمّ الوصلُ بنافذة ±١٢ ساعة
     const COVER_TOL_MS = 24 * 3600_000;
@@ -1077,6 +1079,7 @@ async function runOfficeSyncInner(
         netUser: hit.username ?? sub.netUser, name: hit.name ?? sub.name,
         amount: Math.round(hit.price || 0), activatedAt: actAt,
         sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
+        oldSasDateTo: hit.oldExpiration ? new Date(hit.oldExpiration) : null,
       };
       const isLoanAct = Math.round(hit.price || 0) <= 0;
       let outcome: EventOutcome;

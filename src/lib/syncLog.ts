@@ -122,7 +122,7 @@ export const LOAN_NOTE = "💸 قرض (مبلغ صفر بلا كارت)";
  *  ⚠️ وكونُه مؤرَّخاً (activatedAt) يستثنيه من التصحيح الذاتيّ للتنصيبات — فلا يُغلَق
  *     بعد يومٍ لمجرّد أنّ تفعيلتَه خرجت من النافذة؛ يُغلقه الوصلُ أو قرارُك وحدَهما. */
 export async function recordCompanyActivation(
-  p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean; managerName?: string | null },
+  p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean; managerName?: string | null; oldSasDateTo?: Date | null },
 ): Promise<EventOutcome> {
   try {
     const from = new Date(p.activatedAt.getTime() - 30 * 60_000);
@@ -139,6 +139,7 @@ export async function recordCompanyActivation(
         netUser: p.netUser ?? null, name: p.name ?? null, phone: p.phone ?? null,
         packageName: p.packageName ?? null, sasDateTo: p.sasDateTo ?? null,
         amount: p.amount, activatedAt: p.activatedAt,
+        oldSasDateTo: p.oldSasDateTo ?? null, // 📈 لمدّة التفعيل بالأشهر (أرباحُ الشركة)
         note: p.loan ? LOAN_NOTE : `🏢 تفعيلُ شركة/ديلر${p.managerName ? ` — ${p.managerName}` : ""}`,
       },
     });
@@ -264,7 +265,7 @@ export async function reconcileStolenCards(
 export type EventOutcome = "created" | "open" | "closed";
 
 /** حدثُ تفعيلٍ (تبويب ٣ ذاتيّ · تبويب ٤ صفحة بلا وصل) — صفٌّ لكلّ تفعيلة */
-export async function recordActivationEvent(kind: "self" | "sas", p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean }): Promise<EventOutcome> {
+export async function recordActivationEvent(kind: "self" | "sas", p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean; oldSasDateTo?: Date | null }): Promise<EventOutcome> {
   try {
     // ⏱️ **دقّةُ منع التكرار ±٣٠ دقيقة لا ±١٢ ساعة** (مراجعة 2026-08-21): النافذةُ الواسعة
     // كانت تبتلع **الحدثَ الثاني في اليوم نفسِه** — وهي حالةٌ في تصنيف محمد (نوع ٢: ديلر
@@ -283,6 +284,8 @@ export async function recordActivationEvent(kind: "self" | "sas", p: StatePayloa
         netUser: p.netUser ?? null, name: p.name ?? null, phone: p.phone ?? null,
         packageName: p.packageName ?? null, sasDateTo: p.sasDateTo ?? null,
         amount: p.amount, activatedAt: p.activatedAt,
+        // 📈 الانتهاءُ قبل التفعيلة — تقرؤه «أرباحُ الشركة» لتعرف المدّةَ بالأشهر يقيناً
+        oldSasDateTo: p.oldSasDateTo ?? null,
         // 💸 **القرضُ ليس تفعيلاً خارجيّاً** (بلاغُ محمد 2026-08-21: bg-1-14-2@mu): سعرُ صفرٍ
         //    يعني قرضاً من سوبر سيل، ولا فعلَ عليه إطلاقاً (لا وصلَ ولا دين — يُسدَّد
         //    بتفعيلٍ عاديٍّ لاحقاً). فيُسجَّل **مختوماً** لا معلَّقاً: أثرٌ يُقرأ في السجلّ

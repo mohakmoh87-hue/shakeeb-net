@@ -1689,6 +1689,9 @@ model SyncLog {
   address      String?
   packageName  String? // اسم باقة الساس نصّاً
   sasDateTo    DateTime? // انتهاء الساس لحظة الرصد
+  // 📈 الانتهاءُ **قبل** التفعيلة — يُملأ من الآن فصاعداً (إضافةٌ محضةٌ لا يقرؤها إلّا
+  //    «أرباح الشركة» لتُحسَب مدّةُ التفعيل الخارجيّ بالأشهر يقيناً لا تقديراً).
+  oldSasDateTo DateTime?
   amount       Int? // مبلغ تفعيلة الساس (عرضاً — الوصل بسعر باقة البرنامج)
   activatedAt  DateTime? // وقت التفعيلة (لأنواع self/sas)
   changes      String? // JSON [{f,label,old,new}] لنوع info
@@ -1704,4 +1707,30 @@ model SyncLog {
   @@index([agentId, status])
   @@index([sasId, kind, status])
   @@map("sync_log")
+}
+
+// ═════ 📈 قواعدُ ربح الشركة (طلبُ محمد 2026-08-22) — إعداداتٌ للقراءة لا قيودٌ ماليّة ═════
+// ثلاثُ طبقاتٍ ترث بعضها فتُختصَر مئاتُ الخانات إلى قاعدةٍ واحدةٍ واستثناءات:
+//   عامٌّ للوكيل (towerId=0, cabinet=0) ← المكتب (cabinet=0) ← الكابينة (كلاهما محدَّد).
+// 🔑 و**صفرٌ لا NULL** في مفاتيح النطاق: بوستكرس يعدّ الـNULLات مختلفةً فينهار الفهرسُ الفريد.
+// kind: act (تفعيل) · instIn (تنصيبٌ داخليّ) · instExt (تنصيبٌ خارجيّ) · deduct (استقطاع)
+//   · صفُّ act بـpackageId=0 يحمل **النمط**: percent (مع النسبة) أو fixed
+//   · وصفوفُ act بـpackageId>0 تحمل المبالغَ الثابتةَ لكلّ باقة
+//   · instIn/instExt/deduct: مبلغٌ لكلّ باقة (packageId>0)
+model ProfitRule {
+  id        Int      @id @default(autoincrement())
+  agentId   Int
+  towerId   Int      @default(0) // 0 = قاعدةٌ عامّةٌ لكلّ المكاتب
+  cabinet   Int      @default(0) // 0 = كلُّ كابينات النطاق · رقمٌ = كابينةٌ بعينها (FDT)
+  kind      String
+  packageId Int      @default(0) // 0 = صفُّ النمط (للتفعيل بالنسبة)
+  mode      String? // percent | fixed — لصفّ النمط وحدَه
+  percent   Float? // نسبةُ ربح التفعيل (٪ من سعر بيع الباقة)
+  amount    Int? // مبلغٌ ثابت
+  updatedAt DateTime @default(now()) @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([agentId, towerId, cabinet, kind, packageId])
+  @@index([agentId])
+  @@map("profit_rules")
 }
