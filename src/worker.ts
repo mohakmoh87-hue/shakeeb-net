@@ -90,6 +90,11 @@ try {
     startWaRelayPoller();
     startPrintAgent(); // الطباعة الصامتة لوصولات المكتب على الطابعة الافتراضية
     startOdooSync(); // مزامنة تذاكر أودو محليّاً (سحب/دفع) — قائد الوكيل فقط، للمكاتب المفعّلة
+    // ⚡ إذنُ كروم للاتصال بحاسبة المكتب: يُمنح تلقائيّاً أوّلَ لحظةٍ يكون فيها كرومُ مغلقاً
+    //   (بلا صلاحيّة مدير ولا نافذةٍ ولا إغلاقِ شيءٍ على أحد) — وإلّا حُمّلت لوحةُ الساس من
+    //   أمريكا: ٧٫٩ ميغا لكلّ فتحة و٦١٣ ميغا يوميّاً على حاسبةٍ تجاور خادمَ الساس.
+    const { startChromeLoopbackPermission } = await import("@/lib/chromeLoopbackPermission");
+    startChromeLoopbackPermission();
     startSelfUpdateWatcher(); // تحديث ذاتي: يلتقط تحديثات الكود ويعيد التشغيل عبر الغلاف
     // مراقب الإعدادات: يلتقط تبديل القاعدة المخطَّط ولو بقي الرابط القديم صالحاً
     const { startConfigWatcher } = await import("@/lib/workerSelfConfig");
