@@ -123,35 +123,31 @@ function grantInFile(file: string): Outcome {
   } catch { return "error"; }
 }
 
-let lastReport = "";
-
+// ═════ 📡 سطرُ حالةٍ في **كلّ دورة** — وإلّا عميت المراقبةُ عن بُعد ═════
+// سجلُّ نافذة العامل نافذةٌ متدحرجة (آخرُ ٦٠ سطراً / ٤٠٠٠ حرف) و`[stats-push]` يكتب فيها
+// كلَّ ٥ دقائق. فسطرُ نجاحٍ يُكتب **مرّةً واحدة** يُدفَع خارجها خلال ساعات، والحاسبةُ
+// السليمةُ كانت تخرج **صامتةً** فتبدو في الاستعلام كالتي لم تُحدَّث بعد — لا تمييزَ بينهما.
+// ⇒ تُكتب الحالةُ كلَّ دورةٍ بنفس إيقاع `stats-push` فتبقى داخل النافذة دائماً، ويصير
+//   **غيابُ السطر** معنًى واحداً لا لبسَ فيه: «هذه الحاسبةُ لم تسحب التحديثَ بعد».
 async function sweep(): Promise<void> {
   if (process.platform !== "win32") return;
   const files = preferenceFiles();
-  if (!files.length) return;
+  if (!files.length) { console.log("[chrome-perm] لا كروم على هذه الحاسبة"); return; }
 
-  // كلُّها ممنوحةٌ سلفاً ⇒ لا نستدعي PowerShell أصلاً (فحصٌ صامتٌ رخيص)
+  // كلُّها ممنوحةٌ سلفاً ⇒ لا نستدعي PowerShell أصلاً (فحصٌ صامتٌ رخيص: قراءةُ ملفٍّ محليّ)
   const pending = files.filter((f) => {
     try { const m = fs.readFileSync(f, "utf8").match(SITE_RE); return !(m && m[0].endsWith("1")); } catch { return false; }
   });
-  if (!pending.length) return;
+  if (!pending.length) { console.log("[chrome-perm] ✅ ممنوح"); return; }
 
   if (await userChromeRunning()) {
-    const note = `[chrome-perm] كروم مفتوح — تأجيل منح إذن الاتصال بحاسبة المكتب (${pending.length} ملف)`;
-    if (note !== lastReport) { console.log(note); lastReport = note; } // بلا تكرارٍ كلَّ نصف ساعة
+    console.log(`[chrome-perm] ⏳ كروم مفتوح — تأجيل (${pending.length} ملف)`);
     return;
   }
 
   const done: string[] = [];
-  for (const f of pending) {
-    const r = grantInFile(f);
-    if (r === "updated" || r === "added-site" || r === "added-section") done.push(`${path.basename(path.dirname(f))}:${r}`);
-    else if (r === "unknown-shape" || r === "error") done.push(`${path.basename(path.dirname(f))}:${r}`);
-  }
-  if (done.length) {
-    console.log(`[chrome-perm] ✅ مُنح إذنُ ${ORIGIN} للاتصال بحاسبة المكتب — ${done.join(" · ")} (يسري عند فتح كروم القادم)`);
-    lastReport = "";
-  }
+  for (const f of pending) done.push(`${path.basename(path.dirname(f))}:${grantInFile(f)}`);
+  console.log(`[chrome-perm] ✅ مُنح الآن — ${done.join(" · ")} (يسري عند فتح كروم القادم)`);
 }
 
 /**
