@@ -348,8 +348,15 @@ export async function POST(
       card: cardSerial,
       price: total,
       delivery,
-      paid,
-      remaining: Math.max(0, total + delivery - paid),
+      // ═════ 💳 الواصلُ في الرسالة = **الواصلُ الفعليّ** لا النقديُّ الخام ═════
+      // 🔴 بلاغُ محمد 2026-08-24: «تفعيلٌ بماستر — المالُ يُسجَّل صحيحاً ولا دَينَ عليه،
+      //   لكنّ رسالةَ الواتساب تقول إنّ عليه دَيناً بقيمة الاشتراك».
+      //   وسببُه أنّ الرسالةَ كانت تُبنى بـ`paid` (النقديُّ = صفرٌ في الماستر الكامل)
+      //   بينما الوصلُ والدَّينُ يُبنيان بـ`effPaid` (السطر 214) — فاختلف ما يراه المشتركُ
+      //   عمّا في دفاترك. ويشمل الخللُ **التفعيلَ بمكتب تفعيل** كذلك (كلاهما `fullPaid`).
+      // 🔒 وفي التفعيل النقديّ `effPaid === paid` حرفيّاً ⇒ الرسالةُ لا تتغيّر بحرف.
+      paid: effPaid,
+      remaining: Math.max(0, grandTotal - effPaid),
       carry: newCarry,
       dateTo,
       code: msgRewardCode, balance: msgRewardBalance, // كود/رصيد الخصم بعد هذا التفعيل

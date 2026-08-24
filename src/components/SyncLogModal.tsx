@@ -243,7 +243,14 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
           <label className="flex items-center gap-1 text-[12px] text-slate-500">من<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="max-w-[150px] rounded-lg border border-slate-300 px-2 py-1 text-sm" /></label>
           <label className="flex items-center gap-1 text-[12px] text-slate-500">إلى<input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="max-w-[150px] rounded-lg border border-slate-300 px-2 py-1 text-sm" /></label>
           {(from || to || q) && <button onClick={() => { setQ(""); setFrom(""); setTo(""); }} className="text-[12px] text-slate-400 hover:text-slate-600">مسح ✕</button>}
-          {canEdit && tab === "info" && (
+          {/* ═════ ✔ التحديثُ الجماعيُّ في **التبويبات الأربعة** (بلاغُ محمد 2026-08-24) ═════
+              بنصّه: «في تفعيلات خارجية … عند تحديد الكلّ يوجد إرسالُ رسالةٍ لهم لكن **لا
+              يوجد تحديثٌ لهم**، فقط التحديثُ مشتركاً مشتركاً». وكان الزرّان مقصورَين على
+              تبويب «تحديث معلومات» وحدَه — **والخادمُ يقبل القائمةَ أصلاً** ويعالج كلَّ صفٍّ
+              على حدة بحرّاسه الثلاثة (صفُّ قرضٍ بلا أيّام · صاحبُ قرضٍ لا يُمَسّ · ولا
+              يُقصَّر تاريخٌ أبداً — sync-log/route.ts:179). فالنقصُ كان في العرض لا في المنطق.
+              🔒 و«تحديد الكلّ» يستثني الصفوفَ الخَطِرة كما هو، والزرُّ الفرديُّ ينادي نفسَ المسار. */}
+          {canEdit && (
             <>
               <div className="flex-1" />
               <button onClick={() => void act([...sel], "apply")} disabled={busy || sel.size === 0}
@@ -255,7 +262,6 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
           {/* الإرسالُ اليدويّ (بلا صحِّ التلقائيّ أو فوقه): تحديدُ واحدٍ أو مجموعةٍ ثمّ إرسال */}
           {canEdit && (tab === "install" || tab === "self") && (
             <>
-              <div className="flex-1" />
               <button onClick={() => void act([...sel], "message")} disabled={busy || sel.size === 0}
                 className="rounded-lg bg-mynet-blue px-3.5 py-1.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50">📨 إرسال رسالة للمحدَّد ({sel.size})</button>
             </>
