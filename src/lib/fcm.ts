@@ -85,10 +85,14 @@ export async function sendFcmNotification(
   deviceToken: string | null | undefined,
   title: string,
   body: string,
+  // 🔗 وجهةُ النقر (بلاغُ محمد 2026-08-24): لم تكن الدالّةُ تقبل رابطاً أصلاً، فنقرُ إشعارِ
+  //    التطبيق يفتح التطبيقَ **ولا يفتح الشاشة**. ويُرسَل في `data` كي يقرأه التطبيق.
+  url?: string | null,
 ): Promise<FcmResult> {
   if (!deviceToken) return { ok: false, error: "no-device-token" };
   return sendFcm(deviceToken, {
     notification: { title, body },
     android: { priority: "high", notification: { sound: "default" } },
+    ...(url ? { data: { url } } : {}),
   });
 }

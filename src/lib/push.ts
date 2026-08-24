@@ -51,7 +51,7 @@ export async function sendPushToAgent(agentId: number | null, payload: PushPaylo
     });
     await Promise.all(
       users.map(async (u) => {
-        const r = await sendFcmNotification(u.fcmToken, payload.title, payload.body);
+        const r = await sendFcmNotification(u.fcmToken, payload.title, payload.body, payload.url);
         if (r.invalidToken) await prisma.user.update({ where: { id: u.id }, data: { fcmToken: null } }).catch(() => {});
       }),
     );
@@ -78,7 +78,7 @@ export async function sendPushToUser(userId: number | null, payload: PushPayload
   if (fcmEnabled()) {
     const u = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, fcmToken: true } });
     if (u?.fcmToken) {
-      const r = await sendFcmNotification(u.fcmToken, payload.title, payload.body);
+      const r = await sendFcmNotification(u.fcmToken, payload.title, payload.body, payload.url);
       if (r.invalidToken) await prisma.user.update({ where: { id: u.id }, data: { fcmToken: null } }).catch(() => {});
     }
   }

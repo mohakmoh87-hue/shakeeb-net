@@ -9,16 +9,18 @@ export async function notify(opts: {
   // و`null` أو غيابُها = **للجميع** كما كان — فلا يتغيّر شيءٌ في كلّ نداءٍ قائم.
   userId?: number | null; technicianId?: number | null;
 }): Promise<void> {
+  // 🔗 الرابطُ يُخزَّن (كان يُمرَّر للدفعة ويُرمى) — فيصير الإشعارُ قابلاً للنقر مهما كان نوعُه.
+  const base = {
+    agentId: opts.agentId, towerId: opts.towerId, type: opts.type,
+    title: opts.title, body: opts.body, refType: opts.refType ?? null, refId: opts.refId ?? null,
+    userId: opts.userId ?? null, technicianId: opts.technicianId ?? null,
+  };
   try {
-    await prisma.notification.create({
-      data: {
-        agentId: opts.agentId, towerId: opts.towerId, type: opts.type,
-        title: opts.title, body: opts.body, refType: opts.refType ?? null, refId: opts.refId ?? null,
-        userId: opts.userId ?? null, technicianId: opts.technicianId ?? null,
-      },
-    });
+    await prisma.notification.create({ data: { ...base, url: opts.url ?? null } });
   } catch {
-    // لا يُفشل الحدث الأصلي إن تعذّر إنشاء الإشعار
+    // ⏳ عمودُ `url` يُضاف بلصق SQL؛ وقبل لصقه لا يجوز أن تتوقّف الإشعاراتُ كلُّها —
+    //    فتُعاد المحاولةُ بالحقول القديمة وحدَها. (وبعد اللصق يمرّ الفرعُ الأوّل دائماً.)
+    try { await prisma.notification.create({ data: base }); } catch { /* لا يُفشل الحدث الأصلي */ }
   }
   void sendPushToAgent(opts.agentId, { title: opts.title, body: opts.body, tag: opts.type, url: opts.url ?? "/field-management" }).catch(() => {});
 }

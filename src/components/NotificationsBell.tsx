@@ -4,12 +4,21 @@ import { useCallback, useEffect, useState } from "react";
 import { isNativeApp, getFcmToken } from "@/lib/nativeTracking";
 import { usePolling } from "@/lib/usePolling";
 
-type Notif = { id: number; type: string; title: string; body: string; read: boolean; createdAt: string };
-const ICON: Record<string, string> = { checkin: "🟢", checkout: "🔴", leave: "📅", deduction: "💠", cardDone: "✅" };
+type Notif = { id: number; type: string; title: string; body: string; read: boolean; createdAt: string; url?: string | null };
+const ICON: Record<string, string> = { checkin: "🟢", checkout: "🔴", leave: "📅", deduction: "💠", cardDone: "✅", "map-proposal": "📍" };
 // الإشعارات القابلة للفتح: نقرها يفتح نافذة المراجعة/الموافقة المناسبة في لوحة إدارة الفنيين
+//
+// 🔴 **بلاغُ محمد 2026-08-24**: «الإشعارُ يظهر ولا يمكن الضغط عليه». وسببُه هنا حرفيّاً:
+//   إشعارُ موقع العمود نوعُه `map-proposal` ولم يكن في هذه الخريطة ⇒ `action` فارغةٌ ⇒
+//   `onClick` يخرج من أوّل سطر، ولا صنفَ `cursor-pointer`، ولا سطرَ تلميح. نصٌّ جامد.
+// ⚠️ وفخُّ التسمية الذي أخفاه: النوعُ **مفرد** `map-proposal` واسمُ النافذة **جمع**
+//   `map-proposals` (كما ينتظرها `field-management/page.tsx`) — فلا يُختصر أحدُهما بالآخر.
+// 🔑 وحتى لا تتكرّر العلّةُ مع كلّ نوعٍ جديد: الإشعارُ صار يحمل **رابطَه** (عمود `url`)،
+//   فما لم يُذكَر هنا يُفتَح برابطه بدل أن يموت صامتاً.
 const ACTION: Record<string, { modal: string; hint: string }> = {
   deduction: { modal: "deductions", hint: "اضغط للمراجعة والموافقة ←" }, // يشمل «نسيت البصمة» والخصومات
   leave: { modal: "leaves", hint: "اضغط لمراجعة الإجازة ←" },
+  "map-proposal": { modal: "map-proposals", hint: "اضغط لمراجعة موقع العمود ←" },
 };
 const fmt = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
@@ -104,16 +113,19 @@ export default function NotificationsBell() {
               <ul className="space-y-1.5">
                 {items.map((n) => {
                   const action = ACTION[n.type];
+                  // رابطُ الإشعار ملاذاً: نوعٌ لا تعرفه الخريطةُ يُفتَح برابطه بدل أن يموت صامتاً
+                  const clickable = !!action || !!n.url;
                   return (
                     <li
                       key={n.id}
                       onClick={() => {
-                        if (!action) return;
-                        // فتح نافذة المراجعة المناسبة في لوحة إدارة الفنيين (الجرس يعيش فيها)
+                        if (!clickable) return;
                         setOpen(false);
-                        window.dispatchEvent(new CustomEvent("bell:open-modal", { detail: action.modal }));
+                        // فتح نافذة المراجعة المناسبة في لوحة إدارة الفنيين (الجرس يعيش فيها)
+                        if (action) window.dispatchEvent(new CustomEvent("bell:open-modal", { detail: action.modal }));
+                        else if (n.url) window.location.assign(n.url);
                       }}
-                      className={`rounded-lg border px-3 py-2 ${n.read ? "border-slate-200 bg-white" : "border-mynet-blue/30 bg-blue-50/50"} ${action ? "cursor-pointer transition hover:border-mynet-blue hover:bg-blue-50" : ""}`}
+                      className={`rounded-lg border px-3 py-2 ${n.read ? "border-slate-200 bg-white" : "border-mynet-blue/30 bg-blue-50/50"} ${clickable ? "cursor-pointer transition hover:border-mynet-blue hover:bg-blue-50" : ""}`}
                     >
                       <div className="flex items-start gap-2">
                         <span className="text-lg leading-none">{ICON[n.type] ?? "🔔"}</span>
@@ -122,7 +134,7 @@ export default function NotificationsBell() {
                           <div className="text-xs text-slate-600">{n.body}</div>
                           <div className="mt-0.5 flex items-center justify-between">
                             <span className="text-[10px] text-slate-400" dir="ltr">{fmt(n.createdAt)}</span>
-                            {action && <span className="text-[10px] font-bold text-mynet-blue">{action.hint}</span>}
+                            {clickable && <span className="text-[10px] font-bold text-mynet-blue">{action ? action.hint : "اضغط للفتح ←"}</span>}
                           </div>
                         </div>
                       </div>

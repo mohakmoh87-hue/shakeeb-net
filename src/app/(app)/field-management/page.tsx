@@ -933,8 +933,13 @@ export default function FieldManagementPage() {
             </div>
           )}
           <div data-trial-hide className="contents">
-          <FieldMenu title="اللوحة والسجلّات">
+          <FieldMenu title="اللوحة والسجلّات" badge={canManage ? mapPending : 0}>
             {canManage && <FieldMenuItem onClick={() => setTypesModal(true)}>⏱ الأنواع والأوقات</FieldMenuItem>}
+            {/* 📍 **بلاغُ محمد 2026-08-24**: «الإشعارُ يظهر ولا يمكن الضغط عليه» — ولم يكن
+                للمدير مدخلٌ آخرُ أصلاً: زرُّ مواقع الأعمدة وُلد (e351189) **داخل شريط
+                الفنيّين** الذي حُصر بـ`isTech` قبله بستّة أيّام (fac5250)، وشرطُه `canManage`
+                — وهما لا يجتمعان أبداً، فلم يُعرَض لمديرٍ يوماً. ومكانُه الصحيح هنا. */}
+            {canManage && <FieldMenuItem onClick={() => setMapModal(true)} badge={mapPending}>📍 مواقع الأعمدة</FieldMenuItem>}
             <FieldMenuItem onClick={() => setArchiveModal(true)}>🗂️ الأرشيف</FieldMenuItem>
             {canOperate && !isTech && <FieldMenuItem onClick={() => setTrashModal(true)}>🗑️ المحذوفة</FieldMenuItem>}
           </FieldMenu>
@@ -1224,12 +1229,9 @@ export default function FieldManagementPage() {
               🏅 إنجازات الفنيين
             </button>
           )}
-          {canManage && (
-            <button onClick={() => setMapModal(true)} className="relative rounded-lg bg-teal-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-teal-700">
-              📍 مواقع الأعمدة
-              {mapPending > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white ring-2 ring-black/25">{mapPending}</span>}
-            </button>
-          )}
+          {/* 🪦 حُذف من هنا زرُّ «📍 مواقع الأعمدة»: كان **كوداً ميّتاً** — شرطُه `canManage`
+              داخل شريطٍ شرطُه `isTech`، ولا يجتمعان (الخادمُ يعطي الفنيَّ `canManage:false`).
+              ومكانُه الآن قائمةُ «اللوحة والسجلّات» في شريط المدير حيث يراه فعلاً. */}
           {canManage && (
             <button onClick={() => setTypesModal(true)} className="rounded-lg bg-sky-600 px-3.5 py-1.5 text-sm font-semibold text-white shadow hover:bg-sky-700">
               ⏱ الأنواع والأوقات

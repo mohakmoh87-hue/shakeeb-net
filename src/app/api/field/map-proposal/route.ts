@@ -36,7 +36,8 @@ async function resolveTargetName(params: {
 
   // المشترك (للتوثيق والعزل) — ضمن مكاتب الوكيل حصراً
   if (subscriberId == null && netUser) {
-    const agentTowers = await prisma.tower.findMany({ where: { agentId: params.agentId ?? -1 }, select: { id: true } });
+    // 🔒 والمحذوفةُ تُستثنى: مكتبٌ حُذف لا يُطابَق مشتركوه (كان الترشيحُ بالوكيل وحدَه)
+    const agentTowers = await prisma.tower.findMany({ where: { agentId: params.agentId ?? -1, isDeleted: false }, select: { id: true } });
     const s = await prisma.subscriber.findFirst({
       where: {
         netUser: { equals: netUser, mode: "insensitive" }, isDeleted: false,
@@ -102,13 +103,18 @@ export async function POST(request: Request) {
     ? await prisma.mapPointProposal.update({ where: { id: pending.id }, data })
     : await prisma.mapPointProposal.create({ data });
 
-  await notify({
-    agentId, towerId: t.towerId, type: "map-proposal",
-    title: "📍 موقع عمود جديد بانتظار قبولك",
-    body: `${byName ?? "فني"} أرسل موقع العمود ${t.name} (${t.netUser})`,
-    refType: "mapPointProposal", refId: row.id,
-    url: "/field-management?open=map-proposals",
-  });
+  // 🔔 إشعارٌ **للاقتراح الجديد وحدَه**: إعادةُ الإرسال تُحدّث الصفَّ نفسَه ولا تُكدّس صفوفاً،
+  //    فكان كلُّ إرسالٍ يزرع إشعاراً جديداً لعمودٍ واحدٍ ⇒ جرسٌ ممتلئٌ بتكرار. والمعلَّقُ يبقى
+  //    ظاهراً في شارة «مواقع الأعمدة» على كلّ حال، فلا يضيع شيء.
+  if (!pending) {
+    await notify({
+      agentId, towerId: t.towerId, type: "map-proposal",
+      title: "📍 موقع عمود جديد بانتظار قبولك",
+      body: `${byName ?? "فني"} أرسل موقع العمود ${t.name} (${t.netUser})`,
+      refType: "mapPointProposal", refId: row.id,
+      url: "/field-management?open=map-proposals",
+    });
+  }
 
   return NextResponse.json({ ok: true, id: row.id, name: t.name, updated: !!pending });
 }

@@ -1420,6 +1420,10 @@ model Notification {
   technicianId Int? // الفنيُّ المُخاطَب
   refType      String? // technician | leave | adjustment
   refId        Int?
+  // 🔗 وجهةُ الإشعار عند نقره (بلاغُ محمد 2026-08-24: «الإشعارُ يظهر ولا يمكن الضغط عليه»).
+  // كان `notify` يستقبل `url` ويُمرّره إلى دفعة الهاتف **ولا يخزّنه**، فالجرسُ يبني وجهتَه
+  // من خريطةٍ يدويّةٍ تعرف نوعَين من أحدَ عشر ⇒ كلُّ نوعٍ جديدٍ يولد غيرَ قابلٍ للنقر.
+  url          String?
   read         Boolean  @default(false)
   createdAt    DateTime @default(now())
 
