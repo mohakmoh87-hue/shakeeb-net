@@ -27,6 +27,7 @@ export default function InventoryPage() {
   const [custodies, setCustodies] = useState<Custody[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [transferItem, setTransferItem] = useState<Item | null>(null);
+  const [batchItem, setBatchItem] = useState<Item | null>(null); // 📦 سجلّ الدفعات
   const [custodyOpen, setCustodyOpen] = useState(false);
   const [filterTower, setFilterTower] = useState(""); // فلتر مكتب (للمدير)
 
@@ -61,7 +62,12 @@ export default function InventoryPage() {
         { name: "category", label: "التصنيف" },
         { name: "towerId", label: "المكتب", type: "select", required: true, options: towers.map((t) => ({ value: t.id, label: t.name ?? `#${t.id}` })) },
       ]
-    : [{ name: "count", label: "الكمية (الزيادة فقط — لا يمكن الإنقاص)", type: "number", required: true }];
+    : [
+        { name: "count", label: "الكمية (الزيادة فقط — لا يمكن الإنقاص)", type: "number", required: true },
+        // 📦 «يجب إدخال سعر المادة عند زيادة عددها» (قرار محمد 2026-08-25) — والخادمُ
+        //    يفرضه أيضاً، فلا تمرّ زيادةٌ بلا سعرٍ من أيّ باب.
+        { name: "batchBuyPrice", label: "سعر شراء هذه الدفعة (إلزامي)", type: "number", required: true },
+      ];
 
   return (
     <>
@@ -130,6 +136,16 @@ export default function InventoryPage() {
             >
               🔁 ترحيل
             </button>
+            {/* 📦 سجلُّ الدفعات — يجيب سؤال محمد: بكم اشتُريت في كلّ مرّة، ومتى، وبيد من.
+                🔒 للمدير وحدَه كخانة «الكلفة» — والخادمُ يفرضه أيضاً بـ403. */}
+            {isAdmin && (
+              <button
+                onClick={() => setBatchItem(r)}
+                className="rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+              >
+                📦 الدفعات
+              </button>
+            )}
           </div>
         )}
         columns={[
@@ -179,6 +195,7 @@ export default function InventoryPage() {
           onDone={afterChange}
         />
       )}
+      {batchItem && <BatchesModal item={batchItem} onClose={() => setBatchItem(null)} />}
     </>
   );
 }
@@ -366,5 +383,98 @@ function Inp({ value, onChange, type = "text", placeholder }: { value: string; o
   return (
     <input type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-mynet-blue focus:outline-none" />
+  );
+}
+
+// ═════ 📦 سجلُّ دفعات المادة — سؤالُ محمد 2026-08-25 ═════
+// «سعرُ الشراء قد يختلف لنفس المادة في وقتٍ لاحق — كيف سأعرف سعرَ شراء المادة في كلّ
+//  مرّةٍ أزيد العدد؟» فهذه النافذةُ جوابُه: كلُّ دفعةٍ بسعرها ووقتها وصاحبها.
+// 🔑 وقراءةٌ محضة: لا تكتب شيئاً، ولا تمسّ كلفةَ المادة ولا حسابَ الربح (قرارُ محمد).
+type BatchRow = { id: number; at: string; user: string; before: number; after: number; delta: number; buyPrice: number | null };
+
+function BatchesModal({ item, onClose }: { item: Item; onClose: () => void }) {
+  const [rows, setRows] = useState<BatchRow[] | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    fetch(`/api/items/${item.id}/batches`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("تعذّر جلب السجلّ"))))
+      .then((d) => setRows(d.rows ?? []))
+      .catch((e) => setErr(e instanceof Error ? e.message : "تعذّر جلب السجلّ"));
+  }, [item.id]);
+
+  const ins = (rows ?? []).filter((r) => r.delta > 0);
+  const withPrice = ins.filter((r) => r.buyPrice != null);
+  // 📊 المتوسّطُ المرجّح **معروضاً لا محسوباً في الربح** — يراه محمد ولا يغيّر رقماً
+  const totalQty = withPrice.reduce((s, r) => s + r.delta, 0);
+  const totalCost = withPrice.reduce((s, r) => s + r.delta * (r.buyPrice ?? 0), 0);
+  const avg = totalQty > 0 ? totalCost / totalQty : null;
+  const last = withPrice[0]?.buyPrice ?? null; // الأحدثُ أوّلاً (ترتيبُ الخادم)
+
+  return (
+    <Overlay onClose={onClose} wide>
+      <h3 className="mb-1 text-lg font-bold text-slate-800">📦 سجلّ دفعات: {item.name}</h3>
+      <p className="mb-4 text-sm text-slate-500">كلُّ زيادةِ كميّةٍ بسعر شرائها ووقتها وصاحبها — للاطّلاع فقط، ولا يغيّر كلفة المادة.</p>
+
+      <div className="mb-4 grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-xl bg-slate-50 p-3">
+          <div className="text-[11px] font-medium text-slate-500">آخر سعر شراء</div>
+          <div className="text-lg font-extrabold text-slate-800">{last != null ? last.toLocaleString("en-US") : "—"}</div>
+        </div>
+        <div className="rounded-xl bg-slate-50 p-3">
+          <div className="text-[11px] font-medium text-slate-500">متوسّط الشراء المرجّح</div>
+          <div className="text-lg font-extrabold text-slate-800">{avg != null ? Math.round(avg).toLocaleString("en-US") : "—"}</div>
+        </div>
+        <div className="rounded-xl bg-slate-50 p-3">
+          <div className="text-[11px] font-medium text-slate-500">الكلفة المسجّلة الآن</div>
+          <div className="text-lg font-extrabold text-slate-800">{item.priceDinar != null ? item.priceDinar.toLocaleString("en-US") : "—"}</div>
+        </div>
+      </div>
+
+      {err && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{err}</p>}
+      {rows == null && !err && <p className="py-6 text-center text-sm text-slate-400">جارٍ التحميل…</p>}
+
+      {rows != null && rows.length === 0 && (
+        <p className="rounded-lg bg-slate-50 py-6 text-center text-sm text-slate-500">لا حركاتِ كميّةٍ مسجّلةٌ لهذه المادة بعد.</p>
+      )}
+
+      {rows != null && rows.length > 0 && (
+        <div className="max-h-[46dvh] overflow-y-auto rounded-xl border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-slate-100 text-xs text-slate-600">
+              <tr>
+                <th className="p-2 text-right">التاريخ</th>
+                <th className="p-2 text-right">الحركة</th>
+                <th className="p-2 text-right">سعر الشراء</th>
+                <th className="p-2 text-right">الرصيد</th>
+                <th className="p-2 text-right">بواسطة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-t border-slate-100">
+                  <td className="p-2 whitespace-nowrap text-slate-600" dir="ltr">
+                    {new Date(r.at).toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </td>
+                  <td className={`p-2 font-bold ${r.delta > 0 ? "text-emerald-700" : "text-red-600"}`}>
+                    {r.delta > 0 ? "+" : "−"}{Math.abs(r.delta).toLocaleString("en-US")}
+                  </td>
+                  <td className="p-2 font-bold text-slate-800">
+                    {/* 🔒 صفوفٌ قديمةٌ سبقت الميزةَ لا سعرَ لها — تُقال الحقيقةُ ولا يُلفَّق رقم */}
+                    {r.delta > 0
+                      ? (r.buyPrice != null ? r.buyPrice.toLocaleString("en-US") : <span className="text-xs font-normal text-slate-400">لم يُسجَّل (قبل الميزة)</span>)
+                      : <span className="text-xs font-normal text-slate-400">—</span>}
+                  </td>
+                  <td className="p-2 text-slate-500" dir="ltr">{r.before} → {r.after}</td>
+                  <td className="p-2 text-slate-600">{r.user}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <button onClick={onClose} className="mt-4 w-full rounded-lg bg-slate-200 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-300">إغلاق</button>
+    </Overlay>
   );
 }

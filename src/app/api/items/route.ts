@@ -78,7 +78,28 @@ export async function POST(request: Request) {
   if (towerId != null && !(await ownsTower(g.session, towerId))) {
     return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   }
+  // 📦 «يجب إدخالُ سعر المادة عند زيادة عددها» — والإنشاءُ بكميّةٍ **هو أوّلُ دفعة**،
+  //    فيلزمه سعرُها كما تلزم الزيادةَ. وإنشاءٌ بصفرٍ (اسمٌ للكتالوج) لا يُطالَب بشيء.
+  const openCount = parsed.data.count ?? 0;
+  const openPrice = parsed.data.priceDinar ?? 0;
+  if (openCount > 0 && !(openPrice > 0)) {
+    return NextResponse.json({ error: "أدخل سعر المادة (الكلفة) — لا تُقبل كميّةٌ افتتاحيّةٌ بلا سعر" }, { status: 400 });
+  }
   const created = await prisma.item.create({ data: { ...parsed.data, towerId } });
+  // 📦 قيدُ الدفعة الافتتاحيّة — فلا يبدأ السجلُّ من الزيادة الثانية ويُخفي أوّلَ شراء
+  if (openCount > 0) {
+    const { batchTag } = await import("@/app/api/_lib/itemBatchLog");
+    await prisma.auditLog.create({
+      data: {
+        userId: g.session?.userId ?? null,
+        action: "ITEM_QTY_UP", entity: "item", entityId: String(created.id),
+        details: `دفعة افتتاحية «${parsed.data.name}» من 0 إلى ${openCount} (+${openCount})`
+          + ` — سعر شراء الدفعة ${Math.round(openPrice)} — مكتب ${towerId ?? "—"}`
+          + (g.session?.fullName || g.session?.username ? ` — بواسطة ${g.session.fullName ?? g.session.username}` : "")
+          + batchTag(0, openCount, openPrice),
+      },
+    }).catch(() => { /* لا يُفشل الإنشاءَ قيدٌ */ });
+  }
   // المادة الجديدة تظهر فوراً في كل مكاتب الوكيل بكمية صفر — فمن اشتراها يزيد كميته بنفسه
   clearCatalogCache();
   await ensureOfficeCatalog(g.session?.agentId ?? null, await agentTowerIds(g.session), { force: true }).catch(() => {});
