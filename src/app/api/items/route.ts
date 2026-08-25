@@ -78,6 +78,26 @@ export async function POST(request: Request) {
   if (towerId != null && !(await ownsTower(g.session, towerId))) {
     return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
   }
+  // ═════ 🔒 حارسُ تكرار الاسم في المكتب نفسِه (اقتراحُ محمد 2026-08-25) ═════
+  // 🔴 كان الإنشاءُ بلا فحصٍ إطلاقاً: اسمٌ موجودٌ يُكتب ثانيةً ⇒ **صفّان بالاسم نفسِه في
+  //   المكتب نفسِه**، فينقسم المخزونُ بينهما ولكلٍّ متوسّطُ شراءٍ وسعرُ بيعٍ مختلف، ولا
+  //   ينبّه أحدٌ أحداً. ونافذةُ «إضافة مادة» الجديدةُ تمنعه بالاختيار من القائمة — وهذا
+  //   الحارسُ يمنعه في **الخادم** فلا تعتمد سلامةُ المخزن على شاشةٍ وحدَها.
+  // 🔑 ويعيد معرّفَ الصفّ القائم كي تحوّل الواجهةُ الطلبَ إلى «زيادةُ كميّة» بلا إرباك.
+  const wantName = (parsed.data.name ?? "").trim();
+  if (wantName) {
+    const clash = await prisma.item.findFirst({
+      where: { towerId, isDeleted: false, name: { equals: wantName, mode: "insensitive" } },
+      select: { id: true, name: true, count: true },
+    });
+    if (clash) {
+      return NextResponse.json(
+        { error: `«${clash.name}» موجودةٌ سلفاً في هذا المكتب (الكمية ${clash.count ?? 0}) — زِد كميّتَها بدل إنشاء صفٍّ ثانٍ`, existingId: clash.id },
+        { status: 409 },
+      );
+    }
+  }
+
   // 📦 «يجب إدخالُ سعر المادة عند زيادة عددها» — والإنشاءُ بكميّةٍ **هو أوّلُ دفعة**،
   //    فيلزمه سعرُها كما تلزم الزيادةَ. وإنشاءٌ بصفرٍ (اسمٌ للكتالوج) لا يُطالَب بشيء.
   const openCount = parsed.data.count ?? 0;

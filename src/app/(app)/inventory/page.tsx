@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import CrudManager, { type Field } from "@/components/CrudManager";
 import { usePermission } from "@/lib/usePermission";
+import AddItemModal from "@/components/AddItemModal";
 
 type Item = {
   id: number;
@@ -28,6 +29,7 @@ export default function InventoryPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [transferItem, setTransferItem] = useState<Item | null>(null);
   const [batchItem, setBatchItem] = useState<Item | null>(null); // 📦 سجلّ الدفعات
+  const [addOpen, setAddOpen] = useState(false); // ➕ نافذة إضافة مادة
   const [custodyOpen, setCustodyOpen] = useState(false);
   const [filterTower, setFilterTower] = useState(""); // فلتر مكتب (للمدير)
 
@@ -52,16 +54,11 @@ export default function InventoryPage() {
 
   // المدير: كل الحقول. المستخدم العادي: الكمية فقط (زيادة المخزون عند استلام بضاعة) —
   // إضافة/حذف المواد وتعديل الأسعار من صلاحية المدير، والخادم يفرض ذلك أيضاً.
+  // ✏️ «زرُّ تعديل يعود إلى ما كان عليه: يزيد أو ينقص عددَ مادة» (قرارُ محمد 2026-08-25).
+  //    فالشراءُ صار في نافذة «➕ إضافة مادة» بسعر دفعته، و«تعديل» صار **تصحيحَ عدد**:
+  //    للمدير زيادةً ونقصاناً بلا سعر، وللمستخدم زيادةً بسعرٍ إلزاميّ (بابُه الوحيد).
   const fields: Field[] = isAdmin
-    ? [
-        { name: "name", label: "اسم المادة", required: true },
-        { name: "priceDinar", label: "سعر المادة (الكلفة)", type: "number" },
-        { name: "count", label: "الكمية", type: "number" },
-        { name: "priceSale", label: "سعر البيع", type: "number" },
-        { name: "priceSale2", label: "سعر بيع خاص", type: "number" },
-        { name: "category", label: "التصنيف" },
-        { name: "towerId", label: "المكتب", type: "select", required: true, options: towers.map((t) => ({ value: t.id, label: t.name ?? `#${t.id}` })) },
-      ]
+    ? [{ name: "count", label: "الكمية (تصحيح — زيادة أو نقصان)", type: "number", required: true }]
     : [
         { name: "count", label: "الكمية (الزيادة فقط — لا يمكن الإنقاص)", type: "number", required: true },
         // 📦 «يجب إدخال سعر المادة عند زيادة عددها» (قرار محمد 2026-08-25) — والخادمُ
@@ -78,7 +75,9 @@ export default function InventoryPage() {
         apiBase={filterTower ? `/api/items?officeId=${filterTower}` : "/api/items"}
         addLabel="إضافة مادة"
         fields={fields}
-        canAdd={isAdmin}
+        // ➕ الإضافةُ لها نافذتُها الخاصّة (بحثٌ في القائمة · اختيارٌ · أو اسمٌ جديد) —
+        //    اقتراحُ محمد 2026-08-25. فزرُّ الإضافة المدمَج مُطفأ، وزرُّنا في الترويسة.
+        canAdd={false}
         canDelete={isAdmin}
         summary={(rows) => {
           // قيمة المخزون = الكمية × السعر (تعكس البحث/فلتر المكتب المعروض)
@@ -124,6 +123,15 @@ export default function InventoryPage() {
             >
               🧰 ذمم الفنيين
             </button>
+            {/* ➕ نافذةُ الإضافة الجديدة — للمدير حصراً (قرارُ محمد 2026-08-25) */}
+            {isAdmin && (
+              <button
+                onClick={() => setAddOpen(true)}
+                className="rounded-lg bg-mynet-blue px-4 py-2 text-sm font-semibold text-white shadow hover:bg-mynet-blue-dark"
+              >
+                ➕ إضافة مادة
+              </button>
+            )}
           </>
         }
         rowActions={(r) => (
@@ -153,7 +161,9 @@ export default function InventoryPage() {
           { header: "الاسم", render: (r) => r.name },
           ...(isAdmin ? [{ header: "المكتب", render: (r: Item) => towerName(r.towerId) }] : []),
           // الكلفة للمدير فقط (الخادم يحجبها أيضاً عن غير المدير)
-          ...(isAdmin ? [{ header: "الكلفة", render: (r: Item) => fmt(r.priceDinar) }] : []),
+          // 📊 وصارت **متوسّطَ الشراء المرجّح** لا سعرَ آخر دفعة (طلبُ محمد: «وأن يظهر
+          //    متوسّطُ السعر لي») — والتفصيلُ دفعةً دفعةً في نافذة «📦 الدفعات».
+          ...(isAdmin ? [{ header: "متوسّط الشراء", render: (r: Item) => fmt(r.priceDinar) }] : []),
           { header: "سعر البيع", render: (r) => fmt(r.priceSale) },
           {
             header: "المتبقّي (الكلي)",
@@ -196,6 +206,14 @@ export default function InventoryPage() {
         />
       )}
       {batchItem && <BatchesModal item={batchItem} onClose={() => setBatchItem(null)} />}
+      {addOpen && (
+        <AddItemModal
+          towers={towers}
+          defaultTowerId={filterTower ? Number(filterTower) : null}
+          onClose={() => setAddOpen(false)}
+          onDone={afterChange}
+        />
+      )}
     </>
   );
 }
@@ -405,7 +423,9 @@ function BatchesModal({ item, onClose }: { item: Item; onClose: () => void }) {
 
   const ins = (rows ?? []).filter((r) => r.delta > 0);
   const withPrice = ins.filter((r) => r.buyPrice != null);
-  // 📊 المتوسّطُ المرجّح **معروضاً لا محسوباً في الربح** — يراه محمد ولا يغيّر رقماً
+  // 📊 متوسّطُ **كلّ ما اشتُري تاريخيّاً** — ويختلف عمداً عن «متوسّط الشراء المعتمد»
+  //    (`priceDinar`) الذي يحسبه الخادمُ على **المخزون الباقي** لحظةَ كلّ زيادة.
+  //    فاختلافُهما ليس تناقضاً: هذا تاريخُ مشترياتك، وذاك كلفةُ ما في يدك الآن.
   const totalQty = withPrice.reduce((s, r) => s + r.delta, 0);
   const totalCost = withPrice.reduce((s, r) => s + r.delta * (r.buyPrice ?? 0), 0);
   const avg = totalQty > 0 ? totalCost / totalQty : null;
@@ -422,12 +442,12 @@ function BatchesModal({ item, onClose }: { item: Item; onClose: () => void }) {
           <div className="text-lg font-extrabold text-slate-800">{last != null ? last.toLocaleString("en-US") : "—"}</div>
         </div>
         <div className="rounded-xl bg-slate-50 p-3">
-          <div className="text-[11px] font-medium text-slate-500">متوسّط الشراء المرجّح</div>
+          <div className="text-[11px] font-medium text-slate-500">متوسّط كل المشتريات</div>
           <div className="text-lg font-extrabold text-slate-800">{avg != null ? Math.round(avg).toLocaleString("en-US") : "—"}</div>
         </div>
-        <div className="rounded-xl bg-slate-50 p-3">
-          <div className="text-[11px] font-medium text-slate-500">الكلفة المسجّلة الآن</div>
-          <div className="text-lg font-extrabold text-slate-800">{item.priceDinar != null ? item.priceDinar.toLocaleString("en-US") : "—"}</div>
+        <div className="rounded-xl bg-emerald-50 p-3">
+          <div className="text-[11px] font-medium text-emerald-700">متوسّط الشراء المعتمد</div>
+          <div className="text-lg font-extrabold text-emerald-800">{item.priceDinar != null ? item.priceDinar.toLocaleString("en-US") : "—"}</div>
         </div>
       </div>
 

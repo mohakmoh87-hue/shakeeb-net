@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
-import { batchTag } from "@/app/api/_lib/itemBatchLog";
+import { batchTag, movingAverage } from "@/app/api/_lib/itemBatchLog";
 
 const schema = z.object({
-  name: z.string().min(1, "اسم المادة مطلوب"),
+  // 🔑 الاسمُ **اختياريٌّ في التعديل** منذ 2026-08-25: صار نموذجُ «تعديل» للمدير كميّةً
+  //    وحدَها (قرارُ محمد)، فاشتراطُه كان سيردّ كلَّ تصحيحِ عددٍ بـ«اسم المادة مطلوب».
+  //    ومَن أرسله يُكتب كما كان — فلا يُفقَد سلوكٌ قائم.
+  name: z.string().min(1, "اسم المادة مطلوب").optional(),
   category: z.string().nullable().optional(),
   priceSale: z.coerce.number().nullable().optional(),
   priceSale2: z.coerce.number().nullable().optional(),
@@ -81,9 +84,12 @@ export async function PUT(
     }
     const bad = requireBatchPrice(current, q.data.count, q.data.batchBuyPrice);
     if (bad) return bad;
-    // 🔑 الكميّةُ وحدَها تُكتب — **`priceDinar` لا يُمَسّ** (قرارُ محمد: سجلٌّ للقراءة،
-    //    فلا يتغيّر حسابُ الربح ولا كلفةُ المادة بزيادةِ دفعةٍ بسعرٍ مختلف).
-    const bumped = await prisma.item.update({ where: { id: Number(id) }, data: { count: q.data.count } });
+    // 📊 الكلفةُ تصير **المتوسّطَ المرجّح** لا سعرَ الدفعة الأخيرة (بلاغ محمد 2026-08-25)
+    const avg = movingAverage(current, existing.priceDinar, q.data.count - current, q.data.batchBuyPrice ?? 0);
+    const bumped = await prisma.item.update({
+      where: { id: Number(id) },
+      data: { count: q.data.count, priceDinar: Math.round(avg) },
+    });
     await logQty(current, q.data.count, q.data.batchBuyPrice);
     return NextResponse.json(bumped);
   }
@@ -96,20 +102,33 @@ export async function PUT(
       { status: 400 },
     );
   }
-  // 📦 سعرُ الدفعة للمدير: حقلُه الصريح إن ملأه، وإلّا الكلفةُ التي كتبها في النموذج
-  //    نفسِه (`priceDinar`) — فلا يُطالَب بكتابة الرقم مرّتَين في شاشةٍ واحدة.
+  // 📦 سعرُ الدفعة للمدير: **حقلُه الصريحُ وحدَه** لا خانةُ الكلفة.
+  // 🔴 وكان يُشتقّ من `priceDinar` — وهو عينُ ما شكا منه محمد: يكتب سعرَ الدفعة في خانة
+  //    الكلفة فيُكتب فوق **المخزون كلِّه** («يتغيّر معه سعرُ الشراء لكلّ العدد السابق»).
   const { batchBuyPrice, ...itemData } = parsed.data;
-  const adminBatchPrice = batchBuyPrice ?? parsed.data.priceDinar ?? existing.priceDinar;
-  if (parsed.data.count != null) {
-    const bad = requireBatchPrice(existing.count ?? 0, parsed.data.count, adminBatchPrice);
-    if (bad) return bad;
+  const before = existing.count ?? 0;
+  const hasBatchPrice = batchBuyPrice != null && Number.isFinite(batchBuyPrice) && batchBuyPrice > 0;
+  const isIncrease = parsed.data.count != null && parsed.data.count > before;
+  // ═════ ✏️ «زرُّ تعديل يعود إلى ما كان عليه: يزيد أو ينقص عددَ مادة» (محمد 2026-08-25) ═════
+  // فالشراءُ صار له بابُه: نافذةُ «➕ إضافة مادة» التي تُرسل `batchBuyPrice` فيُحسب المتوسّط.
+  // وزرُّ «تعديل» للمدير صار **تصحيحَ عددٍ لا شراءً** ⇒ لا يُطالَب بسعر.
+  // 🔑 وتصحيحٌ بلا سعرٍ **لا يُحرّك المتوسّط**: القطعُ المضافةُ تُقوَّم بمتوسّط ما في يده
+  //    (وهو معنى التصحيح)، فلا يُخترَع لها سعرٌ ولا يُفسَد به تاريخُ الشراء.
+  // ⚠️ والمستخدمُ العاديُّ يبقى مُطالَباً بالسعر أعلاه — فبابُه إلى المخزن هو «تعديل» وحدَه
+  //    (نافذةُ الإضافة للمدير حصراً بقرار محمد)، فلولا الشرطُ لدخلت بضاعتُه بلا سعرٍ أبداً.
+  if (isIncrease && hasBatchPrice) {
+    itemData.priceDinar = Math.round(
+      movingAverage(before, existing.priceDinar, (parsed.data.count ?? 0) - before, batchBuyPrice ?? 0),
+    );
   }
   const updated = await prisma.item.update({
     where: { id: Number(id) },
     data: itemData,
   });
   // حتى تعديل المدير يُسجَّل — فالسجل لا يُفيد إن كان يوثّق نصف الأيدي
-  if (parsed.data.count != null) await logQty(existing.count ?? 0, parsed.data.count, adminBatchPrice);
+  // 🔑 والسجلُّ يحفظ **سعرَ الدفعة نفسِه** لا المتوسّط — فالمتوسّطُ يُشتقّ منه، وحفظُه
+  //    مكانَه كان سيُضيع السعرَ الحقيقيَّ الذي اشتُريت به هذه الدفعة.
+  if (parsed.data.count != null) await logQty(before, parsed.data.count, batchBuyPrice);
   return NextResponse.json(updated);
 }
 
