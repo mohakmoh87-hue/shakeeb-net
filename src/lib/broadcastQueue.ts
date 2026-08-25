@@ -40,7 +40,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 //   فيعبر الطابورُ إلى المكاتب الحيّة فوراً. وصفوفُه **تبقى منتظرةً كما كانت**
 //   (لا تُختَم فشلاً) وتُلتقَط حين تنقضي هدنتُه — بمؤقّتِ إيقاظٍ ذاتيٍّ لأنّ
 //   الركلاتِ الخارجيّةَ (إقلاعٌ/بثٌّ جديد) قد لا تجيء في الوقت المناسب.
-const gq = globalThis as unknown as { __bqCooldown?: Map<number, number>; __bqWake?: boolean };
+// 🔑 ومؤقّتُ الإيقاظ **لكلّ وكيلٍ على حدة**: كان علماً واحداً، فوكيلٌ يحجزه يمنع بقيّةَ
+//    الوكلاء من جدولة إيقاظهم — وهو عينُ التداخل الذي أُلغي (قاعدةُ محمد 2026-08-25).
+const gq = globalThis as unknown as { __bqCooldown?: Map<number, number>; __bqWake?: Set<string> };
+function wakeSet(): Set<string> {
+  if (!gq.__bqWake) gq.__bqWake = new Set();
+  return gq.__bqWake;
+}
 function cooldowns(): Map<number, number> {
   if (!gq.__bqCooldown) gq.__bqCooldown = new Map();
   return gq.__bqCooldown;
@@ -54,21 +60,37 @@ function activeCooldownOffices(): number[] {
 
 type Claimed = { id: number; subscriberId: number | null; phone: string | null; text: string; templateType: string | null };
 
-/** حَجزُ أقدمِ صفٍّ معلّقٍ ذرّيّاً — عبارةٌ واحدة، فلا يلتقطه ساحبان أبداً.
+/** حَجزُ أقدمِ صفٍّ معلّقٍ **لهذا الوكيل** ذرّيّاً — عبارةٌ واحدة، فلا يلتقطه ساحبان أبداً.
  *  ويستثني صفوفَ مكاتبِ الهدنة (حاسباتُها ثبت غيابُها للتوّ) فلا يعلق الطابورُ خلفها.
- *  🔒 العزلُ كما كان: الساحبُ خادميٌّ يُرسل كلَّ رسالةٍ من جلسة مكتبِ صاحبها. */
-async function claimNext(excludeOffices: number[]): Promise<Claimed | null> {
+ *
+ *  ═════ 🔒 عزلُ الطوابير بين الوكلاء — قاعدةُ محمد 2026-08-25 ═════
+ *  بنصّه: «يجب أن يكون كلُّ وكيلٍ مستقلّاً بعمله وبطوابيره، فلا يجب أن ينتظر وكيلٌ طابورَ
+ *  وكيلٍ آخرَ أبداً — فلكلّ واحدٍ طابورُه ورسائلُه بلا تداخل».
+ *
+ *  🔴 والحادثةُ التي أنتجت القاعدة (2026-08-25 مساءً): كان الحجزُ **بأقدمِ صفٍّ في القاعدة
+ *    كلِّها** بلا نظرٍ إلى صاحبه. فاصطفّ صميمٌ ٨٢٣ رسالةً في 17:12 وواتسابُه مضطرب (رسالةٌ
+ *    كلَّ ٣٧ ثانية)، فحُبست أربعون رسالةً لشكيب اصطفّت 19:08 **خلفها ثمانيَ ساعاتٍ ونصفاً**
+ *    — أي إلى ما بعد الفجر. وهو خرقُ عزلٍ في **بُعد الوقت**: وكيلٌ يُجمّد رسائل الباقين.
+ *  ⇒ لكلّ وكيلٍ ساحبُه، ويحجز صفوفَه هو حصراً (`agentId`)، والسواحبُ تعمل معاً.
+ *  🔑 **وأمانُ التوازي مضمونٌ لا مُفترَض**: الفاصلُ المضادّ للحظر صار على **الرقم نفسِه**
+ *    في بوّابة `waGate` لا في هذا الساحب — فمهما تعدّدت الطوابير المتوازية لا يرى أيُّ رقمٍ
+ *    أكثرَ من رسالةٍ كلَّ فاصلٍ كامل.
+ */
+async function claimNext(excludeOffices: number[], agentId: number | null): Promise<Claimed | null> {
   // ⚠️ NOT EXISTS لا LEFT JOIN (إصلاح 2026-08-20 — حادثة بثّ عليّ البياتي): الصيغةُ
   // القديمةُ كانت `LEFT JOIN … FOR UPDATE` وPostgres يرفضها بالحرف («FOR UPDATE cannot
   // be applied to the nullable side of an outer join») ⇒ **كان الساحبُ يسقط لحظةَ أوّلِ
   // هدنةٍ** وتوقظه الدوريّةُ ليسقطَ ثانيةً — فتجمّد الطابورُ كلُّه (169 رسالةً) خلف مكتبٍ
   // واحدٍ يعيد تشغيلَ حاسبته. والدلالةُ مطابقةٌ تماماً: بلا مشتركٍ أو مكتبُه ليس في الهدنة.
+  // 🔑 `IS NOT DISTINCT FROM` لا `=` — فصفوفُ الوكيل الفارغ (تقاريرُ بلا مشترك) لها ساحبُها
+  //    أيضاً، و`= NULL` كانت ستُسقطها فتخلد في الطابور إلى أن تُمحى بعد يوم.
   const rows = excludeOffices.length
     ? await prisma.$queryRaw<Claimed[]>`
     UPDATE messages SET error = ${CLAIM_MARK}, "updatedAt" = now()
      WHERE id = (
        SELECT m.id FROM messages m
         WHERE m.channel = 'WHATSAPP' AND m.status = 'PENDING' AND m.error = ${QUEUE_MARK}
+          AND m."agentId" IS NOT DISTINCT FROM ${agentId}
           AND NOT EXISTS (
             SELECT 1 FROM subscribers s
              WHERE s.id = m."subscriberId" AND s."towerId" = ANY(${excludeOffices}))
@@ -81,11 +103,23 @@ async function claimNext(excludeOffices: number[]): Promise<Claimed | null> {
      WHERE id = (
        SELECT id FROM messages
         WHERE channel = 'WHATSAPP' AND status = 'PENDING' AND error = ${QUEUE_MARK}
+          AND "agentId" IS NOT DISTINCT FROM ${agentId}
         ORDER BY id
         LIMIT 1
         FOR UPDATE SKIP LOCKED)
      RETURNING id, "subscriberId", phone, text, "templateType"`;
   return rows[0] ?? null;
+}
+
+/** الوكلاءُ الذين لهم صفوفٌ منتظرةٌ الآن — لكلٍّ منهم ساحبُه. */
+async function agentsWithQueue(): Promise<(number | null)[]> {
+  const rows = await prisma.message.findMany({
+    where: { channel: "WHATSAPP", status: "PENDING", error: QUEUE_MARK },
+    select: { agentId: true },
+    distinct: ["agentId"],
+    take: 200,
+  }).catch(() => [] as { agentId: number | null }[]);
+  return rows.map((r) => r.agentId);
 }
 
 async function releaseClaim(id: number): Promise<void> {
@@ -106,8 +140,25 @@ async function recover(): Promise<void> {
        AND date < now() - (${EXPIRE_H} * interval '1 hour')`.catch(() => {});
 }
 
-async function drainLoop(): Promise<void> {
+/** 🧹 صيانةٌ عامّةٌ تُنفَّذ **مرّةً لكلّ ركلة** لا مرّةً لكلّ وكيل: تحريرُ الحجوزات العالقة،
+ *  وإفشالُ ما شاخ، ومسحُ ما تجاوز يوماً. (كانت داخل الحلقة الواحدة قبل عزل الطوابير.) */
+async function sweepOnce(): Promise<void> {
   await recover();
+  // ═════ 🧹 عمرُ الطابور ٢٤ ساعة (قرارُ محمد 2026-08-21 مساءً) ═════
+  // «كلُّ طابورٍ لا يُمسَح اجعله يُمسَح كلَّ ٢٤ ساعة». وبثٌّ عالقٌ يوماً كاملاً (واتسابٌ
+  // مقطوعٌ مثلاً) لا يُرسَل بعده: رسالةٌ تصل المشتركَ متأخّرةً يوماً تُربكه ولا تنفعه.
+  // 🔒 والحذفُ مقصورٌ على **صفوف هذا الطابور** بوسمَيه (المنتظرُ والمحجوزُ) حصراً.
+  await prisma.message.deleteMany({
+    where: {
+      channel: "WHATSAPP", status: "PENDING",
+      error: { in: [QUEUE_MARK, CLAIM_MARK] },
+      date: { lt: new Date(Date.now() - 24 * 3600_000) },
+    },
+  }).catch(() => {});
+}
+
+/** ساحبُ **وكيلٍ واحد** — لا يرى صفوفَ غيره ولا ينتظرها (قاعدةُ محمد 2026-08-25). */
+async function drainLoop(agentId: number | null): Promise<void> {
   // 🖼️ صورةُ القالب لكلّ (نوع، مكتب) — تُحمَّل مرّةً وتُخزَّن لعمر الدورة
   const imgCache = new Map<string, string | null>();
   const imageFor = async (templateType: string | null, towerId: number | null, agentId: number | null): Promise<string | null> => {
@@ -122,30 +173,21 @@ async function drainLoop(): Promise<void> {
     imgCache.set(k, img);
     return img;
   };
-  // ═════ 🧹 عمرُ الطابور ٢٤ ساعة (قرارُ محمد 2026-08-21 مساءً) ═════
-  // «كلُّ طابورٍ لا يُمسَح اجعله يُمسَح كلَّ ٢٤ ساعة». وبثٌّ عالقٌ يوماً كاملاً (واتسابٌ
-  // مقطوعٌ مثلاً) لا يُرسَل بعده: رسالةٌ تصل المشتركَ متأخّرةً يوماً تُربكه ولا تنفعه.
-  // 🔒 والحذفُ مقصورٌ على **صفوف هذا الطابور** بوسمَيه (المنتظرُ والمحجوزُ) حصراً.
-  await prisma.message.deleteMany({
-    where: {
-      channel: "WHATSAPP", status: "PENDING",
-      error: { in: [QUEUE_MARK, CLAIM_MARK] },
-      date: { lt: new Date(Date.now() - 24 * 3600_000) },
-    },
-  }).catch(() => {});
-
   for (;;) {
-    const job = await claimNext(activeCooldownOffices());
+    const job = await claimNext(activeCooldownOffices(), agentId);
     if (!job) {
-      // لا صفَّ قابلاً للحجز. إن كانت ثمّةَ هدنٌ ساريةٌ وصفوفٌ منتظرة، يوقظ الساحبُ
-      // نفسَه عند انقضاء أقربِ هدنةٍ — فلا يعتمد على ركلةٍ خارجيّةٍ قد لا تجيء.
+      // لا صفَّ قابلاً للحجز **لهذا الوكيل**. إن كانت ثمّةَ هدنٌ ساريةٌ وله صفوفٌ منتظرة،
+      // يوقظ الساحبُ نفسَه عند انقضاء أقربِ هدنةٍ — فلا يعتمد على ركلةٍ خارجيّةٍ قد لا تجيء.
       const m = cooldowns();
-      if (m.size && !gq.__bqWake) {
-        const waiting = await prisma.message.count({ where: { channel: "WHATSAPP", status: "PENDING", error: QUEUE_MARK } }).catch(() => 0);
+      const wKey = String(agentId);
+      if (m.size && !wakeSet().has(wKey)) {
+        const waiting = await prisma.message.count({
+          where: { channel: "WHATSAPP", status: "PENDING", error: QUEUE_MARK, agentId },
+        }).catch(() => 0);
         if (waiting > 0) {
           const wakeIn = Math.max(5_000, Math.min(...m.values()) - Date.now() + 1_000);
-          gq.__bqWake = true;
-          setTimeout(() => { gq.__bqWake = false; kickBroadcastDrainer("انقضت هدنةُ مكتب"); }, wakeIn);
+          wakeSet().add(wKey);
+          setTimeout(() => { wakeSet().delete(wKey); kickBroadcastDrainer("انقضت هدنةُ مكتب"); }, wakeIn);
         }
       }
       return; // ينام حتى ركلةٍ قادمة (بثٌّ جديدٌ أو إيقاظُ هدنةٍ أو إقلاع)
@@ -214,13 +256,30 @@ async function drainLoop(): Promise<void> {
   }
 }
 
-// ساحبٌ واحدٌ لكلّ عمليّة — والركلُ آمنُ التكرار (يتجاهَل إن كان يعمل)
-const g = globalThis as unknown as { __broadcastDrainer?: boolean };
+// ═════ 🔒 ساحبٌ **لكلّ وكيل** لا ساحبٌ واحدٌ للجميع (قاعدةُ محمد 2026-08-25) ═════
+// «فلكلّ واحدٍ طابورُه ورسائلُه بلا تداخل». والركلُ آمنُ التكرار: وكيلٌ ساحبُه يعمل يُتخطّى.
+// 🔑 والمفتاحُ نصٌّ لا رقم — فوكيلُ `null` (تقاريرُ بلا مشترك) له خانتُه ولا يختلط بالوكيل صفر.
+const g = globalThis as unknown as { __bqAgents?: Set<string> };
+function running(): Set<string> {
+  if (!g.__bqAgents) g.__bqAgents = new Set();
+  return g.__bqAgents;
+}
+
 export function kickBroadcastDrainer(reason: string): void {
-  if (g.__broadcastDrainer) return;
-  g.__broadcastDrainer = true;
-  console.log(`[broadcast] الساحبُ انطلق (${reason})`);
-  void drainLoop()
-    .catch((e) => console.error("[broadcast] الساحبُ سقط:", e instanceof Error ? e.message : e))
-    .finally(() => { g.__broadcastDrainer = false; });
+  void (async () => {
+    // الصيانةُ مرّةً لكلّ ركلة (لا مرّةً لكلّ وكيل) — وقبل الجرد كي يُحرَّر العالقُ فيُرى
+    await sweepOnce().catch(() => {});
+    const agents = await agentsWithQueue();
+    if (!agents.length) return;
+    const live = running();
+    for (const aid of agents) {
+      const key = String(aid);
+      if (live.has(key)) continue; // لهذا الوكيل ساحبٌ يعمل — ولا ثانيَ له
+      live.add(key);
+      console.log(`[broadcast] ساحبُ الوكيل ${key} انطلق (${reason})`);
+      void drainLoop(aid)
+        .catch((e) => console.error(`[broadcast] ساحبُ الوكيل ${key} سقط:`, e instanceof Error ? e.message : e))
+        .finally(() => { live.delete(key); });
+    }
+  })().catch((e) => console.error("[broadcast] تعذّر جردُ الطوابير:", e instanceof Error ? e.message : e));
 }
