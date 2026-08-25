@@ -710,6 +710,11 @@ export default function SubscribersBoard() {
                               {sasStatus.state === "loading" ? "… جارٍ الفحص" : sasStatus.state === "online" ? "✓ متصل" : sasStatus.state === "offline" ? "✗ غير متصل" : "غير معروف"}
                             </span>
                           )}
+                          {/* ☎️ رقمُ الهاتف تحت «حالة الاتصال» (طلبُ محمد 2026-08-25) — للتطبيق وحدَه.
+                              🔑 وسببُه بنيويّ: التطبيقُ يُخفي خاناتِ الجدول من الخامسة فصاعداً
+                              (`nth-child(n+5)`) وفيها **رقمُ الهاتف** — فالرقمُ لا يظهر في التطبيق
+                              إطلاقاً. وفي المتصفّح خانتُه ظاهرةٌ فلا تُكرَّر (نفسُ نمط شارة «اليوزر»). */}
+                          <span className="sb-chip trial-only-chip" title="رقم هاتف المشترك">الهاتف <b dir="ltr">{s.phone ?? "—"}</b></span>
                           <button className={`sb-act ${moreMenu ? "on" : ""}`} aria-haspopup="true"
                             onClick={(e) => {
                               e.stopPropagation();

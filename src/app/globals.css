@@ -1641,12 +1641,45 @@ html[data-app-trial] .searchbar { flex-wrap: nowrap; gap: 6px; }
 html[data-app-trial] .searchbar input.sq { min-width: 0; }
 html[data-app-trial] .searchbar .allofc { white-space: nowrap; font-size: 10px; flex: 0 0 auto; }
 
-/* ٦ · الجدول: أربعُ خاناتٍ فقط (الاسم · عمليات+المزيد · اليوزر) بلا تمريرٍ جانبيّ */
-html[data-app-trial] .tbl.subs th:first-child,
-html[data-app-trial] .tbl.subs td.cbcol,
+/* ٦ · الجدول: خاناتُ التطبيق (تحديد · الاسم · عمليات+المزيد · اليوزر) بلا تمريرٍ جانبيّ */
 html[data-app-trial] .tbl.subs th:nth-child(n+5),
 html[data-app-trial] .tbl.subs tbody tr:not(.subrow) td:nth-child(n+5) { display: none; }
 html[data-app-trial] .subs-scroll { overflow-x: hidden; }
+
+/* ═════ 🔲 مربّعُ التحديد عاد إلى التطبيق (طلبُ محمد 2026-08-25) ═════
+   كان مخفيّاً ضمن تضييق الجدول إلى ثلاث خانات. وإعادتُه **تزيد الأمانَ لا الخطر**:
+   زرُّ الحذف في التطبيق يحذف «القائمةَ الحاليّة» كلَّها حين لا يكون أحدٌ محدَّداً
+   (`checked.size > 0 ? [...checked] : subs`) — فبلا مربّعٍ لا سبيلَ لحصر الحذف. */
+
+/* ═════ 📏 وسطرُ المشترك يتّسع للشاشة — لا تمريرَ جانبيّاً (بلاغُ محمد 2026-08-25) ═════
+   🔴 العلّة: عرضُ الجدول كان **مجموعَ محتوياته** لا عرضَ الشاشة، وكلُّ خليّةٍ
+   `white-space: nowrap` (‏`.tbl tbody td`) وخانةُ الاسم `max-width: 170px`:
+      الاسم ١٧٠ + عمليات ~٨٠ + اليوزر ~١٣٠ = **~٣٨٠px** على شاشةٍ عرضُها ~٣٦٠
+   ⇒ يفيض السطرُ فيُقَصّ الاسمُ ويضطرّ محمد للتمرير أفقيّاً ليقرأ البقيّة. وزيادةُ
+   خانة التحديد كانت ستزيده ٢٦px أخرى.
+   ⇒ `table-layout: fixed` + عرضٌ صريحٌ للخانات الثابتة، **والاسمُ يأخذ الباقي**
+   بحذفٍ ثلاثيّ الوجه (…) بدل الفيض. فلا تمريرَ ولا قصَّ أعمى. */
+html[data-app-trial] .tbl.subs { table-layout: fixed; width: 100%; }
+html[data-app-trial] .tbl.subs .cbcol { width: 26px; padding-inline: 2px; }
+html[data-app-trial] .tbl.subs .cbcol .cb { width: 15px; height: 15px; }
+/* عمليات (زرّان دائريّان) واليوزر — **أرقامٌ مقيسةٌ لا مقدَّرة** (فحصٌ حيٌّ على 375px):
+   عمليات تحتاج ٨٠ بالضبط (زرّان + الفجوة + الحشو) — و٧٤ كانت تقصّ زرَّ ⋯ خمسةَ بكسلات.
+   واليوزر أطولُه الواقعيّ (`bg-55-14-16@shu`) يحتاج ~١٠٠ ⇒ ١١٠ تُظهره كاملاً بفسحة.
+   والاسمُ يأخذ الباقي (١٤٠) — ولا تُنقَص هذه لأجله: **اليوزرُ هو الفيصل الذي لا يُخطئ**،
+   وقصُّه أضرُّ من قصّ الاسم الذي يُعرَف من أوّله. */
+html[data-app-trial] .tbl.subs thead th:nth-child(3),
+html[data-app-trial] .tbl.subs tbody tr:not(.subrow) td:nth-child(3) { width: 80px; padding-inline: 4px; }
+html[data-app-trial] .tbl.subs thead th:nth-child(4),
+html[data-app-trial] .tbl.subs tbody tr:not(.subrow) td:nth-child(4) {
+  width: 110px; padding-inline: 5px; font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+/* الاسمُ يأخذ ما بقي — ويُقصّ بنقاطٍ لا بالفيض (كان `max-width: 170px` يفرض عرضاً ثابتاً) */
+html[data-app-trial] .tbl.subs tbody tr:not(.subrow) td:nth-child(2) {
+  max-width: none; overflow: hidden; text-overflow: ellipsis;
+}
+/* 🔒 وشريطُ الخيارات يظلّ بعرض الجدول كاملاً — `table-layout: fixed` لا يمسّ colSpan */
+html[data-app-trial] .tbl.subs tr.subrow > td { width: auto; }
 .trial-more { display: none; }
 html[data-app-trial] .trial-more { display: inline-flex; margin-inline-start: 4px; }
 
@@ -1795,6 +1828,11 @@ html[data-app-trial] tr.subrow .sb-row .sb-chip {
 html[data-app-trial] tr.subrow .sb-row .sb-chip b { font-size: 13px; }
 /* العنوانُ وحدَه يمتدّ صفّاً كاملاً — و«متصل» بحجم أخواتها (تصويب محمد) */
 html[data-app-trial] tr.subrow .sb-row .sb-chip[title*="العنوان"] { grid-column: 1 / -1; }
+/* ☎️ رقمُ الهاتف صفّاً كاملاً **تحت «حالة الاتصال»** (طلبُ محمد 2026-08-25 بلقطةٍ منه).
+   🔑 ولماذا صفٌّ كامل؟ الشاراتُ عمودان و«متصل» يقع في العمود الأيسر — فشارةٌ عاديّةٌ
+   بعدها كانت ستقع في **يمين** الصفّ التالي أي تحت «اليوزر» لا تحت «متصل». والعرضُ
+   الكاملُ يجعلها تحتهما معاً، ويُريح الرقمَ الطويلَ من التكسّر. (نفسُ حيلة «العنوان» أعلاه.) */
+html[data-app-trial] tr.subrow .sb-row .sb-chip[title*="رقم هاتف"] { grid-column: 1 / -1; }
 /* زرُّ الإغلاق دائرةٌ في الزاوية لا سطرٌ في الشبكة */
 html[data-app-trial] tr.subrow .sb-row .sb-x {
   position: absolute;
