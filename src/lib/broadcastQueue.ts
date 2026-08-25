@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { isWaBusy } from "@/lib/waGate"; // 🚦 «لم يحن دورُه» ≠ فشلُ إرسال
 
 // ═════════ ب-٢ · طابورُ الإرسال الجماعيّ — مخزَّنٌ في القاعدة ويُستأنف ═════════
 //
@@ -26,7 +27,6 @@ import { prisma } from "@/lib/prisma";
  *  ما `error IS NULL` (يتامى النمط القديم)، وصفوفُ الطابور موسومةٌ فلا تُمَسّ. */
 export const QUEUE_MARK = "📤 في طابور البثّ";
 const CLAIM_MARK = "⏳ قيد الإرسال";
-const GAP_MS = 10_000;          // فاصلُ مكافحة الحظر بين رسالةٍ وأخرى (كما كان)
 const OFFLINE_RETRY_MS = 60_000; // الحاسبةُ مطفأة: هدأةٌ قبل المحاولة التالية
 const EXPIRE_H = 20;            // المنتظرُ فوقها يُختَم فاشلاً — ٢٠ ساعة (طلبُ محمد 2026-08-19: «يُمحى بعد ٢٠ ساعة لا ٤٨»)
 
@@ -168,7 +168,7 @@ async function drainLoop(): Promise<void> {
         const { sendWhatsApp } = await import("@/lib/whatsapp");
         // 🖼️ صورةُ القالب المختار ترافق رسائلَ البثّ أيضاً (كانت مؤجَّلةً حتى عمود templateType)
         const image = await imageFor(job.templateType, towerId, office?.agentId ?? null);
-        outcome = await sendWhatsApp(towerId, job.phone, job.text, image);
+        outcome = await sendWhatsApp(towerId, job.phone, job.text, image, "bulk");
       }
     } catch (e) {
       outcome = { ok: false, error: e instanceof Error ? e.message : "خطأ غير متوقّع" };
@@ -178,7 +178,9 @@ async function drainLoop(): Promise<void> {
     // يبقى الصفُّ منتظراً ويُستأنف حين تتّصل — وهذا جوهرُ «طابورٍ يُستأنف» الذي طلبه محمد.
     // («غير جاهز» أضيفت بعد حادثة 18:32: أثناء إعادة تشغيل الحاسبات تمرّ الجلسةُ بحالات
     //  starting/qr فيردّ المُرحِّلُ «غير جاهز (الحالة: X)» — وهي عابرةٌ لا فشلُ رقم.)
-    const offline = !outcome.ok && /غير مشغّلة|غير متصل|غير جاهز/.test(outcome.error ?? "");
+    // 🚦 و«لم يحن دورُه على الرقم» يُعامَل معاملةَ الغياب تماماً: **لم تخرج رسالةٌ إطلاقاً**،
+    //    فيُفَكّ الحجزُ ويُعاد الصفُّ للطابور بلا ختمٍ فاشلٍ وبلا خطرِ تكرار.
+    const offline = !outcome.ok && (/غير مشغّلة|غير متصل|غير جاهز/.test(outcome.error ?? "") || isWaBusy(outcome.error));
     if (offline) {
       await releaseClaim(job.id).catch(() => {});
       if (jobTowerId != null) {
@@ -207,7 +209,8 @@ async function drainLoop(): Promise<void> {
       catch { await sleep(2_000); }
     }
     if (!stamped) console.error(`[broadcast] 🔴 تعذّر ختمُ الرسالة #${job.id} ثلاثاً — قد يُعيدها recover فتتكرّر`);
-    await sleep(GAP_MS);
+    // 🚦 (أُزيل الفاصلُ المحلّيّ 2026-08-25) — الفاصلُ الآن واحدٌ على الرقم في `waGate`،
+    //    يشمل هذا الساحبَ وبقيّةَ الطوابير والمسارات المباشرة معاً.
   }
 }
 

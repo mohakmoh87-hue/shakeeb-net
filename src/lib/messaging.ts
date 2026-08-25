@@ -83,13 +83,19 @@ export async function sendViaProvider(
   officeId?: number | null, // مكتب المشترك (لاختيار جلسة واتساب المكتب)
   // البند ٣ · صورةُ القالب (data URI) — تُرسَل مع النصّ **تعليقاً واحداً** لا رسالتَين
   image?: string | null,
+  // ═════ 🚦 مسارُ البوّابة (طلبُ محمد 2026-08-25) ═════
+  // الافتراضيُّ `urgent` **عمداً**: كلُّ المسارات التي يطلبها إنسانٌ الآن (تفعيل · تسديد ·
+  // إنجازُ بطاقة · ملخّص · مكافأة · قرض · زرُّ إرسال) تبقى **بلا تعديلِ حرفٍ واحد**، ولا
+  // يُصرّح بـ`bulk` إلّا الدفعاتُ الستُّ التي تعمل في الخلفيّة. فالخطأُ بالنسيان يقع في
+  // الجانب الآمن: رسالةٌ تأخذ الأولويّةَ، لا رسالةُ إنسانٍ تنتظر خلف بثٍّ من ألفَين.
+  lane: "urgent" | "bulk" = "urgent",
 ): Promise<SendResult> {
   if (!phone) return { ok: false, error: "لا يوجد رقم هاتف" };
 
   // واتساب: إرسال من جلسة واتساب المكتب التابع له المشترك
   if (channel === "WHATSAPP") {
     const { sendWhatsApp } = await import("@/lib/whatsapp");
-    return sendWhatsApp(officeId, phone, text, image);
+    return sendWhatsApp(officeId, phone, text, image, lane);
   }
 
   // SMS / تيليغرام: محاكاة حتى ربط مزوّد حقيقي

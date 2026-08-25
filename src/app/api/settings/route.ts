@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { guard } from "@/lib/guard";
 import { getAgentSetting, setAgentSetting } from "@/lib/agentSettings";
+import { clampGapSeconds, forgetGapCache, WA_GAP_MIN, WA_GAP_MAX, WA_GAP_DEFAULT } from "@/lib/waGate";
 
 // المفاتيح المعروفة للإعدادات
-const KNOWN = ["office", "dollar", "country", "whatsapp", "silent", "reminderTime", "reportTime", "backupTime"] as const;
+const KNOWN = ["office", "dollar", "country", "whatsapp", "silent", "reminderTime", "reportTime", "backupTime", "waGapSeconds"] as const;
 
 const schema = z.object({
   office: z.string().nullable().optional(),
@@ -15,6 +16,8 @@ const schema = z.object({
   reminderTime: z.string().nullable().optional(), // وقت إرسال تذكير الانتهاء يومياً (HH:MM)
   reportTime: z.string().nullable().optional(), // وقت إرسال تقرير المدير يومياً (HH:MM)
   backupTime: z.string().nullable().optional(), // وقت إرسال النسخة الاحتياطية يومياً (HH:MM)
+  // 🚦 الفاصلُ بين أيّ رسالتَي واتسابٍ على رقم المكتب (ثانية) — طلبُ محمد 2026-08-25
+  waGapSeconds: z.string().nullable().optional(),
 });
 
 // عزل الوكلاء: كل وكيل يقرأ ويكتب قيمه هو فقط (مفاتيح "key:agentId")؛
@@ -26,7 +29,9 @@ export async function GET() {
 
   const map: Record<string, string> = {};
   for (const key of KNOWN) map[key] = await getAgentSetting(key, agentId, "");
-  return NextResponse.json(map);
+  // 🚦 الفاصلُ يعود دائماً برقمٍ صالحٍ — فالواجهةُ تعرض ما يعمل به الخادمُ فعلاً لا فراغاً
+  map.waGapSeconds = String(clampGapSeconds(map.waGapSeconds || WA_GAP_DEFAULT));
+  return NextResponse.json({ ...map, waGapMin: String(WA_GAP_MIN), waGapMax: String(WA_GAP_MAX) });
 }
 
 export async function POST(request: Request) {
@@ -43,6 +48,15 @@ export async function POST(request: Request) {
   for (const key of KNOWN) {
     const value = parsed.data[key];
     if (value === undefined) continue;
+    // ═════ 🚦 الفاصلُ يُقَصّ في **الخادم** لا في الواجهة (طلبُ محمد 2026-08-25) ═════
+    // حقلُ الواجهة يُقيَّد بـmin/max، لكنّ المسارَ مفتوحٌ لمن يناديه مباشرةً — و`0` هنا
+    // تعني رشقةً بلا فاصلٍ ⇒ **حظرُ رقم الوكيل**. فالقصُّ حكمٌ خادميٌّ: ٣–٦٠ ثانية،
+    // وأيُّ قيمةٍ فاسدةٍ تعود إلى الافتراضيّ ١٠ لا إلى الصفر.
+    if (key === "waGapSeconds") {
+      await setAgentSetting(key, agentId, String(clampGapSeconds(value)));
+      forgetGapCache(); // فلا ينتظر دقيقةً ليرى أثرَ ضبطه
+      continue;
+    }
     // الكتابة على مفتاح الوكيل المعزول حصراً — لا يلمس قيم بقية الوكلاء أبداً
     await setAgentSetting(key, agentId, value ?? "");
   }

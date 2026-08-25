@@ -235,6 +235,6 @@ describe("🖼️ كلُّ القوالب تقبل صورة (تدقيقُ محم
   test("وطابورُ «فعّل بنفسه» يقرأ صورةَ القالب لحظةَ الإرسال", () => {
     const s = rd("src/lib/selfActivatedNotice.ts");
     assert.ok(s.includes("queueImage"), "الطابورُ يُرسل بلا صورة");
-    assert.ok(s.includes('sendViaProvider("WHATSAPP", m.phone, m.text, towerId, queueImage)'), "الصورةُ لا تُمرَّر للمُرسِل");
+    assert.ok(s.includes('sendViaProvider("WHATSAPP", m.phone, m.text, towerId, queueImage, "bulk")'), "الصورةُ لا تُمرَّر للمُرسِل");
   });
 });

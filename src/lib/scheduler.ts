@@ -127,8 +127,7 @@ export async function runExpiringReminder(
     return tplCache.get(key) ?? null;
   }
 
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  let sent = 0, failed = 0, i = 0;
+  let sent = 0, failed = 0;
   // ═════ حادثة الشدن ٢ (2026-08-19) · عدّادان لكلّ مكتب — للختم المشروط أدناه ═════
   const offSent = new Map<number, number>();
   const offFailed = new Map<number, number>();
@@ -140,7 +139,8 @@ export async function runExpiringReminder(
     if (lim != null && sub.dateTo && sub.dateTo.getTime() > lim) continue;
     const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null, sub.packageId ?? null);
     if (!template) continue; // لا قالب مفعّل لوكيل هذا المكتب
-    if (i++ > 0) await sleep(10000); // تأخير 10 ثوانٍ بين رسالة وأخرى
+    // 🚦 (أُزيل الفاصلُ المحلّيّ 2026-08-25) — صار الفاصلُ **واحداً على الرقم** في بوّابة
+    //    `waGate`، فبقاؤه هنا يعني ضِعفَ الفاصل. علّةُ الفواصل الستّة المتفرّقة في `waGate.ts`.
     const text = renderTemplate(template.text, {
       name: sub.name,
       netUser: sub.netUser,
@@ -159,7 +159,7 @@ export async function runExpiringReminder(
     // يتعمّد تجاوزَه، فمُجدولٌ ثمّ زرٌّ (أو ضغطتان) = رسالتان لنفس المشترك. الحارسُ
     // الفرديُّ يسدّها: فحصٌ قبل الإرسال + dedupKey على السجلّ (الفهرسُ الفريدُ شبكةُ أمان).
     if (await alreadySentToday(sub.id, "expiring", office?.agentId ?? null)) continue;
-    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image); // واتساب مكتب المشترك + صورةُ القالب
+    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image, "bulk"); // واتساب مكتب المشترك + صورةُ القالب
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
@@ -256,14 +256,13 @@ export async function runDebtReminder(
     if (!tplCache.has(key)) tplCache.set(key, await getTemplate("debts", agentId, towerId));
     return tplCache.get(key) ?? null;
   }
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  let sent = 0, failed = 0, i = 0;
+  let sent = 0, failed = 0;
   for (const sub of recipients) {
     const office = sub.towerId ? officeMap.get(sub.towerId) : null;
     if (office?.waEnabled === "0") continue;
     const template = await templateFor(office?.agentId ?? null, sub.towerId ?? null);
     if (!template) continue; // لا قالب "debts" مفعّل لوكيل هذا المكتب
-    if (i++ > 0) await sleep(10000);
+    // 🚦 (أُزيل الفاصلُ المحلّيّ 2026-08-25 — الفاصلُ الآن واحدٌ على الرقم في `waGate`)
     const text = renderTemplate(template.text, {
       name: sub.name, netUser: sub.netUser,
       package: sub.packageId ? pkgNameMap.get(sub.packageId) ?? "" : "",
@@ -276,7 +275,7 @@ export async function runDebtReminder(
     // خاتمةُ الأصل ٢ · مطالبةُ ديونٍ واحدةٌ لكلّ مشتركٍ في اليوم — عبر كلّ المسارات
     // (المُجدولُ هنا + زرُّ صفحة الديون الذي يمرّ بـ/api/messages المحروسِ سلفاً).
     if (await alreadySentToday(sub.id, "debts", office?.agentId ?? null)) continue;
-    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image);
+    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image, "bulk");
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
@@ -346,8 +345,7 @@ export async function runExpiredNotice(
 
   const now = Date.now();
   const dayMs = 86400_000;
-  let sent = 0, failed = 0, stamped = 0, i = 0;
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let sent = 0, failed = 0, stamped = 0;
 
   // 🔑 ويُعالَج **كلُّ مكتبٍ بأيّامه**: مكتبٌ يختار يوماً وآخرُ ثلاثةً، فنافذةُ كلٍّ
   //   تُحسَب بأيّامه لا بأيّام غيره — ولو جُمعوا في استعلامٍ واحدٍ لَغلبت أيّامُ الأوّل.
@@ -389,7 +387,7 @@ export async function runExpiredNotice(
       });
       if (claim.count !== 1) continue;
       stamped++;
-      if (i++ > 0) await sleep(10000); // تأخيرٌ بين رسالةٍ وأخرى (حمايةُ الرقم من الحظر)
+      // 🚦 (أُزيل الفاصلُ المحلّيّ 2026-08-25 — الفاصلُ الآن واحدٌ على الرقم في `waGate`)
       const text = renderTemplate(tpl.text, {
         name: sub.name, netUser: sub.netUser,
         package: sub.packageId ? pkgName.get(sub.packageId) ?? "" : "",
@@ -399,7 +397,7 @@ export async function runExpiredNotice(
         code: sub.rewardCode, balance: sub.rewardBalance ?? 0,
         office: officeName,
       });
-      const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, tpl.image);
+      const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, tpl.image, "bulk");
       await prisma.message.create({
         data: {
           channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,

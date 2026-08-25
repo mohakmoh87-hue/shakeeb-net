@@ -76,14 +76,46 @@ describe("البند ٤-ب · فعّل بنفسه", () => {
     assert.match(read("src/lib/scheduler.ts"), /drainSelfActivatedQueue\(o\.id\)/, "لا تصريفَ دوريّ");
   });
 
-  test("الكشفُ في المزامنة مشروطٌ بأنّ المُفعِّلَ ليس حسابَ المكتب", () => {
+  // ═════ 🔴 بلاغُ محمد 2026-08-25 · «الرسائلُ ذهبت للأشخاص الخطأ» ═════
+  // مقيسٌ على الإنتاج: **٤٨ رسالةً خاطئةً من ١١٥** في ثلاثين ساعة — ٢٢ لمن لا صفَّ له في
+  // السجلّ إطلاقاً (أسقطهم حارسا «مغطّى» و«مقبوضٌ عندي») و٢٦ لأصحاب قروض، وستّةٌ وصلهم
+  // قالبٌ ليس قالبَهم. والسببُ شرطٌ يتيمٌ `autoMsg.self && !managerMatch` لا يعرف السجلَّ.
+  // وقاعدةُ محمد: «لكلّ حالةٍ وحسب الحالة تصل الرسالة».
+  test("🔴 لا رسالةَ إلّا لصفٍّ **وُلد الآن** — لا للمنجر وحدَه", () => {
     const sync = read("src/lib/subscriptionSync.ts");
-    // (2026-08-20: صار مشروطاً أيضاً بجيك بوكس «إرسال رسائل تلقائي» — والافتراضيُّ إيقاف.
-    //  2026-08-21: والإرسالُ عبر طابور سجلّ المزامنة الدائم لا notifySelfActivated القديم)
-    assert.match(sync, /if \(autoMsg\.self && !managerMatch && a\.newExpiration\)/, "الكشفُ غيرُ مشروطٍ بالمُفعِّل أو فُقد شرطُ الجيك بوكس");
-    assert.match(sync, /sendSyncLogMessage\("self", \{\s*\r?\n\s*towerId: officeId, sasId: a\.sasUserId,/, "لا نداءَ لمُرسِل طابور السجلّ");
-    // والقاعدةُ نفسُها: مطابقةُ اسم الحساب بحروفٍ صغيرةٍ ومقصوصة
-    assert.match(sync, /\(a\.managerUsername \?\? ""\)\.trim\(\)\.toLowerCase\(\) === officeUser/, "قاعدةُ التفريق تغيّرت");
+    assert.equal(/if \(autoMsg\.self && !managerMatch\b/.test(sync), false,
+      "عاد المُطلِقُ اليتيم: رسالةٌ بمجرّد أنّ المنجرَ ليس حسابَ المكتب ⇒ ٤٢٪ منها لغير مستحقّيها");
+    // النداءُ الوحيدُ لقالب «تفعيل خارجي» من المزامنة مشروطٌ بولادة صفٍّ فعلاً وبلا قرض
+    assert.match(sync, /if \(outcome === "created" && !isLoanAct\) \{/,
+      "الرسالةُ لم تعد مربوطةً بولادة صفٍّ في السجلّ");
+    assert.match(sync, /const msgKind = managerIsPage \? null : ownCabinet \? "self" as const : "install" as const;/,
+      "التصنيفُ الثلاثيُّ للرسالة سقط — كابينتُه ⇒ تفعيل خارجي · ديلر/شركة ⇒ تنصيب خارجي · صفحةُ المكتب ⇒ صمت");
+    assert.match(sync, /msgKind === "self" \? autoMsg\.self : autoMsg\.install/,
+      "جيك بوكسُ التبويب لم يعد يحرس رسالتَه (والافتراضيُّ إيقافُ الاثنين)");
+  });
+
+  test("🔒 الحرّاسُ الأربعةُ يسبقون الرسالةَ — كلٌّ في موضعه", () => {
+    const sync = read("src/lib/subscriptionSync.ts");
+    const send = sync.indexOf(`if (outcome === "created" && !isLoanAct) {`);
+    assert.ok(send > -1, "موضعُ الإرسال لم يُعثر عليه");
+    const loop = sync.slice(sync.indexOf("for (const a of actsWide) {"), send);
+    // ١+٢· «مغطّى» و«مقبوضٌ عندي» يُخرجان الواقعةَ من الحلقة قبل أن تصل الرسالةَ أصلاً
+    assert.match(loop, /if \(covered\) \{[\s\S]*?continue;/, "حارسُ «مغطّى» لم يعد يسبق الإرسال");
+    assert.match(loop, /if \(await collectedByUs\([\s\S]*?continue;/, "حارسُ «مقبوضٌ عندي» لم يعد يسبق الإرسال");
+    // ٣· القرضُ يُقاس بالسعر لا بالكارت (تصحيحُ محمد 2026-08-21)
+    assert.match(loop, /const isLoanAct = Math\.round\(a\.price \|\| 0\) <= 0;/, "قاعدةُ القرض تغيّرت");
+    // ٤· التصنيفُ الثلاثيُّ نفسُه الذي يبني التبويب — لا قاعدةٌ ثانيةٌ للرسالة
+    assert.match(loop, /const managerIsPage = mgr\.toLowerCase\(\) === officeUser;/, "قاعدةُ «صفحةُ المكتب» تغيّرت");
+    assert.match(loop, /const ownCabinet = isOwnCabinet\(/, "قاعدةُ «كابينةُ صاحبه» تغيّرت");
+  });
+
+  test("🚫 «تفعيلاتُ ساس» بلا رسالةٍ — وإلّا وصلته رسالتان لتفعيلٍ واحد", () => {
+    // منجرٌ = صفحةُ المكتب ⇒ واقعةٌ تنتظر تسجيلَ وصلها، وحين يُسجَّل يُرسل مسارُ التفعيل
+    // رسالتَه العاديّة. فرسالةٌ من المزامنة هنا ازدواجٌ لا إفادة.
+    const sync = read("src/lib/subscriptionSync.ts");
+    assert.match(sync, /managerIsPage \? null :/, "«تفعيلاتُ ساس» لم تعد مستثناةً من الرسائل");
+    // ورسالةُ التفعيل العاديّة ما زالت في مسارها ولم تُمَسّ
+    assert.match(read("src/app/api/subscribers/[id]/activate/route.ts"), /sendActivationMessage\(\{/, "مسارُ رسالة التفعيل العاديّة تغيّر");
   });
 
   test("لا يُفشل المزامنةَ ولا يُرسل لمن أُطفئ واتسابُه", () => {

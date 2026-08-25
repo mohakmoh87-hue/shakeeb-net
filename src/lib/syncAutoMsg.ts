@@ -23,7 +23,6 @@ import { baghdadDayKey } from "./messageDedup";
 //     لا يجري إلّا لمن حجز الصفَّ ذرّيّاً — فلا نافذةَ بين الإرسال والتسجيل يدخل منها تكرار.
 const SYNC_MSG_MARK = "📨 في طابور رسائل سجلّ المزامنة";
 const CLAIM_MARK = "⏳ قيد الإرسال (سجلّ المزامنة)";
-const GAP_MS = 10_000;   // فاصلُ مكافحة الحظر — نفسُ فاصل ساحب البثّ
 const BATCH = 30;        // سقفُ الدورة الواحدة والباقي في التالية
 const STALE_CLAIM_MS = 10 * 60_000; // حَجزٌ مات صاحبُه (انهيارٌ وسط الإرسال) يُحرَّر بعدها
 
@@ -82,7 +81,8 @@ function syncMsgDedupKey(kind: "self" | "install", towerId: number, sasId: numbe
 
 /** محاولةُ تسليم صفٍّ محجوزٍ ذرّيّاً: نجاحٌ ⇒ SENT، وتعذُّرٌ ⇒ يعود للطابور (لا يُمسَح ولا يُختَم فاشلاً) */
 async function deliverClaimed(id: number, towerId: number, phone: string, text: string, image?: string | null): Promise<boolean> {
-  const res = await sendViaProvider("WHATSAPP", phone, text, towerId, image);
+  // 🚦 الطابورُ دفعةٌ في الخلفيّة: يأخذ دورَه بعد ما يطلبه إنسانٌ الآن
+  const res = await sendViaProvider("WHATSAPP", phone, text, towerId, image, "bulk");
   if (res.ok) {
     await prisma.message.update({ where: { id }, data: { status: "SENT", error: null } }).catch(() => {});
     return true;
@@ -230,12 +230,10 @@ export async function drainSyncMsgQueue(towerId: number): Promise<{ sent: number
       imageOf.set(t, tpl?.image ?? null);
     }
 
-    let first = true;
     for (const m of mine) {
       if (!m.phone) { out.waiting++; continue; } // بلا هاتفٍ لا يُرسَل ولا يُمسَح — قد يُصحَّح لاحقاً
       // ⏱️ الفاصلُ قبل كلّ رسالةٍ عدا الأولى — فلا رشقةَ تُعرّض الرقم للحظر
-      if (!first) await new Promise((r) => setTimeout(r, GAP_MS));
-      first = false;
+      // 🚦 (أُزيل الفاصلُ المحلّيّ 2026-08-25) — الفاصلُ الآن واحدٌ على الرقم في `waGate`
       // الحَجزُ الذرّيُّ قبل الإرسال — حاسبتان متراكبتان لا تُرسلان صفّاً مرّتَين
       const claim = await prisma.message.updateMany({
         where: { id: m.id, status: "PENDING", error: SYNC_MSG_MARK },

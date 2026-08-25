@@ -63,6 +63,27 @@ export default function SettingsPage() {
         </div>
         <Field label="وقت إرسال النسخة الاحتياطية للإيميل (يومياً)" value={form.backupTime || "04:00"} onChange={(v) => set("backupTime", v)} type="time" />
 
+        {/* 🚦 الفاصل بين رسائل الواتساب — طلب محمد 2026-08-25 */}
+        <div className="mb-4">
+          <label className="mb-1 block text-sm font-medium text-slate-700">🚦 الفاصل بين رسائل الواتساب (ثانية)</label>
+          <input
+            type="number"
+            min={form.waGapMin || 3}
+            max={form.waGapMax || 60}
+            step={1}
+            value={form.waGapSeconds ?? ""}
+            onChange={(e) => set("waGapSeconds", e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-mynet-blue"
+          />
+          <p className="mt-2 text-xs text-slate-500">
+            أقلُّ مدّةٍ بين أيّ رسالتَين على رقم المكتب — <b>تشمل كلّ الرسائل معاً</b>: التفعيل والتذكير والبثّ
+            وسجلّ المزامنة والمكافآت وغيرها. المسموح <b>{form.waGapMin || 3}–{form.waGapMax || 60}</b> ثانية،
+            والافتراضيّ <b>10</b>.
+            <br />
+            ⚠️ التقليلُ يُسرّع الإرسال ويرفع <b>خطر حظر رقم الواتساب</b>؛ لا تنزل تحت ١٠ إلّا لضرورة.
+          </p>
+        </div>
+
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-700">
           ربط واتساب كل مكتب، وبيانات SAS، ورقم المدير، والإرسال الصامت — كلها من صفحة{" "}
           <Link href="/towers" className="font-bold underline">المكاتب</Link>.

@@ -20,6 +20,7 @@ import { prisma } from "@/lib/prisma";
 import { getEffectiveTemplateFull } from "@/lib/smsTemplates";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatExpiryOrEmpty } from "@/lib/format";
+import { isWaBusy } from "@/lib/waGate"; // 🚦 «لم يحن دورُه» ≠ فشلُ إرسال
 
 /** بعدها يُمسَح الصفُّ المعلَّق ولا يُرسَل (نصُّ الطلب: «إن مرّت ٢٤ ساعةً ولم يُفتَح واتساب»). */
 export const SELF_ACT_QUEUE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -36,7 +37,6 @@ export const SELF_ACT_QUEUE_TTL_MS = 24 * 60 * 60 * 1000;
 //      (وسمُه `createdByUser` = اسمُ المُرسِل، وعلامتُه في `error`) يبقى لساحبه وحدَه.
 //   ٢. **فاصلٌ وحارس**: فاصلٌ بين رسالةٍ وأخرى حتى لصفوفها هي، وحارسُ تشغيلٍ واحدٍ لكلّ
 //      مكتب — فهي تُنادى كلَّ دقيقة، وبلا حارسٍ تتراكب النسخُ فيعود التوازي من بابٍ آخر.
-const SELF_ACT_GAP_MS = 10_000; // فاصلُ مكافحة الحظر — نفسُ فاصل ساحب البثّ
 const SELF_ACT_BATCH = 30;      // سقفُ الدورة الواحدة (٣٠ × ١٠ث = ٥ دقائق) والباقي في التالية
 const draining = new Set<number>(); // مكاتبُ يجري تصريفُها الآن (حارسُ عدم التراكب)
 
@@ -96,7 +96,7 @@ export async function notifySelfActivated(
       office: office.name ?? "",
     });
 
-    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, tpl.image);
+    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, tpl.image, "bulk");
     if (res.ok) {
       await prisma.message.create({
         data: {
@@ -132,8 +132,8 @@ export async function notifySelfActivated(
  * ⚠️ وثمنُه المعروف: رسالةٌ فشل إرسالُها بعد الختم تُسجَّل `FAILED` ولا يُعاد إرسالُها —
  *   وهو المقصود، فالبديلُ محاولةٌ أبديّةٌ تُغرق المشترك.
  */
-export async function drainSelfActivatedQueue(towerId: number): Promise<{ sent: number; expired: number; failed: number }> {
-  const out = { sent: 0, expired: 0, failed: 0 };
+export async function drainSelfActivatedQueue(towerId: number): Promise<{ sent: number; expired: number; failed: number; waiting: number }> {
+  const out = { sent: 0, expired: 0, failed: 0, waiting: 0 };
   if (draining.has(towerId)) return out; // دورةٌ سابقةٌ ما زالت تعمل لهذا المكتب
   draining.add(towerId);
   try {
@@ -176,20 +176,25 @@ export async function drainSelfActivatedQueue(towerId: number): Promise<{ sent: 
       const tpl = await getEffectiveTemplateFull("selfActivated", t?.agentId ?? null, towerId);
       queueImage = tpl?.image ?? null;
     } catch { /* بلا صورةٍ خيرٌ من إسقاط الطابور */ }
-    let first = true;
     for (const m of pend) {
       if (!m.phone) { await prisma.message.deleteMany({ where: { id: m.id } }); continue; }
       // ⏱️ الفاصلُ **قبل** كلّ رسالةٍ عدا الأولى — فلا رشقةَ تُعرّض الرقمَ للحظر
-      if (!first) await new Promise((r) => setTimeout(r, SELF_ACT_GAP_MS));
-      first = false;
+      // 🚦 (أُزيل الفاصلُ المحلّيّ 2026-08-25) — الفاصلُ الآن واحدٌ على الرقم في `waGate`
       // الحَجزُ قبل الأثر
       const claim = await prisma.message.updateMany({
         where: { id: m.id, status: "PENDING" },
         data: { status: "SENT", error: null },
       });
       if (claim.count !== 1) continue;
-      const res = await sendViaProvider("WHATSAPP", m.phone, m.text, towerId, queueImage);
+      const res = await sendViaProvider("WHATSAPP", m.phone, m.text, towerId, queueImage, "bulk");
       if (res.ok) out.sent++;
+      else if (isWaBusy(res.error)) {
+        // 🚦 «لم يحن دورُه على الرقم» — **لم تخرج رسالةٌ إطلاقاً**، فيعود الصفُّ معلَّقاً
+        //    ليأخذه التصريفُ التالي. وبلا هذا الاستثناء كان الازدحامُ اللحظيُّ يُعدَم الرسالةَ
+        //    نهائيّاً (الصفُّ يُختَم فاشلاً ولا يُعاد إرسالُه أبداً — بحكم الحَجز قبل الأثر).
+        out.waiting++;
+        await prisma.message.updateMany({ where: { id: m.id }, data: { status: "PENDING", error: null } });
+      }
       else {
         out.failed++;
         await prisma.message.updateMany({ where: { id: m.id }, data: { status: "FAILED", error: res.error ?? "فشل الإرسال من الطابور" } });
