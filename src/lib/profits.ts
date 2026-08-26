@@ -288,10 +288,17 @@ export async function computeProfits(
   // بمنطقه هو: «الداخليُّ له وصلٌ في البرنامج، والوصلُ مختومٌ بقابضه — والخارجيُّ ترصده
   // المزامنةُ بلا يدِ أحدٍ فلا يُنسَب لمستخدمٍ أصلاً». والقائمةُ **المنفصلون حصراً**
   // (`separateAccount`) بقاعدته: غيرُ المفصولين لا يظهر لهم أيُّ تفصيلٍ — المكتبُ فقط.
-  const sepUsers = await prisma.user.findMany({
-    where: { agentId, towerId: { in: towerIds }, isDeleted: false, isActive: true, isOwner: false, separateAccount: true },
-    select: { id: true, fullName: true, username: true, towerId: true },
+  // 🔴 والفصلُ حكمٌ على **المكتب** (بلاغا محمد 2026-08-26 — حالةُ كاسبر): مؤشَّرٌ واحدٌ
+  //    في مكتبٍ فيه مستخدمان+ يفصل المكتبَ كلَّه، فيُنسَب عملُ **كلِّ** مستخدميه —
+  //    وإلّا غاب الأوّلُ (الذي لا يُعرَض عليه المربّعُ عند إنشائه) عن القسم وهو أكثرُهم عملاً.
+  const allOfficeUsers = await prisma.user.findMany({
+    where: { agentId, towerId: { in: towerIds }, isDeleted: false, isActive: true, isOwner: false },
+    select: { id: true, fullName: true, username: true, towerId: true, separateAccount: true },
   });
+  const sepTowerSet = new Set(allOfficeUsers.filter((u) => u.separateAccount).map((u) => u.towerId));
+  const perTowerCount = new Map<number | null, number>();
+  for (const u of allOfficeUsers) perTowerCount.set(u.towerId, (perTowerCount.get(u.towerId) ?? 0) + 1);
+  const sepUsers = allOfficeUsers.filter((u) => sepTowerSet.has(u.towerId) && (perTowerCount.get(u.towerId) ?? 0) >= 2);
   const sepById = new Map(sepUsers.map((u) => [u.id, u]));
   const byUserAcc = new Map<number, { actCount: number; actMonths: number; instCount: number }>();
   const bump = (uid: number | null | undefined, f: "act" | "inst", months = 1) => {

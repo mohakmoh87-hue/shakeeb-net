@@ -28,12 +28,23 @@ export async function reportUserScope(session: { isAdmin?: boolean; userId: numb
   // ═════ البند ١ · الفصلُ بالمربّع لا بعددِ المستخدمين (طلبُ محمد 2026-08-13) ═════
   // كان: «مكتبٌ فيه مستخدمان ⇒ كلٌّ يرى نفسَه» — فصلٌ **إجباريٌّ بلا خيار**. وطلبُ محمد
   // أن يكون اختياريّاً: «وإن لم أضع صحّاً على المربّع فالاثنان يفعلان بنفس التقرير».
-  // ⇒ يُقرأ `separateAccount` للمستخدم نفسِه، وردمُ الهجرة حفظ السلوكَ القائمَ حرفيّاً.
-  const me = await prisma.user.findUnique({
-    where: { id: session.userId },
+  //
+  // ═════ 🔴 والفصلُ حكمٌ على **المكتب** لا على الفرد (بلاغا محمد 2026-08-26) ═════
+  // حالةُ كاسبر الحيّة: فادي ورامي مؤشَّران وأبو فهد لا (أُنشئ أوّلاً قبل وجود زملاء —
+  // والمربّعُ لا يُعرَض إلّا بوجود زميلٍ سابق) ⇒ **حالةٌ مختلطةٌ** جعلت أبا فهد يرى
+  // مالَ فادي ورامي كلَّه، وأسقطته من تبويبات المدير معاً. فصار الحكم: مكتبٌ فيه
+  // مستخدمان+ **وأيٌّ منهم مفصول ⇒ المكتبُ كلُّه منفصل** — الجميعُ يُجبَرون على
+  // تقاريرهم والجميعُ يظهرون للمدير. ومكتبٌ بلا مؤشَّرٍ واحدٍ لا يتغيّر فيه شيء.
+  return (await officeSeparated(session.towerId)) ? session.userId : undefined;
+}
+
+/** أهذا المكتبُ منفصلُ الحسابات؟ — مستخدمان+ وفيهم مؤشَّرٌ واحدٌ على الأقلّ */
+export async function officeSeparated(towerId: number): Promise<boolean> {
+  const us = await prisma.user.findMany({
+    where: { towerId, isDeleted: false, isActive: true, isOwner: false },
     select: { separateAccount: true },
   });
-  return me?.separateAccount ? session.userId : undefined;
+  return us.length >= 2 && us.some((u) => u.separateAccount);
 }
 
 // يحسب أرقام التقرير اليومي (اختيارياً مقيّداً بمكتب واحد أو مجموعة مكاتب وكيل، وليوم محدّد للتدارك،

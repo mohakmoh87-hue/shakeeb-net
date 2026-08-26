@@ -57,17 +57,20 @@ export async function GET(request: Request) {
   const toD = parseDay(sp.get("to"));
   const ranged = fromD != null && toD != null;
 
-  // ═════ أ · مستخدمو المكتب المنفصلون — للتبويبات في نافذة اليوم السابق ═════
-  // تُعاد القائمةُ للمدير حين يطلب مكتباً محدّداً، **وبشرط الفصل** (قاعدة محمد
-  // 2026-08-26): مستخدمان+ حسابُهما منفصلٌ وإلّا `[]` فلا تُبنى تبويباتٌ أصلاً —
-  // مكتبُ المستخدم الواحد وغيرُ المفصولين يبقيان «المكتبَ فقط» بلا أيّ تغيير.
+  // ═════ أ · مستخدمو المكتب — للتبويبات في نافذة اليوم السابق ═════
+  // تُعاد القائمةُ للمدير حين يطلب مكتباً محدّداً، والفصلُ **حكمٌ على المكتب** (بلاغا
+  // محمد 2026-08-26): مستخدمان+ وأيٌّ منهم مفصول ⇒ تُعاد قائمةُ **الجميع** (حالةُ
+  // كاسبر: أبو فهد غيرُ مؤشَّرٍ كان يسقط من التبويبات). وبلا مؤشَّرٍ واحدٍ ⇒ `[]`
+  // فلا تُبنى تبويباتٌ أصلاً — «المكتبُ فقط» بلا أيّ تغيير (قاعدة د).
   let officeUsers: { id: number; name: string }[] = [];
   if (session.isAdmin && typeof scope === "number" && scope > 0) {
     const us = await prisma.user.findMany({
-      where: { towerId: scope, agentId: session.agentId ?? -1, isDeleted: false, isActive: true, isOwner: false, separateAccount: true },
-      select: { id: true, fullName: true, username: true }, orderBy: { id: "asc" },
+      where: { towerId: scope, agentId: session.agentId ?? -1, isDeleted: false, isActive: true, isOwner: false },
+      select: { id: true, fullName: true, username: true, separateAccount: true }, orderBy: { id: "asc" },
     });
-    if (us.length >= 2) officeUsers = us.map((u) => ({ id: u.id, name: u.fullName || u.username }));
+    if (us.length >= 2 && us.some((u) => u.separateAccount)) {
+      officeUsers = us.map((u) => ({ id: u.id, name: u.fullName || u.username }));
+    }
   }
 
   const r = await computeDailyReport(scope, ranged ? fromD : day, userId, ranged ? toD : undefined);

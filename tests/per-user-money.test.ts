@@ -21,18 +21,29 @@ const MA = () => read("src/app/(app)/manager-accounts/page.tsx");
 const PROFITS = () => read("src/lib/profits.ts");
 
 describe("د · «الحساب المنفصل» شرطُ كلّ تفصيلٍ بالمستخدم", () => {
-  test("تبويباتُ الشاشة الرئيسيّة: المنفصلون حصراً — لا العدد وحدَه", () => {
+  // 🔄 حُدِّث بعد حالة كاسبر (2026-08-26): الفصلُ حكمٌ على **المكتب** — مؤشَّرٌ واحدٌ
+  //    يفصل الجميعَ، فيظهر الأوّلُ (الذي لا يُعرَض عليه المربّعُ عند إنشائه) في التبويبات.
+  test("تبويباتُ الشاشة الرئيسيّة: مكتبٌ فيه مؤشَّرٌ ⇒ كلُّ مستخدميه — وبلا مؤشَّرٍ لا أحد", () => {
     const src = read("src/app/(app)/dashboard/page.tsx");
-    assert.match(src, /towerId: \{ not: null \}, separateAccount: true/,
-      "🔴 عاد الجلبُ بالعدد وحدَه ⇒ تظهر تبويباتٌ لمكتبٍ لم يفصل أحدٌ حساباتِه");
+    assert.match(src, /const sepTowers = new Set\(us\.filter\(\(u\) => u\.separateAccount\)/,
+      "مجموعةُ المكاتب المفصولة سقطت — عاد الحكمُ للفرد فيغيب الأوّلُ غيرُ المؤشَّر");
+    assert.match(src, /sepTowers\.has\(u\.towerId\) && \(perTower\.get\(u\.towerId as number\) \?\? 0\) >= 2/,
+      "شرطُ (مكتبٌ مفصولٌ + اثنان فأكثر) سقط — قاعدةُ د تنكسر");
+  });
+
+  test("والمحرّك: reportUserScope يحكم بالمكتب — فأبو فهد يُجبَر على تقريره ولو بلا مؤشَّر", () => {
+    const lib = LIB();
+    assert.match(lib, /return \(await officeSeparated\(session\.towerId\)\) \? session\.userId : undefined;/,
+      "🔴 عاد الحكمُ بعلَم الفرد ⇒ غيرُ المؤشَّر يرى مالَ زملائه كلَّه (بلاغ أبو فهد)");
+    assert.match(lib, /return us\.length >= 2 && us\.some\(\(u\) => u\.separateAccount\);/,
+      "تعريفُ «مكتبٌ منفصل» تغيّر — مستخدمان+ وفيهم مؤشَّرٌ واحدٌ على الأقلّ");
   });
 
   test("وقائمةُ اليوم السابق كذلك — والشرطُ اثنان+ وإلّا لا قائمةَ أصلاً", () => {
     const src = ROUTE();
-    assert.match(src, /isOwner: false, separateAccount: true \}/,
-      "قائمةُ مستخدمي المكتب في ردّ التقرير بلا شرط الفصل");
-    assert.match(src, /if \(us\.length >= 2\) officeUsers = us\.map/,
-      "مستخدمٌ منفصلٌ واحدٌ يكفي لإظهار تبويبات — والقاعدةُ اثنان فأكثر");
+    // 🔄 حالة كاسبر: تُجلب قائمةُ الجميع، والشرطُ (اثنان+ وفيهم مؤشَّر) ⇒ يظهر **الكلُّ**
+    assert.match(src, /if \(us\.length >= 2 && us\.some\(\(u\) => u\.separateAccount\)\) \{/,
+      "شرطُ فصل المكتب سقط — يغيب الأوّلُ غيرُ المؤشَّر أو تظهر تبويباتٌ لغير المفصولين");
     // 🔒 وللمدير ولمكتبٍ محدّدٍ فقط — «الكل» لا تبويبات له
     assert.match(src, /session\.isAdmin && typeof scope === "number" && scope > 0/,
       "القائمةُ تُبنى لغير المدير أو للإجماليّ");
@@ -40,7 +51,10 @@ describe("د · «الحساب المنفصل» شرطُ كلّ تفصيلٍ ب�
 
   test("وأرباحُ الشركة: القائمةُ من المنفصلين، وغيرُهم لا يُعَدّ ولا يظهر قسمُهم", () => {
     const src = PROFITS();
-    assert.match(src, /isOwner: false, separateAccount: true \}/, "جلبُ مستخدمي الأرباح بلا شرط الفصل");
+    assert.match(src, /const sepTowerSet = new Set\(allOfficeUsers\.filter\(\(u\) => u\.separateAccount\)/,
+      "مجموعةُ مكاتب الأرباح المفصولة سقطت — يغيب الأوّلُ غيرُ المؤشَّر عن القسم");
+    assert.match(src, /sepTowerSet\.has\(u\.towerId\) && \(perTowerCount\.get\(u\.towerId\) \?\? 0\) >= 2/,
+      "شرطُ (مكتبٌ مفصولٌ + اثنان فأكثر) سقط من الأرباح");
     assert.match(src, /if \(uid == null \|\| !sepById\.has\(uid\)\) return;/,
       "🔴 يُعَدّ لمستخدمٍ غير منفصل ⇒ يظهر قسمٌ لمكتبٍ قاعدتُه «المكتبُ فقط»");
     assert.match(src, /if \(byUserAcc\.size\) \{/, "قسمُ byUser يُبنى فارغاً بدل غيابه — تغييرُ عرضٍ لغير المفصولين");
