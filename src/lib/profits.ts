@@ -242,6 +242,8 @@ export type ProfitReport = {
   dormant: boolean;
   boxes: { actIn: Box; actExt: Box; instIn: Box; instExt: Box };
   net: number;
+  /** ب · إنجازُ الداخليّ بحسب المستخدم — المنفصلون حصراً (قاعدة محمد 2026-08-26)؛ غيابُه = لا مفصولين */
+  byUser?: { userId: number; name: string; towerId: number | null; actCount: number; actMonths: number; instCount: number }[];
 };
 
 const emptyBox = (): Box => ({ count: 0, months: 0, profit: 0, deduct: 0, rows: [] });
@@ -282,10 +284,27 @@ export async function computeProfits(
   const subById = new Map(subs.map((s) => [s.id, s]));
   const subBySas = new Map(subs.filter((s) => s.sasId != null).map((s) => [`${s.towerId}|${s.sasId}`, s]));
 
+  // ═══ ب · المستخدمون المنفصلون — للإسناد «مَن أنجز الداخليّ؟» (طلبُ محمد 2026-08-26) ═══
+  // بمنطقه هو: «الداخليُّ له وصلٌ في البرنامج، والوصلُ مختومٌ بقابضه — والخارجيُّ ترصده
+  // المزامنةُ بلا يدِ أحدٍ فلا يُنسَب لمستخدمٍ أصلاً». والقائمةُ **المنفصلون حصراً**
+  // (`separateAccount`) بقاعدته: غيرُ المفصولين لا يظهر لهم أيُّ تفصيلٍ — المكتبُ فقط.
+  const sepUsers = await prisma.user.findMany({
+    where: { agentId, towerId: { in: towerIds }, isDeleted: false, isActive: true, isOwner: false, separateAccount: true },
+    select: { id: true, fullName: true, username: true, towerId: true },
+  });
+  const sepById = new Map(sepUsers.map((u) => [u.id, u]));
+  const byUserAcc = new Map<number, { actCount: number; actMonths: number; instCount: number }>();
+  const bump = (uid: number | null | undefined, f: "act" | "inst", months = 1) => {
+    if (uid == null || !sepById.has(uid)) return;
+    const a = byUserAcc.get(uid) ?? { actCount: 0, actMonths: 0, instCount: 0 };
+    if (f === "act") { a.actCount++; a.actMonths += months; } else a.instCount++;
+    byUserAcc.set(uid, a);
+  };
+
   // ═══ ① التفعيلاتُ التي لها وصلٌ في البرنامج ═══
   const entries = await prisma.subscriptionEntry.findMany({
     where: { subscriberId: { in: subs.map((s) => s.id) }, isDeleted: false, date: { gte: from, lte: to } },
-    select: { id: true, subscriberId: true, date: true, month: true, cardType: true },
+    select: { id: true, subscriberId: true, date: true, month: true, cardType: true, userId: true },
     orderBy: { id: "asc" },
   });
   /** تواريخُ وصولات كلّ مشترك — تُستعمل للفصل بين «داخليّ» و«خارجيّ» */
@@ -300,17 +319,25 @@ export async function computeProfits(
       subscriberId: { in: subs.map((s) => s.id) }, isDeleted: false,
       date: { gte: new Date(from.getTime() - INSTALL_RECEIPT_MS), lte: new Date(to.getTime() + INSTALL_RECEIPT_MS) },
     },
-    select: { subscriberId: true, date: true },
+    select: { subscriberId: true, date: true, userId: true },
   });
-  const allReceipts = new Map<number, number[]>();
+  // ب · الوقتُ **وختمُ قابضه معاً** — فوصلُ التنصيب هو دليلُ «داخليّ» وهو نفسُه دليلُ «مَن»
+  const allReceipts = new Map<number, { t: number; userId: number | null }[]>();
   for (const e of near) {
     if (e.subscriberId == null || !e.date) continue;
-    const l = allReceipts.get(e.subscriberId) ?? []; l.push(e.date.getTime()); allReceipts.set(e.subscriberId, l);
+    const l = allReceipts.get(e.subscriberId) ?? []; l.push({ t: e.date.getTime(), userId: e.userId ?? null }); allReceipts.set(e.subscriberId, l);
   }
   const hasReceiptAround = (subId: number, at: Date, span: number) =>
-    (allReceipts.get(subId) ?? []).some((t) => Math.abs(t - at.getTime()) <= span);
+    (allReceipts.get(subId) ?? []).some((r) => Math.abs(r.t - at.getTime()) <= span);
   const hasReceiptAfter = (subId: number, at: Date, span: number) =>
-    (allReceipts.get(subId) ?? []).some((t) => t >= at.getTime() - DAY && t <= at.getTime() + span);
+    (allReceipts.get(subId) ?? []).some((r) => r.t >= at.getTime() - DAY && r.t <= at.getTime() + span);
+  /** قابضُ أقرب وصلٍ في نافذة التنصيب — به يُنسَب التنصيبُ الداخليُّ لمن استلم ماله */
+  const receiptUserAfter = (subId: number, at: Date, span: number): number | null => {
+    const inWin = (allReceipts.get(subId) ?? []).filter((r) => r.t >= at.getTime() - DAY && r.t <= at.getTime() + span);
+    if (!inWin.length) return null;
+    inWin.sort((a, b) => Math.abs(a.t - at.getTime()) - Math.abs(b.t - at.getTime()));
+    return inWin[0].userId;
+  };
 
   for (const e of entries) {
     const s = e.subscriberId != null ? subById.get(e.subscriberId) : null;
@@ -322,6 +349,7 @@ export async function computeProfits(
     const profit = per * months;
     const box = out.boxes.actIn;
     box.count++; box.months += months; box.profit += profit;
+    bump(e.userId, "act", months); // ب · الوصلُ مختومٌ بقابضه — نفسُ الصفّ الذي جعل التفعيلَ داخليّاً
     box.rows.push({
       netUser: s.netUser, name: s.name, towerId: s.towerId ?? 0, cabinet,
       packageName: pkg?.name ?? e.cardType ?? null, months, at: e.date, profit, deduct: 0,
@@ -366,6 +394,7 @@ export async function computeProfits(
         const deduct = rules.deduction(r.towerId, cabinet, pkg?.id ?? 0, !inside);
         const box = inside ? out.boxes.instIn : out.boxes.instExt;
         box.count++; box.months += 1; box.profit += profit; box.deduct += deduct;
+        if (inside && sub) bump(receiptUserAfter(sub.id, at, INSTALL_RECEIPT_MS), "inst"); // ب
         box.rows.push({
           netUser, name: r.name ?? sub?.name ?? null, towerId: r.towerId, cabinet,
           packageName: r.packageName, months: 1, at, profit, deduct,
@@ -400,6 +429,13 @@ export async function computeProfits(
   for (const k of ["actIn", "actExt", "instIn", "instExt"] as const) {
     B[k].rows.sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
     B[k].rows = B[k].rows.slice(0, 300);
+  }
+  // ب · التفصيلُ بالمستخدم — يُبنى فقط إن وُجد مفصولون أنجزوا شيئاً، فغيابُه صفرُ تغييرٍ في العرض
+  if (byUserAcc.size) {
+    out.byUser = [...byUserAcc.entries()].map(([id, a]) => {
+      const u = sepById.get(id)!;
+      return { userId: id, name: u.fullName || u.username, towerId: u.towerId, ...a };
+    }).sort((x, y) => (y.actCount + y.instCount) - (x.actCount + x.instCount));
   }
   void period;
   return out;

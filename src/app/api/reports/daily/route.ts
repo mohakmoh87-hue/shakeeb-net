@@ -42,14 +42,39 @@ export async function GET(request: Request) {
   // أصلاً، لكنّ هذا المسار كان يُمرّر `undefined` دائماً ⇒ اليومُ وحده. الآن يقبل `day`.
   // 🔒 والعزلُ لا يُمَسّ: النطاقُ محسوبٌ أعلاه من `agentTowerIds`/مكتبِ الجلسة، و`userId` لا
   //    يُقبل من العميل لغير المدير — فإضافةُ التاريخ لا تفتح بياناتِ أحد.
-  const dayParam = sp.get("day");
-  let day: Date | undefined;
-  if (dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam)) {
+  const parseDay = (v: string | null): Date | undefined => {
+    if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return undefined;
     // منتصفُ نهارِ بغداد لذلك اليوم — تُشتقّ منه `iraqTodayRange` حدودَ اليوم بلا لبسٍ عند الحدود
-    const d = new Date(`${dayParam}T12:00:00+03:00`);
-    if (!isNaN(d.getTime())) day = d;
+    const d = new Date(`${v}T12:00:00+03:00`);
+    return isNaN(d.getTime()) ? undefined : d;
+  };
+  const dayParam = sp.get("day");
+  const day = parseDay(dayParam);
+  // ═════ ج · «بين تاريخين» (طلبُ محمد 2026-08-26): from/to يغلبان day ═════
+  // 🔒 والعزلُ لم يتغيّر حرفاً: النطاقُ والمستخدمُ محسوبان أعلاه بنفس الحرّاس —
+  //    فاتّساعُ الزمن لا يفتح مكتبَ أحدٍ ولا مستخدمَه.
+  const fromD = parseDay(sp.get("from"));
+  const toD = parseDay(sp.get("to"));
+  const ranged = fromD != null && toD != null;
+
+  // ═════ أ · مستخدمو المكتب المنفصلون — للتبويبات في نافذة اليوم السابق ═════
+  // تُعاد القائمةُ للمدير حين يطلب مكتباً محدّداً، **وبشرط الفصل** (قاعدة محمد
+  // 2026-08-26): مستخدمان+ حسابُهما منفصلٌ وإلّا `[]` فلا تُبنى تبويباتٌ أصلاً —
+  // مكتبُ المستخدم الواحد وغيرُ المفصولين يبقيان «المكتبَ فقط» بلا أيّ تغيير.
+  let officeUsers: { id: number; name: string }[] = [];
+  if (session.isAdmin && typeof scope === "number" && scope > 0) {
+    const us = await prisma.user.findMany({
+      where: { towerId: scope, agentId: session.agentId ?? -1, isDeleted: false, isActive: true, isOwner: false, separateAccount: true },
+      select: { id: true, fullName: true, username: true }, orderBy: { id: "asc" },
+    });
+    if (us.length >= 2) officeUsers = us.map((u) => ({ id: u.id, name: u.fullName || u.username }));
   }
 
-  const r = await computeDailyReport(scope, day, userId);
-  return NextResponse.json({ ...r, day: dayParam && day ? dayParam : null });
+  const r = await computeDailyReport(scope, ranged ? fromD : day, userId, ranged ? toD : undefined);
+  return NextResponse.json({
+    ...r,
+    day: dayParam && day ? dayParam : null,
+    range: ranged ? { from: sp.get("from"), to: sp.get("to") } : null,
+    officeUsers,
+  });
 }

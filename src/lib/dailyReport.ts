@@ -38,9 +38,18 @@ export async function reportUserScope(session: { isAdmin?: boolean; userId: numb
 
 // يحسب أرقام التقرير اليومي (اختيارياً مقيّداً بمكتب واحد أو مجموعة مكاتب وكيل، وليوم محدّد للتدارك،
 // وبمستخدمٍ محدّد userId — لتقارير المكاتب متعدّدة المستخدمين)
-export async function computeDailyReport(towerId?: number | number[] | null, day?: Date, userId?: number) {
-  const { start, end } = iraqTodayRange(day ?? new Date());
-  const dateWhere = { date: { gte: start, lte: end } };
+export async function computeDailyReport(
+  towerId?: number | number[] | null, day?: Date, userId?: number,
+  // ═════ ج · مدى «بين تاريخين» (طلبُ محمد 2026-08-26) ═════
+  // «كم قبض مصطفى هذا الشهرَ كلَّه؟» كان بلا جوابٍ إلّا بفتح ثلاثين يوماً واحداً واحداً.
+  // `endDay` يمدّ نهايةَ النافذة إلى آخرِ يومِه البغداديّ — والبدايةُ من `day` كما هي،
+  // فكلُّ ناديها القدامى (بلا endDay) يعملون حرفيّاً كما كانوا.
+  endDay?: Date,
+) {
+  const { start, end: sameDayEnd } = iraqTodayRange(day ?? new Date());
+  const end = endDay ? iraqTodayRange(endDay).end : sameDayEnd;
+  // 🔒 مدىً مقلوبٌ (نهايتُه قبل بدايته) يرتدّ يوماً واحداً — لا نافذةً فارغةً تُعرَض أصفاراً مضلِّلة
+  const dateWhere = { date: { gte: start, lte: end < start ? sameDayEnd : end } };
   const towerWhere =
     towerId == null ? {} : Array.isArray(towerId) ? { towerId: { in: towerId.length ? towerId : [-1] } } : { towerId };
   // فلتر المستخدم: يمسّ كلّ الجداول الثلاثة (subscription_entries/money_tx/invoices تحمل userId)

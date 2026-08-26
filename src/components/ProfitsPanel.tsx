@@ -19,6 +19,7 @@ type Report = {
   from: string; to: string; label: string; warning: string | null; mode: string; monthValue: string;
   dormant: boolean; net: number;
   boxes: { actIn: Box; actExt: Box; instIn: Box; instExt: Box };
+  byUser?: { userId: number; name: string; towerId: number | null; actCount: number; actMonths: number; instCount: number }[];
   period: { from: string; to: string; label: string; ended: boolean; epoch: string };
   view?: { mode?: string; month?: string; from?: string; to?: string; tower?: number } | null;
 };
@@ -219,6 +220,41 @@ export default function ProfitsPanel() {
           );
         })}
       </div>
+
+      {/* ═════ ب · إنجازُ الداخليّ بحسب المستخدم (طلبُ محمد 2026-08-26) ═════
+          يظهر فقط حين يوجد مستخدمون **منفصلو الحساب** أنجزوا شيئاً في المدى — فوكيلٌ
+          بلا فصلٍ لا يرى هذا القسمَ أصلاً (قاعدتُه: «يبقى نفسُ الوضع الحاليّ بالضبط»).
+          والخارجيّان غائبان عمداً: ترصدهما المزامنةُ بلا يدِ أحدٍ فلا يُنسَبان لمستخدم. */}
+      {(rep?.byUser?.length ?? 0) > 0 && (
+        <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <b className="text-[13px] text-slate-700">👥 الإنجازُ الداخليّ بحسب المستخدم</b>
+            <span className="text-[10.5px] text-slate-400">الحساباتُ المنفصلة — والخارجيُّ لا يُنسَب لأحد</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <thead>
+                <tr className="text-[10.5px] text-slate-500">
+                  <th className="p-1.5 text-right">المستخدم</th>
+                  <th className="p-1.5 text-right">تفعيل داخلي (أشهر)</th>
+                  <th className="p-1.5 text-right">عدد التفعيلات</th>
+                  <th className="p-1.5 text-right">تنصيب داخلي</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rep!.byUser!.map((u) => (
+                  <tr key={u.userId} className="border-t border-slate-200">
+                    <td className="p-1.5 font-bold text-slate-700">👤 {u.name}</td>
+                    <td className="p-1.5 font-extrabold text-slate-800">{fmt(u.actMonths)}</td>
+                    <td className="p-1.5 text-slate-600">{fmt(u.actCount)}</td>
+                    <td className="p-1.5 font-extrabold text-slate-800">{fmt(u.instCount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* ── الصافي + شهر جديد ── */}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-gradient-to-l from-emerald-600 to-emerald-500 px-4 py-3 text-white">

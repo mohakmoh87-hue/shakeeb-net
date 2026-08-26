@@ -26,9 +26,14 @@ export default async function DashboardPage() {
       ? prisma.tower.findMany({ where: { isDeleted: false, id: { in: agentTowers.length ? agentTowers : [-1] } }, select: { id: true, name: true }, orderBy: { id: "asc" } })
       : Promise.resolve([] as { id: number; name: string | null }[]),
     // مستخدمو مكاتب الوكيل (للمدير): تبويب اختيار المستخدم لمكتبٍ فيه مستخدمان+
+    // ═════ 🔒 «الحساب المنفصل» شرطُ الظهور — قاعدةُ محمد 2026-08-26 ═════
+    // بنصّه: «مكتبٌ لديه مستخدمان لكنّ حسابهم غيرُ منفصل ⇒ يظهر له فقط المكتبُ وبدون
+    // أيّ تغييرٍ له إطلاقاً». وكان الجلبُ بالعدد وحدَه — فتظهر التبويباتُ لمكتبٍ لم
+    // يفصل أحدٌ حساباتِه. فصار الشرطُ: مستخدمان+ **مفصولان** (`separateAccount`)،
+    // وما دونه يرى المكتبَ وحدَه كما لو لم تُبنَ الميزة.
     isAdmin
       ? prisma.user.findMany({
-          where: { agentId: session?.agentId ?? -1, isDeleted: false, isActive: true, isOwner: false, towerId: { not: null } },
+          where: { agentId: session?.agentId ?? -1, isDeleted: false, isActive: true, isOwner: false, towerId: { not: null }, separateAccount: true },
           select: { id: true, fullName: true, username: true, towerId: true }, orderBy: { id: "asc" },
         }).then((us) => us.map((u) => ({ id: u.id, name: u.fullName || u.username, towerId: u.towerId as number })))
       : Promise.resolve([] as { id: number; name: string; towerId: number }[]),

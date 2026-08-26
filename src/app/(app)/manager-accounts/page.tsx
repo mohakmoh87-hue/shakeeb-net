@@ -87,14 +87,14 @@ export default function ManagerAccountsPage() {
   // أ-٦ · اليومُ المضغوط ⇒ نافذةُ تقريره الكاملة (طلب محمد 2026-08-11).
   // والجلبُ في **مُعالِج الضغط** لا في `useEffect`: قاعدةُ `set-state-in-effect` محقّة، ولا
   // حاجةَ إلى أثرٍ لحدثٍ يبدأ بنقرةٍ صريحة.
-  const [dayView, setDayView] = useState<{ day: string; towerId: number | null } | null>(null);
+  const [dayView, setDayView] = useState<{ day: string; towerId: number | null; to?: string } | null>(null);
   // أ-١٩+/١ · يومُ الماستر (بلاغ محمد 2026-08-13: «الماسترُ تقاريرُ يوميّةٌ أيضاً فيجب أن يكون
   // مثل مجموع المبالغ اليوميّة بالضبط»). 🔑 ولا مسارَ جديد: `masterDetail.days` مُشتقّةٌ من
   // **نفس** مصفوفة الحركات التي تُرجع في `transactions` (فُحص في `api/manager-accounts/master`)
   // ⇒ ترشيحُ الحركات بيومٍ يُطابق دائماً الصفَّ الذي ضُغط، فلا يختلف رقمٌ عن رقم.
   const [masterDay, setMasterDay] = useState<string | null>(null);
   // «من أين أتت كلُّ واحدة» — الصنفُ المضغوطُ داخل نافذة اليوم، يُعرَض بالعارض المشترك
-  const [drill, setDrill] = useState<{ kind: string; day: string; towerId: number | null } | null>(null);
+  const [drill, setDrill] = useState<{ kind: string; day: string; towerId: number | null; userId?: number | null } | null>(null);
   // ترشيحُ حركات يوم الماستر بضغطِ مربّعِ قبض/صرف — **ترشيحٌ في مكانه** لا نافذةٌ أخرى:
   // ولا يجوز فتحُ `kind=master` من مسار التقرير هنا لأنّه يقرأ `money_tx` وحدَه بينما سجلُّ
   // الماستر يدمج معه حركاتِ المدير (`manager_tx`) ⇒ فيختلف المجموعُ عن التفصيل. والترشيحُ
@@ -113,13 +113,27 @@ export default function ManagerAccountsPage() {
     }
   }, []);
   const [dayRep, setDayRep] = useState<Record<string, number> | null>(null);
-  async function openDay(day: string, towerId: number | null) {
-    setDayView({ day, towerId });
+  // ═════ أ · تبويباتُ المستخدمين في اليوم السابق (طلبُ محمد 2026-08-26) ═════
+  // كان الخادمُ يقبل المستخدمَ واليومَ معاً والواجهةُ لا ترسل المستخدمَ — فتقريرُ «الخميس
+  // الماضي لمصطفى وحدَه» محسوبٌ ولا سبيلَ إليه. القائمةُ تأتي من ردّ التقرير نفسِه
+  // (`officeUsers` — **المنفصلون حصراً وبشرط اثنين+**)، فمكتبُ المستخدم الواحد وغيرُ
+  // المفصولين لا يرون أيَّ جديدٍ إطلاقاً (قاعدته: «يبقى نفسُ الوضع الحاليّ بالضبط»).
+  const [dayUsers, setDayUsers] = useState<{ id: number; name: string }[]>([]);
+  const [dayUser, setDayUser] = useState<"all" | number>("all");
+  // ج · المدى «بين تاريخين» يمرّ بنفس النافذة: `to` حاضرٌ ⇒ عنوانُها مدىً وجلبُها بمدى
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
+  async function openDay(day: string, towerId: number | null, userId: "all" | number = "all", to?: string) {
+    setDayView({ day, towerId, to });
     setDayRep(null);
-    const q = new URLSearchParams({ day, towerId: towerId == null ? "all" : String(towerId) });
+    setDayUser(userId);
+    const q = new URLSearchParams({ towerId: towerId == null ? "all" : String(towerId) });
+    if (to) { q.set("from", day); q.set("to", to); } else q.set("day", day);
+    if (userId !== "all") q.set("userId", String(userId));
     const r = await fetch(`/api/reports/daily?${q}`).catch(() => null);
     const d = r && r.ok ? await r.json().catch(() => null) : null;
     setDayRep(d && !d.error ? d : null);
+    setDayUsers(Array.isArray(d?.officeUsers) ? d.officeUsers : []);
   }
   const [showLog, setShowLog] = useState(false);
   const [logOffice, setLogOffice] = useState<number | "all">("all"); // المكتب المختار في السجل، all = الإجمالي
@@ -894,6 +908,24 @@ export default function ManagerAccountsPage() {
               </div>
             )}
 
+            {/* ═════ ج · كشفٌ بين تاريخين (طلبُ محمد 2026-08-26) ═════
+                يفتح نافذةَ اليوم نفسَها بمدى — فتأتي معها تبويباتُ المستخدمين المنفصلين
+                تلقائيّاً (لمكتبٍ محدّد)، ويُجاب «كم قبض فلانٌ هذا الشهرَ؟» بضغطتَين. */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-blue-50/60 px-4 py-2.5 text-sm">
+              <b className="text-slate-700">🧮 كشف بين تاريخين:</b>
+              <input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs" />
+              <span className="text-slate-500">إلى</span>
+              <input type="date" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs" />
+              <button
+                disabled={!rangeFrom || !rangeTo || rangeTo < rangeFrom}
+                onClick={() => { setShowLog(false); void openDay(rangeFrom, logOffice === "all" ? null : logOffice, "all", rangeTo); }}
+                className="rounded-lg bg-mynet-blue px-3 py-1.5 text-xs font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-40">
+                عرض{logOffice !== "all" ? ` — ${dailyLog?.offices.find((o) => o.id === logOffice)?.name ?? "المكتب"}` : " — الإجمالي"}
+              </button>
+            </div>
+
             <div className="overflow-auto">
               {(() => {
                 if (!dailyLog) return <div className="p-8 text-center text-slate-400">جاري التحميل...</div>;
@@ -1029,11 +1061,11 @@ export default function ManagerAccountsPage() {
           اليوم ← إلى حركاتِ سطرٍ فيه ← وكلُّ حركةٍ بيوزرِ صاحبها واسمِه ووقتِها بالثانية. */}
       {drill && (
         <TxDrillModal
-          kind={drill.kind} day={drill.day} towerId={drill.towerId ?? "all"}
+          kind={drill.kind} day={drill.day} towerId={drill.towerId ?? "all"} userId={drill.userId ?? null}
           onClose={() => setDrill(null)}
           // حذفُ حركةٍ من التفصيل يُعيد حسابَ مربّعات اليوم فوراً — وإلّا بقي الرقمُ القديمَ
           // معروضاً على حركةٍ لم تعد موجودة، وهو أخطرُ ما يظهر في شاشة مال.
-          onChanged={() => { if (dayView) void openDay(dayView.day, dayView.towerId); }}
+          onChanged={() => { if (dayView) void openDay(dayView.day, dayView.towerId, dayUser, dayView.to); }}
         />
       )}
 
@@ -1123,7 +1155,11 @@ export default function ManagerAccountsPage() {
           <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-6 shadow-2xl sm:rounded-2xl">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-xl font-extrabold text-slate-800">📅 تقرير يوم <span dir="ltr">{dayView.day}</span></h3>
+                <h3 className="text-xl font-extrabold text-slate-800">
+                  {dayView.to
+                    ? <>🧮 كشف من <span dir="ltr">{dayView.day}</span> إلى <span dir="ltr">{dayView.to}</span></>
+                    : <>📅 تقرير يوم <span dir="ltr">{dayView.day}</span></>}
+                </h3>
                 <div className="mt-1 text-sm text-slate-500">
                   {dayView.towerId == null ? "كلّ المكاتب" : (dailyLog?.offices.find((o) => o.id === dayView.towerId)?.name ?? "المكتب")}
                 </div>
@@ -1131,6 +1167,23 @@ export default function ManagerAccountsPage() {
               <button onClick={() => setDayView(null)} aria-label="إغلاق"
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-500 hover:bg-slate-200">✕</button>
             </div>
+
+            {/* أ · تبويباتُ المستخدمين — تُبنى من ردّ الخادم (المنفصلون حصراً واثنان+)،
+                فغيابُها لغير المفصولين ليس إخفاءً في الواجهة بل غيابَ بياناتٍ من المصدر */}
+            {dayUsers.length >= 2 && (
+              <div className="mb-4 flex flex-wrap gap-2">
+                <button onClick={() => void openDay(dayView.day, dayView.towerId, "all", dayView.to)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${dayUser === "all" ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                  الكل
+                </button>
+                {dayUsers.map((u) => (
+                  <button key={u.id} onClick={() => void openDay(dayView.day, dayView.towerId, u.id, dayView.to)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${dayUser === u.id ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                    👤 {u.name}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {!dayRep ? (
               <div className="p-10 text-center text-slate-400">جاري الحساب…</div>
@@ -1152,26 +1205,26 @@ export default function ManagerAccountsPage() {
                     // يخلط دفترَين — وهو عينُ اللبس الذي يُحذّر منه الكود: «مالُ الماستر يُحتسب
                     // ماستراً في شاشةٍ ونقداً في أخرى». وسيظهر في **نافذة يوم الماستر** وحدها.
                   ] as [string, string, string | null, string][]).map(([label, k, ck, kind]) => (
-                    <div key={k} onClick={() => setDrill({ kind, day: dayView.day, towerId: dayView.towerId })}
+                    <div key={k} onClick={() => { if (!dayView.to) setDrill({ kind, day: dayView.day, towerId: dayView.towerId, userId: dayUser === "all" ? null : dayUser }); }}
                       title="اضغط لعرض الحركات المكوّنة لهذا المبلغ"
                       className="cursor-pointer rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-mynet-blue hover:bg-white hover:shadow-md">
                       <div className="text-sm text-slate-600">{label}</div>
                       <div className="text-2xl font-extrabold text-slate-800">{fmt(Number(dayRep[k] ?? 0))}</div>
                       <div className="mt-0.5 text-xs text-slate-400">
-                        {ck ? `عددها ${Number(dayRep[ck] ?? 0)} · ` : ""}<span className="text-mynet-blue">التفاصيل ↗</span>
+                        {ck ? `عددها ${Number(dayRep[ck] ?? 0)} · ` : ""}{!dayView.to && <span className="text-mynet-blue">التفاصيل ↗</span>}
                       </div>
                     </div>
                   ))}
                 </div>
-                <div onClick={() => setDrill({ kind: "total", day: dayView.day, towerId: dayView.towerId })}
+                <div onClick={() => { if (!dayView.to) setDrill({ kind: "total", day: dayView.day, towerId: dayView.towerId, userId: dayUser === "all" ? null : dayUser }); }}
                   title="اضغط لعرض كلّ حركات هذا اليوم"
                   className="cursor-pointer rounded-2xl bg-gradient-to-l from-mynet-blue to-mynet-blue-dark p-5 text-center text-white transition hover:brightness-110">
-                  <div className="text-sm opacity-85">صافي اليوم (بلا الماستر)</div>
+                  <div className="text-sm opacity-85">{dayView.to ? "صافي المدى (بلا الماستر)" : "صافي اليوم (بلا الماستر)"}</div>
                   <div className="text-4xl font-extrabold">{fmt(Number(dayRep.total ?? 0))} <span className="text-lg font-normal">د.ع</span></div>
-                  <div className="mt-1 text-xs opacity-75">اضغط لكلّ الحركات ↗</div>
+                  {!dayView.to && <div className="mt-1 text-xs opacity-75">اضغط لكلّ الحركات ↗</div>}
                 </div>
                 <p className="mt-3 text-center text-xs text-slate-400">
-                  الأرقامُ محسوبةٌ بنفس دالّة التقرير اليوميّ للشاشة الرئيسيّة — مقيَّدةً بهذا اليوم وهذا المكتب.
+                  {dayView.to ? "الأرقامُ بنفس دالّة التقرير اليوميّ مجموعةً على المدى كاملاً — والحفرُ بالسطور من نافذة اليوم الواحد." : "الأرقامُ محسوبةٌ بنفس دالّة التقرير اليوميّ للشاشة الرئيسيّة — مقيَّدةً بهذا اليوم وهذا المكتب."}
                 </p>
               </>
             )}
