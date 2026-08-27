@@ -148,10 +148,11 @@ describe("ب · أرباحُ الشركة بحسب المستخدم — الإس
 // لكنّها التباسٌ بلا فائدةٍ لمعزولٍ ⇒ تُحجَب عنه، وتبقى للمدير ولغير المفصولين (صميم).
 describe("🙈 تفصيلُ اللوحات والمستخدمُ المنفصل", () => {
   test("يُحجَب عن المُجبَر وحدَه — في المسار وفي أوّل تحميلٍ للرئيسيّة", () => {
-    assert.match(ROUTE(), /if \(!session\.isAdmin && userId != null\) delete \(r as \{ byPanel\?: unknown \}\)\.byPanel;/,
-      "المسارُ يعيد تفصيلَ اللوحات لمستخدمٍ معزول");
-    assert.match(read("src/app/(app)/dashboard/page.tsx"), /if \(forcedUser != null\) delete \(initialReport as \{ byPanel\?: unknown \}\)\.byPanel;/,
-      "أوّلُ تحميلٍ للرئيسيّة يعرض تفصيلَ اللوحات لمعزولٍ قبل أيّ جلب");
+    // 🔄 شُدِّد (بلاغ محمد الثاني): **للمدير حصراً** — يغطّي المعزولَ ومستخدمَ «كلّ المكاتب» معاً
+    assert.match(ROUTE(), /if \(!session\.isAdmin\) delete \(r as \{ byPanel\?: unknown \}\)\.byPanel;/,
+      "المسارُ يعيد تفصيلَ اللوحات لغير المدير");
+    assert.match(read("src/app/(app)/dashboard/page.tsx"), /if \(!isAdmin\) delete \(initialReport as \{ byPanel\?: unknown \}\)\.byPanel;/,
+      "أوّلُ تحميلٍ للرئيسيّة يعرض تفصيلَ اللوحات لغير المدير");
   });
 
   test("🔒 وعدُّ اللوحات نفسُه يبقى مرشَّحاً بالمستخدم — دفاعُ العمق قائم", () => {

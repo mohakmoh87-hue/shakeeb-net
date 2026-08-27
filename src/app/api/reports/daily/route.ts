@@ -80,7 +80,9 @@ export async function GET(request: Request) {
   // كانت مرشَّحةً بالمستخدم فعلاً (لا تسريب) — لكنّ السطورَ نفسَها التباسٌ بلا فائدةٍ له.
   // 🔑 والحجبُ **للمُجبَر وحدَه**: المديرُ (بكلّ تبويباته) وموظّفو المكاتب غير المفصولة
   //    (كصميم — أصحابُ الميزة الأصليّين أ-٢٣) يرونه كما كان حرفيّاً.
-  if (!session.isAdmin && userId != null) delete (r as { byPanel?: unknown }).byPanel;
+  // 🔄 شُدِّد (بلاغ محمد الثاني 2026-08-26): **للمدير حصراً** لا للمعزول فقط — فيغطّي
+  //    أيضاً مستخدمَ «كلّ المكاتب» (بلا towerId) الذي لا يُجبَر على مستخدمٍ أصلاً.
+  if (!session.isAdmin) delete (r as { byPanel?: unknown }).byPanel;
   return NextResponse.json({
     ...r,
     day: dayParam && day ? dayParam : null,

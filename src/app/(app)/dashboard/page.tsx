@@ -46,7 +46,7 @@ export default async function DashboardPage() {
   ]);
   // 🙈 تفصيلُ اللوحات يُحجَب عن المستخدم المنفصل — نفسُ حكم مسار التقرير (بلاغ 2026-08-26):
   //    سطورُ «↳ من فلان» أسماءُ لوحاتٍ لا أشخاص، لكنّها التباسٌ بلا فائدةٍ لمعزولٍ يرى نفسَه.
-  if (forcedUser != null) delete (initialReport as { byPanel?: unknown }).byPanel;
+  if (!isAdmin) delete (initialReport as { byPanel?: unknown }).byPanel; // 🔄 للمدير حصراً (بلاغ محمد الثاني)
   const counterTowers = isAdmin ? agentTowers : session?.towerId ? [session.towerId] : [];
 
   return (
