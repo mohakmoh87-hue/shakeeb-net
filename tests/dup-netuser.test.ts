@@ -26,7 +26,8 @@ describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلف�
     const src = SRC();
     const guardAt = src.indexOf("progByUser.get(uKey)");
     assert.ok(guardAt > -1, "لا حرسَ على تكرار اليوزر");
-    const linked = src.slice(guardAt, guardAt + 1400);
+    // 🔄 (2026-08-27) اتّسعت النافذة: تعليقُ «الوسم بالمزامنة» دخل بين المرساة والمطلوب
+    const linked = src.slice(guardAt, guardAt + 2200);
     assert.match(linked, /dupUserSkipped\+\+;/, "عدُّ التقرير ضاع");
     // 🔗 وصار الرصدُ **ربطَ رقمِ ساسٍ** على الصفّ القائم لا «تنصيباً خارجيّاً» (2026-08-21):
     //    وسمُ «تنصيب» كان يُغري بـ«تحديث» الذي ينفّذ استبدالاً ⇒ **مكرَّرٌ جديدٌ بيد المستخدم**.
@@ -80,7 +81,8 @@ describe("البند ٥ · لا يُستورَد يوزرٌ موجودٌ سلف�
     const src = SRC();
     const guardAt = src.indexOf("progByUser.get(uKey)");
     assert.ok(guardAt > -1, "مرساةُ الحرس ضاعت");
-    const block = src.slice(guardAt, guardAt + 2000);
+    // 🔄 (2026-08-27) اتّسعت النافذة: تعليقُ «الوسم بالمزامنة» دخل بين المرساة والمطلوب
+    const block = src.slice(guardAt, guardAt + 2800);
     assert.match(block, /packageName: u\.packageName/, "الباقةُ لا تُرصَد مع التنصيب");
     // ومسارُ «حفظ» يستورد بتاريخ الساس ويطابق الباقةَ (والمجهولةُ تُترك فارغةً لا مانعةً)
     const api = fs.readFileSync(path.join(ROOT, "src/app/api/sync-log/route.ts"), "utf8");

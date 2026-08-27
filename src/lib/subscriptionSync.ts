@@ -768,13 +768,18 @@ async function runOfficeSyncInner(
     // «مقبوضٌ عندي» — الغطاءُ بالتاريخ ثمّ الوصلُ بنافذة ±١٢ ساعة
     const COVER_TOL_MS = 24 * 3600_000;
     const covered = !!(validNewExp && sub.dateTo && sub.dateTo.getTime() >= validNewExp.getTime() - COVER_TOL_MS && !loanSubIdsP1.has(sub.id));
-    if (covered) { actedSasIds.add(a.sasUserId); await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }
+    // 🔄 (بلاغا bg-17-19-6@amr وbg-16-23-11@amr 2026-08-27) «مغطًّى» و«مقبوضٌ عندي» **لا
+    //    يُسكتان فرقَ الأيّام**: لا صفَّ معلَّقاً خلفهما — لا بيتَ للواقعة — فإسكاتُ المرحلة
+    //    الثانية كان يُضيّع +شهراً و−أيّاماً بلا أيّ أثر. «المعلَّقُ وحدَه يُسكِت» (قاعدةُ
+    //    2026-08-22 نفسُها) — فالإسكاتُ هنا سقط، والرسالةُ تبقى ساقطةً بـ`continue` كما كانت.
+    if (covered) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }
     // 💰 قاعدةُ محمد بحرفها: «إن كان لديه وصلُ تفعيلٍ عندي فليس خارجيّاً أبداً» —
     // وتُقاس على **اليوزر** (كلّ صفوفه) وبتاريخَين: قربُ الوصل من التفعيل، أو انتهاءُ
     // الوصل بانتهاء الساس نفسِه. (كانت على صفٍّ واحدٍ وبنافذة ±١٢ ساعةً وحدَها.)
     const subUserKey = (a.username ?? sub.netUser ?? "").trim().toLowerCase();
     if (await collectedByUs(subUserKey, sub.id, actAt, validNewExp)) {
-      actedSasIds.add(a.sasUserId);
+      // 🔄 (2026-08-27) بلا إضافةِ إسكاتٍ — انظر تعليقَ «مغطًّى» أعلاه: فرقُ التاريخ الذي
+      //    خلّفه هذا التفعيلُ المُسكَت يُرصَد في «تحديث معلومات» بدل الضياع للأبد.
       await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue;
     }
     // 💸 القرض (تصحيحُ محمد 2026-08-21): **سعرُ صفرٍ يدلّ دائماً على قرض** — وأُسقط شرطُ
@@ -1120,6 +1125,9 @@ async function runOfficeSyncInner(
 
     // ♻️ (seenSasIds/stillInstalls/stillDiffering مرفوعةٌ لنطاق الدالّة أعلاه)
 
+    // 🏷️ من يُوسَم للوحة هذه الدورة (يوزر+رقم تطابقا وبلا وسم) — يُكتب دفعةً بعد الحلقة
+    const stampIds: number[] = [];
+
     for (const u of allUsers) {
       seenSasIds.add(u.sasId);
       let p = progBySasId.get(u.sasId);
@@ -1147,6 +1155,11 @@ async function runOfficeSyncInner(
         // وغيرُ موسومٍ ⇒ يُعالَج هنا بصمتٍ بلا افتعالِ «تغيّر» ولا closeDeadSasRows.
         if (oldByUser && oldByUser.sasId === u.sasId) {
           if (oldByUser.sasPanelId != null && panelId != null && oldByUser.sasPanelId !== panelId) continue;
+          // 🏷️ **الوسمُ بالمزامنة** (بلاغُ كاسبر 2026-08-27): غيرُ الموسوم الذي طابقه اليوزرُ
+          //    والرقمُ معاً في قائمة هذه اللوحة يُوسَم بها. بيتُ الوسم الأوّلُ (الاستيراد) لا
+          //    يُبلَغ لمستورَدٍ سلفاً — «كلُّ المشتركين مستوردون فلا يمكن استيرادُ أحد» و٤٤٦٥
+          //    بلا وسم — وبلا وسمٍ تفتح التفعيلةُ بحساب المكتب فتُرمى Access Denied.
+          if (oldByUser.sasPanelId == null && panelId != null) { stampIds.push(oldByUser.id); oldByUser.sasPanelId = panelId; }
           p = oldByUser;
         } else if (oldByUser) {
           dupUserSkipped++;
@@ -1220,7 +1233,11 @@ async function runOfficeSyncInner(
         // يُرصَد هنا والتطبيقُ يدويٌّ حصراً من التبويب — التمديدُ التلقائيُّ بقي لمجهول
         // الباقة وحدَه (أدناه). وصاحبُ القرض مستثنى: أيّامُه الوهميّةُ ليست فرقاً يُعرَض.
         // 🚫 لا فرقَ أيّامٍ لمن له تفعيلةُ ساسٍ في النافذة — بيتُها تبويبُ التفعيل لا المعلومات
-        if (!sasOffer && sasPkgIdForDiff != null && !loanSubIds.has(p.id) && validDate && !actedSasIds.has(u.sasId)) {
+        // 🔄 (2026-08-27) كان شرطُ «معلوم الباقة» يُغلق البابَ كلَّه — فنقصُ أيّامِ مجهولِ
+        //    الباقة لا يُرصَد أبداً (التمديدُ التلقائيُّ أدناه **للأمام وحدَه** فلا يمسّه).
+        //    الآن: زيادةُ مجهولِ الباقة وحدَها تبقى للتمديد التلقائيّ؛ والنقصُ يُرصَد للجميع.
+        if (!sasOffer && !loanSubIds.has(p.id) && validDate && !actedSasIds.has(u.sasId)
+            && (sasPkgIdForDiff != null || (p.dateTo && validDate < p.dateTo))) {
           const oday = p.dateTo ? p.dateTo.toISOString().slice(0, 10) : "";
           const nday = validDate.toISOString().slice(0, 10);
           // 🕗 فرقٌ دون ١٢ ساعةً = عرفُ تخزينٍ لا تغييرُ اشتراك (٧ ساعاتٍ بين 17:00Z و00:00Z)
@@ -1277,11 +1294,18 @@ async function runOfficeSyncInner(
             // 💰 ونقصُ الأيّام **لا يُرصَد إذا كان تاريخُنا مدفوعاً بوصل** (حالة bg-5-12-11@mu:
             //    وصلُ ٤٥ ألفاً حتى ٢٠-١٠ والساسُ يقول ٣٠-٨ لأنّ الشركةَ تُعطي ١٠ أيّامٍ ثمّ
             //    تُكمل ٥٠). تطبيقُه كان **يقصّ أيّاماً مقبوضةً**، فالسكوتُ عنه هو الصواب.
+            // 🔄 (بلاغ bg-16-23-11@amr 2026-08-27) كان `classified = true` هنا فيُسكَت النقصُ
+            //    المدفوعُ بوصلٍ **للأبد** — والوصلُ الشهريُّ يجدّد الإسكاتَ كلَّ شهرٍ فلا يظهر
+            //    الانحرافُ المتراكمُ أبداً. الآن يُرصَد **موسوماً بالأحمر مهما صغُر**: قرارُ
+            //    قصِّ أيّامٍ مقبوضةٍ (حالة bg-5-12-11@mu «١٠ أيّامٍ ثمّ تُكمل الشركةُ ٥٠»)
+            //    لصاحب الصلاحيّة لا للمزامنة، و«تجاهل» يخفيه حتى تتغيّر بياناتُه — فحالةُ
+            //    «١٠ ثمّ ٥٠» تُتجاهَل مرّةً وتُغلق نفسَها حين تكتمل الأيّام.
+            let receiptBacked = false;
             if (!classified && !grew && p.dateTo) {
               const paid = await receiptsOfUser((u.username ?? p.netUser ?? "").trim().toLowerCase(), p.id);
-              if (paid.to.some((t) => Math.abs(t - p.dateTo!.getTime()) <= RECEIPT_NEAR_MS)) classified = true;
+              if (paid.to.some((t) => Math.abs(t - p.dateTo!.getTime()) <= RECEIPT_NEAR_MS)) receiptBacked = true;
             }
-            if (!classified) {
+            if (!classified && !receiptBacked) {
               classified = await classifyDateJump(p, u.sasId, u.username, validDate);
             }
             if (!classified) {
@@ -1291,9 +1315,11 @@ async function runOfficeSyncInner(
                 : Math.round((p.dateTo.getTime() - validDate.getTime()) / 86400000);
               diffs.push({
                 f: "dateTo",
-                label: grew ? "تاريخ الانتهاء (زيادة أيّام)" : `تاريخ الانتهاء (نقص أيّام: ${lostDays})`,
+                label: grew ? "تاريخ الانتهاء (زيادة أيّام)"
+                  : receiptBacked ? `تاريخ الانتهاء (نقص أيّام: ${lostDays} — وتاريخُنا مدفوعٌ بوصل)`
+                  : `تاريخ الانتهاء (نقص أيّام: ${lostDays})`,
                 old: oday || "—", new: nday,
-                ...(lostDays > 7 ? { danger: true } : {}),
+                ...(lostDays > 7 || receiptBacked ? { danger: true } : {}),
               });
             }
           }
@@ -1331,6 +1357,16 @@ async function runOfficeSyncInner(
         continue;
       }
       checked++;
+    }
+
+    // 🏷️ كتابةُ الوسم دفعةً واحدة — مقيَّدةٌ بمعرّفاتٍ جُمعت من مشتركي هذا المكتب حصراً
+    if (stampIds.length && panelId != null) {
+      for (let i = 0; i < stampIds.length; i += 1000) {
+        await prisma.subscriber.updateMany({
+          where: { id: { in: stampIds.slice(i, i + 1000) }, sasPanelId: null },
+          data: { sasPanelId: panelId },
+        });
+      }
     }
 
     // ═════ ♻️ التصحيحُ الذاتيُّ للسجلّ (شرط محمد 2026-08-21) ═════

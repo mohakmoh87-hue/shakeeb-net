@@ -60,7 +60,9 @@ describe("🎁 العرضُ يُسكِت تحديثَ المعلومات كلَ�
       ["if (!sasOffer && sv(u.name)", "الاسم"],
       ["if (!sasOffer && sv(u.address)", "العنوان"],
       ["if (sv(u.packageName) && !sasOffer &&", "الباقة"],
-      ["if (!sasOffer && sasPkgIdForDiff != null && !loanSubIds.has(p.id)", "تاريخ الانتهاء"],
+      // 🔄 (2026-08-27) سقط شرطُ «معلوم الباقة» من رأس البوّابة (نقصُ مجهولِ الباقة صار
+      //    يُرصَد — حالة bg-16-23-11@amr)؛ وشرطُ «ليس عرضاً» باقٍ في مكانه وهو مقصدُ الاختبار
+      ["if (!sasOffer && !loanSubIds.has(p.id) && validDate && !actedSasIds.has(u.sasId)", "تاريخ الانتهاء"],
     ] as const) {
       assert.ok(src.includes(needle), `${what} ما زال يُرصَد لمشتركٍ على باقة عرض`);
     }

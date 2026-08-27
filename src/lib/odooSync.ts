@@ -63,8 +63,10 @@ async function officeSession(o: OfficeRow): Promise<OdooSession> {
 // والآن تُرجع الدالّةُ **وحدتَي مزامنةٍ**:
 //   (١) المكتبُ بأعمدته — كما كان حرفيّاً (وهو لوحتُه الأولى)
 //   (٢) وكلُّ لوحةٍ **غيرِ أولى** لها حسابُ أودو خاصٌّ بها
-// ⚠️ و**غيرِ أولى** شرطٌ لازم: اللوحةُ الأولى هي المكتبُ نفسُه، فلو ضُمّت لعُوملت التذاكرُ
-//   **مرّتَين** (وذاك أصلُ «التنفيذ المزدوج» المسجَّل في ب-١).
+// ⚠️ واللوحةُ الأولى هي المكتبُ نفسُه، فلو ضُمّت **مع** حسابٍ على أعمدة المكتب لعُوملت
+//   التذاكرُ **مرّتَين** (وذاك أصلُ «التنفيذ المزدوج» المسجَّل في ب-١).
+// 🔄 (2026-08-27) لكنّ مكتباً أعمدتُه فارغةٌ وحسابُ لوحته الأولى مُدخَلٌ في «لوحات الساس»
+//   (كاسبر) كان بلا وحدةٍ أصلاً — فالأولى تُقبَل وحدةً **عند فراغ أعمدة المكتب حصراً**.
 //
 // 📌 وحقولُ **المهلة (SLA)** تبقى على المكتب وتُورَّث لكلّ لوحاته: فهي **سياسةُ مكتبٍ** (دقائقُ
 // الإنذار ونصوصُه) لا خصيصةُ مُخدِّم. أمّا **الاتصالُ والمؤشِّر** (`odooLastTicketId`) فلكلّ
@@ -84,21 +86,31 @@ async function offices(agentId: number): Promise<OfficeRow[]> {
     },
   });
   const byId = new Map(all.map((t) => [t.id, t]));
-  const panels = all.length
+  const rawPanels = all.length
     ? await prisma.sasPanel.findMany({
         where: {
-          isDeleted: false, isPrimary: false,
+          isDeleted: false,
           // ⚠️ **لا يكفي `not: null`**: لوحاتُ صميم فيها `odooUser = ""` (نصٌّ فارغٌ لا NULL)
           //   فيقبله الترشيح ⇒ وحدةٌ بمستخدمٍ فارغٍ تفشل كلَّ دورةٍ وتكتب خطأً بلا فائدة.
           odooUser: { not: null, notIn: [""] }, odooPass: { not: null, notIn: [""] },
           towerId: { in: all.map((t) => t.id) }, // 🔒 عزلُ الوكيل: مكاتبُه وحدَها
         },
         select: {
-          id: true, label: true, towerId: true, odooUser: true, odooPass: true, odooUrl: true,
+          id: true, label: true, towerId: true, isPrimary: true, odooUser: true, odooPass: true, odooUrl: true,
           odooLastTicketId: true, odooEnabled: true, odooUid: true,
         },
       })
     : [];
+  // 🔄 (بلاغُ كاسبر 2026-08-27) كان استبعادُ الأولى شرطاً في الاستعلام نفسِه — فحسابُ
+  //    أودو المُدخَلُ في **اللوحة الأولى** ميّتٌ دائماً، حتى حين تكون أعمدةُ المكتب فارغةً
+  //    (محمد أدخل حسابَي اللوحتين في «لوحات الساس» فسحبت الثانيةُ وحدَها وصمتت الأولى).
+  //    الآن: الأولى تُقبَل وحدةً **فقط إن كانت أعمدةُ المكتب بلا حساب** — فلا ازدواجَ أبداً
+  //    مع وحدة المكتب (حرسُ «التنفيذ المزدوج» ب-١ قائم)، وصميمُ (حسابُه على المكتب) لا يتغيّر.
+  const panels = rawPanels.filter((p) => {
+    if (!p.isPrimary) return true;
+    const t = byId.get(p.towerId);
+    return !(t?.odooUser?.trim() && t?.odooPass?.trim());
+  });
   return [
     // (١) المكاتبُ بأعمدتها — بنفس شرطها القديم حرفيّاً (لها user+pass)
     ...all.filter((t) => t.odooUser?.trim() && t.odooPass?.trim()).map((t) => ({ ...t, panelId: null as number | null })),

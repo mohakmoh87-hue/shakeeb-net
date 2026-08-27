@@ -41,8 +41,11 @@ describe("♻️ سجلّ المزامنة التفاعليّ ودفعةُ ال�
     assert.ok(src.includes('await recordActivationEvent(managerIsPage ? "sas" : "self"'), "التصنيفُ بالمنجر غاب");
     assert.ok(src.includes("await recordCompanyActivation("), "تفعيلُ الشركة/الديلر ما زال يسقط في الفراغ");
     // ولا حدثَ إن كان مقبوضاً عندنا: غطاءُ التاريخ ثمّ الوصل
-    // (وأُضيف إليه `actedSasIds.add` صراحةً 2026-08-22 — فالإسكاتُ صار في كلّ فرعٍ بحسبه)
-    assert.ok(src.includes("if (covered) { actedSasIds.add(a.sasUserId); await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }"), "غطاءُ التاريخ غاب");
+    // 🔄 (2026-08-27) وسقط منه `actedSasIds.add`: لا صفَّ معلَّقاً خلف «مغطًّى» — فإسكاتُ
+    //    فرقِ الأيّام كان يُضيّع +شهرَ bg-17-19-6@amr و−أيّامَ bg-16-23-11@amr بلا أثر.
+    //    «المعلَّقُ وحدَه يُسكِت» — والرسالةُ تبقى ساقطةً بـ`continue` كما كانت.
+    assert.ok(src.includes("if (covered) { await resolveEventIfReceipted(officeId, a.sasUserId, actAt); continue; }"), "غطاءُ التاريخ غاب");
+    assert.ok(!src.includes("if (covered) { actedSasIds.add"), "عاد إسكاتُ «مغطًّى» لفرق الأيّام — فتضيع القفزاتُ المقبوضة");
     // 💰 وصار الفحصُ على **اليوزر** (كلّ صفوفه) وبتاريخَين: قربُ الوصل من التفعيل أو
     //    انتهاءُ الوصل بانتهاء الساس — حالةُ bg-13-6-3@mu (الوصلُ في صفٍّ والرصدُ على آخر).
     assert.ok(src.includes("if (await collectedByUs(subUserKey, sub.id, actAt, validNewExp)) {"), "فحصُ الوصل غاب");

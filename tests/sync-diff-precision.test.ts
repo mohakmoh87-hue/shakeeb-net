@@ -72,7 +72,11 @@ describe("🎯 دقّةُ فروق سجلّ المزامنة — البنودُ 
 
   test("هـ · نقصُ أيّامٍ يتجاوز أسبوعاً يُوسَم خطراً ويخرج من «تحديد الكلّ»", () => {
     const src = SYNC();
-    assert.ok(src.includes("...(lostDays > 7 ? { danger: true } : {}),"), "النقصُ الكبيرُ بلا وسمِ خطر");
+    // 🔄 (2026-08-27) والمدفوعُ بوصلٍ يُوسَم خطراً **مهما صغُر** — كان يُسكَت كلّيّاً
+    //    (`classified = true`) فلا يظهر الانحرافُ المتراكمُ أبداً (حالة bg-16-23-11@amr)
+    assert.ok(src.includes("...(lostDays > 7 || receiptBacked ? { danger: true } : {}),"), "النقصُ الكبيرُ بلا وسمِ خطر");
+    assert.ok(src.includes("<= RECEIPT_NEAR_MS)) receiptBacked = true;"), "قربُ الوصل عاد إسكاتاً أبديّاً بدل وسمِ خطر");
+    assert.ok(!src.includes("<= RECEIPT_NEAR_MS)) classified = true;"), "عاد إسكاتُ النقص المدفوع بوصل — فيختفي الانحراف للأبد");
     assert.ok(read("src/lib/syncLog.ts").includes("danger?: boolean }"), "نوعُ التغيير لا يحمل وسمَ الخطر");
     const ui = read("src/components/SyncLogModal.tsx");
     assert.ok(ui.includes("const isDangerRow = (r: Row) => (r.changes ?? []).some((c) => c.danger);"), "الواجهةُ لا تعرف الصفَّ الخَطِر");

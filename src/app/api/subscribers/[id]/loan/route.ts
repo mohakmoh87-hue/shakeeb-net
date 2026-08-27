@@ -91,7 +91,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       res.reason === "mismatch" || res.reason === "has_loan" ? 409 :
       res.reason === "not_expired" ? 400 :
       502;
-    return NextResponse.json({ error: res.message ?? "تعذّر منح القرض", reason: res.reason, got: res.got }, { status });
+    // 🧭 (بلاغ bg-8-20-9@amr 2026-08-27) «تعذّر قراءة السجلّ» في مكتبٍ متعدّدِ اللوحات
+    //    والقراءةُ جرت بحساب **المكتب** لا بحساب لوحته: الغالبُ أنّ المشترك يتبع ديلراً
+    //    آخر — إمّا بلا وسمِ لوحةٍ بعدُ (تَسِمُه المزامنة)، أو لوحتُه بلا حساب قروضٍ مُدخَل.
+    //    الدخولُ نجح والسجلُّ غاب = الديلرُ الحاليُّ لا يرى هذا المشترك أصلاً.
+    let errMsg = res.message ?? "تعذّر منح القرض";
+    if (res.reason === "no_record" && lc.panelId == null) {
+      const panelCount = await prisma.sasPanel.count({ where: { towerId: subscriber.towerId!, isDeleted: false } });
+      if (panelCount >= 2) {
+        errMsg += " — المكتبُ متعدّدُ اللوحات والقراءةُ جرت بحساب قروض المكتب: شغّل مزامنةً لتُوسَم لوحةُ المشترك، وأدخِل حسابَ قروض لوحته في «لوحات الساس»";
+      }
+    }
+    return NextResponse.json({ error: errMsg, reason: res.reason, got: res.got }, { status });
   }
 
   // ===== نجح المنح: الكتابات المحليّة (٣٠ يوماً وهميّة + دين قرض + سجلّ تدقيق) =====
