@@ -14,9 +14,12 @@ import { prisma } from "@/lib/prisma";
 
 type PanelRow = { panelId: number; label: string; count: number };
 
-/** يحذف من `byPanel` سطورَ المكاتب المفصولة الحسابات (مستخدمان+ وفيهم مؤشَّر). */
-export async function stripSeparatedPanelRows(r: { byPanel?: PanelRow[] }): Promise<void> {
-  const rows = r.byPanel;
+/** يحذف من `activationsByPanel` سطورَ المكاتب المفصولة الحسابات (مستخدمان+ وفيهم مؤشَّر). */
+// 🔴 والاسمُ **activationsByPanel** حرفيّاً لا الاسمُ الداخليُّ للمتغيّر: الأحكامُ الثلاثةُ الأولى (0829a95
+// و6c47674 وd87b313) حذفت حقلاً بالاسم الداخليّ للمتغيّر لا باسم الإعادة، فكانت حذفَ عدمٍ
+// نجحت اختباراتُه وثبتت السطورُ أمام محمد ثلاث مرّات. اختبارُ قفل الاسم العابرُ للملفّات يمنع رجوعها.
+export async function stripSeparatedPanelRows(r: { activationsByPanel?: PanelRow[] }): Promise<void> {
+  const rows = r.activationsByPanel;
   if (!rows?.length) return;
   const panels = await prisma.sasPanel.findMany({
     where: { id: { in: rows.map((p) => p.panelId) } },
@@ -39,6 +42,6 @@ export async function stripSeparatedPanelRows(r: { byPanel?: PanelRow[] }): Prom
   if (!separated.size) return;
   const towerOfPanel = new Map(panels.map((p) => [p.id, p.towerId]));
   const kept = rows.filter((p) => !separated.has(towerOfPanel.get(p.panelId) ?? -1));
-  if (kept.length) r.byPanel = kept;
-  else delete r.byPanel;
+  if (kept.length) r.activationsByPanel = kept;
+  else delete r.activationsByPanel;
 }

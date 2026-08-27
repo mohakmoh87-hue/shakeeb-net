@@ -47,9 +47,8 @@ export default async function DashboardPage() {
   ]);
   // 🙈 تفصيلُ اللوحات يُحجَب عن المستخدم المنفصل — نفسُ حكم مسار التقرير (بلاغ 2026-08-26):
   //    سطورُ «↳ من فلان» أسماءُ لوحاتٍ لا أشخاص، لكنّها التباسٌ بلا فائدةٍ لمعزولٍ يرى نفسَه.
-  if (!isAdmin) delete (initialReport as { byPanel?: unknown }).byPanel; // 🔄 للمدير حصراً (بلاغ محمد الثاني)
-  // 🔄 الحكمُ الثالث: وعن المدير في المكتب المفصول (كاسبر) — وتبقى لمدير غير المفصول (صميم)
-  else await stripSeparatedPanelRows(initialReport as { byPanel?: { panelId: number; label: string; count: number }[] });
+  // 🙈 القاعدةُ الواحدة (نصُّ محمد): مكتبٌ مفصولُ الحسابات ⇒ سطورُ اللوحات تُحذف للجميع؛ وغيرُه لا يتغيّر
+  await stripSeparatedPanelRows(initialReport as { activationsByPanel?: { panelId: number; label: string; count: number }[] });
   const counterTowers = isAdmin ? agentTowers : session?.towerId ? [session.towerId] : [];
 
   return (

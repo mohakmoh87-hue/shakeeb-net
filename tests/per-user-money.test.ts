@@ -147,12 +147,13 @@ describe("ب · أرباحُ الشركة بحسب المستخدم — الإس
 // مسمّاتان باسمَي الشريكَين — والأرقامُ كانت مرشَّحةً بالمستخدم فعلاً (لا تسريبَ مال).
 // لكنّها التباسٌ بلا فائدةٍ لمعزولٍ ⇒ تُحجَب عنه، وتبقى للمدير ولغير المفصولين (صميم).
 describe("🙈 تفصيلُ اللوحات والمستخدمُ المنفصل", () => {
-  test("يُحجَب عن المُجبَر وحدَه — في المسار وفي أوّل تحميلٍ للرئيسيّة", () => {
-    // 🔄 شُدِّد (بلاغ محمد الثاني): **للمدير حصراً** — يغطّي المعزولَ ومستخدمَ «كلّ المكاتب» معاً
-    assert.match(ROUTE(), /if \(!session\.isAdmin\) delete \(r as \{ byPanel\?: unknown \}\)\.byPanel;/,
-      "المسارُ يعيد تفصيلَ اللوحات لغير المدير");
-    assert.match(read("src/app/(app)/dashboard/page.tsx"), /if \(!isAdmin\) delete \(initialReport as \{ byPanel\?: unknown \}\)\.byPanel;/,
-      "أوّلُ تحميلٍ للرئيسيّة يعرض تفصيلَ اللوحات لغير المدير");
+  // 🔄 بُسّطت بنصّ محمد (2026-08-27): «فقط أخفِ هذين السطرين بدون التأثير على وكيلٍ آخر»
+  //    ⇒ قاعدةٌ واحدة: مكتبٌ مفصولُ الحسابات ⇒ تُحذف للجميع؛ وغيرُ المفصول لا يتغيّر لأحد.
+  test("قاعدةٌ واحدةٌ بلا فروع أدوار — المفصولُ تُحذف للجميع وغيرُه لا يُمَسّ", () => {
+    assert.equal(/isAdmin[^\n]*activationsByPanel/.test(ROUTE()), false,
+      "عاد التفريعُ بالأدوار حول سطور اللوحات — والقاعدةُ واحدةٌ للجميع");
+    assert.match(ROUTE(), /\n  await stripSeparatedPanelRows\(/, "المسارُ لا يُرشّح");
+    assert.match(read("src/app/(app)/dashboard/page.tsx"), /\n  await stripSeparatedPanelRows\(/, "الرئيسيّةُ لا تُرشّح");
   });
 
   // 🔄 الحكمُ الثالث (قرار محمد 2026-08-26): وعن **المدير** أيضاً في المكتب المفصول —
@@ -162,12 +163,28 @@ describe("🙈 تفصيلُ اللوحات والمستخدمُ المنفصل",
     const helper = read("src/app/api/_lib/panelRows.ts");
     assert.match(helper, /flagged\.has\(t\) && \(cnt\.get\(t\) \?\? 0\) >= 2/,
       "تعريفُ «المكتب المفصول» في المرشِّح خالف تعريفَ reportUserScope");
-    assert.match(helper, /if \(kept\.length\) r\.byPanel = kept;\s*\r?\n\s*else delete r\.byPanel;/,
-      "المرشِّحُ يترك byPanel فارغاً بدل حذفه — تظهر خانةٌ خاوية");
-    assert.match(ROUTE(), /else await stripSeparatedPanelRows\(/,
-      "مسارُ التقرير لا يُرشّح سطورَ المكاتب المفصولة عن المدير");
-    assert.match(read("src/app/(app)/dashboard/page.tsx"), /else await stripSeparatedPanelRows\(/,
-      "أوّلُ تحميلٍ للرئيسيّة يعرضها للمدير في المكتب المفصول");
+    assert.match(helper, /if \(kept\.length\) r\.activationsByPanel = kept;\s*\r?\n\s*else delete r\.activationsByPanel;/,
+      "المرشِّحُ يترك الحقلَ فارغاً بدل حذفه — تظهر خانةٌ خاوية");
+    // 🔄 القاعدةُ الواحدةُ البسيطة (نصّ محمد 2026-08-27): الترشيحُ للجميع — لا فرعَ مدير/مستخدم
+    assert.match(ROUTE(), /\n  await stripSeparatedPanelRows\(/,
+      "مسارُ التقرير لا يُرشّح سطورَ المكاتب المفصولة");
+    assert.match(read("src/app/(app)/dashboard/page.tsx"), /\n  await stripSeparatedPanelRows\(/,
+      "أوّلُ تحميلٍ للرئيسيّة لا يُرشّح");
+  });
+
+  // ═════ 🔴 قفلُ الاسم العابرُ للملفّات — درسُ «حذف العدم» (2026-08-27) ═════
+  // ثلاثةُ أحكامٍ نُشرت تحذف حقلاً اسمُه `byPanel` والردُّ يعيده باسم `activationsByPanel`
+  // — فنجحت الاختباراتُ (تفحص وجودَ سطر الحذف) وثبتت السطورُ أمام محمد ثلاث مرّات.
+  // هذا الاختبارُ يقفل **الاسمَ الواحدَ** بين المُنتِج والقارئ والمُرشِّحَين معاً.
+  test("🔗 اسمُ الحقل واحدٌ من المصدر إلى الشاشة — يستحيل حذفُ عدمٍ ثانيةً", () => {
+    assert.match(LIB(), /\.\.\.\(byPanel \? \{ activationsByPanel: byPanel \} : \{\}\)/,
+      "اسمُ الإعادة في المصدر تغيّر — حدّث القارئَ والمُرشِّحَين معاً");
+    assert.match(read("src/components/DailyReportCard.tsx"), /data\.activationsByPanel \?\? \[\]/,
+      "البطاقةُ تقرأ اسماً غيرَ اسم الإعادة");
+    for (const f of ["src/app/api/_lib/panelRows.ts", "src/app/api/reports/daily/route.ts", "src/app/(app)/dashboard/page.tsx"]) {
+      assert.match(read(f), /activationsByPanel/, `${f} لا يتعامل مع الاسم الحقيقيّ`);
+      assert.equal(/[^s]byPanel\??:/.test(read(f)), false, `${f} يحمل الاسمَ الداخليَّ الميّت byPanel — عودةُ حذف العدم`);
+    }
   });
 
   test("🔒 وعدُّ اللوحات نفسُه يبقى مرشَّحاً بالمستخدم — دفاعُ العمق قائم", () => {

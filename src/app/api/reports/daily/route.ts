@@ -83,11 +83,10 @@ export async function GET(request: Request) {
   //    (كصميم — أصحابُ الميزة الأصليّين أ-٢٣) يرونه كما كان حرفيّاً.
   // 🔄 شُدِّد (بلاغ محمد الثاني 2026-08-26): **للمدير حصراً** لا للمعزول فقط — فيغطّي
   //    أيضاً مستخدمَ «كلّ المكاتب» (بلا towerId) الذي لا يُجبَر على مستخدمٍ أصلاً.
-  if (!session.isAdmin) delete (r as { byPanel?: unknown }).byPanel;
-  // 🔄 الحكمُ الثالث (قرار محمد): وعن المدير أيضاً في المكتب المفصول — فتبويباتُ
-  //    المستخدمين هناك تكفيه، وسطورُ اللوحات معها ازدواجٌ يُقرأ أشخاصاً. ومكتبُ
-  //    اللوحتين غيرُ المفصول (صميم) تبقى لمديره حرفيّاً.
-  else await stripSeparatedPanelRows(r as { byPanel?: { panelId: number; label: string; count: number }[] });
+  // ═════ 🙈 القاعدةُ الواحدةُ البسيطة (بنصّ محمد 2026-08-27): «فقط أخفِ هذين السطرين
+  // بدون التأثير على وكيلٍ آخر» ⇒ مكتبُ المستخدمين المنفصلين (كاسبر): سطورُ اللوحات
+  // تُحذف **للجميع** — مستخدماً كان أو مديراً. وأيُّ مكتبٍ آخر (صميم): لا تغييرَ لأحد. ═════
+  await stripSeparatedPanelRows(r as { activationsByPanel?: { panelId: number; label: string; count: number }[] });
   return NextResponse.json({
     ...r,
     day: dayParam && day ? dayParam : null,
