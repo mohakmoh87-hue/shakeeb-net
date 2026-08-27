@@ -61,6 +61,27 @@ export async function POST(request: Request) {
   });
   const existingIds = new Set(existing.map((e) => e.sasId));
 
+  // ═════ 🔴 وسمُ **القدامى** بلوحتهم (حالةُ كاسبر — 2026-08-26) ═════
+  // كان الوسمُ للمُنشَئين الجدد وحدَهم، فمكتبٌ رُتّبت لوحاتُه **قبل** الاستيراد (كاسبر:
+  // ٤٤٦٤ مشتركاً استُوردوا بلا لوحة) يبقى مشتركوه بلا ختمٍ فيسقطون كلُّهم إلى حساب
+  // أعمدة المكتب — وكلُّ مَن يوزرُه ملكُ الحساب الآخر يرفضه الساسُ بـ«Access Denied»
+  // عند التفعيل. فصار الاستيرادُ من لوحةٍ يختم أيضاً القدامى الذين ظهروا في قائمتها.
+  // 🔒 حارسان يمنعان الوسمَ الخاطئ:
+  //   · **الفارغُ حصراً** (`sasPanelId: null`): لا يُعاد وسمُ موسومٍ — فحسابٌ أبٌ تظهر
+  //     في قائمته يوزراتُ الابن لا يخطفها بعد أن وُسمت بلوحتها الصحيحة.
+  //   · ونفسُ حرسِ المسار أعلاه: اللوحةُ تتبع هذا المكتبَ حكماً، والمكتبُ يتبع الوكيل.
+  let stamped = 0;
+  if (panelId != null && existingIds.size) {
+    const ids = [...existingIds].filter((x): x is number => x != null);
+    for (let i = 0; i < ids.length; i += 1000) {
+      const r = await prisma.subscriber.updateMany({
+        where: { towerId, sasId: { in: ids.slice(i, i + 1000) }, sasPanelId: null, isDeleted: false },
+        data: { sasPanelId: panelId },
+      });
+      stamped += r.count;
+    }
+  }
+
   // الربط بفئة موجودة مسبقاً فقط (لا تُنشأ فئات تلقائياً — تُضاف يدوياً)، بمطابقة
   // متسامحة مع الفراغات الزائدة وحالة الأحرف وتقديم/تأخير الكلمات وصيغ العربية.
   const matcher = await matcherForAgent(g.session?.agentId ?? null); // عزل: باقات الوكيل فقط
@@ -107,9 +128,10 @@ export async function POST(request: Request) {
       userId: session?.userId,
       action: "IMPORT_SAS4",
       entity: "subscriber",
-      details: `استيراد ${created} من SAS4 (تخطّي ${skipped})`,
+      details: `استيراد ${created} من SAS4 (تخطّي ${skipped})`
+        + (stamped ? ` — ووُسم ${stamped} مشتركاً قائماً باللوحة #${panelId}` : ""),
     },
   });
 
-  return NextResponse.json({ ok: true, created, skipped });
+  return NextResponse.json({ ok: true, created, skipped, stamped });
 }

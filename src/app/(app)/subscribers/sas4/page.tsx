@@ -131,7 +131,8 @@ export default function Sas4ImportPage() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "فشل الاستيراد"); return; }
-      setResult(`تم استيراد ${data.created} مشترك (تخطّي ${data.skipped} مكرّر)`);
+      setResult(`تم استيراد ${data.created} مشترك (تخطّي ${data.skipped} مكرّر)`
+        + (data.stamped ? ` — ووُسم ${data.stamped} مشتركاً قائماً بهذه اللوحة ✅` : ""));
       const importedIds = new Set(chosen.map((u) => u.sasId));
       setUsers((list) => list.map((u) => (importedIds.has(u.sasId) ? { ...u, alreadyImported: true } : u)));
       setSelected(new Set());
