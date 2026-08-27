@@ -44,6 +44,9 @@ export default async function DashboardPage() {
         })
       : Promise.resolve([] as { id: number; name: string; towerId: number }[]),
   ]);
+  // 🙈 تفصيلُ اللوحات يُحجَب عن المستخدم المنفصل — نفسُ حكم مسار التقرير (بلاغ 2026-08-26):
+  //    سطورُ «↳ من فلان» أسماءُ لوحاتٍ لا أشخاص، لكنّها التباسٌ بلا فائدةٍ لمعزولٍ يرى نفسَه.
+  if (forcedUser != null) delete (initialReport as { byPanel?: unknown }).byPanel;
   const counterTowers = isAdmin ? agentTowers : session?.towerId ? [session.towerId] : [];
 
   return (

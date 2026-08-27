@@ -74,6 +74,13 @@ export async function GET(request: Request) {
   }
 
   const r = await computeDailyReport(scope, ranged ? fromD : day, userId, ranged ? toD : undefined);
+  // ═════ 🙈 تفصيلُ اللوحات يُحجَب عن المستخدم المنفصل (بلاغُ محمد 2026-08-26) ═════
+  // لوحتا كاسبر مسمّاتان باسمَي الشريكَين، فبدت سطورُ «↳ من فلان» **أشخاصاً** في تقرير
+  // المستخدم المعزول («المفروض كلُّ مستخدمٍ وله حسابه ما يظهر له البقيّة»). والأرقامُ
+  // كانت مرشَّحةً بالمستخدم فعلاً (لا تسريب) — لكنّ السطورَ نفسَها التباسٌ بلا فائدةٍ له.
+  // 🔑 والحجبُ **للمُجبَر وحدَه**: المديرُ (بكلّ تبويباته) وموظّفو المكاتب غير المفصولة
+  //    (كصميم — أصحابُ الميزة الأصليّين أ-٢٣) يرونه كما كان حرفيّاً.
+  if (!session.isAdmin && userId != null) delete (r as { byPanel?: unknown }).byPanel;
   return NextResponse.json({
     ...r,
     day: dayParam && day ? dayParam : null,
