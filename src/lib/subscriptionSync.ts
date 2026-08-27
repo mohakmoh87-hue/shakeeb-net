@@ -459,10 +459,10 @@ async function runOfficeSyncInner(
   // تُفعّله سوبر سيل في الساس فيصل تفعيلٌ بـsasId مختلف ⇒ صفٌّ ثانٍ بـ١٠ أيّام.
   // 🔑 والمطابقةُ باليوزر: **«اليوزرُ هو الفيصلُ الأكبرُ الذي لا يُخطئ»** — فإن وُجد
   //    صفُّه استُعمل هو ولم يُنشأ ثانٍ، فيُسجَّل التفعيلُ على صاحبه الصحيح.
-  const subByUserPhase1 = new Map<string, { id: number; sasId: number | null; name: string | null; netUser: string | null; dateTo: Date | null }>();
+  const subByUserPhase1 = new Map<string, { id: number; sasId: number | null; name: string | null; netUser: string | null; dateTo: Date | null; sasPanelId: number | null }>();
   for (const s of await prisma.subscriber.findMany({
     where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
-    select: { id: true, sasId: true, name: true, netUser: true, dateTo: true },
+    select: { id: true, sasId: true, name: true, netUser: true, dateTo: true, sasPanelId: true },
   })) {
     const u = (s.netUser ?? "").trim().toLowerCase();
     if (u && !subByUserPhase1.has(u)) subByUserPhase1.set(u, s);
@@ -659,7 +659,14 @@ async function runOfficeSyncInner(
     if (!sub) {
       const uKey = (a.username ?? "").trim().toLowerCase();
       const byUser = uKey ? subByUserPhase1.get(uKey) : undefined;
-      if (byUser) {
+      // ═════ 👻 حارسُ «وهْمِ اللوحتين» (بلاغ كاسبر 2026-08-26) ═════
+      // خريطةُ الرقم مقيَّدةٌ باللوحة وخريطةُ اليوزر بالمكتب كلِّه ⇒ مشتركُ اللوحةِ الأخرى
+      // «يضيع» بالرقم ويُلتقَط باليوزر **بنفس الرقم**. فإن تطابق الرقمان فليس ربطاً جديداً:
+      // موسومٌ للوحةٍ أخرى ⇒ دورتُها تتكفّل به (تخطٍّ)، وغيرُ موسومٍ ⇒ يُعالَج بلا افتعال.
+      if (byUser && byUser.sasId === a.sasUserId) {
+        if (byUser.sasPanelId != null && panelId != null && byUser.sasPanelId !== panelId) continue;
+        sub = byUser; subBySasId.set(a.sasUserId, byUser);
+      } else if (byUser) {
         sub = byUser;
         subBySasId.set(a.sasUserId, byUser);
         dupUserPhase1++;
@@ -736,6 +743,8 @@ async function runOfficeSyncInner(
     if (!sub) {
       const uk = (a.username ?? "").trim().toLowerCase();
       const byUser = uk ? subByUserPhase1.get(uk) : undefined;
+      // 👻 نفسُ الرقم من لوحةٍ أخرى ⇒ حدثُه للوحته لا لهذه الدورة (وهْمُ اللوحتين)
+      if (byUser && byUser.sasId === a.sasUserId && byUser.sasPanelId != null && panelId != null && byUser.sasPanelId !== panelId) continue;
       if (byUser) sub = byUser;
     }
     // 🔑 **الإسكاتُ مشروطٌ بوجود بيتٍ للواقعة** (قرارُ محمد 2026-08-22): «له تفعيلةٌ في
@@ -994,7 +1003,7 @@ async function runOfficeSyncInner(
     const allUsers = await sasFetchAllUsers(base, token);
     const progSubs = await prisma.subscriber.findMany({
       where: { towerId: officeId, ...panelWhere, isDeleted: false, sasId: { not: null } },
-      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true, name: true, netUser: true },
+      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true, name: true, netUser: true, sasPanelId: true },
     });
     const progBySasId = new Map(progSubs.map((s) => [s.sasId as number, s]));
 
@@ -1010,7 +1019,7 @@ async function runOfficeSyncInner(
     const progByUser = new Map<string, (typeof progSubs)[number]>();
     for (const s of await prisma.subscriber.findMany({
       where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
-      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true, name: true, netUser: true },
+      select: { id: true, sasId: true, dateTo: true, packageId: true, address: true, phone: true, name: true, netUser: true, sasPanelId: true },
     })) {
       const u = (s.netUser ?? "").trim().toLowerCase();
       if (u && !progByUser.has(u)) progByUser.set(u, s);
@@ -1129,7 +1138,17 @@ async function runOfficeSyncInner(
         //    والاستبدالُ الحقيقيُّ (تركَ الخدمة وحلَّ محلَّه آخر) زرُّه صريحٌ منفصل.
         const uKey = (u.username ?? "").trim().toLowerCase();
         const oldByUser = uKey ? progByUser.get(uKey) : undefined;
-        if (oldByUser) {
+        // ═════ 👻 حارسُ «وهْمِ اللوحتين» (بلاغُ كاسبر 2026-08-26) ═════
+        // «بكلّ مزامنةٍ يظهر كلُّ المشتركين: رقمُ الساس تغيّر — وبنفس الرقم القديم».
+        // السبب: خريطةُ الرقم مقيَّدةٌ باللوحة (panelWhere) وخريطةُ اليوزر بالمكتب كلِّه،
+        // فمشتركُ اللوحةِ الأخرى (أو غيرُ الموسوم) يضيع بالرقم ويُلتقَط باليوزر **بنفس
+        // الرقم** ⇒ فرقُ ربطٍ مُفتعَلٌ (قديم = جديد) لكلّ مشتركٍ في كلّ دورة.
+        // فإن تطابق الرقمان فليس ربطاً جديداً: موسومٌ للوحةٍ أخرى ⇒ دورتُها تتكفّل به،
+        // وغيرُ موسومٍ ⇒ يُعالَج هنا بصمتٍ بلا افتعالِ «تغيّر» ولا closeDeadSasRows.
+        if (oldByUser && oldByUser.sasId === u.sasId) {
+          if (oldByUser.sasPanelId != null && panelId != null && oldByUser.sasPanelId !== panelId) continue;
+          p = oldByUser;
+        } else if (oldByUser) {
           dupUserSkipped++;
           p = oldByUser;
           sasLinkDiff = {
