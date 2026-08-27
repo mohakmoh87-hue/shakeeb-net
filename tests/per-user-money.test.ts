@@ -155,6 +155,21 @@ describe("🙈 تفصيلُ اللوحات والمستخدمُ المنفصل",
       "أوّلُ تحميلٍ للرئيسيّة يعرض تفصيلَ اللوحات لغير المدير");
   });
 
+  // 🔄 الحكمُ الثالث (قرار محمد 2026-08-26): وعن **المدير** أيضاً في المكتب المفصول —
+  //    تبويباتُ المستخدمين تكفيه هناك، وسطورُ اللوحات معها ازدواجٌ يُقرأ أشخاصاً.
+  //    ومكتبُ اللوحتين غيرُ المفصول (صميم) تبقى لمديره حرفيّاً.
+  test("وعن المدير في المكتب المفصول — وتبقى لمدير غير المفصول (صميم)", () => {
+    const helper = read("src/app/api/_lib/panelRows.ts");
+    assert.match(helper, /flagged\.has\(t\) && \(cnt\.get\(t\) \?\? 0\) >= 2/,
+      "تعريفُ «المكتب المفصول» في المرشِّح خالف تعريفَ reportUserScope");
+    assert.match(helper, /if \(kept\.length\) r\.byPanel = kept;\s*\r?\n\s*else delete r\.byPanel;/,
+      "المرشِّحُ يترك byPanel فارغاً بدل حذفه — تظهر خانةٌ خاوية");
+    assert.match(ROUTE(), /else await stripSeparatedPanelRows\(/,
+      "مسارُ التقرير لا يُرشّح سطورَ المكاتب المفصولة عن المدير");
+    assert.match(read("src/app/(app)/dashboard/page.tsx"), /else await stripSeparatedPanelRows\(/,
+      "أوّلُ تحميلٍ للرئيسيّة يعرضها للمدير في المكتب المفصول");
+  });
+
   test("🔒 وعدُّ اللوحات نفسُه يبقى مرشَّحاً بالمستخدم — دفاعُ العمق قائم", () => {
     // لو سقط الحجبُ يوماً، يبقى العدُّ أرقامَ المستخدم وحدَه لا أرقامَ المكتب
     assert.match(LIB(), /where: \{ isDeleted: false, isMaster: false, \.\.\.dateWhere, \.\.\.towerWhere, \.\.\.userWhere \},\s*\r?\n\s*select: \{ subscriberId: true \}/,

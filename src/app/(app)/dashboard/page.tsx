@@ -5,6 +5,7 @@ import TrialFmCard from "@/components/TrialFmCard";
 import { getSession } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
 import { computeDailyReport, reportUserScope } from "@/lib/dailyReport";
+import { stripSeparatedPanelRows } from "@/app/api/_lib/panelRows";
 import { prisma } from "@/lib/prisma";
 
 // الشاشة الرئيسية بالطراز الجديد (ب2): بطاقات الإحصاء الأربع + جدول المشتركين
@@ -47,6 +48,8 @@ export default async function DashboardPage() {
   // 🙈 تفصيلُ اللوحات يُحجَب عن المستخدم المنفصل — نفسُ حكم مسار التقرير (بلاغ 2026-08-26):
   //    سطورُ «↳ من فلان» أسماءُ لوحاتٍ لا أشخاص، لكنّها التباسٌ بلا فائدةٍ لمعزولٍ يرى نفسَه.
   if (!isAdmin) delete (initialReport as { byPanel?: unknown }).byPanel; // 🔄 للمدير حصراً (بلاغ محمد الثاني)
+  // 🔄 الحكمُ الثالث: وعن المدير في المكتب المفصول (كاسبر) — وتبقى لمدير غير المفصول (صميم)
+  else await stripSeparatedPanelRows(initialReport as { byPanel?: { panelId: number; label: string; count: number }[] });
   const counterTowers = isAdmin ? agentTowers : session?.towerId ? [session.towerId] : [];
 
   return (
