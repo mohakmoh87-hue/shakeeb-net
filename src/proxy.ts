@@ -17,7 +17,8 @@ const SECRET = new TextEncoder().encode(
 );
 // 🏢 /supercell (2026-08-28): صفحةُ عرضِ بوّابة سوبر سيل — ملفٌّ ثابتٌ ببياناتٍ وهميّة
 //    تفتحه الشركةُ بلا حساب؛ معزولٌ تماماً (لا قاعدةَ ولا جلسات) فإتاحتُه لا تفتح شيئاً.
-const PUBLIC_PATHS = ["/login", "/reset", "/about", "/supercell"];
+// 📱 /app (2026-08-28): معاينةُ ستايل تطبيق المشترك «كابينة» — نفسُ الوصفة والعزل حرفيّاً.
+const PUBLIC_PATHS = ["/login", "/reset", "/about", "/supercell", "/app"];
 
 // يعيد { authed, isTech } من توكن الجلسة (المستخدم أو الفني)
 async function readSession(req: NextRequest): Promise<{ authed: boolean; isTech: boolean }> {

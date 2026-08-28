@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>كابينة — تطبيق المشترك</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/* ═══ ستايل v0 لمحمد (internet-subscriber-portal) محوَّلاً صفحةً مكتفية — بيانات وهمية للعرض ═══ */
+:root { color-scheme: light; --background:#edf2f7; --foreground:#102238; --card:#fff; --primary:#18b5d8; --muted:#718198; --border:#e2eaf1; --radius:1.25rem; }
+* { box-sizing:border-box; margin:0; }
+html { background:#edf2f7; }
+body { margin:0; background:#edf2f7; color:var(--foreground); font-family:'Cairo','Segoe UI',Tahoma,sans-serif; }
+button { font:inherit; cursor:pointer; }
+svg { display:block; }
+.app-shell { min-height:100vh; display:flex; justify-content:center; align-items:center; padding:1.25rem; background:radial-gradient(circle at 50% 0%, #dbe9f1 0, #edf2f7 42%); }
+.phone-frame { width:min(100%,430px); min-height:min(900px,calc(100vh - 40px)); background:#f7fafc; border:8px solid #0c1d31; border-radius:2.5rem; box-shadow:0 28px 70px #1022382e, 0 0 0 1px #ffffff; overflow:hidden; display:flex; flex-direction:column; }
+.phone-status { height:28px; padding:0 1.3rem; display:flex; justify-content:space-between; align-items:center; color:#b8c7d5; background:#0c1d31; font-size:10px; font-weight:700; direction:ltr; }
+.app-content { flex:1; overflow:auto; padding:1.35rem 1.1rem 1rem; }
+.view-stack { display:flex; flex-direction:column; gap:1.05rem; }
+section.view { display:none; } section.view.on { display:flex; flex-direction:column; gap:1.05rem; }
+.topbar, .inner-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+.eyebrow { color:#8b9aab; font-size:10px; margin:0 0 .3rem; }
+h1 { margin:0; color:#102238; font-size:23px; letter-spacing:-.6px; } h1 span { color:#18a9ca; }
+.icon-button, .refresh-button, .arrow-button { border:0; display:grid; place-items:center; background:#fff; color:#263c54; box-shadow:0 5px 16px #10223812; }
+.icon-button { position:relative; width:40px; height:40px; border-radius:13px; } .icon-button svg { width:18px; } .icon-button i.dot-badge { position:absolute; top:9px; right:10px; width:6px; height:6px; border-radius:50%; background:#ff8d55; border:2px solid #fff; }
+.hero-card { position:relative; min-height:161px; display:flex; align-items:center; gap:1rem; overflow:hidden; padding:1.25rem; border-radius:23px; color:#fff; background:#0d2943; box-shadow:0 13px 25px #0d294329; }
+.hero-card::after { content:''; position:absolute; width:190px; height:190px; left:-60px; top:-65px; border-radius:50%; border:1px solid #55cee833; box-shadow:0 0 0 22px #55cee812, 0 0 0 44px #55cee808; }
+.hero-orb { z-index:1; flex:0 0 74px; height:74px; display:grid; place-items:center; border:1px solid #64d4ef66; border-radius:50%; background:#164a68; color:#66ddf2; } .hero-orb svg { width:30px; }
+.hero-copy { z-index:1; display:flex; flex-direction:column; gap:.26rem; } .hero-copy p { margin:.5rem 0 0; color:#a7bbca; font-size:11px; } .hero-copy strong { font-size:18px; } .hero-copy small { color:#a7bbca; font-size:9px; }
+.status-pill { width:fit-content; display:inline-flex; gap:5px; align-items:center; padding:4px 8px; border-radius:20px; background:#163e53; color:#73d8c0; font-size:9px; } .status-dot { width:5px; height:5px; border-radius:50%; background:#60d9b6; box-shadow:0 0 0 3px #60d9b622; }
+.refresh-button { z-index:1; position:absolute; left:14px; bottom:15px; width:31px; height:31px; border-radius:10px; color:#57d3e9; background:#ffffff14; box-shadow:none; } .refresh-button svg { width:15px; }
+.days-card { display:flex; align-items:center; gap:1rem; padding:1.15rem; border:1px solid #e4edf3; border-radius:20px; background:#fff; } .days-number { flex:0 0 76px; display:flex; flex-direction:column; align-items:center; justify-content:center; height:88px; border-radius:16px; background:#e9f8fb; color:#13a6c4; } .days-number strong { font-size:38px; line-height:1; } .days-number span { font-size:10px; }
+.days-info { flex:1; min-width:0; } .section-kicker { display:flex; justify-content:space-between; align-items:center; color:#8998a9; font-size:10px; } .section-kicker b { color:#2fba92; background:#e6f8f2; border-radius:5px; padding:3px 6px; font-size:9px; } .days-info h2 { margin:.55rem 0 .15rem; font-size:16px; } .days-info p, .days-info small { margin:0; color:#8998a9; font-size:9px; } .progress { height:5px; margin:.7rem 0 .32rem; border-radius:10px; background:#e9eff4; overflow:hidden; } .progress span { display:block; width:62%; height:100%; border-radius:inherit; background:#1bb5d5; }
+.arrow-button { flex:0 0 30px; width:30px; height:30px; border-radius:9px; background:#f2f7fa; } .arrow-button svg, .section-heading svg { width:15px; }
+.section-heading { display:flex; align-items:center; justify-content:space-between; } .section-heading h2 { margin:0; font-size:16px; } .section-heading button { display:inline-flex; align-items:center; gap:2px; padding:0; border:0; background:none; color:#18a9ca; font-size:11px; }
+.shortcut-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.7rem; } .shortcut { display:flex; flex-direction:column; align-items:flex-start; gap:.38rem; padding:.85rem; border:1px solid #e6edf2; border-radius:17px; background:#fff; text-align:right; transition:transform .2s, box-shadow .2s; } .shortcut:hover { transform:translateY(-2px); box-shadow:0 8px 20px #10223810; } .shortcut-icon { display:grid; place-items:center; width:33px; height:33px; border-radius:10px; } .shortcut-icon svg { width:17px; } .shortcut-icon.blue { color:#1baed0; background:#e6f8fc; } .shortcut-icon.green { color:#36af88; background:#e8f8f2; } .shortcut-icon.violet { color:#7f82dd; background:#efeffc; } .shortcut-icon.orange { color:#ed9667; background:#fff2ea; } .shortcut strong { font-size:12px; } .shortcut small { color:#93a0ae; font-size:9px; }
+.agent-card { display:flex; align-items:center; gap:.7rem; padding:.85rem 1rem; color:#fff; border-radius:17px; background:#123451; } .agent-avatar { display:grid; place-items:center; width:36px; height:36px; border-radius:12px; color:#6de0ec; background:#1c526c; } .agent-avatar svg { width:18px; } .agent-card .agent-mid { display:flex; flex:1; flex-direction:column; gap:2px; } .agent-card p { margin:0; color:#73d9dc; font-size:9px; } .agent-card strong { font-size:12px; } .agent-card small { color:#a9bdca; font-size:9px; } .agent-card > button { width:30px; height:30px; border:0; border-radius:9px; color:#fff; background:#ffffff16; display:grid; place-items:center; } .agent-card > button svg { width:15px; }
+.bottom-nav { display:flex; justify-content:space-around; padding:.7rem .5rem .8rem; border-top:1px solid #e8eef3; background:#fff; } .bottom-nav button { position:relative; display:flex; flex:1; flex-direction:column; align-items:center; gap:4px; border:0; background:none; color:#a6b1bd; font-size:9px; } .bottom-nav button svg { width:19px; height:19px; } .bottom-nav button.active { color:#18a9ca; } .bottom-nav button i.nav-dot { position:absolute; bottom:-7px; width:4px; height:4px; border-radius:50%; background:#18a9ca; }
+.inner-header { padding-bottom:.4rem; } .inner-header > div { flex:1; } .header-symbol { color:#1bb2d0; width:22px; }
+.detail-list { display:flex; flex-direction:column; gap:.6rem; } .detail-list button { display:flex; align-items:center; gap:.7rem; padding:.8rem; border:1px solid #e6edf2; border-radius:15px; background:#fff; text-align:right; } .list-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; color:#17a9c8; background:#e7f7fa; flex:0 0 34px; } .list-icon svg { width:16px; } .detail-list button span.mid { flex:1; display:flex; flex-direction:column; gap:3px; } .detail-list strong { font-size:12px; } .detail-list small { color:#92a0ad; font-size:9px; } .detail-list button > svg { width:15px; color:#9aa8b5; }
+@media (max-width:500px) { .app-shell { padding:0; align-items:stretch; } .phone-frame { width:100%; min-height:100vh; border:0; border-radius:0; } .phone-status { display:none; } }
+
+/* وصلة: نظام المتاجر والخدمات المتوسع */
+.plan-banner { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1.2rem; color:#fff; border-radius:22px; background:#0d2943; box-shadow:0 12px 24px #0d294326; }
+.plan-banner h2 { margin:.55rem 0 .2rem; font-size:20px; } .plan-banner p { margin:0; color:#a7bbca; font-size:10px; } .plan-banner > strong { color:#6de0ec; font-size:34px; line-height:1; } .plan-banner > strong small { display:block; color:#a7bbca; font-size:9px; text-align:center; font-weight:400; }
+.metric-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:.6rem; } .metric-grid > div { display:flex; flex-direction:column; gap:.35rem; padding:.9rem .55rem; border:1px solid #e6edf2; border-radius:16px; background:#fff; text-align:center; } .metric-grid strong { color:#102238; font-size:16px; } .metric-grid small { color:#8998a9; font-size:9px; }
+.service-intro { display:flex; align-items:center; gap:.75rem; padding:1rem; border-radius:18px; color:#fff; background:#123451; } .service-intro > svg { flex:0 0 25px; width:25px; color:#6de0ec; } .service-intro div { display:flex; flex-direction:column; gap:.25rem; } .service-intro strong { font-size:13px; } .service-intro p { margin:0; color:#a9bdca; font-size:10px; }
+.service-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.65rem; } .service-card { position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:.4rem; min-height:128px; padding:.85rem; border:1px solid #e6edf2; border-radius:17px; background:#fff; text-align:right; } .service-card > svg { position:absolute; left:.7rem; bottom:.9rem; width:14px; color:#a5b2be; } .service-card strong { font-size:11px; } .service-card small { max-width:120px; color:#8998a9; font-size:9px; line-height:1.5; } .service-icon { display:grid; place-items:center; width:35px; height:35px; border-radius:11px; color:#18a9ca; background:#e6f8fc; } .service-icon svg { width:17px; }
+.search-box { display:flex; align-items:center; gap:.6rem; padding:.75rem .9rem; border:1px solid #e2eaf1; border-radius:14px; color:#9aa8b5; background:#fff; font-size:10px; } .search-box svg { width:16px; color:#18a9ca; }
+.store-tabs { display:flex; gap:.45rem; overflow:auto; padding-bottom:.15rem; scrollbar-width:none; } .store-tabs button { flex:0 0 auto; display:flex; align-items:center; gap:.35rem; padding:.55rem .7rem; border:1px solid #e5edf2; border-radius:12px; color:#8998a9; background:#fff; font-size:9px; } .store-tabs button svg { width:14px; } .store-tabs button.active { color:#087d98; border-color:#8bddea; background:#e6f8fc; }
+.used-hero { display:none; align-items:center; justify-content:space-between; gap:.7rem; padding:1rem; border-radius:20px; background:#eaf7fa; } .used-hero.on { display:flex; } .used-hero h2 { margin:.35rem 0; font-size:18px; } .used-hero p { max-width:215px; margin:0; color:#718198; font-size:10px; line-height:1.6; } .used-mark { display:grid; place-items:center; flex:0 0 54px; height:54px; border-radius:17px; color:#18a9ca; background:#d4f1f6; } .used-mark svg { width:25px; }
+.listing-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.7rem; } .listing-card { position:relative; overflow:hidden; border:1px solid #e6edf2; border-radius:17px; background:#fff; } .listing-image { display:grid; place-items:center; height:92px; color:#18a9ca; background:#eaf7fa; } .listing-image svg { width:31px; height:31px; } .heart { position:absolute; top:.55rem; left:.55rem; display:grid; place-items:center; width:27px; height:27px; border:0; border-radius:9px; color:#8798a8; background:#ffffffd9; } .heart svg { width:14px; } .listing-body { display:flex; flex-direction:column; gap:.35rem; padding:.7rem; } .listing-body small { overflow:hidden; color:#93a0ae; font-size:8px; text-overflow:ellipsis; white-space:nowrap; } .listing-body strong { min-height:28px; font-size:11px; line-height:1.35; } .listing-body > div { display:flex; align-items:center; justify-content:space-between; gap:.3rem; } .listing-body b { color:#0d8fa9; font-size:10px; } .tiny-arrow { display:grid; place-items:center; width:23px; height:23px; border:0; border-radius:7px; color:#18a9ca; background:#eaf7fa; } .tiny-arrow svg { width:13px; } .sell-button { display:flex; align-items:center; justify-content:center; gap:.45rem; padding:.8rem; border:1px dashed #59c9d9; border-radius:14px; color:#087d98; background:#e6f8fc; font-size:10px; } .sell-button svg { width:15px; }
+.profile-card { display:flex; align-items:center; gap:.7rem; padding:1rem; border-radius:19px; color:#fff; background:#123451; } .profile-avatar { display:grid; place-items:center; width:46px; height:46px; border-radius:15px; color:#0d2943; background:#6de0ec; font-size:20px; font-weight:700; } .profile-card .profile-mid { display:flex; flex:1; flex-direction:column; gap:.25rem; } .profile-card strong { font-size:14px; } .profile-card small { color:#a9bdca; font-size:9px; } .profile-card > button { display:grid; place-items:center; width:30px; height:30px; border:0; border-radius:9px; color:#fff; background:#ffffff16; } .profile-card > button svg { width:14px; }
+.notification-card { display:flex; align-items:center; gap:.7rem; padding:.9rem; border:1px solid #e6edf2; border-radius:16px; background:#fff; } .notification-card div { display:flex; flex-direction:column; gap:.3rem; } .notification-card strong { font-size:11px; } .notification-card small { color:#8998a9; font-size:9px; }
+@media (min-width:700px) { .phone-frame { min-height:800px; } }
+
+.feature-panel { display:flex; flex-direction:column; align-items:center; gap:.65rem; padding:1.35rem 1rem; border:1px solid #dfeaf0; border-radius:22px; background:#fff; text-align:center; }
+.feature-icon { display:grid; place-items:center; width:58px; height:58px; border-radius:18px; color:#0d8fa9; background:#e5f8fb; } .feature-icon svg { width:26px; }
+.feature-panel h2 { margin:.2rem 0 0; font-size:19px; } .feature-panel > p { max-width:270px; margin:0; color:#718198; font-size:10px; line-height:1.7; }
+.primary-action { display:flex; align-items:center; justify-content:center; gap:.45rem; width:100%; margin-top:.5rem; padding:.8rem 1rem; border:0; border-radius:13px; color:#fff; background:#0d8fa9; font-size:11px; font-weight:700; } .primary-action svg { width:16px; }
+.info-note { display:flex; align-items:flex-start; gap:.55rem; padding:.8rem; border-radius:14px; color:#718198; background:#edf7fa; font-size:9px; line-height:1.7; } .info-note svg { flex:0 0 16px; width:16px; color:#18a9ca; }
+.result-card { display:none; align-items:flex-start; gap:.65rem; padding:.9rem; border-radius:16px; text-align:right; } .result-card.on { display:flex; } .result-card > svg { flex:0 0 20px; width:20px; } .result-card div { display:flex; flex-direction:column; gap:.3rem; } .result-card strong { font-size:11px; line-height:1.5; } .result-card small { color:#718198; font-size:9px; line-height:1.6; } .result-card.success { color:#188a6b; background:#e9f8f2; } .result-card.success small { color:#5e8b7d; }
+.diagnostic-steps { display:flex; flex-direction:column; width:100%; margin:.55rem 0; } .diagnostic-steps > div { position:relative; display:grid; grid-template-columns:30px 1fr; grid-template-rows:auto auto; column-gap:.65rem; min-height:53px; text-align:right; } .diagnostic-steps > div:not(:last-child)::after { content:''; position:absolute; top:30px; right:14px; width:1px; height:27px; background:#dfeaf0; } .diagnostic-steps span.stepmark { grid-row:span 2; display:grid; place-items:center; width:29px; height:29px; border-radius:50%; color:#9aa8b5; background:#edf2f5; font-size:10px; font-weight:700; } .diagnostic-steps span.stepmark svg { width:14px; } .diagnostic-steps strong { align-self:end; font-size:10px; } .diagnostic-steps small { color:#a0acb7; font-size:8px; } .diagnostic-steps .current span.stepmark { color:#fff; background:#18a9ca; box-shadow:0 0 0 5px #dff6fa; } .diagnostic-steps .current small { color:#18a9ca; } .diagnostic-steps .done span.stepmark { color:#fff; background:#33b58c; } .diagnostic-steps .done:not(:last-child)::after { background:#8bd9c2; }
+.support-options { display:flex; flex-direction:column; gap:.7rem; } .support-options button { position:relative; display:grid; grid-template-columns:40px 1fr 18px; grid-template-rows:auto auto; align-items:center; gap:0 .7rem; padding:.9rem; border:1px solid #e6edf2; border-radius:17px; background:#fff; text-align:right; } .support-options .service-icon { grid-row:span 2; } .support-options strong { align-self:end; font-size:12px; } .support-options small { color:#8998a9; font-size:9px; } .support-options button > svg { grid-column:3; grid-row:span 2; width:15px; color:#9aa8b5; }
+@media (max-width:500px) { .feature-panel { padding:1.1rem .9rem; } }
+.payment-confirm { display:none; flex-direction:column; gap:.7rem; padding:1rem; border:1px solid #dfeaf0; border-radius:18px; background:#fff; } .payment-confirm.on { display:flex; } .payment-confirm > strong { font-size:11px; } .upload-box { display:none; align-items:center; gap:.6rem; padding:.8rem; border:1px dashed #59c9d9; border-radius:13px; color:#087d98; background:#e6f8fc; font-size:10px; } .upload-box.on { display:flex; } .upload-box svg { width:18px; } .upload-box span { display:flex; flex-direction:column; gap:.25rem; } .upload-box input { width:100%; font-size:9px; }
+.chat-window { display:flex; flex-direction:column; gap:.65rem; min-height:310px; padding:1rem; border-radius:20px; background:#edf5f8; } .chat-message { max-width:82%; padding:.75rem .85rem; border-radius:15px; font-size:11px; line-height:1.6; } .chat-message.agent { align-self:flex-start; color:#24415a; background:#fff; border-bottom-right-radius:4px; } .chat-message.user { align-self:flex-end; color:#fff; background:#0d8fa9; border-bottom-left-radius:4px; } .chat-composer { display:flex; align-items:center; gap:.5rem; padding:.45rem .5rem .45rem .7rem; border:1px solid #dfeaf0; border-radius:15px; background:#fff; } .chat-composer input { flex:1; min-width:0; border:0; outline:0; color:#102238; background:transparent; font-size:11px; font-family:inherit; } .chat-composer button { display:grid; place-items:center; width:34px; height:34px; border:0; border-radius:10px; color:#fff; background:#0d8fa9; } .chat-composer button svg { width:15px; }
+
+/* 🔧 شاشة «شبكتي» — كلاسّاتها كانت بلا تنسيق في ملفّ v0؛ أُكملت بنفس لغة التصميم */
+.network-hero { display:flex; align-items:center; gap:1rem; padding:1.15rem; border-radius:22px; color:#fff; background:#0d2943; box-shadow:0 12px 24px #0d294326; }
+.network-visual { display:grid; place-items:center; flex:0 0 64px; height:64px; border-radius:50%; border:1px solid #64d4ef66; color:#66ddf2; background:#164a68; } .network-visual svg { width:28px; }
+.network-hero > div:nth-child(2) { flex:1; display:flex; flex-direction:column; gap:.25rem; } .network-hero h2 { margin:.2rem 0 0; font-size:17px; } .network-hero p { margin:0; color:#a7bbca; font-size:10px; }
+.network-hero .icon-button { background:#ffffff14; color:#6de0ec; box-shadow:none; }
+.device-count { color:#8998a9; font-size:10px; font-weight:700; }
+.device-list { display:flex; flex-direction:column; gap:.6rem; } .device-list > div { display:flex; align-items:center; gap:.7rem; padding:.8rem; border:1px solid #e6edf2; border-radius:15px; background:#fff; } .device-list span.mid { flex:1; display:flex; flex-direction:column; gap:3px; } .device-list strong { font-size:12px; } .device-list small { color:#92a0ad; font-size:9px; direction:ltr; text-align:right; }
+.online-indicator, .offline-indicator { width:8px; height:8px; border-radius:50%; flex:0 0 8px; } .online-indicator { background:#33b58c; box-shadow:0 0 0 3px #33b58c22; } .offline-indicator { background:#c3ccd6; }
+</style>
+</head>
+<body>
+<main class="app-shell" dir="rtl">
+  <div class="phone-frame">
+    <div class="phone-status"><span>٩:٤١</span><span>● ◔ ▰</span></div>
+    <div class="app-content">
+
+      <!-- ═══ الرئيسية ═══ -->
+      <section class="view on" id="v-home">
+        <header class="topbar"><div><p class="eyebrow">الأحد، ٢٥ آب ٢٠٢٦</p><h1>هلا محمد، <span>نورت كابينة</span></h1></div><button class="icon-button" data-go="notifications" aria-label="الإشعارات"><i class="ic" data-ic="bell"></i><i class="dot-badge"></i></button></header>
+        <section class="hero-card"><div class="hero-orb"><i class="ic" data-ic="wifi"></i></div><div class="hero-copy"><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><p>حالة الاتصال</p><strong>إنترنتك شغّال</strong><small>سرعة مستقرة • آخر فحص قبل ٣ دقائق</small></div><button class="refresh-button" data-go="speed" aria-label="فحص الاتصال"><i class="ic" data-ic="gauge"></i></button></section>
+        <section class="days-card"><div class="days-number"><strong>١٨</strong><span>يوم متبقي</span></div><div class="days-info"><div class="section-kicker"><span>باقتك الحالية</span><b>نشطة</b></div><h2>برو ماكس 50</h2><p>تتجدد في ١٢ أيلول ٢٠٢٦</p><div class="progress"><span></span></div><small>استخدمت ٦٢٪ من بياناتك</small></div><button class="arrow-button" data-go="plan" aria-label="تفاصيل الباقة"><i class="ic" data-ic="chevron-left"></i></button></section>
+        <div class="section-heading"><h2>اختصاراتك</h2><button data-go="services">عرض الكل <i class="ic" data-ic="chevron-left"></i></button></div>
+        <section class="shortcut-grid">
+          <button class="shortcut" data-go="activate"><span class="shortcut-icon blue"><i class="ic" data-ic="credit-card"></i></span><strong>تفعيل الاشتراك</strong><small>جدّد اتصالك</small></button>
+          <button class="shortcut" data-go="loan"><span class="shortcut-icon green"><i class="ic" data-ic="zap"></i></span><strong>قرض إنترنت</strong><small>عند الحاجة</small></button>
+          <button class="shortcut" data-go="speed"><span class="shortcut-icon violet"><i class="ic" data-ic="gauge"></i></span><strong>فحص السرعة</strong><small>اختبر اتصالك</small></button>
+          <button class="shortcut" data-go="network"><span class="shortcut-icon orange"><i class="ic" data-ic="router"></i></span><strong>شبكتي</strong><small>٤ أجهزة متصلة</small></button>
+        </section>
+        <section class="agent-card"><div class="agent-avatar"><i class="ic" data-ic="message-circle"></i></div><div class="agent-mid"><p>وكيلك متاح</p><strong>تحتاج مساعدة؟</strong><small>تحدث مع وكيلك مباشرة</small></div><button data-go="agent" aria-label="فتح الدردشة"><i class="ic" data-ic="arrow-left"></i></button></section>
+      </section>
+
+      <!-- ═══ باقتي ═══ -->
+      <section class="view" id="v-plan">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">اشتراكك الحالي</p><h1>باقتي</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="plan-banner"><div><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><h2>برو ماكس 50</h2><p>باقة سريعة لعائلة متصلة</p></div><strong>١٨ <small>يوم</small></strong></section>
+        <div class="metric-grid"><div><strong>٥٠</strong><small>ميغابت / ثانية</small></div><div><strong>٦٢٪</strong><small>الاستهلاك</small></div><div><strong>٢٥,٠٠٠</strong><small>د.ع / شهر</small></div></div>
+        <div class="section-heading"><h2>إدارة الباقة</h2></div>
+        <div class="detail-list">
+          <button data-go="activate"><span class="list-icon"><i class="ic" data-ic="refresh-cw"></i></span><span class="mid"><strong>تجديد الاشتراك</strong><small>جدّد الآن قبل موعد الانتهاء</small></span><i class="ic" data-ic="chevron-left"></i></button>
+          <button data-go="activate"><span class="list-icon"><i class="ic" data-ic="credit-card"></i></span><span class="mid"><strong>طرق الدفع</strong><small>بطاقتك المحفوظة • نقدي</small></span><i class="ic" data-ic="chevron-left"></i></button>
+          <button><span class="list-icon"><i class="ic" data-ic="package"></i></span><span class="mid"><strong>أسعار الاشتراكات</strong><small>قارن الباقات واختر الأنسب</small></span><i class="ic" data-ic="chevron-left"></i></button>
+        </div>
+      </section>
+
+      <!-- ═══ الخدمات ═══ -->
+      <section class="view" id="v-services">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">كل ما تحتاجه لاتصال أسهل</p><h1>الخدمات</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="service-intro"><i class="ic" data-ic="shield-check"></i><div><strong>خدماتك بين يديك</strong><p>اختار الخدمة المناسبة وسنساعدك فورًا</p></div></section>
+        <div class="service-grid">
+          <button class="service-card" data-go="activate"><span class="service-icon"><i class="ic" data-ic="credit-card"></i></span><strong>تفعيل الاشتراك</strong><small>دفع نقدي أو ماستر وتفعيل مباشر</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button class="service-card" data-go="loan"><span class="service-icon"><i class="ic" data-ic="zap"></i></span><strong>قرض إنترنت</strong><small>احصل على سعة إضافية عند الحاجة</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button class="service-card" data-go="speed"><span class="service-icon"><i class="ic" data-ic="gauge"></i></span><strong>فحص سرعة الإنترنت</strong><small>اعرف جودة اتصالك الآن</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button class="service-card" data-go="agent"><span class="service-icon"><i class="ic" data-ic="message-circle"></i></span><strong>تحدث مع الوكيل</strong><small>دردشة مباشرة مع كابينة</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button class="service-card" data-go="network"><span class="service-icon"><i class="ic" data-ic="router"></i></span><strong>شبكتي</strong><small>٤ أجهزة متصلة حاليًا</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button class="service-card" data-go="network"><span class="service-icon"><i class="ic" data-ic="lock-keyhole"></i></span><strong>إعدادات الراوتر</strong><small>تغيير الاسم والرمز بأمان</small><i class="ic" data-ic="chevron-left"></i></button>
+        </div>
+      </section>
+
+      <!-- ═══ قرض الإنترنت ═══ -->
+      <section class="view" id="v-loan">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">سعة إضافية عند الحاجة</p><h1>قرض الإنترنت</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="feature-panel"><span class="feature-icon"><i class="ic" data-ic="zap"></i></span><h2>تحتاج إنترنت إضافي؟</h2><p>تحقق من أهليتك واحصل على قرض إنترنت مؤقت بدون تعقيد.</p><button class="primary-action" id="loanBtn"><i class="ic" data-ic="zap"></i> تحقق من توفر القرض</button></section>
+        <section class="result-card success" id="loanResult"><i class="ic" data-ic="check"></i><div><strong>تم منحك قرض إنترنت بسعة ٥ جيجابايت لمدة ٣ أيام.</strong><small>سيتم خصم قيمة القرض عند تجديد اشتراكك القادم.</small></div></section>
+        <section class="info-note"><i class="ic" data-ic="shield-check"></i><span>القرض متاح للمشتركين المؤهلين فقط، ويظهر لك سبب عدم الأهلية بوضوح.</span></section>
+      </section>
+
+      <!-- ═══ فحص الإنترنت ═══ -->
+      <section class="view" id="v-speed">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">تشخيص اتصالك تلقائيًا</p><h1>فحص الإنترنت</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="feature-panel"><span class="feature-icon"><i class="ic" data-ic="gauge"></i></span><h2 id="speedTitle">نفحص اتصالك الآن</h2><p id="speedSub">سيتم فحص جميع نقاط الاتصال على ثلاث مراحل.</p>
+          <div class="diagnostic-steps" id="speedSteps">
+            <div><span class="stepmark">1</span><strong>فحص الكيبل الضوئي</strong><small>بانتظار الفحص</small></div>
+            <div><span class="stepmark">2</span><strong>فحص خدمة الإنترنت</strong><small>بانتظار الفحص</small></div>
+            <div><span class="stepmark">3</span><strong>فحص الراوتر</strong><small>بانتظار الفحص</small></div>
+          </div>
+          <button class="primary-action" id="speedBtn"><i class="ic" data-ic="gauge"></i> ابدأ الفحص الآن</button>
+          <section class="result-card success" id="speedResult" style="width:100%"><i class="ic" data-ic="check"></i><div><strong>لم يتم العثور على خلل</strong><small>الكيبل والخدمة والراوتر يعملون بصورة طبيعية.</small></div></section>
+        </section>
+      </section>
+
+      <!-- ═══ تفعيل الاشتراك ═══ -->
+      <section class="view" id="v-activate">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">جدّد اتصالك بسهولة</p><h1>تفعيل الاشتراك</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="plan-banner"><div><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><h2>برو ماكس 50</h2><p>تفعيل شهر جديد • ٢٥,٠٠٠ د.ع</p></div><strong>١٨<small>يوم متبقٍ</small></strong></section>
+        <section class="service-intro"><i class="ic" data-ic="credit-card"></i><div><strong>اختر طريقة الدفع</strong><p>فعّل اشتراكك بالطريقة الأنسب لك</p></div></section>
+        <div class="support-options">
+          <button data-method="توصيل نقدي"><span class="service-icon"><i class="ic" data-ic="banknote"></i></span><strong>الدفع عند التوصيل</strong><small>سيصل المندوب وتدفع نقدًا</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button data-method="تحويل ماستر"><span class="service-icon"><i class="ic" data-ic="upload"></i></span><strong>تحويل ماستر مع صورة</strong><small>أرسل صورة التحويل ليتم تدقيقها</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button data-method="بوابة ماستر"><span class="service-icon"><i class="ic" data-ic="credit-card"></i></span><strong>تفعيل مباشر عبر ماستر</strong><small>دفع آمن وفوري من بوابة ماستر</small><i class="ic" data-ic="chevron-left"></i></button>
+        </div>
+        <section class="payment-confirm" id="payConfirm"><strong id="payMethod"></strong><label class="upload-box" id="payUpload"><i class="ic" data-ic="upload"></i><span>اضغط لإرفاق صورة التحويل<input type="file" accept="image/*"></span></label><button class="primary-action" id="payBtn"><i class="ic" data-ic="check"></i> تأكيد طلب التفعيل</button></section>
+        <section class="result-card success" id="payDone"><i class="ic" data-ic="check"></i><div><strong>تم استلام طلب تفعيل اشتراكك</strong><small>سيتم تأكيد الدفع وتفعيل الخدمة قريبًا.</small></div></section>
+      </section>
+
+      <!-- ═══ دردشة الوكيل ═══ -->
+      <section class="view" id="v-agent">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">مساعدة مباشرة</p><h1>تحدث مع الوكيل</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="chat-window" id="chatWin"><div class="chat-message agent">أهلًا بك في كابينة، كيف أقدر أساعدك؟</div></section>
+        <div class="chat-composer"><input id="chatInput" placeholder="اكتب رسالتك هنا..."><button id="chatSend" aria-label="إرسال"><i class="ic" data-ic="send"></i></button></div>
+      </section>
+
+      <!-- ═══ المتاجر ═══ -->
+      <section class="view" id="v-stores">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">كل شيء في مكان واحد</p><h1>المتاجر</h1></div><button class="icon-button" data-go="notifications" aria-label="الإشعارات"><i class="ic" data-ic="bell"></i><i class="dot-badge"></i></button></header>
+        <div class="search-box"><i class="ic" data-ic="search"></i><span>ابحث عن متجر أو منتج</span></div>
+        <div class="store-tabs" id="storeTabs">
+          <button class="active" data-store="all"><i class="ic" data-ic="store"></i><span>الكل</span></button>
+          <button data-store="digital"><i class="ic" data-ic="wifi"></i><span>كابينة</span></button>
+          <button data-store="used"><i class="ic" data-ic="smartphone"></i><span>مستعمل</span></button>
+          <button data-store="food"><i class="ic" data-ic="package"></i><span>مطاعم</span></button>
+          <button data-store="mobile"><i class="ic" data-ic="smartphone"></i><span>موبايل</span></button>
+          <button data-store="grocery"><i class="ic" data-ic="shopping-bag"></i><span>سوبرماركت</span></button>
+        </div>
+        <section class="used-hero" id="usedHero"><div><span class="eyebrow">سوق آمن بين الناس</span><h2>سوق المستعمل</h2><p>اشترِ وبع أجهزة الراوتر والموبايلات القريبة منك.</p></div><span class="used-mark"><i class="ic" data-ic="smartphone"></i></span></section>
+        <div class="section-heading"><h2 id="storeHeading">مختارات كابينة</h2><button>عرض الكل <i class="ic" data-ic="chevron-left"></i></button></div>
+        <div class="listing-grid" id="listingGrid"></div>
+        <button class="sell-button"><i class="ic" data-ic="plus"></i> أضف إعلانك في سوق المستعمل</button>
+      </section>
+
+      <!-- ═══ شبكتي ═══ -->
+      <section class="view" id="v-network">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">إدارة اتصالك وأجهزتك</p><h1>شبكتي</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="network-hero"><div class="network-visual"><i class="ic" data-ic="router"></i></div><div><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><h2>راوتر المنزل</h2><p>متصل منذ ٤ ساعات و٢٢ دقيقة</p></div><button class="icon-button" aria-label="إعدادات الراوتر"><i class="ic" data-ic="settings-2"></i></button></section>
+        <div class="section-heading"><h2>الأجهزة المتصلة</h2><span class="device-count">٤ أجهزة</span></div>
+        <div class="device-list">
+          <div><span class="list-icon"><i class="ic" data-ic="smartphone"></i></span><span class="mid"><strong>هاتف محمد</strong><small>متصل الآن • 192.168.1.4</small></span><i class="online-indicator"></i></div>
+          <div><span class="list-icon"><i class="ic" data-ic="smartphone"></i></span><span class="mid"><strong>هاتف سارة</strong><small>متصل الآن • 192.168.1.5</small></span><i class="online-indicator"></i></div>
+          <div><span class="list-icon"><i class="ic" data-ic="radio"></i></span><span class="mid"><strong>التلفاز الذكي</strong><small>متصل الآن • 192.168.1.8</small></span><i class="online-indicator"></i></div>
+          <div><span class="list-icon"><i class="ic" data-ic="laptop"></i></span><span class="mid"><strong>حاسوب المنزل</strong><small>آخر ظهور قبل ١٠ دقائق</small></span><i class="offline-indicator"></i></div>
+        </div>
+        <button class="primary-action"><i class="ic" data-ic="settings-2"></i> إدارة إعدادات الراوتر</button>
+      </section>
+
+      <!-- ═══ حسابي ═══ -->
+      <section class="view" id="v-account">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">ملف المشترك</p><h1>حسابي</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="profile-card"><div class="profile-avatar">م</div><div class="profile-mid"><strong>محمد أحمد</strong><small>مشترك كابينة منذ ٢٠٢٤</small></div><button aria-label="تعديل"><i class="ic" data-ic="pencil"></i></button></section>
+        <div class="detail-list">
+          <button><span class="list-icon"><i class="ic" data-ic="user-round"></i></span><span class="mid"><strong>بياناتي الشخصية</strong><small>رقم المشترك والعنوان</small></span><i class="ic" data-ic="chevron-left"></i></button>
+          <button data-go="network"><span class="list-icon"><i class="ic" data-ic="router"></i></span><span class="mid"><strong>أجهزتي وشبكتي</strong><small>إدارة الراوتر والأجهزة</small></span><i class="ic" data-ic="chevron-left"></i></button>
+          <button><span class="list-icon"><i class="ic" data-ic="credit-card"></i></span><span class="mid"><strong>الفواتير والدفع</strong><small>سجل الاشتراكات</small></span><i class="ic" data-ic="chevron-left"></i></button>
+          <button><span class="list-icon"><i class="ic" data-ic="circle-help"></i></span><span class="mid"><strong>المساعدة والأسئلة</strong><small>إجابات سريعة</small></span><i class="ic" data-ic="chevron-left"></i></button>
+        </div>
+      </section>
+
+      <!-- ═══ الإشعارات ═══ -->
+      <section class="view" id="v-notifications">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">آخر التحديثات</p><h1>الإشعارات</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <div class="notification-card"><span class="list-icon"><i class="ic" data-ic="check"></i></span><div><strong>تم فحص اتصالك بنجاح</strong><small>قبل ٣ دقائق • سرعتك مستقرة</small></div></div>
+        <div class="notification-card"><span class="list-icon"><i class="ic" data-ic="package"></i></span><div><strong>تذكير بتجديد الباقة</strong><small>متبقي ١٨ يومًا على موعد التجديد</small></div></div>
+      </section>
+
+    </div>
+    <nav class="bottom-nav" aria-label="التنقل الرئيسي" id="bottomNav">
+      <button class="active" data-go="home"><i class="ic" data-ic="house"></i><span>الرئيسية</span><i class="nav-dot"></i></button>
+      <button data-go="plan"><i class="ic" data-ic="package"></i><span>باقتي</span></button>
+      <button data-go="services"><i class="ic" data-ic="zap"></i><span>الخدمات</span></button>
+      <button data-go="stores"><i class="ic" data-ic="store"></i><span>المتاجر</span></button>
+      <button data-go="account"><i class="ic" data-ic="user-round"></i><span>حسابي</span></button>
+    </nav>
+  </div>
+</main>
+
+<script>
+(function(){
+"use strict";
+/* ═════ عرضٌ تجريبيّ — كلُّ البيانات وهمية وكلُّ تفاعلٍ يعيش في ذاكرة المتصفّح وحدها ═════ */
+var ICONS={"arrow-left":"<svg class=\"lucide lucide-arrow-left\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m12 19-7-7 7-7\" /><path d=\"M19 12H5\" /></svg>","banknote":"<svg class=\"lucide lucide-banknote\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"20\" height=\"12\" x=\"2\" y=\"6\" rx=\"2\" /><circle cx=\"12\" cy=\"12\" r=\"2\" /><path d=\"M6 12h.01M18 12h.01\" /></svg>","bell":"<svg class=\"lucide lucide-bell\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M10.268 21a2 2 0 0 0 3.464 0\" /><path d=\"M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326\" /></svg>","check":"<svg class=\"lucide lucide-check\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 6 9 17l-5-5\" /></svg>","chevron-left":"<svg class=\"lucide lucide-chevron-left\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m15 18-6-6 6-6\" /></svg>","circle-help":"<svg class=\"lucide lucide-circle-help\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\" /><path d=\"M12 17h.01\" /></svg>","credit-card":"<svg class=\"lucide lucide-credit-card\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"20\" height=\"14\" x=\"2\" y=\"5\" rx=\"2\" /><line x1=\"2\" x2=\"22\" y1=\"10\" y2=\"10\" /></svg>","gauge":"<svg class=\"lucide lucide-gauge\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m12 14 4-4\" /><path d=\"M3.34 19a10 10 0 1 1 17.32 0\" /></svg>","heart":"<svg class=\"lucide lucide-heart\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z\" /></svg>","home":"<svg class=\"lucide lucide-house\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\" /><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" /></svg>","house":"<svg class=\"lucide lucide-house\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\" /><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" /></svg>","laptop":"<svg class=\"lucide lucide-laptop\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16\" /></svg>","lock-keyhole":"<svg class=\"lucide lucide-lock-keyhole\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"12\" cy=\"16\" r=\"1\" /><rect x=\"3\" y=\"10\" width=\"18\" height=\"12\" rx=\"2\" /><path d=\"M7 10V7a5 5 0 0 1 10 0v3\" /></svg>","message-circle":"<svg class=\"lucide lucide-message-circle\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M7.9 20A9 9 0 1 0 4 16.1L2 22Z\" /></svg>","package":"<svg class=\"lucide lucide-package\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\" /><path d=\"M12 22V12\" /><path d=\"m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7\" /><path d=\"m7.5 4.27 9 5.15\" /></svg>","pencil":"<svg class=\"lucide lucide-pencil\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\" /><path d=\"m15 5 4 4\" /></svg>","plus":"<svg class=\"lucide lucide-plus\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M5 12h14\" /><path d=\"M12 5v14\" /></svg>","radio":"<svg class=\"lucide lucide-radio\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M4.9 19.1C1 15.2 1 8.8 4.9 4.9\" /><path d=\"M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5\" /><circle cx=\"12\" cy=\"12\" r=\"2\" /><path d=\"M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5\" /><path d=\"M19.1 4.9C23 8.8 23 15.1 19.1 19\" /></svg>","refresh-cw":"<svg class=\"lucide lucide-refresh-cw\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" /><path d=\"M21 3v5h-5\" /><path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" /><path d=\"M8 16H3v5\" /></svg>","router":"<svg class=\"lucide lucide-router\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"20\" height=\"8\" x=\"2\" y=\"14\" rx=\"2\" /><path d=\"M6.01 18H6\" /><path d=\"M10.01 18H10\" /><path d=\"M15 10v4\" /><path d=\"M17.84 7.17a4 4 0 0 0-5.66 0\" /><path d=\"M20.66 4.34a8 8 0 0 0-11.31 0\" /></svg>","search":"<svg class=\"lucide lucide-search\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"11\" cy=\"11\" r=\"8\" /><path d=\"m21 21-4.3-4.3\" /></svg>","send":"<svg class=\"lucide lucide-send\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z\" /><path d=\"m21.854 2.147-10.94 10.939\" /></svg>","settings-2":"<svg class=\"lucide lucide-settings-2\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 7h-9\" /><path d=\"M14 17H5\" /><circle cx=\"17\" cy=\"17\" r=\"3\" /><circle cx=\"7\" cy=\"7\" r=\"3\" /></svg>","shield-check":"<svg class=\"lucide lucide-shield-check\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /><path d=\"m9 12 2 2 4-4\" /></svg>","shopping-bag":"<svg class=\"lucide lucide-shopping-bag\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z\" /><path d=\"M3 6h18\" /><path d=\"M16 10a4 4 0 0 1-8 0\" /></svg>","smartphone":"<svg class=\"lucide lucide-smartphone\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"14\" height=\"20\" x=\"5\" y=\"2\" rx=\"2\" ry=\"2\" /><path d=\"M12 18h.01\" /></svg>","store":"<svg class=\"lucide lucide-store\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7\" /><path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\" /><path d=\"M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4\" /><path d=\"M2 7h20\" /><path d=\"M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7\" /></svg>","upload":"<svg class=\"lucide lucide-upload\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\" /><polyline points=\"17 8 12 3 7 8\" /><line x1=\"12\" x2=\"12\" y1=\"3\" y2=\"15\" /></svg>","user-round":"<svg class=\"lucide lucide-user-round\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"12\" cy=\"8\" r=\"5\" /><path d=\"M20 21a8 8 0 0 0-16 0\" /></svg>","wifi":"<svg class=\"lucide lucide-wifi\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M12 20h.01\" /><path d=\"M2 8.82a15 15 0 0 1 20 0\" /><path d=\"M5 12.859a10 10 0 0 1 14 0\" /><path d=\"M8.5 16.429a5 5 0 0 1 7 0\" /></svg>","wrench":"<svg class=\"lucide lucide-wrench\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\" /></svg>","zap":"<svg class=\"lucide lucide-zap\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\" /></svg>"};
+var $=function(id){return document.getElementById(id)};
+
+/* حقن الأيقونات: الغلاف يُستبدل بالـsvg نفسه كي تعمل محدِّدات > svg المباشرة */
+Array.prototype.slice.call(document.querySelectorAll("i.ic[data-ic]")).forEach(function(el){
+  var svg=ICONS[el.getAttribute("data-ic")];
+  if(!svg)return;
+  var tpl=document.createElement("template");tpl.innerHTML=svg.trim();
+  var node=tpl.content.firstChild;if(node)el.parentNode.replaceChild(node,el);
+});
+
+/* التنقل بين الشاشات */
+var NAV=["home","plan","services","stores","account"];
+function go(tab){
+  Array.prototype.slice.call(document.querySelectorAll("section.view")).forEach(function(v){
+    v.classList.toggle("on",v.id==="v-"+tab);
+  });
+  Array.prototype.slice.call(document.querySelectorAll("#bottomNav button")).forEach(function(b){
+    var active=b.getAttribute("data-go")===tab&&NAV.indexOf(tab)>=0;
+    b.classList.toggle("active",active);
+    var dot=b.querySelector("i.nav-dot");
+    if(active&&!dot){var d=document.createElement("i");d.className="nav-dot";b.appendChild(d)}
+    if(!active&&dot)dot.parentNode.removeChild(dot);
+  });
+  $("v-"+tab).closest(".app-content")||0;
+  document.querySelector(".app-content").scrollTop=0;
+}
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-go]");
+  if(b){go(b.getAttribute("data-go"));return}
+});
+
+/* قرض الإنترنت */
+$("loanBtn").addEventListener("click",function(){$("loanResult").classList.add("on")});
+
+/* فحص الإنترنت — ثلاث مراحل موقوتة */
+var speedRunning=false;
+$("speedBtn").addEventListener("click",function(){
+  if(speedRunning)return;speedRunning=true;
+  var rows=Array.prototype.slice.call($("speedSteps").children);
+  $("speedResult").classList.remove("on");
+  $("speedTitle").textContent="نفحص اتصالك الآن";
+  $("speedSub").textContent="سيتم فحص جميع نقاط الاتصال على ثلاث مراحل.";
+  rows.forEach(function(r,i){r.className="";r.querySelector(".stepmark").textContent=String(i+1);r.querySelector("small").textContent="بانتظار الفحص"});
+  var mark=function(i,cls,txt){var r=rows[i];r.className=cls;r.querySelector("small").textContent=txt;
+    if(cls==="done"){var m=r.querySelector(".stepmark");m.innerHTML=ICONS["check"];}};
+  mark(0,"current","جارٍ الفحص...");
+  setTimeout(function(){mark(0,"done","اكتمل الفحص");mark(1,"current","جارٍ الفحص...")},900);
+  setTimeout(function(){mark(1,"done","اكتمل الفحص");mark(2,"current","جارٍ الفحص...")},1800);
+  setTimeout(function(){mark(2,"done","اكتمل الفحص");
+    $("speedTitle").textContent="اكتمل الفحص";
+    $("speedSub").textContent="اتصالك يعمل بشكل جيد ولا توجد أعطال ظاهرة.";
+    $("speedResult").classList.add("on");speedRunning=false;
+  },2700);
+});
+
+/* تفعيل الاشتراك — اختيار طريقة الدفع */
+Array.prototype.slice.call(document.querySelectorAll("#v-activate .support-options button")).forEach(function(b){
+  b.addEventListener("click",function(){
+    var m=b.getAttribute("data-method");
+    $("payMethod").textContent="طريقة الدفع: "+m;
+    $("payUpload").classList.toggle("on",m==="تحويل ماستر");
+    $("payConfirm").classList.add("on");
+    $("payDone").classList.remove("on");
+  });
+});
+$("payBtn").addEventListener("click",function(){
+  $("payConfirm").classList.remove("on");
+  $("payDone").classList.add("on");
+});
+
+/* دردشة الوكيل */
+function sendChat(){
+  var v=$("chatInput").value.trim();if(!v)return;
+  var m=document.createElement("div");m.className="chat-message user";m.textContent=v;
+  $("chatWin").appendChild(m);$("chatInput").value="";
+  $("chatWin").scrollTop=$("chatWin").scrollHeight;
+  setTimeout(function(){
+    var r=document.createElement("div");r.className="chat-message agent";
+    r.textContent="وصلت رسالتك، الوكيل سيتابع معك الآن.";
+    $("chatWin").appendChild(r);$("chatWin").scrollTop=$("chatWin").scrollHeight;
+  },500);
+}
+$("chatSend").addEventListener("click",sendChat);
+$("chatInput").addEventListener("keydown",function(e){if(e.key==="Enter")sendChat()});
+
+/* المتاجر */
+var LISTINGS={
+  def:[["wifi","باقة برو ماكس 50","من كابينة • تجديد شهري","٢٥,٠٠٠ د.ع"],
+       ["package","مطعم دار النكهة","توصيل سريع • قريب منك","اطلب الآن"],
+       ["smartphone","مركز موبايل بلاس","هواتف وإكسسوارات","تصفح المتجر"]],
+  used:[["router","راوتر TP-Link مستعمل","حالة ممتازة • بغداد","٤٥,٠٠٠ د.ع"],
+        ["smartphone","iPhone 13 Pro","نظيف جدًا • البصرة","٧٥٠,٠٠٠ د.ع"]]
+};
+function renderStore(tab){
+  var used=tab==="used";
+  $("usedHero").classList.toggle("on",used);
+  $("storeHeading").textContent=used?"إعلانات قريبة منك":"مختارات كابينة";
+  var h="";
+  (used?LISTINGS.used:LISTINGS.def).forEach(function(x){
+    h+='<article class="listing-card"><div class="listing-image">'+ICONS[x[0]]+'</div>'+
+       '<button class="heart" aria-label="حفظ">'+ICONS["heart"]+'</button>'+
+       '<div class="listing-body"><small>'+x[2]+'</small><strong>'+x[1]+'</strong>'+
+       '<div><b>'+x[3]+'</b><button class="tiny-arrow" aria-label="فتح">'+ICONS["chevron-left"]+'</button></div></div></article>';
+  });
+  $("listingGrid").innerHTML=h;
+}
+$("storeTabs").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;
+  Array.prototype.slice.call(this.children).forEach(function(x){x.classList.toggle("active",x===b)});
+  renderStore(b.getAttribute("data-store"));
+});
+renderStore("all");
+})();
+</script>
+</body>
+</html>

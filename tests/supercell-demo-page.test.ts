@@ -39,3 +39,24 @@ describe("🏢 صفحة /supercell معزولةٌ تماماً عن الموقع
       "/supercell سقطت من المسارات العامّة — الزائرُ سيُحوَّل إلى /login");
   });
 });
+
+// ═════ 📱 صفحة /app — معاينةُ ستايل تطبيق المشترك «كابينة» (طلب محمد 2026-08-28) ═════
+// نفسُ وصفة /supercell ونفسُ شرط «صفر تدخل» — والقفلُ نفسُه حرفاً بحرف.
+describe("📱 صفحة /app (معاينة تطبيق المشترك) معزولةٌ تماماً", () => {
+  test("المسارُ ثابتٌ بلا استيرادٍ من كود الموقع، والملفُّ وهميٌّ بلا شبكة، والحارسُ يستثنيه", () => {
+    const route = fs.readFileSync(path.join(ROOT, "src/app/app/route.ts"), "utf8");
+    assert.ok(route.includes('path.join(process.cwd(), "public", "subscriber-app.html")'),
+      "المسارُ لا يقرأ الملفَّ الثابت من public");
+    assert.ok(!/from "@\//.test(route) && !/prisma|getSession|guard\(/.test(route),
+      "مسارُ /app صار يلمس كودَ الموقع أو القاعدة — انكسر العزل");
+    const p = path.join(ROOT, "public/subscriber-app.html");
+    assert.ok(fs.existsSync(p), "public/subscriber-app.html غيرُ موجود — المسارُ سيعيد 500");
+    const html = fs.readFileSync(p, "utf8");
+    assert.ok(html.startsWith("<!doctype html>"), "الملفُّ بلا هيكل مستند كامل");
+    assert.ok(html.includes('name="robots" content="noindex'), "ميتا noindex ضاعت");
+    assert.ok(html.includes("بيانات وهمية"), "وسمُ «بيانات وهمية» ضاع من الصفحة");
+    assert.ok(!/fetch\s*\(|XMLHttpRequest|\/api\//.test(html), "صفحةُ /app صارت تنادي الشبكة — انكسر «صفر تدخل»");
+    const proxy = fs.readFileSync(path.join(ROOT, "src/proxy.ts"), "utf8");
+    assert.ok(/PUBLIC_PATHS = \[[^\]]*"\/app"/.test(proxy), "/app سقطت من المسارات العامّة");
+  });
+});
