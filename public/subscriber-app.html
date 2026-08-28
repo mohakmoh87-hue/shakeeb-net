@@ -83,6 +83,44 @@ h1 { margin:0; color:#102238; font-size:23px; letter-spacing:-.6px; } h1 span { 
 .device-count { color:#8998a9; font-size:10px; font-weight:700; }
 .device-list { display:flex; flex-direction:column; gap:.6rem; } .device-list > div { display:flex; align-items:center; gap:.7rem; padding:.8rem; border:1px solid #e6edf2; border-radius:15px; background:#fff; } .device-list span.mid { flex:1; display:flex; flex-direction:column; gap:3px; } .device-list strong { font-size:12px; } .device-list small { color:#92a0ad; font-size:9px; direction:ltr; text-align:right; }
 .online-indicator, .offline-indicator { width:8px; height:8px; border-radius:50%; flex:0 0 8px; } .online-indicator { background:#33b58c; box-shadow:0 0 0 3px #33b58c22; } .offline-indicator { background:#c3ccd6; }
+
+/* ═══ 📏 طبقةُ الملاءمة (طلب محمد 2026-08-28: «لا تمرير للأسفل أبداً») ═══
+   كلُّ مقاسٍ رأسيٍّ صار clamp بوحدة vh: ينكمش مع قِصَر الشاشة حتى تسعَ الشاشةُ
+   كاملةً دفعةً واحدة، ويبقى بمقاسه الأصليّ على الشاشات الطويلة. والتمريرُ الداخليُّ
+   يبقى صمّامَ أمانٍ للشاشات القصيرة جدّاً لا سلوكاً معتاداً. */
+.app-content { padding:clamp(.45rem,1.5vh,1.35rem) 1.1rem clamp(.3rem,.9vh,1rem); }
+section.view.on { gap:clamp(.4rem,1.4vh,1.05rem); }
+h1 { font-size:clamp(18px,2.8vh,23px); }
+.hero-card { min-height:clamp(96px,15vh,161px); padding:clamp(.65rem,1.6vh,1.25rem); }
+.shortcut-grid { gap:clamp(.45rem,1.1vh,.7rem); }
+.service-grid { gap:clamp(.45rem,1vh,.65rem); }
+.support-options, .detail-list, .device-list { gap:clamp(.4rem,1.1vh,.7rem); }
+.hero-orb { flex-basis:clamp(54px,8.5vh,74px); height:clamp(54px,8.5vh,74px); }
+.days-card { padding:clamp(.65rem,1.5vh,1.15rem); }
+.days-number { height:clamp(54px,9.5vh,88px); }
+.days-number strong { font-size:clamp(25px,4.4vh,38px); }
+.shortcut { padding:clamp(.5rem,1.3vh,.85rem); }
+.agent-card { padding:clamp(.55rem,1.4vh,.85rem) 1rem; }
+.plan-banner { padding:clamp(.7rem,1.7vh,1.2rem); }
+.plan-banner > strong { font-size:clamp(24px,4.2vh,34px); }
+.metric-grid > div { padding:clamp(.55rem,1.4vh,.9rem) .55rem; }
+.detail-list button { padding:clamp(.5rem,1.3vh,.8rem); }
+.service-intro { padding:clamp(.6rem,1.5vh,1rem); }
+.service-card { min-height:clamp(94px,15vh,128px); padding:clamp(.55rem,1.4vh,.85rem); }
+.support-options button { padding:clamp(.55rem,1.4vh,.9rem); }
+.feature-panel { padding:clamp(.75rem,1.9vh,1.35rem) 1rem; }
+.feature-icon { width:clamp(44px,7vh,58px); height:clamp(44px,7vh,58px); }
+.diagnostic-steps > div { min-height:clamp(42px,6.6vh,53px); }
+.listing-image { height:clamp(62px,11vh,92px); }
+.used-hero.on { padding:clamp(.6rem,1.5vh,1rem); }
+.profile-card { padding:clamp(.6rem,1.5vh,1rem); }
+.notification-card { padding:clamp(.55rem,1.4vh,.9rem); }
+.network-hero { padding:clamp(.65rem,1.6vh,1.15rem); }
+.device-list > div { padding:clamp(.5rem,1.3vh,.8rem); }
+.bottom-nav { padding:clamp(.4rem,1vh,.7rem) .5rem calc(clamp(.5rem,1.2vh,.8rem) + env(safe-area-inset-bottom,0px)); }
+/* الدردشةُ تملأ ما بين الرأس والكاتب تماماً — الرسائلُ تتمرّر داخل نافذتها وحدَها */
+#v-agent.on { height:100%; }
+.chat-window { flex:1; min-height:120px; overflow:auto; }
 </style>
 </head>
 <body>
@@ -253,6 +291,21 @@ Array.prototype.slice.call(document.querySelectorAll("i.ic[data-ic]")).forEach(f
   var node=tpl.content.firstChild;if(node)el.parentNode.replaceChild(node,el);
 });
 
+/* 📏 الملاءمة الذاتية (طلب محمد: لا تمرير أبداً): بعد كل تنقّلٍ أو تفاعلٍ تُقاس
+   الشاشةُ النشطة، فإن فاض محتواها عن ارتفاع المساحة تنكمش بنسبةٍ محسوبةٍ (zoom)
+   لتسعَ دفعةً واحدة — بحدّ قراءةٍ أدنى 0.7، وما دونه يبقى التمريرُ صمّامَ أمان. */
+function fit(){
+  var s=document.querySelector("section.view.on");if(!s)return;
+  s.style.zoom="";
+  if(s.id==="v-agent")return; /* الدردشةُ مضبوطةٌ بارتفاع الشاشة أصلاً */
+  var ac=document.querySelector(".app-content");
+  if(ac.scrollHeight<=ac.clientHeight+1)return;
+  var r=ac.clientHeight/ac.scrollHeight;
+  s.style.zoom=String(Math.max(r*0.99,0.7));
+}
+window.__fitDemo=fit;
+window.addEventListener("resize",fit);
+
 /* التنقل بين الشاشات */
 var NAV=["home","plan","services","stores","account"];
 function go(tab){
@@ -271,7 +324,9 @@ function go(tab){
 }
 document.addEventListener("click",function(e){
   var b=e.target.closest("[data-go]");
-  if(b){go(b.getAttribute("data-go"));return}
+  if(b)go(b.getAttribute("data-go"));
+  /* أيُّ تفاعلٍ قد يغيّر ارتفاعَ المحتوى (نتيجة قرض، تأكيد دفع…) ⇒ إعادةُ ملاءمة */
+  requestAnimationFrame(fit);
 });
 
 /* قرض الإنترنت */
@@ -294,7 +349,7 @@ $("speedBtn").addEventListener("click",function(){
   setTimeout(function(){mark(2,"done","اكتمل الفحص");
     $("speedTitle").textContent="اكتمل الفحص";
     $("speedSub").textContent="اتصالك يعمل بشكل جيد ولا توجد أعطال ظاهرة.";
-    $("speedResult").classList.add("on");speedRunning=false;
+    $("speedResult").classList.add("on");speedRunning=false;fit();
   },2700);
 });
 
@@ -355,6 +410,7 @@ $("storeTabs").addEventListener("click",function(e){
   renderStore(b.getAttribute("data-store"));
 });
 renderStore("all");
+fit();
 })();
 </script>
 </body>
