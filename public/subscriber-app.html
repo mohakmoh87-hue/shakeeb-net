@@ -2,8 +2,12 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0c1d31">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22%D9%83%D8%A7%D8%A8%D9%8A%D9%86%D8%A9%22%2C%22short_name%22%3A%22%D9%83%D8%A7%D8%A8%D9%8A%D9%86%D8%A9%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230c1d31%22%2C%22theme_color%22%3A%22%230c1d31%22%2C%22dir%22%3A%22rtl%22%2C%22lang%22%3A%22ar%22%2C%22start_url%22%3A%22https%3A%2F%2Fshakeebnet.com%2Fapp%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fshakeebnet.com%2Ficons%2Ficon-192.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%2C%7B%22src%22%3A%22https%3A%2F%2Fshakeebnet.com%2Ficons%2Ficon-512.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 <title>كابينة — تطبيق المشترك</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
@@ -16,9 +20,11 @@ body { margin:0; background:#edf2f7; color:var(--foreground); font-family:'Cairo
 button { font:inherit; cursor:pointer; }
 svg { display:block; }
 .app-shell { min-height:100vh; display:flex; justify-content:center; align-items:center; padding:1.25rem; background:radial-gradient(circle at 50% 0%, #dbe9f1 0, #edf2f7 42%); }
-.phone-frame { width:min(100%,430px); min-height:min(900px,calc(100vh - 40px)); background:#f7fafc; border:8px solid #0c1d31; border-radius:2.5rem; box-shadow:0 28px 70px #1022382e, 0 0 0 1px #ffffff; overflow:hidden; display:flex; flex-direction:column; }
+/* 📐 ارتفاعٌ مثبَّت (لا min-height): المحتوى الطويل يمرَّر داخل .app-content وحدَها —
+   فشريطُ التنقّل السفليّ ثابتٌ على الشاشة دائماً ولا تمريرَ للصفحة كلِّها (طلب محمد) */
+.phone-frame { width:min(100%,430px); height:min(900px,calc(100dvh - 40px)); background:#f7fafc; border:8px solid #0c1d31; border-radius:2.5rem; box-shadow:0 28px 70px #1022382e, 0 0 0 1px #ffffff; overflow:hidden; display:flex; flex-direction:column; }
 .phone-status { height:28px; padding:0 1.3rem; display:flex; justify-content:space-between; align-items:center; color:#b8c7d5; background:#0c1d31; font-size:10px; font-weight:700; direction:ltr; }
-.app-content { flex:1; overflow:auto; padding:1.35rem 1.1rem 1rem; }
+.app-content { flex:1; min-height:0; overflow:auto; padding:1.35rem 1.1rem 1rem; }
 .view-stack { display:flex; flex-direction:column; gap:1.05rem; }
 section.view { display:none; } section.view.on { display:flex; flex-direction:column; gap:1.05rem; }
 .topbar, .inner-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; }
@@ -41,7 +47,7 @@ h1 { margin:0; color:#102238; font-size:23px; letter-spacing:-.6px; } h1 span { 
 .bottom-nav { display:flex; justify-content:space-around; padding:.7rem .5rem .8rem; border-top:1px solid #e8eef3; background:#fff; } .bottom-nav button { position:relative; display:flex; flex:1; flex-direction:column; align-items:center; gap:4px; border:0; background:none; color:#a6b1bd; font-size:9px; } .bottom-nav button svg { width:19px; height:19px; } .bottom-nav button.active { color:#18a9ca; } .bottom-nav button i.nav-dot { position:absolute; bottom:-7px; width:4px; height:4px; border-radius:50%; background:#18a9ca; }
 .inner-header { padding-bottom:.4rem; } .inner-header > div { flex:1; } .header-symbol { color:#1bb2d0; width:22px; }
 .detail-list { display:flex; flex-direction:column; gap:.6rem; } .detail-list button { display:flex; align-items:center; gap:.7rem; padding:.8rem; border:1px solid #e6edf2; border-radius:15px; background:#fff; text-align:right; } .list-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; color:#17a9c8; background:#e7f7fa; flex:0 0 34px; } .list-icon svg { width:16px; } .detail-list button span.mid { flex:1; display:flex; flex-direction:column; gap:3px; } .detail-list strong { font-size:12px; } .detail-list small { color:#92a0ad; font-size:9px; } .detail-list button > svg { width:15px; color:#9aa8b5; }
-@media (max-width:500px) { .app-shell { padding:0; align-items:stretch; } .phone-frame { width:100%; min-height:100vh; border:0; border-radius:0; } .phone-status { display:none; } }
+@media (max-width:500px) { .app-shell { padding:0; align-items:stretch; min-height:100dvh; } .phone-frame { width:100%; height:100dvh; border:0; border-radius:0; } .phone-status { display:none; } .bottom-nav { padding-bottom:calc(.8rem + env(safe-area-inset-bottom)); } }
 
 /* وصلة: نظام المتاجر والخدمات المتوسع */
 .plan-banner { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1.2rem; color:#fff; border-radius:22px; background:#0d2943; box-shadow:0 12px 24px #0d294326; }
@@ -55,7 +61,7 @@ h1 { margin:0; color:#102238; font-size:23px; letter-spacing:-.6px; } h1 span { 
 .listing-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.7rem; } .listing-card { position:relative; overflow:hidden; border:1px solid #e6edf2; border-radius:17px; background:#fff; } .listing-image { display:grid; place-items:center; height:92px; color:#18a9ca; background:#eaf7fa; } .listing-image svg { width:31px; height:31px; } .heart { position:absolute; top:.55rem; left:.55rem; display:grid; place-items:center; width:27px; height:27px; border:0; border-radius:9px; color:#8798a8; background:#ffffffd9; } .heart svg { width:14px; } .listing-body { display:flex; flex-direction:column; gap:.35rem; padding:.7rem; } .listing-body small { overflow:hidden; color:#93a0ae; font-size:8px; text-overflow:ellipsis; white-space:nowrap; } .listing-body strong { min-height:28px; font-size:11px; line-height:1.35; } .listing-body > div { display:flex; align-items:center; justify-content:space-between; gap:.3rem; } .listing-body b { color:#0d8fa9; font-size:10px; } .tiny-arrow { display:grid; place-items:center; width:23px; height:23px; border:0; border-radius:7px; color:#18a9ca; background:#eaf7fa; } .tiny-arrow svg { width:13px; } .sell-button { display:flex; align-items:center; justify-content:center; gap:.45rem; padding:.8rem; border:1px dashed #59c9d9; border-radius:14px; color:#087d98; background:#e6f8fc; font-size:10px; } .sell-button svg { width:15px; }
 .profile-card { display:flex; align-items:center; gap:.7rem; padding:1rem; border-radius:19px; color:#fff; background:#123451; } .profile-avatar { display:grid; place-items:center; width:46px; height:46px; border-radius:15px; color:#0d2943; background:#6de0ec; font-size:20px; font-weight:700; } .profile-card .profile-mid { display:flex; flex:1; flex-direction:column; gap:.25rem; } .profile-card strong { font-size:14px; } .profile-card small { color:#a9bdca; font-size:9px; } .profile-card > button { display:grid; place-items:center; width:30px; height:30px; border:0; border-radius:9px; color:#fff; background:#ffffff16; } .profile-card > button svg { width:14px; }
 .notification-card { display:flex; align-items:center; gap:.7rem; padding:.9rem; border:1px solid #e6edf2; border-radius:16px; background:#fff; } .notification-card div { display:flex; flex-direction:column; gap:.3rem; } .notification-card strong { font-size:11px; } .notification-card small { color:#8998a9; font-size:9px; }
-@media (min-width:700px) { .phone-frame { min-height:800px; } }
+/* (أُلغي تجاوزُ min-width:700px — الارتفاعُ المثبَّتُ أعلاه يحكم الجميع) */
 
 .feature-panel { display:flex; flex-direction:column; align-items:center; gap:.65rem; padding:1.35rem 1rem; border:1px solid #dfeaf0; border-radius:22px; background:#fff; text-align:center; }
 .feature-icon { display:grid; place-items:center; width:58px; height:58px; border-radius:18px; color:#0d8fa9; background:#e5f8fb; } .feature-icon svg { width:26px; }
