@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>بوابة سوبر سيل</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* ═══ رموز شكيب نت — الصفحة نهارية عمداً كالمنتج نفسه، وكل خلفية مصرَّح بها ═══ */
+  :root{
+    --navy:#1b3a5c; --navy2:#14293f; --navy3:#2a5480;
+    --orange:#f5a623; --orange-d:#e0940f;
+    --ground:#f0f4f9; --surface:#ffffff; --surface2:#f8fafc;
+    --ink:#1f3550; --ink2:#5a6b80; --muted:#93a1b3; --line:#e4eaf1;
+    --ok:#0fa678; --bad:#e5384f; --warn:#c47b04;
+    /* فئات البطاقات الخمس — مُحقَّقة بالمقياس لا بالعين */
+    --c-maint:#2f62a8; --c-inst:#c47b04; --c-del:#0d96b0; --c-tran:#7053b3; --c-redo:#b3496b;
+    --sh:0 2px 10px rgba(27,58,92,.08); --sh-lg:0 18px 50px rgba(16,28,45,.35);
+    --r:12px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font-family:"Cairo","Segoe UI",Tahoma,sans-serif;font-size:14px;line-height:1.6}
+  #app{direction:rtl;min-height:100dvh;display:flex;flex-direction:column}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink);background:var(--surface);
+    border:1px solid var(--line);border-radius:9px;padding:8px 11px;outline:none;max-width:100%}
+  input:focus,select:focus,textarea:focus{border-color:var(--navy3)}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* ═══ الترويسة ═══ */
+  header{background:linear-gradient(120deg,var(--navy2),var(--navy) 55%,var(--navy3));color:#fff;
+    padding:0 clamp(12px,3vw,28px)}
+  .hbar{max-width:1140px;margin:0 auto;display:flex;align-items:center;gap:14px;padding:14px 0;flex-wrap:wrap}
+  .logo{display:flex;align-items:center;gap:10px}
+  .logo-badge{width:38px;height:38px;border-radius:11px;background:var(--orange);color:var(--navy2);
+    display:grid;place-items:center;font-weight:900;font-size:17px;flex:none}
+  .logo b{font-size:16.5px;letter-spacing:.2px}
+  .logo span{display:block;font-size:11px;color:#bcd2e6;font-weight:600;margin-top:-3px}
+  .demo-tag{background:rgba(245,166,35,.16);border:1px solid rgba(245,166,35,.55);color:#ffd88a;
+    font-size:11px;font-weight:800;border-radius:99px;padding:3px 12px}
+  .hspace{flex:1}
+  .bell{position:relative;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);
+    color:#fff;border-radius:11px;width:40px;height:40px;font-size:17px}
+  .bell i{position:absolute;top:-6px;inset-inline-start:-6px;background:var(--bad);color:#fff;font-style:normal;
+    font-size:10.5px;font-weight:800;min-width:19px;height:19px;border-radius:99px;display:grid;place-items:center;padding:0 4px}
+  .userchip{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.09);
+    border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:5px 12px 5px 7px}
+  .avatar{width:30px;height:30px;border-radius:50%;background:var(--orange);color:var(--navy2);
+    display:grid;place-items:center;font-weight:900;font-size:13px}
+  .userchip b{font-size:12.5px}
+  .userchip span{display:block;font-size:10.5px;color:#bcd2e6;margin-top:-3px}
+
+  nav{max-width:1140px;margin:0 auto;width:100%;display:flex;gap:4px;overflow-x:auto;padding-bottom:0}
+  nav button{background:transparent;border:0;color:#c6d8ea;font-weight:700;font-size:13px;
+    padding:10px 16px 12px;border-radius:11px 11px 0 0;white-space:nowrap}
+  nav button.on{background:var(--ground);color:var(--navy)}
+  nav button:not(.on):hover{color:#fff}
+
+  main{flex:1;width:100%;max-width:1140px;margin:0 auto;padding:20px clamp(12px,3vw,28px) 40px}
+  section{display:none}section.on{display:block}
+  h2{font-size:17px;margin:0 0 4px}
+  .sub{color:var(--ink2);font-size:12.5px;margin:0 0 16px}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}
+
+  /* ═══ لوحة الأداء ═══ */
+  .filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .seg{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:3px;box-shadow:var(--sh)}
+  .seg button{border:0;background:transparent;color:var(--ink2);font-weight:700;font-size:12.5px;
+    padding:7px 15px;border-radius:9px}
+  .seg button.on{background:var(--navy);color:#fff}
+  .rng{display:none;gap:6px;align-items:center;color:var(--ink2);font-size:12px}
+  .rng.on{display:flex;flex-wrap:wrap}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px}
+  .tile{padding:14px 16px}
+  .tile .lb{font-size:12px;font-weight:700;color:var(--ink2);display:flex;justify-content:space-between;align-items:center}
+  .tile .ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;background:var(--surface2)}
+  .tile .vl{font-size:26px;font-weight:900;letter-spacing:-.5px;margin-top:2px}
+  .tile .hint{font-size:11px;color:var(--muted)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:10px 16px;margin-bottom:10px}
+  .legend b{font-size:11.5px;color:var(--ink2);font-weight:700}
+  .lg{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);font-weight:600}
+  .dot{width:11px;height:11px;border-radius:4px;flex:none}
+  .twrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{text-align:right;font-size:11px;color:var(--muted);font-weight:700;padding:10px 14px;
+    border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface)}
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover td{background:var(--surface2)}
+  .agname b{display:block;font-size:13.5px}
+  .agname span{font-size:11px;color:var(--muted)}
+  .bar{display:flex;height:14px;border-radius:5px;overflow:hidden;min-width:170px;background:var(--surface2)}
+  .bar i{height:100%;border-inline-end:2px solid var(--surface)}
+  .bar i:last-child{border-inline-end:0}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;border-radius:99px;padding:3px 11px}
+  .p-ok{background:#e2f6ef;color:#0b7a58}.p-warn{background:#fdf1dc;color:#8f5a03}.p-bad{background:#fde7ea;color:#b91c34}
+  .p-blue{background:#e7eef8;color:#2a5480}.p-gray{background:#eef2f7;color:#5a6b80}
+  .ghost{background:var(--surface);border:1px solid var(--line);color:var(--navy3);font-weight:700;
+    font-size:11.5px;border-radius:9px;padding:5px 12px}
+  .ghost:hover{border-color:var(--navy3)}
+  .ghost[disabled]{opacity:.45;cursor:default}
+  .ghost[disabled]:hover{border-color:var(--line)}
+  /* 🏅 شريط أدوات الجدول عند 120 وكيلاً: بحث + مجموعة + ترتيب + ترقيم صفحات */
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .toolbar input[type=search]{min-width:210px;flex:1;max-width:330px}
+  .toolbar select{font-weight:600}
+  .toolbar .cnt{font-size:11.5px;color:var(--muted);font-weight:700;margin-inline-start:auto}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:center;padding:10px;border-top:1px solid var(--line);
+    font-size:12px;color:var(--ink2);font-weight:700}
+  .rk{font-weight:800;color:var(--muted)}
+  .rk.top{color:var(--orange-d)}
+
+  /* ═══ نماذج ═══ */
+  .form{padding:18px;max-width:640px}
+  .frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:640px){.frow{grid-template-columns:1fr}}
+  label.f{display:block;margin-bottom:12px}
+  label.f>span{display:block;font-size:11.5px;font-weight:700;color:var(--ink2);margin-bottom:4px}
+  label.f input,label.f select,label.f textarea{width:100%}
+  .toggle{display:flex;gap:6px;margin-bottom:12px}
+  .toggle button{flex:1;border:1px solid var(--line);background:var(--surface);border-radius:10px;
+    padding:9px;font-weight:700;font-size:12.5px;color:var(--ink2)}
+  .toggle button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+  .subresults{border:1px solid var(--line);border-radius:10px;max-height:180px;overflow-y:auto;margin-bottom:12px}
+  .subresults button{display:flex;width:100%;justify-content:space-between;gap:8px;border:0;background:var(--surface);
+    padding:9px 12px;font-size:12.5px;border-bottom:1px solid var(--line);color:var(--ink);text-align:right}
+  .subresults button:last-child{border-bottom:0}
+  .subresults button:hover{background:var(--surface2)}
+  .subresults .u{color:var(--muted);font-size:11px;direction:ltr}
+  .subresults .hintrow{color:var(--muted);font-size:11px;padding:7px 12px;background:var(--surface2)}
+  .slahint{background:#fdf6e7;border:1px solid #f3dfb2;color:#8f5a03;font-size:12px;font-weight:600;
+    border-radius:10px;padding:8px 12px;margin-bottom:12px}
+  .primary{background:var(--orange);color:var(--navy2);border:0;border-radius:11px;font-weight:900;
+    font-size:14px;padding:11px 22px;width:100%}
+  .primary:hover{background:var(--orange-d)}
+
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0 12px}
+  .chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--line);
+    border-radius:99px;padding:5px 7px 5px 12px;font-size:12px;font-weight:700;color:var(--ink)}
+  .chip button{border:0;background:#dfe7f0;color:var(--ink2);border-radius:99px;width:18px;height:18px;
+    font-size:11px;line-height:1;display:grid;place-items:center}
+  .chip button:hover{background:var(--bad);color:#fff}
+  .addrow{display:flex;gap:8px;max-width:420px}
+  .addrow input{flex:1}
+  .addrow .ghost{padding:8px 16px;font-size:12.5px}
+  .locknote{display:flex;gap:8px;align-items:flex-start;background:#eef4fb;border:1px solid #d4e3f3;
+    color:#2a5480;font-size:12px;border-radius:10px;padding:10px 13px;margin:8px 0 12px;font-weight:600}
+  .settings-block{padding:16px 18px;margin-bottom:14px}
+  .settings-block h3{margin:0 0 2px;font-size:14px}
+  .settings-block .sub{margin-bottom:8px}
+
+  /* ═══ منبثقة وإشعارات وتوست ═══ */
+  .overlay{position:fixed;inset:0;background:rgba(10,25,42,.55);display:none;align-items:center;
+    justify-content:center;padding:16px;z-index:50}
+  .overlay.on{display:flex}
+  .modal{background:var(--surface);border-radius:16px;box-shadow:var(--sh-lg);width:100%;max-width:560px;
+    max-height:90dvh;overflow-y:auto;direction:rtl}
+  .mhead{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;border-bottom:1px solid var(--line)}
+  .mhead h3{margin:0;font-size:15px}
+  .x{border:0;background:var(--surface2);border-radius:9px;width:30px;height:30px;font-size:14px;color:var(--ink2)}
+  .mbody{padding:16px 18px}
+  /* الدرجُ على الحافّة اليمنى (بداية السطر في RTL) ⇒ الإخفاءُ بالانزلاق يميناً (+) لا يساراً —
+     الإشارةُ السالبةُ كانت تدفعه إلى داخل الشاشة فيبقى ظاهراً «وهو مغلق» */
+  .drawer{position:fixed;top:0;bottom:0;inset-inline-start:0;width:min(360px,92vw);background:var(--surface);
+    box-shadow:var(--sh-lg);z-index:60;transform:translateX(105%);transition:transform .22s,visibility .22s;direction:rtl;
+    display:flex;flex-direction:column;visibility:hidden}
+  .drawer.on{transform:none;visibility:visible}
+  .drawer .mhead{flex:none}
+  .nlist{overflow-y:auto;padding:8px}
+  .nitem{display:flex;gap:10px;padding:11px;border-radius:11px;align-items:flex-start}
+  .nitem:hover{background:var(--surface2)}
+  .nitem .ic{width:34px;height:34px;border-radius:10px;background:var(--surface2);display:grid;place-items:center;
+    font-size:15px;flex:none}
+  .nitem b{font-size:12.5px;display:block}
+  .nitem span{font-size:11.5px;color:var(--ink2)}
+  .nitem time{font-size:10.5px;color:var(--muted);display:block;margin-top:2px}
+  .toast{position:fixed;bottom:18px;inset-inline-start:50%;transform:translateX(-50%) translateY(80px);
+    background:var(--navy2);color:#fff;font-weight:700;font-size:13px;border-radius:12px;
+    padding:11px 20px;box-shadow:var(--sh-lg);opacity:0;transition:.25s;z-index:70;max-width:92vw;text-align:center}
+  .toast.on{transform:translateX(-50%);opacity:1}
+
+  /* تفاصيل البطاقة */
+  .tl{border-inline-start:2px solid var(--line);margin:6px 8px 14px;padding-inline-start:16px;display:grid;gap:10px}
+  .tl div{position:relative;font-size:12.5px;color:var(--ink2)}
+  .tl div::before{content:"";position:absolute;inset-inline-start:-22px;top:5px;width:9px;height:9px;
+    border-radius:50%;background:var(--muted)}
+  .tl div.done::before{background:var(--ok)}
+  .tl b{color:var(--ink)}
+  .photos{display:flex;gap:10px;margin:10px 0}
+  .ph{flex:1;aspect-ratio:4/3;border-radius:11px;background:linear-gradient(145deg,#dde6ef,#c8d4e2);
+    display:grid;place-items:center;color:#8296ab;font-size:24px;border:1px solid var(--line)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-size:12.5px;margin-bottom:8px}
+  .kv span{color:var(--muted);font-weight:600}
+  .spark{display:flex;align-items:flex-end;gap:4px;height:52px;margin:4px 0 2px}
+  .spark i{flex:1;background:var(--navy3);border-radius:4px 4px 0 0;min-height:4px}
+  .sparkcap{font-size:10.5px;color:var(--muted);text-align:center}
+
+  footer{border-top:1px solid var(--line);background:var(--surface);color:var(--muted);
+    font-size:11.5px;text-align:center;padding:14px;font-weight:600}
+</style>
+</head>
+<body>
+
+<div id="app" lang="ar">
+  <header>
+    <div class="hbar">
+      <div class="logo">
+        <div class="logo-badge">ش</div>
+        <div><b>شكيب نت · بوابة الشركة</b><span>إدارة بطاقات الوكلاء ومتابعة الأداء</span></div>
+      </div>
+      <span class="demo-tag">نسخة تجريبية — بيانات وهمية · 120 وكيلاً</span>
+      <div class="hspace"></div>
+      <button class="bell" id="bellBtn" title="الإشعارات">🔔<i id="bellN">4</i></button>
+      <div class="userchip"><div class="avatar">ف</div><div><b>م. فاطمة كريم</b><span>سوبر سيل — قسم الوكلاء</span></div></div>
+    </div>
+    <nav id="tabs">
+      <button data-v="dash" class="on">📊 لوحة الأداء</button>
+      <button data-v="raise">📤 رفع بطاقة</button>
+      <button data-v="cards">🗂️ بطاقات الشركة</button>
+      <button data-v="inbox">📥 وارد الوكلاء</button>
+      <button data-v="settings">⚙️ الإعدادات</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ═══════════ لوحة الأداء ═══════════ -->
+    <section id="v-dash" class="on">
+      <h2>أداء الوكلاء</h2>
+      <p class="sub">كلُّ ما أنجزه الوكيل — لا بطاقاتُ الشركة وحدَها. التفاصيلُ الكاملة تظهر لبطاقات الشركة فقط.</p>
+      <div class="filters">
+        <div class="seg" id="periodSeg">
+          <button data-p="day">اليوم</button>
+          <button data-p="month" class="on">هذا الشهر</button>
+          <button data-p="range">بين تاريخين</button>
+        </div>
+        <div class="rng" id="rng">
+          من <input type="date" id="d1" value="2026-08-01"> إلى <input type="date" id="d2" value="2026-08-25">
+        </div>
+      </div>
+      <div class="tiles" id="tiles"></div>
+      <div class="card legend" id="legend"><b>أنواع البطاقات:</b></div>
+      <div class="card">
+        <div class="toolbar">
+          <input type="search" id="dashQ" placeholder="🔍 ابحث باسم الوكيل أو منطقته…">
+          <select id="dashG"></select>
+          <select id="dashSort">
+            <option value="sla">🏆 الأعلى التزاماً بالمهلة</option>
+            <option value="slaAsc">⚠️ الأدنى التزاماً (للمتابعة)</option>
+            <option value="done">📦 الأكثر إنجازاً</option>
+            <option value="avg">⏱️ الأسرع إنجازاً</option>
+            <option value="name">🔤 الاسم</option>
+          </select>
+          <span class="cnt" id="dashCnt"></span>
+        </div>
+        <div class="twrap">
+        <table>
+          <thead><tr>
+            <th>#</th><th>الوكيل</th><th>المنجَز</th><th>توزيع الأنواع</th><th>نسبة الإنجاز</th>
+            <th>متوسط الزمن</th><th>الالتزام بالمهلة</th><th></th>
+          </tr></thead>
+          <tbody id="agRows"></tbody>
+        </table>
+        </div>
+        <div class="pager">
+          <button class="ghost" id="pgPrev">‹ السابق</button>
+          <span class="num" id="pgInfo"></span>
+          <button class="ghost" id="pgNext">التالي ›</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ رفع بطاقة ═══════════ -->
+    <section id="v-raise">
+      <h2>رفع بطاقة لوكيل</h2>
+      <p class="sub">تظهر البطاقةُ فوراً في صفحة إدارة الفنيين لدى الوكيل، وتصلك إشعاراتُ استلامها وإنجازها.</p>
+      <div class="card form">
+        <label class="f"><span>الوكيل — اكتب للبحث بين 120 وكيلاً</span>
+          <input id="rAgentQ" placeholder="🔍 اسم الوكيل أو منطقته…" autocomplete="off">
+        </label>
+        <div class="subresults" id="rAgentList" style="display:none"></div>
+        <div id="rAgentPicked"></div>
+        <label class="f"><span>الفئة</span>
+          <select id="rCat"></select></label>
+        <div class="slahint" id="slaHint"></div>
+        <span style="display:block;font-size:11.5px;font-weight:700;color:var(--ink2);margin-bottom:5px">بيانات الزبون</span>
+        <div class="toggle" id="custMode">
+          <button data-m="manual" class="on">✍️ إدخال يدوي</button>
+          <button data-m="base">👥 من قاعدة المشتركين</button>
+        </div>
+        <div id="custManual">
+          <div class="frow">
+            <label class="f"><span>اسم الزبون</span><input id="cName" placeholder="مثال: كرار حيدر جبار"></label>
+            <label class="f"><span>الهاتف</span><input id="cPhone" dir="ltr" placeholder="07x xxxx xxxx"></label>
+          </div>
+          <label class="f"><span>العنوان</span><input id="cAddr" placeholder="المنطقة — أقرب نقطة دالة"></label>
+        </div>
+        <div id="custBase" style="display:none">
+          <label class="f"><span>ابحث في مشتركي الوكيل</span><input id="subQ" placeholder="🔍 اسم أو يوزر…"></label>
+          <div class="subresults" id="subList"></div>
+          <div id="subPicked"></div>
+        </div>
+        <label class="f"><span>ملاحظات للوكيل</span><textarea id="rNote" rows="2" placeholder="وصف الحالة المطلوب معالجتها…"></textarea></label>
+        <button class="primary" id="raiseBtn">📤 رفع البطاقة</button>
+      </div>
+    </section>
+
+    <!-- ═══════════ بطاقات الشركة ═══════════ -->
+    <section id="v-cards">
+      <h2>بطاقات الشركة</h2>
+      <p class="sub">البطاقاتُ التي رفعتها الشركةُ — بكامل تفاصيلها ومسار إنجازها.</p>
+      <div class="filters" id="cardFilter">
+        <div class="seg">
+          <button data-f="all" class="on">الكل</button>
+          <button data-f="wait">بانتظار الاستلام</button>
+          <button data-f="run">قيد التنفيذ</button>
+          <button data-f="done">منجزة</button>
+          <button data-f="late">متجاوزة المهلة</button>
+        </div>
+        <input type="search" id="cardQ" placeholder="🔍 وكيل أو زبون…" style="min-width:190px">
+      </div>
+      <div class="card twrap">
+        <table>
+          <thead><tr><th>#</th><th>الوكيل</th><th>الفئة</th><th>الزبون</th><th>رُفعت</th><th>المهلة</th><th>الحالة</th><th></th></tr></thead>
+          <tbody id="cardRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════ وارد الوكلاء ═══════════ -->
+    <section id="v-inbox">
+      <h2>وارد الوكلاء</h2>
+      <p class="sub" id="inboxSub">بطاقاتٌ يرفعها الوكلاءُ إلى الشركة — بالفئات التي حدّدتها الشركةُ لهم.</p>
+      <div class="filters" id="inboxFilter">
+        <div class="seg">
+          <button data-f="all" class="on">الكل</button>
+          <button data-f="new">جديدة</button>
+          <button data-f="work">قيد المعالجة</button>
+          <button data-f="closed">مغلقة</button>
+        </div>
+        <input type="search" id="inboxQ" placeholder="🔍 وكيل أو موضوع…" style="min-width:190px">
+        <select id="inboxCat"></select>
+      </div>
+      <div class="card twrap">
+        <table>
+          <thead><tr><th>الوكيل</th><th>الفئة</th><th>الموضوع</th><th>وصلت</th><th>الحالة</th><th></th></tr></thead>
+          <tbody id="inboxRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════ الإعدادات ═══════════ -->
+    <section id="v-settings">
+      <h2>الإعدادات</h2>
+      <p class="sub">فئاتُ البطاقات وقواعدُ المهلة — كلُّها بيد الشركة. أمّا الوكلاءُ الظاهرون وحساباتُ الموظفين فيديرها مالكُ النظام.</p>
+
+      <div class="card settings-block">
+        <h3>🏷️ فئات بطاقات الشركة (ترفعها الشركةُ للوكلاء)</h3>
+        <p class="sub">تحدّدها الشركةُ بحرّية وتظهر عند رفع أيّ بطاقة.</p>
+        <div class="chips" id="catCompany"></div>
+        <div class="addrow"><input id="catCompanyIn" placeholder="فئة جديدة…"><button class="ghost" id="catCompanyAdd">إضافة</button></div>
+      </div>
+
+      <div class="card settings-block">
+        <h3>📥 فئات بطاقات الوكلاء (يرفعها الوكلاءُ للشركة)</h3>
+        <div class="chips" id="catAgent"></div>
+        <div class="addrow"><input id="catAgentIn" placeholder="فئة جديدة…"><button class="ghost" id="catAgentAdd">إضافة</button></div>
+      </div>
+
+      <div class="card settings-block">
+        <h3>⏱️ قواعد المهلة</h3>
+        <p class="sub">مهلةُ إنجاز بطاقات الشركة — على وكيلٍ أو مجموعةٍ أو الكلّ، والأخصُّ يغلب الأعمّ. المجموعاتُ هي مفتاحُ إدارة 120 وكيلاً بلا تعبٍ: قاعدةٌ واحدةٌ تشمل مجموعةً كاملة.</p>
+        <div class="twrap"><table>
+          <thead><tr><th>النطاق</th><th>المهلة</th><th></th></tr></thead>
+          <tbody id="slaRows"></tbody>
+        </table></div>
+        <div class="addrow" style="margin-top:10px;max-width:560px">
+          <select id="slaScope" style="flex:1"></select>
+          <input id="slaHours" type="number" min="1" max="168" value="24" style="width:90px" title="ساعات">
+          <button class="ghost" id="slaAdd">إضافة قاعدة</button>
+        </div>
+        <div id="slaAgentPickWrap" style="display:none;max-width:560px;margin-top:8px">
+          <input id="slaAgentQ" placeholder="🔍 اكتب اسم الوكيل…" autocomplete="off" style="width:100%">
+          <div class="subresults" id="slaAgentList" style="display:none;margin-top:6px"></div>
+          <div id="slaAgentPicked"></div>
+        </div>
+      </div>
+
+      <div class="card settings-block">
+        <h3>👥 الوكلاء الظاهرون للشركة</h3>
+        <div class="locknote">🔒 هذه القائمة يحدّدها <b>مالكُ النظام (شكيب نت)</b> — الشركةُ تراها ولا تعدّلها. أيُّ وكيلٍ خارجها لا يظهر في البوابة إطلاقاً.</div>
+        <div class="addrow" style="margin-bottom:6px"><input id="visQ" placeholder="🔍 ابحث بين الوكلاء الظاهرين…"></div>
+        <p class="sub" id="visCnt"></p>
+        <div class="chips" id="agentChips"></div>
+      </div>
+
+      <div class="card settings-block">
+        <h3>🧑‍💼 حسابات موظفي الشركة</h3>
+        <div class="locknote">🔒 يُنشئها مالكُ النظام حصراً — لكلّ موظفٍ حسابُه وأثرُه في السجلّ.</div>
+        <div class="chips">
+          <span class="chip">م. فاطمة كريم — قسم الوكلاء</span>
+          <span class="chip">م. سيف علاء — الدعم الفني</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>عرضٌ تجريبيٌّ من منتج <b>شكيب نت</b> · البياناتُ كلُّها وهميّةٌ للعرض ولا اتصالَ بأيّ نظامٍ حقيقيّ · التواريخُ بتوقيت بغداد</footer>
+
+  <!-- منبثقة عامة -->
+  <div class="overlay" id="overlay"><div class="modal">
+    <div class="mhead"><h3 id="mTitle"></h3><button class="x" id="mClose">✕</button></div>
+    <div class="mbody" id="mBody"></div>
+  </div></div>
+
+  <!-- درج الإشعارات -->
+  <div class="drawer" id="drawer">
+    <div class="mhead"><h3>🔔 الإشعارات</h3><button class="x" id="drawerClose">✕</button></div>
+    <div class="nlist" id="nList"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+/* ═════════ بيانات وهمية بالكامل — 120 وكيلاً ببذرة ثابتة (الأرقام مستقرة بين الفتحات) ═════════ */
+var TYPES=[
+  {k:"maint",n:"صيانة",c:"var(--c-maint)"},
+  {k:"inst",n:"تنصيب",c:"var(--c-inst)"},
+  {k:"del",n:"توصيل",c:"var(--c-del)"},
+  {k:"tran",n:"تحويل",c:"var(--c-tran)"},
+  {k:"redo",n:"إعادة",c:"var(--c-redo)"}
+];
+var GROUPS=[
+  {g:"بغداد الرصافة",ar:["الأعظمية","زيونة","الشعب","بغداد الجديدة","الكرادة","المشتل","الصدر — قطاع 12"]},
+  {g:"بغداد الكرخ",ar:["المنصور","الكاظمية","العامرية","الدورة","الشعلة","حي الجامعة","السيدية"]},
+  {g:"الفرات الأوسط",ar:["بابل — الحلة","كربلاء","النجف","الكوفة","الديوانية","السماوة","المسيب"]},
+  {g:"الجنوب",ar:["البصرة — العشار","الناصرية","العمارة","الزبير","سوق الشيوخ","القرنة","المجر الكبير"]},
+  {g:"الشمال",ar:["الموصل","أربيل","كركوك","دهوك","تلعفر","السليمانية","الحمدانية"]},
+  {g:"الغربية وديالى",ar:["الرمادي","الفلوجة","بعقوبة","هيت","المقدادية","حديثة","الخالص"]}
+];
+/* مولّد شبه عشوائي ببذرة ثابتة — نفس الأرقام في كل فتحة */
+var _s=987654321;
+function rnd(){_s=(_s*1103515245+12345)&0x7fffffff;return _s/0x7fffffff}
+function ri(a,b){return a+Math.floor(rnd()*(b-a+1))}
+
+/* الوكلاء الخمسة الأصليون بأرقامهم المعروفة (تحفظ قصة العرض: البطاقة #118 وغيرها) */
+var AGENTS=[
+ {id:1,n:"وكالة النور للانترنت",r:"بغداد — الكرادة",g:"بغداد الرصافة",
+  m:{maint:[84,79,6.2,94],inst:[41,38,9.1,92],del:[23,23,3.1,100],tran:[12,11,4.8,92],redo:[9,8,7.5,89]}},
+ {id:2,n:"شبكة الرافدين",r:"بغداد — الأعظمية",g:"بغداد الرصافة",
+  m:{maint:[66,58,8.4,81],inst:[52,49,10.2,90],del:[18,17,4.0,94],tran:[8,7,6.1,88],redo:[14,11,11.3,72]}},
+ {id:3,n:"وكالة الفرات",r:"بابل — الحلة",g:"الفرات الأوسط",
+  m:{maint:[45,44,5.1,97],inst:[29,27,8.8,93],del:[31,30,2.8,100],tran:[6,6,3.9,100],redo:[4,4,6.0,100]}},
+ {id:4,n:"النخيل نت",r:"البصرة — العشار",g:"الجنوب",
+  m:{maint:[92,80,9.6,76],inst:[35,30,12.4,71],del:[12,11,5.2,91],tran:[15,13,7.0,84],redo:[20,16,13.1,63]}},
+ {id:5,n:"وكالة الميزان",r:"بغداد — المنصور",g:"بغداد الكرخ",
+  m:{maint:[51,49,4.4,98],inst:[44,43,7.2,97],del:[27,26,3.5,96],tran:[10,10,4.1,100],redo:[6,6,5.8,100]}}
+];
+/* توليد 115 وكيلاً إضافياً: اسم فريد + مجموعة + مستوى أداء (ممتاز/جيد/متوسط/ضعيف) */
+(function(){
+  var NAMES=["الأمل","السلام","البدر","الغدير","الكوثر","الياقوت","المدينة","الصقر","الشمس","النجوم",
+    "الهدى","الرضا","الزهراء","العهد","الفجر","الربيع","الواحة","السنابل","اللؤلؤ","المرجان",
+    "التاج","القلعة","الجسر","النهرين","الأنوار","الرحاب","الخليج","السدرة","الينابيع","الروابي",
+    "الأفق","المجد","الصفا","العقيق","الفردوس","الرمال","الطيف","السرور","البشائر"];
+  var PRE=["وكالة","شبكة","مكتب"];
+  var i,gI,G,tier,t,a,used={};
+  used["وكالة النور للانترنت"]=used["شبكة الرافدين"]=used["وكالة الفرات"]=used["النخيل نت"]=used["وكالة الميزان"]=1;
+  for(i=6;i<=120;i++){
+    var nm;
+    do{nm=PRE[ri(0,2)]+" "+NAMES[ri(0,NAMES.length-1)]+(rnd()<0.3?" نت":"")}while(used[nm]);
+    used[nm]=1;
+    gI=(i-6)%6;G=GROUPS[gI];
+    var tr=rnd();tier=tr<0.15?0:tr<0.68?1:tr<0.9?2:3; /* 0 ممتاز · 1 جيد · 2 متوسط · 3 ضعيف */
+    var CR=[[93,99],[85,95],[72,86],[55,76]][tier], SL=[[92,100],[82,95],[68,84],[48,72]][tier], AVF=[0.75,1,1.35,1.8][tier];
+    var BASE={maint:[38,95],inst:[20,55],del:[8,34],tran:[4,17],redo:[3,21]},AVH={maint:6,inst:9.5,del:3.5,tran:5,redo:9};
+    a={id:i,n:nm,r:G.ar[ri(0,G.ar.length-1)],g:G.g,m:{}};
+    for(t=0;t<TYPES.length;t++){var k=TYPES[t].k,rc=ri(BASE[k][0],BASE[k][1]),
+      cp=Math.min(rc,Math.round(rc*ri(CR[0],CR[1])/100));
+      a.m[k]=[rc,cp,+(AVH[k]*AVF*(0.85+rnd()*0.3)).toFixed(1),ri(SL[0],SL[1])];}
+    AGENTS.push(a);
+  }
+})();
+/* مشتركون وهميون: المعروفون للخمسة الأوائل + توليد للبقية */
+var SUBS={
+ 1:[["كرار حيدر جبار","krar-12-4@nor"],["زينب سعد ماجد","znb-3-9@nor"],["مصطفى رعد كاظم","mst-7-1@nor"],["نور الهدى علي","nor-5-8@nor"],["حسن فلاح مهدي","hsn-2-6@nor"]],
+ 2:[["أحمد قيس عبود","ahm-9-3@raf"],["سجى محمد طالب","sja-1-7@raf"],["علي ثامر حسون","ali-4-2@raf"],["بنين كريم ستار","bnn-6-5@raf"]],
+ 3:[["حوراء عقيل نعمة","hwr-8-1@frt"],["منتظر جواد كريم","mnt-3-4@frt"],["رقية سلام هادي","rqy-5-2@frt"]],
+ 4:[["عباس خضير عبد","abs-2-9@nkl"],["فاطمة ناصر حسين","ftm-7-3@nkl"],["مرتضى صباح جاسم","mrt-1-5@nkl"]],
+ 5:[["يوسف عمار طه","ysf-6-2@mzn"],["آية وليد رشيد","aya-4-8@mzn"],["محمد باقر صادق","mbs-9-1@mzn"]]
+};
+(function(){
+  var F=["كرار","زينب","مصطفى","نور","حسن","أحمد","سجى","علي","بنين","حوراء","منتظر","رقية","عباس","فاطمة","مرتضى","يوسف","آية","محمد","زهراء","حيدر"];
+  var L=["حيدر","سعد","رعد","فلاح","قيس","ثامر","كريم","عقيل","جواد","سلام","خضير","ناصر","صباح","عمار","وليد","باقر","جبار","ستار","هادي","طه"];
+  var i,j,list;
+  for(i=6;i<=120;i++){list=[];
+    for(j=0;j<4;j++)list.push([F[ri(0,F.length-1)]+" "+L[ri(0,L.length-1)]+" "+L[ri(0,L.length-1)],"bg-"+i+"-"+ri(1,29)+"-"+ri(1,9)+"@a"+i]);
+    SUBS[i]=list;}
+})();
+var CAT_COMPANY=["قطع كيبل رئيسي","شكوى مشترك للشركة","فحص جودة الخدمة","صيانة برج","تحديث بيانات نقطة"];
+var CAT_AGENT=["انقطاع رئيسي","طلب كروت","مشكلة فوترة","دعم فني للحاسبة"];
+var SLA=[{s:"كل الوكلاء",h:24},{s:"مجموعة بغداد الرصافة",h:18},{s:"وكالة النور للانترنت",h:12}];
+var CARDS=[
+ {id:118,a:1,cat:"قطع كيبل رئيسي",cu:"كرار حيدر جبار",at:"25‑08 09:40",dl:"12 س",st:"done",tech:"الفني علي حسن",dur:"4 س 20 د",note:"استُبدل الكيبل من العمود 14 حتى الكابينة"},
+ {id:117,a:4,cat:"شكوى مشترك للشركة",cu:"عباس خضير عبد",at:"25‑08 08:10",dl:"24 س",st:"run"},
+ {id:116,a:2,cat:"فحص جودة الخدمة",cu:"سجى محمد طالب",at:"24‑08 19:55",dl:"18 س",st:"late",over:"3 س"},
+ {id:115,a:3,cat:"صيانة برج",cu:"—",at:"24‑08 16:30",dl:"24 س",st:"done",tech:"الفني منتظر كاظم",dur:"7 س 05 د",note:"تبديل نانو ستيشن وإعادة توجيه"},
+ {id:114,a:5,cat:"تحديث بيانات نقطة",cu:"يوسف عمار طه",at:"24‑08 11:20",dl:"24 س",st:"done",tech:"الفني حسين علي",dur:"1 س 40 د",note:"حُدّثت الإحداثيات ورقم الهاتف"},
+ {id:113,a:1,cat:"شكوى مشترك للشركة",cu:"نور الهدى علي",at:"23‑08 14:05",dl:"12 س",st:"done",tech:"الفني علي حسن",dur:"2 س 55 د",note:"ضبط باقة وتغيير باسورد"},
+ {id:112,a:2,cat:"قطع كيبل رئيسي",cu:"أحمد قيس عبود",at:"25‑08 13:25",dl:"18 س",st:"wait"}
+];
+/* بطاقات شركة إضافية موزعة على وكلاء مولّدين — ليُرى الجدول بواقعية 120 وكيلاً */
+(function(){
+  var sts=["done","done","run","wait","late","done","run","done","wait","done","run","done","late","done","run","wait","done","done"];
+  var i,aid,st,cu,c;
+  for(i=0;i<18;i++){aid=ri(6,120);st=sts[i];cu=SUBS[aid][0][0];
+    c={id:111-i,a:aid,cat:CAT_COMPANY[ri(0,CAT_COMPANY.length-1)],cu:cu,
+      at:ri(20,24)+"‑08 "+("0"+ri(8,19)).slice(-2)+":"+("0"+ri(0,59)).slice(-2),dl:[12,18,24][ri(0,2)]+" س",st:st};
+    if(st==="done"){c.tech="الفني "+["علي حسن","حسين كاظم","منتظر صباح","سجاد رعد"][ri(0,3)];c.dur=ri(1,9)+" س "+("0"+ri(0,59)).slice(-2)+" د";c.note="أُنجزت المعالجة وأُغلقت البطاقة"}
+    if(st==="late")c.over=ri(1,6)+" س";
+    CARDS.push(c);
+  }
+})();
+/* وارد الوكلاء — 28 بطاقة من وكلاء متفرقين */
+var INBOX=[
+ {a:3,cat:"انقطاع رئيسي",t:"انقطاع بث عن كابينة FDT‑8 منذ ساعتين",at:"25‑08 12:40",st:"new"},
+ {a:1,cat:"طلب كروت",t:"طلب دفعة كروت شهرية — 500 كارت",at:"25‑08 10:15",st:"work"},
+ {a:4,cat:"مشكلة فوترة",t:"فرق مبلغ في فاتورة تموز",at:"24‑08 18:20",st:"work"},
+ {a:2,cat:"دعم فني للحاسبة",t:"لوحة الساس بطيئة على حاسبة المكتب",at:"23‑08 09:30",st:"closed"}
+];
+(function(){
+  var T=["طلب تبديل سويج كابينة","تداخل ترددات في القطاع الغربي","طلب زيادة سرعة دولية","عطل بور سبلاي في الكابينة",
+    "طلب تفعيل عرض جديد","انقطاع جزئي عن حي كامل","طلب صيانة فايبر رئيسي","استفسار عن مستحقات الشهر",
+    "طلب كروت سنوية","مشكلة في بوابة الدفع","تحديث عنوان نقطة البيع","طلب فني مساند ليوم الجمعة"];
+  var st=["new","new","new","work","work","work","work","closed","closed","closed","closed","closed"];
+  var i;
+  for(i=0;i<24;i++)INBOX.push({a:ri(6,120),cat:CAT_AGENT[ri(0,CAT_AGENT.length-1)],t:T[ri(0,T.length-1)],
+    at:ri(19,25)+"‑08 "+("0"+ri(7,21)).slice(-2)+":"+("0"+ri(0,59)).slice(-2),st:st[i%12]});
+})();
+var NOTIFS=[
+ {ic:"✅",b:"أُنجزت البطاقة #118",s:"وكالة النور — قطع كيبل رئيسي · خلال 4 س 20 د",t:"قبل 25 دقيقة"},
+ {ic:"⚠️",b:"البطاقة #116 تجاوزت المهلة",s:"شبكة الرافدين — فحص جودة الخدمة · تجاوز 3 س",t:"قبل ساعة"},
+ {ic:"📥",b:"بطاقة جديدة من وكالة الفرات",s:"انقطاع رئيسي — كابينة FDT‑8",t:"قبل ساعتين"},
+ {ic:"👷",b:"استلم الوكيل البطاقة #117",s:"النخيل نت — عُيّن الفني مرتضى صباح",t:"قبل 3 ساعات"}
+];
+var STATUS={wait:["p-gray","◔ بانتظار الاستلام"],run:["p-blue","⏳ قيد التنفيذ"],done:["p-ok","✓ منجزة"],late:["p-bad","⚠ متجاوزة المهلة"]};
+var IN_ST={new:["p-blue","جديدة"],work:["p-warn","قيد المعالجة"],closed:["p-gray","مغلقة"]};
+
+var period="month";
+var $=function(id){return document.getElementById(id)};
+var fmt=function(n){return Number(n).toLocaleString("en-US")};
+var agById=function(id){for(var i=0;i<AGENTS.length;i++)if(AGENTS[i].id===id)return AGENTS[i]};
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+
+/* بيانات الفترة: الشهر كما هو · اليوم ≈ /24 · المدى يُقاس بعدد الأيام */
+function statsOf(a){
+  var out={},k,K;
+  for(k in a.m){K=a.m[k];
+    if(period==="month")out[k]=K.slice();
+    else if(period==="day")out[k]=[Math.max(0,Math.round(K[0]/24)),Math.max(0,Math.round(K[1]/24)),K[2],Math.min(100,K[3]+2)];
+    else{var d1=new Date($("d1").value),d2=new Date($("d2").value),
+      days=Math.max(1,Math.round((d2-d1)/864e5)+1),f=Math.min(days,31)/30;
+      out[k]=[Math.round(K[0]*f),Math.round(K[1]*f),K[2],K[3]];}
+  }
+  return out;
+}
+function totals(st){var r=0,c=0,wh=0,ws=0,k,K;
+  for(k in st){K=st[k];r+=K[0];c+=K[1];wh+=K[2]*K[1];ws+=K[3]*K[1];}
+  return {r:r,c:c,avg:c?wh/c:0,sla:c?ws/c:0};
+}
+function slaBadge(v){
+  var cls=v>=90?"p-ok":v>=75?"p-warn":"p-bad";
+  var ic=v>=90?"✓":v>=75?"◐":"⚠";
+  return '<span class="pill '+cls+'">'+ic+' '+Math.round(v)+'%</span>';
+}
+
+/* ═══ أداة عامة: مُنقِّح وكيل بالكتابة (تبحث الاسم والمنطقة والمجموعة) ═══ */
+function agentSearch(q,cap){
+  q=(q||"").trim();var out=[],i,a;
+  for(i=0;i<AGENTS.length;i++){a=AGENTS[i];
+    if(!q||a.n.indexOf(q)>=0||a.r.indexOf(q)>=0||a.g.indexOf(q)>=0)out.push(a);
+    if(out.length>=cap)break;}
+  return out;
+}
+/* قائمة نتائج قابلة لإعادة الاستعمال: inputEl يُظهر listEl ويستدعي onPick(agent) */
+function wireCombo(inputId,listId,onPick){
+  var inp=$(inputId),list=$(listId);
+  function render(){
+    var q=inp.value,rs=agentSearch(q,12),h="",i,a;
+    for(i=0;i<rs.length;i++){a=rs[i];
+      h+='<button data-id="'+a.id+'"><span>'+esc(a.n)+'</span><span class="u" dir="rtl">'+esc(a.r)+'</span></button>';}
+    if(!rs.length)h='<div class="hintrow">لا نتائج — جرّب اسماً أو منطقةً أو مجموعة</div>';
+    else if(rs.length===12)h+='<div class="hintrow">تظهر أول 12 نتيجة — أكمل الكتابة للتضييق (المجموع 120 وكيلاً)</div>';
+    list.innerHTML=h;list.style.display="";
+  }
+  inp.addEventListener("input",render);
+  inp.addEventListener("focus",render);
+  list.addEventListener("click",function(e){
+    var b=e.target.closest("button[data-id]");if(!b)return;
+    list.style.display="none";inp.value="";
+    onPick(agById(Number(b.dataset.id)));
+  });
+  document.addEventListener("click",function(e){
+    if(!list.contains(e.target)&&e.target!==inp)list.style.display="none";
+  });
+}
+
+/* ═══ لوحة الأداء — بحث · مجموعة · ترتيب · ترقيم صفحات (20/صفحة) ═══ */
+var dashQ="",dashG="",dashSort="sla",dashPage=0,PER=20;
+function dashList(){
+  var rows=[],i,a,st,t;
+  for(i=0;i<AGENTS.length;i++){a=AGENTS[i];
+    if(dashG&&a.g!==dashG)continue;
+    if(dashQ&&a.n.indexOf(dashQ)<0&&a.r.indexOf(dashQ)<0)continue;
+    st=statsOf(a);t=totals(st);
+    rows.push({a:a,st:st,t:t});}
+  rows.sort(function(x,y){
+    if(dashSort==="sla")return y.t.sla-x.t.sla;
+    if(dashSort==="slaAsc")return x.t.sla-y.t.sla;
+    if(dashSort==="done")return y.t.c-x.t.c;
+    if(dashSort==="avg")return x.t.avg-y.t.avg;
+    return x.a.n<y.a.n?-1:1;
+  });
+  return rows;
+}
+function renderDash(){
+  /* المربعات تُحسب على 120 وكيلاً كلِّهم — والجدول على المُرشَّح */
+  var G={r:0,c:0,wh:0,ws:0},need=0,i,a,st,t;
+  for(i=0;i<AGENTS.length;i++){a=AGENTS[i];st=statsOf(a);t=totals(st);
+    G.r+=t.r;G.c+=t.c;G.wh+=t.avg*t.c;G.ws+=t.sla*t.c;
+    if(t.sla<75)need++;}
+  var avg=G.c?G.wh/G.c:0,sla=G.c?G.ws/G.c:0;
+  var myDone=CARDS.filter(function(c){return c.st==="done"}).length;
+  var pName=period==="day"?"اليوم":period==="month"?"هذا الشهر":"المدى المحدد";
+  $("tiles").innerHTML=
+    tile("بطاقات منجزة — 120 وكيلاً",fmt(G.c),"من "+fmt(G.r)+" مستلمة · "+pName,"📦")+
+    tile("متوسط زمن الإنجاز",avg.toFixed(1)+" س","لكل البطاقات المنجزة","⏱️")+
+    tile("الالتزام بالمهلة",Math.round(sla)+"%","بطاقات أُنجزت ضمن مهلتها","🎯")+
+    tile("بحاجة لمتابعة",fmt(need),"وكلاء دون 75% التزاماً بالمهلة","⚠️")+
+    tile("بطاقات الشركة المنجزة",fmt(myDone),"من أصل "+CARDS.length+" رفعتها الشركة","🏢");
+
+  var list=dashList(),pages=Math.max(1,Math.ceil(list.length/PER));
+  if(dashPage>=pages)dashPage=pages-1;
+  var from=dashPage*PER,slice=list.slice(from,from+PER),rows="",r,rk;
+  for(i=0;i<slice.length;i++){r=slice[i];a=r.a;st=r.st;t=r.t;rk=from+i+1;
+    var bar="",j,T,v;
+    for(j=0;j<TYPES.length;j++){T=TYPES[j];v=st[T.k][1];
+      if(v>0)bar+='<i style="flex:'+v+';background:'+T.c+'" title="'+T.n+': '+fmt(v)+'"></i>';}
+    var rate=t.r?Math.round(t.c/t.r*100):0;
+    rows+='<tr><td class="num rk'+(rk<=3&&(dashSort==="sla"||dashSort==="done"||dashSort==="avg")?" top":"")+'">'+rk+'</td>'+
+      '<td class="agname"><b>'+esc(a.n)+'</b><span>'+esc(a.r)+' · '+esc(a.g)+'</span></td>'+
+      '<td class="num"><b>'+fmt(t.c)+'</b> <span style="color:var(--muted);font-size:11px">من '+fmt(t.r)+'</span></td>'+
+      '<td><div class="bar">'+bar+'</div></td>'+
+      '<td class="num"><b>'+rate+'%</b></td>'+
+      '<td class="num">'+t.avg.toFixed(1)+' س</td>'+
+      '<td>'+slaBadge(t.sla)+'</td>'+
+      '<td><button class="ghost" onclick="AG_DETAIL('+a.id+')">تفاصيل</button></td></tr>';
+  }
+  $("agRows").innerHTML=rows||'<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:26px">لا وكلاء يطابقون البحث</td></tr>';
+  $("dashCnt").textContent="يطابق: "+list.length+" من 120 وكيلاً";
+  $("pgInfo").textContent=list.length?("عرض "+(from+1)+"–"+Math.min(from+PER,list.length)+" من "+list.length):"—";
+  $("pgPrev").disabled=dashPage<=0;
+  $("pgNext").disabled=dashPage>=pages-1;
+}
+function tile(lb,vl,hint,ic){
+  return '<div class="card tile"><div class="lb">'+lb+'<span class="ic">'+ic+'</span></div>'+
+    '<div class="vl num">'+vl+'</div><div class="hint">'+hint+'</div></div>';
+}
+window.AG_DETAIL=function(id){
+  var a=agById(id),st=statsOf(a),t=totals(st);
+  var rows="",i,T,K;
+  for(i=0;i<TYPES.length;i++){T=TYPES[i];K=st[T.k];
+    rows+='<tr><td><span class="dot" style="display:inline-block;background:'+T.c+';vertical-align:-1px"></span> '+T.n+'</td>'+
+      '<td class="num">'+fmt(K[0])+'</td><td class="num"><b>'+fmt(K[1])+'</b></td>'+
+      '<td class="num">'+(K[0]?Math.round(K[1]/K[0]*100):0)+'%</td>'+
+      '<td class="num">'+K[2].toFixed(1)+' س</td><td>'+slaBadge(K[3])+'</td></tr>';
+  }
+  var sp="",base=Math.max(1,t.c/9),v;
+  for(i=0;i<7;i++){v=base*(0.55+((i*7+a.id*3)%5)*0.22);
+    sp+='<i style="height:'+Math.min(100,Math.round(v/base/1.5*62))+'%" title="'+fmt(Math.round(v))+'"></i>';}
+  openModal("📊 "+a.n,
+    '<div class="kv"><span>المنطقة</span><div>'+esc(a.r)+' · مجموعة '+esc(a.g)+'</div>'+
+    '<span>المنجز</span><div class="num"><b>'+fmt(t.c)+'</b> من '+fmt(t.r)+' ('+(t.r?Math.round(t.c/t.r*100):0)+'%)</div></div>'+
+    '<div class="twrap"><table><thead><tr><th>النوع</th><th>استلم</th><th>أنجز</th><th>نسبة</th><th>متوسط</th><th>المهلة</th></tr></thead>'+
+    '<tbody>'+rows+'</tbody></table></div>'+
+    '<div class="spark">'+sp+'</div><div class="sparkcap">إنجاز آخر 7 أيام</div>');
+};
+$("dashQ").addEventListener("input",function(){dashQ=this.value.trim();dashPage=0;renderDash()});
+$("dashG").addEventListener("change",function(){dashG=this.value;dashPage=0;renderDash()});
+$("dashSort").addEventListener("change",function(){dashSort=this.value;dashPage=0;renderDash()});
+$("pgPrev").addEventListener("click",function(){if(dashPage>0){dashPage--;renderDash()}});
+$("pgNext").addEventListener("click",function(){dashPage++;renderDash()});
+
+/* ═══ رفع بطاقة — اختيار الوكيل بالبحث لا بقائمة 120 خياراً ═══ */
+var custMode="manual",pickedSub=null,selAgent=AGENTS[0];
+function slaFor(a){
+  var h=24,src="قاعدة «كل الوكلاء»",i,r;
+  for(i=0;i<SLA.length;i++){r=SLA[i];
+    if(r.s==="مجموعة "+a.g){h=r.h;src="قاعدة «مجموعة "+a.g+"»"}}
+  for(i=0;i<SLA.length;i++){r=SLA[i];
+    if(r.s===a.n){h=r.h;src="قاعدة «"+a.n+"» الخاصة"}}
+  return {h:h,src:src};
+}
+function renderRaise(){
+  var o="",i;
+  for(i=0;i<CAT_COMPANY.length;i++)o+='<option>'+esc(CAT_COMPANY[i])+'</option>';
+  $("rCat").innerHTML=o;
+  showPickedAgent();updSla();renderSubList("");
+}
+function showPickedAgent(){
+  $("rAgentPicked").innerHTML='<div class="locknote" style="margin-top:0">🏢 الوكيل المحدد: <b>'+esc(selAgent.n)+'</b> — '+esc(selAgent.r)+' · مجموعة '+esc(selAgent.g)+'</div>';
+}
+function updSla(){
+  var s=slaFor(selAgent);
+  $("slaHint").innerHTML="⏱️ مهلةُ هذه البطاقة: <b>"+s.h+" ساعة</b> — من "+s.src+" (تُعدَّل من الإعدادات)";
+}
+function renderSubList(q){
+  var list=SUBS[selAgent.id]||[],h="",i,s;
+  q=(q||"").trim();
+  for(i=0;i<list.length;i++){s=list[i];
+    if(q&&s[0].indexOf(q)<0&&s[1].indexOf(q)<0)continue;
+    h+='<button onclick="PICK_SUB('+i+')"><span>'+esc(s[0])+'</span><span class="u">'+esc(s[1])+'</span></button>';}
+  $("subList").innerHTML=h||'<button disabled style="color:var(--muted)">لا نتائج</button>';
+}
+window.PICK_SUB=function(i){
+  pickedSub=SUBS[selAgent.id][i];
+  $("subPicked").innerHTML='<div class="locknote" style="background:#e9f8f2;border-color:#bfe8d8;color:#0b7a58">✓ الزبون: <b>'+esc(pickedSub[0])+'</b> <span dir="ltr">'+esc(pickedSub[1])+'</span></div>';
+};
+wireCombo("rAgentQ","rAgentList",function(a){
+  selAgent=a;pickedSub=null;$("subPicked").innerHTML="";
+  showPickedAgent();updSla();renderSubList($("subQ").value);
+});
+$("custMode").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;
+  custMode=b.dataset.m;
+  var bs=this.querySelectorAll("button"),i;for(i=0;i<bs.length;i++)bs[i].classList.toggle("on",bs[i]===b);
+  $("custManual").style.display=custMode==="manual"?"":"none";
+  $("custBase").style.display=custMode==="base"?"":"none";
+});
+document.addEventListener("input",function(e){if(e.target.id==="subQ")renderSubList(e.target.value)});
+$("raiseBtn").addEventListener("click",function(){
+  var a=selAgent;
+  var cu=custMode==="base"?(pickedSub?pickedSub[0]:""):$("cName").value.trim();
+  if(!cu&&$("rCat").value.indexOf("برج")<0&&$("rCat").value.indexOf("نقطة")<0){toast("أدخل بيانات الزبون أو اختره من القاعدة");return}
+  var s=slaFor(a);
+  CARDS.unshift({id:119,a:a.id,cat:$("rCat").value,cu:cu||"—",at:"25‑08 الآن",dl:s.h+" س",st:"wait"});
+  NOTIFS.unshift({ic:"📤",b:"رُفعت البطاقة #119",s:a.n+" — "+$("rCat").value,t:"الآن"});
+  bump();renderCards();renderNotifs();
+  toast("✓ رُفعت البطاقة إلى "+a.n+" — ستظهر في إدارة فنّييه فوراً");
+  $("cName").value="";$("cPhone").value="";$("cAddr").value="";$("rNote").value="";pickedSub=null;$("subPicked").innerHTML="";
+});
+
+/* ═══ بطاقات الشركة — فلتر حالة + بحث ═══ */
+var cardF="all",cardQ="";
+function renderCards(){
+  var h="",i,c,a,S;
+  for(i=0;i<CARDS.length;i++){c=CARDS[i];
+    if(cardF!=="all"&&c.st!==cardF)continue;
+    a=agById(c.a);
+    if(cardQ&&a.n.indexOf(cardQ)<0&&String(c.cu).indexOf(cardQ)<0)continue;
+    S=STATUS[c.st];
+    h+='<tr><td class="num">#'+c.id+'</td><td>'+esc(a.n)+'</td><td>'+esc(c.cat)+'</td><td>'+esc(c.cu)+'</td>'+
+      '<td class="num" dir="ltr">'+c.at+'</td><td class="num">'+c.dl+(c.over?' <span style="color:var(--bad);font-weight:800">(+'+c.over+')</span>':"")+'</td>'+
+      '<td><span class="pill '+S[0]+'">'+S[1]+'</span></td>'+
+      '<td>'+(c.st==="done"?'<button class="ghost" onclick="CARD_DETAIL('+c.id+')">عرض الإنجاز</button>':"")+'</td></tr>';
+  }
+  $("cardRows").innerHTML=h||'<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:26px">لا بطاقات</td></tr>';
+}
+$("cardFilter").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;
+  cardF=b.dataset.f;
+  var bs=this.querySelectorAll("button"),i;for(i=0;i<bs.length;i++)bs[i].classList.toggle("on",bs[i]===b);
+  renderCards();
+});
+$("cardQ").addEventListener("input",function(){cardQ=this.value.trim();renderCards()});
+window.CARD_DETAIL=function(id){
+  var c,i;for(i=0;i<CARDS.length;i++)if(CARDS[i].id===id)c=CARDS[i];
+  var a=agById(c.a);
+  openModal("🗂️ البطاقة #"+c.id+" — "+c.cat,
+    '<div class="kv"><span>الوكيل</span><div>'+esc(a.n)+'</div>'+
+    '<span>الزبون</span><div>'+esc(c.cu)+'</div>'+
+    '<span>الفني</span><div>'+esc(c.tech||"—")+'</div>'+
+    '<span>زمن الإنجاز</span><div class="num"><b>'+(c.dur||"—")+'</b> (المهلة '+c.dl+') <span class="pill p-ok">✓ ضمن المهلة</span></div></div>'+
+    '<div class="tl">'+
+    '<div class="done"><b>رُفعت من الشركة</b> — م. فاطمة · <span dir="ltr">'+c.at+'</span></div>'+
+    '<div class="done"><b>استلمها الوكيل</b> وعُيّن '+esc(c.tech||"الفني")+'</div>'+
+    '<div class="done"><b>أُنجزت</b> — '+esc(c.note||"")+'</div></div>'+
+    '<b style="font-size:12.5px">صور الإنجاز</b>'+
+    '<div class="photos"><div class="ph">📷</div><div class="ph">📷</div></div>'+
+    '<div class="sparkcap">الصورُ توضيحية — في النسخة الحقيقية تظهر صورُ الفني الفعلية</div>');
+};
+
+/* ═══ وارد الوكلاء — فلتر حالة + بحث + فئة ═══ */
+var inF="all",inQ="",inCat="";
+function renderInbox(){
+  var h="",i,x,a,S,shown=0,news=0;
+  for(i=0;i<INBOX.length;i++)if(INBOX[i].st==="new")news++;
+  for(i=0;i<INBOX.length;i++){x=INBOX[i];a=agById(x.a);
+    if(inF!=="all"&&x.st!==inF)continue;
+    if(inCat&&x.cat!==inCat)continue;
+    if(inQ&&a.n.indexOf(inQ)<0&&x.t.indexOf(inQ)<0)continue;
+    S=IN_ST[x.st];shown++;
+    h+='<tr><td class="agname"><b>'+esc(a.n)+'</b><span>'+esc(a.g)+'</span></td><td><span class="pill p-blue">'+esc(x.cat)+'</span></td><td>'+esc(x.t)+'</td>'+
+      '<td class="num" dir="ltr">'+x.at+'</td><td><span class="pill '+S[0]+'">'+S[1]+'</span></td>'+
+      '<td><button class="ghost" onclick="REPLY('+i+')">ردّ</button></td></tr>';
+  }
+  $("inboxRows").innerHTML=h||'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:26px">لا بطاقات تطابق الفلتر</td></tr>';
+  $("inboxSub").innerHTML="بطاقاتٌ يرفعها الوكلاءُ إلى الشركة — بالفئات التي حدّدتها الشركةُ لهم. <b>"+INBOX.length+" بطاقة</b> (منها <b style='color:var(--navy3)'>"+news+" جديدة</b>) · المعروض: "+shown;
+}
+$("inboxFilter").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;
+  inF=b.dataset.f;
+  var bs=this.querySelectorAll(".seg button"),i;for(i=0;i<bs.length;i++)bs[i].classList.toggle("on",bs[i]===b);
+  renderInbox();
+});
+$("inboxQ").addEventListener("input",function(){inQ=this.value.trim();renderInbox()});
+$("inboxCat").addEventListener("change",function(){inCat=this.value;renderInbox()});
+window.REPLY=function(i){
+  var x=INBOX[i],a=agById(x.a);
+  openModal("↩️ ردّ إلى "+a.n,
+    '<div class="kv"><span>الموضوع</span><div>'+esc(x.t)+'</div><span>الفئة</span><div>'+esc(x.cat)+'</div></div>'+
+    '<textarea rows="3" style="width:100%" placeholder="اكتب الرد — يصل الوكيلَ إشعاراً فورياً…"></textarea>'+
+    '<button class="primary" style="margin-top:12px" onclick="SENT_REPLY()">إرسال الرد</button>');
+};
+window.SENT_REPLY=function(){closeModal();toast("✓ أُرسل الردُّ ووصل الوكيلَ إشعاراً")};
+
+/* ═══ الإعدادات ═══ */
+var slaPickedAgent=null,visQ="";
+function renderChips(el,arr,removable){
+  var h="",i;
+  for(i=0;i<arr.length;i++)h+='<span class="chip">'+esc(arr[i])+(removable?'<button data-i="'+i+'">✕</button>':"")+'</span>';
+  el.innerHTML=h;
+}
+function renderSettings(){
+  renderChips($("catCompany"),CAT_COMPANY,true);
+  renderChips($("catAgent"),CAT_AGENT,true);
+  var h="",i,r;
+  for(i=0;i<SLA.length;i++){r=SLA[i];
+    h+='<tr><td>'+esc(r.s)+'</td><td class="num"><b>'+r.h+'</b> ساعة</td>'+
+      '<td><button class="ghost" onclick="SLA_DEL('+i+')">حذف</button></td></tr>';}
+  $("slaRows").innerHTML=h;
+  var o='<option value="all">كل الوكلاء (120)</option>',g;
+  for(i=0;i<GROUPS.length;i++){g=GROUPS[i];
+    var cnt=AGENTS.filter(function(a){return a.g===g.g}).length;
+    o+='<option value="g:'+esc(g.g)+'">مجموعة '+esc(g.g)+' ('+cnt+' وكيلاً)</option>';}
+  o+='<option value="one">وكيل بعينه — بالبحث…</option>';
+  $("slaScope").innerHTML=o;
+  renderVisAgents();
+}
+function renderVisAgents(){
+  var all=AGENTS.length,match=[],i,a;
+  for(i=0;i<AGENTS.length;i++){a=AGENTS[i];
+    if(!visQ||a.n.indexOf(visQ)>=0||a.r.indexOf(visQ)>=0||a.g.indexOf(visQ)>=0)match.push(a);}
+  $("visCnt").innerHTML="<b>"+all+" من "+all+"</b> وكلاءُ سوبر سيل ظاهرون كلُّهم · يطابق البحث: "+match.length;
+  var h="",cap=Math.min(match.length,36);
+  for(i=0;i<cap;i++)h+='<span class="chip">🔒 '+esc(match[i].n)+'</span>';
+  if(match.length>cap)h+='<span class="chip" style="color:var(--muted)">… و'+(match.length-cap)+' آخرون — ضيّق البحث</span>';
+  $("agentChips").innerHTML=h||'<span class="chip" style="color:var(--muted)">لا نتائج</span>';
+}
+$("visQ").addEventListener("input",function(){visQ=this.value.trim();renderVisAgents()});
+$("catCompany").addEventListener("click",function(e){var b=e.target.closest("button");if(b){CAT_COMPANY.splice(Number(b.dataset.i),1);renderSettings();renderRaise()}});
+$("catAgent").addEventListener("click",function(e){var b=e.target.closest("button");if(b){CAT_AGENT.splice(Number(b.dataset.i),1);renderSettings()}});
+$("catCompanyAdd").addEventListener("click",function(){var v=$("catCompanyIn").value.trim();if(v){CAT_COMPANY.push(v);$("catCompanyIn").value="";renderSettings();renderRaise();toast("✓ أُضيفت الفئة")}});
+$("catAgentAdd").addEventListener("click",function(){var v=$("catAgentIn").value.trim();if(v){CAT_AGENT.push(v);$("catAgentIn").value="";renderSettings();toast("✓ أُضيفت الفئة")}});
+$("slaScope").addEventListener("change",function(){
+  var one=this.value==="one";
+  $("slaAgentPickWrap").style.display=one?"":"none";
+  if(!one){slaPickedAgent=null;$("slaAgentPicked").innerHTML=""}
+});
+wireCombo("slaAgentQ","slaAgentList",function(a){
+  slaPickedAgent=a;
+  $("slaAgentPicked").innerHTML='<div class="locknote" style="margin:6px 0 0">🏢 <b>'+esc(a.n)+'</b> — '+esc(a.r)+'</div>';
+});
+$("slaAdd").addEventListener("click",function(){
+  var h=Math.max(1,Math.min(168,Number($("slaHours").value)||24));
+  var v=$("slaScope").value,s;
+  if(v==="all")s="كل الوكلاء";
+  else if(v.indexOf("g:")===0)s="مجموعة "+v.slice(2);
+  else{if(!slaPickedAgent){toast("ابحث واختر الوكيلَ أولاً");return}s=slaPickedAgent.n}
+  SLA.push({s:s,h:h});renderSettings();updSla();toast("✓ أُضيفت قاعدة المهلة");
+});
+window.SLA_DEL=function(i){SLA.splice(i,1);renderSettings();updSla()};
+
+/* ═══ إشعارات · منبثقة · توست · تبويبات ═══ */
+function renderNotifs(){
+  var h="",i,n;
+  for(i=0;i<NOTIFS.length;i++){n=NOTIFS[i];
+    h+='<div class="nitem"><div class="ic">'+n.ic+'</div><div><b>'+esc(n.b)+'</b><span>'+esc(n.s)+'</span><time>'+n.t+'</time></div></div>';}
+  $("nList").innerHTML=h;
+}
+function bump(){var b=$("bellN");b.textContent=String(Number(b.textContent)+1);b.style.display="grid"}
+$("bellBtn").addEventListener("click",function(){$("drawer").classList.add("on");$("bellN").textContent="0";$("bellN").style.display="none"});
+$("drawerClose").addEventListener("click",function(){$("drawer").classList.remove("on")});
+function openModal(t,html){$("mTitle").textContent=t;$("mBody").innerHTML=html;$("overlay").classList.add("on")}
+function closeModal(){$("overlay").classList.remove("on")}
+$("mClose").addEventListener("click",closeModal);
+$("overlay").addEventListener("click",function(e){if(e.target===this)closeModal()});
+var toastT;
+function toast(m){$("toast").textContent=m;$("toast").classList.add("on");
+  clearTimeout(toastT);toastT=setTimeout(function(){$("toast").classList.remove("on")},2800)}
+$("tabs").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;
+  var bs=this.querySelectorAll("button"),i;
+  for(i=0;i<bs.length;i++)bs[i].classList.toggle("on",bs[i]===b);
+  var vs=document.querySelectorAll("main section");
+  for(i=0;i<vs.length;i++)vs[i].classList.toggle("on",vs[i].id==="v-"+b.dataset.v);
+});
+$("periodSeg").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;
+  period=b.dataset.p;
+  var bs=this.querySelectorAll("button"),i;for(i=0;i<bs.length;i++)bs[i].classList.toggle("on",bs[i]===b);
+  $("rng").classList.toggle("on",period==="range");
+  renderDash();
+});
+document.addEventListener("change",function(e){if(e.target.id==="d1"||e.target.id==="d2")renderDash()});
+
+/* مفتاح الألوان + فلاتر ثابتة */
+(function(){var h="",i,T;for(i=0;i<TYPES.length;i++){T=TYPES[i];
+  h+='<span class="lg"><span class="dot" style="background:'+T.c+'"></span>'+T.n+'</span>'}
+  $("legend").insertAdjacentHTML("beforeend",h)})();
+(function(){var o='<option value="">كل المجموعات</option>',i;
+  for(i=0;i<GROUPS.length;i++)o+='<option>'+GROUPS[i].g+'</option>';
+  /* قيمة الخيار = نصّه (اسم المجموعة) */
+  $("dashG").innerHTML=o.replace(/<option>([^<]+)<\/option>/g,'<option value="$1">$1</option>');
+  var c='<option value="">كل الفئات</option>';
+  for(i=0;i<CAT_AGENT.length;i++)c+='<option value="'+CAT_AGENT[i]+'">'+CAT_AGENT[i]+'</option>';
+  $("inboxCat").innerHTML=c;
+})();
+
+renderDash();renderRaise();renderCards();renderInbox();renderSettings();renderNotifs();
+})();
+</script>
+
+</body>
+</html>
