@@ -106,6 +106,14 @@ h1 { margin:0; color:#102238; font-size:23px; letter-spacing:-.6px; } h1 span { 
 .yn-row { display:flex; gap:.7rem; width:100%; max-width:280px; margin:0 auto; }
 .yn { flex:1; padding:.8rem; border-radius:13px; font-size:14px; font-weight:800; border:1px solid #dfeaf0; background:#fff; color:#102238; }
 .yn.yes { background:#0d8fa9; border-color:#0d8fa9; color:#fff; }
+.secondary-action { display:flex; align-items:center; justify-content:center; gap:.45rem; width:100%; padding:.8rem 1rem; border:1px solid #b9e3ee; border-radius:13px; color:#0d8fa9; background:#fff; font-size:11px; font-weight:700; } .secondary-action svg { width:16px; }
+/* 📐 توحيدُ مستطيلات الإدخال (طلب محمد): حجمٌ واحد، امتلاءٌ كامل، إيقاعٌ رأسيٌّ ثابت */
+.login-step .payment-confirm { gap:.85rem; }
+.login-step label.f { margin:0; }
+.login-step label.f > span { margin-bottom:5px; font-size:11px; }
+.login-step .payment-confirm input { width:100%; height:46px; padding:0 13px; border-radius:11px; font-size:14px; }
+.login-step input[dir="ltr"], .login-step .phone-input { text-align:left; }
+.login-step .otp-input { text-align:center; }
 .login-hero { display:flex; flex-direction:column; align-items:center; gap:.4rem; padding:2.2rem 1rem 1.2rem; text-align:center; }
 .login-logo { display:grid; place-items:center; width:74px; height:74px; border-radius:24px; color:#66ddf2; background:#0d2943; font-size:32px; box-shadow:0 13px 25px #0d294329; }
 .login-hero h2 { margin:.6rem 0 0; font-size:22px; } .login-hero p { margin:0; color:#718198; font-size:11px; }
@@ -243,7 +251,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
         <div class="login-hero"><div class="login-logo"><i class="ic" data-ic="wifi"></i></div><h2>أهلاً بك في كابينة</h2><p>تطبيق المشترك — نسخة معاينة ببيانات وهمية</p></div>
 
         <div class="login-step on" id="ls0">
-          <button class="primary-action" id="loginStart"><i class="ic" data-ic="lock-keyhole"></i> تسجيل الدخول</button>
+          <button class="primary-action" id="loginStart"><i class="ic" data-ic="user-round"></i> إنشاء حساب</button>
           <!-- 🔄 (طلب محمد): نعم/لا تنبثقان تحت الزرّ مباشرةً — وسطيّاً وبلا أيّ شرحٍ ولا صفحةٍ جديدة -->
           <div class="ask-inline" id="askInline">
             <strong>هل أنت مشترك مع سوبر سيل؟</strong>
@@ -252,7 +260,19 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
               <button class="yn" id="ansNo">لا</button>
             </div>
           </div>
+          <button class="secondary-action" id="loginExisting"><i class="ic" data-ic="lock-keyhole"></i> تسجيل دخول</button>
+          <button class="mini-link" id="guestGo">👀 استكشف التطبيق كضيف</button>
           <section class="info-note"><i class="ic" data-ic="shield-check"></i><span>معاينة: لا يُحفظ شيءٌ على أيّ خادم، ورمزُ الواتساب يظهر أمامك هنا (آليّةُ الواتساب تُتّفق لاحقاً).</span></section>
+        </div>
+
+        <div class="login-step" id="lsLogin">
+          <section class="payment-confirm on">
+            <strong>تسجيل الدخول</strong>
+            <label class="f"><span>رقم الهاتف</span><input id="loginPhone" class="phone-input" inputmode="numeric" maxlength="11" placeholder="07XXXXXXXXX"></label>
+            <label class="f"><span>كلمة المرور</span><input id="loginPass" type="password" placeholder="••••••••"></label>
+            <button class="primary-action" id="loginGo"><i class="ic" data-ic="lock-keyhole"></i> دخول</button>
+          </section>
+          <button class="mini-link" data-lstep="ls0">رجوع</button>
         </div>
 
         <div class="login-step" id="lsPhone">
@@ -293,15 +313,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
           <section class="info-note"><i class="ic" data-ic="message-circle"></i><span id="otpHint"></span></section>
         </div>
 
-        <div class="login-step" id="lsCred">
-          <section class="payment-confirm on">
-            <strong>تمّ التحقق ✓ — أنشئ بيانات دخولك</strong>
-            <label class="f"><span>اسم المستخدم</span><input id="credUser" dir="ltr" placeholder="username"></label>
-            <label class="f"><span>كلمة المرور</span><input id="credPass" type="password" placeholder="••••••••"></label>
-            <button class="primary-action" id="credGo"><i class="ic" data-ic="check"></i> إنشاء الحساب والدخول</button>
-          </section>
-        </div>
-
+        <!-- (أُلغيت خطوةُ اليوزر/الباسورد لمشترك سوبر سيل — «يكفي رقم الهاتف ورمز»: طلب محمد) -->
         <div class="login-step" id="lsReg">
           <section class="payment-confirm on">
             <strong>سجّل حساباً جديداً</strong>
@@ -613,13 +625,26 @@ $("nameYes").addEventListener("click",function(){
 });
 $("otpCheck").addEventListener("click",function(){
   if($("otpIn").value.trim()!==otpCode){toast("الرمز غير صحيح — جرّب ثانية");return}
-  lstep("lsCred");
-});
-$("credGo").addEventListener("click",function(){
-  var u=$("credUser").value.trim(),w=$("credPass").value;
-  if(!u||w.length<4){toast("أدخل اسمَ مستخدمٍ وكلمةَ مرور (4 أحرف فأكثر)");return}
+  // مشتركُ سوبر سيل: الرمزُ يكفي — لا يوزرَ ولا باسورد (طلب محمد)
   PROFILE={name:loginCand.name,user:loginCand.user,phone:loginCand.phone};
   setMode("sas");
+});
+/* تسجيلُ دخولِ حسابٍ قائم: رقمُ هاتفٍ وباسورد */
+$("loginExisting").addEventListener("click",function(){lstep("lsLogin")});
+$("loginGo").addEventListener("click",function(){
+  var p=normPhone($("loginPhone").value),w=$("loginPass").value;
+  if(!/^07\d{9}$/.test(p)){toast("صيغة الرقم غير صحيحة — 11 رقماً تبدأ بـ07");return}
+  if(w.length<4){toast("أدخل كلمةَ المرور (4 أحرف فأكثر)");return}
+  var hit=null,i;for(i=0;i<SUBSDB.length;i++)if(normPhone(SUBSDB[i].phone)===p&&SUBSDB[i].active)hit=SUBSDB[i];
+  if(hit){PROFILE={name:hit.name,user:hit.user,phone:hit.phone};setMode("sas");return}
+  var saved=null;try{saved=JSON.parse(localStorage.getItem("kabina_profile")||"null")}catch(e){}
+  if(saved&&normPhone(saved.phone)===p){PROFILE=saved;setMode("guest");return}
+  toast("لا يوجد حسابٌ بهذا الرقم — اضغط «إنشاء حساب» أولاً");
+});
+/* 👀 استكشافٌ كضيف — دخولٌ فوريٌّ بلا أيّ تسجيل، بنفس تجربة غير المشترك (إعلانات) */
+$("guestGo").addEventListener("click",function(){
+  PROFILE={name:"زائر كابينة",user:"guest",phone:""};
+  setMode("guest");
 });
 /* لا — غير مشترك: تسجيلٌ كامل ثم دخولُ زائرٍ بإعلانات سوبر سيل */
 $("regGo").addEventListener("click",function(){
