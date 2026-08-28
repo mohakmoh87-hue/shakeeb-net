@@ -92,6 +92,13 @@ h1 { margin:0; color:#102238; font-size:23px; letter-spacing:-.6px; } h1 span { 
 .ad-tag { position:absolute; top:.55rem; left:.55rem; z-index:1; padding:2px 9px; border-radius:99px; background:#0d2943d9; color:#ffd88a; font-size:8.5px; font-weight:800; }
 .ad-cta { align-self:flex-start; display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1rem; border:0; border-radius:11px; color:#fff; background:#0d8fa9; font-size:11px; font-weight:800; }
 .login-frame .bottom-nav { display:none; }
+.login-step { display:none; flex-direction:column; gap:1.05rem; }
+.login-step.on { display:flex; }
+.otp-input { text-align:center; letter-spacing:12px; font-size:22px; font-weight:800; direction:ltr; }
+.phone-input { direction:ltr; text-align:left; font-size:15px; letter-spacing:1px; }
+.agent-hit { display:flex; flex-direction:column; gap:.35rem; padding:.9rem; border:1px solid #f3dfb2; border-radius:14px; background:#fdf6e7; font-size:11px; color:#5a4a1e; }
+.agent-hit b { color:#8f5a03; }
+.mini-link { border:0; background:none; color:#0d8fa9; font-size:10.5px; font-weight:700; align-self:center; padding:.3rem; }
 .login-hero { display:flex; flex-direction:column; align-items:center; gap:.4rem; padding:2.2rem 1rem 1.2rem; text-align:center; }
 .login-logo { display:grid; place-items:center; width:74px; height:74px; border-radius:24px; color:#66ddf2; background:#0d2943; font-size:32px; box-shadow:0 13px 25px #0d294329; }
 .login-hero h2 { margin:.6rem 0 0; font-size:22px; } .login-hero p { margin:0; color:#718198; font-size:11px; }
@@ -148,7 +155,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
 
       <!-- ═══ الرئيسية ═══ -->
       <section class="view on" id="v-home">
-        <header class="topbar"><div><p class="eyebrow">الأحد، ٢٥ آب ٢٠٢٦</p><h1>هلا محمد، <span>نورت كابينة</span></h1></div><button class="icon-button" data-go="notifications" aria-label="الإشعارات"><i class="ic" data-ic="bell"></i><i class="dot-badge"></i></button></header>
+        <header class="topbar"><div><p class="eyebrow">الأحد، ٢٥ آب ٢٠٢٦</p><h1>هلا <b id="helloName">محمد</b>، <span>نورت كابينة</span></h1></div><button class="icon-button" data-go="notifications" aria-label="الإشعارات"><i class="ic" data-ic="bell"></i><i class="dot-badge"></i></button></header>
         <div id="slotHero"><section class="hero-card"><div class="hero-orb"><i class="ic" data-ic="wifi"></i></div><div class="hero-copy"><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><p>حالة الاتصال</p><strong>إنترنتك شغّال</strong><small>سرعة مستقرة • آخر فحص قبل ٣ دقائق</small></div><button class="refresh-button" data-go="speed" aria-label="فحص الاتصال"><i class="ic" data-ic="gauge"></i></button></section></div>
         <div id="slotHome2"><section class="days-card"><div class="days-number"><strong>١٨</strong><span>يوم متبقي</span></div><div class="days-info"><div class="section-kicker"><span>باقتك الحالية</span><b>نشطة</b></div><h2>برو ماكس 50</h2><p>تتجدد في ١٢ أيلول ٢٠٢٦</p><div class="progress"><span></span></div><small>استخدمت ٦٢٪ من بياناتك</small></div><button class="arrow-button" data-go="plan" aria-label="تفاصيل الباقة"><i class="ic" data-ic="chevron-left"></i></button></section></div>
         <div class="section-heading"><h2>اختصاراتك</h2><button data-go="services">عرض الكل <i class="ic" data-ic="chevron-left"></i></button></div>
@@ -224,14 +231,82 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
         <section class="result-card success" id="payDone"><i class="ic" data-ic="check"></i><div><strong>تم استلام طلب تفعيل اشتراكك</strong><small>سيتم تأكيد الدفع وتفعيل الخدمة قريبًا.</small></div></section>
       </section>
 
-      <!-- ═══ تسجيل الدخول ═══ -->
+      <!-- ═══ تسجيل الدخول — رحلة متعددة الخطوات (خطة محمد 2026-08-28) ═══ -->
       <section class="view" id="v-login">
-        <div class="login-hero"><div class="login-logo"><i class="ic" data-ic="wifi"></i></div><h2>أهلاً بك في كابينة</h2><p>تطبيق المشترك — اختر طريقة الدخول</p></div>
-        <div class="support-options">
-          <button id="loginSas"><span class="service-icon"><i class="ic" data-ic="shield-check"></i></span><strong>تسجيل الدخول</strong><small>أنا مشترك مع سوبر سيل</small><i class="ic" data-ic="chevron-left"></i></button>
-          <button id="loginGuest"><span class="service-icon"><i class="ic" data-ic="user-round"></i></span><strong>تسجيل الدخول</strong><small>لست مشتركاً مع سوبر سيل بعد</small><i class="ic" data-ic="chevron-left"></i></button>
+        <div class="login-hero"><div class="login-logo"><i class="ic" data-ic="wifi"></i></div><h2>أهلاً بك في كابينة</h2><p>تطبيق المشترك — نسخة معاينة ببيانات وهمية</p></div>
+
+        <div class="login-step on" id="ls0">
+          <button class="primary-action" id="loginStart"><i class="ic" data-ic="lock-keyhole"></i> تسجيل الدخول</button>
+          <section class="info-note"><i class="ic" data-ic="shield-check"></i><span>معاينة: لا يُحفظ شيءٌ على أيّ خادم، ورمزُ الواتساب يظهر أمامك هنا (آليّةُ الواتساب تُتّفق لاحقاً).</span></section>
         </div>
-        <section class="info-note"><i class="ic" data-ic="shield-check"></i><span>عرضٌ تجريبيٌّ ببيانات وهمية — لا كلماتِ مرورٍ هنا. غيرُ المشترك يرى إعلاناتِ سوبر سيل مكان بيانات الاشتراك، ويمكنه التبديل في أيّ وقت من «حسابي».</span></section>
+
+        <div class="login-step" id="lsAsk">
+          <section class="service-intro"><i class="ic" data-ic="circle-help"></i><div><strong>هل أنت مشترك مع سوبر سيل؟</strong><p>لنجهّز حسابك بالطريقة الصحيحة</p></div></section>
+          <div class="support-options">
+            <button id="ansYes"><span class="service-icon"><i class="ic" data-ic="check"></i></span><strong>نعم — أنا مشترك</strong><small>سنتحقق من رقم هاتفك في قاعدة المشتركين</small><i class="ic" data-ic="chevron-left"></i></button>
+            <button id="ansNo"><span class="service-icon"><i class="ic" data-ic="user-round"></i></span><strong>لا — لست مشتركاً بعد</strong><small>سجّل حساباً وتصفح عروض سوبر سيل</small><i class="ic" data-ic="chevron-left"></i></button>
+          </div>
+        </div>
+
+        <div class="login-step" id="lsPhone">
+          <section class="payment-confirm on">
+            <strong>أدخل رقم هاتفك المسجّل لدى وكيلك</strong>
+            <label class="f"><span>رقم الهاتف</span><input id="phoneIn" class="phone-input" inputmode="numeric" maxlength="11" placeholder="07XXXXXXXXX"></label>
+            <button class="primary-action" id="phoneCheck"><i class="ic" data-ic="search"></i> تحقّق من الرقم</button>
+          </section>
+          <section class="info-note"><i class="ic" data-ic="circle-help"></i><span>أرقامُ المعاينة: <b dir="ltr">07701234567</b> (فعّال) · <b dir="ltr">07723456789</b> (غير فعّال) — وأيُّ رقمٍ آخرَ «غير مسجّل».</span></section>
+          <button class="mini-link" data-lstep="lsAsk">رجوع</button>
+        </div>
+
+        <div class="login-step" id="lsName">
+          <section class="feature-panel"><span class="feature-icon"><i class="ic" data-ic="user-round"></i></span><h2 id="askNameTitle">هل أنت …؟</h2><p>هذا الاسمُ المسجّلُ على رقمك في قاعدة المشتركين</p>
+            <button class="primary-action" id="nameYes"><i class="ic" data-ic="check"></i> نعم، أنا هو</button>
+            <button class="mini-link" id="nameNo">لا — أعد إدخال الرقم</button>
+          </section>
+        </div>
+
+        <div class="login-step" id="lsInactive">
+          <section class="result-card on" style="color:#8f5a03;background:#fdf6e7"><i class="ic" data-ic="circle-help"></i><div><strong id="inactiveMsg">اشتراكك غير فعّال حالياً</strong><small id="inactiveAgent"></small></div></section>
+          <button class="mini-link" data-lstep="lsPhone">رجوع</button>
+        </div>
+
+        <div class="login-step" id="lsWrong">
+          <section class="result-card on" style="color:#b91c34;background:#fde7ea"><i class="ic" data-ic="circle-help"></i><div><strong>رقم الهاتف خطأ أو غير مسجّل</strong><small>يجب الاتصال بالوكيل للتأكد من رقم هاتفك المسجّل</small></div></section>
+          <button class="primary-action" id="findAgent"><i class="ic" data-ic="map-pin"></i> حدّد موقعي لأقرب وكيل</button>
+          <div class="agent-hit" id="agentHit" style="display:none"></div>
+          <button class="mini-link" data-lstep="lsPhone">رجوع لإدخال الرقم</button>
+        </div>
+
+        <div class="login-step" id="lsOtp">
+          <section class="payment-confirm on">
+            <strong id="otpTitle">أرسلنا رمزَ تحقّقٍ إلى واتسابك</strong>
+            <label class="f"><span>رمز التحقق (٤ أرقام)</span><input id="otpIn" class="otp-input" inputmode="numeric" maxlength="4" placeholder="----"></label>
+            <button class="primary-action" id="otpCheck"><i class="ic" data-ic="check"></i> تأكيد الرمز</button>
+          </section>
+          <section class="info-note"><i class="ic" data-ic="message-circle"></i><span id="otpHint"></span></section>
+        </div>
+
+        <div class="login-step" id="lsCred">
+          <section class="payment-confirm on">
+            <strong>تمّ التحقق ✓ — أنشئ بيانات دخولك</strong>
+            <label class="f"><span>اسم المستخدم</span><input id="credUser" dir="ltr" placeholder="username"></label>
+            <label class="f"><span>كلمة المرور</span><input id="credPass" type="password" placeholder="••••••••"></label>
+            <button class="primary-action" id="credGo"><i class="ic" data-ic="check"></i> إنشاء الحساب والدخول</button>
+          </section>
+        </div>
+
+        <div class="login-step" id="lsReg">
+          <section class="payment-confirm on">
+            <strong>سجّل حساباً جديداً</strong>
+            <label class="f"><span>الاسم الكامل</span><input id="regName" placeholder="الاسم الثلاثي"></label>
+            <label class="f"><span>رقم الهاتف</span><input id="regPhone" class="phone-input" inputmode="numeric" maxlength="11" placeholder="07XXXXXXXXX"></label>
+            <label class="f"><span>اسم المستخدم</span><input id="regUser" dir="ltr" placeholder="username"></label>
+            <label class="f"><span>كلمة المرور</span><input id="regPass" type="password" placeholder="••••••••"></label>
+            <button class="primary-action" id="regGo"><i class="ic" data-ic="check"></i> تسجيل والدخول</button>
+          </section>
+          <section class="info-note"><i class="ic" data-ic="message-circle"></i><span>ستصلك رسالةُ ترحيبٍ عبر واتساب (آليّتُه تُتّفق لاحقاً — في المعاينة تظهر إشعاراً هنا).</span></section>
+          <button class="mini-link" data-lstep="lsAsk">رجوع</button>
+        </div>
       </section>
 
       <!-- ═══ تحتاج مساعدة؟ — اختيار الجهة ═══ -->
@@ -302,7 +377,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
       <!-- ═══ حسابي ═══ -->
       <section class="view" id="v-account">
         <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">ملف المشترك</p><h1>حسابي</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
-        <section class="profile-card"><div class="profile-avatar">م</div><div class="profile-mid"><strong>محمد أحمد</strong><small>مشترك كابينة منذ ٢٠٢٤</small></div><button aria-label="تعديل"><i class="ic" data-ic="pencil"></i></button></section>
+        <section class="profile-card"><div class="profile-avatar" id="avLetter">م</div><div class="profile-mid"><strong id="accName">محمد أحمد</strong><small id="accSub">مشترك كابينة</small></div><button aria-label="تعديل"><i class="ic" data-ic="pencil"></i></button></section>
         <div class="detail-list">
           <button><span class="list-icon"><i class="ic" data-ic="user-round"></i></span><span class="mid"><strong>بياناتي الشخصية</strong><small>رقم المشترك والعنوان</small></span><i class="ic" data-ic="chevron-left"></i></button>
           <button data-go="network"><span class="list-icon"><i class="ic" data-ic="router"></i></span><span class="mid"><strong>أجهزتي وشبكتي</strong><small>إدارة الراوتر والأجهزة</small></span><i class="ic" data-ic="chevron-left"></i></button>
@@ -335,7 +410,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
 (function(){
 "use strict";
 /* ═════ عرضٌ تجريبيّ — كلُّ البيانات وهمية وكلُّ تفاعلٍ يعيش في ذاكرة المتصفّح وحدها ═════ */
-var ICONS={"arrow-left":"<svg class=\"lucide lucide-arrow-left\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m12 19-7-7 7-7\" /><path d=\"M19 12H5\" /></svg>","banknote":"<svg class=\"lucide lucide-banknote\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"20\" height=\"12\" x=\"2\" y=\"6\" rx=\"2\" /><circle cx=\"12\" cy=\"12\" r=\"2\" /><path d=\"M6 12h.01M18 12h.01\" /></svg>","bell":"<svg class=\"lucide lucide-bell\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M10.268 21a2 2 0 0 0 3.464 0\" /><path d=\"M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326\" /></svg>","check":"<svg class=\"lucide lucide-check\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 6 9 17l-5-5\" /></svg>","chevron-left":"<svg class=\"lucide lucide-chevron-left\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m15 18-6-6 6-6\" /></svg>","circle-help":"<svg class=\"lucide lucide-circle-help\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\" /><path d=\"M12 17h.01\" /></svg>","credit-card":"<svg class=\"lucide lucide-credit-card\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"20\" height=\"14\" x=\"2\" y=\"5\" rx=\"2\" /><line x1=\"2\" x2=\"22\" y1=\"10\" y2=\"10\" /></svg>","gauge":"<svg class=\"lucide lucide-gauge\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m12 14 4-4\" /><path d=\"M3.34 19a10 10 0 1 1 17.32 0\" /></svg>","heart":"<svg class=\"lucide lucide-heart\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z\" /></svg>","home":"<svg class=\"lucide lucide-house\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\" /><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" /></svg>","house":"<svg class=\"lucide lucide-house\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\" /><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" /></svg>","laptop":"<svg class=\"lucide lucide-laptop\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16\" /></svg>","lock-keyhole":"<svg class=\"lucide lucide-lock-keyhole\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"12\" cy=\"16\" r=\"1\" /><rect x=\"3\" y=\"10\" width=\"18\" height=\"12\" rx=\"2\" /><path d=\"M7 10V7a5 5 0 0 1 10 0v3\" /></svg>","message-circle":"<svg class=\"lucide lucide-message-circle\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M7.9 20A9 9 0 1 0 4 16.1L2 22Z\" /></svg>","package":"<svg class=\"lucide lucide-package\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\" /><path d=\"M12 22V12\" /><path d=\"m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7\" /><path d=\"m7.5 4.27 9 5.15\" /></svg>","pencil":"<svg class=\"lucide lucide-pencil\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\" /><path d=\"m15 5 4 4\" /></svg>","plus":"<svg class=\"lucide lucide-plus\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M5 12h14\" /><path d=\"M12 5v14\" /></svg>","radio":"<svg class=\"lucide lucide-radio\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M4.9 19.1C1 15.2 1 8.8 4.9 4.9\" /><path d=\"M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5\" /><circle cx=\"12\" cy=\"12\" r=\"2\" /><path d=\"M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5\" /><path d=\"M19.1 4.9C23 8.8 23 15.1 19.1 19\" /></svg>","refresh-cw":"<svg class=\"lucide lucide-refresh-cw\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" /><path d=\"M21 3v5h-5\" /><path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" /><path d=\"M8 16H3v5\" /></svg>","router":"<svg class=\"lucide lucide-router\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"20\" height=\"8\" x=\"2\" y=\"14\" rx=\"2\" /><path d=\"M6.01 18H6\" /><path d=\"M10.01 18H10\" /><path d=\"M15 10v4\" /><path d=\"M17.84 7.17a4 4 0 0 0-5.66 0\" /><path d=\"M20.66 4.34a8 8 0 0 0-11.31 0\" /></svg>","search":"<svg class=\"lucide lucide-search\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"11\" cy=\"11\" r=\"8\" /><path d=\"m21 21-4.3-4.3\" /></svg>","send":"<svg class=\"lucide lucide-send\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z\" /><path d=\"m21.854 2.147-10.94 10.939\" /></svg>","settings-2":"<svg class=\"lucide lucide-settings-2\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 7h-9\" /><path d=\"M14 17H5\" /><circle cx=\"17\" cy=\"17\" r=\"3\" /><circle cx=\"7\" cy=\"7\" r=\"3\" /></svg>","shield-check":"<svg class=\"lucide lucide-shield-check\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /><path d=\"m9 12 2 2 4-4\" /></svg>","shopping-bag":"<svg class=\"lucide lucide-shopping-bag\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z\" /><path d=\"M3 6h18\" /><path d=\"M16 10a4 4 0 0 1-8 0\" /></svg>","smartphone":"<svg class=\"lucide lucide-smartphone\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"14\" height=\"20\" x=\"5\" y=\"2\" rx=\"2\" ry=\"2\" /><path d=\"M12 18h.01\" /></svg>","store":"<svg class=\"lucide lucide-store\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7\" /><path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\" /><path d=\"M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4\" /><path d=\"M2 7h20\" /><path d=\"M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7\" /></svg>","upload":"<svg class=\"lucide lucide-upload\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\" /><polyline points=\"17 8 12 3 7 8\" /><line x1=\"12\" x2=\"12\" y1=\"3\" y2=\"15\" /></svg>","user-round":"<svg class=\"lucide lucide-user-round\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"12\" cy=\"8\" r=\"5\" /><path d=\"M20 21a8 8 0 0 0-16 0\" /></svg>","wifi":"<svg class=\"lucide lucide-wifi\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M12 20h.01\" /><path d=\"M2 8.82a15 15 0 0 1 20 0\" /><path d=\"M5 12.859a10 10 0 0 1 14 0\" /><path d=\"M8.5 16.429a5 5 0 0 1 7 0\" /></svg>","wrench":"<svg class=\"lucide lucide-wrench\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\" /></svg>","zap":"<svg class=\"lucide lucide-zap\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\" /></svg>"};
+var ICONS={"arrow-left":"<svg class=\"lucide lucide-arrow-left\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m12 19-7-7 7-7\" /><path d=\"M19 12H5\" /></svg>","banknote":"<svg class=\"lucide lucide-banknote\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"20\" height=\"12\" x=\"2\" y=\"6\" rx=\"2\" /><circle cx=\"12\" cy=\"12\" r=\"2\" /><path d=\"M6 12h.01M18 12h.01\" /></svg>","bell":"<svg class=\"lucide lucide-bell\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M10.268 21a2 2 0 0 0 3.464 0\" /><path d=\"M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326\" /></svg>","check":"<svg class=\"lucide lucide-check\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 6 9 17l-5-5\" /></svg>","chevron-left":"<svg class=\"lucide lucide-chevron-left\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m15 18-6-6 6-6\" /></svg>","circle-help":"<svg class=\"lucide lucide-circle-help\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\" /><path d=\"M12 17h.01\" /></svg>","credit-card":"<svg class=\"lucide lucide-credit-card\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"20\" height=\"14\" x=\"2\" y=\"5\" rx=\"2\" /><line x1=\"2\" x2=\"22\" y1=\"10\" y2=\"10\" /></svg>","gauge":"<svg class=\"lucide lucide-gauge\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m12 14 4-4\" /><path d=\"M3.34 19a10 10 0 1 1 17.32 0\" /></svg>","heart":"<svg class=\"lucide lucide-heart\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z\" /></svg>","home":"<svg class=\"lucide lucide-house\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\" /><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" /></svg>","house":"<svg class=\"lucide lucide-house\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\" /><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" /></svg>","laptop":"<svg class=\"lucide lucide-laptop\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16\" /></svg>","lock-keyhole":"<svg class=\"lucide lucide-lock-keyhole\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"12\" cy=\"16\" r=\"1\" /><rect x=\"3\" y=\"10\" width=\"18\" height=\"12\" rx=\"2\" /><path d=\"M7 10V7a5 5 0 0 1 10 0v3\" /></svg>","map-pin":"<svg class=\"lucide lucide-map-pin\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0\" /><circle cx=\"12\" cy=\"10\" r=\"3\" /></svg>","message-circle":"<svg class=\"lucide lucide-message-circle\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M7.9 20A9 9 0 1 0 4 16.1L2 22Z\" /></svg>","package":"<svg class=\"lucide lucide-package\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\" /><path d=\"M12 22V12\" /><path d=\"m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7\" /><path d=\"m7.5 4.27 9 5.15\" /></svg>","pencil":"<svg class=\"lucide lucide-pencil\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\" /><path d=\"m15 5 4 4\" /></svg>","plus":"<svg class=\"lucide lucide-plus\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M5 12h14\" /><path d=\"M12 5v14\" /></svg>","radio":"<svg class=\"lucide lucide-radio\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M4.9 19.1C1 15.2 1 8.8 4.9 4.9\" /><path d=\"M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5\" /><circle cx=\"12\" cy=\"12\" r=\"2\" /><path d=\"M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5\" /><path d=\"M19.1 4.9C23 8.8 23 15.1 19.1 19\" /></svg>","refresh-cw":"<svg class=\"lucide lucide-refresh-cw\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" /><path d=\"M21 3v5h-5\" /><path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" /><path d=\"M8 16H3v5\" /></svg>","router":"<svg class=\"lucide lucide-router\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"20\" height=\"8\" x=\"2\" y=\"14\" rx=\"2\" /><path d=\"M6.01 18H6\" /><path d=\"M10.01 18H10\" /><path d=\"M15 10v4\" /><path d=\"M17.84 7.17a4 4 0 0 0-5.66 0\" /><path d=\"M20.66 4.34a8 8 0 0 0-11.31 0\" /></svg>","search":"<svg class=\"lucide lucide-search\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"11\" cy=\"11\" r=\"8\" /><path d=\"m21 21-4.3-4.3\" /></svg>","send":"<svg class=\"lucide lucide-send\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z\" /><path d=\"m21.854 2.147-10.94 10.939\" /></svg>","settings-2":"<svg class=\"lucide lucide-settings-2\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 7h-9\" /><path d=\"M14 17H5\" /><circle cx=\"17\" cy=\"17\" r=\"3\" /><circle cx=\"7\" cy=\"7\" r=\"3\" /></svg>","shield-check":"<svg class=\"lucide lucide-shield-check\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /><path d=\"m9 12 2 2 4-4\" /></svg>","shopping-bag":"<svg class=\"lucide lucide-shopping-bag\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z\" /><path d=\"M3 6h18\" /><path d=\"M16 10a4 4 0 0 1-8 0\" /></svg>","smartphone":"<svg class=\"lucide lucide-smartphone\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><rect width=\"14\" height=\"20\" x=\"5\" y=\"2\" rx=\"2\" ry=\"2\" /><path d=\"M12 18h.01\" /></svg>","store":"<svg class=\"lucide lucide-store\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7\" /><path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\" /><path d=\"M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4\" /><path d=\"M2 7h20\" /><path d=\"M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7\" /></svg>","upload":"<svg class=\"lucide lucide-upload\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\" /><polyline points=\"17 8 12 3 7 8\" /><line x1=\"12\" x2=\"12\" y1=\"3\" y2=\"15\" /></svg>","user-round":"<svg class=\"lucide lucide-user-round\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><circle cx=\"12\" cy=\"8\" r=\"5\" /><path d=\"M20 21a8 8 0 0 0-16 0\" /></svg>","wifi":"<svg class=\"lucide lucide-wifi\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M12 20h.01\" /><path d=\"M2 8.82a15 15 0 0 1 20 0\" /><path d=\"M5 12.859a10 10 0 0 1 14 0\" /><path d=\"M8.5 16.429a5 5 0 0 1 7 0\" /></svg>","wrench":"<svg class=\"lucide lucide-wrench\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\" /></svg>","zap":"<svg class=\"lucide lucide-zap\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" ><path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\" /></svg>"};
 var $=function(id){return document.getElementById(id)};
 
 /* حقن الأيقونات: الغلاف يُستبدل بالـsvg نفسه كي تعمل محدِّدات > svg المباشرة */
@@ -368,6 +443,20 @@ var toastT;
 function toast(m){var t=$("toast");t.textContent=m;t.classList.add("on");
   clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove("on")},2800)}
 var PROFILE={name:"محمد أحمد",user:"bg-12-7-3@kab",phone:"0770 123 4567"};
+/* قاعدةُ مشتركي المعاينة — «قاعدة بيانات جميع الوكلاء» وهميّةً (أو قاعدةُ الشركة لاحقاً) */
+var SUBSDB=[
+  {phone:"07701234567",name:"محمد أحمد الجبوري",user:"bg-12-7-3@kab",active:true, agent:"وكالة النور للانترنت",agentPhone:"0770 000 1111"},
+  {phone:"07712345678",name:"زهراء علي الساعدي",user:"bg-5-3-9@kab", active:true, agent:"شبكة الرافدين",       agentPhone:"0771 000 2222"},
+  {phone:"07723456789",name:"كرار حيدر جبار",   user:"bg-9-1-4@kab", active:false,agent:"وكالة الفرات",        agentPhone:"0772 000 3333"}
+];
+/* أعمدةُ الخريطة الوهميّة — لأقرب وكيلٍ حسب موقع الهاتف (النظامُ الحقيقيُّ عنده خريطةُ الأعمدة) */
+var POLES=[
+  {name:"SLM-14",lat:33.3125,lng:44.3615,agent:"وكالة النور للانترنت",phone:"0770 000 1111"},
+  {name:"AZM-7", lat:33.3510,lng:44.3925,agent:"شبكة الرافدين",       phone:"0771 000 2222"},
+  {name:"HLA-3", lat:32.4720,lng:44.4210,agent:"وكالة الفرات",        phone:"0772 000 3333"},
+  {name:"BSR-9", lat:30.5085,lng:47.7835,agent:"النخيل نت",           phone:"0773 000 4444"},
+  {name:"MSL-2", lat:36.3350,lng:43.1180,agent:"مكتب الأمل نت",       phone:"0774 000 5555"}
+];
 var MODE=null;try{MODE=localStorage.getItem("kabina_mode")}catch(e){}
 var ADS={
   hero:{text:"⚡ اشترك مع سوبر سيل — إنترنت مستقرّ بسرعات حقيقية وتغطية أوسع",image:""},
@@ -467,16 +556,101 @@ $("payBtn").addEventListener("click",function(){
 });
 
 /* ═════ الدخول والمساعدة والطلبات ═════ */
+/* ═════ رحلةُ تسجيل الدخول متعددةُ الخطوات (خطة محمد 2026-08-28) ═════ */
+function lstep(id){
+  Array.prototype.slice.call(document.querySelectorAll(".login-step")).forEach(function(s){s.classList.toggle("on",s.id===id)});
+  document.querySelector(".app-content").scrollTop=0;fit();
+}
+document.addEventListener("click",function(e){var b=e.target.closest("[data-lstep]");if(b)lstep(b.getAttribute("data-lstep"))});
+var loginCand=null,otpCode="";
+function saveProfile(){try{localStorage.setItem("kabina_profile",JSON.stringify(PROFILE))}catch(e){}}
+function applyProfile(){
+  var first=(PROFILE.name||"").trim().split(" ")[0]||"مشترك";
+  var el=$("helloName");if(el)el.textContent=first;
+  var av=$("avLetter");if(av)av.textContent=first.charAt(0)||"م";
+  var an=$("accName");if(an)an.textContent=PROFILE.name||"—";
+  var as=$("accSub");if(as)as.textContent=(MODE==="guest"?"حساب زائر — ":"مشترك كابينة — ")+(PROFILE.user||PROFILE.phone||"");
+}
 function setMode(m){
   MODE=m;try{localStorage.setItem("kabina_mode",m)}catch(e){}
-  applyMode();go("home");
-  toast(m==="guest"?"أهلاً بك — تصفّح واطّلع على عروض سوبر سيل":"أهلاً بعودتك يا "+PROFILE.name.split(" ")[0]+" 👋");
+  saveProfile();applyMode();applyProfile();go("home");
+  var first=(PROFILE.name||"").trim().split(" ")[0]||"";
+  toast(m==="guest"?"أهلاً بك "+first+" — اطّلع على عروض سوبر سيل":"أهلاً بك يا "+first+" 👋");
 }
-$("loginSas").addEventListener("click",function(){setMode("sas")});
-$("loginGuest").addEventListener("click",function(){setMode("guest")});
+function normPhone(v){return String(v||"").replace(/\D/g,"")}
+$("loginStart").addEventListener("click",function(){lstep("lsAsk")});
+$("ansYes").addEventListener("click",function(){lstep("lsPhone")});
+$("ansNo").addEventListener("click",function(){lstep("lsReg")});
+/* نعم — مشترك: التحقق من الرقم في قاعدة كل الوكلاء + شرط «فعّال» */
+$("phoneCheck").addEventListener("click",function(){
+  var p=normPhone($("phoneIn").value);
+  if(!/^07\d{9}$/.test(p)){toast("صيغة الرقم غير صحيحة — 11 رقماً تبدأ بـ07");return}
+  var hit=null,i;for(i=0;i<SUBSDB.length;i++)if(normPhone(SUBSDB[i].phone)===p)hit=SUBSDB[i];
+  if(!hit){$("agentHit").style.display="none";lstep("lsWrong");return}
+  if(!hit.active){
+    $("inactiveMsg").textContent="اشتراكك غير فعّال حالياً يا "+hit.name.split(" ")[0];
+    $("inactiveAgent").textContent="تواصل مع وكيلك «"+hit.agent+"» — "+hit.agentPhone+" لإعادة التفعيل";
+    lstep("lsInactive");return;
+  }
+  loginCand=hit;
+  $("askNameTitle").textContent="هل أنت "+hit.name+"؟";
+  lstep("lsName");
+});
+$("nameNo").addEventListener("click",function(){lstep("lsPhone")});
+/* تأكيد الاسم ⇒ رمز واتساب (في المعاينة يظهر أمامه — آليةُ الواتساب تُتّفق لاحقاً) */
+$("nameYes").addEventListener("click",function(){
+  otpCode=String(Math.floor(1000+Math.random()*9000));
+  $("otpTitle").textContent="أرسلنا رمزَ تحقّقٍ إلى واتساب "+loginCand.phone;
+  $("otpHint").innerHTML="نسخةُ معاينة — لا واتسابَ حقيقيّاً بعد: رمزُك هو <b style='font-size:14px'>"+otpCode+"</b>";
+  $("otpIn").value="";lstep("lsOtp");
+});
+$("otpCheck").addEventListener("click",function(){
+  if($("otpIn").value.trim()!==otpCode){toast("الرمز غير صحيح — جرّب ثانية");return}
+  lstep("lsCred");
+});
+$("credGo").addEventListener("click",function(){
+  var u=$("credUser").value.trim(),w=$("credPass").value;
+  if(!u||w.length<4){toast("أدخل اسمَ مستخدمٍ وكلمةَ مرور (4 أحرف فأكثر)");return}
+  PROFILE={name:loginCand.name,user:loginCand.user,phone:loginCand.phone};
+  setMode("sas");
+});
+/* لا — غير مشترك: تسجيلٌ كامل ثم دخولُ زائرٍ بإعلانات سوبر سيل */
+$("regGo").addEventListener("click",function(){
+  var n=$("regName").value.trim(),p=normPhone($("regPhone").value),u=$("regUser").value.trim(),w=$("regPass").value;
+  if(n.split(" ").filter(Boolean).length<2){toast("أدخل الاسمَ الكامل (كلمتين فأكثر)");return}
+  if(!/^07\d{9}$/.test(p)){toast("صيغة رقم الهاتف غير صحيحة");return}
+  if(!u||w.length<4){toast("أدخل اسمَ مستخدمٍ وكلمةَ مرور (4 أحرف فأكثر)");return}
+  PROFILE={name:n,user:u,phone:p};
+  setMode("guest");
+  setTimeout(function(){toast("📨 (معاينة) وصلتك رسالةُ ترحيبٍ على واتساب "+p)},3000);
+});
+/* رقمٌ غير مسجّل ⇒ أقربُ وكيلٍ من أقرب عامودٍ حسب موقع الهاتف (خريطةُ الأعمدة) */
+function nearestPole(lat,lng){
+  var best=null,bd=1e18,i,p;
+  for(i=0;i<POLES.length;i++){p=POLES[i];
+    var dLat=(p.lat-lat)*Math.PI/180,dLng=(p.lng-lng)*Math.PI/180;
+    var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat*Math.PI/180)*Math.cos(p.lat*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    var d=12742*Math.asin(Math.sqrt(a));
+    if(d<bd){bd=d;best=p}}
+  return {p:best,km:bd};
+}
+function showAgentHit(p,km,note){
+  $("agentHit").innerHTML=(note?"<span>"+note+"</span>":"")+
+    "<span>أقرب عامود إليك: <b>"+p.name+"</b>"+(km!=null?" (~"+km.toFixed(1)+" كم)":"")+"</span>"+
+    "<span>يتبع الوكيل: <b>"+p.agent+"</b></span><span>هاتف الوكيل: <b dir=\"ltr\">"+p.phone+"</b></span>";
+  $("agentHit").style.display="";fit();
+}
+$("findAgent").addEventListener("click",function(){
+  if(!navigator.geolocation){showAgentHit(POLES[0],null,"متصفحك لا يدعم تحديدَ الموقع — مثالُ معاينة:");return}
+  toast("جارٍ تحديد موقعك…");
+  navigator.geolocation.getCurrentPosition(function(pos){
+    var r=nearestPole(pos.coords.latitude,pos.coords.longitude);
+    showAgentHit(r.p,r.km,null);
+  },function(){showAgentHit(POLES[0],null,"تعذّر تحديدُ الموقع — مثالُ معاينة:")},{timeout:8000});
+});
 $("switchAccount").addEventListener("click",function(){
-  try{localStorage.removeItem("kabina_mode")}catch(e){}
-  MODE=null;go("login");
+  try{localStorage.removeItem("kabina_mode");localStorage.removeItem("kabina_profile")}catch(e){}
+  MODE=null;loginCand=null;lstep("ls0");go("login");
 });
 var curChat="agent";
 document.addEventListener("click",function(e){
@@ -559,7 +733,9 @@ $("storeTabs").addEventListener("click",function(e){
 renderStore("all");
 captureOrig();
 renderChips();
+try{var sp=localStorage.getItem("kabina_profile");if(sp){var pp=JSON.parse(sp);if(pp&&pp.name)PROFILE=pp}}catch(e){}
 if(!MODE){go("login")}else{applyMode()}
+applyProfile();
 loadPortal();
 fit();
 })();
