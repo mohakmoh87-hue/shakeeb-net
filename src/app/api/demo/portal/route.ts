@@ -24,6 +24,7 @@ type Store = {
   requests: DemoRequest[];
   ads: Record<string, AdSlot>;
   quick: string[];
+  offers: AdSlot[];
 };
 
 const DEFAULT_ADS: Record<string, AdSlot> = {
@@ -33,6 +34,12 @@ const DEFAULT_ADS: Record<string, AdSlot> = {
   activate: { text: "🚀 فعّل اشتراكك الأوّل اليوم ويصلك الفنّي خلال 24 ساعة", image: "" },
 };
 const DEFAULT_QUICK = ["طلب صيانة", "طلب تنصيب"];
+// 📦 باقاتُ وعروضُ التطبيق — صورةٌ أو كتابةٌ أو كلاهما، تديرها الشركة (طلب محمد 2026-08-29)
+const DEFAULT_OFFERS: AdSlot[] = [
+  { text: "برو ماكس 50 — سرعة 50 ميغابت · 25,000 د.ع شهرياً", image: "" },
+  { text: "🎁 عرض العائلة: 75 ميغابت + شهرٌ مجانيٌّ عند الاشتراك السنويّ", image: "" },
+  { text: "باقة الطالب — 30 ميغابت · 15,000 د.ع شهرياً", image: "" },
+];
 
 // globalThis: يبقى عبر HMR في التطوير وعبر الطلبات في الإنتاج (نسخةٌ واحدة)
 const g = globalThis as unknown as { __demoPortal?: Store; __demoPortalRate?: Map<string, { n: number; at: number }> };
@@ -43,6 +50,7 @@ function store(): Store {
       requests: [],
       ads: JSON.parse(JSON.stringify(DEFAULT_ADS)),
       quick: DEFAULT_QUICK.slice(),
+      offers: JSON.parse(JSON.stringify(DEFAULT_OFFERS)),
     };
   }
   return g.__demoPortal;
@@ -65,7 +73,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const s = store();
   return NextResponse.json(
-    { ads: s.ads, quick: s.quick, requests: s.requests },
+    { ads: s.ads, quick: s.quick, offers: s.offers, requests: s.requests },
     { headers: { "cache-control": "no-store" } },
   );
 }
@@ -105,6 +113,20 @@ export async function POST(req: Request) {
         image: image.startsWith("data:image/") && image.length <= 400_000 ? image : "",
       };
     }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (b.op === "offers") {
+    const list = Array.isArray(b.offers) ? b.offers : [];
+    s.offers = list.slice(0, 12).map((o) => {
+      const oo = (o ?? {}) as { text?: unknown; image?: unknown };
+      const image = cut(oo.image, 400_000);
+      return {
+        text: cut(oo.text, 300),
+        image: image.startsWith("data:image/") && image.length <= 400_000 ? image : "",
+      };
+    }).filter((o) => o.text || o.image);
+    if (!s.offers.length) s.offers = JSON.parse(JSON.stringify(DEFAULT_OFFERS));
     return NextResponse.json({ ok: true });
   }
 

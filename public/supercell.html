@@ -426,6 +426,16 @@
       </div>
 
       <div class="card settings-block">
+        <h3>📦 باقات وعروض تطبيق المشتركين</h3>
+        <p class="sub">تظهر في صفحة «الباقات والعروض» — صورةٌ أو كتابةٌ أو كلاهما، تُغيَّر ويُضاف إليها فتصل التطبيقَ فوراً.</p>
+        <div id="offerEditors"></div>
+        <div style="display:flex;gap:8px">
+          <button class="ghost" id="offerAdd">➕ إضافة عرض</button>
+          <button class="ghost" id="offersSave">💾 حفظ العروض</button>
+        </div>
+      </div>
+
+      <div class="card settings-block">
         <h3>⚡ خيارات المساعدة السريعة في التطبيق</h3>
         <p class="sub">تظهر فوق محادثة «تحتاج مساعدة؟» (طلب صيانة، طلب تنصيب…) — الإضافةُ والحذفُ يصلان التطبيقَ فوراً.</p>
         <div class="chips" id="quickChipsSc"></div>
@@ -981,7 +991,7 @@ renderDash();renderRaise();renderCards();renderInbox();renderSettings();renderNo
    طلباتُ التطبيق تصل هنا حيّةً (تحديثٌ كلّ ٥ ثوانٍ)، وإعلاناتُ التطبيق وخياراتُ
    المساعدة تُدار من الإعدادات وتصل التطبيقَ فوراً. الجسرُ ذاكرةُ عرضٍ مؤقّتةٌ فقط. */
 var AD_SLOTS=[["hero","الرئيسية — المستطيل الأعلى (مكان «إنترنتك شغّال»)"],["home2","الرئيسية — المستطيل الأسفل (مكان «باقتك الحالية»)"],["plan","صفحة «باقتي»"],["activate","صفحة «تفعيل الاشتراك»"]];
-var PORTAL={ads:{},quick:[],reqs:[],seen:{},first:true};
+var PORTAL={ads:{},quick:[],offers:[],reqs:[],seen:{},first:true};
 function routeOf(t){return t.indexOf("صيانة")>=0?"قسم الصيانة":t.indexOf("تنصيب")>=0?"قسم التنصيب":"الدعم العام"}
 function fmtAt(iso){try{var d=new Date(iso);
   return d.toLocaleDateString("en-GB",{timeZone:"Asia/Baghdad",day:"2-digit",month:"2-digit"})+" "+
@@ -1037,6 +1047,38 @@ $("adsSave").addEventListener("click",function(){
     PORTAL.ads[k].text=b.querySelector(".adTxt").value.trim();}
   postPortal({op:"ads",ads:PORTAL.ads},"✓ حُفظت الإعلانات — ستظهر في التطبيق فوراً");
 });
+/* 📦 عروضُ التطبيق — قائمةٌ حرّةٌ تُضاف وتُحذف (كالإعلانات لكن بلا خانات ثابتة) */
+function renderOfferEditors(){
+  var h="",i,o;
+  PORTAL.offers=PORTAL.offers||[];
+  for(i=0;i<PORTAL.offers.length;i++){o=PORTAL.offers[i]||{text:"",image:""};
+    h+='<div class="ad-editor" data-oi="'+i+'"><b>عرض '+(i+1)+' <button class="ghost offerDel" style="font-size:10px;padding:2px 8px;margin-inline-start:8px">حذف</button></b>'+
+      '<textarea rows="2" class="offTxt" placeholder="نصّ العرض…">'+esc(o.text||"")+'</textarea>'+
+      '<div class="ad-side">'+(o.image?'<img src="'+String(o.image).replace(/"/g,"")+'" alt="">':'<span style="color:var(--muted);font-size:10px">بلا صورة</span>')+
+      '<input type="file" accept="image/*" class="offImg">'+(o.image?'<button class="ghost offImgDel">إزالة الصورة</button>':"")+'</div></div>';
+  }
+  $("offerEditors").innerHTML=h||'<p class="sub">لا عروض — أضف أوّلها</p>';
+}
+$("offerAdd").addEventListener("click",function(){PORTAL.offers.push({text:"",image:""});renderOfferEditors()});
+$("offerEditors").addEventListener("click",function(e){
+  var del=e.target.closest(".offerDel");
+  if(del){PORTAL.offers.splice(Number(del.closest(".ad-editor").dataset.oi),1);renderOfferEditors();return}
+  var idel=e.target.closest(".offImgDel");
+  if(idel){PORTAL.offers[Number(idel.closest(".ad-editor").dataset.oi)].image="";renderOfferEditors()}
+});
+$("offerEditors").addEventListener("change",function(e){
+  var inp=e.target.closest(".offImg");if(!inp||!inp.files||!inp.files[0])return;
+  var i=Number(inp.closest(".ad-editor").dataset.oi),f=inp.files[0];
+  if(f.size>220*1024){toast("الصورة كبيرة — الحدّ 220KB للعرض");inp.value="";return}
+  var rd=new FileReader();
+  rd.onload=function(){PORTAL.offers[i].image=String(rd.result);renderOfferEditors()};
+  rd.readAsDataURL(f);
+});
+$("offersSave").addEventListener("click",function(){
+  var boxes=document.querySelectorAll("#offerEditors .ad-editor"),i;
+  for(i=0;i<boxes.length;i++)PORTAL.offers[Number(boxes[i].dataset.oi)].text=boxes[i].querySelector(".offTxt").value.trim();
+  postPortal({op:"offers",offers:PORTAL.offers},"✓ حُفظت العروض — تصل التطبيقَ فوراً");
+});
 function renderQuickSc(){
   var h="",i;
   for(i=0;i<PORTAL.quick.length;i++)h+='<span class="chip">⚡ '+esc(PORTAL.quick[i])+'<button data-qi="'+i+'">✕</button></span>';
@@ -1062,6 +1104,7 @@ function pollPortal(){
     if(!d)return;
     if(d.ads&&PORTAL.first){PORTAL.ads=d.ads;renderAdEditors()}
     if(d.quick&&PORTAL.first){PORTAL.quick=d.quick.slice();renderQuickSc()}
+    if(d.offers&&PORTAL.first){PORTAL.offers=d.offers.slice();renderOfferEditors()}
     var fresh=[],i,r;
     PORTAL.reqs=d.requests||[];
     for(i=0;i<PORTAL.reqs.length;i++){r=PORTAL.reqs[i];
