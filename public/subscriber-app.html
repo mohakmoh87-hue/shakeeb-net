@@ -99,6 +99,13 @@ h1 { margin:0; color:#102238; font-size:23px; letter-spacing:-.6px; } h1 span { 
 .agent-hit { display:flex; flex-direction:column; gap:.35rem; padding:.9rem; border:1px solid #f3dfb2; border-radius:14px; background:#fdf6e7; font-size:11px; color:#5a4a1e; }
 .agent-hit b { color:#8f5a03; }
 .mini-link { border:0; background:none; color:#0d8fa9; font-size:10.5px; font-weight:700; align-self:center; padding:.3rem; }
+#v-login.on { min-height:100%; justify-content:center; }
+.ask-inline { display:none; flex-direction:column; align-items:center; gap:.8rem; text-align:center; }
+.ask-inline.on { display:flex; }
+.ask-inline > strong { font-size:15px; color:#102238; }
+.yn-row { display:flex; gap:.7rem; width:100%; max-width:280px; margin:0 auto; }
+.yn { flex:1; padding:.8rem; border-radius:13px; font-size:14px; font-weight:800; border:1px solid #dfeaf0; background:#fff; color:#102238; }
+.yn.yes { background:#0d8fa9; border-color:#0d8fa9; color:#fff; }
 .login-hero { display:flex; flex-direction:column; align-items:center; gap:.4rem; padding:2.2rem 1rem 1.2rem; text-align:center; }
 .login-logo { display:grid; place-items:center; width:74px; height:74px; border-radius:24px; color:#66ddf2; background:#0d2943; font-size:32px; box-shadow:0 13px 25px #0d294329; }
 .login-hero h2 { margin:.6rem 0 0; font-size:22px; } .login-hero p { margin:0; color:#718198; font-size:11px; }
@@ -237,15 +244,15 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
 
         <div class="login-step on" id="ls0">
           <button class="primary-action" id="loginStart"><i class="ic" data-ic="lock-keyhole"></i> تسجيل الدخول</button>
-          <section class="info-note"><i class="ic" data-ic="shield-check"></i><span>معاينة: لا يُحفظ شيءٌ على أيّ خادم، ورمزُ الواتساب يظهر أمامك هنا (آليّةُ الواتساب تُتّفق لاحقاً).</span></section>
-        </div>
-
-        <div class="login-step" id="lsAsk">
-          <section class="service-intro"><i class="ic" data-ic="circle-help"></i><div><strong>هل أنت مشترك مع سوبر سيل؟</strong><p>لنجهّز حسابك بالطريقة الصحيحة</p></div></section>
-          <div class="support-options">
-            <button id="ansYes"><span class="service-icon"><i class="ic" data-ic="check"></i></span><strong>نعم — أنا مشترك</strong><small>سنتحقق من رقم هاتفك في قاعدة المشتركين</small><i class="ic" data-ic="chevron-left"></i></button>
-            <button id="ansNo"><span class="service-icon"><i class="ic" data-ic="user-round"></i></span><strong>لا — لست مشتركاً بعد</strong><small>سجّل حساباً وتصفح عروض سوبر سيل</small><i class="ic" data-ic="chevron-left"></i></button>
+          <!-- 🔄 (طلب محمد): نعم/لا تنبثقان تحت الزرّ مباشرةً — وسطيّاً وبلا أيّ شرحٍ ولا صفحةٍ جديدة -->
+          <div class="ask-inline" id="askInline">
+            <strong>هل أنت مشترك مع سوبر سيل؟</strong>
+            <div class="yn-row">
+              <button class="yn yes" id="ansYes">نعم</button>
+              <button class="yn" id="ansNo">لا</button>
+            </div>
           </div>
+          <section class="info-note"><i class="ic" data-ic="shield-check"></i><span>معاينة: لا يُحفظ شيءٌ على أيّ خادم، ورمزُ الواتساب يظهر أمامك هنا (آليّةُ الواتساب تُتّفق لاحقاً).</span></section>
         </div>
 
         <div class="login-step" id="lsPhone">
@@ -255,7 +262,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
             <button class="primary-action" id="phoneCheck"><i class="ic" data-ic="search"></i> تحقّق من الرقم</button>
           </section>
           <section class="info-note"><i class="ic" data-ic="circle-help"></i><span>أرقامُ المعاينة: <b dir="ltr">07701234567</b> (فعّال) · <b dir="ltr">07723456789</b> (غير فعّال) — وأيُّ رقمٍ آخرَ «غير مسجّل».</span></section>
-          <button class="mini-link" data-lstep="lsAsk">رجوع</button>
+          <button class="mini-link" data-lstep="ls0">رجوع</button>
         </div>
 
         <div class="login-step" id="lsName">
@@ -305,7 +312,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
             <button class="primary-action" id="regGo"><i class="ic" data-ic="check"></i> تسجيل والدخول</button>
           </section>
           <section class="info-note"><i class="ic" data-ic="message-circle"></i><span>ستصلك رسالةُ ترحيبٍ عبر واتساب (آليّتُه تُتّفق لاحقاً — في المعاينة تظهر إشعاراً هنا).</span></section>
-          <button class="mini-link" data-lstep="lsAsk">رجوع</button>
+          <button class="mini-link" data-lstep="ls0">رجوع</button>
         </div>
       </section>
 
@@ -578,7 +585,7 @@ function setMode(m){
   toast(m==="guest"?"أهلاً بك "+first+" — اطّلع على عروض سوبر سيل":"أهلاً بك يا "+first+" 👋");
 }
 function normPhone(v){return String(v||"").replace(/\D/g,"")}
-$("loginStart").addEventListener("click",function(){lstep("lsAsk")});
+$("loginStart").addEventListener("click",function(){$("askInline").classList.toggle("on");fit()});
 $("ansYes").addEventListener("click",function(){lstep("lsPhone")});
 $("ansNo").addEventListener("click",function(){lstep("lsReg")});
 /* نعم — مشترك: التحقق من الرقم في قاعدة كل الوكلاء + شرط «فعّال» */
