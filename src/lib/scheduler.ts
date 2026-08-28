@@ -30,6 +30,24 @@ function baghdadToday(): string { return baghdadDateStr(new Date()); }
 function baghdadYesterday(): Date { return new Date(Date.now() - 24 * 60 * 60 * 1000); }
 
 // ===== تذكير المشتركين المنتهين خلال «أيام التذكير» — لمكاتب محدّدة (أو الكل) =====
+// ═════ 🩺 ترقّبُ إنعاش عميل الواتساب (حادثة صميم 2026-08-28) ═════
+// العميلُ العليلُ يعود وحدَه بالدقائق (قِيس ~٧ دقائق) — فالدفعةُ تنتظره بدل الاحتراق.
+// على السحابة (لا عميلَ محلّيّاً) `waReadyLocal` كاذبةٌ دوماً فيَقصر الانتظارُ بلا ضرر —
+// عمليّاً لا يُبلَغ هذا المسارُ إلّا على حاسبة المكتب القائدة (الدفعاتُ الصامتةُ تعمل عليها).
+// ⛑️ خانقُ دورة القضاء: محاولةٌ لكلّ مكتبٍ كلَّ ٢٠ دقيقةً كحدٍّ أقصى — لا كلَّ دقيقةِ كرون
+const reminderCatchupAt = new Map<number, number>();
+const WA_REVIVAL_MAX_MS = 8 * 60_000;
+const WA_REVIVAL_STEP_MS = 10_000;
+async function waitWaRevival(officeId: number): Promise<boolean> {
+  const { waReadyLocal } = await import("@/lib/whatsapp");
+  const until = Date.now() + WA_REVIVAL_MAX_MS;
+  while (Date.now() < until) {
+    if (waReadyLocal(officeId)) return true;
+    await new Promise((r) => setTimeout(r, WA_REVIVAL_STEP_MS));
+  }
+  return waReadyLocal(officeId);
+}
+
 // عدد الأيام لكلّ مكتب (Tower.reminderDays) — فارغ = يومان (السلوك القديم). طلب محمد 2026-08-09.
 export const DEFAULT_REMINDER_DAYS = 2;
 export const reminderDaysOf = (d: number | null | undefined): number =>
@@ -131,6 +149,8 @@ export async function runExpiringReminder(
   // ═════ حادثة الشدن ٢ (2026-08-19) · عدّادان لكلّ مكتب — للختم المشروط أدناه ═════
   const offSent = new Map<number, number>();
   const offFailed = new Map<number, number>();
+  // 🩺 مكاتبُ ثبت موتُ واتسابها هذه الدورةَ رغم الإنعاش (حادثة صميم 2026-08-28)
+  const deadWaOffices = new Set<number>();
   for (const sub of recipients) {
     const office = sub.towerId ? officeMap.get(sub.towerId) : null;
     if (office?.waEnabled === "0") continue; // مكتب معطّل الواتساب
@@ -155,11 +175,28 @@ export async function runExpiringReminder(
       office: office?.name ?? (await fallbackOfficeFor(office?.agentId ?? null)),
     });
     // ═════ خاتمةُ الأصل ٢ (2026-08-19) · تذكيرُ الانتهاء تحت مظلّة فهرس التكرار ═════
+    // 🩺 مكتبٌ ثبت موتُ واتسابه هذه الدورةَ (بعد إنعاشٍ فاشل) ⇒ بقيّةُ مشتركيه يُتخطَّون
+    //    **بلا صفوف فشلٍ بالجملة** (حادثة صميم: ٦١ صفّاً محروقاً في دقيقة) — دورةُ القضاء
+    //    كلَّ ٢٠ دقيقةً تلتقطهم، وalreadySentToday يعفي من وصلته فعلاً.
+    if (sub.towerId != null && deadWaOffices.has(sub.towerId)) continue;
     // claimDay يحرس **المكتبَ** من دورتَي مُجدولٍ — لكنّ الزرَّ اليدويَّ (send-expiring)
     // يتعمّد تجاوزَه، فمُجدولٌ ثمّ زرٌّ (أو ضغطتان) = رسالتان لنفس المشترك. الحارسُ
     // الفرديُّ يسدّها: فحصٌ قبل الإرسال + dedupKey على السجلّ (الفهرسُ الفريدُ شبكةُ أمان).
     if (await alreadySentToday(sub.id, "expiring", office?.agentId ?? null)) continue;
-    const res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image, "bulk"); // واتساب مكتب المشترك + صورةُ القالب
+    let res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image, "bulk"); // واتساب مكتب المشترك + صورةُ القالب
+    // ═════ 🩺 إنعاشٌ داخل الدفعة (حادثة صميم 2026-08-28) ═════
+    // العميلُ العليلُ يموت وسطَ الدفعة **ويعود وحدَه بالدقائق** (قِيس: ماتَ بعد الأولى
+    // وعاد بعد ~٧ دقائق والشارةُ خضراء). فبدل حرق البقيّة: نترقّب عودتَه ثمّ نعيد محاولةَ
+    // المشترك نفسِه — فإن بقي ميّتاً بعد المهلة يُعلَن مكتبُه ميّتَ الدورة ويُترك للقضاء.
+    if (!res.ok && sub.towerId != null) {
+      const { isWaDown } = await import("@/lib/whatsapp");
+      if (isWaDown(res.error)) {
+        if (await waitWaRevival(sub.towerId)) {
+          res = await sendViaProvider("WHATSAPP", sub.phone, text, sub.towerId, template.image, "bulk");
+        }
+        if (!res.ok && isWaDown(res.error)) deadWaOffices.add(sub.towerId);
+      }
+    }
     await prisma.message.create({
       data: {
         channel: "WHATSAPP", subscriberId: sub.id, phone: sub.phone, text,
@@ -194,7 +231,11 @@ export async function runExpiringReminder(
   //   الفرديُّ alreadySentToday + فهرسُ dedupKey يحرسان كلَّ مشتركٍ وصلته رسالة.
   const today = baghdadToday();
   if (officeIds && officeIds.length) {
-    const dead = officeIds.filter((id) => (offFailed.get(id) ?? 0) > 0 && (offSent.get(id) ?? 0) === 0);
+    // 🔄 (حادثة صميم 2026-08-28) الشرطُ اشتدّ: كان «فشل **كلُّه**» وحدَه يفكّ الختم —
+    //    فنجاحُ يتيمةٍ ختم يومَ ٦١ فاشلة. الآن: **الفشلُ الغالبُ** يفكّ (failed > sent)،
+    //    ومكتبٌ أُعلن ميّتَ الواتساب وسطَ الدورة يُفكّ حكماً — فدورةُ القضاء تعيده اليوم.
+    const dead = officeIds.filter((id) =>
+      deadWaOffices.has(id) || (offFailed.get(id) ?? 0) > (offSent.get(id) ?? 0));
     const okIds = officeIds.filter((id) => !dead.includes(id));
     if (okIds.length) {
       await prisma.tower.updateMany({ where: { id: { in: okIds } }, data: { lastReminderDate: today } });
@@ -615,12 +656,31 @@ export function startScheduler() {
           ...(wAgent != null ? { agentId: wAgent } : {}), // عزل: مكاتب وكيل هذا العامل حصراً
           NOT: { OR: [{ silent: "0" }, { waEnabled: "0" }] },
         },
-        select: { id: true, reminderTime: true },
-      }).catch(() => [] as { id: number; reminderTime: string | null }[]);
+        select: { id: true, reminderTime: true, lastReminderDate: true },
+      }).catch(() => [] as { id: number; reminderTime: string | null; lastReminderDate: string | null }[]);
       const due = offs.filter((o) => (o.reminderTime?.trim() || reminderTime) === nowHM).map((o) => o.id);
       if (due.length) {
         // { claimDay } — المسارُ التلقائيُّ وحدَه يحجز يومَ المكتب قبل أوّل رسالة (ب-١/الأصل ٢)
         runExpiringReminder(due, { claimDay: true }).catch((e) => console.error("[scheduler] expiring:", e));
+      }
+      // ═════ ⛑️ قضاءُ اليوم (حادثة صميم 2026-08-28) ═════
+      // مكتبٌ صامتٌ **مضى وقتُه ويومُه غيرُ مختوم** — فشلُه الغالبُ فكّ ختمَه، أو كانت
+      // حاسبتُه مطفأةً وقتَه — يُعاد كلَّ ٢٠ دقيقةً حتى يُختم يومُه أو ينقضي اليوم.
+      // ولا ازدواجَ: `claimDay` يحجز قبل أوّل رسالة، و`alreadySentToday` يعفي من وصلته،
+      // والإخفاقُ الغالبُ يفكّ الختمَ ثانيةً فتلتقطه الدورةُ التالية.
+      {
+        const todayK = baghdadToday();
+        const lateDue = offs.filter((o) => {
+          const t = o.reminderTime?.trim() || reminderTime;
+          if (!(t < nowHM) || o.lastReminderDate === todayK) return false;
+          const last = reminderCatchupAt.get(o.id) ?? 0;
+          if (Date.now() - last < 20 * 60_000) return false;
+          reminderCatchupAt.set(o.id, Date.now());
+          return true;
+        }).map((o) => o.id);
+        if (lateDue.length) {
+          runExpiringReminder(lateDue, { claimDay: true }).catch((e) => console.error("[scheduler] expiring-catchup:", e));
+        }
       }
     }
     // رسائل الديون اليومية: لمكاتب فعّلت الخانة، بوقتها الخاص debtReminderTime (أو وقت تذكير المكتب/الوكيل).

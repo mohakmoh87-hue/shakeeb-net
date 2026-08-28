@@ -126,7 +126,9 @@ describe("🔗 البوّابةُ مربوطةٌ بالمكان الوحيد ا�
     // الافتراضيُّ `urgent` عمداً: النسيانُ يقع في الجانب الآمن (رسالةُ إنسانٍ لا تنتظر)
     assert.match(read("src/lib/messaging.ts"), /lane: "urgent" \| "bulk" = "urgent"/, "الافتراضيُّ لم يعد العاجل");
     const sch = read("src/lib/scheduler.ts");
-    assert.equal((sch.match(/, "bulk"\)/g) ?? []).length, 3, "دفعاتُ المجدول الثلاث (انتهاء · ديون · منتهون) لم تعد كلُّها bulk");
+    // 🔄 (2026-08-28) صارت أربعة: الرابعُ إعادةُ محاولة المشترك نفسِه بعد إنعاش العميل
+    //    (حادثة صميم) — وهي دفعةٌ بطبيعتها فتُصرّح bulk كأصلها.
+    assert.equal((sch.match(/, "bulk"\)/g) ?? []).length, 4, "دفعاتُ المجدول (انتهاء · ديون · منتهون · إعادةُ الإنعاش) لم تعد كلُّها bulk");
     assert.match(read("src/lib/broadcastQueue.ts"), /sendWhatsApp\(towerId, job\.phone, job\.text, image, "bulk"\)/, "ساحبُ البثّ ليس دفعة");
     assert.match(read("src/lib/syncAutoMsg.ts"), /image, "bulk"\)/, "طابورُ سجلّ المزامنة ليس دفعة");
     assert.match(read("src/lib/selfActivatedNotice.ts"), /queueImage, "bulk"\)/, "طابورُ «فعّل بنفسه» ليس دفعة");

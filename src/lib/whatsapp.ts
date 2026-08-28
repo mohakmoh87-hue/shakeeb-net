@@ -886,10 +886,21 @@ async function sendWhatsAppLocal(
   return withWaTurn(officeId, lane, maxWaitMs, () => sendWhatsAppNow(officeId, phone, text, image));
 }
 
+// ═════ 🩺 مِجسّا حالة العميل — لحادثة صميم 2026-08-28 ═════
+// «أرسل الأولى 15:50 ثمّ مات ٧ دقائق فاحترقت ٦١ فشلاً»: الدفعاتُ تحتاج أن **تعرف**
+// أنّ العلّةَ موتُ العميل (لا رقمٌ خاطئ) وأن **تجسّ** عودتَه لتستأنف بدل حرق البقيّة.
+export const WA_DOWN_MSG = "واتساب المكتب غير متصل — اربطه من إدارة المكاتب";
+export const isWaDown = (e?: string | null): boolean => !!e && e.includes("غير متصل — اربطه");
+/** جاهزيّةُ عميل هذا المكتب **على هذه الحاسبة** — للدفعات كي تترقّب إنعاشَه. */
+export function waReadyLocal(officeId: number): boolean {
+  const s = store(officeId);
+  return s.state === "ready" && !!s.client;
+}
+
 /** الإرسالُ الفعليُّ — لا يُنادى إلّا من داخل البوّابة أعلاه. */
 async function sendWhatsAppNow(officeId: number, phone: string, text: string, image?: string | null): Promise<SendResult> {
   const s = store(officeId);
-  if (s.state !== "ready" || !s.client) return { ok: false, error: "واتساب المكتب غير متصل — اربطه من إدارة المكاتب" };
+  if (s.state !== "ready" || !s.client) return { ok: false, error: WA_DOWN_MSG };
   const waId = toWaId(phone);
   if (!waId) return { ok: false, error: `رقم غير صالح: ${phone}` };
   const client = s.client;
@@ -970,7 +981,7 @@ async function sendWhatsAppRouted(officeId: number, phone: string, text: string,
   const s = store(officeId);
   if (s.state === "ready" && s.client) return sendWhatsAppLocal(officeId, phone, text, image, lane);
   // هذه الحاسبة مالكة الجلسة لكنها غير جاهزة الآن ⇒ لا تُمرّر لنفسها
-  if (hostsOfficeLocally(officeId)) return { ok: false, error: "واتساب المكتب غير متصل — اربطه من إدارة المكاتب" };
+  if (hostsOfficeLocally(officeId)) return { ok: false, error: WA_DOWN_MSG };
   // ليست المالكة ⇒ مرّر الإرسال إلى حاسبة المكتب.
   // المهلة ٤٥ ثانية لا ١٥: القياس على مكتب الشدن (2026-08-10) أظهر إرسالاً يستغرق ١٢–١٤ ثانية
   // في الإرسال الجماعيّ، فكانت رسائلٌ **وصلت فعلاً** تُختَم "فاشلة" لمجرّد تجاوز المهلة.
