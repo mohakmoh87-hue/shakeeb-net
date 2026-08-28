@@ -29,8 +29,12 @@ describe("🏢 صفحة /supercell معزولةٌ تماماً عن الموقع
     assert.ok(html.startsWith("<!doctype html>"), "الملفُّ بلا هيكل مستند كامل");
     assert.ok(html.includes("بيانات وهمية"), "وسمُ «بيانات وهمية» ضاع — قد تُقرأ الصفحةُ حقيقيّةً");
     assert.ok(html.includes('name="robots" content="noindex'), "ميتا noindex ضاعت من الملفّ");
-    // «صفر تدخل»: لا fetch ولا XMLHttpRequest ولا أيّ مسار /api — بياناتُها محقونةٌ فيها
-    assert.ok(!/fetch\s*\(|XMLHttpRequest|\/api\//.test(html), "الصفحةُ صارت تنادي الشبكة — انكسر «صفر تدخل»");
+    // 🔄 (خطة محمد 2026-08-28) «ربط الصفحتين معاً لأرى كيف تمرّ الطلبات»: صار للصفحة
+    //    نداءُ شبكةٍ واحدٌ مسموح — جسرُ العرض /api/demo/portal **حصراً**، ولا سواه أبداً.
+    assert.ok(!/XMLHttpRequest/.test(html), "ظهر XMLHttpRequest — النداءُ الوحيدُ المسموح جسرُ العرض عبر fetch");
+    const apiRefs = html.match(/\/api\/[a-z0-9/-]*/g) ?? [];
+    assert.ok(apiRefs.length > 0 && apiRefs.every((u) => u === "/api/demo/portal"),
+      "الصفحةُ تنادي مساراً غيرَ جسر العرض /api/demo/portal — انكسر العزل: " + JSON.stringify([...new Set(apiRefs)]));
   });
 
   test("حارسُ الدخول يستثني /supercell — تفتحها الشركةُ بلا حساب", () => {
@@ -55,8 +59,26 @@ describe("📱 صفحة /app (معاينة تطبيق المشترك) معزول
     assert.ok(html.startsWith("<!doctype html>"), "الملفُّ بلا هيكل مستند كامل");
     assert.ok(html.includes('name="robots" content="noindex'), "ميتا noindex ضاعت");
     assert.ok(html.includes("بيانات وهمية"), "وسمُ «بيانات وهمية» ضاع من الصفحة");
-    assert.ok(!/fetch\s*\(|XMLHttpRequest|\/api\//.test(html), "صفحةُ /app صارت تنادي الشبكة — انكسر «صفر تدخل»");
+    // 🔄 (خطة محمد 2026-08-28) النداءُ الوحيدُ المسموح: جسرُ العرض /api/demo/portal حصراً
+    assert.ok(!/XMLHttpRequest/.test(html), "ظهر XMLHttpRequest في /app — الجسرُ عبر fetch وحدَه");
+    const apiRefs = html.match(/\/api\/[a-z0-9/-]*/g) ?? [];
+    assert.ok(apiRefs.length > 0 && apiRefs.every((u) => u === "/api/demo/portal"),
+      "/app تنادي مساراً غيرَ جسر العرض — انكسر العزل: " + JSON.stringify([...new Set(apiRefs)]));
     const proxy = fs.readFileSync(path.join(ROOT, "src/proxy.ts"), "utf8");
     assert.ok(/PUBLIC_PATHS = \[[^\]]*"\/app"/.test(proxy), "/app سقطت من المسارات العامّة");
+  });
+});
+
+// ═════ 🌉 جسرُ العرض /api/demo/portal — مؤقّتٌ ومعزولٌ (خطة محمد 2026-08-28) ═════
+// «حالياً أربط الصفحتين لأرى كيف تمرّ الطلبات، ولاحقاً الربطُ مع إدارة الفنيين».
+describe("🌉 جسرُ العرض التجريبيّ معزولٌ ومسقوف", () => {
+  test("ذاكرةُ عمليةٍ فقط — لا قاعدةَ ولا جلسات ولا استيرادَ من كود الموقع، وبسقوفٍ وحدِّ إرسال", () => {
+    const r = fs.readFileSync(path.join(ROOT, "src/app/api/demo/portal/route.ts"), "utf8");
+    assert.ok(!/from "@\//.test(r), "الجسرُ صار يستورد من كود الموقع (@/) — انكسر العزل");
+    assert.ok(!/prisma|getSession|guard\(|jwtVerify/i.test(r), "الجسرُ يلمس القاعدةَ أو الجلسات — انكسر العزل");
+    assert.ok(r.includes("globalThis"), "الجسرُ فقد ذاكرةَ العملية — أين تُخزَّن بياناتُ العرض؟");
+    assert.ok(r.includes("s.requests.length > 50"), "سقفُ الطلبات (50) ضاع — طوفانٌ محتمل على مسارٍ عامّ");
+    assert.ok(r.includes("rateLimited"), "حدُّ الإرسال ضاع — مسارٌ عامٌّ بلا كوابح");
+    assert.ok(r.includes('startsWith("data:image/")'), "صورُ الإعلانات لم تعد مقيّدةً بـdata: — حقنُ روابطَ خارجيةٍ للمشتركين");
   });
 });

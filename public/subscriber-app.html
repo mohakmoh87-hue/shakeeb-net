@@ -84,6 +84,23 @@ h1 { margin:0; color:#102238; font-size:23px; letter-spacing:-.6px; } h1 span { 
 .device-list { display:flex; flex-direction:column; gap:.6rem; } .device-list > div { display:flex; align-items:center; gap:.7rem; padding:.8rem; border:1px solid #e6edf2; border-radius:15px; background:#fff; } .device-list span.mid { flex:1; display:flex; flex-direction:column; gap:3px; } .device-list strong { font-size:12px; } .device-list small { color:#92a0ad; font-size:9px; direction:ltr; text-align:right; }
 .online-indicator, .offline-indicator { width:8px; height:8px; border-radius:50%; flex:0 0 8px; } .online-indicator { background:#33b58c; box-shadow:0 0 0 3px #33b58c22; } .offline-indicator { background:#c3ccd6; }
 
+/* ═══ 🪧 الإعلانات (وضع غير مشترك سوبر سيل) + الدخول + المساعدة + الطلب ═══ */
+.ad-card { position:relative; overflow:hidden; border:1px solid #e4edf3; border-radius:20px; background:#fff; }
+.ad-card img { display:block; width:100%; max-height:150px; object-fit:cover; }
+.ad-body { display:flex; flex-direction:column; gap:.5rem; padding:.9rem 1rem; }
+.ad-body p { margin:0; font-size:12.5px; font-weight:700; color:#102238; line-height:1.7; }
+.ad-tag { position:absolute; top:.55rem; left:.55rem; z-index:1; padding:2px 9px; border-radius:99px; background:#0d2943d9; color:#ffd88a; font-size:8.5px; font-weight:800; }
+.ad-cta { align-self:flex-start; display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1rem; border:0; border-radius:11px; color:#fff; background:#0d8fa9; font-size:11px; font-weight:800; }
+.login-frame .bottom-nav { display:none; }
+.login-hero { display:flex; flex-direction:column; align-items:center; gap:.4rem; padding:2.2rem 1rem 1.2rem; text-align:center; }
+.login-logo { display:grid; place-items:center; width:74px; height:74px; border-radius:24px; color:#66ddf2; background:#0d2943; font-size:32px; box-shadow:0 13px 25px #0d294329; }
+.login-hero h2 { margin:.6rem 0 0; font-size:22px; } .login-hero p { margin:0; color:#718198; font-size:11px; }
+.chip-note { align-self:center; padding:3px 12px; border-radius:99px; background:#eaf7fa; color:#0d8fa9; font-size:9px; font-weight:700; }
+.quick-chips { display:flex; gap:.45rem; overflow:auto; scrollbar-width:none; } .quick-chips button { flex:0 0 auto; display:flex; align-items:center; gap:.35rem; padding:.55rem .8rem; border:1px solid #8bddea; border-radius:12px; color:#087d98; background:#e6f8fc; font-size:10px; font-weight:700; } .quick-chips button svg { width:13px; }
+.req-line { display:flex; justify-content:space-between; gap:.6rem; padding:.6rem .1rem; border-bottom:1px dashed #e2eaf1; font-size:11.5px; } .req-line span { color:#8998a9; font-size:10px; } .req-line b { color:#102238; }
+.toast { position:fixed; bottom:84px; inset-inline-start:50%; transform:translateX(-50%) translateY(90px); background:#0d2943; color:#fff; font-weight:700; font-size:11.5px; border-radius:12px; padding:10px 18px; box-shadow:0 18px 50px #10223859; opacity:0; transition:.25s; z-index:70; max-width:88vw; text-align:center; }
+.toast.on { transform:translateX(-50%); opacity:1; }
+
 /* ═══ 📏 طبقةُ الملاءمة (طلب محمد 2026-08-28: «لا تمرير للأسفل أبداً») ═══
    كلُّ مقاسٍ رأسيٍّ صار clamp بوحدة vh: ينكمش مع قِصَر الشاشة حتى تسعَ الشاشةُ
    كاملةً دفعةً واحدة، ويبقى بمقاسه الأصليّ على الشاشات الطويلة. والتمريرُ الداخليُّ
@@ -132,8 +149,8 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
       <!-- ═══ الرئيسية ═══ -->
       <section class="view on" id="v-home">
         <header class="topbar"><div><p class="eyebrow">الأحد، ٢٥ آب ٢٠٢٦</p><h1>هلا محمد، <span>نورت كابينة</span></h1></div><button class="icon-button" data-go="notifications" aria-label="الإشعارات"><i class="ic" data-ic="bell"></i><i class="dot-badge"></i></button></header>
-        <section class="hero-card"><div class="hero-orb"><i class="ic" data-ic="wifi"></i></div><div class="hero-copy"><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><p>حالة الاتصال</p><strong>إنترنتك شغّال</strong><small>سرعة مستقرة • آخر فحص قبل ٣ دقائق</small></div><button class="refresh-button" data-go="speed" aria-label="فحص الاتصال"><i class="ic" data-ic="gauge"></i></button></section>
-        <section class="days-card"><div class="days-number"><strong>١٨</strong><span>يوم متبقي</span></div><div class="days-info"><div class="section-kicker"><span>باقتك الحالية</span><b>نشطة</b></div><h2>برو ماكس 50</h2><p>تتجدد في ١٢ أيلول ٢٠٢٦</p><div class="progress"><span></span></div><small>استخدمت ٦٢٪ من بياناتك</small></div><button class="arrow-button" data-go="plan" aria-label="تفاصيل الباقة"><i class="ic" data-ic="chevron-left"></i></button></section>
+        <div id="slotHero"><section class="hero-card"><div class="hero-orb"><i class="ic" data-ic="wifi"></i></div><div class="hero-copy"><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><p>حالة الاتصال</p><strong>إنترنتك شغّال</strong><small>سرعة مستقرة • آخر فحص قبل ٣ دقائق</small></div><button class="refresh-button" data-go="speed" aria-label="فحص الاتصال"><i class="ic" data-ic="gauge"></i></button></section></div>
+        <div id="slotHome2"><section class="days-card"><div class="days-number"><strong>١٨</strong><span>يوم متبقي</span></div><div class="days-info"><div class="section-kicker"><span>باقتك الحالية</span><b>نشطة</b></div><h2>برو ماكس 50</h2><p>تتجدد في ١٢ أيلول ٢٠٢٦</p><div class="progress"><span></span></div><small>استخدمت ٦٢٪ من بياناتك</small></div><button class="arrow-button" data-go="plan" aria-label="تفاصيل الباقة"><i class="ic" data-ic="chevron-left"></i></button></section></div>
         <div class="section-heading"><h2>اختصاراتك</h2><button data-go="services">عرض الكل <i class="ic" data-ic="chevron-left"></i></button></div>
         <section class="shortcut-grid">
           <button class="shortcut" data-go="activate"><span class="shortcut-icon blue"><i class="ic" data-ic="credit-card"></i></span><strong>تفعيل الاشتراك</strong><small>جدّد اتصالك</small></button>
@@ -141,14 +158,14 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
           <button class="shortcut" data-go="speed"><span class="shortcut-icon violet"><i class="ic" data-ic="gauge"></i></span><strong>فحص السرعة</strong><small>اختبر اتصالك</small></button>
           <button class="shortcut" data-go="network"><span class="shortcut-icon orange"><i class="ic" data-ic="router"></i></span><strong>شبكتي</strong><small>٤ أجهزة متصلة</small></button>
         </section>
-        <section class="agent-card"><div class="agent-avatar"><i class="ic" data-ic="message-circle"></i></div><div class="agent-mid"><p>وكيلك متاح</p><strong>تحتاج مساعدة؟</strong><small>تحدث مع وكيلك مباشرة</small></div><button data-go="agent" aria-label="فتح الدردشة"><i class="ic" data-ic="arrow-left"></i></button></section>
+        <section class="agent-card"><div class="agent-avatar"><i class="ic" data-ic="message-circle"></i></div><div class="agent-mid"><p>نحن متاحون</p><strong>تحتاج مساعدة؟</strong><small>تحدث مع وكيلك أو مع الشركة مباشرة</small></div><button data-go="help" aria-label="فتح المساعدة"><i class="ic" data-ic="arrow-left"></i></button></section>
       </section>
 
       <!-- ═══ باقتي ═══ -->
       <section class="view" id="v-plan">
         <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">اشتراكك الحالي</p><h1>باقتي</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
-        <section class="plan-banner"><div><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><h2>برو ماكس 50</h2><p>باقة سريعة لعائلة متصلة</p></div><strong>١٨ <small>يوم</small></strong></section>
-        <div class="metric-grid"><div><strong>٥٠</strong><small>ميغابت / ثانية</small></div><div><strong>٦٢٪</strong><small>الاستهلاك</small></div><div><strong>٢٥,٠٠٠</strong><small>د.ع / شهر</small></div></div>
+        <div id="slotPlan"><section class="plan-banner"><div><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><h2>برو ماكس 50</h2><p>باقة سريعة لعائلة متصلة</p></div><strong>١٨ <small>يوم</small></strong></section></div>
+        <div class="metric-grid" id="planMetrics"><div><strong>٥٠</strong><small>ميغابت / ثانية</small></div><div><strong>٦٢٪</strong><small>الاستهلاك</small></div><div><strong>٢٥,٠٠٠</strong><small>د.ع / شهر</small></div></div>
         <div class="section-heading"><h2>إدارة الباقة</h2></div>
         <div class="detail-list">
           <button data-go="activate"><span class="list-icon"><i class="ic" data-ic="refresh-cw"></i></span><span class="mid"><strong>تجديد الاشتراك</strong><small>جدّد الآن قبل موعد الانتهاء</small></span><i class="ic" data-ic="chevron-left"></i></button>
@@ -165,7 +182,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
           <button class="service-card" data-go="activate"><span class="service-icon"><i class="ic" data-ic="credit-card"></i></span><strong>تفعيل الاشتراك</strong><small>دفع نقدي أو ماستر وتفعيل مباشر</small><i class="ic" data-ic="chevron-left"></i></button>
           <button class="service-card" data-go="loan"><span class="service-icon"><i class="ic" data-ic="zap"></i></span><strong>قرض إنترنت</strong><small>احصل على سعة إضافية عند الحاجة</small><i class="ic" data-ic="chevron-left"></i></button>
           <button class="service-card" data-go="speed"><span class="service-icon"><i class="ic" data-ic="gauge"></i></span><strong>فحص سرعة الإنترنت</strong><small>اعرف جودة اتصالك الآن</small><i class="ic" data-ic="chevron-left"></i></button>
-          <button class="service-card" data-go="agent"><span class="service-icon"><i class="ic" data-ic="message-circle"></i></span><strong>تحدث مع الوكيل</strong><small>دردشة مباشرة مع كابينة</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button class="service-card" data-go="help"><span class="service-icon"><i class="ic" data-ic="message-circle"></i></span><strong>تحتاج مساعدة؟</strong><small>تحدث مع الوكيل أو الشركة</small><i class="ic" data-ic="chevron-left"></i></button>
           <button class="service-card" data-go="network"><span class="service-icon"><i class="ic" data-ic="router"></i></span><strong>شبكتي</strong><small>٤ أجهزة متصلة حاليًا</small><i class="ic" data-ic="chevron-left"></i></button>
           <button class="service-card" data-go="network"><span class="service-icon"><i class="ic" data-ic="lock-keyhole"></i></span><strong>إعدادات الراوتر</strong><small>تغيير الاسم والرمز بأمان</small><i class="ic" data-ic="chevron-left"></i></button>
         </div>
@@ -196,7 +213,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
       <!-- ═══ تفعيل الاشتراك ═══ -->
       <section class="view" id="v-activate">
         <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">جدّد اتصالك بسهولة</p><h1>تفعيل الاشتراك</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
-        <section class="plan-banner"><div><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><h2>برو ماكس 50</h2><p>تفعيل شهر جديد • ٢٥,٠٠٠ د.ع</p></div><strong>١٨<small>يوم متبقٍ</small></strong></section>
+        <div id="slotActivate"><section class="plan-banner"><div><span class="status-pill"><span class="status-dot"></span> متصل الآن</span><h2>برو ماكس 50</h2><p>تفعيل شهر جديد • ٢٥,٠٠٠ د.ع</p></div><strong>١٨<small>يوم متبقٍ</small></strong></section></div>
         <section class="service-intro"><i class="ic" data-ic="credit-card"></i><div><strong>اختر طريقة الدفع</strong><p>فعّل اشتراكك بالطريقة الأنسب لك</p></div></section>
         <div class="support-options">
           <button data-method="توصيل نقدي"><span class="service-icon"><i class="ic" data-ic="banknote"></i></span><strong>الدفع عند التوصيل</strong><small>سيصل المندوب وتدفع نقدًا</small><i class="ic" data-ic="chevron-left"></i></button>
@@ -207,11 +224,47 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
         <section class="result-card success" id="payDone"><i class="ic" data-ic="check"></i><div><strong>تم استلام طلب تفعيل اشتراكك</strong><small>سيتم تأكيد الدفع وتفعيل الخدمة قريبًا.</small></div></section>
       </section>
 
-      <!-- ═══ دردشة الوكيل ═══ -->
+      <!-- ═══ تسجيل الدخول ═══ -->
+      <section class="view" id="v-login">
+        <div class="login-hero"><div class="login-logo"><i class="ic" data-ic="wifi"></i></div><h2>أهلاً بك في كابينة</h2><p>تطبيق المشترك — اختر طريقة الدخول</p></div>
+        <div class="support-options">
+          <button id="loginSas"><span class="service-icon"><i class="ic" data-ic="shield-check"></i></span><strong>تسجيل الدخول</strong><small>أنا مشترك مع سوبر سيل</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button id="loginGuest"><span class="service-icon"><i class="ic" data-ic="user-round"></i></span><strong>تسجيل الدخول</strong><small>لست مشتركاً مع سوبر سيل بعد</small><i class="ic" data-ic="chevron-left"></i></button>
+        </div>
+        <section class="info-note"><i class="ic" data-ic="shield-check"></i><span>عرضٌ تجريبيٌّ ببيانات وهمية — لا كلماتِ مرورٍ هنا. غيرُ المشترك يرى إعلاناتِ سوبر سيل مكان بيانات الاشتراك، ويمكنه التبديل في أيّ وقت من «حسابي».</span></section>
+      </section>
+
+      <!-- ═══ تحتاج مساعدة؟ — اختيار الجهة ═══ -->
+      <section class="view" id="v-help">
+        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">نحن في خدمتك</p><h1>تحتاج مساعدة؟</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="service-intro"><i class="ic" data-ic="message-circle"></i><div><strong>اختر مع من تريد التحدث</strong><p>وستظهر لك اختصاراتُ الطلبات السريعة فوق المحادثة</p></div></section>
+        <div class="support-options">
+          <button data-chat="agent"><span class="service-icon"><i class="ic" data-ic="user-round"></i></span><strong>التحدث مع الوكيل</strong><small>وكيلك الأقرب — صيانة وتفعيل ومتابعة</small><i class="ic" data-ic="chevron-left"></i></button>
+          <button data-chat="company"><span class="service-icon"><i class="ic" data-ic="shield-check"></i></span><strong>التحدث مع الشركة</strong><small>سوبر سيل — الدعم والشكاوى العامة</small><i class="ic" data-ic="chevron-left"></i></button>
+        </div>
+      </section>
+
+      <!-- ═══ المحادثة (وكيل/شركة) ═══ -->
       <section class="view" id="v-agent">
-        <header class="inner-header"><button class="icon-button" data-go="home" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">مساعدة مباشرة</p><h1>تحدث مع الوكيل</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <header class="inner-header"><button class="icon-button" data-go="help" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow">مساعدة مباشرة</p><h1 id="chatTitle">تحدث مع الوكيل</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <div class="quick-chips" id="quickChips"></div>
         <section class="chat-window" id="chatWin"><div class="chat-message agent">أهلًا بك في كابينة، كيف أقدر أساعدك؟</div></section>
         <div class="chat-composer"><input id="chatInput" placeholder="اكتب رسالتك هنا..."><button id="chatSend" aria-label="إرسال"><i class="ic" data-ic="send"></i></button></div>
+      </section>
+
+      <!-- ═══ معلومات الطلب ═══ -->
+      <section class="view" id="v-request">
+        <header class="inner-header"><button class="icon-button" data-go="agent" aria-label="العودة"><i class="ic" data-ic="arrow-left"></i></button><div><p class="eyebrow" id="reqTargetLabel">إلى الوكيل</p><h1 id="reqTitle">طلب صيانة</h1></div><i class="ic header-symbol" data-ic="wifi"></i></header>
+        <section class="payment-confirm on" id="reqCard">
+          <strong>معلومات الطلب — تُرسل تلقائياً من ملفّك</strong>
+          <div class="req-line"><span>نوع الطلب</span><b id="reqType">طلب صيانة</b></div>
+          <div class="req-line"><span>الاسم</span><b id="reqName"></b></div>
+          <div class="req-line"><span>اليوزر</span><b id="reqUser" dir="ltr"></b></div>
+          <div class="req-line"><span>الهاتف</span><b id="reqPhone" dir="ltr"></b></div>
+          <label class="f" style="margin:.4rem 0 0"><span>ملاحظة (اختياري)</span><textarea id="reqNote" rows="2" placeholder="صف حالتك باختصار…"></textarea></label>
+          <button class="primary-action" id="reqSend"><i class="ic" data-ic="send"></i> إرسال الطلب</button>
+        </section>
+        <section class="result-card success" id="reqDone"><i class="ic" data-ic="check"></i><div><strong id="reqDoneMsg">تم إرسال طلبك</strong><small>سيتواصل معك المختصّ في أقرب وقت.</small></div></section>
       </section>
 
       <!-- ═══ المتاجر ═══ -->
@@ -255,6 +308,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
           <button data-go="network"><span class="list-icon"><i class="ic" data-ic="router"></i></span><span class="mid"><strong>أجهزتي وشبكتي</strong><small>إدارة الراوتر والأجهزة</small></span><i class="ic" data-ic="chevron-left"></i></button>
           <button><span class="list-icon"><i class="ic" data-ic="credit-card"></i></span><span class="mid"><strong>الفواتير والدفع</strong><small>سجل الاشتراكات</small></span><i class="ic" data-ic="chevron-left"></i></button>
           <button><span class="list-icon"><i class="ic" data-ic="circle-help"></i></span><span class="mid"><strong>المساعدة والأسئلة</strong><small>إجابات سريعة</small></span><i class="ic" data-ic="chevron-left"></i></button>
+          <button id="switchAccount"><span class="list-icon"><i class="ic" data-ic="refresh-cw"></i></span><span class="mid"><strong>تبديل طريقة الدخول</strong><small id="modeLabel"></small></span><i class="ic" data-ic="chevron-left"></i></button>
         </div>
       </section>
 
@@ -275,6 +329,7 @@ h1 { font-size:clamp(18px,2.8vh,23px); }
     </nav>
   </div>
 </main>
+<div class="toast" id="toast"></div>
 
 <script>
 (function(){
@@ -306,9 +361,52 @@ function fit(){
 window.__fitDemo=fit;
 window.addEventListener("resize",fit);
 
+/* ═════ الحالة: وضعُ الدخول (مشترك سوبر سيل / زائر) + الإعلانات + خيارات المساعدة ═════
+   «معلومات المشترك تُستخرج من قاعدة البيانات» في النسخة الحقيقية — هنا ملفٌّ وهميّ. */
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+var toastT;
+function toast(m){var t=$("toast");t.textContent=m;t.classList.add("on");
+  clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove("on")},2800)}
+var PROFILE={name:"محمد أحمد",user:"bg-12-7-3@kab",phone:"0770 123 4567"};
+var MODE=null;try{MODE=localStorage.getItem("kabina_mode")}catch(e){}
+var ADS={
+  hero:{text:"⚡ اشترك مع سوبر سيل — إنترنت مستقرّ بسرعات حقيقية وتغطية أوسع",image:""},
+  home2:{text:"🎁 عرض الاشتراك الجديد: أوّل شهر بنصف السعر — اسأل وكيلك الأقرب",image:""},
+  plan:{text:"📶 باقات سوبر سيل تناسب الجميع — من 25 ألفاً شهرياً",image:""},
+  activate:{text:"🚀 فعّل اشتراكك الأوّل اليوم ويصلك الفنّي خلال 24 ساعة",image:""}
+};
+var QUICK=["طلب صيانة","طلب تنصيب"];
+var SLOTS={hero:"slotHero",home2:"slotHome2",plan:"slotPlan",activate:"slotActivate"};
+var ORIG={};
+function captureOrig(){for(var k in SLOTS)ORIG[k]=$(SLOTS[k]).innerHTML}
+function adHtml(k){
+  var a=ADS[k]||{},img=a.image?'<img src="'+String(a.image).replace(/"/g,"")+'" alt="إعلان">':"";
+  var txt=a.text?'<p>'+esc(a.text)+'</p>':"";
+  return '<section class="ad-card"><span class="ad-tag">إعلان</span>'+img+
+    '<div class="ad-body">'+txt+'<button class="ad-cta" data-go="activate">اشترك الآن مع سوبر سيل</button></div></section>';
+}
+function applyMode(){
+  var guest=MODE==="guest",k;
+  for(k in SLOTS)$(SLOTS[k]).innerHTML=guest?adHtml(k):ORIG[k];
+  var pm=$("planMetrics");if(pm)pm.style.display=guest?"none":"";
+  var ml=$("modeLabel");if(ml)ml.textContent=guest?"الوضع الحالي: زائر — تظهر لك إعلانات سوبر سيل":"الوضع الحالي: مشترك مع سوبر سيل";
+}
+/* 🌉 جسرُ العرض: الإعلاناتُ وخياراتُ المساعدة تُدار من صفحة الشركة (/supercell) وتصل من هنا */
+function loadPortal(){
+  try{
+    fetch("/api/demo/portal",{cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
+      if(d&&d.ads)for(var k in SLOTS)if(d.ads[k])ADS[k]=d.ads[k];
+      if(d&&d.quick&&d.quick.length)QUICK=d.quick;
+      renderChips();
+      if(MODE==="guest")applyMode();
+    }).catch(function(){});
+  }catch(e){}
+}
+
 /* التنقل بين الشاشات */
 var NAV=["home","plan","services","stores","account"];
 function go(tab){
+  document.querySelector(".phone-frame").classList.toggle("login-frame",tab==="login");
   Array.prototype.slice.call(document.querySelectorAll("section.view")).forEach(function(v){
     v.classList.toggle("on",v.id==="v-"+tab);
   });
@@ -368,7 +466,56 @@ $("payBtn").addEventListener("click",function(){
   $("payDone").classList.add("on");
 });
 
-/* دردشة الوكيل */
+/* ═════ الدخول والمساعدة والطلبات ═════ */
+function setMode(m){
+  MODE=m;try{localStorage.setItem("kabina_mode",m)}catch(e){}
+  applyMode();go("home");
+  toast(m==="guest"?"أهلاً بك — تصفّح واطّلع على عروض سوبر سيل":"أهلاً بعودتك يا "+PROFILE.name.split(" ")[0]+" 👋");
+}
+$("loginSas").addEventListener("click",function(){setMode("sas")});
+$("loginGuest").addEventListener("click",function(){setMode("guest")});
+$("switchAccount").addEventListener("click",function(){
+  try{localStorage.removeItem("kabina_mode")}catch(e){}
+  MODE=null;go("login");
+});
+var curChat="agent";
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-chat]");if(!b)return;
+  curChat=b.getAttribute("data-chat");
+  $("chatTitle").textContent=curChat==="company"?"تحدث مع الشركة":"تحدث مع الوكيل";
+  go("agent");
+});
+function renderChips(){
+  var h="",i;
+  for(i=0;i<QUICK.length;i++)h+='<button data-quick="'+esc(QUICK[i])+'">⚡ '+esc(QUICK[i])+'</button>';
+  $("quickChips").innerHTML=h;
+}
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-quick]");if(!b)return;
+  var t=b.getAttribute("data-quick");
+  $("reqTitle").textContent=t;$("reqType").textContent=t;
+  $("reqTargetLabel").textContent=curChat==="company"?"إلى الشركة — سوبر سيل":"إلى الوكيل";
+  $("reqName").textContent=PROFILE.name;$("reqUser").textContent=PROFILE.user;$("reqPhone").textContent=PROFILE.phone;
+  $("reqNote").value="";$("reqDone").classList.remove("on");$("reqCard").classList.add("on");
+  go("request");
+});
+$("reqSend").addEventListener("click",function(){
+  var payload={op:"request",target:curChat,type:$("reqType").textContent,
+    name:PROFILE.name,user:PROFILE.user,phone:PROFILE.phone,note:$("reqNote").value.trim()};
+  var btn=this;btn.disabled=true;
+  fetch("/api/demo/portal",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)})
+    .then(function(r){if(!r.ok)throw 0;return r.json()})
+    .then(function(){
+      $("reqCard").classList.remove("on");
+      $("reqDoneMsg").textContent="تم إرسال «"+payload.type+"» "+(curChat==="company"?"إلى الشركة":"إلى الوكيل");
+      $("reqDone").classList.add("on");fit();
+      toast("✓ أُرسل الطلب — يظهر الآن في "+(curChat==="company"?"صفحة سوبر سيل":"وارد الوكيل"));
+    })
+    .catch(function(){toast("تعذّر الإرسال — تحقّق من الاتصال وحاول ثانية")})
+    .then(function(){btn.disabled=false});
+});
+
+/* دردشة الوكيل/الشركة */
 function sendChat(){
   var v=$("chatInput").value.trim();if(!v)return;
   var m=document.createElement("div");m.className="chat-message user";m.textContent=v;
@@ -410,6 +557,10 @@ $("storeTabs").addEventListener("click",function(e){
   renderStore(b.getAttribute("data-store"));
 });
 renderStore("all");
+captureOrig();
+renderChips();
+if(!MODE){go("login")}else{applyMode()}
+loadPortal();
 fit();
 })();
 </script>

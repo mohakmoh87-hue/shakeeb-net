@@ -152,6 +152,15 @@
   .settings-block{padding:16px 18px;margin-bottom:14px}
   .settings-block h3{margin:0 0 2px;font-size:14px}
   .settings-block .sub{margin-bottom:8px}
+  /* 📣 محرّرات إعلانات التطبيق */
+  .ad-editor{display:grid;grid-template-columns:1fr auto;gap:8px 12px;align-items:start;
+    border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--surface2)}
+  .ad-editor b{grid-column:1/-1;font-size:12px;color:var(--navy3)}
+  .ad-editor textarea{width:100%;resize:vertical}
+  .ad-side{display:flex;flex-direction:column;gap:6px;align-items:center;min-width:110px}
+  .ad-side img{height:52px;max-width:110px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+  .ad-side input[type=file]{width:110px;font-size:10px}
+  .ad-side .ghost{font-size:10.5px;padding:3px 9px}
 
   /* ═══ منبثقة وإشعارات وتوست ═══ */
   .overlay{position:fixed;inset:0;background:rgba(10,25,42,.55);display:none;align-items:center;
@@ -222,6 +231,7 @@
       <button data-v="raise">📤 رفع بطاقة</button>
       <button data-v="cards">🗂️ بطاقات الشركة</button>
       <button data-v="inbox">📥 وارد الوكلاء</button>
+      <button data-v="appreq">📱 طلبات التطبيق</button>
       <button data-v="settings">⚙️ الإعدادات</button>
     </nav>
   </header>
@@ -352,6 +362,25 @@
       </div>
     </section>
 
+    <!-- ═══════════ طلبات تطبيق المشتركين ═══════════ -->
+    <section id="v-appreq">
+      <h2>طلبات تطبيق المشتركين</h2>
+      <p class="sub" id="appreqSub">تصل مباشرةً من تطبيق «كابينة» — الاسمُ واليوزر والهاتف من قاعدة البيانات، والطلبُ يُوجَّه للموظّف المختصّ. التحديثُ تلقائيٌّ كلّ ٥ ثوانٍ.</p>
+      <div class="filters">
+        <div class="seg" id="appreqSeg">
+          <button data-f="all" class="on">الكل</button>
+          <button data-f="company">إلى الشركة</button>
+          <button data-f="agent">إلى الوكيل</button>
+        </div>
+      </div>
+      <div class="card twrap">
+        <table>
+          <thead><tr><th>وصل</th><th>الجهة</th><th>نوع الطلب</th><th>الاسم</th><th>اليوزر</th><th>الهاتف</th><th>التوجيه</th></tr></thead>
+          <tbody id="appreqRows"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ═══════════ الإعدادات ═══════════ -->
     <section id="v-settings">
       <h2>الإعدادات</h2>
@@ -387,6 +416,20 @@
           <div class="subresults" id="slaAgentList" style="display:none;margin-top:6px"></div>
           <div id="slaAgentPicked"></div>
         </div>
+      </div>
+
+      <div class="card settings-block">
+        <h3>📣 إعلانات تطبيق المشتركين</h3>
+        <p class="sub">تظهر لغير مشتركي سوبر سيل مكانَ بيانات الاشتراك — نصٌّ أو صورةٌ أو كلاهما، وتُستبدل في أيّ وقتٍ فتصل التطبيقَ فوراً.</p>
+        <div id="adEditors"></div>
+        <button class="ghost" id="adsSave">💾 حفظ الإعلانات الأربعة</button>
+      </div>
+
+      <div class="card settings-block">
+        <h3>⚡ خيارات المساعدة السريعة في التطبيق</h3>
+        <p class="sub">تظهر فوق محادثة «تحتاج مساعدة؟» (طلب صيانة، طلب تنصيب…) — الإضافةُ والحذفُ يصلان التطبيقَ فوراً.</p>
+        <div class="chips" id="quickChipsSc"></div>
+        <div class="addrow"><input id="quickIn" placeholder="خيار جديد… (مثال: نقل خط)"><button class="ghost" id="quickAdd">إضافة</button></div>
       </div>
 
       <div class="card settings-block">
@@ -933,6 +976,106 @@ document.addEventListener("change",function(e){if(e.target.id==="d1"||e.target.i
 })();
 
 renderDash();renderRaise();renderCards();renderInbox();renderSettings();renderNotifs();
+
+/* ═════ 🌉 جسرُ تطبيق المشتركين — /api/demo/portal (خطة محمد 2026-08-28) ═════
+   طلباتُ التطبيق تصل هنا حيّةً (تحديثٌ كلّ ٥ ثوانٍ)، وإعلاناتُ التطبيق وخياراتُ
+   المساعدة تُدار من الإعدادات وتصل التطبيقَ فوراً. الجسرُ ذاكرةُ عرضٍ مؤقّتةٌ فقط. */
+var AD_SLOTS=[["hero","الرئيسية — المستطيل الأعلى (مكان «إنترنتك شغّال»)"],["home2","الرئيسية — المستطيل الأسفل (مكان «باقتك الحالية»)"],["plan","صفحة «باقتي»"],["activate","صفحة «تفعيل الاشتراك»"]];
+var PORTAL={ads:{},quick:[],reqs:[],seen:{},first:true};
+function routeOf(t){return t.indexOf("صيانة")>=0?"قسم الصيانة":t.indexOf("تنصيب")>=0?"قسم التنصيب":"الدعم العام"}
+function fmtAt(iso){try{var d=new Date(iso);
+  return d.toLocaleDateString("en-GB",{timeZone:"Asia/Baghdad",day:"2-digit",month:"2-digit"})+" "+
+         d.toLocaleTimeString("en-GB",{timeZone:"Asia/Baghdad",hour:"2-digit",minute:"2-digit"});}catch(e){return "—"}}
+var appreqF="all";
+function renderAppReq(){
+  var h="",i,r,shown=0;
+  for(i=0;i<PORTAL.reqs.length;i++){r=PORTAL.reqs[i];
+    if(appreqF!=="all"&&r.target!==appreqF)continue;shown++;
+    h+='<tr><td class="num" dir="ltr">'+fmtAt(r.at)+'</td>'+
+      '<td><span class="pill '+(r.target==="company"?"p-blue":"p-gray")+'">'+(r.target==="company"?"الشركة":"الوكيل")+'</span></td>'+
+      '<td><b>'+esc(r.type)+'</b>'+(r.note?'<br><span style="color:var(--muted);font-size:10.5px">'+esc(r.note)+'</span>':"")+'</td>'+
+      '<td>'+esc(r.name||"—")+'</td><td dir="ltr" class="num">'+esc(r.user||"—")+'</td>'+
+      '<td dir="ltr" class="num">'+esc(r.phone||"—")+'</td>'+
+      '<td><span class="pill p-ok">⇐ '+routeOf(r.type)+'</span></td></tr>';
+  }
+  $("appreqRows").innerHTML=h||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:26px">لا طلبات بعد — أرسل طلباً من التطبيق (shakeebnet.com/app) وسيظهر هنا خلال ثوانٍ</td></tr>';
+  $("appreqSub").innerHTML="تصل مباشرةً من تطبيق «كابينة» — التحديثُ تلقائيٌّ كلّ ٥ ثوانٍ. <b>"+PORTAL.reqs.length+" طلباً</b> · المعروض: "+shown;
+}
+$("appreqSeg").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;
+  appreqF=b.dataset.f;
+  var bs=this.querySelectorAll("button"),i;for(i=0;i<bs.length;i++)bs[i].classList.toggle("on",bs[i]===b);
+  renderAppReq();
+});
+function renderAdEditors(){
+  var h="",i,s,k,a;
+  for(i=0;i<AD_SLOTS.length;i++){s=AD_SLOTS[i];k=s[0];a=PORTAL.ads[k]||{text:"",image:""};
+    h+='<div class="ad-editor" data-slot="'+k+'"><b>'+s[1]+'</b>'+
+      '<textarea rows="2" class="adTxt" placeholder="نصّ الإعلان…">'+esc(a.text||"")+'</textarea>'+
+      '<div class="ad-side">'+(a.image?'<img src="'+String(a.image).replace(/"/g,"")+'" alt="">':'<span style="color:var(--muted);font-size:10px">بلا صورة</span>')+
+      '<input type="file" accept="image/*" class="adImg">'+(a.image?'<button class="ghost adImgDel">إزالة الصورة</button>':"")+'</div></div>';
+  }
+  $("adEditors").innerHTML=h;
+}
+$("adEditors").addEventListener("change",function(e){
+  var inp=e.target.closest(".adImg");if(!inp||!inp.files||!inp.files[0])return;
+  var box=inp.closest(".ad-editor"),k=box.dataset.slot,f=inp.files[0];
+  if(f.size>220*1024){toast("الصورة كبيرة — الحدّ 220KB للعرض");inp.value="";return}
+  var rd=new FileReader();
+  rd.onload=function(){PORTAL.ads[k]=PORTAL.ads[k]||{text:"",image:""};PORTAL.ads[k].image=String(rd.result);renderAdEditors()};
+  rd.readAsDataURL(f);
+});
+$("adEditors").addEventListener("click",function(e){
+  var del=e.target.closest(".adImgDel");if(!del)return;
+  var k=del.closest(".ad-editor").dataset.slot;
+  if(PORTAL.ads[k])PORTAL.ads[k].image="";renderAdEditors();
+});
+$("adsSave").addEventListener("click",function(){
+  var boxes=document.querySelectorAll("#adEditors .ad-editor"),i,b,k;
+  for(i=0;i<boxes.length;i++){b=boxes[i];k=b.dataset.slot;
+    PORTAL.ads[k]=PORTAL.ads[k]||{text:"",image:""};
+    PORTAL.ads[k].text=b.querySelector(".adTxt").value.trim();}
+  postPortal({op:"ads",ads:PORTAL.ads},"✓ حُفظت الإعلانات — ستظهر في التطبيق فوراً");
+});
+function renderQuickSc(){
+  var h="",i;
+  for(i=0;i<PORTAL.quick.length;i++)h+='<span class="chip">⚡ '+esc(PORTAL.quick[i])+'<button data-qi="'+i+'">✕</button></span>';
+  $("quickChipsSc").innerHTML=h||'<span class="chip" style="color:var(--muted)">لا خيارات — أضف أوّلها</span>';
+}
+$("quickChipsSc").addEventListener("click",function(e){
+  var b=e.target.closest("button[data-qi]");if(!b)return;
+  PORTAL.quick.splice(Number(b.dataset.qi),1);renderQuickSc();
+  postPortal({op:"quick",quick:PORTAL.quick},"✓ حُذف الخيار");
+});
+$("quickAdd").addEventListener("click",function(){
+  var v=$("quickIn").value.trim();if(!v)return;
+  PORTAL.quick.push(v);$("quickIn").value="";renderQuickSc();
+  postPortal({op:"quick",quick:PORTAL.quick},"✓ أُضيف الخيار — يظهر في التطبيق فوراً");
+});
+function postPortal(payload,okMsg){
+  fetch("/api/demo/portal",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)})
+    .then(function(r){if(!r.ok)throw 0;toast(okMsg)})
+    .catch(function(){toast("تعذّر الحفظ — تحقّق من الاتصال")});
+}
+function pollPortal(){
+  fetch("/api/demo/portal",{cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
+    if(!d)return;
+    if(d.ads&&PORTAL.first){PORTAL.ads=d.ads;renderAdEditors()}
+    if(d.quick&&PORTAL.first){PORTAL.quick=d.quick.slice();renderQuickSc()}
+    var fresh=[],i,r;
+    PORTAL.reqs=d.requests||[];
+    for(i=0;i<PORTAL.reqs.length;i++){r=PORTAL.reqs[i];
+      if(!PORTAL.seen[r.id]){PORTAL.seen[r.id]=1;if(!PORTAL.first)fresh.push(r)}}
+    for(i=0;i<fresh.length;i++){r=fresh[i];
+      NOTIFS.unshift({ic:"📱",b:"طلب جديد من التطبيق: "+r.type,s:(r.name||"مشترك")+" — "+(r.target==="company"?"إلى الشركة ⇐ "+routeOf(r.type):"إلى الوكيل"),t:"الآن"});
+      bump();}
+    if(fresh.length)renderNotifs();
+    PORTAL.first=false;
+    renderAppReq();
+  }).catch(function(){});
+}
+pollPortal();
+setInterval(pollPortal,5000);
 })();
 </script>
 
