@@ -18,7 +18,9 @@ const SECRET = new TextEncoder().encode(
 // 🏢 /supercell (2026-08-28): صفحةُ عرضِ بوّابة سوبر سيل — ملفٌّ ثابتٌ ببياناتٍ وهميّة
 //    تفتحه الشركةُ بلا حساب؛ معزولٌ تماماً (لا قاعدةَ ولا جلسات) فإتاحتُه لا تفتح شيئاً.
 // 📱 /app (2026-08-28): معاينةُ ستايل تطبيق المشترك «كابينة» — نفسُ الوصفة والعزل حرفيّاً.
-const PUBLIC_PATHS = ["/login", "/reset", "/about", "/supercell", "/app"];
+// 📦 /kabina-web (2026-08-29): بناءُ Flutter الثابت الذي يحمّله /app في iframe — نسخةُ الويب
+//    محاكاةٌ بحتة (بلا أسرار ولا قاعدة ولا جلسات)، فلا بدّ أن يكون عامّاً وإلا انكسر الـiframe للزائر.
+const PUBLIC_PATHS = ["/login", "/reset", "/about", "/supercell", "/app", "/kabina-web"];
 
 // يعيد { authed, isTech } من توكن الجلسة (المستخدم أو الفني)
 async function readSession(req: NextRequest): Promise<{ authed: boolean; isTech: boolean }> {
