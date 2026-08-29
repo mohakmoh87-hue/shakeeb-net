@@ -11,38 +11,31 @@ import path from "node:path";
 
 const ROOT = process.cwd();
 
-describe("🏢 صفحة /supercell معزولةٌ تماماً عن الموقع الحيّ", () => {
-  test("المسارُ يقدّم ملفّاً ثابتاً، ويُحجب بـ404 عند إطفاء البوّابة، بلا لمسِ قاعدةٍ أو جلسةِ مستخدم", () => {
-    const route = fs.readFileSync(path.join(ROOT, "src/app/supercell/route.ts"), "utf8");
-    assert.ok(route.includes('path.join(process.cwd(), "public", "supercell.html")'),
-      "المسارُ لم يعد يقرأ الملفَّ الثابت من public — وDockerfile ينسخها كاملةً لمخرجات standalone");
-    // 🔌 حجبُ 404 عند الإطفاء (طلب محمد 2026-08-29): العلَمُ العامُّ الوحيدُ المسموحُ استيرادُه
-    assert.ok(route.includes("getPortalEnabled") && /status:\s*404/.test(route),
-      "بوّابةُ /supercell لم تعد تُحجب بـ404 عند إطفاء المالك");
-    // صفرُ تدخّل بالمستأجرين: لا Prisma مباشرة ولا جلسةَ مستخدمٍ ولا حارسٍ — علَمٌ عامٌّ فقط
-    assert.ok(!/prisma|getSession|guard\(/.test(route), "المسارُ يلمس القاعدةَ مباشرةً أو جلسةَ المستخدم — انكسر العزل");
-    // الاستيرادُ الوحيدُ المسموحُ من كود الموقع هو علَمُ البوّابة (appConfig) — لا سواه
-    const imports = [...route.matchAll(/from "(@\/[^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(imports, ["@/lib/appConfig"], "المسارُ يستوردُ من كود الموقع أكثرَ من علَم البوّابة — انكسر العزل: " + JSON.stringify(imports));
-    assert.ok(route.includes("noindex"), "الصفحةُ بلا noindex — عرضٌ تسويقيٌّ لا يُفهرَس");
+describe("🏢 بوّابة /supercell الحقيقيّة معزولةٌ بجلسة الشركة (لا المستخدم)", () => {
+  // القطعة ٥ (2026-08-29): حلّت بوّابةٌ حقيقيّةٌ (page.tsx) محلَّ عرض الـ120 وكيلاً الوهميّ (route.ts محذوف).
+  test("/supercell صفحةٌ محروسةٌ بجلسة الشركة، محجوبةٌ 404 عند الإطفاء، لا تلمس جلسةَ المستخدم", () => {
+    const pagePath = path.join(ROOT, "src/app/supercell/page.tsx");
+    assert.ok(fs.existsSync(pagePath), "صفحةُ /supercell الحقيقيّة غيرُ موجودة");
+    const page = fs.readFileSync(pagePath, "utf8");
+    // 404 عند إطفاء البوّابة (طلب محمد)
+    assert.ok(page.includes("getPortalEnabled") && page.includes("notFound"), "بوّابةُ /supercell لا تُحجب بـ404 عند إطفاء المالك");
+    // تُحرَس بجلسة الشركة المنفصلة (kabina_company)، لا بجلسة المستخدم الداخليّة
+    assert.ok(page.includes("getCompanySession"), "/supercell لا تُحرَس بجلسة الشركة");
+    assert.ok(!/getSession\b|guard\(/.test(page), "/supercell تلمس جلسةَ المستخدم الداخليّة — يجب جلسةَ الشركة حصراً");
+    assert.ok(/robots:\s*\{\s*index:\s*false/.test(page), "noindex ضاع من البوّابة");
+    // لا route.ts ثابتٌ متبقٍّ (يتعارض مع page.tsx)
+    assert.ok(!fs.existsSync(path.join(ROOT, "src/app/supercell/route.ts")), "route.ts الساكن ما زال موجوداً مع page.tsx — تعارض");
   });
 
-  test("الملفُّ الثابتُ موجودٌ، وهميُّ البيانات، وبلا أيّ نداءِ شبكة", () => {
-    const p = path.join(ROOT, "public/supercell.html");
-    assert.ok(fs.existsSync(p), "public/supercell.html غيرُ موجود — المسارُ سيعيد 500");
-    const html = fs.readFileSync(p, "utf8");
-    assert.ok(html.startsWith("<!doctype html>"), "الملفُّ بلا هيكل مستند كامل");
-    assert.ok(html.includes("بيانات وهمية"), "وسمُ «بيانات وهمية» ضاع — قد تُقرأ الصفحةُ حقيقيّةً");
-    assert.ok(html.includes('name="robots" content="noindex'), "ميتا noindex ضاعت من الملفّ");
-    // 🔄 (خطة محمد 2026-08-28) «ربط الصفحتين معاً لأرى كيف تمرّ الطلبات»: صار للصفحة
-    //    نداءُ شبكةٍ واحدٌ مسموح — جسرُ العرض /api/demo/portal **حصراً**، ولا سواه أبداً.
-    assert.ok(!/XMLHttpRequest/.test(html), "ظهر XMLHttpRequest — النداءُ الوحيدُ المسموح جسرُ العرض عبر fetch");
-    const apiRefs = html.match(/\/api\/[a-z0-9/-]*/g) ?? [];
-    assert.ok(apiRefs.length > 0 && apiRefs.every((u) => u === "/api/demo/portal"),
-      "الصفحةُ تنادي مساراً غيرَ جسر العرض /api/demo/portal — انكسر العزل: " + JSON.stringify([...new Set(apiRefs)]));
+  test("تحريرُ الشركة للإعلانات محروسٌ بجلسة الشركة ويكتب المحتوى فقط (لا أعلامَ المالك)", () => {
+    const cfg = fs.readFileSync(path.join(ROOT, "src/app/api/company/config/route.ts"), "utf8");
+    assert.ok(cfg.includes("getCompanySession"), "مسارُ تحرير الشركة لا يُحرَس بجلسة الشركة");
+    assert.ok(!/getSession\b|guard\(/.test(cfg), "مسارُ تحرير الشركة يلمس جلسةَ المستخدم — يجب جلسةَ الشركة حصراً");
+    // الشركةُ تكتب المحتوى فقط؛ الأعلام (companyMode/portalEnabled) للمالك حصراً
+    assert.ok(cfg.includes("setAppContent") && !/setCompanyMode|setPortalEnabled/.test(cfg), "الشركةُ تكتب أعلامَ المالك — تجاوزُ صلاحيّة");
   });
 
-  test("حارسُ الدخول يستثني /supercell — تفتحها الشركةُ بلا حساب", () => {
+  test("حارسُ الدخول يستثني /supercell — تفتحها الشركةُ بلا جلسة مستخدم", () => {
     const proxy = fs.readFileSync(path.join(ROOT, "src/proxy.ts"), "utf8");
     assert.ok(/PUBLIC_PATHS = \[[^\]]*"\/supercell"/.test(proxy),
       "/supercell سقطت من المسارات العامّة — الزائرُ سيُحوَّل إلى /login");
