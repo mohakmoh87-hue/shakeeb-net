@@ -44,10 +44,12 @@ describe("🏢 صفحة /supercell معزولةٌ تماماً عن الموقع
   });
 });
 
-// ═════ 📱 صفحة /app — معاينةُ ستايل تطبيق المشترك «كابينة» (طلب محمد 2026-08-28) ═════
-// نفسُ وصفة /supercell ونفسُ شرط «صفر تدخل» — والقفلُ نفسُه حرفاً بحرف.
-describe("📱 صفحة /app (معاينة تطبيق المشترك) معزولةٌ تماماً", () => {
-  test("المسارُ ثابتٌ بلا استيرادٍ من كود الموقع، والملفُّ وهميٌّ بلا شبكة، والحارسُ يستثنيه", () => {
+// ═════ 📱 صفحة /app — معاينةُ تطبيق المشترك «كابينة» (Flutter كامل، 2026-08-29) ═════
+// صار /app غلافاً رقيقاً يضمّن بناءَ Flutter الثابت من /kabina-web في iframe (كلُّ التطبيق:
+// شاشاتٌ + فحص + تنقّل). نفسُ شرط «صفر تدخل»: الغلافُ خاملٌ — لا قاعدةَ ولا جلساتٍ ولا نداءَ
+// API — والقفلُ هنا يمنع أيَّ تسرّبٍ قبل الإنتاج، ويثبّت أنّ /kabina-web عامٌّ (وإلّا انكسر الـiframe).
+describe("📱 صفحة /app (تطبيق المشترك Flutter) معزولةٌ تماماً", () => {
+  test("المسارُ ثابتٌ بلا استيرادٍ من كود الموقع، والغلافُ خاملٌ يضمّن /kabina-web، والحارسُ يفتح الاثنين", () => {
     const route = fs.readFileSync(path.join(ROOT, "src/app/app/route.ts"), "utf8");
     assert.ok(route.includes('path.join(process.cwd(), "public", "subscriber-app.html")'),
       "المسارُ لا يقرأ الملفَّ الثابت من public");
@@ -58,14 +60,20 @@ describe("📱 صفحة /app (معاينة تطبيق المشترك) معزول
     const html = fs.readFileSync(p, "utf8");
     assert.ok(html.startsWith("<!doctype html>"), "الملفُّ بلا هيكل مستند كامل");
     assert.ok(html.includes('name="robots" content="noindex'), "ميتا noindex ضاعت");
-    assert.ok(html.includes("بيانات وهمية"), "وسمُ «بيانات وهمية» ضاع من الصفحة");
-    // 🔄 (خطة محمد 2026-08-28) النداءُ الوحيدُ المسموح: جسرُ العرض /api/demo/portal حصراً
-    assert.ok(!/XMLHttpRequest/.test(html), "ظهر XMLHttpRequest في /app — الجسرُ عبر fetch وحدَه");
+    assert.ok(html.includes("بيانات وهمية"), "وسمُ «بيانات وهمية» ضاع — قد تُقرأ الصفحةُ حقيقيّةً");
+    // البنيةُ الجديدة: يضمّن بناءَ Flutter الثابت من /kabina-web في iframe (لا محتوى بيانات في الغلاف)
+    assert.ok(/<iframe/i.test(html) && html.includes("/kabina-web/"),
+      "/app لم يعد يضمّن بناءَ Flutter من /kabina-web — انكسرت المعاينة");
+    // عزلٌ أقوى من السابق: الغلافُ خاملٌ تماماً — لا XHR ولا أيّ نداءِ API (الكودُ كلُّه في بناء Flutter المعزول)
+    assert.ok(!/XMLHttpRequest/.test(html), "ظهر XMLHttpRequest في /app — الغلافُ يجب أن يكون خاملاً");
     const apiRefs = html.match(/\/api\/[a-z0-9/-]*/g) ?? [];
-    assert.ok(apiRefs.length > 0 && apiRefs.every((u) => u === "/api/demo/portal"),
-      "/app تنادي مساراً غيرَ جسر العرض — انكسر العزل: " + JSON.stringify([...new Set(apiRefs)]));
+    assert.equal(apiRefs.length, 0,
+      "غلافُ /app ينادي مسارَ API — يجب أن يكون خاملاً تماماً: " + JSON.stringify([...new Set(apiRefs)]));
     const proxy = fs.readFileSync(path.join(ROOT, "src/proxy.ts"), "utf8");
     assert.ok(/PUBLIC_PATHS = \[[^\]]*"\/app"/.test(proxy), "/app سقطت من المسارات العامّة");
+    // بناءُ Flutter (iframe) يجب أن يكون عامّاً أيضاً وإلّا حُوِّل إلى /login للزائر غير المسجَّل
+    assert.ok(/PUBLIC_PATHS = \[[^\]]*"\/kabina-web"/.test(proxy),
+      "/kabina-web سقطت من المسارات العامّة — الـiframe سيُحوَّل إلى /login للزائر");
   });
 });
 
