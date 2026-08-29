@@ -125,14 +125,16 @@ export const PERMISSION_GROUPS: { title: string; items: { key: Permission; label
 export const PERMISSION_LIST: { key: Permission; label: string }[] =
   PERMISSION_GROUPS.flatMap((g) => g.items);
 
-// توافق الجلسات القديمة: جلسة صادرة قبل الهجرة تحمل المفاتيح القديمة فقط —
-// المفتاح القديم يمنح مفاتيحه الجديدة حتى يعيد المستخدم الدخول (نفس خريطة هجرة القاعدة)
+// توافق الجلسات القديمة: مفتاحٌ **مُلغىً** يمنح مفاتيحَه الجديدة (خريطةُ هجرة القاعدة).
+// 🔓 فُصِلت 2026-08-29 (طلبُ محمد): الأزواجُ الأربعةُ «أبٌ حيٌّ ⇒ ابنٌ حيّ» أُزيلت من هنا
+//    (subscribers.manage→subscribers.import · users.manage→audit.view ·
+//     manager.accounts→hybrid.manage · field.manage→field.payroll) لتصيرَ الصلاحيّاتُ
+//    مستقلّةً قابلةً للتحكّم فرديّاً — فالبلاغُ: «إدارة الفنيين» كانت تُلصِقُ «رواتب الفنيين»
+//    فيستحيلُ نزعُها. وردمُ `permSplitBackfill` ثبّت الابنَ صراحةً لكلّ من يملك الأبَ قبل
+//    الإزالة (منحاً ومنعاً) — فلا فقدَ ولا كسب. يبقى `offices.manage` وحدَه لأنّه مفتاحٌ
+//    **مُلغىً** فعلاً (لا يُعرَض في الأصناف ولا يُخزَّن جديداً).
 export const LEGACY_IMPLIES: Record<string, Permission[]> = {
   "offices.manage": ["offices.edit", "offices.delete", "backup.manage", "agent.settings", "rewards.config"],
-  "subscribers.manage": ["subscribers.import"],
-  "users.manage": ["audit.view"],
-  "manager.accounts": ["hybrid.manage"],
-  "field.manage": ["field.payroll"],
 };
 
 // توسيع المفاتيح القديمة إلى الجديدة وإسقاط الملغاة — تستعمله صفحة المستخدمين عند
@@ -144,6 +146,33 @@ export function expandLegacyPermissions(perms: string[]): Permission[] {
     for (const k of LEGACY_IMPLIES[p] ?? []) out.add(k);
   }
   return [...out] as Permission[];
+}
+
+// ═════ الأزواجُ المفصولة 2026-08-29 (أبٌ حيٌّ كان يَستلزمُ ابناً حيّاً) ═════
+// أُزيلت من LEGACY_IMPLIES لتصيرَ مستقلّة. ويُستعمَلُ هذا الجدولُ مرّةً في ردمِ
+// `permSplitBackfill` لتثبيت الابن صراحةً لكلّ من يملك الأبَ قبل الإزالة (بلا فقدٍ ولا كسب).
+export const SPLIT_PAIRS: ReadonlyArray<readonly [Permission, Permission]> = [
+  ["subscribers.manage", "subscribers.import"],
+  ["users.manage", "audit.view"],
+  ["manager.accounts", "hybrid.manage"],
+  ["field.manage", "field.payroll"],
+];
+
+// نقيّةٌ قابلةٌ للاختبار: تُثبّت الابنَ لكلّ أبٍ موجودٍ في المنح والمنع. تُرجع القائمتَين
+// الجديدتَين إن تغيّر شيء، وإلّا null (لا كتابة). المنعُ يُثبَّت أيضاً كي لا يتسرّبَ الابنُ
+// بعد الإزالة لمديرٍ كان أبوه ممنوعاً (المنعُ كان يستلزمُ منعَ الابن في can).
+export function bakeSplitPairs(
+  permissions: string[],
+  denied: string[],
+): { permissions: string[]; denied: string[] } | null {
+  const perms = new Set(permissions);
+  const den = new Set(denied);
+  let changed = false;
+  for (const [parent, child] of SPLIT_PAIRS) {
+    if (perms.has(parent) && !perms.has(child)) { perms.add(child); changed = true; }
+    if (den.has(parent) && !den.has(child)) { den.add(child); changed = true; }
+  }
+  return changed ? { permissions: [...perms], denied: [...den] } : null;
 }
 
 export interface SessionLike {

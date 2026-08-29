@@ -23,6 +23,7 @@ const COOKIE = "mynet_session";
 const MAX_AGE = 60 * 60 * 24 * 365; // سنة
 
 import type { Permission } from "./rbac";
+import { ensurePermSplitBackfillOnce } from "./permSplitBackfill";
 
 export interface SessionPayload {
   userId: number;
@@ -123,6 +124,10 @@ export async function getSession(): Promise<SessionPayload | null> {
   if (!payload) return null;
   // جلسة فني ليست جلسة مستخدم — تُرفض في كل مسارات المستخدم للحفاظ على الأمان
   if ((payload as unknown as { kind?: string }).kind === "technician") return null;
+
+  // ردمُ فكِّ ربط الصلاحيّات (2026-08-29): يُثبّت الابنَ المُستلزَمَ صراحةً مرّةً واحدةً
+  // **قبل** قراءة الصلاحيّات أدناه، فلا فجوةَ يُزال فيها الاستلزامُ قبل الردم. راجع permSplitBackfill.
+  await ensurePermSplitBackfillOnce();
 
   // اقرأ بيانات المستخدم الحالية من قاعدة البيانات (المكتب/الصلاحيات/الحالة)
   // حتى يُطبَّق أي تغيير فوراً بلا حاجة لإعادة تسجيل الدخول
