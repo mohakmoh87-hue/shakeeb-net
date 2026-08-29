@@ -150,6 +150,8 @@ export default function OwnerPage() {
         <h1 className="text-2xl font-extrabold text-slate-800">👑 لوحة مالك النظام</h1>
         <div className="flex gap-2">
           <button onClick={() => setShowAccount(true)} className="rounded-xl bg-slate-100 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-200">⚙️ حسابي</button>
+          {/* 🏢 رابطُ بوّابة سوبر سيل والتطبيق (طلبُ محمد 2026-08-29) — صفحةٌ جديدةٌ معزولة */}
+          <a href="/owner/supercell" className="rounded-xl bg-sky-100 px-4 py-2 font-semibold text-sky-700 hover:bg-sky-200">🏢 سوبر سيل</a>
           <button onClick={() => setAdding(true)} className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700">➕ وكيل جديد</button>
           <button onClick={logout} className="rounded-xl bg-slate-200 px-4 py-2 font-semibold text-slate-600 hover:bg-slate-300">خروج</button>
         </div>
