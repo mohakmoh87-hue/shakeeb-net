@@ -763,6 +763,23 @@ model SystemSetting {
   @@map("system_settings")
 }
 
+// ═════ حساباتُ بوّابة سوبر سيل (الشركة) — طلبُ محمد 2026-08-29 ═════
+// طرفٌ خارجيٌّ عابرٌ للوكلاء: **جدولٌ منفصلٌ تماماً** بجلسةٍ منفصلةٍ (kabina_company)، لا يمسّ
+// جدولَ users ولا جلسةَ المستخدم الداخليّة. يُنشئه المالكُ يدويّاً حصراً (لا تسجيلَ ذاتيّ).
+// الجدولُ يُنشأ كسولاً (CREATE TABLE IF NOT EXISTS) في companyAuth إذ لا migrate على النشر.
+model CompanyUser {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  password      String // bcrypt
+  plainPassword String? // encryptSecret — يعرضه المالكُ للشركة
+  sessionToken  String? // جهازٌ واحد: يُبطِل الدخولُ الجديد القديمَ
+  isDeleted     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@map("company_users")
+}
+
 // ===== قوالب الرسائل (Setting_sms) =====
 model SmsTemplate {
   id      Int     @id @default(autoincrement())

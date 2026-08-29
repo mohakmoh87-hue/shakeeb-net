@@ -53,15 +53,41 @@ function ImageField({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
+type CompanyUser = { id: number; username: string; password: string | null };
+
 export default function OwnerSupercellPage() {
   const [s, setS] = useState<State | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [users, setUsers] = useState<CompanyUser[]>([]);
+  const [nu, setNu] = useState({ username: "", password: "" });
+  const [uErr, setUErr] = useState("");
 
   const load = useCallback(() => {
     fetch("/api/owner/supercell").then((r) => r.ok ? r.json() : null).then((d) => { if (d) setS(d); });
   }, []);
-  useEffect(() => { load(); }, [load]);
+  const loadUsers = useCallback(() => {
+    fetch("/api/owner/supercell/users").then((r) => r.ok ? r.json() : []).then((d) => setUsers(Array.isArray(d) ? d : []));
+  }, []);
+  useEffect(() => { load(); loadUsers(); }, [load, loadUsers]);
+
+  async function createUser() {
+    setUErr("");
+    const res = await fetch("/api/owner/supercell/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nu) });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setUErr(d.error ?? "فشل الإنشاء"); return; }
+    setNu({ username: "", password: "" }); loadUsers();
+  }
+  async function resetUser(id: number) {
+    const p = prompt("كلمة المرور الجديدة (٤ أحرف فأكثر)")?.trim();
+    if (!p) return;
+    const res = await fetch(`/api/owner/supercell/users/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: p }) });
+    if (res.ok) loadUsers(); else { const d = await res.json().catch(() => ({})); setUErr(d.error ?? "فشل التصفير"); }
+  }
+  async function deleteUser(id: number) {
+    if (!confirm("حذفُ حساب الشركة هذا؟ (يُخرَج فوراً)")) return;
+    const res = await fetch(`/api/owner/supercell/users/${id}`, { method: "DELETE" });
+    if (res.ok) loadUsers();
+  }
 
   if (!s) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
 
@@ -111,6 +137,30 @@ export default function OwnerSupercellPage() {
           label="تفعيل بوّابة سوبر سيل" hint="مطفأة ⇒ صفحةُ /supercell مغلقةٌ تماماً (404)" />
         <Toggle on={s.companyMode} onFlip={() => setS({ ...s, companyMode: !s.companyMode })}
           label="وضع الشركة" hint="مطفأ ⇒ يختفي كلُّ ما يخصّ الشركة، والطلباتُ للوكيل فقط" />
+      </div>
+
+      {/* حساباتُ الشركة — يُنشئها المالكُ يدويّاً حصراً (لا تسجيلَ ذاتيّ) */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-3 font-semibold text-slate-800">حسابات دخول الشركة</div>
+        <div className="mb-3 text-[11px] text-slate-500">تدخلُ بها الشركةُ بوّابةَ /supercell. تُنشأ هنا فقط — لا تسجيلَ ذاتيّ. الحذفُ أو التصفيرُ يُخرِج الحسابَ فوراً.</div>
+        <div className="space-y-2">
+          {users.length === 0 && <div className="text-xs text-slate-400">لا حسابات بعد.</div>}
+          {users.map((u) => (
+            <div key={u.id} className="flex items-center gap-2 rounded-lg border border-slate-100 p-2 text-sm">
+              <span className="font-bold text-slate-700" dir="ltr">{u.username}</span>
+              <span className="text-slate-400" dir="ltr">{u.password ?? "—"}</span>
+              <span className="flex-1" />
+              <button type="button" onClick={() => resetUser(u.id)} className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-700 hover:bg-amber-100">تصفير كلمة المرور</button>
+              <button type="button" onClick={() => deleteUser(u.id)} className="rounded bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100">حذف</button>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input value={nu.username} onChange={(e) => setNu({ ...nu, username: e.target.value })} dir="ltr" placeholder="اسم المستخدم" className="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} dir="ltr" placeholder="كلمة المرور" className="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <button type="button" onClick={createUser} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">+ إنشاء حساب</button>
+          {uErr && <span className="text-xs text-red-500">{uErr}</span>}
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">

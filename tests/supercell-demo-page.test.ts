@@ -12,13 +12,18 @@ import path from "node:path";
 const ROOT = process.cwd();
 
 describe("🏢 صفحة /supercell معزولةٌ تماماً عن الموقع الحيّ", () => {
-  test("المسارُ يقدّم ملفّاً ثابتاً بلا أيّ استيرادٍ من كود الموقع", () => {
+  test("المسارُ يقدّم ملفّاً ثابتاً، ويُحجب بـ404 عند إطفاء البوّابة، بلا لمسِ قاعدةٍ أو جلسةِ مستخدم", () => {
     const route = fs.readFileSync(path.join(ROOT, "src/app/supercell/route.ts"), "utf8");
     assert.ok(route.includes('path.join(process.cwd(), "public", "supercell.html")'),
       "المسارُ لم يعد يقرأ الملفَّ الثابت من public — وDockerfile ينسخها كاملةً لمخرجات standalone");
-    // صفرُ تدخّل: لا Prisma ولا جلسات ولا src/lib ولا مكوّنات
-    assert.ok(!/from "@\//.test(route), "المسارُ صار يستورد من كود الموقع (@/) — انكسر العزل");
-    assert.ok(!/prisma|getSession|guard\(/.test(route), "المسارُ يلمس القاعدةَ أو الجلسات — انكسر العزل");
+    // 🔌 حجبُ 404 عند الإطفاء (طلب محمد 2026-08-29): العلَمُ العامُّ الوحيدُ المسموحُ استيرادُه
+    assert.ok(route.includes("getPortalEnabled") && /status:\s*404/.test(route),
+      "بوّابةُ /supercell لم تعد تُحجب بـ404 عند إطفاء المالك");
+    // صفرُ تدخّل بالمستأجرين: لا Prisma مباشرة ولا جلسةَ مستخدمٍ ولا حارسٍ — علَمٌ عامٌّ فقط
+    assert.ok(!/prisma|getSession|guard\(/.test(route), "المسارُ يلمس القاعدةَ مباشرةً أو جلسةَ المستخدم — انكسر العزل");
+    // الاستيرادُ الوحيدُ المسموحُ من كود الموقع هو علَمُ البوّابة (appConfig) — لا سواه
+    const imports = [...route.matchAll(/from "(@\/[^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(imports, ["@/lib/appConfig"], "المسارُ يستوردُ من كود الموقع أكثرَ من علَم البوّابة — انكسر العزل: " + JSON.stringify(imports));
     assert.ok(route.includes("noindex"), "الصفحةُ بلا noindex — عرضٌ تسويقيٌّ لا يُفهرَس");
   });
 
