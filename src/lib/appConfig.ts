@@ -90,8 +90,9 @@ export async function getCompanyMode(): Promise<boolean> {
 export async function setCompanyMode(on: boolean) { await writeVal(COMPANY_MODE_KEY, on ? "1" : "0"); }
 
 export async function getPortalEnabled(): Promise<boolean> {
+  // الافتراضُ **مفعّل** (تبقى /supercell تعمل كسلوكها الحاليّ) — المالكُ يُطفئها صراحةً بـ"0" فتصير 404.
   const row = await prisma.systemSetting.findFirst({ where: { type: PORTAL_ENABLED_KEY }, select: { value: true } });
-  return row?.value === "1";
+  return row?.value !== "0";
 }
 export async function setPortalEnabled(on: boolean) { await writeVal(PORTAL_ENABLED_KEY, on ? "1" : "0"); }
 
