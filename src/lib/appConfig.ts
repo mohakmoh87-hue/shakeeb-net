@@ -101,5 +101,5 @@ export async function getPublicAppConfig() {
   const [content, companyMode, portalEnabled] = await Promise.all([
     getAppContent(), getCompanyMode(), getPortalEnabled(),
   ]);
-  return { ...content, companyMode, portalEnabled };
+  return { ...content, companyMode: companyMode && portalEnabled, portalEnabled };
 }

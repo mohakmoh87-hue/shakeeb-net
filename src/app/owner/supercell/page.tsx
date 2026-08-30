@@ -5,11 +5,24 @@
 // وهو نفسُ المخزَن الذي يقرؤه التطبيقُ (GET /api/app/config) وستحرّره صفحةُ الشركة لاحقاً.
 
 import { useCallback, useEffect, useState } from "react";
-import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
 
-type State = AppContentT & { companyMode: boolean; portalEnabled: boolean };
+type State = { portalEnabled: boolean };
 
 type CompanyUser = { id: number; username: string; password: string | null };
+
+function Toggle({ on, onFlip, label, hint }: { on: boolean; onFlip: () => void; label: string; hint: string }) {
+  return (
+    <button type="button" onClick={onFlip} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white p-4 text-right hover:bg-slate-50">
+      <div>
+        <div className="font-semibold text-slate-800">{label}</div>
+        <div className="text-[11px] text-slate-500">{hint}</div>
+      </div>
+      <span className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition ${on ? "bg-emerald-500" : "bg-slate-300"}`}>
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${on ? "right-0.5" : "right-5"}`} />
+      </span>
+    </button>
+  );
+}
 
 export default function OwnerSupercellPage() {
   const [s, setS] = useState<State | null>(null);
@@ -52,10 +65,7 @@ export default function OwnerSupercellPage() {
     try {
       const res = await fetch("/api/owner/supercell", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: { ads: s!.ads, offers: s!.offers, quick: s!.quick },
-          companyMode: s!.companyMode, portalEnabled: s!.portalEnabled,
-        }),
+        body: JSON.stringify({ portalEnabled: s!.portalEnabled }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setMsg(d.error ?? "فشل الحفظ"); return; }
       setMsg("✓ حُفِظ — يظهرُ في التطبيق حيّاً");
@@ -64,31 +74,18 @@ export default function OwnerSupercellPage() {
     finally { setSaving(false); }
   }
 
-  const Toggle = ({ on, onFlip, label, hint }: { on: boolean; onFlip: () => void; label: string; hint: string }) => (
-    <button type="button" onClick={onFlip} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white p-4 text-right hover:bg-slate-50">
-      <div>
-        <div className="font-semibold text-slate-800">{label}</div>
-        <div className="text-[11px] text-slate-500">{hint}</div>
-      </div>
-      <span className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition ${on ? "bg-emerald-500" : "bg-slate-300"}`}>
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${on ? "right-0.5" : "right-5"}`} />
-      </span>
-    </button>
-  );
-
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-800">🏢 بوّابة سوبر سيل والتطبيق</h1>
-        <a href="/owner" className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200">← رجوع</a>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold text-slate-800">🏢 إعدادات سوبر سيل</h1>
+        <div className="flex gap-2">
+          <a href="/owner/app-settings" className="rounded-lg bg-sky-100 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-200">📱 إعدادات التطبيق</a>
+          <a href="/owner" className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200">← رجوع</a>
+        </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Toggle on={s.portalEnabled} onFlip={() => setS({ ...s, portalEnabled: !s.portalEnabled })}
-          label="تفعيل بوّابة سوبر سيل" hint="مطفأة ⇒ صفحةُ /supercell مغلقةٌ تماماً (404)" />
-        <Toggle on={s.companyMode} onFlip={() => setS({ ...s, companyMode: !s.companyMode })}
-          label="وضع الشركة" hint="مطفأ ⇒ يختفي كلُّ ما يخصّ الشركة، والطلباتُ للوكيل فقط" />
-      </div>
+      <Toggle on={s.portalEnabled} onFlip={() => setS({ ...s, portalEnabled: !s.portalEnabled })}
+        label="تفعيل سوبر سيل" hint="مطفأ ⇒ صفحةُ /supercell مغلقةٌ (404)، وكلُّ ما يخصّ الشركة يختفي من تطبيق المشتركين" />
 
       {/* حساباتُ الشركة — يُنشئها المالكُ يدويّاً حصراً (لا تسجيلَ ذاتيّ) */}
       <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -114,7 +111,7 @@ export default function OwnerSupercellPage() {
         </div>
       </div>
 
-      <AdsEditor content={{ ads: s.ads, offers: s.offers, quick: s.quick }} onChange={(c) => setS({ ...s, ...c })} />
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">إعلاناتُ التطبيق انتقلت إلى «📱 إعدادات التطبيق».</div>
 
       <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-200 bg-white/90 py-3 backdrop-blur">
         {msg && <span className="text-sm text-slate-600">{msg}</span>}
