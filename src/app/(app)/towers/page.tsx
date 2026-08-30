@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import SasPanelsButton from "@/components/SasPanelsButton";
 import { usePermission } from "@/lib/usePermission";
 import { usePolling } from "@/lib/usePolling";
+import OfficeWaChannel from "@/components/OfficeWaChannel";
 
 type Office = {
   id: number;
@@ -102,6 +103,7 @@ export default function OfficesPage() {
                 <div className="mt-4">
                   <OfficeWhatsApp officeId={o.id} />
                 </div>
+                <OfficeWaChannel officeId={o.id} />
               </div>
             ))}
           </div>
@@ -123,6 +125,7 @@ export default function OfficesPage() {
               <div key={o.id}>
                 <div className="mb-1 font-bold text-slate-800">{o.name ?? `مكتب ${o.id}`}</div>
                 <OfficeWhatsApp officeId={o.id} />
+                <OfficeWaChannel officeId={o.id} />
               </div>
             ))}
           </div>
@@ -424,6 +427,7 @@ export default function OfficesPage() {
 
               {/* واتساب هذا المكتب */}
               {sel && !editing && <OfficeWhatsApp officeId={sel.id} />}
+              {sel && !editing && <OfficeWaChannel officeId={sel.id} />}
 
               {/* مزامنة الاشتراكات — بصلاحيتها المستقلة (offices.edit وحدها لا تكفي) */}
               {sel && !editing && canSync && <OfficeSync officeId={sel.id} />}

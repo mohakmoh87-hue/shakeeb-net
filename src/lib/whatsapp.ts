@@ -4,6 +4,7 @@ import type { Client as WAClient } from "whatsapp-web.js";
 import { prisma } from "@/lib/prisma";
 import { scrubRelayImage } from "@/lib/relayScrub"; // 🧹 نزعُ الصورة من صفّ الترحيل بعد تنفيذه
 import { withWaTurn, waGapMs, isWaBusy, type WaLane } from "@/lib/waGate"; // 🚦 فاصلُ الرقم الموحَّد
+import { getWaChannel, sendViaUltraMsg } from "@/lib/waChannel";
 
 // ═════ 🚦 سقفا انتظار البوّابة — ولماذا رقمان لا رقم ═════
 // **المحلّيّ** ينتظر طويلاً بلا ضرر: لا مهلةَ تحكمه، والرسالةُ في يد صاحبها.
@@ -978,6 +979,8 @@ export async function sendWhatsApp(officeId: number | null | undefined, phone: s
 }
 
 async function sendWhatsAppRouted(officeId: number, phone: string, text: string, image: string | null | undefined, lane: WaLane): Promise<SendResult> {
+  const apiChan = await getWaChannel(officeId);
+  if (apiChan) return sendViaUltraMsg(apiChan, phone, text, image);
   const s = store(officeId);
   if (s.state === "ready" && s.client) return sendWhatsAppLocal(officeId, phone, text, image, lane);
   // هذه الحاسبة مالكة الجلسة لكنها غير جاهزة الآن ⇒ لا تُمرّر لنفسها
