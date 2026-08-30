@@ -420,15 +420,72 @@ export async function POST(request: Request) {
       // تحويل: تحديث يوزر المشترك لليوزر الجديد + تسجيله بسجل الصيانات
       if (isTransfer && newUser?.trim()) {
         const nu = newUser.trim();
-        // تحديث اليوزر + وسم التحويل (يُنبَّه عند التفعيل ويُحذف بعد 30 يوماً دون تفعيل)
-        await prisma.subscriber.update({ where: { id: sub.id }, data: { netUser: nu, transferredAt: new Date(), transferredTo: nu } });
-        await prisma.maintenanceLog.create({
-          data: {
-            subscriberId: sub.id,
-            details: `تحويل اليوزر من «${sub.netUser ?? "—"}» إلى «${nu}»`,
-            technicianName: tech?.name ?? null, cardTitle: card.title, kind: card.kind, durationSec, amount: netSale, date: new Date(),
-          },
-        });
+        const oldUser = sub.netUser ?? null;
+        try {
+          let newSasId: number | null = null;
+          try {
+            const { credsOfSubscriber } = await import("@/lib/sasPanel");
+            const { sasBaseUrl, sasLogin, sasFindUserByUsername } = await import("@/lib/sas4");
+            const { sasHostBlocked } = await import("@/lib/sasProxy");
+            const creds = await credsOfSubscriber(sub.id);
+            if (creds && !(await sasHostBlocked(creds.loginUrl))) {
+              const base = sasBaseUrl(creds.loginUrl);
+              const token = await sasLogin(base, creds.username, creds.password);
+              const found = await sasFindUserByUsername(base, token, nu);
+              if (found?.sasId) newSasId = found.sasId;
+            }
+          } catch { newSasId = null; }
+
+          const occupants = await prisma.subscriber.findMany({
+            where: { towerId: sub.towerId, isDeleted: false, id: { not: sub.id }, netUser: { equals: nu, mode: "insensitive" } },
+            select: { id: true, netUser: true, note: true },
+          });
+          const iq = new Date(Date.now() + 3 * 60 * 60 * 1000);
+          const stamp = `${iq.getUTCFullYear()}${String(iq.getUTCMonth() + 1).padStart(2, "0")}${String(iq.getUTCDate()).padStart(2, "0")}-${String(iq.getUTCHours()).padStart(2, "0")}${String(iq.getUTCMinutes()).padStart(2, "0")}`;
+          const day = `${String(iq.getUTCDate()).padStart(2, "0")}/${String(iq.getUTCMonth() + 1).padStart(2, "0")}/${iq.getUTCFullYear()}`;
+
+          await prisma.$transaction(async (tx) => {
+            for (const occ of occupants) {
+              await tx.subscriber.update({
+                where: { id: occ.id },
+                data: {
+                  state: "مستبدل", sasId: null,
+                  netUser: `${(occ.netUser ?? "").trim()}#مستبدل-${stamp}`,
+                  note: `${occ.note ? `${occ.note}\n` : ""}[استبدال ${day} — تحويل] حلّ محلّه المحوَّل «${sub.name ?? oldUser ?? "—"}» على اليوزر «${nu}»`,
+                },
+              });
+              await tx.syncLog.updateMany({
+                where: { subscriberId: occ.id, status: { in: ["pending", "ignored"] } },
+                data: { status: "done", note: "مُستبدَل بتحويل — أُغلق تلقائيّاً", handledAt: new Date() },
+              }).catch(() => {});
+              await tx.auditLog.create({
+                data: {
+                  userId: actor.userId, action: "TRANSFER_REPLACE", entity: "subscriber", entityId: String(occ.id),
+                  details: `تحويل: اليوزر «${nu}» أُخذ من «${occ.netUser ?? "—"}» (وُسم مُستبدَل، فُكّ ساسه) لصالح «${sub.name ?? oldUser ?? "—"}»`,
+                },
+              }).catch(() => {});
+            }
+            if (newSasId != null) {
+              await tx.subscriber.updateMany({
+                where: { towerId: sub.towerId, isDeleted: false, id: { not: sub.id }, sasId: newSasId },
+                data: { sasId: null },
+              });
+            }
+            await tx.subscriber.update({
+              where: { id: sub.id },
+              data: { netUser: nu, transferredFrom: oldUser, transferredTo: nu, transferredAt: new Date(), sasId: newSasId },
+            });
+            await tx.maintenanceLog.create({
+              data: {
+                subscriberId: sub.id,
+                details: `تحويل اليوزر من «${oldUser ?? "—"}» إلى «${nu}»`,
+                technicianName: tech?.name ?? null, cardTitle: card.title, kind: card.kind, durationSec, amount: netSale, date: new Date(),
+              },
+            });
+          });
+        } catch (e) {
+          console.error(`[field/complete] فشل التحويل — بطاقة ${cardId} مشترك ${sub.id}:`, e);
+        }
       }
       // سجل صيانات المشترك (بلا صور) — للصيانة/التنصيب التي لها تفاصيل
       if (!isDelivery && !isTransfer && serviceDetails?.trim()) {

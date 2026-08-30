@@ -27,6 +27,7 @@ export type ActSubscriber = {
   carry: number | null;
   dateTo: string | null;
   transferredTo?: string | null; // اليوزر الجديد إن كان المشترك محوّلاً (للتنبيه)
+  transferredFrom?: string | null;
   // 🔴 بلاغُ صميم 2026-08-13: «يفتح لوحةَ الساس ويضع الكارت ويضغط تفعيل فيظهر Access
   //   Denied من الساس نفسِه». والسببُ أنّ هذا النوعَ كان **بلا لوحة**: فتُفتَح اللوحةُ
   //   برمزِ **أعمدةِ المكتب** — وهي أعمدةُ اللوحة الأولى — بينما المشتركُ على اللوحة
@@ -348,8 +349,10 @@ export default function ActivationModal({
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.stopPropagation()}>
           <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-7 text-center shadow-2xl">
             <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-amber-100 text-5xl">🔁</div>
-            <h2 className="mb-2 text-2xl font-extrabold text-amber-700">تنبيه: مشترك محوّل</h2>
-            <p className="mb-1 text-lg text-slate-700">هذا المشترك قد تحوّل إلى اليوزر:</p>
+            <h2 className="mb-3 text-2xl font-extrabold text-amber-700">تنبيه: مشترك محوّل</h2>
+            <p className="mb-1 text-base text-slate-600">حُوّل من الاشتراك:</p>
+            <p className="mb-3 text-xl font-extrabold text-slate-500 line-through" dir="ltr">{subscriber.transferredFrom ?? "—"}</p>
+            <p className="mb-1 text-base text-slate-600">إلى الاشتراك:</p>
             <p className="mb-4 text-2xl font-extrabold text-slate-900" dir="ltr">{subscriber.transferredTo}</p>
             <button onClick={() => setTransferSeen(true)} className="w-full rounded-xl bg-mynet-blue py-3 text-lg font-bold text-white hover:bg-mynet-blue-dark">فهمت، متابعة التفعيل</button>
           </div>

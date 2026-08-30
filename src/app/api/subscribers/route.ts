@@ -107,7 +107,7 @@ export async function GET(request: Request) {
         select: {
           id: true, name: true, phone: true, address: true, packageId: true,
           towerId: true, carry: true, dateTo: true, netUser: true, sasId: true, sasPanelId: true,
-          note: true, smsEnabled: true, waEnabled: true, transferredTo: true,
+          note: true, smsEnabled: true, waEnabled: true, transferredTo: true, transferredFrom: true,
           rewardBalance: true, rewardCode: true,
         },
       }),
@@ -128,7 +128,7 @@ export async function GET(request: Request) {
       select: {
         id: true, name: true, phone: true, address: true, packageId: true,
         towerId: true, carry: true, dateTo: true, netUser: true, sasId: true, sasPanelId: true,
-        note: true, smsEnabled: true, waEnabled: true, transferredTo: true,
+        note: true, smsEnabled: true, waEnabled: true, transferredTo: true, transferredFrom: true,
         rewardBalance: true, rewardCode: true,
       },
       orderBy: { name: "asc" },

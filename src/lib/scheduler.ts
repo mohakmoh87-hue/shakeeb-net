@@ -570,20 +570,6 @@ export async function purgeOldMessages(days = 3): Promise<{ deleted: number }> {
   return { deleted: res.count };
 }
 
-// حذف نهائي للمشتركين المحوّلين الذين مضى 30 يوماً على تحويلهم دون تفعيل
-export async function purgeTransferredSubscribers(days = 30): Promise<{ deleted: number }> {
-  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const subs = await prisma.subscriber.findMany({
-    where: { isDeleted: false, transferredAt: { not: null, lt: cutoff } },
-    select: { id: true },
-  });
-  if (!subs.length) return { deleted: 0 };
-  const { purgeSubscribers } = await import("@/lib/subscriberDelete");
-  const res = await purgeSubscribers(subs.map((s) => s.id));
-  console.log(`[scheduler] حُذف ${res.deleted} مشترك محوّل مضى ${days} يوماً دون تفعيل`);
-  return res;
-}
-
 // الوقت الحالي بتوقيت بغداد بصيغة HH:MM
 function baghdadHHMM(): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -774,10 +760,9 @@ export function startScheduler() {
       import("@/lib/autoCheckout").then((m) => m.runAutoCheckout({ resetSupport: true })).then((r) => { if (r.closed || r.supportEnded) console.log(`[scheduler] خروج تلقائي: أُغلق ${r.closed} حضور، أُنهي ${r.supportEnded} دعم`); }).catch((e) => console.error("[scheduler] autoCheckout:", e));
     }
 
-    // تنظيف يومي (03:00 بغداد): حذف أرشيف الرسائل >3 أيام، والمشتركين المحوّلين >30 يوماً دون تفعيل
+    // تنظيف يومي (03:00 بغداد): حذف أرشيف الرسائل >3 أيام
     if (nowHM === "03:00") {
       purgeOldMessages(3).catch((e) => console.error("[scheduler] purge messages:", e));
-      purgeTransferredSubscribers(30).catch((e) => console.error("[scheduler] purge transferred:", e));
       // حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (احتياط محلي — الكرون السحابي يفعلها أيضاً)
       import("@/lib/field").then((m) => m.purgeOldArchivedCards()).catch((e) => console.error("[scheduler] purge archive:", e));
     }

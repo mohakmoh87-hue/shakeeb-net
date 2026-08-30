@@ -26,7 +26,7 @@ type Subscriber = {
   // أ-٢٣ · لوحةُ الساس التي يتبعها — يُعرَض وسمُها إن كان لمكتبه أكثرُ من لوحة
   sasPanelId?: number | null;
   note: string | null; smsEnabled: number | null; waEnabled: boolean | null;
-  transferredTo: string | null; rewardBalance: number | null; rewardCode: string | null;
+  transferredTo: string | null; transferredFrom?: string | null; rewardBalance: number | null; rewardCode: string | null;
   hasLoan?: boolean; // عليه دين قرضٍ قائم (للوسم والتنبيه ومنع قرضٍ ثانٍ)
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
