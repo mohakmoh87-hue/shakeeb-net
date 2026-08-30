@@ -178,7 +178,20 @@ Write-Host "تثبيت المكتبات (قد يستغرق دقائق)..." -Fore
 & cmd /c "npx prisma generate"
 # متصفّح Chromium للواتساب (whatsapp-web.js) — ضروري لظهور رمز QR؛ قد لا ينزّله npm install وحده
 Write-Host "تنزيل متصفّح الواتساب (Chromium)..." -ForegroundColor Yellow
+$puppChrome = Join-Path $env:USERPROFILE ".cache\puppeteer\chrome"
+if (Test-Path $puppChrome) {
+  Get-ChildItem -Path $puppChrome -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+    if (-not (Test-Path (Join-Path $_.FullName "chrome-win64\chrome.exe"))) {
+      Write-Host ("حذفُ نسخةِ كروم ناقصة: " + $_.Name) -ForegroundColor Yellow
+      Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue
+    }
+  }
+}
 & cmd /c "npx puppeteer browsers install chrome"
+$chromeOk = (Test-Path $puppChrome) -and (@(Get-ChildItem -Path $puppChrome -Directory -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName "chrome-win64\chrome.exe") }).Count -gt 0)
+if (-not $chromeOk) {
+  Write-Host "تنبيه: لم يكتمل تنزيل كروم — قد يحذفه مضادُّ الفيروسات. استثنِ مجلّد .cache\puppeteer ثم أعد التنصيب. (مكاتب واتساب API لا تحتاج كروم)" -ForegroundColor Red
+}
 
 # 5) التشغيل التلقائي المخفي عند دخول ويندوز — عبر VBScript بمجلد بدء التشغيل (بلا نافذة، بلا صلاحية مدير)
 $oldBat = Join-Path ([Environment]::GetFolderPath('Startup')) 'ShakeebNetAgent.bat'
