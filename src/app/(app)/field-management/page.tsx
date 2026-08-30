@@ -724,6 +724,16 @@ export default function FieldManagementPage() {
     const r = await fetch(`/api/field/cards?id=${id}`, { method: "DELETE" });
     if (!r.ok) { const d = await r.json().catch(() => ({})); load(officeId); alert(d.error ?? `تعذّر حذفُ البطاقة «${removed.title}» — ما زالت قائمةً والتحصيلُ لم يتغيّر`); }
   }
+
+  async function archiveCard() {
+    if (!sel || !canOperate) return;
+    if (!confirm("أرشفة هذه البطاقة؟ ستذهب إلى الأرشيف ويمكن استرجاعها.")) return;
+    const removed = sel;
+    setCards((x) => x.filter((c) => c.id !== sel.id));
+    const id = sel.id; setSel(null);
+    const r = await fetch("/api/field/archive", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); load(officeId); alert(d.error ?? `تعذّرت أرشفةُ البطاقة «${removed.title}»`); }
+  }
   // ↩️ إلغاء إنجاز بطاقة لم تُحصَّل: تعود للانتظار في عمودها، ويسقط مبلغها من تحصيل
   // الفني ومن عدّ بطاقاته في كشف الراتب. أمّا فاتورة مبيعها وقبضها فيبقيان — فالمال
   // سُجّل لحظة الإنجاز، وإلغاؤه هنا لا يعكسه (وهذا يُقال صراحةً قبل التأكيد).
@@ -1566,7 +1576,8 @@ export default function FieldManagementPage() {
               </div>
             )}
 
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-end gap-2">
+              {canOperate && !isTech && <button onClick={archiveCard} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200">🗂️ أرشفة</button>}
               {canOperate && !isTech && <button onClick={deleteCard} className="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100">🗑️ حذف البطاقة</button>}
             </div>
           </div>

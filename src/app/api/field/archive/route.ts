@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { isFieldManager } from "@/lib/field";
+import { isFieldManager, canOperateOffice } from "@/lib/field";
 import { agentTowerIds } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
@@ -69,6 +69,35 @@ export async function GET(request: Request) {
       office: (() => { const tid = listTower.get(c.listId); return tid != null ? towerName.get(tid) ?? null : null; })(),
     })),
   });
+}
+
+// أرشفة بطاقةٍ يدويّاً (المشترك لم يرغب بالصيانة): تذهب إلى الأرشيف بدل الحذف النهائيّ،
+// قابلةً للاسترجاع (PATCH) أو الحذف (DELETE للمدير)، وتُنظَّف تلقائيّاً بعد أسبوع كالمحصَّلة.
+export async function POST(request: Request) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  const b = await request.json().catch(() => null);
+  const id = Number(b?.id);
+  if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
+
+  const card = await prisma.taskCard.findFirst({
+    where: { id, archivedAt: null, isDeleted: false },
+    select: { id: true, listId: true, title: true, done: true },
+  });
+  if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
+  if (card.done) return NextResponse.json({ error: "البطاقة منجزة — تُؤرشَف عبر التحصيل لا يدويّاً" }, { status: 400 });
+
+  const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } });
+  const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
+  if (!board || !(await canOperateOffice(session, board.towerId))) {
+    return NextResponse.json({ error: "البطاقة لا تتبع حسابك" }, { status: 403 });
+  }
+
+  await prisma.taskCard.update({ where: { id: card.id }, data: { archivedAt: new Date() } });
+  const byName = session.fullName ?? session.username;
+  const { appendCardHistory } = await import("@/lib/field");
+  await appendCardHistory(card.id, byName, "🗂️ أُرشفت البطاقة (بدل الحذف)");
+  return NextResponse.json({ ok: true });
 }
 
 // استرجاع بطاقة من الأرشيف إلى عمودها السابق: تعود فعّالة (غير منجزة) ليتمكن الفني من
