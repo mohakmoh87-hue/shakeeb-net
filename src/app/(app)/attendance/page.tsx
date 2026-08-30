@@ -288,7 +288,7 @@ export default function AttendancePage() {
       {/* بصماتُ فنيٍّ واحدٍ — الشاشةُ الثالثةُ في الطلب («بالضغط على فنيٍّ تظهر كلّ بصماته») */}
       {openTech && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" onClick={() => setOpenTech(null)}>
-          <div className="mt-8 w-full max-w-3xl rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="my-8 max-h-[85dvh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-bold text-slate-800">
                 بصمات {openTech.name ?? `فنيّ ${openTech.id}`}
