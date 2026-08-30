@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendCardRaisedMessage } from "@/lib/cardRaisedMessage";
 import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
+import { fillCardPassword } from "@/lib/userPassword";
 import { bgIsSet, odooTicketRefDate, type OdooTicket } from "@/lib/odoo";
 import { odooDateToUtc } from "@/lib/odooSla";
 
@@ -73,6 +74,7 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket,
     }
     throw e;
   }
+  if (bgIsSet(ticket.bg)) void fillCardPassword(card.id, { towerId, sasPanelId: panelId, netUser: ticket.bg });
   await appendCardHistory(card.id, "أودو", `سُحبت من أودو (تذكرة #${ticket.id})${usernameRequired ? " — يوزر إلزاميّ" : ""}`);
   // البند ٧ · رسالةٌ للمشترك عند رفعِ البطاقة من أودو أيضاً — بنفس الختم الذرّيّ،
   // وهو **ألزمُ هنا**: أودو تُعيد إنشاءَ ما حُذف وتذكرتُه مفتوحةٌ كلَّ دورة.

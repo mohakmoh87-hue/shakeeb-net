@@ -270,6 +270,26 @@ export async function sasFetchUser(
   }
 }
 
+// باسورد اليوزر من ملفّ الـOverview (GET user/overview/{id}) — يُرجِعه الساس صراحةً في حقل password
+export async function sasFetchUserPassword(base: string, token: string, sasId: number): Promise<string | null> {
+  try {
+    const res = await undiciFetch(base + "user/overview/" + sasId, {
+      method: "GET",
+      headers: { authorization: "Bearer " + token, accept: "application/json" },
+      dispatcher: insecureAgent,
+    });
+    if (!res.ok) return null;
+    const j = JSON.parse(await res.text());
+    const u = (j.data ?? j) as Record<string, unknown>;
+    const pw = u?.password;
+    if (pw == null) return null;
+    const s = String(pw).trim();
+    return s ? s : null;
+  } catch {
+    return null;
+  }
+}
+
 // صف من تقرير التفعيلات (index/activations)
 export interface SasActivation {
   sasUserId: number;

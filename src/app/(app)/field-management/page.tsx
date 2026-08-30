@@ -33,6 +33,7 @@ type Card = {
   odooCreatedAt?: string | null; odooFetchedAt?: string | null; odooPhone?: string | null;
   // اسمُ المشترك — يُعرَض على الوجه قبل فتح البطاقة (طلبُ محمد 2026-08-13)
   subscriberName?: string | null;
+  userPassword?: string | null; // باسورد يوزر الساس — يظهر داخل البطاقة عند فتحها فقط، لا على الوجه
   slaNoteAt?: string | null; slaWaQueuedAt?: string | null; slaWaSentAt?: string | null; slaWaError?: string | null;
 };
 // ═════ 🧰 سجلُّ صيانات مشترك البطاقة — داخل البطاقة نفسِها (طلبُ محمد 2026-08-21) ═════
@@ -1352,6 +1353,13 @@ export default function FieldManagementPage() {
             {(faceCallPhone(sel.description) ?? sel.odooPhone) && (
               <div className="mb-3 flex items-center gap-2 rounded-lg bg-emerald-50/70 px-3 py-2 text-sm font-semibold text-slate-700">
                 <CallPhone phone={(faceCallPhone(sel.description) ?? sel.odooPhone)!} />
+              </div>
+            )}
+
+            {sel.userPassword && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg bg-sky-50 px-3 py-2 text-sm">
+                <span className="shrink-0 font-semibold text-slate-600">🔑 باسورد اليوزر:</span>
+                <span dir="ltr" className="select-all font-extrabold tracking-wide text-slate-900">{sel.userPassword}</span>
               </div>
             )}
 

@@ -4,6 +4,7 @@ import { guard, sameAgentTower, agentTowerIds } from "@/lib/guard";
 import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
 import { autoAssignOn, pickAssignee, verifyManualAssignee } from "@/lib/autoAssign";
 import { isSystemList, ensureCardType } from "@/lib/fieldDefaults";
+import { fillCardPassword } from "@/lib/userPassword";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
 
   const sub = await prisma.subscriber.findFirst({
     where: { id: subscriberId, isDeleted: false },
-    select: { id: true, name: true, phone: true, netUser: true, towerId: true, packageId: true },
+    select: { id: true, name: true, phone: true, netUser: true, towerId: true, packageId: true, sasId: true, sasPanelId: true },
   });
   if (!sub || !(await sameAgentTower(g.session, sub.towerId))) {
     return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
@@ -128,6 +129,7 @@ export async function POST(request: Request) {
     },
   });
   // أول حدث في سجل التغييرات: إنشاء البطاقة (تاريخه ووقته وفاعله)
+  void fillCardPassword(card.id, { towerId: sub.towerId, sasPanelId: sub.sasPanelId, netUser: sub.netUser, sasId: sub.sasId });
   await appendCardHistory(card.id, g.session.fullName ?? g.session.username, "إنشاء البطاقة");
   if (autoNote) await appendCardHistory(card.id, "النظام", autoNote);
   // البند ٧ · رسالةُ «رُفعت لك بطاقة» للمشترك — كان النداءُ في مسار اللوحة وحدَه، وبطاقةُ
