@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { announceMoneyChanged } from "@/lib/moneyRefresh";
 import { usePermission } from "@/lib/usePermission";
+import ActivationModal, { type ActSubscriber } from "@/components/ActivationModal";
 
 // قيد التحصيل: كل ضغطة «اكمال» صارت سطراً دائماً يُعرض ويمكن سحبه — وكان يمحو
 // المبلغ بلا أثر، والبطاقات تُحذف بعد أسبوع فيضيع أصل الرقم (المرحلة ٨).
@@ -12,9 +13,11 @@ type SettleRow = {
   count: number; total: number; sale: number; sub: number; undone: boolean;
 };
 
-type Item = { title: string; kind: string; amount: number; subAmount?: number; netUser?: string | null };
+type Item = { title: string; kind: string; amount: number; subAmount?: number; netUser?: string | null; subscriberId?: number | null; isDelivery?: boolean; activated?: boolean };
 type Tech = { id: number; name: string; towerId: number | null; pendingTotal: number; saleTotal?: number; subTotal?: number; pendingCount: number; items?: Item[] };
 type Office = { id: number; name: string | null };
+type Pkg = { id: number; name: string | null; priceDinar: number | null };
+type Tower = { id: number; loginUrl: string | null; activationTemplate: string | null; activationMode?: string | null };
 
 const fmt = (n: number) => Number(n).toLocaleString("en-US");
 const KIND_ICON: Record<string, string> = { "توصيل": "🚚", "صيانة": "🔧", "تنصيب": "🔧", "اعادة": "🔁", "تحويل": "↪️" };
@@ -32,16 +35,23 @@ export default function FieldSettlementCard() {
   const { can } = usePermission();
   const [logOpen, setLogOpen] = useState(false);
   const [log, setLog] = useState<SettleRow[] | null>(null);
-  // النقر في أي مكان خارج القائمة العائمة يغلقها تلقائياً (طلب محمد)
+  const [packages, setPackages] = useState<Pkg[]>([]);
+  const [towers, setTowers] = useState<Tower[]>([]);
+  const [activating, setActivating] = useState<ActSubscriber | null>(null);
+  // النقر في أي مكان خارج القائمة العائمة يغلقها تلقائياً (طلب محمد) — إلا أثناء نافذة التفعيل
   useEffect(() => {
-    if (openId == null) return;
+    if (openId == null || activating != null) return;
     const h = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
       if (!t.closest || (!t.closest(".ss-pop") && !t.closest(".ss-plus"))) setOpenId(null);
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
-  }, [openId]);
+  }, [openId, activating]);
+  useEffect(() => {
+    fetch("/api/packages").then((r) => (r.ok ? r.json() : [])).then(setPackages).catch(() => {});
+    fetch("/api/towers").then((r) => (r.ok ? r.json() : [])).then(setTowers).catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     fetch("/api/field/settlement")
@@ -70,8 +80,25 @@ export default function FieldSettlementCard() {
     } else alert(d.error ?? "تعذّر السحب");
   }
 
+  async function openActivate(subscriberId: number) {
+    const r = await fetch(`/api/subscribers/${subscriberId}`);
+    if (!r.ok) { alert("تعذّر فتح المشترك"); return; }
+    const sub = await r.json();
+    setActivating({
+      id: sub.id, name: sub.name, packageId: sub.packageId, towerId: sub.towerId,
+      netUser: sub.netUser, sasId: sub.sasId, carry: sub.carry, dateTo: sub.dateTo,
+      sasPanelId: sub.sasPanelId, transferredTo: sub.transferredTo, transferredFrom: sub.transferredFrom,
+    });
+  }
+
   async function settle(t: Tech) {
-    if (!confirm(`تحصيل ${fmt(t.pendingTotal)} د.ع من الفني ${t.name}؟ ستُزال تكتاته المنجزة.`)) return;
+    const unact = (t.items ?? []).filter((it) => it.isDelivery && !it.activated);
+    if (unact.length) {
+      const names = unact.map((it) => (it.subscriberId != null ? (it.netUser || it.title) : `${it.netUser || it.title} (غير مربوط بمشترك)`)).join("، ");
+      if (!confirm(`تنبيه: لم يُفعَّل هؤلاء المشتركون بعد:\n${names}\n\nهل توافق على إكمال تحصيل ${fmt(t.pendingTotal)} د.ع من ${t.name} رغم ذلك؟`)) return;
+    } else if (!confirm(`تحصيل ${fmt(t.pendingTotal)} د.ع من الفني ${t.name}؟ ستُزال تكتاته المنجزة.`)) {
+      return;
+    }
     setBusyId(t.id);
     const r = await fetch("/api/field/settlement", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -140,14 +167,14 @@ export default function FieldSettlementCard() {
         return createPortal(
           <div className="nst">
             <div className="ss-pop" onClick={(e) => e.stopPropagation()}
-              style={{ position: "fixed", top: popPos.top, right: popPos.right, left: "auto", transform: "translateY(-100%)", width: "fit-content", minWidth: 280, maxWidth: "min(92vw, 620px)", maxHeight: "60vh", overflowY: "auto", zIndex: 95 }}>
+              style={{ position: "fixed", top: popPos.top, right: popPos.right, left: "auto", transform: "translateY(-100%)", width: "fit-content", minWidth: 280, maxWidth: "min(92vw, 620px)", maxHeight: "60vh", overflowY: "auto", zIndex: activating != null ? 50 : 95 }}>
               <div className="ss-pop-h">{t.name} — تفاصيل المبلغ</div>
               {(t.items ?? []).length === 0 ? (
                 <div className="sd-empty">لا تفاصيل</div>
               ) : (
                 <div className="ss-det" style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}>
                   {(t.items ?? []).map((it, idx) => (
-                    <div key={idx} className="sd-row">
+                    <div key={idx} className="sd-row" style={it.isDelivery && it.activated ? { textDecoration: "line-through", opacity: 0.55 } : undefined}>
                       <span>
                         {/* عنوان البطاقة **هو** اليوزر في بطاقات المشتركين، فكان يُطبع مرّتين
                             متلاصقتين. يُعرض الثاني فقط إن اختلف — واختلافه خبرٌ يستحق أن يُرى. */}
@@ -159,6 +186,12 @@ export default function FieldSettlementCard() {
                         {(it.subAmount ?? 0) > 0 && <em>{it.amount > 0 ? " + " : ""}اشتراك {fmt(it.subAmount ?? 0)}</em>}
                         {it.amount <= 0 && (it.subAmount ?? 0) <= 0 && "0"}
                       </b>
+                      {it.isDelivery && it.subscriberId != null && !it.activated && (
+                        <button onClick={() => openActivate(it.subscriberId as number)}
+                          style={{ flex: "none", alignSelf: "center", fontSize: 9.5, fontWeight: 800, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, padding: "1px 7px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                          تفعيل
+                        </button>
+                      )}
                     </div>
                   ))}
                   <div className="sd-tot">
@@ -220,6 +253,16 @@ export default function FieldSettlementCard() {
           </div>
         </div>,
         document.body,
+      )}
+
+      {activating && (
+        <ActivationModal
+          subscriber={activating}
+          packages={packages}
+          tower={towers.find((tw) => tw.id === activating.towerId)}
+          onClose={() => setActivating(null)}
+          onDone={() => { setActivating(null); load(); announceMoneyChanged(); }}
+        />
       )}
     </div>
   );

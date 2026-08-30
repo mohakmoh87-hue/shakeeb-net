@@ -44,17 +44,29 @@ export async function GET() {
 
   const cards = await prisma.taskCard.findMany({
     where: { done: true, settled: false, isDeleted: false, technicianId: { in: technicians.map((t) => t.id) }, listId: { in: viewLists.map((l) => l.id) } },
-    select: { id: true, title: true, kind: true, amount: true, subAmount: true, technicianId: true, description: true },
+    select: { id: true, title: true, kind: true, amount: true, subAmount: true, technicianId: true, description: true, subscriberId: true },
     orderBy: { id: "asc" },
   });
-  const byTech = new Map<number, { title: string; kind: string; amount: number; subAmount: number; netUser: string | null }[]>();
+  type SItem = { title: string; kind: string; amount: number; subAmount: number; netUser: string | null; subscriberId: number | null; isDelivery: boolean };
+  const byTech = new Map<number, SItem[]>();
   for (const c of cards) {
     if (c.technicianId == null) continue;
     // اليوزر مخزّن في وصف البطاقة كسطر «👤 اليوزر: X»
     const netUser = c.description?.match(/اليوزر\s*[:：]\s*([^\n]+)/)?.[1]?.trim();
     const arr = byTech.get(c.technicianId) ?? [];
-    arr.push({ title: c.title, kind: c.kind, amount: c.amount ?? 0, subAmount: c.subAmount ?? 0, netUser: netUser && netUser !== "—" ? netUser : null });
+    arr.push({ title: c.title, kind: c.kind, amount: c.amount ?? 0, subAmount: c.subAmount ?? 0, netUser: netUser && netUser !== "—" ? netUser : null, subscriberId: c.subscriberId ?? null, isDelivery: isDeliveryKind(c.kind) });
     byTech.set(c.technicianId, arr);
+  }
+  // مُفعَّل = للمشترك تفعيلٌ حقيقيٌّ (moneyType:1، لا دينٌ سابق) ضمن ٧ أيّام سابقة حتى الآن (قرار محمد)
+  const since = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+  const delSubIds = [...new Set(cards.filter((c) => isDeliveryKind(c.kind) && c.subscriberId != null).map((c) => c.subscriberId as number))];
+  const activatedSet = new Set<number>();
+  if (delSubIds.length) {
+    const acts = await prisma.subscriptionEntry.findMany({
+      where: { subscriberId: { in: delSubIds }, isDeleted: false, moneyType: 1, date: { gte: since } },
+      select: { subscriberId: true },
+    });
+    for (const a of acts) if (a.subscriberId != null) activatedSet.add(a.subscriberId);
   }
   // بطاقات التوصيل: مبلغها (المخزَّن في amount عند الإنجاز) اشتراكٌ محاسبياً —
   // يُنقل لخانة الاشتراك فيصحّ العرض والمجاميع (كان يظهر «مبيع 36 واشتراك 0» معكوساً)
@@ -77,7 +89,7 @@ export async function GET() {
         pendingTotal: saleTotal + subTotal,
         saleTotal, subTotal,
         pendingCount: items.length,
-        items, // تفصيل كل تكت (عنوان + نوع + مبيع + اشتراك)
+        items: items.map((x) => ({ ...x, activated: x.subscriberId != null && activatedSet.has(x.subscriberId) })),
       };
     }),
   });
