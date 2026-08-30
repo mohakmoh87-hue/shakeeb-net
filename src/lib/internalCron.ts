@@ -137,6 +137,52 @@ async function driveBackup(dayKey: string): Promise<void> {
   }
 }
 
+let agentCfgWarnDay = "";
+const lastAgentAttempt = new Map<number, number>();
+async function agentBackups(now: Date, dayKey: string): Promise<void> {
+  const { gmailConfigured, gmailReady } = await import("./gmailSend");
+  if (!gmailConfigured()) {
+    if (agentCfgWarnDay !== dayKey) { agentCfgWarnDay = dayKey; console.warn("[internal-cron] ✉️ Gmail غير مهيّأ (GMAIL_REFRESH_TOKEN) — نسخُ الوكلاء السحابيّة معلّقة"); }
+    return;
+  }
+  const agents = await prisma.agent.findMany({
+    where: { isDeleted: false, backupEmail: { not: null }, OR: [{ lastBackupDate: null }, { lastBackupDate: { not: dayKey } }] },
+    select: { id: true },
+  });
+  if (!agents.length) return;
+  const mins = baghdadMinutes(now);
+  const { getAgentSetting } = await import("./agentSettings");
+  const due: number[] = [];
+  for (const a of agents) {
+    const bt = await getAgentSetting("backupTime", a.id, "04:00");
+    const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(bt);
+    const dueMin = m ? Number(m[1]) * 60 + Number(m[2]) : 4 * 60;
+    if (mins >= dueMin) due.push(a.id);
+  }
+  if (!due.length) return;
+  if (!(await gmailReady())) {
+    if (agentCfgWarnDay !== dayKey) { agentCfgWarnDay = dayKey; console.warn("[internal-cron] ✉️ توكِن Gmail مرفوضٌ — نسخُ الوكلاء معلّقةٌ (لا تصدير)"); }
+    return;
+  }
+  const { runDailyBackups } = await import("./backupJob");
+  let sent = 0, failed = 0;
+  for (const id of due) {
+    const la = lastAgentAttempt.get(id);
+    if (la && Date.now() - la < 60 * 60_000) continue;
+    lastAgentAttempt.set(id, Date.now());
+    const r = await runDailyBackups(id).catch((e) => { console.error(`[internal-cron] نسخة الوكيل ${id}:`, e instanceof Error ? e.message : e); return { total: 0, sent: 0, failed: 1 }; });
+    sent += r.sent; failed += r.failed;
+  }
+  if (sent) console.log(`[internal-cron] ✉️ نسخُ الوكلاء السحابيّة: أُرسلت ${sent}${failed ? ` · فشل ${failed}` : ""}`);
+  if (failed) {
+    const f = await claimDay("lastAgentBackupFailDate", dayKey, 24 * 3600_000);
+    if (f.claimed && f.rowId != null) {
+      await finalizeDay(f.rowId, dayKey);
+      await notifyOwner("🔴 نسخُ وكلاءَ لم تُرسَل", `${failed} نسخةَ وكيلٍ فشلت اليوم (قد يتجاوزُ الحجمُ حدَّ المرفق). تُعادُ المحاولةُ تلقائيّاً كلَّ ٥ دقائق.`);
+    }
+  }
+}
+
 // ═════ الدورة — تُركَل كلَّ ٥ دقائق من instrumentation.ts (الموقعُ حصراً) ═════
 const g = globalThis as unknown as { __internalCron?: boolean };
 export function kickInternalCron(reason: string): void {
@@ -172,4 +218,6 @@ async function tick(reason: string): Promise<void> {
     // `claimDay` يرفضه فوراً إن كان الأمسُ مختوماً أو عُهدتُه طازجة.
     await driveBackup(baghdadDayKey(new Date(now.getTime() - 24 * 3600 * 1000)));
   }
+
+  await agentBackups(now, todayKey);
 }

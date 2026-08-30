@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { exportAgentBackup, exportFullSystemBackup } from "@/lib/backup";
 import { sendMail, mailerConfigured } from "@/lib/mailer";
+import { sendGmail, gmailConfigured } from "@/lib/gmailSend";
 import { baghdadDayKey } from "@/lib/attendance";
 
 // إرسال نسخة احتياطية لوكيل واحد إلى إيميله المضبوط
@@ -9,14 +10,15 @@ export async function sendAgentBackupEmail(agentId: number): Promise<{ ok: boole
   if (!agent?.backupEmail) return { ok: false, error: "لا يوجد إيميل نسخ احتياطي مضبوط" };
   const { gz, filename } = await exportAgentBackup(agentId);
   const today = new Date().toISOString().slice(0, 10);
-  return sendMail({
+  const mail = {
     to: agent.backupEmail,
     subject: `نسخة احتياطية — ${agent.name ?? "SHAKEEB"} — ${today}`,
     text:
       `مرفق نسخة احتياطية كاملة لبيانات «${agent.name ?? ""}» بتاريخ ${today}.\n\n` +
       `احتفظ بهذا الملف. لاسترجاع بياناتك في أي وقت: افتح البرنامج ← الإعدادات ← النسخ الاحتياطي ← «استرجاع عن طريق النسخة الاحتياطية» وارفع هذا الملف.`,
     attachments: [{ filename, content: gz, contentType: "application/gzip" }],
-  });
+  };
+  return gmailConfigured() ? sendGmail(mail) : sendMail(mail);
 }
 
 // المهمة اليومية: إرسال نسخة كل وكيل لديه إيميل نسخ مضبوط إلى إيميله.
@@ -24,8 +26,8 @@ export async function sendAgentBackupEmail(agentId: number): Promise<{ ok: boole
 // بعلامة lastBackupDate (يوم بغداد) تمنع إرسال نسختين لنفس اليوم.
 // agentId اختياري: يُمرَّر من المجدول (قائد كل وكيل ينفّذ لوكيله فقط).
 export async function runDailyBackups(agentId?: number | null): Promise<{ total: number; sent: number; failed: number }> {
-  if (!mailerConfigured()) {
-    console.warn("[backup] لم تُضبط بيانات SMTP — تخطّي النسخ اليومي بالبريد");
+  if (!mailerConfigured() && !gmailConfigured()) {
+    console.warn("[backup] لا SMTP ولا Gmail — تخطّي النسخ اليومي بالبريد");
     return { total: 0, sent: 0, failed: 0 };
   }
   const todayKey = baghdadDayKey(new Date());
