@@ -30,6 +30,18 @@ export async function GET(request: Request) {
   const phone = (sub.phone ?? "").trim();
   if (!phone) return NextResponse.json({ status: "no-phone" });
 
+  // آخرُ نتيجةِ إرسالٍ حاسمةٍ من سجلّ الرسائل: فشلٌ سببُه «لا واتساب» ⇒ تنبيه، وإلّا نجاحٌ ⇒ ok.
+  // (الفحصُ الحيّ لا يعمل على السحابة لأنّ عميلَ واتساب على حاسبة المكتب — فنعتمد الإرسالَ الفعليّ.)
+  const last = await prisma.message.findFirst({
+    where: {
+      subscriberId: sub.id, channel: "WHATSAPP",
+      OR: [{ status: "SENT" }, { status: "FAILED", error: { contains: "ليس له واتساب" } }],
+    },
+    orderBy: { date: "desc" },
+    select: { status: true },
+  });
+  if (last) return NextResponse.json({ status: last.status === "FAILED" ? "no-whatsapp" : "ok" });
+
   const has = await hasWhatsApp(sub.towerId, phone);
   if (has === null) return NextResponse.json({ status: "unknown" });
   return NextResponse.json({ status: has ? "ok" : "no-whatsapp" });
