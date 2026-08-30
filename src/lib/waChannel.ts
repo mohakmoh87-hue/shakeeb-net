@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { encryptSecret, decryptSecret } from "./secretbox";
+import { decryptSecret } from "./secretbox";
 import type { SendResult } from "./whatsapp";
 
 type Stored = { enabled: boolean; provider: string; instanceId: string; token: string | null };
@@ -55,7 +55,7 @@ export async function setWaChannel(
   const enabled = input.enabled ?? prev?.enabled ?? false;
   const instanceId = (input.instanceId ?? prev?.instanceId ?? "").trim();
   let token = prev?.token ?? null;
-  if (typeof input.token === "string" && input.token.trim() !== "") token = encryptSecret(input.token.trim());
+  if (typeof input.token === "string" && input.token.trim() !== "") token = input.token.trim();
   await writeText(KEY(officeId), JSON.stringify({ enabled, provider: "ultramsg", instanceId, token }));
   invalidateWaChannel(officeId);
   return { enabled, provider: "ultramsg", instanceId, tokenSet: !!(token && token.length > 0) };
