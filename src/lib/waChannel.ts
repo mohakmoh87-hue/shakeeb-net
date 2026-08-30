@@ -78,6 +78,22 @@ export async function getWaChannel(officeId: number): Promise<WaChannel | null> 
   return cfg;
 }
 
+export async function listUltraMsgOffices(): Promise<number[]> {
+  const rows = await prisma.systemSetting.findMany({ where: { type: { startsWith: "waApi:" } }, select: { type: true, text: true } });
+  const ids: number[] = [];
+  for (const r of rows) {
+    if (!r.type || !r.text) continue;
+    try {
+      const o = JSON.parse(r.text) as Record<string, unknown>;
+      if (o.enabled === true && typeof o.instanceId === "string" && o.instanceId.trim() && typeof o.token === "string" && o.token) {
+        const id = Number(r.type.slice("waApi:".length));
+        if (Number.isFinite(id)) ids.push(id);
+      }
+    } catch { /* skip */ }
+  }
+  return ids;
+}
+
 function toUltraTo(phoneRaw: string): string | null {
   let p = (phoneRaw || "").replace(/[^\d+]/g, "");
   if (!p) return null;

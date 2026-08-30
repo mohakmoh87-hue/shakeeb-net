@@ -20,6 +20,11 @@ function baghdadMinutes(now: Date): number {
   return b.getUTCHours() * 60 + b.getUTCMinutes();
 }
 
+function baghdadHM(now: Date): string {
+  const b = new Date(now.getTime() + 3 * 3600 * 1000);
+  return `${String(b.getUTCHours()).padStart(2, "0")}:${String(b.getUTCMinutes()).padStart(2, "0")}`;
+}
+
 // ═════ حَجزُ يومٍ بعُهدةٍ زمنيّة — النمطُ المجرَّب في نسخة المالك (b818506) ═════
 // `اليوم#pending#وقت` أثناء العمل، و`اليوم` الصريحُ بعد النجاح؛ عُهدةٌ بايتةٌ تُنتزَع.
 type Claim = { claimed: boolean; rowId?: number; prev?: string | null };
@@ -183,8 +188,67 @@ async function agentBackups(now: Date, dayKey: string): Promise<void> {
   }
 }
 
+const ultraReminderAt = new Map<number, number>();
+async function ultraMsgOfficeSends(now: Date): Promise<void> {
+  const { listUltraMsgOffices } = await import("./waChannel");
+  const ids = await listUltraMsgOffices();
+  if (!ids.length) return;
+  const offs = await prisma.tower.findMany({
+    where: { id: { in: ids }, isDeleted: false },
+    select: {
+      id: true, agentId: true, reminderTime: true, silent: true, waEnabled: true, lastReminderDate: true,
+      debtReminderEnabled: true, debtReminderTime: true, lastDebtReminderDate: true,
+      expiredNoticeEnabled: true, expiredNoticeTime: true, lastExpiredNoticeDate: true,
+    },
+  });
+  if (!offs.length) return;
+  const nowHM = baghdadHM(now);
+  const todayK = baghdadDayKey(now);
+  const { getAgentSetting } = await import("./agentSettings");
+  const agentCache = new Map<number | null, string>();
+  const agentReminder = async (agentId: number | null): Promise<string> => {
+    const hit = agentCache.get(agentId);
+    if (hit !== undefined) return hit;
+    const t = await getAgentSetting("reminderTime", agentId, "13:00");
+    agentCache.set(agentId, t);
+    return t;
+  };
+  const expiring: number[] = [], debt: number[] = [], expired: number[] = [];
+  for (const o of offs) {
+    try {
+      if (o.waEnabled === "0") continue;
+      const la = ultraReminderAt.get(o.id);
+      if (la != null && Date.now() - la < 20 * 60_000) continue;
+      const base = o.reminderTime?.trim() || (await agentReminder(o.agentId));
+      let due = false;
+      if (o.silent !== "0" && nowHM >= base && o.lastReminderDate !== todayK) { expiring.push(o.id); due = true; }
+      if (o.debtReminderEnabled === "1") {
+        const t = o.debtReminderTime?.trim() || base;
+        if (nowHM >= t && o.lastDebtReminderDate !== todayK) { debt.push(o.id); due = true; }
+      }
+      if (o.expiredNoticeEnabled === "1") {
+        const t = o.expiredNoticeTime?.trim() || base;
+        if (nowHM >= t && o.lastExpiredNoticeDate !== todayK) { expired.push(o.id); due = true; }
+      }
+      if (due) ultraReminderAt.set(o.id, Date.now());
+    } catch (e) {
+      console.error(`[internal-cron] ↗️ تصنيف مكتب ${o.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
+  const sched = await import("./scheduler");
+  if (expiring.length) await sched.runExpiringReminder(expiring, { claimDay: true }).catch((e) => console.error("[internal-cron] ↗️ تذكير الانتهاء (UltraMsg):", e instanceof Error ? e.message : e));
+  if (debt.length) await sched.runDebtReminder(debt, { claimDay: true }).catch((e) => console.error("[internal-cron] ↗️ الديون (UltraMsg):", e instanceof Error ? e.message : e));
+  if (expired.length) await sched.runExpiredNotice(expired, { claimDay: true }).catch((e) => console.error("[internal-cron] ↗️ المنتهون (UltraMsg):", e instanceof Error ? e.message : e));
+  const selfMod = await import("./selfActivatedNotice");
+  const syncMod = await import("./syncAutoMsg");
+  for (const o of offs) {
+    await selfMod.drainSelfActivatedQueue(o.id).catch(() => {});
+    await syncMod.drainSyncMsgQueue(o.id).catch(() => {});
+  }
+}
+
 // ═════ الدورة — تُركَل كلَّ ٥ دقائق من instrumentation.ts (الموقعُ حصراً) ═════
-const g = globalThis as unknown as { __internalCron?: boolean };
+const g = globalThis as unknown as { __internalCron?: boolean; __ultraSending?: boolean };
 export function kickInternalCron(reason: string): void {
   if (g.__internalCron) return; // دورةٌ سابقة ما زالت تعمل (مزامنةٌ طويلة؟) — لا تراكب
   g.__internalCron = true;
@@ -220,4 +284,10 @@ async function tick(reason: string): Promise<void> {
   }
 
   await agentBackups(now, todayKey);
+  if (!g.__ultraSending) {
+    g.__ultraSending = true;
+    void ultraMsgOfficeSends(now)
+      .catch((e) => console.error("[internal-cron] ↗️ إرسال UltraMsg سقط:", e instanceof Error ? e.message : e))
+      .finally(() => { g.__ultraSending = false; });
+  }
 }
