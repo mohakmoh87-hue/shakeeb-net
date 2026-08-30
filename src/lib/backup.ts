@@ -1,4 +1,4 @@
-import { gzipSync, gunzipSync, createGzip } from "node:zlib";
+import { gunzipSync, createGzip } from "node:zlib";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -49,50 +49,114 @@ export type AgentBackup = {
   settings: Row[];               // system_settings الخاصّة بالوكيل (قالب الوصل)
 };
 
-// تصدير نسخة الوكيل ككائن + نسخة مضغوطة (gzip) جاهزة للتنزيل/الإرسال
-export async function exportAgentBackup(agentId: number): Promise<{ backup: AgentBackup; gz: Buffer; filename: string }> {
+// اسمُ ملفِّ نسخة الوكيل
+function agentBackupFilename(agentName: string | null, agentId: number): string {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const safeName = (agentName ?? `agent-${agentId}`).replace(/[^\w؀-ۿ-]+/g, "_").slice(0, 40);
+  return `backup-${safeName}-${stamp}.json.gz`;
+}
+
+// ═════ 🔴 «نسخةُ الوكيل لا تُنزَّل ولا تُرسَل (500)» (بلاغُ محمد 2026-08-29) ═════
+// كانت `exportAgentBackup` تُجسّدُ كلَّ جداول الوكيل في الذاكرة ثمّ `JSON.stringify` تبني
+// **سلسلةً واحدةً** بحجمها كلِّه — ولوكيلٍ كبيرٍ (خصوصاً card_photos المُرمَّزة base64) تتجاوز
+// **أقصى طول سلسلةٍ في V8 (~512MB)** فيُرمى `RangeError: Invalid string length` ⇒ **500**
+// يُفشل التنزيلَ والإرسالَ معاً (كلاهما يستدعيها). وهو **عينُ عطل النسخة الكاملة** الذي عولج
+// بالبثّ. فهذه النواةُ البثّيّة تُصدّرُ **صفحةً صفحة** إلى مجرى gzip (ذاكرةٌ محدودةٌ مهما كبر
+// الوكيل، بلا سلسلةٍ عملاقةٍ أبداً)، مع حارس اكتمالٍ داخل لقطةٍ متّسقة (REPEATABLE READ).
+export async function exportAgentBackupTo(agentId: number, onChunk: (c: Buffer) => void): Promise<{ filename: string; tableCount: number; rowCount: number }> {
   const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { name: true, backupEmail: true } });
   const towers = await prisma.tower.findMany({ where: { agentId }, select: { id: true } });
   const towerIds = towers.map((t) => t.id);
 
-  const tables: Record<string, Row[]> = {};
+  const PAGE = 2000;
+  let rowCount = 0, tableCount = 0;
 
-  // 1) جداول فيها agentId
-  for (const t of await columnsWith("agentId")) {
-    if (t === "agents") continue;
-    tables[t] = await prisma.$queryRawUnsafe<Row[]>(`SELECT * FROM "${t}" WHERE "agentId" = $1`, agentId);
-  }
-  // 2) جداول فيها towerId
-  if (towerIds.length) {
-    for (const t of await columnsWith("towerId")) {
-      if (tables[t]) continue; // لا تكرّر إن كان له agentId أيضاً
-      tables[t] = await prisma.$queryRawUnsafe<Row[]>(`SELECT * FROM "${t}" WHERE "towerId" = ANY($1::int[])`, towerIds);
+  const gzip = createGzip({ level: 6 });
+  gzip.on("data", (c: Buffer) => onChunk(c));
+  const finished = new Promise<void>((res, rej) => { gzip.on("end", res); gzip.on("error", rej); });
+  const put = (str: string): Promise<void> =>
+    new Promise((res, rej) => {
+      if (gzip.write(str)) return res();
+      gzip.once("drain", res);
+      gzip.once("error", rej);
+    });
+
+  await prisma.$transaction(async (tx) => {
+    const count = async (sql: string, ...p: unknown[]): Promise<number> => {
+      const [{ n }] = await tx.$queryRawUnsafe<{ n: bigint }[]>(sql, ...p);
+      return Number(n);
+    };
+    let firstTable = true;
+    // يبثّ جدولاً واحداً `"label":[...]` صفحةً صفحة، ويحرس اكتمالَه بمقارنة المعدود بالحقيقيّ.
+    const emit = async (label: string, pageFn: (off: number) => Promise<Row[]>, totalFn: () => Promise<number>) => {
+      await put((firstTable ? "" : ",") + JSON.stringify(label) + ":[");
+      firstTable = false; tableCount++;
+      let offset = 0, tableRows = 0, firstRow = true;
+      for (;;) {
+        const rows = await pageFn(offset);
+        if (rows.length === 0) break;
+        for (const r of rows) { await put((firstRow ? "" : ",") + JSON.stringify(r, jsonReplacer)); firstRow = false; }
+        rowCount += rows.length; tableRows += rows.length; offset += rows.length;
+        if (rows.length < PAGE) break;
+      }
+      await put("]");
+      const n = await totalFn();
+      if (n !== tableRows) throw new Error(`نسخةٌ ناقصة: جدول ${label} فيه ${n} صفّاً وخرج منه ${tableRows} — أُوقفت النسخة`);
+    };
+
+    await put('{"version":' + BACKUP_VERSION + ',"agentId":' + agentId +
+      ',"agentName":' + JSON.stringify(agent?.name ?? null) +
+      ',"backupEmail":' + JSON.stringify(agent?.backupEmail ?? null) +
+      ',"exportedAt":' + JSON.stringify(new Date().toISOString()) + ',"tables":{');
+
+    const done = new Set<string>();
+    // 1) جداول فيها agentId
+    for (const t of await columnsWith("agentId")) {
+      if (t === "agents" || !SAFE_IDENT.test(t)) continue;
+      done.add(t);
+      await emit(t,
+        (off) => tx.$queryRawUnsafe<Row[]>(`SELECT * FROM "${t}" WHERE "agentId" = $1 ORDER BY 1 OFFSET ${off} LIMIT ${PAGE}`, agentId),
+        () => count(`SELECT count(*)::bigint AS n FROM "${t}" WHERE "agentId" = $1`, agentId));
     }
-    // 3) أبناء لوحات الفنيين (لا يملكون towerId مباشرةً — عبر العلاقة باللوحة)
-    tables["task_lists"] = await prisma.$queryRawUnsafe<Row[]>(
-      `SELECT l.* FROM task_lists l JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[])`, towerIds);
-    tables["task_cards"] = await prisma.$queryRawUnsafe<Row[]>(
-      `SELECT c.* FROM task_cards c JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[])`, towerIds);
-    tables["card_photos"] = await prisma.$queryRawUnsafe<Row[]>(
-      `SELECT p.* FROM card_photos p JOIN task_cards c ON c.id=p."cardId" JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[])`, towerIds);
-  }
+    // 2) جداول فيها towerId (بلا agentId) + 3) سلسلةُ لوحات الفنيين
+    if (towerIds.length) {
+      for (const t of await columnsWith("towerId")) {
+        if (done.has(t) || !SAFE_IDENT.test(t)) continue;
+        done.add(t);
+        await emit(t,
+          (off) => tx.$queryRawUnsafe<Row[]>(`SELECT * FROM "${t}" WHERE "towerId" = ANY($1::int[]) ORDER BY 1 OFFSET ${off} LIMIT ${PAGE}`, towerIds),
+          () => count(`SELECT count(*)::bigint AS n FROM "${t}" WHERE "towerId" = ANY($1::int[])`, towerIds));
+      }
+      await emit("task_lists",
+        (off) => tx.$queryRawUnsafe<Row[]>(`SELECT l.* FROM task_lists l JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[]) ORDER BY l.id OFFSET ${off} LIMIT ${PAGE}`, towerIds),
+        () => count(`SELECT count(*)::bigint AS n FROM task_lists l JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[])`, towerIds));
+      await emit("task_cards",
+        (off) => tx.$queryRawUnsafe<Row[]>(`SELECT c.* FROM task_cards c JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[]) ORDER BY c.id OFFSET ${off} LIMIT ${PAGE}`, towerIds),
+        () => count(`SELECT count(*)::bigint AS n FROM task_cards c JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[])`, towerIds));
+      await emit("card_photos",
+        (off) => tx.$queryRawUnsafe<Row[]>(`SELECT p.* FROM card_photos p JOIN task_cards c ON c.id=p."cardId" JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[]) ORDER BY p.id OFFSET ${off} LIMIT ${PAGE}`, towerIds),
+        () => count(`SELECT count(*)::bigint AS n FROM card_photos p JOIN task_cards c ON c.id=p."cardId" JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[])`, towerIds));
+    }
 
-  // قالب الوصل الخاص بالوكيل في system_settings (type = receipt:{agentId})
-  const settings = await prisma.$queryRawUnsafe<Row[]>(`SELECT * FROM system_settings WHERE type = $1`, `receipt:${agentId}`);
+    // قالبُ الوصل الخاصّ بالوكيل (صغير — بلا ترقيم)
+    await put('},"settings":[');
+    const settings = await tx.$queryRawUnsafe<Row[]>(`SELECT * FROM system_settings WHERE type = $1`, `receipt:${agentId}`);
+    let firstS = true;
+    for (const s of settings) { await put((firstS ? "" : ",") + JSON.stringify(s, jsonReplacer)); firstS = false; }
+    await put("]}");
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 300000, maxWait: 15000 });
 
-  const backup: AgentBackup = {
-    version: BACKUP_VERSION,
-    agentId,
-    agentName: agent?.name ?? null,
-    backupEmail: agent?.backupEmail ?? null,
-    exportedAt: new Date().toISOString(),
-    tables,
-    settings,
-  };
-  const gz = gzipSync(Buffer.from(JSON.stringify(backup, jsonReplacer)));
-  const stamp = new Date().toISOString().slice(0, 10);
-  const safeName = (agent?.name ?? `agent-${agentId}`).replace(/[^\w؀-ۿ-]+/g, "_").slice(0, 40);
-  return { backup, gz, filename: `backup-${safeName}-${stamp}.json.gz` };
+  gzip.end();
+  await finished;
+  return { filename: agentBackupFilename(agent?.name ?? null, agentId), tableCount, rowCount };
+}
+
+// نسخةٌ مضغوطةٌ (Buffer) لبيانات الوكيل — للإرسال بالبريد (مرفق). تجمع قطعَ البثّ (ذاكرةٌ محدودةٌ
+// أثناء التوليد، والمضغوطُ وحدَه يُجمَّع — أصغرُ بمراتب من الخام).
+export async function exportAgentBackup(agentId: number): Promise<{ gz: Buffer; filename: string }> {
+  const chunks: Buffer[] = [];
+  const r = await exportAgentBackupTo(agentId, (c) => { chunks.push(c); });
+  return { gz: Buffer.concat(chunks), filename: r.filename };
 }
 
 // ===== نسخة النظام الكاملة (كل الوكلاء + حساباتهم + كروتهم + كل تفصيل) =====
