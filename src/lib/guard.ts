@@ -15,6 +15,13 @@ export async function agentTowerIds(session: SessionPayload | null): Promise<num
   return towers.map((t) => t.id);
 }
 
+// مكاتبُ وكيلٍ بمعرّفٍ صريح (يعكس agentTowerIds بلا جلسةٍ داخليّة) — لبوّابة الشركة (القطعة ٧-ب):
+// الشركةُ عامّةٌ بلا SessionPayload، فتقرأ مشتركي وكيلٍ **واحدٍ** عبر مكاتبه فقط، فلا تسريبَ بين وكلاء.
+export async function towerIdsOfAgent(agentId: number): Promise<number[]> {
+  const towers = await prisma.tower.findMany({ where: { agentId, isDeleted: false }, select: { id: true } });
+  return towers.map((t) => t.id);
+}
+
 // فلتر المكتب للاستعلامات (معزول بالوكيل):
 // - مستخدم مكتب ⇒ مكتبه فقط
 // - مدير الوكيل (أدمن أو بلا مكتب) ⇒ كل مكاتب وكيله فقط (لا يرى مكاتب وكلاء آخرين)

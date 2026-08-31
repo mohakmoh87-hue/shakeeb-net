@@ -109,6 +109,18 @@ export async function setTicketDest(dest: TicketDest) {
   await writeVal(TICKET_DEST_KEY, dest === "supercell" || dest === "agent" ? dest : "both");
 }
 
+// ═════ كشفُ مشتركي الوكلاء لبوّابة الشركة (القطعة ٧-ب — أخطرُ باب) ═════
+// **مطفأٌ افتراضاً** — عكسُ بقيّة الأعلام (companyMode/portalEnabled الافتراضُ مفعّل): هذا كشفٌ
+// حسّاسٌ للـPII، فلا يُفتَح إلا بإذن المالك الصريح. الغيابُ ⇒ false.
+const SUBS_VISIBLE_KEY = "subscribersVisibleToCompany";
+export async function getSubsVisibleToCompany(): Promise<boolean> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: SUBS_VISIBLE_KEY }, select: { value: true } });
+  return row?.value === "1";
+}
+export async function setSubsVisibleToCompany(on: boolean) {
+  await writeVal(SUBS_VISIBLE_KEY, on ? "1" : "0");
+}
+
 // الحزمةُ الكاملةُ للقراءة العامّة (يقرؤها تطبيقُ Flutter عند الإقلاع)
 export async function getPublicAppConfig() {
   const [content, companyMode, portalEnabled] = await Promise.all([

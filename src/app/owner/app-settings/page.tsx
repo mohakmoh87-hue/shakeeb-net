@@ -5,7 +5,7 @@ import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
 
 type OtpWaInfo = { instanceId: string; tokenSet: boolean };
 type TicketDest = "supercell" | "agent" | "both";
-type State = AppContentT & { otpWa: OtpWaInfo; ticketDest: TicketDest };
+type State = AppContentT & { otpWa: OtpWaInfo; ticketDest: TicketDest; subsVisibleToCompany: boolean };
 
 export default function OwnerAppSettingsPage() {
   const [s, setS] = useState<State | null>(null);
@@ -16,10 +16,11 @@ export default function OwnerAppSettingsPage() {
   const [testPhone, setTestPhone] = useState("");
   const [testMsg, setTestMsg] = useState("");
   const [ticketDest, setTicketDest] = useState<TicketDest>("both");
+  const [subsVisible, setSubsVisible] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/owner/app-settings").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d) { setS(d); setInstanceId(d.otpWa?.instanceId ?? ""); setToken(""); setTicketDest(d.ticketDest ?? "both"); }
+      if (d) { setS(d); setInstanceId(d.otpWa?.instanceId ?? ""); setToken(""); setTicketDest(d.ticketDest ?? "both"); setSubsVisible(!!d.subsVisibleToCompany); }
     });
   }, []);
   useEffect(() => { const t = setTimeout(() => load(), 0); return () => clearTimeout(t); }, [load]);
@@ -35,6 +36,7 @@ export default function OwnerAppSettingsPage() {
           content: { ads: s!.ads, offers: s!.offers, quick: s!.quick },
           otpWa: { instanceId, token },
           ticketDest,
+          subsVisibleToCompany: subsVisible,
         }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setMsg(d.error ?? "فشل الحفظ"); return; }
@@ -105,6 +107,20 @@ export default function OwnerAppSettingsPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-1 font-semibold text-slate-800">👁️ كشفُ مشتركي الوكلاء لبوّابة الشركة</div>
+        <div className="mb-3 text-[11px] leading-5 text-slate-500">
+          يسمحُ لبوّابة سوبر سيل بقراءة قائمة مشتركي وكيلٍ تختاره (اسم·هاتف·مكتب·باقة·انتهاء·حالة فقط — بلا أيّ كلمة سرٍّ أو بيانات دخول). <b className="text-rose-600">حسّاسٌ — مطفأٌ افتراضاً.</b>
+        </div>
+        <button type="button" onClick={() => setSubsVisible((v) => !v)}
+          className={`flex w-full items-center justify-between rounded-xl border p-3 transition ${subsVisible ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}>
+          <span className={`text-sm font-bold ${subsVisible ? "text-emerald-700" : "text-slate-600"}`}>{subsVisible ? "مفعّل — الشركةُ تستطيعُ القراءة" : "مطفأٌ — الشركةُ لا ترى المشتركين"}</span>
+          <span className={`relative h-6 w-11 rounded-full transition ${subsVisible ? "bg-emerald-500" : "bg-slate-300"}`}>
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${subsVisible ? "right-0.5" : "right-5"}`} />
+          </span>
+        </button>
       </div>
 
       <AdsEditor content={{ ads: s.ads, offers: s.offers, quick: s.quick }} onChange={(c) => setS({ ...s, ...c })} />

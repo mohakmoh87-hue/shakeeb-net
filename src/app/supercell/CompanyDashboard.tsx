@@ -18,18 +18,43 @@ export default function CompanyDashboard({ username }: { username: string }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [agentName, setAgentName] = useState<Record<string, string>>({});
   const [ticketDest, setTicketDest] = useState<string>("both");
+  // مشتركو الوكلاء (القطعة ٧-ب) — كشفٌ للقراءة فقط مشروطٌ بعلَم المالك
+  const [subsEnabled, setSubsEnabled] = useState<boolean | null>(null);
+  const [agents, setAgents] = useState<{ id: number; name: string }[]>([]);
+  const [selAgent, setSelAgent] = useState<number | "">("");
+  const [subs, setSubs] = useState<{ id: number; name: string | null; phone: string | null; office: string | null; package: string | null; expiry: string; state: string; daysExpired: number }[]>([]);
+  const [subsTotal, setSubsTotal] = useState(0);
+  const [subsPage, setSubsPage] = useState(1);
+  const [subsPages, setSubsPages] = useState(0);
+  const [subsQ, setSubsQ] = useState("");
+  const [subsLoading, setSubsLoading] = useState(false);
 
   const loadTickets = useCallback(() => {
     fetch("/api/company/tickets").then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (d) { setTickets(Array.isArray(d.tickets) ? d.tickets : []); setAgentName(d.agentName ?? {}); setTicketDest(d.dest ?? "both"); }
     }).catch(() => {});
   }, []);
+  const loadAgents = useCallback(() => {
+    fetch("/api/company/agents").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) { setSubsEnabled(!!d.enabled); setAgents(Array.isArray(d.agents) ? d.agents : []); }
+    }).catch(() => {});
+  }, []);
+  const loadSubs = useCallback((agentId: number, page: number, q: string) => {
+    setSubsLoading(true);
+    fetch(`/api/company/subscribers?agentId=${agentId}&page=${page}&q=${encodeURIComponent(q)}`)
+      .then((r) => (r.ok ? r.json() : null)).then((d) => {
+        if (d && Array.isArray(d.subscribers)) { setSubs(d.subscribers); setSubsTotal(d.total ?? 0); setSubsPage(d.page ?? 1); setSubsPages(d.pages ?? 0); }
+        else { setSubs([]); setSubsTotal(0); setSubsPages(0); }
+      }).catch(() => {}).finally(() => setSubsLoading(false));
+  }, []);
   const load = useCallback(() => {
     fetch("/api/company/config").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setContent(d); });
     fetch("/api/company/otp-wa").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setOtp(d); setInstanceId(d.instanceId ?? ""); setToken(""); } });
     loadTickets();
-  }, [loadTickets]);
+    loadAgents();
+  }, [loadTickets, loadAgents]);
   useEffect(() => { load(); }, [load]);
+  function pickAgent(id: number) { setSelAgent(id); setSubsQ(""); loadSubs(id, 1, ""); }
   async function patchTicket(id: number, status: string) {
     try {
       await fetch("/api/company/tickets", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
@@ -128,6 +153,65 @@ export default function CompanyDashboard({ username }: { username: string }) {
                 );
               })}
             </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 font-semibold text-slate-800">👥 مشتركو الوكلاء</div>
+          {subsEnabled === false ? (
+            <div className="text-xs text-slate-400">الكشفُ مُطفأٌ — يفعّله مالكُ النظام من إعدادات التطبيق.</div>
+          ) : subsEnabled === null ? (
+            <div className="text-xs text-slate-400">جارٍ التحميل…</div>
+          ) : (
+            <>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <select value={selAgent} onChange={(e) => e.target.value && pickAgent(Number(e.target.value))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">اختر وكيلاً…</option>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                {selAgent !== "" && (
+                  <form onSubmit={(e) => { e.preventDefault(); loadSubs(Number(selAgent), 1, subsQ); }} className="flex items-center gap-1">
+                    <input value={subsQ} onChange={(e) => setSubsQ(e.target.value)} placeholder="بحث بالاسم أو الهاتف" className="w-44 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    <button type="submit" className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200">بحث</button>
+                  </form>
+                )}
+              </div>
+              {selAgent === "" ? (
+                <div className="text-xs text-slate-400">اختر وكيلاً لعرض مشتركيه.</div>
+              ) : subsLoading ? (
+                <div className="text-xs text-slate-400">جارٍ التحميل…</div>
+              ) : subs.length === 0 ? (
+                <div className="text-xs text-slate-400">لا مشتركين مطابقين.</div>
+              ) : (
+                <>
+                  <div className="mb-2 text-[11px] text-slate-500">الإجمالي: {subsTotal} مشترك</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead className="text-slate-500"><tr><th className="p-2">الاسم</th><th className="p-2">الهاتف</th><th className="p-2">المكتب</th><th className="p-2">الباقة</th><th className="p-2">الانتهاء</th><th className="p-2">الحالة</th></tr></thead>
+                      <tbody>
+                        {subs.map((u) => (
+                          <tr key={u.id} className="border-t border-slate-100">
+                            <td className="p-2 font-semibold text-slate-700">{u.name ?? "—"}</td>
+                            <td className="p-2 text-slate-600" dir="ltr">{u.phone ?? "—"}</td>
+                            <td className="p-2 text-slate-500">{u.office ?? "—"}</td>
+                            <td className="p-2 text-slate-500">{u.package ?? "—"}</td>
+                            <td className="p-2 text-slate-500" dir="ltr">{u.expiry || "—"}</td>
+                            <td className="p-2"><span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${u.state === "active" ? "bg-emerald-100 text-emerald-700" : u.state === "grace" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>{u.state === "active" ? "نشط" : u.state === "grace" ? "بمهلة" : "منتهٍ"}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {subsPages > 1 && (
+                    <div className="mt-3 flex items-center justify-center gap-2 text-xs">
+                      <button disabled={subsPage <= 1} onClick={() => loadSubs(Number(selAgent), subsPage - 1, subsQ)} className="rounded bg-slate-100 px-3 py-1 font-semibold disabled:opacity-40">السابق</button>
+                      <span className="text-slate-500">صفحة {subsPage} / {subsPages}</span>
+                      <button disabled={subsPage >= subsPages} onClick={() => loadSubs(Number(selAgent), subsPage + 1, subsQ)} className="rounded bg-slate-100 px-3 py-1 font-semibold disabled:opacity-40">التالي</button>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
           )}
         </div>
 
