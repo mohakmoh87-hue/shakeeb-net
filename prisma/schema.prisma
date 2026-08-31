@@ -1757,3 +1757,30 @@ model ProfitRule {
   @@index([agentId])
   @@map("profit_rules")
 }
+
+// ===== تذاكر المشتركين: طلبُ اشتراكٍ جديدٍ من تطبيق كابينة (طلب محمد 2026-08-31) =====
+// المسجّلُ الجديدُ يُدخِل بياناته وموقعَ التنصيب، فيحسب الخادمُ أقربَ عامودٍ ومسافتَه ووكيلَه
+// (من منطقة اسم العمود ← Tower.mapArea). يظهرُ في إدارة الفنيين للوكيل و/أو لوحة سوبر سيل
+// حسب إعداد المالك. agentId=null ⇒ بلا وكيل (منطقةٌ بلا مكتبٍ مطابق) ⇒ سوبر سيل فقط.
+model SubscriberTicket {
+  id            Int       @id @default(autoincrement())
+  name          String
+  phone         String
+  area          String?
+  note          String?
+  lat           Float?
+  lng           Float?
+  nearestPole   String? // اسم أقرب عامود
+  poleDistanceM Float? // المسافة إلى أقرب عامود بالأمتار
+  towerId       Int? // المكتب المشتقّ من العامود
+  agentId       Int? // الوكيل المشتقّ (للعزل والتوجيه)؛ null = بلا وكيل
+  status        String    @default("new") // new | contacted | done | rejected
+  source        String    @default("app")
+  handledById   Int?
+  handledAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+
+  @@index([agentId, status])
+  @@map("subscriber_tickets")
+}

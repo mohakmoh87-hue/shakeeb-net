@@ -14,6 +14,7 @@ export type AppContent = { ads: Record<string, Ad>; offers: Ad[]; quick: string[
 const CONTENT_KEY = "appContent"; // JSON فيه صورٌ ⇒ يُخزَّن في العمود text
 const COMPANY_MODE_KEY = "companyModeEnabled";
 const PORTAL_ENABLED_KEY = "supercellPortalEnabled";
+const TICKET_DEST_KEY = "ticketDest"; // وجهةُ تذاكر المشتركين: supercell | agent | both
 
 export const AD_SLOTS = ["hero", "home2", "plan", "activate"] as const;
 export const MAX_IMG = 300_000; // سقفُ الصورة (data:) — نفسُ حدّ شعار الدخول
@@ -95,6 +96,18 @@ export async function getPortalEnabled(): Promise<boolean> {
   return row?.value !== "0";
 }
 export async function setPortalEnabled(on: boolean) { await writeVal(PORTAL_ENABLED_KEY, on ? "1" : "0"); }
+
+// ═════ وجهةُ تذاكر المشتركين (طلبُ محمد 2026-08-31): يتحكّم بها المالكُ وحدَه ═════
+// «both» = تظهرُ للوكيل (إدارة الفنيين) وللشركة (سوبر سيل) معاً · «agent» = للوكيل فقط ·
+// «supercell» = للشركة فقط. الافتراضُ «both». تُصفّي كلَّ سطحٍ ما يعرضه (لا تمسّ التخزين).
+export type TicketDest = "supercell" | "agent" | "both";
+export async function getTicketDest(): Promise<TicketDest> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: TICKET_DEST_KEY }, select: { value: true } });
+  return row?.value === "supercell" || row?.value === "agent" ? row.value : "both";
+}
+export async function setTicketDest(dest: TicketDest) {
+  await writeVal(TICKET_DEST_KEY, dest === "supercell" || dest === "agent" ? dest : "both");
+}
 
 // الحزمةُ الكاملةُ للقراءة العامّة (يقرؤها تطبيقُ Flutter عند الإقلاع)
 export async function getPublicAppConfig() {

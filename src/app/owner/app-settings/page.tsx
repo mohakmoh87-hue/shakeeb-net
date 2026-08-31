@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
 
 type OtpWaInfo = { instanceId: string; tokenSet: boolean };
-type State = AppContentT & { otpWa: OtpWaInfo };
+type TicketDest = "supercell" | "agent" | "both";
+type State = AppContentT & { otpWa: OtpWaInfo; ticketDest: TicketDest };
 
 export default function OwnerAppSettingsPage() {
   const [s, setS] = useState<State | null>(null);
@@ -14,10 +15,11 @@ export default function OwnerAppSettingsPage() {
   const [token, setToken] = useState("");
   const [testPhone, setTestPhone] = useState("");
   const [testMsg, setTestMsg] = useState("");
+  const [ticketDest, setTicketDest] = useState<TicketDest>("both");
 
   const load = useCallback(() => {
     fetch("/api/owner/app-settings").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d) { setS(d); setInstanceId(d.otpWa?.instanceId ?? ""); setToken(""); }
+      if (d) { setS(d); setInstanceId(d.otpWa?.instanceId ?? ""); setToken(""); setTicketDest(d.ticketDest ?? "both"); }
     });
   }, []);
   useEffect(() => { const t = setTimeout(() => load(), 0); return () => clearTimeout(t); }, [load]);
@@ -32,6 +34,7 @@ export default function OwnerAppSettingsPage() {
         body: JSON.stringify({
           content: { ads: s!.ads, offers: s!.offers, quick: s!.quick },
           otpWa: { instanceId, token },
+          ticketDest,
         }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setMsg(d.error ?? "فشل الحفظ"); return; }
@@ -81,6 +84,26 @@ export default function OwnerAppSettingsPage() {
             {testMsg && <span className="text-xs text-slate-600">{testMsg}</span>}
           </div>
           <p className="text-[11px] text-slate-400">احفظ أوّلاً ثمّ اختبر.</p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-1 font-semibold text-slate-800">🎫 وجهةُ تذاكر المشتركين</div>
+        <div className="mb-3 text-[11px] leading-5 text-slate-500">
+          طلبُ اشتراكٍ جديدٍ من التطبيق (باسمه وهاتفه وأقرب عامودٍ ووكيله) — إلى أين يصل؟
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {([
+            ["both", "الوكيل والشركة", "يظهرُ في إدارة الفنيين للوكيل وفي لوحة سوبر سيل معاً"],
+            ["agent", "الوكيل فقط", "في إدارة الفنيين للوكيل صاحب أقرب عامود"],
+            ["supercell", "سوبر سيل فقط", "في لوحة الشركة وحدها"],
+          ] as [TicketDest, string, string][]).map(([val, label, hint]) => (
+            <button key={val} type="button" onClick={() => setTicketDest(val)}
+              className={`rounded-xl border p-3 text-right transition ${ticketDest === val ? "border-mynet-blue bg-blue-50 ring-1 ring-mynet-blue" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}>
+              <div className={`text-sm font-bold ${ticketDest === val ? "text-mynet-blue" : "text-slate-700"}`}>{label}</div>
+              <div className="mt-1 text-[10px] leading-4 text-slate-500">{hint}</div>
+            </button>
+          ))}
         </div>
       </div>
 

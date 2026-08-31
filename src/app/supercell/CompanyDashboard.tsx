@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
 
 type OtpInfo = { instanceId: string; tokenSet: boolean };
+type Ticket = { id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; agentId: number | null; towerId: number | null; status: string; createdAt: string };
 
 export default function CompanyDashboard({ username }: { username: string }) {
   const [content, setContent] = useState<AppContentT | null>(null);
@@ -14,12 +15,27 @@ export default function CompanyDashboard({ username }: { username: string }) {
   const [testMsg, setTestMsg] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [agentName, setAgentName] = useState<Record<string, string>>({});
+  const [ticketDest, setTicketDest] = useState<string>("both");
 
+  const loadTickets = useCallback(() => {
+    fetch("/api/company/tickets").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) { setTickets(Array.isArray(d.tickets) ? d.tickets : []); setAgentName(d.agentName ?? {}); setTicketDest(d.dest ?? "both"); }
+    }).catch(() => {});
+  }, []);
   const load = useCallback(() => {
     fetch("/api/company/config").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setContent(d); });
     fetch("/api/company/otp-wa").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setOtp(d); setInstanceId(d.instanceId ?? ""); setToken(""); } });
-  }, []);
+    loadTickets();
+  }, [loadTickets]);
   useEffect(() => { load(); }, [load]);
+  async function patchTicket(id: number, status: string) {
+    try {
+      await fetch("/api/company/tickets", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
+      loadTickets();
+    } catch { /* لا نكسر الواجهة */ }
+  }
 
   async function save() {
     if (!content) return;
@@ -69,8 +85,47 @@ export default function CompanyDashboard({ username }: { username: string }) {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="mb-1 font-semibold text-slate-800">وارد طلبات المشتركين</div>
-          <div className="text-xs text-slate-400">لا طلباتٍ بعد — يُفعَّل مع ربط توجيه الطلبات قريباً.</div>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-semibold text-slate-800">🎫 وارد طلبات المشتركين</span>
+            {tickets.filter((t) => t.status === "new").length > 0 && (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">{tickets.filter((t) => t.status === "new").length} جديد</span>
+            )}
+          </div>
+          {tickets.length === 0 ? (
+            <div className="text-xs text-slate-400">{ticketDest === "agent" ? "التوجيهُ «الوكيل فقط» — تصلُ هنا فقط الطلباتُ التي تعذّر توجيهُها لوكيل." : "لا طلباتٍ بعد."}</div>
+          ) : (
+            <div className="space-y-2">
+              {ticketDest === "agent" && <div className="rounded bg-amber-50 p-2 text-[11px] text-amber-700">التوجيهُ «الوكيل فقط» — هذه طلباتٌ تعذّر توجيهُها لوكيلٍ (منطقةٌ مشتركةٌ أو بلا مكتب).</div>}
+              {tickets.map((t) => {
+                const dist = t.poleDistanceM == null ? null : t.poleDistanceM >= 1000 ? `${(t.poleDistanceM / 1000).toFixed(1)}كم` : `${t.poleDistanceM}م`;
+                const done = t.status === "done", rej = t.status === "rejected";
+                return (
+                  <div key={t.id} className={`rounded-lg border border-slate-100 bg-slate-50/60 p-3 ${done ? "opacity-60" : rej ? "opacity-50" : ""}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-slate-800">{t.name}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-600" dir="ltr">{t.phone}</span>
+                        {t.status !== "new" && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${done ? "bg-emerald-100 text-emerald-700" : rej ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>{t.status === "contacted" ? "تواصلت" : done ? "أُنجز" : "رُفض"}</span>}
+                      </div>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                      {t.area && <span>🗺️ {t.area}</span>}
+                      <span>🏢 {t.agentId != null ? (agentName[String(t.agentId)] ?? `وكيل ${t.agentId}`) : "بلا وكيل"}</span>
+                      {t.nearestPole && <span>📍 {t.nearestPole}{dist ? ` · يبعد ${dist}` : ""}</span>}
+                      {t.lat != null && t.lng != null && <a href={`https://www.google.com/maps?q=${t.lat},${t.lng}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-sky-700 hover:underline">🧭 موقع التنصيب</a>}
+                    </div>
+                    {t.note && <div className="mt-1 rounded bg-white p-1.5 text-[11px] text-slate-600">{t.note}</div>}
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {t.status !== "contacted" && !done && !rej && <button onClick={() => void patchTicket(t.id, "contacted")} className="rounded bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-200">تواصلت</button>}
+                      {!done && <button onClick={() => void patchTicket(t.id, "done")} className="rounded bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-200">✓ أُنجز</button>}
+                      {!rej && <button onClick={() => void patchTicket(t.id, "rejected")} className="rounded bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">✕ رفض</button>}
+                      {(done || rej) && <button onClick={() => void patchTicket(t.id, "new")} className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">↩ إرجاع</button>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
