@@ -71,6 +71,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
   const [sortKey, setSortKey] = useState<string>("createdAt");
   const [sortAsc, setSortAsc] = useState(false);
   const [sel, setSel] = useState<Set<number>>(new Set());
+  const [pickN, setPickN] = useState("");
   const [plusFor, setPlusFor] = useState<number | null>(null); // قائمة «+» المفتوحة (تبويب ٤)
   // جيك بوكسا «إرسال رسائل تلقائي» (تبويبا ٢ و٣) — الافتراضيُّ إيقافُ الاثنين (قرار محمد)
   const [autoMsg, setAutoMsg] = useState<{ self: boolean; install: boolean }>({ self: false, install: false });
@@ -253,6 +254,20 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
           {canEdit && (
             <>
               <div className="flex-1" />
+              {bulkable.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => setSel(new Set(bulkable.map((r) => r.id)))} disabled={busy}
+                    className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-[13px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50">تحديد الكلّ</button>
+                  <div className="flex items-center gap-1 rounded-lg border border-slate-300 px-1.5 py-1">
+                    <span className="text-[12px] text-slate-500">أوّل</span>
+                    <input type="number" min={1} value={pickN} onChange={(e) => setPickN(e.target.value)} placeholder="عدد"
+                      className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-center text-sm outline-none focus:border-mynet-blue" />
+                    <button onClick={() => { const n = Math.max(0, Math.min(bulkable.length, Math.floor(Number(pickN) || 0))); setSel(new Set(bulkable.slice(0, n).map((r) => r.id))); }} disabled={busy}
+                      className="rounded bg-mynet-blue px-2 py-0.5 text-[12px] font-bold text-white hover:opacity-90 disabled:opacity-50">حدّد</button>
+                  </div>
+                  {sel.size > 0 && <button onClick={() => setSel(new Set())} className="text-[12px] text-slate-400 hover:text-slate-600">مسح ✕</button>}
+                </div>
+              )}
               <button onClick={() => void act([...sel], "apply")} disabled={busy || sel.size === 0}
                 className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">✔ تحديث المحدَّد ({sel.size})</button>
               <button onClick={() => void act([...sel], "ignore")} disabled={busy || sel.size === 0}
@@ -281,7 +296,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-white shadow-sm">
                 <tr>
-                  {tab !== "sas" && canEdit && (
+                  {canEdit && (
                     <th className="p-2"><input type="checkbox" checked={allSel} title="الكل"
                       onChange={() => setSel(allSel ? new Set() : new Set(bulkable.map((r) => r.id)))} /></th>
                   )}
@@ -303,7 +318,7 @@ export default function SyncLogModal({ onClose }: { onClose: () => void }) {
               <tbody>
                 {view.map((r) => (
                   <tr key={r.id} className={`border-t border-slate-100 align-top hover:bg-slate-50/60${isDangerRow(r) ? " bg-rose-50/70" : ""}`}>
-                    {tab !== "sas" && canEdit && (
+                    {canEdit && (
                       <td className="p-2 text-center"><input type="checkbox" checked={sel.has(r.id)}
                         onChange={() => setSel((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} /></td>
                     )}
