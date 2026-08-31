@@ -243,7 +243,7 @@ export default function FieldManagementPage() {
   const [supportInfo, setSupportInfo] = useState<string | null>(null); // شريط دعم اليوم الكامل (للفني المُعار)
   const [supportOfficeId, setSupportOfficeId] = useState<number | null>(null); // مكتب الدعم (لخريطة بطاقات «دعم مؤقت»)
   // 🎫 تذاكرُ المشتركين: طلباتُ اشتراكٍ جديدةٌ من التطبيق، مُوجَّهةٌ لهذا الوكيل بأقرب عامود
-  const [subTickets, setSubTickets] = useState<{ id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; towerId: number | null; status: string; createdAt: string }[]>([]);
+  const [subTickets, setSubTickets] = useState<{ id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; towerId: number | null; type: string | null; status: string; createdAt: string }[]>([]);
   const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
@@ -1017,7 +1017,10 @@ export default function FieldManagementPage() {
                 return (
                   <div key={t.id} className={`rounded-lg bg-white p-2.5 shadow-sm ${done ? "opacity-60" : rej ? "opacity-50" : ""}`}>
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-sm font-bold text-slate-800">{t.name}</span>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-sm font-bold text-slate-800">{t.name}</span>
+                        {t.type && <span className="shrink-0 rounded px-1 py-0.5 text-[9px] font-bold text-white" style={{ background: t.type === "صيانة" ? "#d97706" : t.type === "توصيل" ? "#2563eb" : "#059669" }}>{t.type === "صيانة" ? "🔧 صيانة" : t.type === "توصيل" ? "🚚 توصيل" : "🆕 اشتراك"}</span>}
+                      </div>
                       {t.status !== "new" && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${done ? "bg-emerald-100 text-emerald-700" : rej ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>{t.status === "contacted" ? "تواصلت" : done ? "أُنجز" : "رُفض"}</span>}
                     </div>
                     <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={t.phone} /></div>

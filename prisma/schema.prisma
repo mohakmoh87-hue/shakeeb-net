@@ -1774,6 +1774,8 @@ model SubscriberTicket {
   poleDistanceM Float? // المسافة إلى أقرب عامود بالأمتار
   towerId       Int? // المكتب المشتقّ من العامود
   agentId       Int? // الوكيل المشتقّ (للعزل والتوجيه)؛ null = بلا وكيل
+  subscriberId  Int? // للطلبات من مشتركٍ مسجَّل (صيانة/توصيل)؛ null لطلب الاشتراك الجديد
+  type          String? // اشتراك جديد | صيانة | توصيل
   status        String    @default("new") // new | contacted | done | rejected
   source        String    @default("app")
   handledById   Int?

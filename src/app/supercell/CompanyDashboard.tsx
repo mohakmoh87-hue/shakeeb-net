@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
 
 type OtpInfo = { instanceId: string; tokenSet: boolean };
-type Ticket = { id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; agentId: number | null; towerId: number | null; status: string; createdAt: string };
+type Ticket = { id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; agentId: number | null; towerId: number | null; type: string | null; status: string; createdAt: string };
 
 export default function CompanyDashboard({ username }: { username: string }) {
   const [content, setContent] = useState<AppContentT | null>(null);
@@ -102,7 +102,10 @@ export default function CompanyDashboard({ username }: { username: string }) {
                 return (
                   <div key={t.id} className={`rounded-lg border border-slate-100 bg-slate-50/60 p-3 ${done ? "opacity-60" : rej ? "opacity-50" : ""}`}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-slate-800">{t.name}</span>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-sm font-bold text-slate-800">{t.name}</span>
+                        {t.type && <span className="shrink-0 rounded px-1 py-0.5 text-[9px] font-bold text-white" style={{ background: t.type === "صيانة" ? "#d97706" : t.type === "توصيل" ? "#2563eb" : "#059669" }}>{t.type === "صيانة" ? "🔧 صيانة" : t.type === "توصيل" ? "🚚 توصيل" : "🆕 اشتراك"}</span>}
+                      </div>
                       <div className="flex items-center gap-1">
                         <span className="rounded bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-600" dir="ltr">{t.phone}</span>
                         {t.status !== "new" && <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${done ? "bg-emerald-100 text-emerald-700" : rej ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>{t.status === "contacted" ? "تواصلت" : done ? "أُنجز" : "رُفض"}</span>}

@@ -39,6 +39,7 @@ export async function POST(request: Request) {
       poleDistanceM: loc.poleDistanceM,
       towerId: loc.towerId,
       agentId: loc.agentId,
+      type: "اشتراك جديد",
       status: "new",
       source: "app",
     },

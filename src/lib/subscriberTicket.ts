@@ -17,6 +17,8 @@ export async function ensureSubscriberTicketsTable(): Promise<void> {
       "poleDistanceM" DOUBLE PRECISION,
       "towerId" INTEGER,
       "agentId" INTEGER,
+      "subscriberId" INTEGER,
+      "type" TEXT,
       "status" TEXT NOT NULL DEFAULT 'new',
       "source" TEXT NOT NULL DEFAULT 'app',
       "handledById" INTEGER,
@@ -24,6 +26,8 @@ export async function ensureSubscriberTicketsTable(): Promise<void> {
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "subscriber_tickets" ADD COLUMN IF NOT EXISTS "subscriberId" INTEGER`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "subscriber_tickets" ADD COLUMN IF NOT EXISTS "type" TEXT`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "subscriber_tickets_agentId_status_idx" ON "subscriber_tickets" ("agentId", "status")`);
   ticketsTableReady = true;
 }
