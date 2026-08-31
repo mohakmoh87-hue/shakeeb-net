@@ -17,12 +17,14 @@ type MgrTx = { id: number; type: string; amount: number; notes: string | null; d
 
 // سجل المبالغ اليومية: كل يوم بإجماليه وتفصيله حسب المكتب (البرج)
 type DayAgg = { moneyIn: number; moneyOut: number; net: number; count: number };
-type DayRow = DayAgg & { day: string; byOffice: Record<string, DayAgg> };
+type DayRow = DayAgg & { day: string; byOffice: Record<string, DayAgg>; byUser: Record<string, DayAgg> };
 type DailyLog = {
   offices: { id: number; name: string }[];
+  separatedOffices: { towerId: number; users: { id: number; name: string }[] }[];
   days: DayRow[];
   total: number;
   totalByOffice: Record<string, number>;
+  totalByUser: Record<string, number>;
 };
 type Data = {
   cumulativeDaily: number;
@@ -137,6 +139,7 @@ export default function ManagerAccountsPage() {
   }
   const [showLog, setShowLog] = useState(false);
   const [logOffice, setLogOffice] = useState<number | "all">("all"); // المكتب المختار في السجل، all = الإجمالي
+  const [logUser, setLogUser] = useState<number | "all">("all"); // المستخدم المختار داخل مكتبٍ منفصل، all = كل المكتب
   const [masterDetail, setMasterDetail] = useState<MasterDetail | null>(null);
   const [showMaster, setShowMaster] = useState(false);
   const [showTotal, setShowTotal] = useState(false); // تفكيك «المبلغ الكلي الموجود»
@@ -172,6 +175,7 @@ export default function ManagerAccountsPage() {
   function openDailyLog() {
     setShowLog(true);
     setLogOffice("all");
+    setLogUser("all");
     fetch("/api/manager-accounts/daily-log").then((r) => void (r.ok && r.json().then(setDailyLog)));
   }
 
@@ -891,7 +895,7 @@ export default function ManagerAccountsPage() {
             {dailyLog && dailyLog.offices.length > 0 && (
               <div className="flex flex-wrap gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
                 <button
-                  onClick={() => setLogOffice("all")}
+                  onClick={() => { setLogOffice("all"); setLogUser("all"); }}
                   className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logOffice === "all" ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                 >
                   الإجمالي
@@ -899,7 +903,7 @@ export default function ManagerAccountsPage() {
                 {dailyLog.offices.map((o) => (
                   <button
                     key={o.id}
-                    onClick={() => setLogOffice(o.id)}
+                    onClick={() => { setLogOffice(o.id); setLogUser("all"); }}
                     className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logOffice === o.id ? "bg-mynet-blue text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                   >
                     {o.name}
@@ -907,6 +911,34 @@ export default function ManagerAccountsPage() {
                 ))}
               </div>
             )}
+
+            {/* تفرّعُ مستخدمي المكتب المنفصل: يظهر عند اختيار مكتبٍ حسابُه منفصل (مستخدمان+ وفيهم
+                مفصول) — «كل المكتب» + زرٌّ لكلّ مستخدم، فيُرى صافي كلّ مستخدمٍ لكلّ يومٍ عبر الأيّام */}
+            {(() => {
+              if (logOffice === "all" || !dailyLog) return null;
+              const sep = dailyLog.separatedOffices?.find((s) => s.towerId === logOffice);
+              if (!sep || sep.users.length < 2) return null;
+              return (
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-indigo-50/50 px-4 py-2.5">
+                  <span className="text-xs font-bold text-slate-500">👥 مستخدمو المكتب:</span>
+                  <button
+                    onClick={() => setLogUser("all")}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logUser === "all" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"}`}
+                  >
+                    كل المكتب
+                  </button>
+                  {sep.users.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => setLogUser(u.id)}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logUser === u.id ? "bg-indigo-600 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"}`}
+                    >
+                      👤 {u.name}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* ═════ ج · كشفٌ بين تاريخين (طلبُ محمد 2026-08-26) ═════
                 يفتح نافذةَ اليوم نفسَها بمدى — فتأتي معها تبويباتُ المستخدمين المنفصلين
@@ -920,9 +952,9 @@ export default function ManagerAccountsPage() {
                 className="rounded-lg border border-slate-300 px-2 py-1 text-xs" />
               <button
                 disabled={!rangeFrom || !rangeTo || rangeTo < rangeFrom}
-                onClick={() => { setShowLog(false); void openDay(rangeFrom, logOffice === "all" ? null : logOffice, "all", rangeTo); }}
+                onClick={() => { setShowLog(false); void openDay(rangeFrom, logOffice === "all" ? null : logOffice, logOffice === "all" ? "all" : logUser, rangeTo); }}
                 className="rounded-lg bg-mynet-blue px-3 py-1.5 text-xs font-bold text-white hover:bg-mynet-blue-dark disabled:opacity-40">
-                عرض{logOffice !== "all" ? ` — ${dailyLog?.offices.find((o) => o.id === logOffice)?.name ?? "المكتب"}` : " — الإجمالي"}
+                عرض{logOffice !== "all" ? ` — ${dailyLog?.offices.find((o) => o.id === logOffice)?.name ?? "المكتب"}${logUser !== "all" ? ` · ${dailyLog?.separatedOffices?.find((s) => s.towerId === logOffice)?.users.find((u) => u.id === logUser)?.name ?? ""}` : ""}` : " — الإجمالي"}
               </button>
             </div>
 
@@ -930,14 +962,19 @@ export default function ManagerAccountsPage() {
               {(() => {
                 if (!dailyLog) return <div className="p-8 text-center text-slate-400">جاري التحميل...</div>;
 
-                // اختيار البيانات حسب المكتب المحدد (أو الإجمالي)
+                // اختيار البيانات حسب المكتب المحدد (أو الإجمالي)، وداخل المكتب المنفصل حسب المستخدم
+                const empty: DayAgg = { moneyIn: 0, moneyOut: 0, net: 0, count: 0 };
                 const rows = dailyLog.days
                   .map((d) => {
-                    const agg: DayAgg = logOffice === "all" ? d : (d.byOffice[String(logOffice)] ?? { moneyIn: 0, moneyOut: 0, net: 0, count: 0 });
+                    const agg: DayAgg = logOffice === "all" ? d
+                      : logUser !== "all" ? (d.byUser?.[String(logUser)] ?? empty)
+                      : (d.byOffice[String(logOffice)] ?? empty);
                     return { day: d.day, ...agg };
                   })
                   .filter((d) => logOffice === "all" || d.count > 0);
-                const total = logOffice === "all" ? dailyLog.total : (dailyLog.totalByOffice[String(logOffice)] ?? 0);
+                const total = logOffice === "all" ? dailyLog.total
+                  : logUser !== "all" ? (dailyLog.totalByUser?.[String(logUser)] ?? 0)
+                  : (dailyLog.totalByOffice[String(logOffice)] ?? 0);
 
                 if (rows.length === 0) return <div className="p-8 text-center text-slate-400">لا توجد حركات بعد</div>;
 
@@ -951,7 +988,7 @@ export default function ManagerAccountsPage() {
                           (بلاغ محمد: «أُشاهد مبلغ يومٍ سابقٍ ولا أعرف من أين جاء»). والتقريرُ
                           مقيَّدٌ **باليوم والمكتب المضغوطَين معاً** لا بكلّ مكاتب الوكيل. */}
                       {rows.map((d) => (
-                        <tr key={d.day} onClick={() => void openDay(d.day, logOffice === "all" ? null : Number(logOffice))}
+                        <tr key={d.day} onClick={() => void openDay(d.day, logOffice === "all" ? null : Number(logOffice), logOffice === "all" ? "all" : logUser)}
                           title="اضغط لعرض تقرير هذا اليوم كاملاً"
                           className="cursor-pointer border-t border-slate-100 hover:bg-indigo-50/60">
                           <td className="p-3 font-medium" dir="ltr">{d.day} <span className="text-mynet-blue">↗</span></td>
@@ -963,7 +1000,7 @@ export default function ManagerAccountsPage() {
                       ))}
                     </tbody>
                     <tfoot className="sticky bottom-0 bg-slate-100 font-bold">
-                      <tr><td className="p-3">{logOffice === "all" ? "المجموع الكلي" : "مجموع المكتب"}</td><td colSpan={2}></td><td className="p-3 text-emerald-700">{fmt(total)}</td><td></td></tr>
+                      <tr><td className="p-3">{logOffice === "all" ? "المجموع الكلي" : logUser !== "all" ? "مجموع المستخدم" : "مجموع المكتب"}</td><td colSpan={2}></td><td className="p-3 text-emerald-700">{fmt(total)}</td><td></td></tr>
                     </tfoot>
                   </table>
                 );
