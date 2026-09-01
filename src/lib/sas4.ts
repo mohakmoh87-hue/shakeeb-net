@@ -168,6 +168,29 @@ export async function sasFetchOnlineCount(base: string, token: string): Promise<
   return null;
 }
 
+// عدّا «الأكتف» و«الكلّي» بنداءين رخيصين على `index/user` (يُعيد `total`) بدل جلبِ كلّ
+// المستخدمين: `status:1` يفلتر على الأكتف (مُثبَتٌ على SAS Radius v4)، و`sub_users` يشمل
+// الحسابات الفرعية. (status: 1=أكتف · 2=منتهٍ · 3=مستنفَد · 4=معطَّل.)
+// ⚠️ **يرمي عند الفشل** (بعد إعادة محاولةٍ) لا يُعيد صفراً: صفرٌ كاذبٌ كان يُسمّم مخزنَ
+// الإحصاء والسحابةَ (يدهس أرقاماً صالحةً)، بينما الرميُ يُبقي حارسُ المتّصلِ آخرَ رقمٍ صالح.
+export async function sasFetchActiveTotal(base: string, token: string): Promise<{ active: number; total: number }> {
+  const count = async (extra: Record<string, unknown>): Promise<number> => {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const r = await sasPost(base, "index/user", { page: 1, count: 1, sub_users: true, connection: -1, profile_id: -1, parent_id: -1, ...extra }, token);
+        const t = JSON.parse(r.text)?.total;
+        if (typeof t !== "number") throw new Error("SAS4 index/user: لا يوجد total");
+        return t;
+      } catch (e) { lastErr = e; await sleep(1000 * (attempt + 1)); }
+    }
+    throw lastErr;
+  };
+  const total = await count({});
+  const active = await count({ status: 1 });
+  return { active, total };
+}
+
 // ===== قائمة يوزرات المتّصلين الآن (لفلتر «المتصلين» في صفحة المشتركين — طلب محمد 2026-08-09) =====
 // تُصفَّح قائمة index/online كاملةً مرّةً واحدة، ونجمع كلّ القيم النصّيّة من كلّ صفٍّ في مجموعةٍ
 // صغيرة الحروف — لأنّ شكل صفّ المتّصلين يختلف بين خوادم الساس (username تحت مفاتيح مختلفة).

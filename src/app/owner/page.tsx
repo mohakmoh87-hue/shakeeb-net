@@ -46,6 +46,9 @@ export default function OwnerPage() {
   const [dbSizeAt, setDbSizeAt] = useState<Date | null>(null); // وقت آخر قراءة للحجم
   const [showDbDetail, setShowDbDetail] = useState(false);
   const [host, setHost] = useState<HostUsage | null>(null); // استخدامُ الاستضافة لكلّ مزوّدٍ بدوره (أ-٢٠)
+  // إجمالي الشبكة: مجاميعُ مشتركي/أكتف/متصلي كلّ الوكلاء (حيّة من الساس)
+  const [net, setNet] = useState<{ at: number; subscribers: number; active: number; online: number; totalAgents: number; reportedAgents: number } | null>(null);
+  const [netLoading, setNetLoading] = useState(true);
 
   const load = useCallback(() => {
     fetch("/api/owner/agents").then((r) => r.ok ? r.json() : { agents: [] }).then((d) => { setAgents(d.agents ?? []); setLoading(false); });
@@ -63,6 +66,18 @@ export default function OwnerPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setHost(d); })
       .catch(() => {});
+  }, []);
+  // إجمالي الشبكة — حسابٌ حيٌّ من الساس (يخزّنه الخادمُ ٥د)، فالاستطلاعُ رخيص
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetch("/api/owner/sub-stats")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d) setNet(d); })
+      .catch(() => {})
+      .finally(() => { if (alive) setNetLoading(false); });
+    load();
+    const t = setInterval(load, 120_000);
+    return () => { alive = false; clearInterval(t); };
   }, []);
 
   async function addAgent() {
@@ -156,6 +171,38 @@ export default function OwnerPage() {
           <button onClick={() => setAdding(true)} className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700">➕ وكيل جديد</button>
           <button onClick={logout} className="rounded-xl bg-slate-200 px-4 py-2 font-semibold text-slate-600 hover:bg-slate-300">خروج</button>
         </div>
+      </div>
+
+      {/* 🌐 إجمالي الشبكة: مجاميعُ مشتركي/أكتف/متصلي كلّ الوكلاء (حيّةٌ من الساس) */}
+      <div className="mb-5 rounded-2xl border border-slate-200 bg-gradient-to-l from-slate-50 to-white p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-1">
+          <div className="font-bold text-slate-800">🌐 إجمالي الشبكة — كلّ الوكلاء</div>
+          {net && (
+            <div className="text-[10px] text-slate-400">
+              حيّةٌ من الساس · {net.reportedAgents}/{net.totalAgents} وكيلاً · آخر تحديث {new Date(net.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+            </div>
+          )}
+        </div>
+        {netLoading && !net ? (
+          <div className="py-6 text-center text-sm text-slate-400">جارٍ حسابُ أرقام كلّ الوكلاء من الساس…</div>
+        ) : net ? (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-blue-50 p-3 text-center ring-1 ring-blue-100">
+              <div className="text-[11px] font-semibold text-blue-500">👥 المشتركون</div>
+              <div className="mt-0.5 text-2xl font-extrabold text-blue-700" dir="ltr">{net.subscribers.toLocaleString("en-US")}</div>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-3 text-center ring-1 ring-emerald-100">
+              <div className="text-[11px] font-semibold text-emerald-600">✅ الأكتف</div>
+              <div className="mt-0.5 text-2xl font-extrabold text-emerald-700" dir="ltr">{net.active.toLocaleString("en-US")}</div>
+            </div>
+            <div className="rounded-xl bg-teal-50 p-3 text-center ring-1 ring-teal-100">
+              <div className="text-[11px] font-semibold text-teal-600">🟢 المتصلون</div>
+              <div className="mt-0.5 text-2xl font-extrabold text-teal-700" dir="ltr">{net.online.toLocaleString("en-US")}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="py-4 text-center text-sm text-slate-400">تعذّر جلبُ الأرقام</div>
+        )}
       </div>
 
       {/* مؤشّر حجم قاعدة البيانات — تنبيه عند 60% و80% */}

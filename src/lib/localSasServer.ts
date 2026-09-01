@@ -2,7 +2,7 @@ import http from "node:http";
 import { prisma } from "@/lib/prisma";
 import { proxyToSas } from "@/lib/sasProxy";
 import { parseSasScope, sasScopeSegment } from "@/lib/sasScope";
-import { sasBaseUrl, sasLogin, sasFetchOnePage, sasFetchAllUsers, sasFetchOnlineCount, parseUsersList, type SasUser } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasFetchOnePage, sasFetchActiveTotal, sasFetchOnlineCount, parseUsersList, type SasUser } from "@/lib/sas4";
 import { getWorkerAgentId } from "@/lib/hybridAgent";
 import { panelsOfTower, credsFromPanel, type SasCreds } from "@/lib/sasPanel";
 
@@ -173,14 +173,10 @@ const ONLINE_TTL = 4_500;
 async function refreshScopeStats(c: SasCreds): Promise<void> {
   const base = sasBaseUrl(c.loginUrl);
   const token = await scopeToken(c);
-  const users = await sasFetchAllUsers(base, token, 500, 700, 30);
-  const now = Date.now();
-  let active = 0;
-  // «فعال» = مُمكَّن في SAS وتاريخ انتهائه بالمستقبل (نفس مفهوم «حالة الخدمة: فعالة»)
-  for (const u of users) {
-    if (u.enabled && u.expiration && new Date(u.expiration).getTime() > now) active++;
-  }
-  statsCache.set(scopeKey(c), { active, total: users.length, at: now });
+  // نداءان رخيصان بدل جلبِ كلّ المستخدمين (كان حتى ١٥٠٠٠ سجلّ يعبر السحابةَ لكلّ حساب).
+  // «فعال» = status:1 في الساس (نفسُ «Active» في لوحته)؛ والكلّي من `index/user` بلا فلتر.
+  const { active, total } = await sasFetchActiveTotal(base, token);
+  statsCache.set(scopeKey(c), { active, total, at: Date.now() });
 }
 
 /** أرقامُ نطاقٍ واحدٍ من المخزن، ويُجدَّد إن قدُم. `null` = لم يُمسح بعد.
