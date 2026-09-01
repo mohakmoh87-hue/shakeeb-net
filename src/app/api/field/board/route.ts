@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { agentTowerIds } from "@/lib/guard";
-import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOfficeIn, parseExtraTowers } from "@/lib/field";
+import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOfficeIn, parseExtraTowers, fieldGroupOffices } from "@/lib/field";
 import { ensureFieldDefaultsOnce } from "@/app/api/_lib/fieldSeed";
 import { applyPrivateLists, type BoardViewer } from "@/lib/guardAssign";
 
@@ -32,11 +32,13 @@ async function buildBoard(officeId: number | null, agentId: number | null, viewe
     ...c,
     subscriberName: c.subscriberId != null ? subNames.get(c.subscriberId) ?? null : null,
   }));
+  // مجموعةُ اللوحة: على اللوحة المشتركة تظهر فنّيّو كلّ مكاتب المجموعة معاً (غير المُجمَّع: [نفسه]).
+  const group = officeId == null ? [] : await fieldGroupOffices(officeId);
   const techRows = await prisma.technician.findMany({
-    where: officeId == null ? { towerId: null, isDeleted: false } : { isDeleted: false, OR: [{ towerId: officeId }, { supportTowerId: officeId }] },
+    where: officeId == null ? { towerId: null, isDeleted: false } : { isDeleted: false, OR: [{ towerId: { in: group } }, { supportTowerId: { in: group } }] },
     orderBy: { id: "asc" },
   });
-  const technicians = techRows.map((t) => ({ id: t.id, name: t.name, phone: t.phone, isSupport: officeId != null && t.towerId !== officeId && t.supportTowerId === officeId }));
+  const technicians = techRows.map((t) => ({ id: t.id, name: t.name, phone: t.phone, isSupport: officeId != null && (t.towerId == null || !group.includes(t.towerId)) && t.supportTowerId != null && group.includes(t.supportTowerId) }));
   // عزل المستأجر: فئات البطاقات لوكيل المستخدم فقط
   const cardTypes = await prisma.cardType.findMany({ where: { isDeleted: false, agentId: agentId ?? -1 }, orderBy: [{ position: "asc" }, { id: "asc" }] });
   // تذاكر أودو: عدد المفتوحة (غير المنجزة/الملغاة) + هل «أودو نشط» للمكتب (مفعّل أو به بطاقات مفتوحة)

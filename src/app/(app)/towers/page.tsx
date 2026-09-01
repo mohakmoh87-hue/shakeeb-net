@@ -41,6 +41,7 @@ type Office = {
   loanPass: string | null; // كلمة مرور القروض (مفكوكة للمدير)
   loanMode: string | null; // activation | normal (طريقة القرض)
   hasLoanCreds?: boolean;
+  sharedFieldWith: number | null; // مجموعةُ اللوحة: مكتبٌ رئيسيٌّ يشاركه لوحةَ الفنيين (null = مستقلّ)
 };
 type MapArea = { code: string; count: number };
 
@@ -345,6 +346,20 @@ export default function OfficesPage() {
                       <span className="block text-[11px] text-slate-400">تُسنَد البطاقة الجديدة لصاحب العمل الأقل بين فنيي المكتب الحاضرين — ويلزم تفعيل «توزيع تلقائي» للنوع أيضاً</span>
                     </span>
                   </label>
+                  {/* مجموعةُ لوحةِ الفنيين: يجعل هذا المكتب يتشارك لوحةَ إدارة الفنيين مع مكتبٍ رئيسيّ.
+                      المخزنُ والتفعيلاتُ والمالُ تبقى منفصلةً لكلّ مكتب (كلُّ بطاقةٍ لمكتبها). */}
+                  <div className="flex flex-col gap-1 text-sm text-slate-600">
+                    <span>👥 مجموعةُ لوحة الفنيين</span>
+                    <select value={form.sharedFieldWith ?? ""} disabled={ro}
+                      onChange={(e) => set("sharedFieldWith", e.target.value ? Number(e.target.value) : null)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-50">
+                      <option value="">مستقلٌّ — لوحةٌ خاصّةٌ بهذا المكتب</option>
+                      {offices
+                        .filter((o) => o.id !== form.id && o.sharedFieldWith == null)
+                        .map((o) => <option key={o.id} value={o.id}>يشارك لوحةَ «{o.name ?? o.id}»</option>)}
+                    </select>
+                    <span className="text-[11px] text-slate-400">يتشارك الفنيين واللوحةَ الواحدةَ مع المكتب المختار — والمخزنُ والتفعيلاتُ والمالُ تبقى لكلّ مكتبه، وكلُّ بطاقةٍ يذهب مالُها لمكتبها.</span>
+                  </div>
                 </div>
 
                 {/* موقع المكتب للبصمة الجغرافية — لا يبصم الفني إلا داخل النطاق */}

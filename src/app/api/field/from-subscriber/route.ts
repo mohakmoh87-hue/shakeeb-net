@@ -124,6 +124,7 @@ export async function POST(request: Request) {
     // نوع البطاقة يُؤخذ تلقائياً من العملية (توصيل/تحويل/صيانة/اعادة) + ربط المشترك (لمنع التكرار)
     data: {
       listId: list.id, title, description: descLines.join("\n"), position, kind: operation, subscriberId: sub.id,
+      officeId: sub.towerId ?? null, // مكتبُ البطاقة المالي = مكتبُ المشترك (توصيلُه/ذمّتُه له حصراً)
       subAmount: subAmount > 0 ? subAmount : null,
       technicianId, assignee,
     },

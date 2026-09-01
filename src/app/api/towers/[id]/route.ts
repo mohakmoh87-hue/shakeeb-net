@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, ownsTower } from "@/lib/guard";
+import { guard, ownsTower, validateSharedFieldWith } from "@/lib/guard";
 import { encryptSecret, decryptSecret } from "@/lib/secretbox";
 
 const schema = z.object({
@@ -42,6 +42,7 @@ const schema = z.object({
   loanUser: z.string().nullable().optional(), // اسم مستخدم قروض سوبر سيل (مدير فقط)
   loanPass: z.string().nullable().optional(), // كلمة مرور القروض — تُشفَّر (مدير فقط)
   loanMode: z.string().nullable().optional(), // activation | normal (طريقة القرض، مدير فقط)
+  sharedFieldWith: z.coerce.number().int().positive().nullable().optional(), // مجموعةُ اللوحة — يُتحقَّق منها بحرسِ العزل
 });
 
 export async function PUT(
@@ -63,6 +64,14 @@ export async function PUT(
       { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" },
       { status: 400 },
     );
+  }
+
+  // حرسُ عزلِ مجموعةِ اللوحة: القيمةُ (إن أُرسلت) لمكتبٍ رئيسيٍّ ضمن نفس الوكيل، وليست ذاتيّةً/سلسلة
+  let prevSharedFieldWith: number | null = null;
+  if ("sharedFieldWith" in parsed.data) {
+    const sfwErr = await validateSharedFieldWith(g.session?.agentId ?? null, Number(id), parsed.data.sharedFieldWith);
+    if (sfwErr) return NextResponse.json({ error: sfwErr }, { status: 400 });
+    prevSharedFieldWith = (await prisma.tower.findUnique({ where: { id: Number(id) }, select: { sharedFieldWith: true } }))?.sharedFieldWith ?? null;
   }
 
   // حالة القرض قبل التعديل — لكشف تحويل الإطفاء→تشغيل (فحص إعادة التشغيل)
@@ -89,6 +98,17 @@ export async function PUT(
     where: { id: Number(id) },
     data,
   });
+
+  // مجموعةُ اللوحة: عند جعل المكتب ثانويّاً لأوّل مرّة (null → رئيسيّ) نرحّل بطاقاتِه الحيّة إلى
+  // اللوحة المشتركة كي لا تختفي، ونختم officeId على بطاقات الرئيسيّ القديمة (أفضلُ جهد).
+  if ("sharedFieldWith" in parsed.data && parsed.data.sharedFieldWith != null && prevSharedFieldWith == null) {
+    try {
+      const { migrateOfficeIntoFieldGroup } = await import("@/lib/field");
+      await migrateOfficeIntoFieldGroup(Number(id), parsed.data.sharedFieldWith);
+    } catch (e) {
+      console.error(`[towers] فشل ترحيل مجموعة اللوحة للمكتب ${id}:`, e instanceof Error ? e.message : e);
+    }
+  }
 
   // ═════ أ-٢٣ · تعديلُ ساس المكتب يُحدِّث **لوحتَه الأولى** معه (قرار محمد 2026-08-13) ═════
   // 🔴 والسببُ حادثةٌ مقيسة: رابطُ ساس صميم كان مكتوباً في موضعَين مختلفَين —

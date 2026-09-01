@@ -230,6 +230,10 @@ model Tower {
   lng                   Float? // خط الطول
   geoRadius             Int?      @default(200) // نصف قطر النطاق المسموح بالأمتار
   geoEnabled            Boolean   @default(false) // تفعيل التحقّق من الموقع عند البصمة
+  // مجموعةُ لوحةِ الفنيين: مكتبٌ ثانويٌّ يشيرُ لمكتبٍ رئيسيٍّ ضمن **نفس الوكيل** ليتشاركا
+  // لوحةَ إدارة الفنيين الواحدة (المخزنُ والتفعيلاتُ والمالُ تبقى منفصلةً لكلّ مكتب عبر
+  // TaskCard.officeId). null = لا مشاركة (السلوكُ الحاليّ). يُحلَّل عبر fieldBoardOffice/fieldGroupOffices.
+  sharedFieldWith       Int?
   isDeleted             Boolean   @default(false)
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
@@ -1068,6 +1072,10 @@ model TaskCard {
   assignee         String? // اسم الفني/الموظف (للعرض)
   technicianId     Int? // الفني المسؤول (لتجميع التحصيل)
   subscriberId     Int? // المشترك المصدر (لبطاقات العمليات) — لمنع بطاقتين فعّالتين لنفس المشترك
+  // مكتبُ البطاقة المالي (مجموعةُ اللوحة): يُختَم عند الإنشاء = مكتبُ المشترك/المنشئ/الأودو.
+  // على اللوحة المشتركة تفترق البطاقةُ عن مكتبِ اللوحة (board.towerId=الرئيسيّ)، فيوجَّه مالُها/
+  // مخزنُها/فاتورتُها إلى مكتبها هي. null = بطاقةٌ قديمة ⇒ يسقط الإكمالُ على board.towerId (سلوكُ اليوم).
+  officeId         Int?
   userPassword     String? // باسورد يوزر الساس — يُجلَب لحظة الرفع ويظهر داخل البطاقة عند فتحها فقط
   kind             String    @default("maintenance") // maintenance = صيانة | delivery = توصيل
   label            String? // لون/تصنيف

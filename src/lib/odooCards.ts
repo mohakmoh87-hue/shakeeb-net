@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendCardRaisedMessage } from "@/lib/cardRaisedMessage";
-import { getOrCreateBoard, appendCardHistory } from "@/lib/field";
+import { getOrCreateBoard, appendCardHistory, fieldBoardOffice } from "@/lib/field";
 import { fillCardPassword } from "@/lib/userPassword";
 import { bgIsSet, odooTicketRefDate, type OdooTicket } from "@/lib/odoo";
 import { odooDateToUtc } from "@/lib/odooSla";
@@ -50,6 +50,7 @@ export async function upsertOdooCard(towerId: number | null, ticket: OdooTicket,
     card = await prisma.taskCard.create({
       data: {
         listId: list.id, title, description: descLines.join("\n"), position,
+        officeId: towerId ?? null, // مكتبُ البطاقة المالي = مكتبُ الأودو الذي سحبها (على اللوحة المشتركة)
         kind: "", viaOdoo: true, odooTicketId: ticket.id, usernameRequired, // بلا فئة — الوسم الجانبيّ يميّزها
         // مهلة سوبر سيل: مرجع العدّاد زمنُ أودو نفسه (مُطبَّعاً UTC — نصّه بلا منطقة)، ولحظة السحب
         // لمهلة الرؤية وبوّابة التسليح، والهاتف عموداً صريحاً (لا استخراجاً بـregex من الوصف).
@@ -119,11 +120,14 @@ export async function refreshOdooCard(cardId: number, ticket: OdooTicket): Promi
 
 // عدد بطاقات أودو المفتوحة (غير المنجزة وغير الملغاة) لمكتب — للعدّاد ومنطق «drain»
 export async function countOpenOdooCards(towerId: number): Promise<number> {
-  const board = await prisma.taskBoard.findFirst({ where: { towerId, isDeleted: false }, select: { id: true } });
+  // مجموعةُ اللوحة: لوحةُ المكتب المشتركة (العدُّ يُقصَر على أودو هذا المكتب أدناه)
+  const boardOffice = (await fieldBoardOffice(towerId)) ?? towerId;
+  const board = await prisma.taskBoard.findFirst({ where: { towerId: boardOffice, isDeleted: false }, select: { id: true } });
   if (!board) return 0;
   const lists = await prisma.taskList.findMany({ where: { boardId: board.id, isDeleted: false }, select: { id: true } });
   const listIds = lists.map((l) => l.id);
   if (!listIds.length) return 0;
-  // مفتوحة = viaOdoo، لم تُنجَز (done=false)، لم تُلغَ (settled=false)، غير مؤرشفة/محذوفة
+  // مفتوحة = viaOdoo، لم تُنجَز (done=false)، لم تُلغَ (settled=false)، غير مؤرشفة/محذوفة.
+  // (على اللوحة المشتركة يشمل العدُّ أودو المكتبين — مقبولٌ فهما صفحةٌ واحدة؛ ولا يكسر البطاقاتِ القديمة.)
   return prisma.taskCard.count({ where: { listId: { in: listIds }, viaOdoo: true, done: false, settled: false, isDeleted: false, archivedAt: null } });
 }

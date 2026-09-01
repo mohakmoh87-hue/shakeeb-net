@@ -39,6 +39,31 @@ export async function agentOfficeFilter(session: SessionPayload | null): Promise
   return { id: { in: ids.length ? ids : [-1] } };
 }
 
+// ═════ حرسُ عزلِ مجموعةِ اللوحة (sharedFieldWith) — أخطرُ نقطةٍ في الميزة ═════
+// المكتبُ الثانويُّ يشير لمكتبٍ رئيسيٍّ ليتشاركا لوحةَ الفنيين. لو قُبِلت القيمةُ بلا فحصٍ
+// لأمكن مستخدمٌ ربطُ مكتبه بلوحةِ **وكيلٍ آخر** فيسحب فنّييه (نفسُ فئة ثغرة verifyManualAssignee).
+// يُتحقَّق: الهدفُ ضمن **نفس الوكيل** · موجودٌ غيرُ محذوف · **رئيسيٌّ** (بلا سلسلة) · لا إحالةَ
+// ذاتيّة · وهذا المكتبُ ليس رئيسيّاً لغيره (منعُ السلاسل من الطرفين). يُعيد رسالةَ خطأٍ أو null.
+export async function validateSharedFieldWith(
+  agentId: number | null, selfId: number | null, value: number | null | undefined,
+): Promise<string | null> {
+  if (value == null) return null; // فكُّ الربط جائزٌ دائماً
+  if (agentId == null) return "لا وكيل مرتبط بحسابك";
+  if (selfId != null && value === selfId) return "لا يمكن ربطُ المكتب بنفسه";
+  const target = await prisma.tower.findUnique({
+    where: { id: value },
+    select: { agentId: true, isDeleted: true, sharedFieldWith: true },
+  });
+  if (!target || target.isDeleted) return "المكتب الرئيسيّ غير موجود";
+  if (target.agentId == null || target.agentId !== agentId) return "المكتب الرئيسيّ ليس من حسابك";
+  if (target.sharedFieldWith != null) return "المكتب الهدف تابعٌ لمجموعةٍ أخرى — اختر مكتباً رئيسيّاً";
+  if (selfId != null) {
+    const dependents = await prisma.tower.count({ where: { sharedFieldWith: selfId, isDeleted: false } });
+    if (dependents > 0) return "هذا المكتب رئيسيٌّ لمكاتبَ أخرى — لا يصير ثانويّاً";
+  }
+  return null;
+}
+
 // تحقق تزامني من ملكية مكتب ضمن مجموعة مكاتب معروفة (تُجلب مرّة عبر agentTowerIds)
 export function ownsTowerIn(session: SessionPayload | null, recordTowerId: number | null | undefined, agentTowers: number[]): boolean {
   if (!session) return false;

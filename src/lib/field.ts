@@ -57,9 +57,12 @@ export async function resolveListActor(listId: number): Promise<
   const tech = await getTechSession();
   if (!tech) return { ok: false, status: 401, error: "غير مصرّح" };
   const officeId = await listOfficeId(listId);
-  // مكاتب الفني الفعّالة: الأصلي + الإضافية الدائمة + مكتب الدعم المؤقت
+  // مكاتب الفني الفعّالة: الأصلي + الإضافية الدائمة + مكتب الدعم المؤقت — موسَّعةً بمجموعة
+  // اللوحة كي يضيف الفنيُّ على اللوحة المشتركة (لا يمسّ ذلك مخزنَه/بصمتَه — عزلُهما بـtowerId).
   const effective = await techEffectiveOfficesById(tech.technicianId);
-  if (officeId == null || !effective.includes(officeId)) {
+  const boardOffices = new Set<number>();
+  for (const off of effective) for (const g of await fieldGroupOffices(off)) boardOffices.add(g);
+  if (officeId == null || !boardOffices.has(officeId)) {
     return { ok: false, status: 403, error: "العمود ليس في مكاتبك" };
   }
   return { ok: true, actor: { isTech: true, userId: null, agentId: tech.agentId, name: tech.name, technicianId: tech.technicianId, session: null } };
@@ -132,7 +135,13 @@ export function canOperateOfficeIn(session: SessionPayload, towerId: number | nu
 export async function canOperateOffice(session: SessionPayload, towerId: number | null): Promise<boolean> {
   if (towerId == null) return false;
   // الموظف لا يحتاج جلب مكاتب الوكيل — مكتبه فقط
-  if (!can(session, "field.manage")) return towerId === (session.towerId ?? null);
+  if (!can(session, "field.manage")) {
+    if (towerId === (session.towerId ?? null)) return true;
+    // مجموعةُ اللوحة: موظفُ مكتبٍ ثانويٍّ يعمل على اللوحة المشتركة (مكتبُها الرئيسيّ) —
+    // ضمن نفس الوكيل حصراً. للمكتب غير المُجمَّع تعود المجموعةُ [نفسه] فلا يتغيّر شيء.
+    if (session.towerId == null) return false;
+    return (await fieldGroupOffices(session.towerId)).includes(towerId);
+  }
   return (await agentTowerIds(session)).includes(towerId);
 }
 export async function canOperateCard(session: SessionPayload, cardId: number): Promise<boolean> {
@@ -316,14 +325,113 @@ export async function approvedTimeLeaveFor(
   return l?.startMin != null && l.endMin != null ? { startMin: l.startMin, endMin: l.endMin } : null;
 }
 
-// لوحة المكتب (تُنشأ إن لم توجد) — لوحة واحدة لكل قيمة towerId.
+// ═════ مجموعةُ لوحةِ الفنيين (sharedFieldWith) ═════
+// مكتبٌ ثانويٌّ (Tower.sharedFieldWith=رئيسيّ) يشارك المكتبَ الرئيسيَّ **لوحةَ إدارة الفنيين
+// الواحدة** — والمخزنُ والتفعيلاتُ والمالُ تبقى لكلّ مكتبه (عبر TaskCard.officeId). العزلُ:
+// المشاركةُ **ضمن نفس الوكيل حصراً** (تُتحقَّق عند الكتابة + دفاعٌ في العمق هنا). null = لا مشاركة
+// ⇒ يعود كلُّ شيءٍ إلى المعرّف نفسِه فيطابق سلوكَ اليوم حرفيّاً للمكاتب غير المُجمَّعة.
+
+// المكتبُ صاحبُ **اللوحة** لهذا المكتب: يتبع sharedFieldWith إن كان سليماً (نفسُ الوكيل، هدفٌ
+// رئيسيٌّ غيرُ محذوف، بلا سلسلة)، وإلّا المعرّفُ نفسُه. أساسُ كلّ حلٍّ أحاديِّ المكتب للّوحة.
+export async function fieldBoardOffice(officeId: number | null): Promise<number | null> {
+  if (officeId == null) return null;
+  const self = await prisma.tower.findUnique({
+    where: { id: officeId },
+    select: { agentId: true, sharedFieldWith: true, isDeleted: true },
+  });
+  if (!self || self.isDeleted || self.sharedFieldWith == null) return officeId;
+  const primary = await prisma.tower.findUnique({
+    where: { id: self.sharedFieldWith },
+    select: { agentId: true, isDeleted: true, sharedFieldWith: true },
+  });
+  // دفاعٌ في العمق: لا نتبع الرابطَ إلّا لهدفٍ ضمن **نفس الوكيل**، رئيسيٍّ (بلا سلسلة)، غيرِ محذوف
+  if (!primary || primary.isDeleted || primary.agentId == null || primary.agentId !== self.agentId || primary.sharedFieldWith != null) {
+    return officeId;
+  }
+  return self.sharedFieldWith;
+}
+
+// كلُّ مكاتب مجموعة اللوحة لهذا المكتب (الرئيسيّ + كلُّ ثانويّاته ضمن نفس الوكيل).
+// للمكتب غير المُجمَّع: [نفسه] فقط ⇒ مطابقٌ لليوم. تُستعمل لعرض فنيّي المجموعة وبوّابات العمل.
+export async function fieldGroupOffices(officeId: number | null): Promise<number[]> {
+  if (officeId == null) return [];
+  const boardOffice = await fieldBoardOffice(officeId);
+  if (boardOffice == null) return [officeId];
+  const primary = await prisma.tower.findUnique({ where: { id: boardOffice }, select: { agentId: true } });
+  const secondaries = primary?.agentId != null
+    ? await prisma.tower.findMany({
+        where: { sharedFieldWith: boardOffice, isDeleted: false, agentId: primary.agentId },
+        select: { id: true },
+      })
+    : [];
+  return [...new Set([boardOffice, ...secondaries.map((s) => s.id)])];
+}
+
+// ═════ ترحيلُ الربط: يُستدعى عند جعل مكتبٍ ثانويّاً (sharedFieldWith: null → رئيسيّ) ═════
+// بلا هذا يُيتَّم ما على لوحة الثانويّ القديمة: بطاقاتُه الحيّة تختفي من العرض (getOrCreateBoard
+// صار يحلّه إلى لوحة الرئيسيّ). فننقل بطاقاتِه **الحيّة** (غير محذوفةٍ ولا مؤرشفة) إلى اللوحة
+// المشتركة بأعمدةٍ مطابقةِ الاسم، ونختم officeId=الثانويّ. ونختم officeId=الرئيسيّ على بطاقات
+// الرئيسيّ القديمة (officeId=null) كي يصحّ عزلُ عاملِ أودو بـofficeId على اللوحة المشتركة.
+// أفضلُ جهدٍ (لا يُفشل حفظَ المكتب)، وذرّيٌّ بما يكفي: البطاقاتُ المؤرشفة/المحذوفة تبقى مرئيّةً
+// عبر مسحِ المجموعة (towerId ∈ group) في مسارَي الأرشيف/المحذوفات فلا تحتاج نقلاً.
+export async function migrateOfficeIntoFieldGroup(secondaryId: number, primaryId: number): Promise<void> {
+  const primaryBoard = await getOrCreateBoard(primaryId); // رئيسيٌّ sharedFieldWith=null ⇒ لوحتُه نفسُها
+  const oldBoard = await prisma.taskBoard.findFirst({ where: { towerId: secondaryId, isDeleted: false }, orderBy: { id: "asc" } });
+  // ذرّيٌّ: إمّا يتمّ الترحيلُ كاملاً أو لا شيء — فلا بطاقةٌ حيّةٌ تبقى عالقةً على اللوحة القديمة
+  // (تختفي من buildBoard الذي يعرضُ اللوحة المشتركة). timeout مرفوعٌ لمكتبٍ كثيرِ البطاقات.
+  await prisma.$transaction(async (tx) => {
+    // (١) ختمُ **كلّ** بطاقات الرئيسيّ القديمة officeId=null ⇒ الرئيسيّ (حيّةً ومؤرشفةً ومحذوفة):
+    // الحيّةُ لعزل عامل أودو، والمؤرشفة/المحذوفةُ كي لا تختفي تحت فلتر المكتب في الأرشيف/المحذوفات.
+    const pLists = await tx.taskList.findMany({ where: { boardId: primaryBoard.id, isDeleted: false }, select: { id: true } });
+    if (pLists.length) {
+      await tx.taskCard.updateMany({
+        where: { listId: { in: pLists.map((l) => l.id) }, officeId: null },
+        data: { officeId: primaryId },
+      });
+    }
+    if (!oldBoard || oldBoard.id === primaryBoard.id) return;
+    const oldLists = await tx.taskList.findMany({ where: { boardId: oldBoard.id, isDeleted: false } });
+    // (٢) نقلُ بطاقات الثانويّ **الحيّة** من لوحته القديمة إلى اللوحة المشتركة (بأعمدةٍ مطابقةِ الاسم)
+    for (const ol of oldLists) {
+      const liveCards = await tx.taskCard.findMany({
+        where: { listId: ol.id, isDeleted: false, archivedAt: null },
+        select: { id: true, officeId: true }, orderBy: { position: "asc" },
+      });
+      if (!liveCards.length) continue;
+      let target = await tx.taskList.findFirst({ where: { boardId: primaryBoard.id, name: ol.name, isDeleted: false }, orderBy: { position: "asc" } });
+      if (!target) {
+        const count = await tx.taskList.count({ where: { boardId: primaryBoard.id, isDeleted: false } });
+        target = await tx.taskList.create({ data: { boardId: primaryBoard.id, name: ol.name, position: count, privateToAssignee: ol.privateToAssignee, timeTracked: ol.timeTracked } });
+      }
+      let pos = await tx.taskCard.count({ where: { listId: target.id, isDeleted: false } });
+      for (const c of liveCards) {
+        await tx.taskCard.update({
+          where: { id: c.id },
+          data: { listId: target.id, position: pos++, officeId: c.officeId ?? secondaryId },
+        });
+      }
+    }
+    // (٣) ختمُ ما بقيَ على لوحة الثانويّ القديمة (المؤرشفة/المحذوفة) officeId=null ⇒ الثانويّ —
+    // فتبقى مرئيّةً تحت فلتر مكتبها في الأرشيف/المحذوفات (المسحُ بالمجموعة towerId ∈ group).
+    if (oldLists.length) {
+      await tx.taskCard.updateMany({
+        where: { listId: { in: oldLists.map((l) => l.id) }, officeId: null },
+        data: { officeId: secondaryId },
+      });
+    }
+  }, { timeout: 20000 });
+}
+
+// لوحة المكتب (تُنشأ إن لم توجد) — لوحة واحدة لكل قيمة towerId، مع حلِّ مجموعة اللوحة:
+// مكتبٌ ثانويٌّ يُصيَّر على لوحةِ مكتبه الرئيسيّ (فيتشاركان لوحةً فيزيائيّةً واحدة).
 export async function getOrCreateBoard(towerId: number | null) {
+  const boardOffice = await fieldBoardOffice(towerId);
   let board = await prisma.taskBoard.findFirst({
-    where: { towerId: towerId ?? null, isDeleted: false },
+    where: { towerId: boardOffice ?? null, isDeleted: false },
     orderBy: { id: "asc" },
   });
   if (!board) {
-    board = await prisma.taskBoard.create({ data: { name: "إدارة الفنيين", towerId: towerId ?? null } });
+    board = await prisma.taskBoard.create({ data: { name: "إدارة الفنيين", towerId: boardOffice ?? null } });
   }
   return board;
 }

@@ -152,7 +152,10 @@ export async function POST(request: Request) {
   // مكتب البطاقة (حيث تمّ العمل) — لعزل المبيعات/النثرية؛ يهمّ عند الدعم المؤقّت من مكتب آخر
   const list = cardList; // قُرئ أعلاه (الاسم + boardId + الاحتساب بالوقت)
   const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
-  const towerId = board?.towerId ?? tech?.towerId ?? null;
+  // مكتبُ البطاقة المالي: officeId المختوم عند الإنشاء (مجموعةُ اللوحة) يغلب مكتبَ اللوحة —
+  // فمالُ/مخزنُ/فاتورةُ البطاقة تذهب لمكتبها هي لا لمكتب اللوحة الرئيسيّ. والذيلُ كاملٌ حرفيّاً:
+  // حين officeId=null (بطاقةٌ قديمة/مكتبٌ غير مُجمَّع) يساوي `board?.towerId ?? tech?.towerId ?? null` = سلوكُ اليوم.
+  const towerId = card.officeId ?? board?.towerId ?? tech?.towerId ?? null;
 
   {
     const e = requireTower(towerId, "إنجاز البطاقة");
@@ -197,6 +200,7 @@ export async function POST(request: Request) {
       }
       const custody = await prisma.custody.findFirst({
         where: { technicianId: card.technicianId, itemId: m.itemId, isDeleted: false },
+        orderBy: { id: "asc" }, // حرسٌ حتميّ ضدّ ازدواجِ صفٍّ لنفس (فني،مادّة) — يُخصَم الأقدمُ ثابتاً
       });
       if (!custody || custody.qty < m.qty) {
         return NextResponse.json({ error: `الكمية بذمّة الفني من «${item.name}» غير كافية` }, { status: 400 });
@@ -268,6 +272,7 @@ export async function POST(request: Request) {
       }
       const custody = await tx.custody.findFirst({
         where: { technicianId: card.technicianId!, itemId: s.itemId, isDeleted: false },
+        orderBy: { id: "asc" }, // نفسُ الحرس الحتميّ في الخصم الفعليّ (يطابق فحصَ الكفاية أعلاه)
       });
       if (custody) await tx.custody.update({ where: { id: custody.id }, data: { qty: custody.qty - s.qty } });
     }

@@ -137,10 +137,14 @@ export async function POST(request: Request) {
       // أوّلُ عمودٍ في لوحةِ مكتبِ الفنيّ — ولا تُخلَق لوحةٌ جديدة.
       // 🔒 و`TaskBoard` معزولٌ **بالمكتب** لا بالوكيل وبلا علاقةٍ في السكيمة، فالعزلُ
       //    يُبنى على `agentTowerIds` صريحاً: لوحاتُ مكاتبِ هذا الوكيل وحدَها.
+      // مجموعةُ اللوحة: يُحلُّ مكتبُ الفنيّ إلى مكتب لوحته المشتركة كي تظهر بطاقةُ الحارس على
+      // الصفحة نفسِها التي يراها (غير المُجمَّع: يعود للمعرّف نفسِه).
+      const { fieldBoardOffice } = await import("@/lib/field");
+      const boardTower = techTowerId != null && towers.includes(techTowerId) ? await fieldBoardOffice(techTowerId) : null;
       const boards = await prisma.taskBoard.findMany({
         where: {
           isDeleted: false,
-          towerId: techTowerId != null && towers.includes(techTowerId) ? techTowerId : { in: towers },
+          towerId: boardTower != null ? boardTower : { in: towers },
         },
         select: { id: true },
       });
@@ -172,6 +176,7 @@ export async function POST(request: Request) {
           data: {
             listId: list.id, title: titleText.slice(0, 120),
             description: bodyText, technicianId: toTechnicianId, assignee: toName,
+            officeId: techTowerId ?? null, // مكتبُ الفنيّ (بطاقةُ حارسٍ بلا أثرٍ ماليّ — للاتّساق)
             kind: "guard", label: "حارس المال",
           },
           select: { id: true },

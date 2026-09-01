@@ -13,8 +13,12 @@ import { baghdadDayKey, baghdadMinutesOfDay } from "@/lib/attendance";
 //  • لا يوجد مؤهَّل؟ تُنشأ البطاقة بلا فني ولا تفشل العملية إطلاقاً.
 
 // كل أعمدة كل لوحات المكتب (قد تتكرّر اللوحة للمكتب الواحد — بلا قيد تفرّد)
+// مجموعةُ اللوحة: يُحلُّ المكتبُ إلى لوحته المشتركة فيُعدُّ الحملُ ويُوزَّع على البطاقات الحقيقيّة
+// (غير المُجمَّع: يعود للمعرّف نفسِه).
 async function officeListIds(officeId: number): Promise<number[]> {
-  const boards = await prisma.taskBoard.findMany({ where: { towerId: officeId, isDeleted: false }, select: { id: true } });
+  const { fieldBoardOffice } = await import("@/lib/field");
+  const boardOffice = (await fieldBoardOffice(officeId)) ?? officeId;
+  const boards = await prisma.taskBoard.findMany({ where: { towerId: boardOffice, isDeleted: false }, select: { id: true } });
   if (!boards.length) return [];
   const lists = await prisma.taskList.findMany({
     where: { boardId: { in: boards.map((b) => b.id) }, isDeleted: false },
@@ -125,8 +129,17 @@ export async function distributePending(officeId: number | null, agentId: number
   const agentTowers = await agentTowerIdsForAgent(office.agentId ?? agentId);
   const listIds = await officeListIds(officeId);
   if (!listIds.length) return 0;
+  // مجموعةُ اللوحة: اللوحة المشتركة تحمل بطاقاتِ مكتبَين — فلا يُوزَّع إلّا **بطاقاتُ هذا المكتب**
+  // (officeId=هو). والبطاقاتُ القديمة (officeId=null) تخصُّ مكتبَ اللوحة الرئيسيّ حصراً (سبقت
+  // الميزةَ فلا لوحةَ مشتركةَ لها)، فتُدرَج فقط حين يكون المطلوبُ هو مكتبَ اللوحة نفسَه — فيبقى
+  // سلوكُ المكتب غير المُجمَّع (boardOffice=officeId) مطابقاً لليوم حرفيّاً.
+  const { fieldBoardOffice } = await import("@/lib/field");
+  const boardOffice = (await fieldBoardOffice(officeId)) ?? officeId;
+  const officeFilter = boardOffice === officeId
+    ? [{ officeId }, { officeId: null }]
+    : [{ officeId }];
   const pending = await prisma.taskCard.findMany({
-    where: { listId: { in: listIds }, technicianId: null, done: false, settled: false, isDeleted: false, archivedAt: null },
+    where: { listId: { in: listIds }, technicianId: null, done: false, settled: false, isDeleted: false, archivedAt: null, OR: officeFilter },
     select: { id: true, kind: true },
     orderBy: { id: "asc" },
     take: 200, // سقف حماية
@@ -177,8 +190,13 @@ export async function verifyManualAssignee(
   if (t.towerId == null || !agentTowers.includes(t.towerId)) return null; // يسدّ ثغرة towerId=null
   // الإسناد اليدوي أوسع من التوزيع التلقائي عمداً: يقبل المكاتب الإضافية الدائمة والدعم
   // بكل أنواعه — فالمدير يعرف ما يفعل؛ الممنوع فقط تجاوز حدود الوكيل والمكتب.
-  const { parseExtraTowers } = await import("@/lib/field");
+  const { parseExtraTowers, fieldGroupOffices } = await import("@/lib/field");
   const offices = new Set<number>([t.towerId, ...parseExtraTowers(t.extraTowerIds)]);
   if (t.supportTowerId != null) offices.add(t.supportTowerId);
-  return offices.has(officeId) ? { id: t.id, name: t.name } : null;
+  if (offices.has(officeId)) return { id: t.id, name: t.name };
+  // مجموعةُ اللوحة: يجوز إسنادُ فنيِّ مكتبٍ ضمن المجموعة لبطاقةٍ على اللوحة المشتركة (نفسُ الوكيل).
+  // للمكتب غير المُجمَّع تعود المجموعةُ [نفسه] فلا يتغيّر القبول قيدَ أنملة.
+  const group = await fieldGroupOffices(officeId);
+  if (group.some((o) => offices.has(o))) return { id: t.id, name: t.name };
+  return null;
 }

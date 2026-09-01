@@ -19,7 +19,7 @@ export async function sendCardRaisedMessage(cardId: number): Promise<void> {
     const card = await prisma.taskCard.findUnique({
       where: { id: cardId },
       select: {
-        id: true, title: true, kind: true, label: true, subscriberId: true,
+        id: true, title: true, kind: true, label: true, subscriberId: true, officeId: true,
         raisedNoticeAt: true, listId: true, viaOdoo: true, odooPhone: true, description: true,
       },
     });
@@ -30,8 +30,11 @@ export async function sendCardRaisedMessage(cardId: number): Promise<void> {
     //  فذراعُ «أو من أودو» من طلب محمد لم يعمل قطّ. المشتركُ يُروى من وصف البطاقة إن وُجد.)
     if (card.subscriberId == null) {
       if (!card.viaOdoo || !card.odooPhone) return;
-      const officeId = (await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } })
+      // مجموعةُ اللوحة: مكتبُ البطاقة الماليّ (officeId) لا مكتبُ اللوحة الرئيسيّ — فبطاقةُ أودو
+      // لمكتبٍ ثانويٍّ تستعمل اسمَه وواتسابَه وقالبَه. null ⇒ مكتبُ اللوحة (سلوكُ اليوم).
+      const boardOffice = (await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } })
         .then((l) => l ? prisma.taskBoard.findUnique({ where: { id: l.boardId }, select: { towerId: true } }) : null))?.towerId ?? null;
+      const officeId = card.officeId ?? boardOffice;
       if (officeId == null) return;
       const office = await prisma.tower.findUnique({
         where: { id: officeId },

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, guardAny, agentTowerIds } from "@/lib/guard";
+import { guard, guardAny, agentTowerIds, validateSharedFieldWith } from "@/lib/guard";
 import { can } from "@/lib/rbac";
 import { encryptSecret, decryptSecret } from "@/lib/secretbox";
 
@@ -37,6 +37,7 @@ const schema = z.object({
   loanUser: z.string().nullable().optional(), // اسم مستخدم قروض سوبر سيل (مدير فقط)
   loanPass: z.string().nullable().optional(), // كلمة مرور القروض — تُشفَّر (مدير فقط)
   loanMode: z.string().nullable().optional(), // activation | normal (طريقة القرض، مدير فقط)
+  sharedFieldWith: z.coerce.number().int().positive().nullable().optional(), // مجموعةُ اللوحة — يُتحقَّق منها بحرسِ العزل
 });
 
 export async function GET() {
@@ -127,6 +128,10 @@ export async function POST(request: Request) {
   if (agent && current >= agent.officeCap) {
     return NextResponse.json({ error: `بلغت الحد الأقصى للمكاتب (${agent.officeCap})` }, { status: 403 });
   }
+
+  // حرسُ عزلِ مجموعةِ اللوحة: القيمةُ (إن وُجدت) لمكتبٍ رئيسيٍّ ضمن نفس الوكيل حصراً
+  const sfwErr = await validateSharedFieldWith(agentId, null, parsed.data.sharedFieldWith);
+  if (sfwErr) return NextResponse.json({ error: sfwErr }, { status: 400 });
 
   // إعداد القرض للمدير حصراً: يُشفَّر loanPass، وتُهمَل حقول القرض من غير المدير
   const { loanEnabled, loanUser, loanPass, loanMode, ...rest } = parsed.data;

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendCardRaisedMessage } from "@/lib/cardRaisedMessage";
 import { getSession } from "@/lib/auth";
-import { agentOwnsCard, agentOwnsList, appendCardHistory, canOperateCard, canOperateList, cardOfficeId, listOfficeId, resolveListActor } from "@/lib/field";
+import { agentOwnsCard, agentOwnsList, appendCardHistory, canOperateCard, canOperateList, cardOfficeId, listOfficeId, resolveListActor, techEffectiveOfficesById, fieldGroupOffices } from "@/lib/field";
 import { agentTowerIds } from "@/lib/guard";
 import { autoAssignOn, pickAssignee, verifyManualAssignee } from "@/lib/autoAssign";
 
@@ -55,12 +55,29 @@ export async function POST(request: Request) {
   // بطاقة التوصيل تُرفع **بلا أرقام** (تصحيح محمد 2026-08-05): الفني يكتب مبلغ التوصيل
   // ويعدّل مبلغ الاشتراك عند الإنجاز — فالمبلغ يُعرف عند الباب لا قبله.
   const kindName = b.kind ? String(b.kind).trim() : "صيانة";
+  // مكتبُ البطاقة المالي (مجموعةُ اللوحة): مكتبُ المنشئ. مستخدمُ المكتب⇒مكتبه، المديرُ (بلا مكتب)
+  // ⇒مكتبُ اللوحة (officeId). الفنيُّ⇒**مكتبُه الذي تحتوي مجموعتُه لوحةَ هذا العمود**: على لوحةٍ
+  // مشتركةٍ (officeId=الرئيسيّ) يُنتقى مكتبُ الفنيّ الثانويّ فيذهب مالُه لمكتبه؛ وفي الدعم/المكتب
+  // الإضافيّ (لوحةٌ مستقلّة) يُنتقى ذاك المكتبُ نفسُه (=officeId=board.towerId) — فيبقى غير المُجمَّع
+  // byte-identical (officeId=مكتبُ اللوحة) ويعبرُ حرسَ الدعم في الإكمال (towerId===supOffice).
+  let cardOffice = officeId;
+  if (actor.isTech && actor.technicianId != null) {
+    const eff = await techEffectiveOfficesById(actor.technicianId);
+    let picked = officeId; // احتياطٌ = مكتبُ اللوحة
+    for (const o of eff) {
+      if (officeId != null && (await fieldGroupOffices(o)).includes(officeId)) { picked = o; break; }
+    }
+    cardOffice = picked;
+  } else if (actor.session?.towerId != null) {
+    cardOffice = actor.session.towerId;
+  }
   const count = await prisma.taskCard.count({ where: { listId: Number(b.listId), isDeleted: false } });
   const created = await prisma.taskCard.create({
     data: {
       listId: Number(b.listId),
       title: String(b.title).trim(),
       position: count,
+      officeId: cardOffice ?? null,
       // نوع البطاقة = اسم الفئة (CardType) كما اختاره المستخدم — لا يُقسَر إلى maintenance/delivery
       kind: kindName,
       assignee,

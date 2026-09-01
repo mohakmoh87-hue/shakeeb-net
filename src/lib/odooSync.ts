@@ -180,10 +180,24 @@ async function sendAllowedFor(agentId: number): Promise<boolean> {
 const unknownStages = new Set<string>();
 
 async function listIdsOf(towerId: number): Promise<number[]> {
-  const board = await prisma.taskBoard.findFirst({ where: { towerId, isDeleted: false }, select: { id: true } });
+  // مجموعةُ اللوحة: يُحلُّ المكتبُ إلى لوحته المشتركة. مساراتُ المصالحة/الدفع (runPull/runSlaSweep)
+  // معزولةٌ بـodooPanelId لكلّ لوحة؛ ومسارا **العامل** (runTechAlerts/runWaQueue) يُقيَّمان لكلّ
+  // حاسبةِ مكتبٍ لا لكلّ لوحة، فيُرفَقان بـodooOfficeScope(officeId) على اللوحة المشتركة.
+  const { fieldBoardOffice } = await import("@/lib/field");
+  const boardOffice = (await fieldBoardOffice(towerId)) ?? towerId;
+  const board = await prisma.taskBoard.findFirst({ where: { towerId: boardOffice, isDeleted: false }, select: { id: true } });
   if (!board) return [];
   const lists = await prisma.taskList.findMany({ where: { boardId: board.id, isDeleted: false }, select: { id: true } });
   return lists.map((l) => l.id);
+}
+
+// عزلُ بطاقات المكتب على اللوحة المشتركة لمسارات العامل (التي لا تُفلتر بـodooPanelId): حين يكون
+// المكتبُ ضمن مجموعةٍ (لوحةٌ مشتركةٌ فيها بطاقاتُ مكتبٍ آخر) نُقيّد بـofficeId؛ ومكتبٌ مستقلٌّ لا فلتر
+// (فتشمل بطاقاتُه القديمةَ بـofficeId=null — سلوكُ اليوم حرفيّاً). يُبقي مكتبَ الحاسبة على بطاقاته وحده.
+async function odooOfficeScope(officeId: number): Promise<{ officeId?: number }> {
+  const { fieldGroupOffices } = await import("@/lib/field");
+  const group = await fieldGroupOffices(officeId);
+  return group.length > 1 ? { officeId } : {};
 }
 
 // ===== السحب (كلّ ١٠د): تذاكر جديدة + رسيف Change Team + إنشاء بطاقات + مصالحة القائمة =====
@@ -236,9 +250,12 @@ async function runPull(): Promise<void> {
 
         // (٢) مصالحة: بطاقات مفتوحة تذاكرها **ليست** ضمن المفتوح المسحوب ⇒ تحقّقٌ مباشر (أُغلقت خارجيّاً؟)
         const listIds = await listIdsOf(o.id);
+        // مجموعةُ اللوحة: odooPanelId=null متصادمٌ بين مكتبَي المجموعة على اللوحة المشتركة، فنعزل
+        // بـofficeId أيضاً (مستقلٌّ ⇒ بلا فلتر). وإلّا قرأ القائدُ تذكرةَ المكتب الآخر بجلسته وأغلقها خطأً.
+        const officeScope = await odooOfficeScope(o.id);
         if (listIds.length) {
           const open = await prisma.taskCard.findMany({
-            where: { listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null }, done: false, settled: false, isDeleted: false, archivedAt: null },
+            where: { listId: { in: listIds }, ...officeScope, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null }, done: false, settled: false, isDeleted: false, archivedAt: null },
             // ═════ أ-١٥/٦ · المصالحةُ مسقوفةٌ بأربعين — **فلتكن بترتيبٍ عادل** (2026-08-14) ═════
             // كانت بلا `orderBy` ⇒ ترتيبُ القاعدة (id تصاعديّاً غالباً) يعني أنّ أوّلَ أربعين
             // بطاقةً تُفحَص كلَّ دورةٍ إلى الأبد، **والباقي لا يُفحَص أبداً** في مكتبٍ مزدحم —
@@ -317,10 +334,12 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
   for (const o of await offices(agentId)) {
     const listIds = await listIdsOf(o.id);
     if (!listIds.length) continue;
+    // مجموعةُ اللوحة: عزلٌ إضافيٌّ بـofficeId (odooPanelId=null متصادمٌ على اللوحة المشتركة)
+    const officeScope = await odooOfficeScope(o.id);
     const [pending, postponed] = await Promise.all([
       prisma.taskCard.findMany({
         where: {
-          listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null }, odooPushedAt: null,
+          listId: { in: listIds }, ...officeScope, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null }, odooPushedAt: null,
           isDeleted: false, OR: [{ done: true }, { settled: true }],
         },
         select: { id: true, odooTicketId: true, done: true, settled: true, serviceDetails: true, techNote: true, odooBg: true, history: true, odooNotedAt: true },
@@ -329,7 +348,7 @@ export async function pushAgentToOdoo(agentId: number): Promise<{ pushed: number
       // ملاحظة تأجيلٍ يدويّ أحدث من آخر دفع (تُدفَع دائماً — لا تخضع لمفاتيح الإرسال)
       prisma.taskCard.findMany({
         where: {
-          listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null },
+          listId: { in: listIds }, ...officeScope, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null },
           done: false, settled: false, isDeleted: false, archivedAt: null,
           postponeNote: { not: null }, postponeNoteAt: { not: null },
         },
@@ -462,13 +481,13 @@ async function notifyManagers(o: OfficeRow, cards: SlaCardRow[], alarmMin: numbe
 // تنبيه الفنيّ كلّ ١٥ دقيقة — **على حاسبة مكتبه** (واتساب مكتبه محليّاً بلا مُرحِّلٍ بمهلة ١٥ث
 // داخل حلقةٍ على القائد). يستمرّ **حتى إنجاز البطاقة أو إلغائها** — أي بعد التأجيل التلقائيّ أيضاً
 // (قرار محمد)، فلا يُرشَّح هنا بـslaNoteAt خلافاً لسويب الإرسال.
-async function runTechAlerts(o: { id: number; name: string | null; agentId: number | null; odooSlaAlarm: string | null; odooSlaTechText: string | null; odooSlaAlarmMin: number | null; odooSlaSendMin: number | null }, listIds: number[], now: Date): Promise<void> {
+async function runTechAlerts(o: { id: number; name: string | null; agentId: number | null; odooSlaAlarm: string | null; odooSlaTechText: string | null; odooSlaAlarmMin: number | null; odooSlaSendMin: number | null }, listIds: number[], now: Date, officeScope: { officeId?: number } = {}): Promise<void> {
   if (o.odooSlaAlarm !== "1" || !inSlaWindow(now)) return;
   const alarmMin = o.odooSlaAlarmMin ?? SLA_ALARM_MIN_DEFAULT;
   const sendMin = o.odooSlaSendMin ?? SLA_SEND_MIN_DEFAULT;
   const cards = await prisma.taskCard.findMany({
     where: {
-      listId: { in: listIds }, viaOdoo: true, odooTicketId: { not: null }, technicianId: { not: null },
+      listId: { in: listIds }, ...officeScope, viaOdoo: true, odooTicketId: { not: null }, technicianId: { not: null },
       done: false, settled: false, isDeleted: false, archivedAt: null,
     },
     select: {
@@ -524,13 +543,15 @@ async function runSlaSweep(): Promise<void> {
     for (const o of await offices(agentId)) {
       const listIds = await listIdsOf(o.id);
       if (!listIds.length) continue;
+      // مجموعةُ اللوحة: عزلٌ إضافيٌّ بـofficeId (odooPanelId=null متصادمٌ على اللوحة المشتركة)
+      const officeScope = await odooOfficeScope(o.id);
       // الميزة ١ مطفأة ومفتاح الإرسال مطفأ ⇒ لا عمل هنا إلّا دفعُ ملاحظات التأجيل اليدويّ
       const alarmOn = o.odooSlaAlarm === "1";
       // لا يُرشَّح بـslaNoteAt هنا: البطاقة المؤجَّلة يدويّاً مرّةً أخرى يجب أن تُدفَع ملاحظتها
       // الجديدة إلى أودو (الترشيح بالختم كان يُسقط كلّ تأجيلٍ بعد الأوّل — اصطاده تدقيق عدائيّ).
       const cards = await prisma.taskCard.findMany({
         where: {
-          listId: { in: listIds }, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null },
+          listId: { in: listIds }, ...officeScope, odooPanelId: o.panelId, viaOdoo: true, odooTicketId: { not: null },
           done: false, settled: false, isDeleted: false, archivedAt: null,
         },
         select: {
@@ -662,8 +683,11 @@ async function runWaQueue(): Promise<void> {
     if (!office) return;
     const listIds = await listIdsOf(towerId);
     if (!listIds.length) return;
+    // مجموعةُ اللوحة: على لوحةٍ مشتركةٍ نقصر بطاقاتِ هذه الحاسبة على مكتبها (officeId) — فلا يمسّ
+    // عاملُ مكتبٍ بطاقاتِ المكتب الآخر (تفريغُ الطابور/التنبيه/الإرسال). مستقلٌّ = بلا فلتر (سلوكُ اليوم).
+    const officeScope = await odooOfficeScope(towerId);
     // تنبيه الفنيّ (الميزة ١) — من هذه الحاسبة لأنّها صاحبة جلسة واتساب مكتبها
-    await runTechAlerts(office, listIds, new Date());
+    await runTechAlerts(office, listIds, new Date(), officeScope);
     // ===== بوّابة الطابور (اصطادها تدقيقٌ عدائيّ) =====
     // كان الطابور يُرسل ما فيه بلا فحص أيّ مفتاح: فإطفاء الإرسال أو سحب إذن المالك أو إطفاء ربط
     // أودو لا يمنع رسالةً مُدرَجةً من الخروج بعده. الآن: أيّ إطفاء ⇒ **يُفرَّغ الطابور** بسببٍ ظاهر.
@@ -671,7 +695,7 @@ async function runWaQueue(): Promise<void> {
       && (await sendAllowedFor(agentId));
     if (!gateOn) {
       const stale = await prisma.taskCard.updateMany({
-        where: { listId: { in: listIds }, viaOdoo: true, slaWaQueuedAt: { not: null }, slaWaSentAt: null },
+        where: { listId: { in: listIds }, ...officeScope, viaOdoo: true, slaWaQueuedAt: { not: null }, slaWaSentAt: null },
         data: { slaWaQueuedAt: null, slaWaError: "أُلغيت — أُطفئ إرسال رسائل أودو" },
       });
       if (stale.count) console.log(`[odoo-sla] أُفرِغ الطابور (${stale.count}) — المفتاح مطفأ`);
@@ -680,7 +704,7 @@ async function runWaQueue(): Promise<void> {
     const rows = await prisma.taskCard.findMany({
       // done/settled/archivedAt: بطاقةٌ أُنجزت أو أُلغيت بعد الإدراج **لا** يُبلَّغ مشتركها بتأجيل
       where: {
-        listId: { in: listIds }, viaOdoo: true, slaWaQueuedAt: { not: null }, slaWaSentAt: null,
+        listId: { in: listIds }, ...officeScope, viaOdoo: true, slaWaQueuedAt: { not: null }, slaWaSentAt: null,
         isDeleted: false, done: false, settled: false, archivedAt: null,
       },
       select: { id: true, odooTicketId: true, odooPhone: true, odooBg: true, slaWaQueuedAt: true },

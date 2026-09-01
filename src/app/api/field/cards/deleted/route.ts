@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { isFieldManager, appendCardHistory } from "@/lib/field";
+import { isFieldManager, appendCardHistory, fieldGroupOffices } from "@/lib/field";
 import { agentTowerIds } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
@@ -19,31 +19,42 @@ export async function GET(request: Request) {
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
 
   const officeId = Number(new URL(request.url).searchParams.get("officeId")) || null;
-  const allTowers = isFieldManager(session) ? await agentTowerIds(session) : (session.towerId != null ? [session.towerId] : []);
-  const towers = officeId != null && allTowers.includes(officeId) ? [officeId] : allTowers;
+  // مجموعةُ اللوحة: موظفُ مكتبٍ ثانويٍّ يرى محذوفاتِ لوحته المشتركة (غير المُجمَّع: [مكتبه]).
+  const allTowers = isFieldManager(session) ? await agentTowerIds(session) : await fieldGroupOffices(session.towerId ?? null);
+  // تصفيةٌ بمكتبٍ معيّن: مكتبٌ مُجمَّعٌ بطاقاتُه على اللوحة المشتركة ⇒ نمسح المجموعةَ ونُرشّح بـofficeId؛
+  // مكتبٌ مستقلٌّ ⇒ لوحتُه وحدَها (فتظهر بطاقاتُه القديمةُ بـofficeId=null كاليوم).
+  let scanTowers = allTowers;
+  let cardOfficeFilter: { officeId?: number } = {};
+  if (officeId != null && allTowers.includes(officeId)) {
+    const group = await fieldGroupOffices(officeId);
+    if (group.length > 1) { scanTowers = group; cardOfficeFilter = { officeId }; }
+    else scanTowers = [officeId];
+  }
 
-  const boards = await prisma.taskBoard.findMany({ where: { towerId: { in: towers.length ? towers : [-1] } }, select: { id: true, towerId: true } });
+  const boards = await prisma.taskBoard.findMany({ where: { towerId: { in: scanTowers.length ? scanTowers : [-1] } }, select: { id: true, towerId: true } });
   const lists = await prisma.taskList.findMany({ where: { boardId: { in: boards.map((b) => b.id) } }, select: { id: true, name: true, boardId: true, isDeleted: true } });
   const listById = new Map(lists.map((l) => [l.id, l]));
   const boardTower = new Map(boards.map((b) => [b.id, b.towerId]));
 
   const cards = await prisma.taskCard.findMany({
-    where: { listId: { in: lists.length ? lists.map((l) => l.id) : [-1] }, isDeleted: true },
+    where: { listId: { in: lists.length ? lists.map((l) => l.id) : [-1] }, isDeleted: true, ...cardOfficeFilter },
     orderBy: { updatedAt: "desc" },
     take: 200,
     select: {
       id: true, listId: true, title: true, description: true, kind: true, assignee: true, technicianId: true,
-      subscriberId: true, done: true, settled: true, amount: true, subAmount: true, updatedAt: true, createdAt: true,
+      subscriberId: true, done: true, settled: true, amount: true, subAmount: true, officeId: true, updatedAt: true, createdAt: true,
     },
   });
 
-  const towersInfo = await prisma.tower.findMany({ where: { id: { in: towers.length ? towers : [-1] } }, select: { id: true, name: true } });
+  const towersInfo = await prisma.tower.findMany({ where: { id: { in: scanTowers.length ? scanTowers : [-1] } }, select: { id: true, name: true } });
   const towerName = new Map(towersInfo.map((t) => [t.id, t.name]));
 
   return NextResponse.json({
     rows: cards.map((c) => {
       const l = listById.get(c.listId);
       const tw = l ? boardTower.get(l.boardId) ?? null : null;
+      // مجموعةُ اللوحة: اسمُ مكتب البطاقة من officeId (مكتبها الماليّ) لا من مكتب اللوحة الرئيسيّ
+      const cardTw = c.officeId ?? tw;
       return {
         id: c.id,
         title: c.title,
@@ -51,7 +62,7 @@ export async function GET(request: Request) {
         assignee: c.assignee,
         listName: l?.name ?? null,
         listGone: !l || l.isDeleted, // عمودها الأصلي حُذف ⇒ لا استرجاع
-        office: tw != null ? towerName.get(tw) ?? null : null,
+        office: cardTw != null ? towerName.get(cardTw) ?? null : null,
         done: c.done,
         settled: c.settled,
         // ما سيعود إلى تحصيل الفني لو استُرجعت (منجزة غير محصَّلة فقط)
@@ -78,7 +89,8 @@ export async function POST(request: Request) {
   // عزل: عمود البطاقة يجب أن يتبع مكاتب المستخدم
   const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { id: true, name: true, boardId: true, isDeleted: true } });
   const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
-  const allTowers = isFieldManager(session) ? await agentTowerIds(session) : (session.towerId != null ? [session.towerId] : []);
+  // مجموعةُ اللوحة: موظفُ المكتب الثانويّ يسترجع من لوحته المشتركة (غير المُجمَّع: [مكتبه]).
+  const allTowers = isFieldManager(session) ? await agentTowerIds(session) : await fieldGroupOffices(session.towerId ?? null);
   if (!board?.towerId || !allTowers.includes(board.towerId)) {
     return NextResponse.json({ error: "البطاقة لا تتبع حسابك" }, { status: 403 });
   }

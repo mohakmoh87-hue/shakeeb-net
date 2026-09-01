@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { isFieldManager } from "@/lib/field";
+import { isFieldManager, fieldGroupOffices } from "@/lib/field";
 import { agentTowerIds, agentOfficeFilter } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +13,12 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const manager = isFieldManager(session);
   const agentTowers = await agentTowerIds(session);
+  // مجموعةُ اللوحة: موظفُ مكتبٍ ثانويٍّ يحصّل فنّيّي مجموعته على اللوحة المشتركة (غير المُجمَّع: [مكتبه]).
+  const empGroup = manager ? [] : await fieldGroupOffices(session.towerId ?? null);
 
   const techWhere = manager
     ? { isDeleted: false, OR: [{ towerId: { in: agentTowers } }, { supportTowerId: { in: agentTowers } }] }
-    : { isDeleted: false, OR: [{ towerId: session.towerId ?? null }, { supportTowerId: session.towerId ?? null }] };
+    : { isDeleted: false, OR: [{ towerId: { in: empGroup } }, { supportTowerId: { in: empGroup } }] };
   const technicians = await prisma.technician.findMany({
     where: techWhere,
     select: { id: true, name: true, towerId: true },
@@ -29,7 +31,7 @@ export async function GET() {
   // البطاقات المنجزة غير المحصّلة — محصورة بلوحات مكاتب المُشاهد (المدير: مكاتب وكيله؛
   // الموظف: مكتبه فقط) — فبطاقات الفني المُعار «دعماً» في مكتبي تظهر لي، وبطاقات
   // مكتبه الأصلي لا تظهر (كلٌّ يحصّل بطاقات مكتبه فقط)
-  const viewTowers = manager ? agentTowers : [session.towerId ?? -1];
+  const viewTowers = manager ? agentTowers : (empGroup.length ? empGroup : [session.towerId ?? -1]);
   const viewBoards = await prisma.taskBoard.findMany({ where: { towerId: { in: viewTowers }, isDeleted: false }, select: { id: true } });
   const viewLists = await prisma.taskList.findMany({ where: { boardId: { in: viewBoards.map((b) => b.id) } }, select: { id: true } });
   // أنواع التوصيل لدى الوكيل: مبلغها المقبوض يُخزَّن في amount عند الإنجاز لكنه
@@ -108,17 +110,19 @@ export async function POST(request: Request) {
   const tech = await prisma.technician.findUnique({ where: { id: technicianId } });
   if (!tech) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
   const myOffice = session.towerId ?? null;
+  // مجموعةُ اللوحة: موظفٌ يحصّل فنّيّي مجموعته على اللوحة المشتركة (غير المُجمَّع: [مكتبه]).
+  const empGroup = isFieldManager(session) ? [] : await fieldGroupOffices(myOffice);
   if (isFieldManager(session)) {
     const agentTowers = await agentTowerIds(session);
     const ok = (tech.towerId != null && agentTowers.includes(tech.towerId)) || (tech.supportTowerId != null && agentTowers.includes(tech.supportTowerId));
     if (!ok) return NextResponse.json({ error: "لا يمكنك تحصيل فني وكيل آخر" }, { status: 403 });
-  } else if (tech.towerId !== myOffice && tech.supportTowerId !== myOffice) {
+  } else if (!(tech.towerId != null && empGroup.includes(tech.towerId)) && !(tech.supportTowerId != null && empGroup.includes(tech.supportTowerId))) {
     return NextResponse.json({ error: "لا يمكنك تحصيل فني مكتب آخر" }, { status: 403 });
   }
 
-  // التحصيل محصور ببطاقات لوحات مكاتب المُحصِّل (المدير: مكاتب وكيله؛ الموظف: مكتبه) —
+  // التحصيل محصور ببطاقات لوحات مكاتب المُحصِّل (المدير: مكاتب وكيله؛ الموظف: مجموعةُ لوحته) —
   // فتحصيلي لفنيٍّ مُعار لي لا يلمس بطاقات مكتبه الأصلي غير المحصّلة
-  const settleTowers = isFieldManager(session) ? await agentTowerIds(session) : [myOffice ?? -1];
+  const settleTowers = isFieldManager(session) ? await agentTowerIds(session) : (empGroup.length ? empGroup : [myOffice ?? -1]);
   const settleBoards = await prisma.taskBoard.findMany({ where: { towerId: { in: settleTowers }, isDeleted: false }, select: { id: true } });
   const settleLists = await prisma.taskList.findMany({ where: { boardId: { in: settleBoards.map((b) => b.id) } }, select: { id: true } });
   const cards = await prisma.taskCard.findMany({

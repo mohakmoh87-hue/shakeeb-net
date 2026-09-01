@@ -36,18 +36,21 @@ export async function GET(request: Request) {
   const cardId = Number(url.searchParams.get("cardId")) || null;
 
   if (!subscriberId && cardId) {
-    const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false }, select: { title: true, description: true, listId: true } });
+    const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false }, select: { title: true, description: true, listId: true, officeId: true } });
     if (card) {
       const list = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } });
       const board = list ? await prisma.taskBoard.findUnique({ where: { id: list.boardId }, select: { towerId: true } }) : null;
+      // مجموعةُ اللوحة: مكتبُ البطاقة الماليّ (officeId) لا مكتبُ اللوحة — فبطاقةُ مكتبٍ ثانويٍّ
+      // على لوحةٍ مشتركةٍ تُطابَق ضمن مكتبها هي (وإلّا سقط صندوقُ المكافأة). null ⇒ مكتبُ اللوحة (اليوم).
+      const cardOffice = card.officeId ?? board?.towerId ?? null;
       // تحسين مهم: لا تُشغّل مطابقة المشترك (الثقيلة) إن كانت مكافآت المكتب مُعطّلة
-      const office = board?.towerId != null ? await prisma.tower.findUnique({ where: { id: board.towerId }, select: { rewardsEnabled: true, agentId: true } }) : null;
+      const office = cardOffice != null ? await prisma.tower.findUnique({ where: { id: cardOffice }, select: { rewardsEnabled: true, agentId: true } }) : null;
       if (office?.rewardsEnabled !== "1") return NextResponse.json({ found: false });
-      subscriberId = await matchFromText(`${card.title}\n${card.description ?? ""}`, board?.towerId ?? null);
+      subscriberId = await matchFromText(`${card.title}\n${card.description ?? ""}`, cardOffice);
       if (!subscriberId) {
         // مكافآت المكتب مفعّلة لكن لا مشترك مطابق لنصّ البطاقة: نعيد حالة التفعيل (بعزل
         // الوكيل) كي يظهر صندوق المكافأة ويجيب «ليس لديه كود» فوراً بدل غياب أي رد
-        const owned = session ? await ownsTower(session, board?.towerId ?? null) : office.agentId === actorAgentId;
+        const owned = session ? await ownsTower(session, cardOffice) : office.agentId === actorAgentId;
         return NextResponse.json({ found: false, rewardsEnabled: owned });
       }
     }
