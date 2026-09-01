@@ -87,20 +87,43 @@ export async function sendPushToUser(userId: number | null, payload: PushPayload
 // ═════ أ-٢٢ · إشعارُ **الفنيّ** على هاتفه (طلب محمد 2026-08-12) ═════
 // «عند توجيه بطاقةٍ على فنيّ يجب أن يذهب إشعارٌ إلى هاتفه… لأنّ الفنيَّ الآن يضطرّ إلى
 // فتح التطبيق في كلّ مرّةٍ ليبحث عن بطاقاتٍ جديدة.»
-// كانت القناةُ غائبةً من النظام كلّه: `Technician.fcmToken` يُسجَّل من التطبيق ولا
-// يستهلكه إلّا إيقاظُ تتبّع GPS — و`sendFcmNotification` لا تُنادى لفنيٍّ إطلاقاً.
-// وهي على نمط نظيرتها للمديرين حرفيّاً: تقرأ الرمزَ، تُرسل، وتُفرّغه إن كان باطلاً.
-// 🔒 العزلُ ضمنيّ: الإشعارُ إلى رمزِ ذلك الفنيّ وحدَه — لا قراءةَ رموزٍ بغير technicianId.
-// وفنيٌّ بلا رمزٍ (لم يُثبّت التطبيق أو لم يمنح الإذن) يُتخطّى بصمتٍ — أفضلُ جهد.
+// قناتان — كنظيرتَيه للمدير والمستخدم:
+// (1) Web Push (VAPID) للمتصفّح/الـPWA — **آيفون خصوصاً**، إذ لا يمرّ عبر FCM إطلاقاً.
+// (2) FCM للتطبيق الأصلي (أندرويد؛ WebView لا يدعم Web Push).
+// 🔒 العزلُ ضمنيّ: الاستعلامُ بـ technicianId وحدَه — لا يلتقط اشتراكاً لغيره، ولا يلتقطه
+// بثُّ المدير (sendPushToAgent/User يستعلمان بـ agentId/userId اللذَين يبقيان فارغَين هنا).
 export async function sendPushToTechnician(technicianId: number | null, payload: PushPayload): Promise<void> {
-  if (technicianId == null || !fcmEnabled()) return;
-  const tech = await prisma.technician.findUnique({
-    where: { id: technicianId },
-    select: { id: true, fcmToken: true, isDeleted: true },
-  });
-  if (!tech || tech.isDeleted || !tech.fcmToken) return;
-  const r = await sendFcmNotification(tech.fcmToken, payload.title, payload.body);
-  if (r.invalidToken) {
-    await prisma.technician.update({ where: { id: tech.id }, data: { fcmToken: null } }).catch(() => {});
+  if (technicianId == null) return;
+
+  // (1) Web Push (VAPID) — إن ضُبطت المفاتيح
+  if (ensureConfigured()) {
+    const subs = await prisma.pushSubscription.findMany({ where: { technicianId } });
+    if (subs.length > 0) {
+      const data = JSON.stringify(payload);
+      await Promise.all(
+        subs.map(async (s) => {
+          try {
+            await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, data);
+          } catch (e: unknown) {
+            const code = (e as { statusCode?: number })?.statusCode;
+            if (code === 404 || code === 410) await prisma.pushSubscription.delete({ where: { id: s.id } }).catch(() => {});
+          }
+        }),
+      );
+    }
+  }
+
+  // (2) FCM — التطبيق الأصلي (أندرويد)
+  if (fcmEnabled()) {
+    const tech = await prisma.technician.findUnique({
+      where: { id: technicianId },
+      select: { id: true, fcmToken: true, isDeleted: true },
+    });
+    if (tech && !tech.isDeleted && tech.fcmToken) {
+      const r = await sendFcmNotification(tech.fcmToken, payload.title, payload.body, payload.url);
+      if (r.invalidToken) {
+        await prisma.technician.update({ where: { id: tech.id }, data: { fcmToken: null } }).catch(() => {});
+      }
+    }
   }
 }

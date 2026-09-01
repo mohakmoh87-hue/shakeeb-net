@@ -6,10 +6,18 @@ import TechAdjustments from "./TechAdjustments";
 import SalaryModal from "./SalaryModal";
 import AchievementsModal from "./AchievementsModal";
 import { bioConfirm, bioReRegister } from "@/lib/biometric";
-import { isNativeApp, registerPushToken, startNativeTracking, stopNativeTracking, openNativeSettings } from "@/lib/nativeTracking";
+import { isNativeApp, registerPushToken, getFcmToken, startNativeTracking, stopNativeTracking, openNativeSettings } from "@/lib/nativeTracking";
 
 type AttState = "none" | "in" | "done";
 const fmtTime = (d: string | null) => (d ? new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "");
+
+// مفتاح VAPID العامّ (Base64URL) → Uint8Array لاشتراك pushManager
+function urlB64ToUint8Array(base64: string) {
+  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
 
 // شريط الفني السفلي: زر البصمة (دخول↔خروج) + قائمة «عمليات».
 export default function TechOpsBar({ techName }: { techName: string }) {
@@ -35,6 +43,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   const [geoBlocked, setGeoBlocked] = useState(false); // إذن الموقع مرفوض/متعذّر أثناء الطلب
   const [excusePrompt, setExcusePrompt] = useState(false); // دخول متأخّر: عرض «هل نسيت البصمة؟»
   const [excuseBusy, setExcuseBusy] = useState(false);
+  const [pushOn, setPushOn] = useState(false); // إشعاراتُ الهاتف مفعّلة؟ (بطاقةٌ موجَّهةٌ للفنيّ)
 
   useEffect(() => {
     fetch("/api/field/attendance").then((r) => (r.ok ? r.json() : null)).then((d) => {
@@ -91,7 +100,59 @@ export default function TechOpsBar({ techName }: { techName: string }) {
   // التطبيق الأصلي: سجّل رمز جهاز FCM (مرّة) ليتمكّن الخادم من إيقاظ خدمة التتبع عند الطلب.
   useEffect(() => { void registerPushToken(); }, []);
 
+  // حالةُ إشعارات الهاتف الحالية: التطبيقُ الأصليُّ⇒علَمُ FCM المحفوظ؛ المتصفّح/الـPWA⇒اشتراكُ Web Push.
+  useEffect(() => {
+    if (isNativeApp()) { try { setPushOn(localStorage.getItem("fcmOn") === "1"); } catch { /* */ } return; }
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    navigator.serviceWorker.getRegistration()
+      .then((reg) => reg?.pushManager.getSubscription())
+      .then(async (sub) => {
+        if (!sub) { setPushOn(false); return; }
+        // اشتراكٌ قائمٌ في المتصفّح: أعِد تسجيلَه باسم هذا الفنيّ ليملك الخادمُ صفَّه — يشفي أجهزةَ
+        // المكتب المشتركة (لو ملكه مديرٌ/فنيٌّ آخر سابقاً على نفس المتصفّح) بلا طلبِ إذنٍ جديد.
+        const j = sub.toJSON() as { endpoint?: string; keys?: { p256dh: string; auth: string } };
+        if (!j.endpoint || !j.keys) { setPushOn(true); return; }
+        const r = await fetch("/api/field/push-subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: j.endpoint, keys: j.keys }) }).catch(() => null);
+        setPushOn(!!r?.ok);
+      })
+      .catch(() => {});
+  }, []);
+
   function flash(msg: string) { setToast(msg); setTimeout(() => setToast(""), 4200); }
+
+  // تفعيلُ إشعارات الهاتف بلمسة الفني (لحظةَ إسناد/تحويل بطاقةٍ إليه يصله إشعارٌ بنوعها).
+  // التطبيقُ الأصليّ (أندرويد)⇒FCM؛ المتصفّح/الـPWA (آيفون خصوصاً)⇒Web Push عبر VAPID.
+  async function enableNotifications() {
+    if (isNativeApp()) {
+      const token = await getFcmToken().catch(() => null);
+      if (token) {
+        const r = await fetch("/api/field/push-token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) }).catch(() => null);
+        if (r?.ok) { try { localStorage.setItem("fcmOn", "1"); } catch { /* */ } setPushOn(true); flash("تم تفعيل إشعارات الهاتف ✓"); return; }
+      }
+      flash("تعذّر التفعيل — اسمح بالإشعارات من إعدادات التطبيق ثم أعِد المحاولة"); return;
+    }
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        // آيفون في تبويب سفاري (غيرُ مثبَّت): Web Push لا يعمل إلّا من أيقونة الشاشة الرئيسية.
+        const ua = navigator.userAgent || "";
+        const isIOS = /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+        const { isAppMode } = await import("@/lib/appMode");
+        flash(isIOS && !isAppMode()
+          ? "على آيفون: زرُّ المشاركة ⬆️ ← «إضافة إلى الشاشة الرئيسية»، وافتح التطبيقَ من أيقونته لتفعيل الإشعارات"
+          : "جهازك لا يدعم إشعارات الويب");
+        return;
+      }
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { flash(perm === "denied" ? "الإشعارات محظورة — فعّلها من إعدادات المتصفح" : "لم تُفعَّل الإشعارات"); return; }
+      const { publicKey } = await fetch("/api/push/vapid").then((r) => r.json());
+      if (!publicKey) { flash("الإشعارات غير مفعّلة على الخادم بعد"); return; }
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(publicKey) });
+      const j = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } };
+      const r = await fetch("/api/field/push-subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: j.endpoint, keys: j.keys }) });
+      if (r.ok) { setPushOn(true); flash("تم تفعيل إشعارات الهاتف ✓"); } else flash("تعذّر حفظ الاشتراك — أعد المحاولة");
+    } catch { flash("تعذّر تفعيل الإشعارات — أعد المحاولة"); }
+  }
 
   // تفعيل الموقع بلمسة الفني — داخل التطبيق: فتح الإعدادات لمنح الإذن؛ بالمتصفح: طلب الإذن
   function primeLocation() {
@@ -187,6 +248,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
       : { label: "انتهى دوام اليوم", cls: "bg-slate-400 cursor-default", icon: "✓" };
 
   const ops = [
+    { key: "notify", label: pushOn ? "إشعارات الهاتف مفعّلة ✓" : "تفعيل إشعارات الهاتف", icon: "🔔" },
     { key: "leave", label: "طلب إجازة", icon: "📅" },
     { key: "tleave", label: "طلب إجازة زمنية", icon: "⏱️" },
     { key: "adjust", label: "الخصومات والمكافآت", icon: "💠" },
@@ -267,7 +329,8 @@ export default function TechOpsBar({ techName }: { techName: string }) {
             {ops.map((o) => (
               <button key={o.key} onClick={() => {
                 setOpsOpen(false);
-                if (o.key === "leave") setLeaveMode("day");
+                if (o.key === "notify") void enableNotifications();
+                else if (o.key === "leave") setLeaveMode("day");
                 else if (o.key === "tleave") setLeaveMode("time");
                 else if (o.key === "adjust") setAdjOpen(true);
                 else if (o.key === "salary") setSalaryOpen(true);
@@ -358,6 +421,7 @@ export default function TechOpsBar({ techName }: { techName: string }) {
                 </div>
                 <div className="grid grid-cols-2 gap-2.5">
                   {([
+                    { key: "notify", icon: pushOn ? "🔔" : "🔕", label: pushOn ? "الإشعارات مفعّلة" : "تفعيل الإشعارات", sub: "إشعارُ البطاقات الجديدة", cls: pushOn ? "from-teal-600 to-teal-800" : "from-slate-600 to-slate-800", on: () => void enableNotifications() },
                     { key: "rank", icon: "🏅", label: "الترتيب", sub: "إنجازات الفنيين", cls: "from-indigo-600 to-indigo-800", on: () => setAchOpen(true) },
                     { key: "leave", icon: "📅", label: "طلب إجازة", sub: "يوم كامل", cls: "from-amber-500 to-amber-700", on: () => setLeaveMode("day") },
                     { key: "tleave", icon: "⏱️", label: "إجازة زمنية", sub: "ساعات من اليوم", cls: "from-sky-600 to-sky-800", on: () => setLeaveMode("time") },

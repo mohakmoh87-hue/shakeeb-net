@@ -1483,17 +1483,19 @@ model Notification {
   @@map("notifications")
 }
 
-// ===== اشتراكات Web Push للمدير (VAPID) =====
+// ===== اشتراكات Web Push (VAPID) — للمدير وللفنيّ =====
 model PushSubscription {
-  id        Int      @id @default(autoincrement())
-  userId    Int // المستخدم المشترِك (المدير)
-  agentId   Int? // للعزل والاستهداف
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  createdAt DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  userId       Int? // المستخدمُ المشترِك (مديرٌ/موظّف) — فارغٌ في اشتراكات الفنيّ
+  technicianId Int? // الفنيُّ المشترِك (المتصفّح/الـPWA — آيفون خصوصاً، إذ لا يمرّ عبر FCM)
+  agentId      Int? // للعزل والاستهداف — يبقى فارغاً في اشتراكات الفنيّ كي لا تُلتقَط في بثّ المدير
+  endpoint     String   @unique
+  p256dh       String
+  auth         String
+  createdAt    DateTime @default(now())
 
   @@index([agentId])
+  @@index([technicianId])
   @@map("push_subscriptions")
 }
 
