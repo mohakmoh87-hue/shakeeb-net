@@ -17,17 +17,24 @@ export function phoneCore(raw: string): string | null {
 export type SubMatch = {
   id: number; name: string | null; netUser: string | null; packageId: number | null;
   dateFrom: Date | null; dateTo: Date | null; towerId: number | null; carry: number | null; phone: string | null;
+  appBanned: boolean;
 };
 
 export async function findSubscriberByPhone(core: string): Promise<SubMatch | null> {
   const rows = await prisma.$queryRaw<SubMatch[]>`
-    SELECT id, name, "netUser", "packageId", "dateFrom", "dateTo", "towerId", carry, phone
+    SELECT id, name, "netUser", "packageId", "dateFrom", "dateTo", "towerId", carry, phone, "appBanned"
     FROM subscribers
     WHERE "isDeleted" = false AND "purgedAt" IS NULL
       AND right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = ${core}
     ORDER BY ("dateTo" IS NULL OR "dateTo" >= now() - interval '30 days') DESC, "dateFrom" DESC NULLS LAST, id DESC
     LIMIT 1`;
   return rows[0] ?? null;
+}
+
+// طابعُ آخرِ دخولٍ للتطبيق — لعدّ مستعملي التطبيق (أدمن التطبيق). أفضلُ جهدٍ لا يُفشل الدخول.
+export async function markAppLogin(subscriberId: number): Promise<void> {
+  try { await prisma.subscriber.update({ where: { id: subscriberId }, data: { lastAppLoginAt: new Date() } }); }
+  catch { /* لا يُفشل الدخول */ }
 }
 
 export type SubState = { state: "active" | "grace" | "expired"; daysExpired: number };

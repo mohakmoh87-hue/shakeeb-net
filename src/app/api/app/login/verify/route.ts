@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
-import { phoneCore, verifyOtp } from "@/lib/subscriberLogin";
+import { phoneCore, verifyOtp, markAppLogin } from "@/lib/subscriberLogin";
 import { setSubscriberSession } from "@/lib/subscriberAuth";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,10 @@ export async function POST(request: Request) {
 
   const r = await verifyOtp(core, code);
   if (!r.ok || r.subscriberId == null) return NextResponse.json({ error: r.error ?? "فشل التحقّق" }, { status: 400 });
+  // حرسُ الحظر (قد يُحظَر بين طلب الرمز والتحقّق) — لا تُفتَح جلسةٌ لمحظور
+  const sub = await prisma.subscriber.findFirst({ where: { id: r.subscriberId, isDeleted: false, purgedAt: null }, select: { appBanned: true } });
+  if (!sub || sub.appBanned) return NextResponse.json({ error: "حُظِر حسابُك من التطبيق — راجِع الدعم" }, { status: 403 });
   await setSubscriberSession(r.subscriberId);
+  await markAppLogin(r.subscriberId); // طابعُ آخرِ دخولٍ للتطبيق (لعدّ مستعمليه)
   return NextResponse.json({ ok: true });
 }

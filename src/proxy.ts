@@ -20,7 +20,9 @@ const SECRET = new TextEncoder().encode(
 // 📱 /app (2026-08-28): معاينةُ ستايل تطبيق المشترك «كابينة» — نفسُ الوصفة والعزل حرفيّاً.
 // 📦 /kabina-web (2026-08-29): بناءُ Flutter الثابت الذي يحمّله /app في iframe — نسخةُ الويب
 //    محاكاةٌ بحتة (بلا أسرار ولا قاعدة ولا جلسات)، فلا بدّ أن يكون عامّاً وإلا انكسر الـiframe للزائر.
-const PUBLIC_PATHS = ["/login", "/reset", "/about", "/supercell", "/app", "/kabina-web"];
+// 🛡️ /app-admin (2026-09-01): لوحةُ أدمن تطبيق المشترك — دخولٌ مستقلٌّ (kabina_appadmin) بحسابٍ
+//    يُنشئه المالك؛ معزولٌ عن جلسة المستخدم، فلا بدّ أن يكون عامّاً ليُظهر نموذجَ دخوله الخاصّ.
+const PUBLIC_PATHS = ["/login", "/reset", "/about", "/supercell", "/app-admin", "/app", "/kabina-web"];
 
 // يعيد { authed, isTech } من توكن الجلسة (المستخدم أو الفني)
 async function readSession(req: NextRequest): Promise<{ authed: boolean; isTech: boolean }> {

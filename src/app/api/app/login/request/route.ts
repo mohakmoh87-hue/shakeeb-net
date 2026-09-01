@@ -17,6 +17,8 @@ export async function POST(request: Request) {
 
   const sub = await findSubscriberByPhone(core);
   if (!sub) return NextResponse.json({ status: "not_subscriber" });
+  // حظرُ أدمن التطبيق: يُمنَع الدخولُ قبل إرسال أيّ رمز
+  if (sub.appBanned) return NextResponse.json({ status: "banned", error: "حُظِر حسابُك من التطبيق — راجِع الدعم" }, { status: 403 });
 
   const st = subscriberState(sub.dateTo);
   if (st.state === "expired") return NextResponse.json({ status: "expired", days: st.daysExpired });

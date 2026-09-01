@@ -23,9 +23,10 @@ export async function POST(request: Request) {
 
   const sub = await prisma.subscriber.findUnique({
     where: { id: sess.subscriberId },
-    select: { id: true, name: true, phone: true, towerId: true },
+    select: { id: true, name: true, phone: true, towerId: true, appBanned: true },
   });
   if (!sub) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+  if (sub.appBanned) return NextResponse.json({ error: "محظور" }, { status: 403 }); // حرسُ الحظر
 
   const tower = sub.towerId
     ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { agentId: true } })

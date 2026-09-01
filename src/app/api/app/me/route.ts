@@ -11,9 +11,11 @@ export async function GET() {
   if (!sess) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
   const sub = await prisma.subscriber.findUnique({
     where: { id: sess.subscriberId },
-    select: { id: true, name: true, netUser: true, phone: true, packageId: true, dateFrom: true, dateTo: true, carry: true },
+    select: { id: true, name: true, netUser: true, phone: true, packageId: true, dateFrom: true, dateTo: true, carry: true, appBanned: true },
   });
   if (!sub) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+  // حظرُ أدمن التطبيق: تُبطَل جلسةُ المحظور فوراً (يُخرَجُ من التطبيق عند أوّل طلب)
+  if (sub.appBanned) return NextResponse.json({ error: "محظور" }, { status: 403 });
   const pkg = sub.packageId ? await prisma.package.findUnique({ where: { id: sub.packageId }, select: { name: true, priceDinar: true, priceDollar: true } }) : null;
   const st = subscriberState(sub.dateTo);
   const rem = remaining(sub.dateTo);

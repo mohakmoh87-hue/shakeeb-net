@@ -306,6 +306,9 @@ model Subscriber {
   type             Int?
   smsEnabled       Int? // cost_sms
   waEnabled        Boolean   @default(true) // إرسال واتساب لهذا المشترك (افتراضي مفعّل)
+  // تطبيقُ المشترك (كابينة): حظرٌ يمنعُ الدخولَ (يفرضه أدمن التطبيق)، وطابعُ آخرِ دخولٍ للتطبيق (لعدّ مستعمليه)
+  appBanned        Boolean   @default(false)
+  lastAppLoginAt   DateTime?
   // ═════ البند ٤-أ · ختمُ رسالة «انتهى منذ N يوم» ═════
   // 🔑 يُختَم **قبل الإرسال ذرّيّاً** (`updateMany` بشرط `null` — درسُ ب-١: الحَجزُ قبل
   //    الأثر)، وإلّا أرسلت حاسبتان لكلّ منتهٍ مرّتَين (حادثةُ الشدن: ٤ نسخ).
@@ -783,6 +786,22 @@ model CompanyUser {
   updatedAt     DateTime @default(now()) @updatedAt
 
   @@map("company_users")
+}
+
+// ===== أدمن تطبيق المشترك (كابينة) — حسابٌ يُنشئه المالكُ لإدارة التطبيق =====
+// نمطُ CompanyUser نفسُه: دخولٌ مستقلٌّ (كوكي kabina_appadmin) بإبطالٍ حيّ. يتحكّم بالإعلانات
+// وربط واتساب OTP وعدّاد مشتركي التطبيق وحظر المشتركين. الجدولُ يُنشأ كسولاً (النشرُ بلا migrate).
+model AppAdmin {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  password      String // bcrypt
+  plainPassword String? // encryptSecret — يعرضه المالكُ
+  sessionToken  String? // جهازٌ واحد: يُبطِل الدخولُ الجديد القديمَ
+  isDeleted     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@map("app_admins")
 }
 
 // ===== قوالب الرسائل (Setting_sms) =====
