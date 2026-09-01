@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { phoneCore } from "@/lib/subscriberLogin";
-import { resolveTicketLocation, ensureSubscriberTicketsTable } from "@/lib/subscriberTicket";
+import { resolveTicketLocation, nearestAgentByOffice, ensureSubscriberTicketsTable } from "@/lib/subscriberTicket";
+import { getPortalEnabled } from "@/lib/appConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,13 @@ export async function POST(request: Request) {
 
   await ensureSubscriberTicketsTable();
   const loc = await resolveTicketLocation(lat, lng);
+  let { towerId, agentId } = loc;
+  // معالجةُ اليتيم (شرطُ محمد): بلا وكيلٍ **والبوّابةُ مطفأة** ⇒ لا سوبر سيل يستقبله، فنأخذ
+  // وكيلَ أقرب مكتبٍ جغرافيّاً كي لا تُيتَّم التذكرة. والبوّابةُ مُشعَلةٌ ⇒ يبقى «بلا وكيل» لسوبر سيل.
+  if (agentId == null && !(await getPortalEnabled())) {
+    const near = await nearestAgentByOffice(lat, lng);
+    if (near) { agentId = near.agentId; towerId = near.towerId; }
+  }
   await prisma.subscriberTicket.create({
     data: {
       name,
@@ -37,12 +45,12 @@ export async function POST(request: Request) {
       lng,
       nearestPole: loc.nearestPole,
       poleDistanceM: loc.poleDistanceM,
-      towerId: loc.towerId,
-      agentId: loc.agentId,
+      towerId,
+      agentId,
       type: "اشتراك جديد",
       status: "new",
       source: "app",
     },
   });
-  return NextResponse.json({ ok: true, routed: loc.agentId != null });
+  return NextResponse.json({ ok: true, routed: agentId != null });
 }

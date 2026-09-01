@@ -81,3 +81,25 @@ export async function resolveTicketLocation(lat: number | null, lng: number | nu
   }
   return { nearestPole: best.name, poleDistanceM: Math.round(bestD), towerId, agentId };
 }
+
+// ═════ احتياطُ «أقرب وكيل» (معالجةُ اليتيم — طلبُ محمد 2026-09-01) ═════
+// حين تعذّر تحديدُ وكيلٍ من المنطقة (agentId=null، منطقةٌ مشتركةٌ أو بلا مكتب) **والبوّابةُ مطفأة**
+// (لا سوبر سيل يستقبلُ اليتيم): نأخذ وكيلَ **أقرب مكتبٍ جغرافيّاً** للمشترك (من المكاتب ذات
+// الإحداثيّات ضمن ~٥٥كم) — «العامودُ تابعٌ لأقرب مكتب». فلا تُيتَّم تذكرةُ التسجيل. صفرٌ عند
+// عدم وجود مكتبٍ قريبٍ بإحداثيّات. لا يُستعمَل والبوّابةُ مُشعَلة (اليتيمُ يذهبُ لسوبر سيل يدويّاً).
+export async function nearestAgentByOffice(lat: number | null, lng: number | null): Promise<{ towerId: number; agentId: number } | null> {
+  if (lat == null || lng == null || !isFinite(lat) || !isFinite(lng)) return null;
+  const box = 0.5; // ~٥٥كم — نطاقُ خدمةٍ معقول
+  const towers = await prisma.tower.findMany({
+    where: { isDeleted: false, agentId: { not: null }, lat: { gte: lat - box, lte: lat + box }, lng: { gte: lng - box, lte: lng + box } },
+    select: { id: true, agentId: true, lat: true, lng: true },
+  });
+  let best: { id: number; agentId: number } | null = null;
+  let bestD = Infinity;
+  for (const t of towers) {
+    if (t.lat == null || t.lng == null || t.agentId == null) continue;
+    const d = distanceMeters(lat, lng, t.lat, t.lng);
+    if (d < bestD) { bestD = d; best = { id: t.id, agentId: t.agentId }; }
+  }
+  return best ? { towerId: best.id, agentId: best.agentId } : null;
+}
