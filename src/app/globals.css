@@ -683,8 +683,11 @@ input[type="number"] { direction: ltr; }
 .nst .ss-item.expanded .ss-plus { width: 30px; }
 
 /* ===== نافذة عمليات المشترك (تصميم النموذج) ===== */
+/* 🔴 كان overflow: hidden (أولويّتُه صنفان تغلبُ overflow-y-auto من Tailwind) فيَقُصُّ ما يتجاوز
+   الارتفاعَ بدل تمريره ⇒ على شاشةٍ قصيرة (بلاغُ كاسبر) يُقصُّ زرُّ «موافق». الآن: تمريرٌ رأسيٌّ
+   فعليّ + حدُّ ارتفاعٍ بـvh (احتياطٌ للمتصفّح القديم) ثمّ dvh (يصحّح شريطَ متصفّح الهاتف المتحرّك). */
 .nst .ops-sheet { background: var(--surface); border-radius: 14px; width: 100%; max-width: 400px;
-  box-shadow: var(--sh-lg); overflow: hidden; }
+  box-shadow: var(--sh-lg); overflow-x: hidden; overflow-y: auto; max-height: 92vh; max-height: 92dvh; }
 .nst .ops-head { background: linear-gradient(165deg, var(--navy-3), var(--navy)); color: #fff; padding: 15px 18px; text-align: center; }
 .nst .ops-head h3 { margin: 0; font-size: 16px; font-weight: 800; }
 .nst .ops-head .who { font-size: 12px; opacity: .85; margin-top: 3px; }
@@ -708,7 +711,9 @@ input[type="number"] { direction: ltr; }
 .nst .ops-in:focus { outline: 2px solid var(--orange); outline-offset: 1px; }
 .nst textarea.ops-in { resize: vertical; min-height: 66px; }
 .nst .ops-hint { font-size: 10.5px; color: var(--muted); line-height: 1.65; margin-bottom: 12px; }
-.nst .ops-acts { display: flex; gap: 8px; }
+/* أزرارُ الإجراء (موافق/رجوع) مثبّتةٌ أسفلَ النافذة دائماً — فلا تُقصُّ ولا تحتاج تمريراً حتى على
+   الشاشات القصيرة (بلاغُ محمد: «موافق» يغيب على حاسبة كاسبر). */
+.nst .ops-acts { display: flex; gap: 8px; position: sticky; bottom: 0; background: var(--surface); padding-top: 10px; margin-top: 4px; }
 .nst .ops-ok { flex: 1; border: 0; cursor: pointer; font-family: inherit; background: var(--orange); color: #fff;
   border-radius: 9px; padding: 10px; font-size: 13px; font-weight: 800; }
 .nst .ops-ok:hover { background: var(--orange-d); }
