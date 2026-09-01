@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import { puppeteerChromeExists, findSystemChrome } from "@/lib/chromePath";
 import type { Client as WAClient } from "whatsapp-web.js";
 import { prisma } from "@/lib/prisma";
 import { scrubRelayImage } from "@/lib/relayScrub"; // 🧹 نزعُ الصورة من صفّ الترحيل بعد تنفيذه
@@ -168,33 +169,6 @@ function publish(officeId: number) {
 
 // تهيئة وبدء اتصال واتساب لمكتب محدّد (idempotent)
 const STARTUP_TIMEOUT_MS = 75_000; // إن لم يظهر QR/يجهز خلال هذه المدة نعتبر الإقلاع عالقاً
-
-function puppeteerChromeExists(): boolean {
-  const home = process.env.USERPROFILE;
-  if (!home) return false;
-  const dir = path.join(home, ".cache", "puppeteer", "chrome");
-  let ok = false;
-  try {
-    if (fs.existsSync(dir)) {
-      ok = fs.readdirSync(dir).some((v) => {
-        try { return fs.existsSync(path.join(dir, v, "chrome-win64", "chrome.exe")); } catch { return false; }
-      });
-    }
-  } catch { ok = false; }
-  return ok;
-}
-
-function findSystemChrome(): string | undefined {
-  const roots = [process.env["PROGRAMFILES"], process.env["PROGRAMFILES(X86)"], process.env["LOCALAPPDATA"]];
-  for (const r of roots) {
-    if (!r) continue;
-    const exe = path.join(r, "Google", "Chrome", "Application", "chrome.exe");
-    let ok = false;
-    try { ok = fs.existsSync(exe); } catch { ok = false; }
-    if (ok) return exe;
-  }
-  return undefined;
-}
 
 export async function startWhatsApp(officeId: number): Promise<WaState> {
   const s = store(officeId);

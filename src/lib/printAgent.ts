@@ -10,6 +10,7 @@ import path from "node:path";
 import { prisma } from "@/lib/prisma";
 import { subscriptionReceiptHtml, invoiceReceiptHtml } from "@/lib/printReceiptHtml";
 import { getReceiptTemplate } from "@/lib/receiptTemplate";
+import { puppeteerChromeExists, findSystemChrome } from "@/lib/chromePath";
 
 type Browser = { newPage: () => Promise<Page>; close: () => Promise<void> };
 type Page = {
@@ -26,7 +27,14 @@ async function getBrowser(): Promise<Browser> {
   const puppeteer = (await import("puppeteer")).default as unknown as {
     launch: (o: Record<string, unknown>) => Promise<Browser>;
   };
-  browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-gpu"] });
+  // كرومُ puppeteer المحمَّل إن وُجد، وإلّا كرومُ النظام — كما يفعل الواتساب، فلا يتوقّف
+  // طبعُ الوصل حين يفشل تحميلُ كروم puppeteer (حادثة سبايدر 2026-09-01).
+  const sysChrome = puppeteerChromeExists() ? undefined : findSystemChrome();
+  browser = await puppeteer.launch({
+    headless: true,
+    ...(sysChrome ? { executablePath: sysChrome } : {}),
+    args: ["--no-sandbox", "--disable-gpu"],
+  });
   return browser;
 }
 
