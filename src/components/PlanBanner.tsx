@@ -16,7 +16,11 @@ export default async function PlanBanner({ agentId }: { agentId: number | null }
         grace ? "bg-red-600 text-white" : "bg-amber-100 text-amber-900"
       }`}
     >
-      {grace ? "⛔" : "⚠️"} {st.message}
+      <div>{grace ? "⛔" : "⚠️"} {st.message}</div>
+      {/* تعليماتُ الدفع للوكيل (طلبُ محمد) — تظهرُ مع التنبيه والمهلة */}
+      <div className={`mt-1 text-xs font-semibold ${grace ? "text-white/90" : "text-amber-800"}`}>
+        💳 لاستمرار الخدمة يرجى تحويل المبلغ على ماستر <span dir="ltr" className="font-mono font-extrabold tracking-wide">1216228344</span> (محمد عبد الكاظم)
+      </div>
     </div>
   );
 }
