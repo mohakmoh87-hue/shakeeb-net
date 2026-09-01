@@ -13,8 +13,9 @@ export async function GET() {
   const g = await guardOwner();
   if (g.error) return g.error;
   await ensureCompanyUsersTable();
+  // المالكُ يُدير **المديرين** فقط — موظفو المديرين يُدارون من لوحة مديرهم (لا يختلطون هنا)
   const rows = await prisma.companyUser.findMany({
-    where: { isDeleted: false },
+    where: { isDeleted: false, role: "manager" },
     select: { id: true, username: true, plainPassword: true, createdAt: true },
     orderBy: { id: "asc" },
   });
@@ -37,8 +38,10 @@ export async function POST(request: Request) {
   const taken = await prisma.companyUser.findUnique({ where: { username }, select: { id: true, isDeleted: true } });
   if (taken && !taken.isDeleted) return NextResponse.json({ error: "اسم المستخدم موجود مسبقاً" }, { status: 400 });
   if (taken && taken.isDeleted) {
-    // إعادةُ تفعيل حسابٍ محذوفٍ بنفس اليوزر (لتفادي قيد التفرّد) — رمزٌ جديدٌ يُبطل أيَّ توكنٍ قديم
-    await prisma.companyUser.update({ where: { id: taken.id }, data: { password: await hashPassword(password), plainPassword: encryptSecret(password), isDeleted: false, sessionToken: newSessionToken() } });
+    // إعادةُ تفعيل حسابٍ محذوفٍ بنفس اليوزر (لتفادي قيد التفرّد) — رمزٌ جديدٌ يُبطل أيَّ توكنٍ قديم.
+    // ⚠️ يُعادُ ضبطُ role='manager'+parentId=null: لو كان اليوزرُ المحذوفُ **موظفاً** لمديرٍ سابق،
+    // فالمالكُ ينشئ **مديراً** — فلا يُنتَج «مديرٌ» هو في الحقيقة موظفٌ منحدرٌ تابعٌ لمدير (اصطاده تدقيق).
+    await prisma.companyUser.update({ where: { id: taken.id }, data: { password: await hashPassword(password), plainPassword: encryptSecret(password), isDeleted: false, sessionToken: newSessionToken(), role: "manager", parentId: null } });
   } else {
     await prisma.companyUser.create({ data: { username, password: await hashPassword(password), plainPassword: encryptSecret(password) } });
   }

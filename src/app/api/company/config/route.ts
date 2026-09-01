@@ -9,12 +9,14 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const s = await getCompanySession();
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  if (s.role !== "manager") return NextResponse.json({ error: "للمدير فقط" }, { status: 403 }); // الإعلانات للمدير حصراً
   return NextResponse.json(await getAppContent());
 }
 
 export async function PATCH(request: Request) {
   const s = await getCompanySession();
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  if (s.role !== "manager") return NextResponse.json({ error: "للمدير فقط" }, { status: 403 }); // الإعلانات للمدير حصراً
   const body = await request.json().catch(() => null);
   await setAppContent((body as { content?: unknown } | null)?.content); // يُطهَّر داخل setAppContent
   return NextResponse.json({ ok: true });

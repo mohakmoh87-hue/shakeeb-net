@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const s = await getCompanySession();
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
-  return NextResponse.json({ username: s.username });
+  return NextResponse.json({ username: s.username, role: s.role });
 }

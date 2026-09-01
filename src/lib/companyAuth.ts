@@ -21,6 +21,8 @@ export interface CompanySessionPayload {
   kind: "company";
   companyUserId: number;
   username: string;
+  role: "manager" | "employee";
+  parentId: number | null; // معرّفُ المدير للموظف (null للمدير)
   sessionToken?: string;
 }
 
@@ -39,6 +41,9 @@ export async function ensureCompanyUsersTable(): Promise<void> {
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`);
+  // الأدوار (مدير/موظف) — إضافيّةٌ كسولةٌ لتحصين التعافي
+  await prisma.$executeRawUnsafe(`ALTER TABLE "company_users" ADD COLUMN IF NOT EXISTS "role" TEXT NOT NULL DEFAULT 'manager'`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "company_users" ADD COLUMN IF NOT EXISTS "parentId" INTEGER`);
   tableReady = true;
 }
 
@@ -77,11 +82,21 @@ export async function getCompanySession(): Promise<CompanySessionPayload | null>
     await ensureCompanyUsersTable();
     const row = await prisma.companyUser.findUnique({
       where: { id: payload.companyUserId },
-      select: { id: true, username: true, isDeleted: true, sessionToken: true },
+      select: { id: true, username: true, isDeleted: true, sessionToken: true, role: true, parentId: true },
     });
     if (!row || row.isDeleted) return null;
     if (row.sessionToken && payload.sessionToken !== row.sessionToken) return null;
-    return { kind: "company", companyUserId: row.id, username: row.username, sessionToken: payload.sessionToken };
+    // موظفٌ يتيمٌ (حُذف مديرُه) ⇒ لا جلسة (عزلٌ: الموظفُ تابعٌ لمديره)
+    if (row.role === "employee") {
+      if (row.parentId == null) return null;
+      const parent = await prisma.companyUser.findUnique({ where: { id: row.parentId }, select: { isDeleted: true } });
+      if (!parent || parent.isDeleted) return null;
+    }
+    return {
+      kind: "company", companyUserId: row.id, username: row.username,
+      role: row.role === "employee" ? "employee" : "manager", parentId: row.parentId ?? null,
+      sessionToken: payload.sessionToken,
+    };
   } catch {
     return null;
   }

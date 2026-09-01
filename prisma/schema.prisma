@@ -781,6 +781,10 @@ model CompanyUser {
   password      String // bcrypt
   plainPassword String? // encryptSecret — يعرضه المالكُ للشركة
   sessionToken  String? // جهازٌ واحد: يُبطِل الدخولُ الجديد القديمَ
+  // دورُ الحساب: مديرٌ (يُنشئه المالك، يرى كلَّ شيءٍ ويُضيف موظفين) أو موظفٌ (يُنشئه المدير،
+  // مهمتُه متابعةُ الطلبات وإسنادُها فقط). القديمُ كلُّه «مدير» (default) فلا ينكسر أحد.
+  role          String   @default("manager") // manager | employee
+  parentId      Int? // للموظف: معرّفُ المدير الذي أنشأه (عزل: كلُّ مديرٍ يرى موظفيه)
   isDeleted     Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt

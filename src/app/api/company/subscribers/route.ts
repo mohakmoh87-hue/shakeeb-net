@@ -16,6 +16,7 @@ const PAGE = 30;
 export async function GET(request: Request) {
   const s = await getCompanySession();
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  if (s.role !== "manager") return NextResponse.json({ error: "للمدير فقط" }, { status: 403 }); // مشتركو الوكلاء للمدير حصراً
   if (!(await getSubsVisibleToCompany())) return NextResponse.json({ error: "الكشفُ مُطفأٌ من المالك" }, { status: 403 });
 
   const sp = new URL(request.url).searchParams;

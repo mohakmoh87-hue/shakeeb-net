@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const s = await getCompanySession();
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  if (s.role !== "manager") return NextResponse.json({ error: "للمدير فقط" }, { status: 403 });
   const body = await request.json().catch(() => null);
   const phone = typeof body?.phone === "string" ? body.phone.trim() : "";
   if (!phone) return NextResponse.json({ error: "أدخِل رقمَ الاختبار" }, { status: 400 });

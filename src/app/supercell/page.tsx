@@ -13,5 +13,5 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 export default async function SupercellPage() {
   if (!(await getPortalEnabled())) notFound(); // 404 عند إطفاء البوّابة
   const session = await getCompanySession();
-  return session ? <CompanyDashboard username={session.username} /> : <CompanyLogin />;
+  return session ? <CompanyDashboard username={session.username} role={session.role} /> : <CompanyLogin />;
 }
