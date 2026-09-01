@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
-import { getTicketDest } from "@/lib/appConfig";
+import { getEffectiveTicketDest } from "@/lib/appConfig";
 import { ensureSubscriberTicketsTable } from "@/lib/subscriberTicket";
 
 export const dynamic = "force-dynamic";
 
 // تذاكرُ المشتركين الواصلةُ لهذا الوكيل (معزولةٌ بـagentId) — عمود «تذاكر المشتركين».
 // تُحجَب إن كان توجيهُ المالك «supercell» فقط، أو إن كانت التذكرةُ بلا وكيلٍ مطابق.
+// **الوجهةُ الفعليّة**: إطفاءُ بوّابة سوبر سيل يُحوّلها «للوكيل» حتماً (شرطُ محمد) فلا تُحبَس التذاكر.
 export async function GET() {
   const g = await guard("field.manage");
   if (g.error) return g.error;
   const agentId = g.session.agentId;
-  const dest = await getTicketDest();
+  const dest = await getEffectiveTicketDest();
   if (dest === "supercell" || agentId == null) return NextResponse.json({ tickets: [], dest });
   await ensureSubscriberTicketsTable();
   const tickets = await prisma.subscriberTicket.findMany({ where: { agentId }, orderBy: { id: "desc" } });

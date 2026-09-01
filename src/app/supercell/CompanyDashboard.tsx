@@ -17,6 +17,7 @@ export default function CompanyDashboard({ username }: { username: string }) {
   const [msg, setMsg] = useState("");
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [agentName, setAgentName] = useState<Record<string, string>>({});
+  const [allAgents, setAllAgents] = useState<{ id: number; name: string }[]>([]); // لمُنتقي «أسنِد لوكيل»
   const [ticketDest, setTicketDest] = useState<string>("both");
   // مشتركو الوكلاء (القطعة ٧-ب) — كشفٌ للقراءة فقط مشروطٌ بعلَم المالك
   const [subsEnabled, setSubsEnabled] = useState<boolean | null>(null);
@@ -31,7 +32,7 @@ export default function CompanyDashboard({ username }: { username: string }) {
 
   const loadTickets = useCallback(() => {
     fetch("/api/company/tickets").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d) { setTickets(Array.isArray(d.tickets) ? d.tickets : []); setAgentName(d.agentName ?? {}); setTicketDest(d.dest ?? "both"); }
+      if (d) { setTickets(Array.isArray(d.tickets) ? d.tickets : []); setAgentName(d.agentName ?? {}); setAllAgents(Array.isArray(d.allAgents) ? d.allAgents : []); setTicketDest(d.dest ?? "both"); }
     }).catch(() => {});
   }, []);
   const loadAgents = useCallback(() => {
@@ -58,6 +59,12 @@ export default function CompanyDashboard({ username }: { username: string }) {
   async function patchTicket(id: number, status: string) {
     try {
       await fetch("/api/company/tickets", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
+      loadTickets();
+    } catch { /* لا نكسر الواجهة */ }
+  }
+  async function assignTicket(id: number, agentId: number) {
+    try {
+      await fetch("/api/company/tickets", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, agentId }) });
       loadTickets();
     } catch { /* لا نكسر الواجهة */ }
   }
@@ -148,6 +155,14 @@ export default function CompanyDashboard({ username }: { username: string }) {
                       {!done && <button onClick={() => void patchTicket(t.id, "done")} className="rounded bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-200">✓ أُنجز</button>}
                       {!rej && <button onClick={() => void patchTicket(t.id, "rejected")} className="rounded bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">✕ رفض</button>}
                       {(done || rej) && <button onClick={() => void patchTicket(t.id, "new")} className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">↩ إرجاع</button>}
+                      {/* أسنِد لوكيل: ضبطُ agentId ⇒ تنتقلُ لإدارة فنّيّي ذلك الوكيل. تظهرُ لكلّ تذكرة (خاصّةً «بلا وكيل»). */}
+                      {allAgents.length > 0 && (
+                        <select value="" onChange={(e) => { const v = Number(e.target.value); if (v) void assignTicket(t.id, v); }}
+                          className="rounded bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100">
+                          <option value="">{t.agentId != null ? "↪ أعِد الإسناد" : "↪ أسنِد لوكيل"}</option>
+                          {allAgents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        </select>
+                      )}
                     </div>
                   </div>
                 );

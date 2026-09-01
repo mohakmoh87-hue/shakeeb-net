@@ -109,6 +109,16 @@ export async function setTicketDest(dest: TicketDest) {
   await writeVal(TICKET_DEST_KEY, dest === "supercell" || dest === "agent" ? dest : "both");
 }
 
+// ═════ الوجهةُ **الفعليّة** للتذاكر (شرطُ محمد الحاكم 2026-09-01) ═════
+// «في حالة إطفاء صفحة سوبر سيل لا يعود لها وجودٌ في أيّ مكان» — فلو كانت الوجهةُ «supercell»
+// والبوّابةُ مطفأةٌ لَحُبِست التذاكرُ في بوّابةٍ لا وجودَ لها ⇒ تضيع. لذا: **البوّابةُ مطفأةٌ ⇒
+// الوجهةُ «الوكيل» حتماً** (نمطُ `companyMode && portalEnabled` نفسُه)، فتصلُ التذكرةُ وكيلَها
+// المعنيَّ مباشرةً (يُعرَفُ من أقرب عامودٍ عند الإنشاء). تُستعمَل في سطوح العرض لا التخزين.
+export async function getEffectiveTicketDest(): Promise<TicketDest> {
+  const [dest, portal] = await Promise.all([getTicketDest(), getPortalEnabled()]);
+  return portal ? dest : "agent";
+}
+
 // ═════ كشفُ مشتركي الوكلاء لبوّابة الشركة (القطعة ٧-ب — أخطرُ باب) ═════
 // **مطفأٌ افتراضاً** — عكسُ بقيّة الأعلام (companyMode/portalEnabled الافتراضُ مفعّل): هذا كشفٌ
 // حسّاسٌ للـPII، فلا يُفتَح إلا بإذن المالك الصريح. الغيابُ ⇒ false.
