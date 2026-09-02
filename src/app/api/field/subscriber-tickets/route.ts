@@ -18,7 +18,7 @@ export async function GET() {
   await ensureSubscriberTicketsTable();
   // بطاقاتُ الشركة (source=company) مُرسَلةٌ للوكيل مباشرةً فتصله **دائماً**؛ تذاكرُ المشتركين
   // وحدَها تخضع لتوجيه المالك «supercell» (فتُحجَب عن الوكيل حينها).
-  const where = dest === "supercell" ? { agentId, source: "company" } : { agentId };
+  const where = dest === "supercell" ? { agentId, source: "company" } : { agentId, source: { not: "agent-inbox" } };
   const tickets = await prisma.subscriberTicket.findMany({ where, orderBy: { id: "desc" } });
   return NextResponse.json({ tickets, dest });
 }
@@ -34,8 +34,8 @@ export async function PATCH(request: Request) {
   const status = typeof body?.status === "string" ? body.status : "";
   if (!id || !ALLOWED.has(status)) return NextResponse.json({ error: "طلبٌ غير صالح" }, { status: 400 });
   await ensureSubscriberTicketsTable();
-  // العزل: لا تُحدَّث إلا تذكرةٌ تخصّ وكيلَ الجلسة
-  const t = await prisma.subscriberTicket.findFirst({ where: { id, agentId }, select: { id: true } });
+  // العزل: لا تُحدَّث إلا تذكرةٌ تخصّ وكيلَ الجلسة، **وليست بطاقةَ وارده للشركة** (تلك تديرها الشركة)
+  const t = await prisma.subscriberTicket.findFirst({ where: { id, agentId, source: { not: "agent-inbox" } }, select: { id: true } });
   if (!t) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   await prisma.subscriberTicket.update({
     where: { id },

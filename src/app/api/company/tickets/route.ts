@@ -47,8 +47,10 @@ export async function GET() {
   await ensureSubscriberTicketsTable();
   // في وضع «الوكيل فقط» تبقى للشركة التذاكرُ **بلا وكيلٍ مطابق** (تعذّر توجيهُها) فلا تضيع؛
   // في «سوبر سيل»/«كلاهما» ترى الشركةُ كلَّ التذاكر.
+  // توجيهُ «الوكيل فقط» يخصّ تذاكرَ المشتركين (تبقى للشركةُ غيرُ الموجَّهة فلا تضيع)؛ أمّا بطاقاتُ
+  // الشركة ووارد الوكلاء فهما قناتا الشركة نفسِها ⇒ تُرى دائماً مهما كان التوجيه.
   const tickets = await prisma.subscriberTicket.findMany({
-    where: dest === "agent" ? { agentId: null } : {},
+    where: dest === "agent" ? { OR: [{ agentId: null }, { source: { in: ["company", "agent-inbox"] } }] } : {},
     orderBy: { id: "desc" },
   });
   const agentIds = [...new Set(tickets.map((t) => t.agentId).filter((x): x is number => x != null))];
@@ -88,6 +90,20 @@ export async function PATCH(request: Request) {
     if (!t) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
     await prisma.subscriberTicket.update({ where: { id }, data: { agentId, handledAt: new Date() } });
     return NextResponse.json({ ok: true, agentId });
+  }
+
+  // ═════ ردُّ الشركة على بطاقة وكيلٍ (وارد الوكلاء source=agent-inbox) ═════
+  if (typeof body?.reply === "string") {
+    const reply = body.reply.trim().slice(0, 1000);
+    if (!reply) return NextResponse.json({ error: "الردُّ فارغ" }, { status: 400 });
+    const t = await prisma.subscriberTicket.findFirst({ where: { id }, select: { id: true, status: true, source: true } });
+    if (!t) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+    if (t.source !== "agent-inbox") return NextResponse.json({ error: "الردُّ لبطاقات الوكلاء فقط" }, { status: 400 });
+    await prisma.subscriberTicket.update({
+      where: { id },
+      data: { reply, repliedAt: new Date(), handledAt: new Date(), ...(t.status === "new" ? { status: "contacted" } : {}) },
+    });
+    return NextResponse.json({ ok: true });
   }
 
   // تغييرُ الحالة (كما كان)

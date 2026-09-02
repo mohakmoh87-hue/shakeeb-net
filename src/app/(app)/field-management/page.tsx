@@ -12,6 +12,7 @@ import DeductionReview from "@/components/DeductionReview";
 import MapProposalReview from "@/components/MapProposalReview";
 import DeletedCardsModal from "@/components/DeletedCardsModal";
 import AchievementsModal from "@/components/AchievementsModal";
+import AgentCompanyOutbox from "./AgentCompanyOutbox";
 import NotificationsBell from "@/components/NotificationsBell";
 import { isPageActive } from "@/lib/usePolling";
 import { slaStateOf, fmtMin, SLA_ALARM_MIN_DEFAULT, SLA_SEND_MIN_DEFAULT, type SlaCard } from "@/lib/odooSla";
@@ -895,6 +896,8 @@ export default function FieldManagementPage() {
               : <OdooConfigButton officeId={officeId} officeName={offices.find((o) => o.id === officeId)?.name ?? "المكتب"} onChange={() => load(officeId)} />}
             </span>
           )}
+          {/* 📤 مراسلةُ سوبر سيل (وارد الوكلاء — جانبُ الوكيل) — لصاحب صلاحية إدارة الفنيين */}
+          <span data-trial-hide className="contents"><AgentCompanyOutbox canManage={canManage} /></span>
         </div>
         <div className="flex items-center gap-2">
           {/* 🧪 في التجربة ينزل الجرسُ إلى الركن الأيمن السفليّ بجانب «الخيارات»

@@ -173,6 +173,20 @@ export async function setCompanyCardSlaHours(hours: number) {
   await writeVal(COMPANY_SLA_KEY, String(Math.max(1, Math.min(720, Math.round(Number(hours) || 24)))));
 }
 
+// فئاتُ «وارد الوكلاء» — يرفعها الوكيلُ للشركة (منفصلةٌ عن فئات بطاقات الشركة). تُدار من الشركة.
+const AGENT_INBOX_CATS_KEY = "agentInboxCategories";
+const DEFAULT_AGENT_CATS = ["انقطاع رئيسي", "طلب كروت", "مشكلة فوترة", "دعم فنيّ للحاسبة"];
+export async function getAgentInboxCategories(): Promise<string[]> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: AGENT_INBOX_CATS_KEY }, select: { text: true } });
+  if (!row?.text) return DEFAULT_AGENT_CATS;
+  try { const c = cleanCats(JSON.parse(row.text)); return c.length ? c : DEFAULT_AGENT_CATS; } catch { return DEFAULT_AGENT_CATS; }
+}
+export async function setAgentInboxCategories(list: unknown): Promise<string[]> {
+  const clean = cleanCats(list);
+  await writeText(AGENT_INBOX_CATS_KEY, JSON.stringify(clean));
+  return clean;
+}
+
 // الحزمةُ الكاملةُ للقراءة العامّة (يقرؤها تطبيقُ Flutter عند الإقلاع)
 export async function getPublicAppConfig() {
   const [content, companyMode, portalEnabled] = await Promise.all([

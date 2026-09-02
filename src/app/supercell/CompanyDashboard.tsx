@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
 import AgentPerfTab from "./AgentPerfTab";
 import CompanyCardsTab from "./CompanyCardsTab";
+import AgentInboxTab from "./AgentInboxTab";
 
 type OtpInfo = { instanceId: string; tokenSet: boolean };
 type Ticket = { id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; agentId: number | null; towerId: number | null; type: string | null; status: string; createdAt: string; source: string | null };
@@ -19,6 +20,7 @@ export default function CompanyDashboard({ username, role }: { username: string;
     ? [
         { k: "perf", label: "📊 أداء الوكلاء" },
         { k: "cards", label: "🗂️ بطاقات الشركة" },
+        { k: "inbox", label: "📥 وارد الوكلاء" },
         { k: "tickets", label: "📱 الطلبات" },
         { k: "employees", label: "🧑‍💼 الموظفون" },
         { k: "ads", label: "📣 الإعلانات" },
@@ -146,8 +148,8 @@ export default function CompanyDashboard({ username, role }: { username: string;
   }
   async function logout() { await fetch("/api/company/logout", { method: "POST" }); window.location.reload(); }
 
-  // «الطلبات» = تذاكرُ المشتركين فقط؛ بطاقاتُ الشركة (source=company) لها تبويبُها المستقلّ
-  const subReq = tickets.filter((t) => t.source !== "company");
+  // «الطلبات» = تذاكرُ المشتركين فقط؛ بطاقاتُ الشركة (company) ووارد الوكلاء (agent-inbox) لهما تبويباهما
+  const subReq = tickets.filter((t) => t.source !== "company" && t.source !== "agent-inbox");
   const newCount = subReq.filter((t) => t.status === "new").length;
   const assignedCount = subReq.filter((t) => t.agentId != null).length;
   const unassignedCount = subReq.filter((t) => t.agentId == null).length;
@@ -193,6 +195,9 @@ export default function CompanyDashboard({ username, role }: { username: string;
 
         {/* ═════ بطاقات الشركة (مدير) ═════ */}
         {isManager && tab === "cards" && <CompanyCardsTab isManager={isManager} />}
+
+        {/* ═════ وارد الوكلاء (مدير) ═════ */}
+        {isManager && tab === "inbox" && <AgentInboxTab isManager={isManager} />}
 
         {/* ═════ الطلبات ═════ */}
         {tab === "tickets" && (
