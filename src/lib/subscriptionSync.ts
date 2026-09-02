@@ -27,8 +27,8 @@ const EXP_TOL_MS = 12 * 3600_000;
 const sameExpiry = (a: Date | null | undefined, b: Date | null | undefined): boolean =>
   !!a && !!b && Math.abs(a.getTime() - b.getTime()) <= EXP_TOL_MS;
 
-// 💰 نافذةُ «مقبوضٌ عندي» حول لحظة التفعيل — ٣٦ ساعةً تغطّي وصلاً كُتب صباحَ اليوم التالي
-const RECEIPT_NEAR_MS = 36 * 3600_000;
+// 💰 نافذةُ «مقبوضٌ عندي» حول لحظة التفعيل — ±٣ أيّامٍ (قاعدةُ محمد 2026-09-02: له وصلٌ عندي حتى لو تغيّرت باقتُه ⇒ ليس خارجيّاً)
+const RECEIPT_NEAR_MS = 3 * 86400_000;
 
 const nameKey = (x: string | null | undefined) =>
   String(x ?? "").replace(/[\s.,\-_()·،]+/g, " ").trim().toLowerCase();
@@ -734,7 +734,7 @@ async function runOfficeSyncInner(
   //   · منجر = **كابينةُ صاحب اليوزر نفسِه** (FDT+المقطع الأوّل+لاحقة @) ⇒ «تفعيل خارجي» (٣)
   //   · أيُّ منجرٍ آخرَ (ديلر/شركة) ⇒ «تنصيب خارجي» (٢) بوصفه إعادةَ خدمةٍ من الشركة —
   //     وكان يسقط في الفراغ فلا يظهر في أيّ تبويب.
-  // 💰 وفي الأنواع الثلاثة: «مقبوضٌ عندي ⇒ ليس خارجيّاً» (وصلٌ ±١٢ ساعة **أو** تاريخُنا
+  // 💰 وفي الأنواع الثلاثة: «مقبوضٌ عندي ⇒ ليس خارجيّاً» (وصلٌ ±٣ أيّام **أو** تاريخُنا
   //   يغطّي انتهاءَ الساس)، وصاحبُ القرض مستثنًى من الغطاء.
   for (const a of actsWide) {
     const actAt = a.createdAt ? new Date(a.createdAt) : null;
@@ -765,7 +765,7 @@ async function runOfficeSyncInner(
       // 📈 الانتهاءُ **قبل** التفعيلة كما يعطيه تقريرُ الساس — به تُعرَف المدّةُ بالأشهر
       oldSasDateTo: a.oldExpiration ? new Date(a.oldExpiration) : null,
     };
-    // «مقبوضٌ عندي» — الغطاءُ بالتاريخ ثمّ الوصلُ بنافذة ±١٢ ساعة
+    // «مقبوضٌ عندي» — الغطاءُ بالتاريخ ثمّ الوصلُ بنافذة ±٣ أيّام
     const COVER_TOL_MS = 24 * 3600_000;
     const covered = !!(validNewExp && sub.dateTo && sub.dateTo.getTime() >= validNewExp.getTime() - COVER_TOL_MS && !loanSubIdsP1.has(sub.id));
     // 🔄 (بلاغا bg-17-19-6@amr وbg-16-23-11@amr 2026-08-27) «مغطًّى» و«مقبوضٌ عندي» **لا
@@ -848,7 +848,7 @@ async function runOfficeSyncInner(
         ? `🤝 تفعيلُ ديلر: ${g.pins.length} كروتٍ من خارج المخزن ليوزر ${g.sub.netUser ?? "—"} — ${money}. والديلرُ يُفعَّل بكروتٍ خارجيّةٍ دائماً، والمالُ مقبوضٌ عندك ⇒ **حالةٌ بسيطةٌ غيرُ ضارّة**.`
         : verdict === "receipted"
           ? `🎴 كارتٌ من خارج المخزن (${g.pins.length}) ليوزر ${g.sub.netUser ?? "—"} — ${money}. المالُ مقبوضٌ عندك ⇒ لا ضرر، والسببُ غالباً كارتٌ لم يُسجَّل في المخزن.`
-          : `🔴 ${g.pins.length} كارتٍ من خارج المخزن ليوزر ${g.sub.netUser ?? "—"} **بلا أيّ وصلٍ في نافذة ٣٦ ساعة** — يحتاج تدقيقاً: مَن قبض ثمنَه؟`;
+          : `🔴 ${g.pins.length} كارتٍ من خارج المخزن ليوزر ${g.sub.netUser ?? "—"} **بلا أيّ وصلٍ في نافذة ٣ أيّام** — يحتاج تدقيقاً: مَن قبض ثمنَه؟`;
       await recordExternalCardCase({
         agentId: office.agentId ?? -1, towerId: officeId, sasId: g.sasId, subscriberId: g.sub.id,
         netUser: g.sub.netUser, name: g.sub.name, activatedAt: g.at,
