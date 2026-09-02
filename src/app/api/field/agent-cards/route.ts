@@ -1,30 +1,33 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
-import { getAgentInboxCategories } from "@/lib/appConfig";
+import { getAgentInboxCategories, getPortalEnabled } from "@/lib/appConfig";
 import { ensureSubscriberTicketsTable } from "@/lib/subscriberTicket";
 
 export const dynamic = "force-dynamic";
 
 // «وارد الوكلاء» — جانبُ الوكيل: يرفع بطاقةً للشركة (source=agent-inbox) ويرى ردَّها وحالتَها.
 // محروسٌ بـfield.manage (المديرُ/صاحبُ صلاحية إدارة الفنيين) ومعزولٌ بـagentId (يرى مراسلاتِه فقط).
+// 🔒 سوبر سيل مطفأةٌ ⇒ enabled:false والقناةُ تختفي كلّيّاً لدى الوكيل (قاعدةُ محمد).
 export async function GET() {
   const g = await guard("field.manage");
   if (g.error) return g.error;
+  if (!(await getPortalEnabled())) return NextResponse.json({ cards: [], categories: [], enabled: false });
   const agentId = g.session.agentId;
   const categories = await getAgentInboxCategories();
-  if (agentId == null) return NextResponse.json({ cards: [], categories });
+  if (agentId == null) return NextResponse.json({ cards: [], categories, enabled: true });
   await ensureSubscriberTicketsTable();
   const cards = await prisma.subscriberTicket.findMany({
     where: { agentId, source: "agent-inbox" }, orderBy: { id: "desc" },
     select: { id: true, type: true, note: true, status: true, reply: true, repliedAt: true, createdAt: true },
   });
-  return NextResponse.json({ cards, categories });
+  return NextResponse.json({ cards, categories, enabled: true });
 }
 
 export async function POST(request: Request) {
   const g = await guard("field.manage");
   if (g.error) return g.error;
+  if (!(await getPortalEnabled())) return NextResponse.json({ error: "سوبر سيل غيرُ مفعّلة" }, { status: 403 });
   const agentId = g.session.agentId;
   if (agentId == null) return NextResponse.json({ error: "ليس لديك وكيل" }, { status: 403 });
   await ensureSubscriberTicketsTable();

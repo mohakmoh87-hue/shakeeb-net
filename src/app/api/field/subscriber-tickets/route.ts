@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
-import { getEffectiveTicketDest } from "@/lib/appConfig";
+import { getEffectiveTicketDest, getPortalEnabled } from "@/lib/appConfig";
 import { ensureSubscriberTicketsTable } from "@/lib/subscriberTicket";
 
 export const dynamic = "force-dynamic";
@@ -13,12 +13,17 @@ export async function GET() {
   const g = await guard("field.manage");
   if (g.error) return g.error;
   const agentId = g.session.agentId;
-  const dest = await getEffectiveTicketDest();
+  const [dest, portal] = await Promise.all([getEffectiveTicketDest(), getPortalEnabled()]);
   if (agentId == null) return NextResponse.json({ tickets: [], dest });
   await ensureSubscriberTicketsTable();
-  // بطاقاتُ الشركة (source=company) مُرسَلةٌ للوكيل مباشرةً فتصله **دائماً**؛ تذاكرُ المشتركين
-  // وحدَها تخضع لتوجيه المالك «supercell» (فتُحجَب عن الوكيل حينها).
-  const where = dest === "supercell" ? { agentId, source: "company" } : { agentId, source: { not: "agent-inbox" } };
+  // 🔒 سوبر سيل مطفأةٌ ⇒ **لا وجودَ لقنواتها لدى الوكيل** (لا بطاقاتِ شركةٍ ولا وارد) — تبقى
+  //    تذاكرُ المشتركين وحدَها (طلباتُ التطبيق، ليست من سوبر سيل). قاعدةُ محمد: «كأنّها لا وجودَ لها».
+  // وحين سوبر سيل شغّالة: بطاقاتُ الشركة تصل الوكيلَ دائماً؛ تذاكرُ المشتركين تخضع لتوجيه «supercell».
+  const where = !portal
+    ? { agentId, source: { notIn: ["company", "agent-inbox"] } }
+    : dest === "supercell"
+      ? { agentId, source: "company" }
+      : { agentId, source: { not: "agent-inbox" } };
   const tickets = await prisma.subscriberTicket.findMany({ where, orderBy: { id: "desc" } });
   return NextResponse.json({ tickets, dest });
 }

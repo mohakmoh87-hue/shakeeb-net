@@ -20,12 +20,15 @@ export default function AgentCompanyOutbox({ canManage }: { canManage: boolean }
   const [subject, setSubject] = useState("");
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState("");
+  const [enabled, setEnabled] = useState(false); // يُعرَف من الخادم؛ يبقى مخفيّاً حتى يتأكّد أنّ سوبر سيل مفعّلة
 
   const load = useCallback(() => {
     fetch("/api/field/agent-cards").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d) { setCards(d.cards || []); setCats(d.categories || []); setCategory((c) => (d.categories?.includes(c) ? c : d.categories?.[0] || "")); }
+      if (d) { setEnabled(d.enabled !== false); setCards(d.cards || []); setCats(d.categories || []); setCategory((c) => (d.categories?.includes(c) ? c : d.categories?.[0] || "")); }
     }).catch(() => {});
   }, []);
+  // على الإقلاع نعرف إن كانت سوبر سيل مفعّلةً (فيظهر الزرُّ أو يختفي كأنّه لا وجودَ له) — للمدير فقط
+  useEffect(() => { if (canManage) load(); }, [canManage, load]);
   useEffect(() => {
     if (!open) return;
     load();
@@ -44,7 +47,7 @@ export default function AgentCompanyOutbox({ canManage }: { canManage: boolean }
     } catch { setMsg("تعذّر الاتصال"); } finally { setSending(false); }
   }
 
-  if (!canManage) return null;
+  if (!canManage || !enabled) return null;
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} data-trial-hide
