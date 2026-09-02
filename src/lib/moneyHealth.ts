@@ -345,6 +345,10 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
            to_char(g."activatedAt" ${BG}, 'YYYY-MM-DD HH24:MI') AS at
       FROM sync_log g
      WHERE g.kind = 'card' AND g.status = 'pending' AND g."towerId" IN (${T})
+       -- 🤝 الأحكامُ الطبيعيّةُ لا تُعرَض (طلبُ محمد): ديلرُ الثلاثة أشهرٍ والوصلُ الموجودُ حالتان
+       --    غيرُ ضارّتَين ⇒ لا حالةَ لهما (قاعدةُ «إن لم يبقَ ضررٌ فلا حالة»). يبقى الضارُّ فقط: مسروق · بلا وصل.
+       AND coalesce(g.changes,'') NOT LIKE '%"verdict":"dealer"%'
+       AND coalesce(g.changes,'') NOT LIKE '%"verdict":"receipted"%'
      ORDER BY g."activatedAt" DESC LIMIT 200`, (x) => {
     let verdict = "";
     try { verdict = String((JSON.parse(s(x.changes) || "{}") as { verdict?: string }).verdict ?? ""); } catch { /* نصٌّ غيرُ مقروء */ }
@@ -488,6 +492,7 @@ ${s(x.note)}`,
     WITH op AS (
       SELECT e."subscriberId", e.date::date AS d, min(e.id) AS first_id,
              sum(coalesce(e."moneyIn",0)) AS paid, sum(coalesce(e.money,0)) AS due,
+             sum(coalesce(e."addPrice",0)) AS delivery,
              sum(e."dateTo"::date - e."dateFrom"::date) AS days, count(*)::int AS parts
         FROM subscription_entries e
        WHERE e."isDeleted" = false AND e."isMaster" = false AND e."towerId" IN (${T})
@@ -501,6 +506,13 @@ ${s(x.note)}`,
               JOIN packages p ON p.id = s."packageId"
      WHERE coalesce(p."priceDinar",0) > 0 AND op.days >= 25
        AND GREATEST(op.paid, op.due) < p."priceDinar"
+       -- ⚖️ استثناءُ ترقية الفئة (طلبُ محمد): المبلغُ يدلّ على الباقة التي فُعِّل عليها فعلاً.
+       --    فإن ساوى **صافي التفعيل** (المبلغُ ناقصَ أجرةِ التوصيل addPrice) سعرَ **أيّ باقةٍ للوكيل**
+       --    فهو تفعيلٌ كاملٌ لتلك الباقة (رُقِّي بعدها من ٣٥ إلى ٤٥، أو ٣٥+توصيلٌ ١٠٠٠=٣٦٠٠٠) ولا يُقاس
+       --    بالباقة الحاليّة. واستثناءُ «مال الشركة» (بلا مالٍ = صفر) — بيتُه فحصُ «مدّةٌ بلا مال».
+       AND GREATEST(op.paid, op.due) > 0
+       AND (GREATEST(op.paid, op.due) - op.delivery) NOT IN (
+             SELECT "priceDinar" FROM packages WHERE "agentId" = ${agentId} AND coalesce("priceDinar",0) > 0)
      ORDER BY (p."priceDinar" - GREATEST(op.paid, op.due)) DESC LIMIT 100`, (x) => ({
     rowKey: `under:${s(x.first_id)}`,
     title: "شهرٌ مُنح بأقلَّ من سعرِ باقته",
