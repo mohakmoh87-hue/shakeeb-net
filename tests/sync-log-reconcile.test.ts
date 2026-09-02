@@ -23,7 +23,8 @@ describe("♻️ سجلّ المزامنة التفاعليّ ودفعةُ ال�
     // 🎁 وقاعدةُ Offer عادت في **موضعٍ واحدٍ ضيّقٍ فقط** بإملاء محمد 2026-08-21: مَن لا باقةَ
     //    له عندنا وباقتُه في الساس عرضٌ ⇒ لا يُذكَر في «تحديث معلومات». ويبقى الممنوعُ حرفيّاً:
     //    **لا تُستعمَل لتصنيف تنصيبٍ خارجيّ** (فهي تُطابق باقاتِ سوبر سيل العاديّة).
-    assert.equal(/isOfferPackage(u.packageName) *?|isOfferPackage([^)]*) *&& *!p/.test(src), false,
+    const offerCalls = [...src.matchAll(/isOfferPackage\s*\(/g)].length;
+    assert.equal(offerCalls, 1,
       "قاعدةُ Offer عادت لتصنيف التنصيب — وهي تُطابق باقاتِ سوبر سيل العاديّة");
     // (السطرُ أعلاه يكفي — الاستعمالُ صار في موضعٍ واحدٍ يُسكِت الفروقَ لا يُصنّف تنصيباً)
     assert.ok(src.includes("const sasOffer = isOfferPackage(u.packageName);"),
