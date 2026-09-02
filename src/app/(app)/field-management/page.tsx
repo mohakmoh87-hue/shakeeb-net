@@ -196,6 +196,7 @@ export default function FieldManagementPage() {
   const [board, setBoard] = useState<Board | null>(null);
   const [lists, setLists] = useState<List[]>([]);
   const [odooActive, setOdooActive] = useState(false); // أودو نشط للمكتب المعروض (مفعّل أو به بطاقات مفتوحة) — يحكم إظهار عمود «تذاكر أودو»
+  const [portalOn, setPortalOn] = useState(true); // سوبر سيل مفعّلة؟ — عند الإطفاء يُمحى اسمُها من «مهلة سوبر سيل» على بطاقات أودو
   // ⏳ مهلة سوبر سيل: عتبتا المكتب + ساعةٌ تنبض كلّ ٣٠ث ليتحرّك العدّاد بلا طلبٍ للخادم
   const [canAddCards, setCanAddCards] = useState(true); // الفنيّ: خيار المدير «إضافة بطاقات» (افتراضه مسموح)
   const [slaOn, setSlaOn] = useState(false); // الميزة ١ «إنذارات أودو» لهذا المكتب
@@ -317,6 +318,10 @@ export default function FieldManagementPage() {
     }).catch(() => {});
   }, []);
   useEffect(() => { loadTickets(); }, [loadTickets]);
+  // سوبر سيل مفعّلة؟ (عامّ، يعمل للفنيّ أيضاً) — لإخفاء اسمها من «مهلة أودو» عند الإطفاء
+  useEffect(() => {
+    fetch("/api/app/config").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setPortalOn(d.portalEnabled !== false); }).catch(() => {});
+  }, []);
   async function patchTicket(id: number, status: string) {
     try {
       await fetch("/api/field/subscriber-tickets", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
@@ -1163,7 +1168,7 @@ export default function FieldManagementPage() {
                     {/* وسم «أودو» عاموديّ على الحافّة اليسرى: كلمةٌ مُدوَّرة ككتلة (transform) فتبقى حروفها موصولة،
                         لونها لون الفئة إن أُسندت وإلا بنفسجيّ — يبقى دائماً على بطاقة أودو */}
                     {isOdoo && (
-                      <div className="absolute inset-y-0 left-0 flex w-5 items-center justify-center" style={{ background: slaHot ? "#dc26261f" : `${odooColor}1f` }} title={slaHot ? "تجاوزت مهلة سوبر سيل — أنجز أو ألغِ أو أجّل" : "بطاقة واردة من أودو"}>
+                      <div className="absolute inset-y-0 left-0 flex w-5 items-center justify-center" style={{ background: slaHot ? "#dc26261f" : `${odooColor}1f` }} title={slaHot ? (portalOn ? "تجاوزت مهلة سوبر سيل — أنجز أو ألغِ أو أجّل" : "تجاوزت المهلة — أنجز أو ألغِ أو أجّل") : "بطاقة واردة من أودو"}>
                         <span className="text-[11px] font-extrabold leading-none" style={{ color: slaHot ? "#dc2626" : odooColor, transform: "rotate(-90deg)" }}>أودو</span>
                       </div>
                     )}
@@ -1693,6 +1698,7 @@ export default function FieldManagementPage() {
       {postponing && (
         <PostponeModal
           card={postponing}
+          portalOn={portalOn}
           onClose={() => setPostponing(null)}
           onDone={() => { setPostponing(null); load(officeId); }}
         />
@@ -1891,7 +1897,7 @@ function SupportModal({ officeId, onClose, onChange }: { officeId: number; onClo
 }
 
 /* ========== نافذة تأجيل البطاقة ========== */
-function PostponeModal({ card, onClose, onDone }: { card: Card; onClose: () => void; onDone: () => void }) {
+function PostponeModal({ card, onClose, onDone, portalOn }: { card: Card; onClose: () => void; onDone: () => void; portalOn: boolean }) {
   const [when, setWhen] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -1923,7 +1929,7 @@ function PostponeModal({ card, onClose, onDone }: { card: Card; onClose: () => v
             <label className="mb-1 block text-xs font-bold text-violet-700">ملاحظة التأجيل — تُرسَل إلى أودو (إلزاميّة)</label>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="مثال: تم التأجيل بطلب من المشترك — موعد جديد يوم…"
               className="w-full resize-none rounded-lg border border-violet-300 px-3 py-2 text-sm outline-none focus:border-violet-500" />
-            <p className="mt-1 text-[11px] text-slate-500">بلا ملاحظةٍ تبقى التذكرة بلا حركة عند سوبر سيل وتقع الغرامة.</p>
+            <p className="mt-1 text-[11px] text-slate-500">{portalOn ? "بلا ملاحظةٍ تبقى التذكرة بلا حركة عند سوبر سيل وتقع الغرامة." : "بلا ملاحظةٍ تبقى التذكرة بلا حركة وتقع الغرامة."}</p>
           </div>
         )}
         {err && <p className="mb-2 text-sm text-red-600">{err}</p>}

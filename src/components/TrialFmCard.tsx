@@ -33,6 +33,7 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
   // ⏳ إنذارُ مهلة أودو في المربّع (فحص محمد 2026-08-19): عددُ التذاكر المفتوحة التي
   //    تجاوزت عتبةَ الإنذار — بالعتبات الافتراضيّة لأنّ المربّعَ يجمع كلَّ المكاتب
   const [odooHot, setOdooHot] = useState(0);
+  const [portalOn, setPortalOn] = useState(true); // سوبر سيل مفعّلة؟ — عند الإطفاء يُمحى اسمُها من تلميح مهلة أودو
   const [leader, setLeader] = useState<{ name: string; points: number } | null>(demo?.leader ?? null);
   // 🔴 لقطة محمد (2026-08-19): «عند الضغط على الفني فهد يفتح صفحة ادارة الفنيين وليس
   //    نافذة انجازات الفنيين كما في السابق» — فالشارةُ تفتح النافذةَ لا الرابط
@@ -60,6 +61,7 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
         }, 0));
       })
       .catch(() => setOn(true));
+    fetch("/api/app/config").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setPortalOn(d.portalEnabled !== false); }).catch(() => {});
     fetch("/api/field/achievements?leader=1")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d?.leader?.name) setLeader({ name: d.leader.name, points: Number(d.leader.points ?? 0) }); })
@@ -105,7 +107,7 @@ export default function TrialFmCard({ demo }: { demo?: TrialFmDemo }) {
           <div className="tfm-legend">
             <div><span>منجزة</span><b>{fmt(done)}</b></div>
             <div><span>متبقّية</span><b>{fmt(left)}</b></div>
-            <div className={odooHot > 0 ? "tfm-sla" : undefined} title={odooHot > 0 ? `⏳ ${odooHot} تذكرة تجاوزت مهلةَ سوبر سيل` : undefined}>
+            <div className={odooHot > 0 ? "tfm-sla" : undefined} title={odooHot > 0 ? `⏳ ${odooHot} تذكرة تجاوزت ${portalOn ? "مهلةَ سوبر سيل" : "المهلة"}` : undefined}>
               <span>تذاكر أودو{odooHot > 0 ? " ⏳" : ""}</span><b>{fmt(odoo)}</b>
             </div>
           </div>
