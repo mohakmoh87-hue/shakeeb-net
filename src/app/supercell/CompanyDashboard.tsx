@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
+import AgentPerfTab from "./AgentPerfTab";
 
 type OtpInfo = { instanceId: string; tokenSet: boolean };
 type Ticket = { id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; agentId: number | null; towerId: number | null; type: string | null; status: string; createdAt: string };
@@ -15,6 +16,7 @@ export default function CompanyDashboard({ username, role }: { username: string;
   const isManager = role === "manager";
   const tabs = useMemo(() => (isManager
     ? [
+        { k: "perf", label: "📊 أداء الوكلاء" },
         { k: "tickets", label: "📱 الطلبات" },
         { k: "employees", label: "🧑‍💼 الموظفون" },
         { k: "ads", label: "📣 الإعلانات" },
@@ -182,6 +184,9 @@ export default function CompanyDashboard({ username, role }: { username: string;
       </header>
 
       <main className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
+        {/* ═════ أداء الوكلاء (مدير) ═════ */}
+        {isManager && tab === "perf" && <AgentPerfTab />}
+
         {/* ═════ الطلبات ═════ */}
         {tab === "tickets" && (
           <>

@@ -6,7 +6,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type State = { portalEnabled: boolean };
+type AnalyticsView = "tickets" | "field" | "both";
+type State = { portalEnabled: boolean; analyticsView: AnalyticsView };
 
 type CompanyUser = { id: number; username: string; password: string | null };
 
@@ -65,7 +66,7 @@ export default function OwnerSupercellPage() {
     try {
       const res = await fetch("/api/owner/supercell", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ portalEnabled: s!.portalEnabled }),
+        body: JSON.stringify({ portalEnabled: s!.portalEnabled, analyticsView: s!.analyticsView }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setMsg(d.error ?? "فشل الحفظ"); return; }
       setMsg("✓ حُفِظ — يظهرُ في التطبيق حيّاً");
@@ -86,6 +87,25 @@ export default function OwnerSupercellPage() {
 
       <Toggle on={s.portalEnabled} onFlip={() => setS({ ...s, portalEnabled: !s.portalEnabled })}
         label="تفعيل سوبر سيل" hint="مطفأ ⇒ صفحةُ /supercell مغلقةٌ (404)، وكلُّ ما يخصّ الشركة يختفي من تطبيق المشتركين" />
+
+      {/* 📊 عرضُ «أداء الوكلاء» في البوّابة — يتحكّم المالكُ بما تراه الشركة */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-1 font-semibold text-slate-800">📊 قسم «أداء الوكلاء»</div>
+        <div className="mb-3 text-[11px] text-slate-500">ما تراه الشركةُ في تبويب الأداء داخل البوّابة.</div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {([
+            { v: "tickets", t: "التذاكر + العدّادات", h: "تذاكرُ الشركة + كلّي/أكتف/متصل" },
+            { v: "field", t: "أداء لوحة الفنيين", h: "المُنجَز والزمن والالتزام بالمهلة" },
+            { v: "both", t: "الاثنان", h: "العرضان معاً" },
+          ] as { v: AnalyticsView; t: string; h: string }[]).map((o) => (
+            <button key={o.v} type="button" onClick={() => setS({ ...s, analyticsView: o.v })}
+              className={`flex-1 rounded-xl border p-3 text-right transition ${s.analyticsView === o.v ? "border-mynet-blue bg-mynet-blue/10 ring-1 ring-mynet-blue" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+              <div className={`text-sm font-semibold ${s.analyticsView === o.v ? "text-mynet-blue" : "text-slate-700"}`}>{o.t}</div>
+              <div className="text-[11px] text-slate-500">{o.h}</div>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* حساباتُ الشركة — يُنشئها المالكُ يدويّاً حصراً (لا تسجيلَ ذاتيّ) */}
       <div className="rounded-xl border border-slate-200 bg-white p-4">

@@ -131,6 +131,19 @@ export async function setSubsVisibleToCompany(on: boolean) {
   await writeVal(SUBS_VISIBLE_KEY, on ? "1" : "0");
 }
 
+// ═════ عرضُ «أداء الوكلاء» في بوّابة الشركة (طلبُ محمد 2026-09-02) ═════
+// يتحكّم المالكُ بما تراه سوبر سيل في قسم التحليلات: «tickets» = تذاكرُ الشركة + عدّاداتُ
+// المشتركين فقط · «field» = أداءُ لوحة الفنيين فقط · «both» = الاثنان. الافتراضُ «both».
+const ANALYTICS_VIEW_KEY = "companyAnalyticsView";
+export type AnalyticsView = "tickets" | "field" | "both";
+export async function getCompanyAnalyticsView(): Promise<AnalyticsView> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: ANALYTICS_VIEW_KEY }, select: { value: true } });
+  return row?.value === "tickets" || row?.value === "field" ? row.value : "both";
+}
+export async function setCompanyAnalyticsView(v: AnalyticsView) {
+  await writeVal(ANALYTICS_VIEW_KEY, v === "tickets" || v === "field" ? v : "both");
+}
+
 // الحزمةُ الكاملةُ للقراءة العامّة (يقرؤها تطبيقُ Flutter عند الإقلاع)
 export async function getPublicAppConfig() {
   const [content, companyMode, portalEnabled] = await Promise.all([
