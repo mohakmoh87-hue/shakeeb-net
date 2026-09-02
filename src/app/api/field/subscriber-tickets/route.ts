@@ -14,9 +14,12 @@ export async function GET() {
   if (g.error) return g.error;
   const agentId = g.session.agentId;
   const dest = await getEffectiveTicketDest();
-  if (dest === "supercell" || agentId == null) return NextResponse.json({ tickets: [], dest });
+  if (agentId == null) return NextResponse.json({ tickets: [], dest });
   await ensureSubscriberTicketsTable();
-  const tickets = await prisma.subscriberTicket.findMany({ where: { agentId }, orderBy: { id: "desc" } });
+  // بطاقاتُ الشركة (source=company) مُرسَلةٌ للوكيل مباشرةً فتصله **دائماً**؛ تذاكرُ المشتركين
+  // وحدَها تخضع لتوجيه المالك «supercell» (فتُحجَب عن الوكيل حينها).
+  const where = dest === "supercell" ? { agentId, source: "company" } : { agentId };
+  const tickets = await prisma.subscriberTicket.findMany({ where, orderBy: { id: "desc" } });
   return NextResponse.json({ tickets, dest });
 }
 

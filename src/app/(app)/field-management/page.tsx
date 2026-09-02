@@ -243,7 +243,7 @@ export default function FieldManagementPage() {
   const [supportInfo, setSupportInfo] = useState<string | null>(null); // شريط دعم اليوم الكامل (للفني المُعار)
   const [supportOfficeId, setSupportOfficeId] = useState<number | null>(null); // مكتب الدعم (لخريطة بطاقات «دعم مؤقت»)
   // 🎫 تذاكرُ المشتركين: طلباتُ اشتراكٍ جديدةٌ من التطبيق، مُوجَّهةٌ لهذا الوكيل بأقرب عامود
-  const [subTickets, setSubTickets] = useState<{ id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; towerId: number | null; type: string | null; status: string; createdAt: string }[]>([]);
+  const [subTickets, setSubTickets] = useState<{ id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; towerId: number | null; type: string | null; status: string; createdAt: string; source: string | null; dueAt: string | null }[]>([]);
   const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
@@ -322,6 +322,9 @@ export default function FieldManagementPage() {
       loadTickets();
     } catch { /* لا نكسر الواجهة */ }
   }
+  // فصلُ التذاكر: عمودٌ لتذاكر المشتركين (من التطبيق) وآخرُ لبطاقات الشركة (source=company)
+  const subOnly = subTickets.filter((t) => t.source !== "company");
+  const coCards = subTickets.filter((t) => t.source === "company");
 
   // تحديث تلقائي كل ٢٠ ثانية (كان ٥ — حمية بولنغ: يخفّض طلبات كل جهاز فاتح للوحة ~٤ أضعاف).
   // يتوقّف مؤقتاً أثناء أي نافذة/تحرير/سحب كي لا يقاطع الكتابة، وحين تكون الشاشة مخفيّة.
@@ -1004,14 +1007,14 @@ export default function FieldManagementPage() {
         )}
         {/* 🎫 عمودُ تذاكر المشتركين: طلباتُ اشتراكٍ جديدةٌ من التطبيق مُوجَّهةٌ لهذا الوكيل بأقرب عامود.
             على مستوى الوكيل (يظهر على كلّ مكاتبه)؛ يُخفى إن لا تذاكر أو إن وجّهها المالكُ لسوبر سيل فقط. */}
-        {subTickets.length > 0 && (
+        {subOnly.length > 0 && (
           <div data-app-col className="flex max-h-full w-[280px] shrink-0 flex-col rounded-xl border border-line bg-surface-2 shadow-lg">
             <div className="flex items-center justify-between rounded-t-[11px] bg-emerald-600 px-3 py-2 text-white">
               <span className="text-sm font-bold">🎫 تذاكر المشتركين</span>
-              <span className="rounded-full bg-white/25 px-2 text-xs font-bold">{subTickets.filter((t) => t.status === "new").length}</span>
+              <span className="rounded-full bg-white/25 px-2 text-xs font-bold">{subOnly.filter((t) => t.status === "new").length}</span>
             </div>
             <div className="flex-1 space-y-2 overflow-y-auto p-2">
-              {subTickets.map((t) => {
+              {subOnly.map((t) => {
                 const dist = t.poleDistanceM == null ? null : t.poleDistanceM >= 1000 ? `${(t.poleDistanceM / 1000).toFixed(1)}كم` : `${t.poleDistanceM}م`;
                 const done = t.status === "done", rej = t.status === "rejected";
                 return (
@@ -1036,6 +1039,43 @@ export default function FieldManagementPage() {
                     {canManage && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {t.status !== "contacted" && !done && !rej && <button onClick={() => void patchTicket(t.id, "contacted")} className="rounded bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-200">تواصلت</button>}
+                        {!done && <button onClick={() => void patchTicket(t.id, "done")} className="rounded bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-200">✓ أُنجز</button>}
+                        {!rej && <button onClick={() => void patchTicket(t.id, "rejected")} className="rounded bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">✕ رفض</button>}
+                        {(done || rej) && <button onClick={() => void patchTicket(t.id, "new")} className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">↩ إرجاع</button>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {/* 🏢 عمودُ بطاقات الشركة (source=company): رفعتها سوبر سيل لهذا الوكيل مباشرةً — يظهر حين تأتيه بطاقة */}
+        {coCards.length > 0 && (
+          <div data-app-col className="flex max-h-full w-[280px] shrink-0 flex-col rounded-xl border border-line bg-surface-2 shadow-lg">
+            <div className="flex items-center justify-between rounded-t-[11px] bg-[#16213e] px-3 py-2 text-white">
+              <span className="text-sm font-bold">🏢 تذاكر الشركة</span>
+              <span className="rounded-full bg-white/25 px-2 text-xs font-bold">{coCards.filter((t) => t.status === "new").length}</span>
+            </div>
+            <div className="flex-1 space-y-2 overflow-y-auto p-2">
+              {coCards.map((t) => {
+                const done = t.status === "done", rej = t.status === "rejected";
+                const due = t.dueAt ? new Date(t.dueAt) : null;
+                const late = due != null && !done && !rej && due.getTime() < Date.now();
+                const dueLabel = due && !isNaN(due.getTime()) ? due.toLocaleString("ar", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : null;
+                return (
+                  <div key={t.id} className={`rounded-lg bg-white p-2.5 shadow-sm ${done ? "opacity-60" : rej ? "opacity-50" : ""} ${late ? "ring-1 ring-rose-300" : ""}`}>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="shrink-0 rounded bg-[#16213e] px-1.5 py-0.5 text-[9px] font-bold text-white">🏢 {t.type ?? "بطاقة"}</span>
+                      {t.status !== "new" && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${done ? "bg-emerald-100 text-emerald-700" : rej ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>{t.status === "contacted" ? "قيد التنفيذ" : done ? "أُنجز" : "رُفض"}</span>}
+                    </div>
+                    {t.name && t.name !== t.type && <div className="mt-1 text-sm font-bold text-slate-800">{t.name}</div>}
+                    {t.phone && t.phone !== "—" && <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={t.phone} /></div>}
+                    {dueLabel && <div className={`mt-1 text-[11px] font-semibold ${late ? "text-rose-600" : "text-slate-500"}`}>⏱️ المهلة: {dueLabel}{late ? " · متجاوَزة" : ""}</div>}
+                    {t.note && <div className="mt-1 rounded bg-slate-50 p-1.5 text-[11px] text-slate-600">{t.note}</div>}
+                    {canManage && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {t.status !== "contacted" && !done && !rej && <button onClick={() => void patchTicket(t.id, "contacted")} className="rounded bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-200">استلمت</button>}
                         {!done && <button onClick={() => void patchTicket(t.id, "done")} className="rounded bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-200">✓ أُنجز</button>}
                         {!rej && <button onClick={() => void patchTicket(t.id, "rejected")} className="rounded bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">✕ رفض</button>}
                         {(done || rej) && <button onClick={() => void patchTicket(t.id, "new")} className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">↩ إرجاع</button>}

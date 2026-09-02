@@ -144,6 +144,35 @@ export async function setCompanyAnalyticsView(v: AnalyticsView) {
   await writeVal(ANALYTICS_VIEW_KEY, v === "tickets" || v === "field" ? v : "both");
 }
 
+// ═════ بطاقاتُ الشركة: الفئاتُ + المهلةُ الافتراضيّة (طلبُ محمد 2026-09-02) ═════
+// الشركةُ ترفع بطاقةً لوكيلٍ بفئةٍ من قائمةٍ قابلةٍ للتحرير ومهلةٍ (ساعات). تُخزَّن في system_settings.
+const COMPANY_CATS_KEY = "companyCardCategories";
+const COMPANY_SLA_KEY = "companyCardSlaHours";
+const DEFAULT_COMPANY_CATS = ["قطع كيبل رئيسي", "شكوى مشترك", "فحص جودة الخدمة", "صيانة برج", "تحديث بيانات نقطة"];
+function cleanCats(arr: unknown): string[] {
+  return Array.isArray(arr)
+    ? [...new Set(arr.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim().slice(0, 80)))].slice(0, 40)
+    : [];
+}
+export async function getCompanyCardCategories(): Promise<string[]> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: COMPANY_CATS_KEY }, select: { text: true } });
+  if (!row?.text) return DEFAULT_COMPANY_CATS;
+  try { const c = cleanCats(JSON.parse(row.text)); return c.length ? c : DEFAULT_COMPANY_CATS; } catch { return DEFAULT_COMPANY_CATS; }
+}
+export async function setCompanyCardCategories(list: unknown): Promise<string[]> {
+  const clean = cleanCats(list);
+  await writeText(COMPANY_CATS_KEY, JSON.stringify(clean));
+  return clean;
+}
+export async function getCompanyCardSlaHours(): Promise<number> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: COMPANY_SLA_KEY }, select: { value: true } });
+  const n = Number(row?.value);
+  return Number.isFinite(n) && n >= 1 && n <= 720 ? Math.round(n) : 24;
+}
+export async function setCompanyCardSlaHours(hours: number) {
+  await writeVal(COMPANY_SLA_KEY, String(Math.max(1, Math.min(720, Math.round(Number(hours) || 24)))));
+}
+
 // الحزمةُ الكاملةُ للقراءة العامّة (يقرؤها تطبيقُ Flutter عند الإقلاع)
 export async function getPublicAppConfig() {
   const [content, companyMode, portalEnabled] = await Promise.all([

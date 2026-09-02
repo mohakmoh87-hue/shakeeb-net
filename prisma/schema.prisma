@@ -1814,8 +1814,10 @@ model SubscriberTicket {
   subscriberId  Int? // للطلبات من مشتركٍ مسجَّل (صيانة/توصيل)؛ null لطلب الاشتراك الجديد
   type          String? // اشتراك جديد | صيانة | توصيل
   status        String    @default("new") // new | contacted | done | rejected
-  source        String    @default("app")
+  source        String    @default("app") // app | app-request | company (الشركةُ رفعتها)
   handledById   Int?
+  raisedById    Int? // مستخدمُ الشركة الذي رفع البطاقة (لبطاقات الشركة source=company)
+  dueAt         DateTime? // مهلةُ الإنجاز لبطاقات الشركة — «متجاوزة» إن مرّت ولم تُنجَز
   handledAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @default(now()) @updatedAt

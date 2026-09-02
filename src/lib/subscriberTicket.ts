@@ -28,6 +28,8 @@ export async function ensureSubscriberTicketsTable(): Promise<void> {
     )`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "subscriber_tickets" ADD COLUMN IF NOT EXISTS "subscriberId" INTEGER`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "subscriber_tickets" ADD COLUMN IF NOT EXISTS "type" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "subscriber_tickets" ADD COLUMN IF NOT EXISTS "dueAt" TIMESTAMP(3)`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "subscriber_tickets" ADD COLUMN IF NOT EXISTS "raisedById" INTEGER`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "subscriber_tickets_agentId_status_idx" ON "subscriber_tickets" ("agentId", "status")`);
   ticketsTableReady = true;
 }

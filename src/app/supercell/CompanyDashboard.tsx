@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
 import AgentPerfTab from "./AgentPerfTab";
+import CompanyCardsTab from "./CompanyCardsTab";
 
 type OtpInfo = { instanceId: string; tokenSet: boolean };
-type Ticket = { id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; agentId: number | null; towerId: number | null; type: string | null; status: string; createdAt: string };
+type Ticket = { id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; agentId: number | null; towerId: number | null; type: string | null; status: string; createdAt: string; source: string | null };
 type Employee = { id: number; username: string; password: string | null; createdAt: string };
 type Sub = { id: number; name: string | null; phone: string | null; office: string | null; package: string | null; expiry: string; state: string; daysExpired: number };
 type Role = "manager" | "employee";
@@ -17,6 +18,7 @@ export default function CompanyDashboard({ username, role }: { username: string;
   const tabs = useMemo(() => (isManager
     ? [
         { k: "perf", label: "📊 أداء الوكلاء" },
+        { k: "cards", label: "🗂️ بطاقات الشركة" },
         { k: "tickets", label: "📱 الطلبات" },
         { k: "employees", label: "🧑‍💼 الموظفون" },
         { k: "ads", label: "📣 الإعلانات" },
@@ -144,10 +146,12 @@ export default function CompanyDashboard({ username, role }: { username: string;
   }
   async function logout() { await fetch("/api/company/logout", { method: "POST" }); window.location.reload(); }
 
-  const newCount = tickets.filter((t) => t.status === "new").length;
-  const assignedCount = tickets.filter((t) => t.agentId != null).length;
-  const unassignedCount = tickets.filter((t) => t.agentId == null).length;
-  const shownTickets = tickets.filter((t) =>
+  // «الطلبات» = تذاكرُ المشتركين فقط؛ بطاقاتُ الشركة (source=company) لها تبويبُها المستقلّ
+  const subReq = tickets.filter((t) => t.source !== "company");
+  const newCount = subReq.filter((t) => t.status === "new").length;
+  const assignedCount = subReq.filter((t) => t.agentId != null).length;
+  const unassignedCount = subReq.filter((t) => t.agentId == null).length;
+  const shownTickets = subReq.filter((t) =>
     tFilter === "all" ? true : tFilter === "agent" ? t.agentId != null : t.agentId == null);
 
   return (
@@ -187,11 +191,14 @@ export default function CompanyDashboard({ username, role }: { username: string;
         {/* ═════ أداء الوكلاء (مدير) ═════ */}
         {isManager && tab === "perf" && <AgentPerfTab />}
 
+        {/* ═════ بطاقات الشركة (مدير) ═════ */}
+        {isManager && tab === "cards" && <CompanyCardsTab isManager={isManager} />}
+
         {/* ═════ الطلبات ═════ */}
         {tab === "tickets" && (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatCard icon="📥" label="إجمالي الطلبات" value={tickets.length} />
+              <StatCard icon="📥" label="إجمالي الطلبات" value={subReq.length} />
               <StatCard icon="🆕" label="جديدة" value={newCount} tone={newCount > 0 ? "emerald" : "slate"} />
               <StatCard icon="✅" label="مُسنَدة لوكيل" value={assignedCount} />
               <StatCard icon="⏳" label="بلا وكيل" value={unassignedCount} tone={unassignedCount > 0 ? "amber" : "slate"} />

@@ -1,10 +1,42 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCompanySession } from "@/lib/companyAuth";
-import { getEffectiveTicketDest } from "@/lib/appConfig";
+import { getEffectiveTicketDest, getCompanyCardSlaHours, getCompanyCardCategories } from "@/lib/appConfig";
 import { ensureSubscriberTicketsTable } from "@/lib/subscriberTicket";
 
 export const dynamic = "force-dynamic";
+
+// ═════ رفعُ بطاقةِ شركةٍ لوكيل (طلبُ محمد 2026-09-02) — source=company ═════
+// تظهرُ في عمود «تذاكر الشركة» لدى الوكيل (منفصلٍ عن تذاكر المشتركين) وفي متابعة الشركة.
+// المهلةُ بسيطةٌ: ساعاتٌ ⇒ dueAt = الآن + ساعات (أو الافتراضُ من الإعدادات). لا موقعَ ولا توجيهَ
+// تلقائيّ — الشركةُ تختار الوكيلَ صراحةً (هي فوق كلّ الوكلاء).
+export async function POST(request: Request) {
+  const s = await getCompanySession();
+  if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
+  await ensureSubscriberTicketsTable();
+  const body = await request.json().catch(() => null);
+  const agentId = Number(body?.agentId) || 0;
+  const category = typeof body?.category === "string" ? body.category.trim().slice(0, 80) : "";
+  const customerName = typeof body?.customerName === "string" ? body.customerName.trim().slice(0, 120) : "";
+  const customerPhone = typeof body?.customerPhone === "string" ? body.customerPhone.trim().slice(0, 30) : "";
+  const note = typeof body?.note === "string" ? body.note.trim().slice(0, 500) : "";
+  if (!agentId || !category) return NextResponse.json({ error: "الوكيل والفئة مطلوبان" }, { status: 400 });
+  const a = await prisma.agent.findFirst({ where: { id: agentId, isDeleted: false }, select: { id: true } });
+  if (!a) return NextResponse.json({ error: "وكيلٌ غير موجود" }, { status: 404 });
+  // الفئةُ من القائمة المعرَّفة حصراً (القائمةُ مرجعٌ لا نصٌّ حرّ) — تُدار من إعدادات بطاقات الشركة
+  const cats = await getCompanyCardCategories();
+  if (!cats.includes(category)) return NextResponse.json({ error: "فئةٌ غير معرَّفة" }, { status: 400 });
+  const rawHours = Number(body?.slaHours);
+  const slaHours = Number.isFinite(rawHours) && rawHours >= 1 && rawHours <= 720 ? Math.round(rawHours) : await getCompanyCardSlaHours();
+  const dueAt = new Date(Date.now() + slaHours * 3600_000);
+  const t = await prisma.subscriberTicket.create({
+    data: {
+      name: customerName || category, phone: customerPhone || "—", note: note || null,
+      agentId, type: category, source: "company", status: "new", dueAt, raisedById: s.companyUserId,
+    },
+  });
+  return NextResponse.json({ ok: true, id: t.id, dueAt: dueAt.toISOString() });
+}
 
 // تذاكرُ المشتركين للشركة (سوبر سيل) — تراها كلَّها (الشركةُ فوق كلّ الوكلاء)، مع اسم الوكيل/المكتب.
 // تُحجَب إن كان توجيهُ المالك «agent» فقط. + قائمةُ كلّ الوكلاء لمُنتقي «أسنِد لوكيل».
