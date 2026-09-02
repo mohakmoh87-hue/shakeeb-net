@@ -340,9 +340,12 @@ export async function POST(request: Request) {
     });
     // سجل الإنجاز الدائم (البطاقة تُحذف من الأرشيف بعد أسبوع — هذا يبقى):
     // لعدّ بطاقات الفني حسب الفئة في كشف راتبه
+    const onTime = !isDelivery && durationSec != null && (type?.execMinutes ?? 0) > 0
+      ? durationSec <= type!.execMinutes! * 60
+      : null;
     await tx.cardCompletion.create({
       // durationSec يُحفظ هنا لأن البطاقة تُحذف بعد أسبوع — وبدونه تعمى «إنجازات الفنيين» عن السرعة
-      data: { cardId, technicianId: card.technicianId!, agentId: actor.agentId ?? null, towerId, kind: card.kind, durationSec, completedAt: new Date() },
+      data: { cardId, technicianId: card.technicianId!, agentId: actor.agentId ?? null, towerId, kind: card.kind, durationSec, onTime, completedAt: new Date() },
     });
   });
 

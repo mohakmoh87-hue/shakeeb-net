@@ -1186,9 +1186,13 @@ model CardCompletion {
   // زمن الإنجاز محفوظ هنا لأن البطاقة تُحذف بعد أسبوع من تحصيلها — وبدونه تصير
   // «إنجازات الفنيين» عمياء عن السرعة بعد أسبوع من كل بطاقة (قرار محمد 2026-08-05)
   durationSec  Int?
+  // أُنجزت ضمن الوقت المسموح للنوع (execMinutes)؟ null = لا وقتَ مسموحٌ للنوع أو توصيلٌ بلا مدّة
+  // (لحساب «الالتزام بالمهلة» لبوّابة الشركة — تُختَم من الآن فصاعداً، بلا أثرٍ رجعيّ)
+  onTime       Boolean?
   completedAt  DateTime @default(now())
 
   @@index([technicianId, completedAt])
+  @@index([agentId, completedAt])
   @@map("card_completions")
 }
 
