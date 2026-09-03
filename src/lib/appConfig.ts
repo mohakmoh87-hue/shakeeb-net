@@ -187,6 +187,20 @@ export async function setAgentInboxCategories(list: unknown): Promise<string[]> 
   return clean;
 }
 
+// 🛒 فئاتُ سوق المستعمل — يديرها أدمنُ التطبيق. الغيابُ ⇒ الافتراضيّة.
+const MARKET_CATS_KEY = "marketCategories";
+const DEFAULT_MARKET_CATS = ["سيارات", "إلكترونيات", "أجهزة منزليّة", "أثاث", "ملابس", "عقارات", "أخرى"];
+export async function getMarketCategories(): Promise<string[]> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: MARKET_CATS_KEY }, select: { text: true } });
+  if (!row?.text) return DEFAULT_MARKET_CATS;
+  try { const c = cleanCats(JSON.parse(row.text)); return c.length ? c : DEFAULT_MARKET_CATS; } catch { return DEFAULT_MARKET_CATS; }
+}
+export async function setMarketCategories(list: unknown): Promise<string[]> {
+  const clean = cleanCats(list);
+  await writeText(MARKET_CATS_KEY, JSON.stringify(clean));
+  return clean;
+}
+
 // الحزمةُ الكاملةُ للقراءة العامّة (يقرؤها تطبيقُ Flutter عند الإقلاع)
 export async function getPublicAppConfig() {
   const [content, companyMode, portalEnabled] = await Promise.all([

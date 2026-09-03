@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
+import MarketModeration from "./MarketModeration";
 
 type OtpWaInfo = { instanceId: string; tokenSet: boolean };
 type State = AppContentT & { otpWa: OtpWaInfo };
@@ -132,6 +133,9 @@ export default function AppAdminDashboard({ username }: { username: string }) {
           </div>
         )}
       </div>
+
+      {/* سوق المستعمل — الموديريشن */}
+      <MarketModeration />
 
       {/* ربط واتساب OTP */}
       <div className="rounded-xl border border-slate-200 bg-white p-4">

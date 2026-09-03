@@ -1827,3 +1827,24 @@ model SubscriberTicket {
   @@index([agentId, status])
   @@map("subscriber_tickets")
 }
+
+// 🛒 سوق المستعمل: المشتركُ يعرض بضاعتَه ورقمَه، والبيعُ خارج الموقع (لا معاملةَ ولا مال).
+// الأدمنُ يُخفي/يحذف. طبقةٌ مضافةٌ بالكامل — لا تمسّ عزلَ الوكلاء (السوقُ عامٌّ بين المشتركين).
+model MarketListing {
+  id          Int      @id @default(autoincrement())
+  sellerId    Int // المشترك صاحب الإعلان
+  sellerName  String?
+  title       String
+  price       BigInt? // دينار (اختياريّ) — BigInt لأنّ العقارات تتجاوز حدَّ int (٢٫١ مليار)
+  description String?
+  phone       String // رقمُ البائع — يظهر للمشترين (البيعُ خارج الموقع)
+  photo       String? // data:image مقيّدة
+  category    String?
+  status      String   @default("visible") // visible | hidden (إخفاءُ الأدمن)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([status, createdAt])
+  @@index([sellerId])
+  @@map("market_listings")
+}
