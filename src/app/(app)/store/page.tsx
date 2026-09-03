@@ -6,13 +6,10 @@ import Modal from "@/components/Modal";
 import { usePermission } from "@/lib/usePermission";
 
 type Product = { id: number; title: string; price: number | null; description: string | null; category: string | null; stock: number | null; photo: string | null; status: string; agentName: string | null; createdAt: string };
-type Order = { id: number; subscriberName: string | null; productTitle: string; price: number | null; qty: number; phone: string; address: string; note: string | null; status: string; createdAt: string };
 type PForm = { title: string; price: string; category: string; description: string; stock: string; photo: string | null };
 
 const emptyForm = (): PForm => ({ title: "", price: "", category: "", description: "", stock: "", photo: null });
 const fmt = (n: number | null) => (n == null ? "بلا سعر" : `${n.toLocaleString("en-US")} د.ع`);
-const ORDER_LABEL: Record<string, string> = { new: "جديد", accepted: "مقبول", delivered: "مُسلّم", declined: "مرفوض", cancelled: "مُلغى" };
-const ORDER_CLASS: Record<string, string> = { new: "bg-sky-100 text-sky-700", accepted: "bg-amber-100 text-amber-700", delivered: "bg-emerald-100 text-emerald-700", declined: "bg-rose-100 text-rose-700", cancelled: "bg-slate-200 text-slate-600" };
 
 async function fileToDataUrl(file: File): Promise<string | null> {
   const dataUrl = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
@@ -30,10 +27,7 @@ async function fileToDataUrl(file: File): Promise<string | null> {
 
 export default function StorePage() {
   const { can, me } = usePermission();
-  const [tab, setTab] = useState<"products" | "orders">("products");
   const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<PForm>(emptyForm());
@@ -43,10 +37,7 @@ export default function StorePage() {
   const loadProducts = useCallback(() => {
     fetch("/api/store/products").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setProducts(d.items || []); }).catch(() => {});
   }, []);
-  const loadOrders = useCallback(() => {
-    fetch("/api/store/orders").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setOrders(d.items || []); setCounts(d.counts || {}); } }).catch(() => {});
-  }, []);
-  useEffect(() => { loadProducts(); loadOrders(); }, [loadProducts, loadOrders]);
+  useEffect(() => { loadProducts(); }, [loadProducts]);
 
   function openAdd() { setEditId(null); setForm(emptyForm()); setErr(""); setModal(true); }
   function openEdit(p: Product) {
@@ -90,87 +81,37 @@ export default function StorePage() {
     if (!r.ok) { alert("فشل حذفُ المنتج — أعد المحاولة"); return; }
     loadProducts();
   }
-  async function setStatus(o: Order, status: string) {
-    const r = await fetch("/api/store/orders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: o.id, status }) });
-    if (!r.ok) { alert("فشل تحديثُ الطلب — أعد المحاولة"); return; }
-    loadOrders();
-  }
 
   if (!me) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
   if (!can("store.manage")) return <div className="p-6"><PageHeader title="متجري" /><div className="rounded-lg bg-red-50 px-4 py-3 text-red-600">ليس لديك صلاحية إدارة المتجر.</div></div>;
 
-  const newCount = counts.new || 0;
-
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="متجري" subtitle="كتالوجُ متجرك في التطبيق وطلباتُه" action={tab === "products" ? <button onClick={openAdd} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">+ منتج</button> : undefined} />
+      <PageHeader title="متجري" subtitle="منتجاتُ متجرك في التطبيق — تصل الطلباتُ إلى «طلبات المتجر» في إدارة الفنيين" action={<button onClick={openAdd} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">+ منتج</button>} />
 
-      <div className="mb-4 flex gap-2">
-        <button onClick={() => setTab("products")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === "products" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}>المنتجات ({products.length})</button>
-        <button onClick={() => setTab("orders")} className={`relative rounded-lg px-4 py-2 text-sm font-semibold ${tab === "orders" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}>
-          طلبات المتجر
-          {newCount > 0 && <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-500 px-1 text-[10px] font-bold text-white">{newCount}</span>}
-        </button>
-      </div>
-
-      {tab === "products" ? (
-        products.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 py-14 text-center text-sm text-slate-400">لا منتجاتٍ بعد — اضغط «+ منتج» لإضافة أوّل منتج</div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {products.map((p) => (
-              <div key={p.id} className={`overflow-hidden rounded-xl border border-slate-200 bg-white ${p.status === "hidden" ? "opacity-60" : ""}`}>
-                <div className="grid h-28 w-full place-items-center bg-slate-100">
-                  {p.photo ? <img src={p.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-3xl text-slate-300">🏬</span>}
-                </div>
-                <div className="p-2.5">
-                  <div className="truncate text-sm font-bold text-slate-800">{p.title}</div>
-                  <div className="mt-1 text-[13px] font-extrabold text-emerald-700">{fmt(p.price)}</div>
-                  <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">
-                    {p.category && <span className="rounded bg-sky-50 px-1.5 py-0.5 font-bold text-sky-600">{p.category}</span>}
-                    {p.stock != null && <span>مخزون: {p.stock}</span>}
-                    {p.status === "hidden" && <span className="rounded bg-slate-200 px-1.5 py-0.5 font-bold text-slate-600">مخفيّ</span>}
-                  </div>
-                  <div className="mt-2 flex gap-1">
-                    <button onClick={() => openEdit(p)} className="flex-1 rounded bg-slate-100 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">تعديل</button>
-                    <button onClick={() => toggle(p)} className="flex-1 rounded bg-amber-50 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">{p.status === "visible" ? "إخفاء" : "إظهار"}</button>
-                    <button onClick={() => del(p)} className="rounded bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">حذف</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      ) : orders.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 py-14 text-center text-sm text-slate-400">لا طلباتٍ بعد</div>
+      {products.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 py-14 text-center text-sm text-slate-400">لا منتجاتٍ بعد — اضغط «+ منتج» لإضافة أوّل منتج</div>
       ) : (
-        <div className="space-y-2.5">
-          {orders.map((o) => (
-            <div key={o.id} className="rounded-xl border border-slate-200 bg-white p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-sm font-bold text-slate-800">{o.productTitle} {o.qty > 1 && <span className="text-slate-500">× {o.qty}</span>}</div>
-                  <div className="mt-0.5 text-[12px] text-slate-500">{fmt(o.price)}{o.subscriberName ? ` · ${o.subscriberName}` : ""}</div>
-                </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${ORDER_CLASS[o.status] || "bg-slate-100 text-slate-600"}`}>{ORDER_LABEL[o.status] || o.status}</span>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {products.map((p) => (
+            <div key={p.id} className={`overflow-hidden rounded-xl border border-slate-200 bg-white ${p.status === "hidden" ? "opacity-60" : ""}`}>
+              <div className="grid h-28 w-full place-items-center bg-slate-100">
+                {p.photo ? <img src={p.photo} alt="" className="h-full w-full object-cover" /> : <span className="text-3xl text-slate-300">🏬</span>}
               </div>
-              <div className="mt-2 grid gap-0.5 text-[12px] text-slate-600">
-                <div>📍 {o.address}</div>
-                <div dir="ltr" className="text-right">📞 {o.phone}</div>
-                {o.note && <div className="text-slate-500">📝 {o.note}</div>}
+              <div className="p-2.5">
+                <div className="truncate text-sm font-bold text-slate-800">{p.title}</div>
+                <div className="mt-1 text-[13px] font-extrabold text-emerald-700">{fmt(p.price)}</div>
+                <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">
+                  {p.category && <span className="rounded bg-sky-50 px-1.5 py-0.5 font-bold text-sky-600">{p.category}</span>}
+                  {p.stock != null && <span>مخزون: {p.stock}</span>}
+                  {p.status === "hidden" && <span className="rounded bg-slate-200 px-1.5 py-0.5 font-bold text-slate-600">مخفيّ</span>}
+                </div>
+                <div className="mt-2 flex gap-1">
+                  <button onClick={() => openEdit(p)} className="flex-1 rounded bg-slate-100 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">تعديل</button>
+                  <button onClick={() => toggle(p)} className="flex-1 rounded bg-amber-50 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">{p.status === "visible" ? "إخفاء" : "إظهار"}</button>
+                  <button onClick={() => del(p)} className="rounded bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">حذف</button>
+                </div>
               </div>
-              {o.status === "new" && (
-                <div className="mt-2.5 flex gap-1.5">
-                  <button onClick={() => setStatus(o, "accepted")} className="flex-1 rounded-lg bg-amber-100 py-1.5 text-[12px] font-semibold text-amber-800 hover:bg-amber-200">قبول</button>
-                  <button onClick={() => setStatus(o, "declined")} className="rounded-lg bg-rose-100 px-3 py-1.5 text-[12px] font-semibold text-rose-700 hover:bg-rose-200">رفض</button>
-                </div>
-              )}
-              {o.status === "accepted" && (
-                <div className="mt-2.5 flex gap-1.5">
-                  <button onClick={() => setStatus(o, "delivered")} className="flex-1 rounded-lg bg-emerald-100 py-1.5 text-[12px] font-semibold text-emerald-800 hover:bg-emerald-200">تمّ التوصيل</button>
-                  <button onClick={() => setStatus(o, "declined")} className="rounded-lg bg-rose-100 px-3 py-1.5 text-[12px] font-semibold text-rose-700 hover:bg-rose-200">رفض</button>
-                </div>
-              )}
             </div>
           ))}
         </div>
@@ -195,9 +136,9 @@ export default function StorePage() {
               <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} maxLength={120} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="مثال: راوتر TP-Link" /></label>
             <div className="grid grid-cols-2 gap-3">
               <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">السعر (د.ع)</span>
-                <input value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="اختياري" /></label>
+                <input value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} dir="ltr" inputMode="numeric" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="اختياري" /></label>
               <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">المخزون</span>
-                <input value={form.stock} onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="اختياري" /></label>
+                <input value={form.stock} onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))} dir="ltr" inputMode="numeric" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="اختياري" /></label>
             </div>
             <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">الفئة</span>
               <input value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} maxLength={80} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="مثال: راوترات، إكسسوارات" /></label>

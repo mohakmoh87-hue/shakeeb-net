@@ -246,6 +246,8 @@ export default function FieldManagementPage() {
   const [supportOfficeId, setSupportOfficeId] = useState<number | null>(null); // مكتب الدعم (لخريطة بطاقات «دعم مؤقت»)
   // 🎫 تذاكرُ المشتركين: طلباتُ اشتراكٍ جديدةٌ من التطبيق، مُوجَّهةٌ لهذا الوكيل بأقرب عامود
   const [subTickets, setSubTickets] = useState<{ id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; towerId: number | null; type: string | null; status: string; createdAt: string; source: string | null; dueAt: string | null }[]>([]);
+  // 🏬 طلباتُ متجر الوكيل الواصلةُ له — عمودٌ خاصٌّ يظهر حين تأتيه طلبات (يختفي حين يفرغ)
+  const [storeOrders, setStoreOrders] = useState<{ id: number; subscriberName: string | null; productTitle: string; price: number | null; qty: number; phone: string; address: string; note: string | null; status: string; createdAt: string }[]>([]);
   const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
@@ -318,6 +320,13 @@ export default function FieldManagementPage() {
     }).catch(() => {});
   }, []);
   useEffect(() => { loadTickets(); }, [loadTickets]);
+  // طلباتُ متجر الوكيل (على مستوى الوكيل) — تُجلَب مرّةً وتُحدَّث مع دورة اللوحة وبعد كلّ فعل
+  const loadStoreOrders = useCallback(() => {
+    fetch("/api/field/store-orders").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d && Array.isArray(d.orders)) setStoreOrders(d.orders);
+    }).catch(() => {});
+  }, []);
+  useEffect(() => { loadStoreOrders(); }, [loadStoreOrders]);
   // سوبر سيل مفعّلة؟ (عامّ، يعمل للفنيّ أيضاً) — لإخفاء اسمها من «مهلة أودو» عند الإطفاء
   useEffect(() => {
     fetch("/api/app/config").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setPortalOn(d.portalEnabled !== false); }).catch(() => {});
@@ -326,6 +335,12 @@ export default function FieldManagementPage() {
     try {
       await fetch("/api/field/subscriber-tickets", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
       loadTickets();
+    } catch { /* لا نكسر الواجهة */ }
+  }
+  async function patchStoreOrder(id: number, status: string) {
+    try {
+      await fetch("/api/field/store-orders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
+      loadStoreOrders();
     } catch { /* لا نكسر الواجهة */ }
   }
   // فصلُ التذاكر: عمودٌ لتذاكر المشتركين (من التطبيق) وآخرُ لبطاقات الشركة (source=company)
@@ -342,6 +357,7 @@ export default function FieldManagementPage() {
       if (sel || completing || postponing || drag != null || addingTo != null) return;
       load(officeId);
       loadTickets();
+      loadStoreOrders();
     }, role === "technician" ? 60000 : 20000); // الفنيّ كل 60ث (طلب محمد 2026-08-08)، المدير 20ث كما هو
     // العودة للتبويب/التطبيق ⇒ تحديث فوري (لا انتظار الدورة القادمة)
     const onVisible = () => {
@@ -1050,6 +1066,40 @@ export default function FieldManagementPage() {
                         {!done && <button onClick={() => void patchTicket(t.id, "done")} className="rounded bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-200">✓ أُنجز</button>}
                         {!rej && <button onClick={() => void patchTicket(t.id, "rejected")} className="rounded bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">✕ رفض</button>}
                         {(done || rej) && <button onClick={() => void patchTicket(t.id, "new")} className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">↩ إرجاع</button>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {/* 🏬 عمودُ طلبات المتجر: طلباتُ توصيلٍ من متجر الوكيل — يظهر حين تأتيه طلبات فقط (طلب محمد) */}
+        {storeOrders.length > 0 && (
+          <div data-app-col className="flex max-h-full w-[280px] shrink-0 flex-col rounded-xl border border-line bg-surface-2 shadow-lg">
+            <div className="flex items-center justify-between rounded-t-[11px] bg-[#0d7d94] px-3 py-2 text-white">
+              <span className="text-sm font-bold">🏬 طلبات المتجر</span>
+              <span className="rounded-full bg-white/25 px-2 text-xs font-bold">{storeOrders.filter((o) => o.status === "new").length}</span>
+            </div>
+            <div className="flex-1 space-y-2 overflow-y-auto p-2">
+              {storeOrders.map((o) => {
+                const accepted = o.status === "accepted";
+                return (
+                  <div key={o.id} className="rounded-lg bg-white p-2.5 shadow-sm">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="min-w-0 truncate text-sm font-bold text-slate-800">{o.productTitle}{o.qty > 1 ? ` × ${o.qty}` : ""}</span>
+                      {accepted && <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">مقبول</span>}
+                    </div>
+                    {o.price != null && <div className="mt-0.5 text-xs font-bold text-[#0d7d94]">{o.price.toLocaleString("en-US")} د.ع</div>}
+                    {o.subscriberName && <div className="mt-0.5 text-[11px] font-semibold text-slate-600">{o.subscriberName}</div>}
+                    <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={o.phone} /></div>
+                    <div className="mt-1 text-[11px] text-slate-600">📍 {o.address}</div>
+                    {o.note && <div className="mt-1 rounded bg-slate-50 p-1.5 text-[11px] text-slate-600">{o.note}</div>}
+                    {canManage && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {o.status === "new" && <button onClick={() => void patchStoreOrder(o.id, "accepted")} className="rounded bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-200">قبول</button>}
+                        {accepted && <button onClick={() => void patchStoreOrder(o.id, "delivered")} className="rounded bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-200">✓ سُلّم</button>}
+                        <button onClick={() => void patchStoreOrder(o.id, "declined")} className="rounded bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">✕ رفض</button>
                       </div>
                     )}
                   </div>
