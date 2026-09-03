@@ -1860,8 +1860,11 @@ model AgentProduct {
   price       BigInt? // دينار (اختياريّ) — BigInt اتّساقاً مع السوق
   description String?
   photo       String? // data:image مقيّدة
-  category    String? // نصٌّ حرٌّ يكتبه الوكيل
-  stock       Int? // كميّةٌ اختياريّةٌ للعرض — لا خصمَ تلقائيّ
+  category    String? // نصٌّ حرٌّ يكتبه الوكيل (يُملأ من المخزن عند الاختيار)
+  itemName    String? // اسمُ صنف المخزن المربوط — العددُ مرآةٌ حيّةٌ لمجموعه في كلّ مكاتب الوكيل (null = حرّ)
+  stock       Int? // كميّةٌ يدويّةٌ للحرّ فقط — المربوطُ يعرض عددَ المخزن حيّاً
+  deliveryFee BigInt? // مبلغُ التوصيل (دينار) — يحدّده الوكيل
+  installFee  BigInt? // مبلغُ التنصيب/البرمجة (دينار) — اختياريّ؛ وجودُه يُتيح خيارَ «توصيل وتنصيب»
   status      String   @default("visible") // visible | hidden
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
@@ -1881,6 +1884,9 @@ model StoreOrder {
   productTitle   String // لقطةٌ وقتَ الطلب
   price          BigInt? // لقطةُ سعرِ الوحدة
   qty            Int      @default(1)
+  fulfillment    String   @default("delivery") // delivery | delivery_install — اختيارُ الزبون
+  deliveryFee    BigInt? // لقطةُ مبلغ التوصيل
+  installFee     BigInt? // لقطةُ مبلغ التنصيب (حين اختار «توصيل وتنصيب»)
   phone          String
   address        String
   note           String?

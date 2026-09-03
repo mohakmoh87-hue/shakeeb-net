@@ -15,7 +15,7 @@ export async function GET() {
   await ensureAgentStoreTables();
   // الطلباتُ الفاعلةُ فقط (new/accepted) فيختفي العمودُ حين تُنجَز كلُّها (طلب محمد)
   const orders = await prisma.storeOrder.findMany({ where: { agentId, status: { in: ["new", "accepted"] } }, orderBy: { id: "desc" }, take: 200 });
-  return NextResponse.json({ orders: orders.map((o) => ({ ...o, price: priceToNum(o.price) })) });
+  return NextResponse.json({ orders: orders.map((o) => ({ ...o, price: priceToNum(o.price), deliveryFee: priceToNum(o.deliveryFee), installFee: priceToNum(o.installFee) })) });
 }
 
 export async function PATCH(request: Request) {

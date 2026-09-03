@@ -15,10 +15,10 @@ export type Permission =
   | "receipts.deleted" // سجل الوصولات المحذوفة (طلب محمد 2026-08-22)
   | "manager.accounts" // حسابات المدير
   | "syncLog.update" // تحديث سجل المزامنة (العرضُ للجميع — الأفعالُ لصاحبها. قرار محمد 2026-08-20)
+  | "store.manage" // مشاهدة متجري — بدونها يُخفى «متجري» كلّياً (نافذةُ متجر الوكيل، طلب محمد 2026-09-03)
   // ٣ · المخزن والمبيع
   | "inventory.manage" // المخزن والفواتير وكروت التفعيل
   | "cards.delete" // حذف كروت التفعيل (+ إصلاح الكروت الوهمية)
-  | "store.manage" // متجري — كتالوجُ متجر الوكيل في التطبيق وطلباته
   // ٤ · التقارير
   | "reports.view" // التقارير
   // ٥ · الرسائل والواتساب
@@ -67,6 +67,7 @@ export const PERMISSION_GROUPS: { title: string; items: { key: Permission; label
       { key: "receipts.deleted", label: "سجل الوصولات المحذوفة" },
       { key: "manager.accounts", label: "حسابات المدير" },
       { key: "syncLog.update", label: "تحديث سجل المزامنة" },
+      { key: "store.manage", label: "مشاهدة متجري" },
     ],
   },
   {
@@ -74,7 +75,6 @@ export const PERMISSION_GROUPS: { title: string; items: { key: Permission; label
     items: [
       { key: "inventory.manage", label: "المخزن والفواتير وكروت التفعيل" },
       { key: "cards.delete", label: "حذف كروت التفعيل" },
-      { key: "store.manage", label: "متجري (متجر التطبيق)" },
     ],
   },
   {

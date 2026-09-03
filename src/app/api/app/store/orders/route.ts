@@ -13,7 +13,7 @@ export async function GET() {
   if (!sess) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
   await ensureAgentStoreTables();
   const items = await prisma.storeOrder.findMany({ where: { subscriberId: sess.subscriberId }, orderBy: { id: "desc" }, take: 100 });
-  return NextResponse.json({ items: items.map((o) => ({ ...o, price: priceToNum(o.price) })) });
+  return NextResponse.json({ items: items.map((o) => ({ ...o, price: priceToNum(o.price), deliveryFee: priceToNum(o.deliveryFee), installFee: priceToNum(o.installFee) })) });
 }
 
 // نشرُ طلبٍ ⇒ يصل الوكيلَ البائع (agentId من المنتج). لا مالَ ولا خصمَ مخزون.
@@ -37,13 +37,17 @@ export async function POST(request: Request) {
   if (!productId) return NextResponse.json({ error: "المنتج مطلوب" }, { status: 400 });
   if (!address) return NextResponse.json({ error: "عنوانُ التوصيل مطلوب" }, { status: 400 });
   if (!phone.trim()) return NextResponse.json({ error: "رقمُ الهاتف مطلوب" }, { status: 400 });
-  const product = await prisma.agentProduct.findFirst({ where: { id: productId, status: "visible" }, select: { id: true, agentId: true, title: true, price: true } });
+  const product = await prisma.agentProduct.findFirst({ where: { id: productId, status: "visible" }, select: { id: true, agentId: true, title: true, price: true, deliveryFee: true, installFee: true } });
   if (!product) return NextResponse.json({ error: "المنتجُ غيرُ متاح" }, { status: 404 });
+  // «توصيل وتنصيب» متاحٌ فقط إن حدّد الوكيلُ مبلغَ تنصيبٍ لهذا المنتج، وإلّا فتوصيلٌ عاديّ.
+  const wantInstall = b?.fulfillment === "delivery_install" && product.installFee != null;
+  const fulfillment = wantInstall ? "delivery_install" : "delivery";
   const t = await prisma.storeOrder.create({
     data: {
       agentId: product.agentId, subscriberId: sub.id, subscriberName: sub.name ?? null,
       productId: product.id, productTitle: product.title, price: product.price,
-      qty, phone: phone.trim(), address, note: note || null, status: "new",
+      qty, fulfillment, deliveryFee: product.deliveryFee, installFee: wantInstall ? product.installFee : null,
+      phone: phone.trim(), address, note: note || null, status: "new",
     },
     select: { id: true },
   });

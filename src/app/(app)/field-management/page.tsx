@@ -247,7 +247,7 @@ export default function FieldManagementPage() {
   // 🎫 تذاكرُ المشتركين: طلباتُ اشتراكٍ جديدةٌ من التطبيق، مُوجَّهةٌ لهذا الوكيل بأقرب عامود
   const [subTickets, setSubTickets] = useState<{ id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; towerId: number | null; type: string | null; status: string; createdAt: string; source: string | null; dueAt: string | null }[]>([]);
   // 🏬 طلباتُ متجر الوكيل الواصلةُ له — عمودٌ خاصٌّ يظهر حين تأتيه طلبات (يختفي حين يفرغ)
-  const [storeOrders, setStoreOrders] = useState<{ id: number; subscriberName: string | null; productTitle: string; price: number | null; qty: number; phone: string; address: string; note: string | null; status: string; createdAt: string }[]>([]);
+  const [storeOrders, setStoreOrders] = useState<{ id: number; subscriberName: string | null; productTitle: string; price: number | null; qty: number; phone: string; address: string; note: string | null; status: string; createdAt: string; fulfillment: string; deliveryFee: number | null; installFee: number | null }[]>([]);
   const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
@@ -1091,6 +1091,11 @@ export default function FieldManagementPage() {
                       {accepted && <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">مقبول</span>}
                     </div>
                     {o.price != null && <div className="mt-0.5 text-xs font-bold text-[#0d7d94]">{o.price.toLocaleString("en-US")} د.ع</div>}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
+                      <span className={`rounded px-1.5 py-0.5 font-bold ${o.fulfillment === "delivery_install" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700"}`}>{o.fulfillment === "delivery_install" ? "🚚🔧 توصيل وتنصيب" : "🚚 توصيل"}</span>
+                      {o.deliveryFee != null && <span className="text-slate-500">توصيل {o.deliveryFee.toLocaleString("en-US")}</span>}
+                      {o.installFee != null && <span className="text-slate-500">· تنصيب {o.installFee.toLocaleString("en-US")}</span>}
+                    </div>
                     {o.subscriberName && <div className="mt-0.5 text-[11px] font-semibold text-slate-600">{o.subscriberName}</div>}
                     <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={o.phone} /></div>
                     <div className="mt-1 text-[11px] text-slate-600">📍 {o.address}</div>
