@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { guard, sameAgentTower } from "@/lib/guard";
+import { guard, sameAgentTower, agentTowerIds } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
 
@@ -166,6 +166,19 @@ export async function POST(request: Request) {
     }
   }
   const towerId = subscriber?.towerId ?? g.session.towerId ?? null;
+
+  const actorTowerIds = await agentTowerIds(g.session);
+  {
+    const ids = [...new Set(items.map((it) => it.itemId))];
+    const owned = new Set(
+      (await prisma.item.findMany({
+        where: { id: { in: ids }, isDeleted: false, towerId: { in: actorTowerIds.length ? actorTowerIds : [-1] } },
+        select: { id: true },
+      })).map((x) => x.id),
+    );
+    const bad = ids.find((id) => !owned.has(id));
+    if (bad != null) return NextResponse.json({ error: `مادة #${bad} غير موجودة` }, { status: 404 });
+  }
 
   const total = items.reduce((s, it) => s + it.count * it.price, 0);
   const itemsCount = items.reduce((s, it) => s + it.count, 0);
