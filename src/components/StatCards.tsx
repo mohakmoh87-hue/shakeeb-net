@@ -287,7 +287,8 @@ function Spark({ values }: { values: number[] }) {
 
 // ٤ · إدارة الفنيين — دونات بقوسين (لاجورد منجزة + برتقالي متبقّية)
 function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }) {
-  const [v, setV] = useState<{ done: number; rest: number; odoo: number; odooActive: boolean; slaN: number; slaSoon: number | null } | null>(null);
+  // منجزة اليوم (تشمل المؤرشفة) · متبقّية · مؤجّلة (إلى يومٍ قادم) — تُحسب في الخادم بحدود يوم بغداد (?counts=1)
+  const [v, setV] = useState<{ completed: number; remaining: number; postponed: number; odoo: number; odooActive: boolean; slaN: number; slaSoon: number | null } | null>(null);
   // ⏳ العدّاد يُحدَّث مع جلب اللوحة كلّ ٦٠ث. (كانت نبضةٌ كلّ ٣٠ث تُعيد جلب لوحة **كلّ مكتب** —
   // ٧ طلبات لكلّ نبضة — لأنّها كانت في اعتماديّات الأثر؛ أزالها تدقيقٌ عدائيّ 2026-08-09.)
   // 👑 متصدّر فترة الراتب — مسابقةٌ تبدأ مع الفترة وتُصفَّر مع نهايتها (طلب محمد 2026-08-05)
@@ -304,10 +305,6 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
   const [officeSel, setOfficeSel] = useState<"all" | number>("all");
   useEffect(() => {
     let stop = false;
-    const count = (cards: { done?: boolean }[]) => {
-      const done = cards.filter((c) => c.done).length;
-      return { done, rest: cards.length - done };
-    };
     // ⏳ مهلة سوبر سيل: كم بطاقة أودو تجاوزت عتبة الإنذار، وأقربها إلى الغرامة
     const slaOf = (b: { cards?: SlaCard[]; odooSla?: { alarm?: boolean; alarmMin: number | null; sendMin: number | null } | null }) => {
       if (!b.odooSla?.alarm) return { n: 0, soon: null }; // الميزة ١ مطفأة لهذا المكتب ⇒ لا إنذار
@@ -328,28 +325,31 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
         if (isAdmin && officeSel === "all" && offices.length > 0) {
           // كل المكاتب: جمع لوحات مكاتب الوكيل كلها
           const boards = await Promise.all(
-            offices.map((o) => fetch(`/api/field/board?officeId=${o.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)),
+            offices.map((o) => fetch(`/api/field/board?officeId=${o.id}&counts=1`).then((r) => (r.ok ? r.json() : null)).catch(() => null)),
           );
           if (stop) return;
-          let done = 0, rest = 0, odoo = 0, odooActive = false, slaN = 0;
+          let completed = 0, remaining = 0, postponed = 0, odoo = 0, odooActive = false, slaN = 0;
           let slaSoon: number | null = null;
+          // 🔒 مكاتبُ مجموعةٍ تتشارك لوحةً (sharedFieldWith) تُرجِع نفسَ اللوحة كاملةً ⇒ تُحسب مرّةً بمعرّفها
+          const seenBoards = new Set<number>();
           for (const b of boards) {
-            if (!b?.cards) continue;
-            const c = count(b.cards);
-            done += c.done; rest += c.rest;
+            if (!b) continue;
+            const bid = b.board?.id;
+            if (typeof bid === "number") { if (seenBoards.has(bid)) continue; seenBoards.add(bid); }
+            completed += Number(b.completedToday ?? 0); remaining += Number(b.remainingOpen ?? 0); postponed += Number(b.postponedOpen ?? 0);
             odoo += Number(b.odooOpen ?? 0); if (b.odooActive) odooActive = true;
             const s = slaOf(b);
             slaN += s.n;
             if (s.soon != null) slaSoon = slaSoon == null ? s.soon : Math.min(slaSoon, s.soon);
           }
-          setV({ done, rest, odoo, odooActive, slaN, slaSoon });
+          setV({ completed, remaining, postponed, odoo, odooActive, slaN, slaSoon });
         } else {
           // مكتب محدّد (مدير) أو مكتب المستخدم (يحدّده الخادم تلقائياً)
-          const qs = isAdmin && officeSel !== "all" ? `?officeId=${officeSel}` : "";
+          const qs = isAdmin && officeSel !== "all" ? `?officeId=${officeSel}&counts=1` : "?counts=1";
           const d = await fetch(`/api/field/board${qs}`).then((r) => (r.ok ? r.json() : null));
-          if (!stop && d?.cards) {
+          if (!stop && d) {
             const s = slaOf(d);
-            setV({ ...count(d.cards), odoo: Number(d.odooOpen ?? 0), odooActive: !!d.odooActive, slaN: s.n, slaSoon: s.soon });
+            setV({ completed: Number(d.completedToday ?? 0), remaining: Number(d.remainingOpen ?? 0), postponed: Number(d.postponedOpen ?? 0), odoo: Number(d.odooOpen ?? 0), odooActive: !!d.odooActive, slaN: s.n, slaSoon: s.soon });
           }
         }
       } catch { /* */ }
@@ -359,8 +359,8 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
     const poll = setInterval(() => { void load(); }, 60_000);
     return () => { stop = true; clearInterval(poll); };
   }, [isAdmin, officeSel, offices]);
-  const total = (v?.done ?? 0) + (v?.rest ?? 0);
-  const pct = total ? v!.done / total : 0;
+  const total = (v?.completed ?? 0) + (v?.remaining ?? 0);
+  const pct = total ? v!.completed / total : 0;
   const R = 28, C = 2 * Math.PI * R, GAP = 4;
   const doneLen = Math.max(0, pct * C - GAP), restLen = Math.max(0, (1 - pct) * C - GAP);
   const slaOn = (v?.slaN ?? 0) > 0; // إنذار: تذاكر أودو تجاوزت العتبة بلا إجراء
@@ -407,8 +407,9 @@ function FieldCard({ offices, isAdmin }: { offices: Office[]; isAdmin: boolean }
           <div className="dc"><b>{total ? `${Math.round(pct * 100)}%` : "—"}</b></div>
         </div>
         <div className="fnums">
-          <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--navy)" }} /> منجزة</span><b>{v?.done ?? "—"}</b></div>
-          <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--orange)" }} /> متبقّية</span><b>{v?.rest ?? "—"}</b></div>
+          <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--navy)" }} /> منجزة</span><b>{v?.completed ?? "—"}</b></div>
+          <div className="fnum"><span className="lf"><i className="dot" style={{ background: "var(--orange)" }} /> متبقّية</span><b>{v?.remaining ?? "—"}</b></div>
+          <div className="fnum"><span className="lf"><i className="dot" style={{ background: "#f59e0b" }} /> مؤجّلة</span><b>{v?.postponed ?? "—"}</b></div>
           {/* تذاكر أودو المفتوحة — يظهر فقط حين «أودو نشط» (مفعّل أو به بطاقات مفتوحة) */}
           {v?.odooActive && (
             <div className="fnum"><span className="lf"><i className="dot" style={{ background: "#7c3aed" }} /> تذاكر أودو</span><b>{v?.odoo ?? 0}</b></div>

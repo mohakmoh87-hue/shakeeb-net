@@ -18,7 +18,6 @@ import { isPageActive } from "@/lib/usePolling";
 import { slaStateOf, fmtMin, SLA_ALARM_MIN_DEFAULT, SLA_SEND_MIN_DEFAULT, type SlaCard } from "@/lib/odooSla";
 import FieldAppMenu from "@/components/FieldAppMenu";
 import { FieldTrackerProvider } from "@/components/FieldTracker";
-import { hasTrialSkin } from "@/components/trialSkin";
 
 type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number; timeTracked?: boolean };
@@ -215,9 +214,6 @@ export default function FieldManagementPage() {
   const [slaSendMin, setSlaSendMin] = useState(SLA_SEND_MIN_DEFAULT);
   const [slaNow, setSlaNow] = useState(() => new Date());
   useEffect(() => { const t = setInterval(() => setSlaNow(new Date()), 30_000); return () => clearInterval(t); }, []);
-  // 🧪 علامةُ «مؤجّلة» الجانبيّة تظهر في تطبيق الهاتف وحده (جلد التجربة) — لا على الموقع
-  const [trialOn, setTrialOn] = useState(false);
-  useEffect(() => { setTrialOn(hasTrialSkin()); }, []);
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [newList, setNewList] = useState("");
@@ -1221,12 +1217,12 @@ export default function FieldManagementPage() {
                   const isOdoo = !!c.viaOdoo; // بطاقة واردة من أودو
                   const odooInbox = isOdoo && l.name === "تذاكر أودو"; // غير مُصنّفة بعد (صندوق الوارد)
                   const odooColor = l.name && l.name !== "تذاكر أودو" ? catColorOf(l.name) : "#7c3aed"; // لون الفئة إن أُسندت، وإلا بنفسجيّ افتراضيّ
-                  // 🧪 علامةُ «مؤجّلة» الجانبيّة (الهاتف وحده): كأودو تماماً — كهرمانيّةٌ هادئة، وحين
-                  //    يحلّ يومُها المقرّر تصير شريطاً أحمرَ يومض والكلمةُ بيضاء. تُوضَع يساراً كأودو،
-                  //    وإن كانت البطاقةُ أودو أصلاً (يسارُها مشغول) فيميناً.
+                  // علامةُ «مؤجّلة» الجانبيّة: كأودو تماماً — كهرمانيّةٌ هادئة، وحين يحلّ يومُها المقرّر
+                  //    تصير شريطاً أحمرَ يومض والكلمةُ بيضاء. تُوضَع يساراً كأودو، وإن كانت البطاقةُ أودو
+                  //    أصلاً (يسارُها مشغول) فيميناً.
                   const isPostponed = !c.done && !!c.postponedTo;
                   const postponeDue = isPostponed && postponeDueNow(c.postponedTo);
-                  const showPostpone = trialOn && isPostponed;
+                  const showPostpone = isPostponed;
                   const postponeLeft = showPostpone && !isOdoo;
                   const postponeRight = showPostpone && isOdoo;
                   return (
@@ -1250,7 +1246,7 @@ export default function FieldManagementPage() {
                         <span className="text-[11px] font-extrabold leading-none" style={{ color: slaHot ? "#dc2626" : odooColor, transform: "rotate(-90deg)" }}>أودو</span>
                       </div>
                     )}
-                    {/* 🧪 وسمُ «مؤجّلة» الجانبيّ (الهاتف): كأودو — كهرمانيٌّ هادئ، وحين يحلّ يومُها شريطٌ أحمر يومض بكلمةٍ بيضاء */}
+                    {/* وسمُ «مؤجّلة» الجانبيّ: كأودو — كهرمانيٌّ هادئ، وحين يحلّ يومُها شريطٌ أحمر يومض بكلمةٍ بيضاء */}
                     {showPostpone && (
                       <div
                         className={`absolute inset-y-0 ${postponeRight ? "right-0" : "left-0"} flex w-5 items-center justify-center ${postponeDue ? "fm-postpone-due" : ""}`}
