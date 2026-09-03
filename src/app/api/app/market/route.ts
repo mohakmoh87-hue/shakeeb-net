@@ -49,16 +49,20 @@ export async function POST(request: Request) {
   const price = Number.isFinite(priceRaw) && priceRaw >= 0 && priceRaw <= 1e13 ? Math.round(priceRaw) : null;
   const photo = cleanPhoto(b?.photo);
   if (!title || !phone.trim()) return NextResponse.json({ error: "العنوان ورقم الهاتف مطلوبان" }, { status: 400 });
-  // سقفٌ دائمٌ لعدد إعلانات البائع (يكمّل الخانقَ اللحظيّ ضدّ الإغراق)
-  if ((await prisma.marketListing.count({ where: { sellerId: sub.id } })) >= 30) {
-    return NextResponse.json({ error: "بلغتَ حدَّ الإعلانات (٣٠) — احذف قديماً لتنشر جديداً" }, { status: 400 });
-  }
   const cats = await getMarketCategories();
-  const t = await prisma.marketListing.create({
-    data: {
-      sellerId: sub.id, sellerName: sub.name ?? null, title, price: price != null ? BigInt(price) : null, description: description || null,
-      phone: phone.trim(), photo, category: cats.includes(category) ? category : null, status: "visible",
-    },
+  // سقفٌ صارمٌ لعدد إعلانات البائع (٣٠): قفلٌ استشاريٌّ لكلّ بائعٍ يُسلسِل العدَّ+الإنشاءَ داخل
+  // معاملةٍ واحدة، فلا يتجاوزه نشرٌ متزامنٌ خاطف (يكمّل الخانقَ اللحظيّ ضدّ الإغراق).
+  const created = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(4200, ${sub.id}::int)`;
+    if ((await tx.marketListing.count({ where: { sellerId: sub.id } })) >= 30) return null;
+    return tx.marketListing.create({
+      data: {
+        sellerId: sub.id, sellerName: sub.name ?? null, title, price: price != null ? BigInt(price) : null, description: description || null,
+        phone: phone.trim(), photo, category: cats.includes(category) ? category : null, status: "visible",
+      },
+      select: { id: true },
+    });
   });
-  return NextResponse.json({ ok: true, id: t.id });
+  if (!created) return NextResponse.json({ error: "بلغتَ حدَّ الإعلانات (٣٠) — احذف قديماً لتنشر جديداً" }, { status: 400 });
+  return NextResponse.json({ ok: true, id: created.id });
 }

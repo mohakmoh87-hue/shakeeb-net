@@ -33,7 +33,7 @@ export default function MarketModeration() {
   async function del(id: number) {
     if (!confirm("حذفُ الإعلان نهائيّاً؟")) return;
     await fetch(`/api/app-admin/market?id=${id}`, { method: "DELETE" });
-    load(q, page);
+    load(q, items.length === 1 && page > 1 ? page - 1 : page);
   }
   async function saveCats() {
     setCatMsg("");

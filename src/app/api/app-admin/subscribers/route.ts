@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAppAdminSession } from "@/lib/appAdminAuth";
 import { subscriberState } from "@/lib/subscriberLogin";
+import { ensureMarketTable } from "@/lib/market";
 
 export const dynamic = "force-dynamic";
 const PAGE = 30;
@@ -60,5 +61,13 @@ export async function PATCH(request: Request) {
   const sub = await prisma.subscriber.findFirst({ where: { id: parsed.data.id, isDeleted: false, purgedAt: null }, select: { id: true } });
   if (!sub) return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
   await prisma.subscriber.update({ where: { id: sub.id }, data: { appBanned: parsed.data.banned } });
+  // حظرٌ ⇒ إخفاءُ كلِّ إعلانات البائع في السوق (حتى القديمة) فتختفي هي ورقمُه عن العرض العامّ.
+  // فكُّ الحظر لا يُعيدها تلقائيّاً (لئلّا يُظهِر ما أخفاه الأدمنُ يدويّاً) — يُظهرها الأدمنُ متى شاء.
+  if (parsed.data.banned) {
+    try {
+      await ensureMarketTable();
+      await prisma.marketListing.updateMany({ where: { sellerId: sub.id, status: "visible" }, data: { status: "hidden" } });
+    } catch {}
+  }
   return NextResponse.json({ ok: true, banned: parsed.data.banned });
 }
