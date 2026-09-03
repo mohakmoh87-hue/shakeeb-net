@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { priceToNum } from "@/lib/market";
 
 // إنشاءٌ كسولٌ لجدولَي متجر الوكيل + أعمدةٍ إضافيّة (النشرُ لا يُشغّل migrate) — تحصينٌ للتعافي.
 let ready = false;
@@ -65,6 +66,38 @@ export async function liveStockFor(
       if (it.towerId != null && tids.includes(it.towerId) && (it.name ?? "").trim() === p.itemName) sum += it.count ?? 0;
     }
     result.set(p.id, Math.round(sum));
+  }
+  return result;
+}
+
+// وكيلُ المشترك (لتحديد الشريحة): Subscriber.towerId ⇒ Tower.agentId.
+export async function subscriberAgentId(subscriberId: number): Promise<number | null> {
+  const sub = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { towerId: true } });
+  if (!sub?.towerId) return null;
+  const t = await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { agentId: true } });
+  return t?.agentId ?? null;
+}
+
+// رسومُ التوصيل/التنصيب لكلّ منتجٍ حسب شريحة المشترِي: مشتركُ الوكيلِ البائع ⇒ رسومُ المشتركين، وإلّا غيرُهم.
+export async function feesForProducts(
+  products: { id: number; agentId: number }[],
+  viewerAgentId: number | null,
+): Promise<Map<number, { deliveryFee: number | null; installFee: number | null }>> {
+  const result = new Map<number, { deliveryFee: number | null; installFee: number | null }>();
+  if (products.length === 0) return result;
+  const agentIds = [...new Set(products.map((p) => p.agentId))];
+  const agents = await prisma.agent.findMany({
+    where: { id: { in: agentIds } },
+    select: { id: true, storeDeliverySub: true, storeInstallSub: true, storeDeliveryOther: true, storeInstallOther: true },
+  });
+  const byAgent = new Map(agents.map((a) => [a.id, a]));
+  for (const p of products) {
+    const a = byAgent.get(p.agentId);
+    const isSub = viewerAgentId != null && viewerAgentId === p.agentId;
+    result.set(p.id, {
+      deliveryFee: priceToNum((isSub ? a?.storeDeliverySub : a?.storeDeliveryOther) ?? null),
+      installFee: priceToNum((isSub ? a?.storeInstallSub : a?.storeInstallOther) ?? null),
+    });
   }
   return result;
 }

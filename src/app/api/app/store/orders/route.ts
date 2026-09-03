@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
 import { getSubscriberSession } from "@/lib/subscriberAuth";
-import { ensureAgentStoreTables } from "@/lib/agentStore";
+import { ensureAgentStoreTables, subscriberAgentId } from "@/lib/agentStore";
 import { priceToNum } from "@/lib/market";
 
 export const dynamic = "force-dynamic";
@@ -37,16 +37,22 @@ export async function POST(request: Request) {
   if (!productId) return NextResponse.json({ error: "المنتج مطلوب" }, { status: 400 });
   if (!address) return NextResponse.json({ error: "عنوانُ التوصيل مطلوب" }, { status: 400 });
   if (!phone.trim()) return NextResponse.json({ error: "رقمُ الهاتف مطلوب" }, { status: 400 });
-  const product = await prisma.agentProduct.findFirst({ where: { id: productId, status: "visible" }, select: { id: true, agentId: true, title: true, price: true, deliveryFee: true, installFee: true } });
+  const product = await prisma.agentProduct.findFirst({ where: { id: productId, status: "visible" }, select: { id: true, agentId: true, title: true, price: true } });
   if (!product) return NextResponse.json({ error: "المنتجُ غيرُ متاح" }, { status: 404 });
-  // «توصيل وتنصيب» متاحٌ فقط إن حدّد الوكيلُ مبلغَ تنصيبٍ لهذا المنتج، وإلّا فتوصيلٌ عاديّ.
-  const wantInstall = b?.fulfillment === "delivery_install" && product.installFee != null;
+  // رسومُ الوكيل البائع حسب شريحة المشترِي (مشتركُه أم لا) — ثابتةٌ لكامل الطلب.
+  const viewerAgentId = await subscriberAgentId(sub.id);
+  const isSub = viewerAgentId != null && viewerAgentId === product.agentId;
+  const ag = await prisma.agent.findUnique({ where: { id: product.agentId }, select: { storeDeliverySub: true, storeInstallSub: true, storeDeliveryOther: true, storeInstallOther: true } });
+  const deliveryFee = (isSub ? ag?.storeDeliverySub : ag?.storeDeliveryOther) ?? null;
+  const installFee = (isSub ? ag?.storeInstallSub : ag?.storeInstallOther) ?? null;
+  // «توصيل وتنصيب» متاحٌ فقط إن حدّد الوكيلُ مبلغَ تنصيبٍ لهذه الشريحة، وإلّا فتوصيلٌ عاديّ.
+  const wantInstall = b?.fulfillment === "delivery_install" && installFee != null;
   const fulfillment = wantInstall ? "delivery_install" : "delivery";
   const t = await prisma.storeOrder.create({
     data: {
       agentId: product.agentId, subscriberId: sub.id, subscriberName: sub.name ?? null,
       productId: product.id, productTitle: product.title, price: product.price,
-      qty, fulfillment, deliveryFee: product.deliveryFee, installFee: wantInstall ? product.installFee : null,
+      qty, fulfillment, deliveryFee, installFee: wantInstall ? installFee : null,
       phone: phone.trim(), address, note: note || null, status: "new",
     },
     select: { id: true },

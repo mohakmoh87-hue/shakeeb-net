@@ -61,6 +61,12 @@ model Agent {
   // بصمات (sha256) الروابط السابقة — بها تُثبت حاسبة تحمل رابطاً قديماً هويتها فتستلم
   // الرابط الجديد وحدها (الربط الذاتي 2026-08-02). بصمات فقط لا روابط — أأمن تخزيناً.
   prevUrlHashes      String?
+  // 🏬 رسومُ متجر الوكيل — ثابتةٌ على مستوى الوكيل، تُطبَّق مرّةً على كامل الطلب، بشريحتَين
+  //    (مشتركو الوكيلِ البائعِ / غيرُهم). يحدّدها الوكيلُ مرّةً ويعدّلها متى شاء. دينار.
+  storeDeliverySub   BigInt? // توصيلٌ لمشتركيه
+  storeInstallSub    BigInt? // تنصيبٌ لمشتركيه
+  storeDeliveryOther BigInt? // توصيلٌ لغير مشتركيه
+  storeInstallOther  BigInt? // تنصيبٌ لغير مشتركيه
   isDeleted          Boolean   @default(false)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @default(now()) @updatedAt
