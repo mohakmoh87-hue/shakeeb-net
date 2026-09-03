@@ -14,6 +14,13 @@ export async function POST(request: Request) {
   const card = await prisma.taskCard.findFirst({ where: { id: cardId, isDeleted: false } });
   if (!card) return NextResponse.json({ error: "البطاقة غير موجودة" }, { status: 404 });
   if (card.done) return NextResponse.json({ error: "البطاقة منجزة" }, { status: 400 });
+  // 🚫 بطاقةٌ في عمود «الغاء» لا تُبدأ: بدؤها يضبط startedAt على بطاقةٍ ملغاةٍ لا يراها الفنيّ
+  //    في أعمدته فتحجبه ببطاقةٍ «جارية» وهميّة (بلاغُ أبو جنة 2026-09-02). لإعادة العمل عليها
+  //    تُنقَل أوّلاً إلى عمودٍ فعّالٍ ثمّ تُبدأ.
+  const cardList = await prisma.taskList.findUnique({ where: { id: card.listId }, select: { name: true } });
+  if (cardList && /الغاء|الغى|ملغي/.test(cardList.name ?? "")) {
+    return NextResponse.json({ error: "البطاقة ملغاة — أعِدها إلى عمودٍ فعّالٍ قبل بدئها" }, { status: 400 });
+  }
   const auth = await resolveCardActor(cardId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
