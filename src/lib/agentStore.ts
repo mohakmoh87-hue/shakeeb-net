@@ -26,8 +26,13 @@ export async function ensureAgentStoreTables(): Promise<void> {
   await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "fulfillment" TEXT NOT NULL DEFAULT 'delivery'`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "deliveryFee" BIGINT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "installFee" BIGINT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "total" BIGINT`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "store_orders_agentId_status_idx" ON "store_orders" ("agentId","status")`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "store_orders_subscriberId_idx" ON "store_orders" ("subscriberId")`);
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "store_order_items" (
+    "id" SERIAL PRIMARY KEY, "orderId" INTEGER NOT NULL, "productId" INTEGER NOT NULL,
+    "productTitle" TEXT NOT NULL, "price" BIGINT, "qty" INTEGER NOT NULL DEFAULT 1 )`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "store_order_items_orderId_idx" ON "store_order_items" ("orderId")`);
   ready = true;
 }
 
@@ -68,6 +73,22 @@ export async function liveStockFor(
     result.set(p.id, Math.round(sum));
   }
   return result;
+}
+
+// بنودُ الطلبات (سلّة) مفهرسةً بـorderId — مع ارتدادٍ للطلبات المفردة القديمة (تُشتَقُّ من الرأس).
+export async function storeOrderLines(
+  orders: { id: number; productTitle: string; price: bigint | null; qty: number }[],
+): Promise<Map<number, { productTitle: string; price: number | null; qty: number }[]>> {
+  const m = new Map<number, { productTitle: string; price: number | null; qty: number }[]>();
+  const ids = orders.map((o) => o.id);
+  const rows = ids.length ? await prisma.storeOrderItem.findMany({ where: { orderId: { in: ids } }, orderBy: { id: "asc" } }) : [];
+  for (const l of rows) {
+    const arr = m.get(l.orderId) ?? [];
+    arr.push({ productTitle: l.productTitle, price: priceToNum(l.price), qty: l.qty });
+    m.set(l.orderId, arr);
+  }
+  for (const o of orders) if (!m.has(o.id)) m.set(o.id, [{ productTitle: o.productTitle, price: priceToNum(o.price), qty: o.qty }]);
+  return m;
 }
 
 // وكيلُ المشترك (لتحديد الشريحة): Subscriber.towerId ⇒ Tower.agentId.

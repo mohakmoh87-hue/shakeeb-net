@@ -1886,12 +1886,13 @@ model StoreOrder {
   agentId        Int // الوكيلُ البائع (عزلٌ = agentId المنتج، قد يخالف وكيلَ المشترك)
   subscriberId   Int
   subscriberName String?
-  productId      Int
-  productTitle   String // لقطةٌ وقتَ الطلب
-  price          BigInt? // لقطةُ سعرِ الوحدة
+  productId      Int // (توافقٌ خلفيّ) أوّلُ بندٍ للطلبات المفردة القديمة؛ التفاصيلُ في store_order_items
+  productTitle   String // ملخّصٌ للعرض (أوّلُ بندٍ +N) — البنودُ في store_order_items
+  price          BigInt? // (توافقٌ خلفيّ) سعرُ البند المفرد القديم
   qty            Int      @default(1)
+  total          BigInt? // إجماليُّ الفاتورة (البضاعةُ + الرسوم) — لقطةٌ للعرض
   fulfillment    String   @default("delivery") // delivery | delivery_install — اختيارُ الزبون
-  deliveryFee    BigInt? // لقطةُ مبلغ التوصيل
+  deliveryFee    BigInt? // لقطةُ مبلغ التوصيل (مرّةً لكامل الفاتورة)
   installFee     BigInt? // لقطةُ مبلغ التنصيب (حين اختار «توصيل وتنصيب»)
   phone          String
   address        String
@@ -1903,4 +1904,17 @@ model StoreOrder {
   @@index([agentId, status])
   @@index([subscriberId])
   @@map("store_orders")
+}
+
+// بنودُ طلب المتجر (سلّةٌ بعدّة مواد) — لقطةٌ لكلّ مادة. الرسمُ على الرأس (StoreOrder) مرّةً.
+model StoreOrderItem {
+  id           Int     @id @default(autoincrement())
+  orderId      Int
+  productId    Int
+  productTitle String
+  price        BigInt? // لقطةُ سعرِ الوحدة
+  qty          Int     @default(1)
+
+  @@index([orderId])
+  @@map("store_order_items")
 }
