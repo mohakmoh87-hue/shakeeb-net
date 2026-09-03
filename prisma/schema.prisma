@@ -1848,3 +1848,46 @@ model MarketListing {
   @@index([sellerId])
   @@map("market_listings")
 }
+
+// متجرُ الوكيل — كتالوجٌ يؤلّفه الوكيلُ للتطبيق، مستقلٌّ تماماً عن مخزنه الداخليّ (Item).
+// يتصفّحه المشتركُ عبر متاجر كلّ الوكلاء؛ agentId هو مفتاحُ العزل والبائع.
+model AgentProduct {
+  id          Int      @id @default(autoincrement())
+  agentId     Int // الوكيلُ البائع (مفتاحُ العزل)
+  agentName   String? // اسمُ المتجر (اسمُ الوكيل) — مُنسَخٌ للعرض في تصفّح كلّ المتاجر
+  title       String
+  price       BigInt? // دينار (اختياريّ) — BigInt اتّساقاً مع السوق
+  description String?
+  photo       String? // data:image مقيّدة
+  category    String? // نصٌّ حرٌّ يكتبه الوكيل
+  stock       Int? // كميّةٌ اختياريّةٌ للعرض — لا خصمَ تلقائيّ
+  status      String   @default("visible") // visible | hidden
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([status, createdAt])
+  @@index([agentId])
+  @@map("agent_products")
+}
+
+// طلبُ شراءٍ (توصيل) من المشترك ⇒ يصل الوكيلَ البائع. لا مالَ ولا خصمَ مخزون؛ لقطةٌ للمنتج.
+model StoreOrder {
+  id             Int      @id @default(autoincrement())
+  agentId        Int // الوكيلُ البائع (عزلٌ = agentId المنتج، قد يخالف وكيلَ المشترك)
+  subscriberId   Int
+  subscriberName String?
+  productId      Int
+  productTitle   String // لقطةٌ وقتَ الطلب
+  price          BigInt? // لقطةُ سعرِ الوحدة
+  qty            Int      @default(1)
+  phone          String
+  address        String
+  note           String?
+  status         String   @default("new") // new | accepted | delivered | declined | cancelled
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  @@index([agentId, status])
+  @@index([subscriberId])
+  @@map("store_orders")
+}

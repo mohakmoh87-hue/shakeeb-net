@@ -1,4 +1,4 @@
-// الصلاحيات المفصّلة — ٣٢ صلاحية في ٨ أصناف (القائمة النهائية المعتمدة من محمد 2026-07-26)
+// الصلاحيات المفصّلة — ٣٣ صلاحية في ٨ أصناف (الأصلُ ٣٢ معتمدةٌ من محمد 2026-07-26 + store.manage)
 // أُلغيت نهائياً: offices.manage (فُصلت إلى edit/delete/backup/agent/rewards.config)
 // و cardprice.manage (سعر الكارت للمدير حصراً — بلا صلاحية).
 export type Permission =
@@ -18,6 +18,7 @@ export type Permission =
   // ٣ · المخزن والمبيع
   | "inventory.manage" // المخزن والفواتير وكروت التفعيل
   | "cards.delete" // حذف كروت التفعيل (+ إصلاح الكروت الوهمية)
+  | "store.manage" // متجري — كتالوجُ متجر الوكيل في التطبيق وطلباته
   // ٤ · التقارير
   | "reports.view" // التقارير
   // ٥ · الرسائل والواتساب
@@ -73,6 +74,7 @@ export const PERMISSION_GROUPS: { title: string; items: { key: Permission; label
     items: [
       { key: "inventory.manage", label: "المخزن والفواتير وكروت التفعيل" },
       { key: "cards.delete", label: "حذف كروت التفعيل" },
+      { key: "store.manage", label: "متجري (متجر التطبيق)" },
     ],
   },
   {

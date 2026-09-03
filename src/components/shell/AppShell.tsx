@@ -36,6 +36,7 @@ const NAV: NavEntry[] = [
   // طلب محمد 2026-08-19: «فاتورة مبيع اخرجها من المصاريف وضعها خارجا اسفل المخزن
   // وليس داخل اي قائمة» — بندٌ مستقلٌّ ظاهرٌ مباشرةً
   { kind: "link", icon: "🧾", label: "فاتورة المبيع", href: "/invoices", perm: "inventory.manage" },
+  { kind: "link", icon: "🏬", label: "متجري", href: "/store", perm: "store.manage" },
   // 📬 الرسائل الداخليّة المنبثقة (طلب محمد 2026-08-20) — لكلّ مستخدمٍ ومديرٍ بلا صلاحيّةٍ خاصّة
   { kind: "link", icon: "📩", label: "رسالة داخلية", href: "/internal-messages" },
   {
