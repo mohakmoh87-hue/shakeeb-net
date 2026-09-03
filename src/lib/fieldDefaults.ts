@@ -11,6 +11,12 @@ export function isSystemList(name: string | null | undefined): boolean {
   return SYSTEM_LISTS.has(String(name ?? "").trim());
 }
 
+// عمودُ «الغاء» (بأشكاله) — تُستثنى بطاقاتُه من «المتبقّية» في مربّع الفنيّين
+const CANCEL_LISTS = new Set(["الغاء", "الإلغاء", "إلغاء"]);
+export function isCancelList(name: string | null | undefined): boolean {
+  return CANCEL_LISTS.has(String(name ?? "").trim());
+}
+
 // يُنشئ نوع بطاقة باسمٍ ما إن لم يوجد (idempotent). يتخطّى الفارغ والنظاميّ.
 export async function ensureCardType(agentId: number | null, name: string): Promise<void> {
   const n = String(name ?? "").trim();

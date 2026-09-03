@@ -6,6 +6,7 @@ import { formatDate } from "@/lib/format";
 import { onMoneyRefresh } from "@/lib/moneyRefresh";
 import TxDrillModal from "@/components/TxDrillModal";
 import WaStatusBadge from "@/components/WaStatusBadge";
+import { useTrialOffice } from "@/components/TrialOfficeContext";
 
 // «الضغط على المبلغ يفتح مكوّناته» (المرحلة ٥ · ووُسِّع 2026-08-13): الجدولُ نفسُه صار
 // `TxDrillModal` المشترك — تستعمله هذه البطاقةُ ونافذةُ يومٍ سابقٍ في حسابات المدير معاً،
@@ -42,7 +43,9 @@ export default function DailyReportCard({
   towerUsers?: TowerUser[];
   initial: DailyReport;
 }) {
-  const [sel, setSel] = useState<"all" | number>("all");
+  // اختيارُ المكتب مشتركٌ عبر السياق: في تطبيق الهاتف يتبعه مربّعُ إدارة الفنيّين ومستطيلُ
+  // الفعالين/المتصلين. على سطح المكتب لا قارئَ آخرَ للسياق فالسلوكُ مطابقٌ تماماً للسابق.
+  const { office: sel, setOffice: setSel } = useTrialOffice();
   // اختيار المستخدم (لمكتبٍ فيه مستخدمان+): «الكل» أو مستخدم محدّد — للمدير فقط
   const [userSel, setUserSel] = useState<"all" | number>("all");
   const officeUsers = sel !== "all" ? towerUsers.filter((u) => u.towerId === sel) : [];

@@ -2,6 +2,7 @@ import DailyReportCard from "@/components/DailyReportCard";
 import StatCards from "@/components/StatCards";
 import SubscribersBoard from "@/components/SubscribersBoard";
 import TrialFmCard from "@/components/TrialFmCard";
+import { TrialOfficeProvider } from "@/components/TrialOfficeContext";
 import { getSession } from "@/lib/auth";
 import { agentTowerIds } from "@/lib/guard";
 import { computeDailyReport, reportUserScope } from "@/lib/dailyReport";
@@ -56,13 +57,18 @@ export default async function DashboardPage() {
     // بطاقات الإحصاء ثم row2: [المشتركين + تحصيل الفنيين | التقرير اليومي]
     <div className="nst nst-fill min-h-screen bg-ground p-4 min-[1051px]:p-[20px_22px_16px]" style={{ display: "grid", gap: 17, alignContent: "start" }}>
       <StatCards initialReport={initialReport} towerIds={counterTowers} offices={towers} isAdmin={isAdmin} />
-      {/* 🧪 مربّعُ رئيسيّة النموذج (إدارة الفنيّين + سجلّ الوصولات) — null في الإنتاج، يظهر تحت علَم التجربة وحدَه */}
-      <TrialFmCard />
-      {/* نقطة الكسر 1051px نفسها المستعملة في طبقة التكيّف مع الارتفاع */}
-      <div className="row2 max-[1050px]:!grid-cols-1">
-        <SubscribersBoard />
-        <DailyReportCard isAdmin={isAdmin} towers={towers} towerUsers={towerUsers} initial={initialReport} />
-      </div>
+      {/* 🧪 مربّعُ رئيسيّة النموذج + التقرير اليومي داخلَ مزوّد اختيار المكتب المشترك:
+          في تطبيق الهاتف يتبع المربّعُ منتقيَ التقرير. سطحُ المكتب (StatCards) خارجَه
+          فلا يقرؤه ولا يتأثّر — والمزوّد بلا عقدة DOM فالتخطيطُ الشبكيّ كما هو تماماً. */}
+      <TrialOfficeProvider>
+        {/* null في الإنتاج، يظهر تحت علَم التجربة وحدَه */}
+        <TrialFmCard offices={towers} isAdmin={isAdmin} />
+        {/* نقطة الكسر 1051px نفسها المستعملة في طبقة التكيّف مع الارتفاع */}
+        <div className="row2 max-[1050px]:!grid-cols-1">
+          <SubscribersBoard />
+          <DailyReportCard isAdmin={isAdmin} towers={towers} towerUsers={towerUsers} initial={initialReport} />
+        </div>
+      </TrialOfficeProvider>
     </div>
   );
 }

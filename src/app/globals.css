@@ -1957,6 +1957,14 @@ html[data-app-trial] .tfm-legend .tfm-sla b { color: inherit; }
   html[data-app-trial] .tfm-legend .tfm-sla { animation: none; background: #fee2e2; color: #b91c1c; }
 }
 
+/* 🧪 شريطُ «مؤجّلة» الجانبيّ حين يحلّ يومُها المقرّر — أحمرُ عريضٌ يومض بكلمةٍ بيضاء (طلب محمد 2026-09-04) */
+@keyframes fmPostponeBlink {
+  0%, 100% { background: #dc2626; }
+  50% { background: rgba(220, 38, 38, .4); }
+}
+.fm-postpone-due { animation: fmPostponeBlink 1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .fm-postpone-due { animation: none; background: #dc2626; } }
+
 /* أزرارُ عمليات و⋯المزيد: الرمزُ في مركز دائرته تماماً (لقطة محمد الثالثة) */
 html[data-app-trial] .tbl.subs .op {
   width: 34px;

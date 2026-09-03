@@ -18,6 +18,7 @@ import { isPageActive } from "@/lib/usePolling";
 import { slaStateOf, fmtMin, SLA_ALARM_MIN_DEFAULT, SLA_SEND_MIN_DEFAULT, type SlaCard } from "@/lib/odooSla";
 import FieldAppMenu from "@/components/FieldAppMenu";
 import { FieldTrackerProvider } from "@/components/FieldTracker";
+import { hasTrialSkin } from "@/components/trialSkin";
 
 type Board = { id: number; name: string };
 type List = { id: number; name: string; position: number; timeTracked?: boolean };
@@ -110,6 +111,16 @@ type CardEvent = { at: string; by: string; text: string };
 const parseHistory = (h?: string | null): CardEvent[] => { try { return h ? (JSON.parse(h) as CardEvent[]) : []; } catch { return []; } };
 // بطاقة أُعيدت من الأرشيف (من سجلها) — لعرض شارة «من الأرشيف» على وجهها
 const wasRestored = (h?: string | null): boolean => parseHistory(h).some((e) => e.text.includes("إعادة البطاقة من الأرشيف"));
+// حان يومُ التأجيل المقرّر؟ (مقارنةٌ باليوم بتوقيت بغداد) — عليه يومض شريطُ «مؤجّلة» أحمرَ
+const postponeDueNow = (iso?: string | null): boolean => {
+  if (!iso) return false;
+  const off = 3 * 60 * 60 * 1000;
+  const p = new Date(new Date(iso).getTime() + off);
+  const n = new Date(Date.now() + off);
+  const pDay = p.getUTCFullYear() * 10000 + p.getUTCMonth() * 100 + p.getUTCDate();
+  const nDay = n.getUTCFullYear() * 10000 + n.getUTCMonth() * 100 + n.getUTCDate();
+  return pDay <= nDay;
+};
 // لون فئة العمود (طراز المدير الجديد بالمتصفح): اسم أبيض على خلفية لون فئته —
 // توصيل برتقالي · صيانة لاجورد · تنصيب أخضر · بالشوب رمادي · المنجزة أخضر داكن
 const listCatColor = (name: string): string => {
@@ -204,6 +215,9 @@ export default function FieldManagementPage() {
   const [slaSendMin, setSlaSendMin] = useState(SLA_SEND_MIN_DEFAULT);
   const [slaNow, setSlaNow] = useState(() => new Date());
   useEffect(() => { const t = setInterval(() => setSlaNow(new Date()), 30_000); return () => clearInterval(t); }, []);
+  // 🧪 علامةُ «مؤجّلة» الجانبيّة تظهر في تطبيق الهاتف وحده (جلد التجربة) — لا على الموقع
+  const [trialOn, setTrialOn] = useState(false);
+  useEffect(() => { setTrialOn(hasTrialSkin()); }, []);
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [newList, setNewList] = useState("");
@@ -1207,6 +1221,14 @@ export default function FieldManagementPage() {
                   const isOdoo = !!c.viaOdoo; // بطاقة واردة من أودو
                   const odooInbox = isOdoo && l.name === "تذاكر أودو"; // غير مُصنّفة بعد (صندوق الوارد)
                   const odooColor = l.name && l.name !== "تذاكر أودو" ? catColorOf(l.name) : "#7c3aed"; // لون الفئة إن أُسندت، وإلا بنفسجيّ افتراضيّ
+                  // 🧪 علامةُ «مؤجّلة» الجانبيّة (الهاتف وحده): كأودو تماماً — كهرمانيّةٌ هادئة، وحين
+                  //    يحلّ يومُها المقرّر تصير شريطاً أحمرَ يومض والكلمةُ بيضاء. تُوضَع يساراً كأودو،
+                  //    وإن كانت البطاقةُ أودو أصلاً (يسارُها مشغول) فيميناً.
+                  const isPostponed = !c.done && !!c.postponedTo;
+                  const postponeDue = isPostponed && postponeDueNow(c.postponedTo);
+                  const showPostpone = trialOn && isPostponed;
+                  const postponeLeft = showPostpone && !isOdoo;
+                  const postponeRight = showPostpone && isOdoo;
                   return (
                   <div
                     key={c.id}
@@ -1219,13 +1241,23 @@ export default function FieldManagementPage() {
                       ...(shift ? { transform: `translateY(${shift}px)` } : null),
                       transition: drag ? "transform .18s cubic-bezier(.2,.8,.2,1)" : undefined,
                     }}
-                    className={`relative overflow-hidden cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md ${isOdoo ? "pl-7" : ""} ${slaHot ? "sla-card" : ""} ${dragged ? "fm-collapsing" : ""}`}
+                    className={`relative overflow-hidden cursor-pointer rounded-lg bg-white p-2.5 shadow-sm transition hover:shadow-md ${isOdoo || postponeLeft ? "pl-7" : ""} ${postponeRight ? "pr-7" : ""} ${slaHot ? "sla-card" : ""} ${dragged ? "fm-collapsing" : ""}`}
                   >
                     {/* وسم «أودو» عاموديّ على الحافّة اليسرى: كلمةٌ مُدوَّرة ككتلة (transform) فتبقى حروفها موصولة،
                         لونها لون الفئة إن أُسندت وإلا بنفسجيّ — يبقى دائماً على بطاقة أودو */}
                     {isOdoo && (
                       <div className="absolute inset-y-0 left-0 flex w-5 items-center justify-center" style={{ background: slaHot ? "#dc26261f" : `${odooColor}1f` }} title={slaHot ? (portalOn ? "تجاوزت مهلة سوبر سيل — أنجز أو ألغِ أو أجّل" : "تجاوزت المهلة — أنجز أو ألغِ أو أجّل") : "بطاقة واردة من أودو"}>
                         <span className="text-[11px] font-extrabold leading-none" style={{ color: slaHot ? "#dc2626" : odooColor, transform: "rotate(-90deg)" }}>أودو</span>
+                      </div>
+                    )}
+                    {/* 🧪 وسمُ «مؤجّلة» الجانبيّ (الهاتف): كأودو — كهرمانيٌّ هادئ، وحين يحلّ يومُها شريطٌ أحمر يومض بكلمةٍ بيضاء */}
+                    {showPostpone && (
+                      <div
+                        className={`absolute inset-y-0 ${postponeRight ? "right-0" : "left-0"} flex w-5 items-center justify-center ${postponeDue ? "fm-postpone-due" : ""}`}
+                        style={postponeDue ? undefined : { background: "#f59e0b1f" }}
+                        title={postponeDue ? "حان يومُها المقرّر للتنفيذ" : `مؤجّلة إلى ${fmtDateTime(c.postponedTo!)}`}
+                      >
+                        <span className="text-[11px] font-extrabold leading-none" style={{ color: postponeDue ? "#fff" : "#b45309", transform: "rotate(-90deg)" }}>مؤجّلة</span>
                       </div>
                     )}
                     <div className={`text-sm font-medium text-slate-800 ${c.done ? "line-through opacity-60" : ""}`}>{c.title}</div>

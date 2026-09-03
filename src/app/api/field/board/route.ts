@@ -6,11 +6,14 @@ import { agentTowerIds } from "@/lib/guard";
 import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOfficeIn, parseExtraTowers, fieldGroupOffices } from "@/lib/field";
 import { ensureFieldDefaultsOnce } from "@/app/api/_lib/fieldSeed";
 import { applyPrivateLists, type BoardViewer } from "@/lib/guardAssign";
+import { isCancelList } from "@/lib/fieldDefaults";
 
 export const dynamic = "force-dynamic";
 
 // لوحة لمكتب واحد: الأعمدة والبطاقات (معزولة بالوكيل). مشترك بين المستخدم والفني.
-async function buildBoard(officeId: number | null, agentId: number | null, viewer: BoardViewer = { kind: "manager" }) {
+// withCounts: عدّاداتُ مربّع الهاتف (منجزة اليوم/متبقّية/مؤجّلة) تُحسب فقط حين يطلبها التطبيقُ
+//   (‎?counts=1‎) — فلا تُضيف استعلامَ عدٍّ على طلبات الموقع العاديّة (شرطُ محمد: صفرُ تغيير على الموقع).
+async function buildBoard(officeId: number | null, agentId: number | null, viewer: BoardViewer = { kind: "manager" }, withCounts = false) {
   const board = await getOrCreateBoard(officeId);
   const lists = await prisma.taskList.findMany({ where: { boardId: board.id, isDeleted: false }, orderBy: { position: "asc" } });
   // المؤرشفة (بعد التحصيل) لا تظهر على اللوحة — تُعرض من نافذة الأرشيف
@@ -62,10 +65,30 @@ async function buildBoard(officeId: number | null, agentId: number | null, viewe
   // 🔒 قاعدةُ العمود الخاصّ في **نقطةٍ واحدةٍ** تمرّ بها كلُّ فروع المسار (فنّيٌّ · دعمٌ ·
   //   مكاتبُ إضافيّة · مديرٌ · مستخدمُ مكتب): مَن يرى ماذا، ثمّ إخفاءُ العمود إذا خلا.
   //   ⚠️ ولو وُضع الحجبُ في فرعٍ واحدٍ لَظهرت البطاقةُ من فرعٍ آخر — والفروعُ خمسة.
-  return applyPrivateLists(
+  const filtered = applyPrivateLists(
     { board, lists, cards, technicians, cardTypes, odooOpen, odooActive, odooSla },
     viewer,
   );
+  if (!withCounts) return filtered; // الموقعُ لا يطلبها ⇒ لا استعلامَ عدٍّ ولا حقولَ إضافيّة (صفرُ تغيير)
+
+  // عدّاداتُ مربّع الفنيّين في تطبيق الهاتف (طلبُ محمد 2026-09-04) — بحدود يوم بغداد:
+  //   • المنجزة = كلُّ ما أُنجز اليوم (completedAt داخل النافذة) **ولو أُرشِف بعد الإكمال** — تُصفَّر يوميّاً.
+  //   • المتبقّية = غيرُ المنجزة، عدا الملغاة (عمود الغاء) والمؤجّلة إلى يومٍ قادم.
+  //   • المؤجّلة = المؤجّلة إلى يومٍ لم يأتِ بعد؛ فور دخول يومها تنتقل تلقائيّاً إلى المتبقّية.
+  const iq = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  const iqY = iq.getUTCFullYear(), iqM = iq.getUTCMonth(), iqD = iq.getUTCDate();
+  const dayStart = new Date(Date.UTC(iqY, iqM, iqD, 0, 0, 0) - 3 * 60 * 60 * 1000);
+  const dayEnd = new Date(Date.UTC(iqY, iqM, iqD, 23, 59, 59, 999) - 3 * 60 * 60 * 1000);
+  const cancelIds = new Set(filtered.lists.filter((l) => isCancelList(l.name)).map((l) => l.id));
+  const isFuturePostponed = (c: { postponedTo: Date | null }) => c.postponedTo != null && c.postponedTo.getTime() > dayEnd.getTime();
+  const remainingOpen = filtered.cards.filter((c) => !c.done && !cancelIds.has(c.listId) && !isFuturePostponed(c)).length;
+  const postponedOpen = filtered.cards.filter((c) => !c.done && !cancelIds.has(c.listId) && isFuturePostponed(c)).length;
+  const visListIds = filtered.lists.map((l) => l.id).filter((id) => id > 0);
+  const completedToday = visListIds.length
+    ? await prisma.taskCard.count({ where: { listId: { in: visListIds }, isDeleted: false, done: true, completedAt: { gte: dayStart, lte: dayEnd } } })
+    : 0;
+
+  return { ...filtered, completedToday, remainingOpen, postponedOpen };
 }
 
 // لوحة "إدارة الفنيين" لمكتب واحد مع أعمدتها وبطاقاتها وفنّييه.
@@ -208,8 +231,10 @@ export async function GET(request: Request) {
   if (manager && officeId == null && offices.length > 0) officeId = offices[0].id;
 
   // 🔒 العمودُ الخاصُّ: المديرُ يراه كلَّه، ومستخدمُ المكتب غيرُ المدير لا يراه أصلاً
+  // عدّاداتُ الهاتف تُحسب فقط حين يطلبها تطبيقُ الهاتف (?counts=1) — الموقعُ لا يمرّرها فلا تُحسب
+  const withCounts = new URL(request.url).searchParams.get("counts") === "1";
   const data = await buildBoard(officeId, session.agentId,
-    isFieldManager(session) ? { kind: "manager" } : { kind: "user" });
+    isFieldManager(session) ? { kind: "manager" } : { kind: "user" }, withCounts);
   return NextResponse.json({
     ...data, offices, officeId, officePanels,
     isManager: manager,
