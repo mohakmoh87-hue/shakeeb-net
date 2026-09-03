@@ -1131,6 +1131,7 @@ model TaskCard {
   // ربط أودو (Helpdesk) — بطاقة مصدرها تذكرة أودو
   odooTicketId     Int? // رقم تذكرة أودو المصدر (منع تكرار + ربط الدفع العكسيّ)
   viaOdoo          Boolean   @default(false) // وسم «عبر أودو» — لا يزول عند إسناد فئة
+  viaSubscriber    Boolean   @default(false) // وسم «تذكرة مشترك» — بطاقةٌ من طلب صيانة/توصيل عبر التطبيق
   usernameRequired Boolean   @default(false) // BG إلزاميّ (قيمة BG في أودو فارغة عند السحب)
   odooBg           String? // قيمة BG (اليوزر) التي أدخلها الفنيّ — تُدفَع إلى change_bg_field
   odooPushedAt     DateTime? // وقت دفع الإنجاز/الإلغاء إلى أودو (null = لم يُدفَع بعد)
