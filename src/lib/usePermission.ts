@@ -9,6 +9,7 @@ type Me = {
   // يُفشِله الخادمُ، والمستخدمُ لا يعرف أنّ السببَ صلاحيّةٌ لا عطل.
   deniedPermissions?: string[];
   officeCap?: number | null; officeCount?: number; agentName?: string | null;
+  subDealerCheck?: boolean; // 🕵️ فحصُ سب-ديلر مفعّلٌ لهذا الوكيل (عَلَمُ المالك)
 };
 
 // كاش على مستوى الوحدة: يُجلب /api/me مرة واحدة ويُعاد استخدامه عبر كل الصفحات (يقلّل الطلبات عند التنقّل)

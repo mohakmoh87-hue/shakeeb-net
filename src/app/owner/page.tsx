@@ -24,6 +24,7 @@ type Agent = {
   manager: Manager | null; expired: boolean;
   managerPhones: string[]; backupEmail: string | null;
   odooSlaSendAllowed: boolean; // إذن «رسائل أودو التلقائيّة» (الميزة ٢) — بلا هذا الإذن لا يراها الوكيل
+  subDealerCheck: boolean; // 🕵️ فحصُ سب-ديلر مفعّلٌ لهذا الوكيل
   // أ-٢٣ · حصّةُ «مكتبٌ بأكثر من لوحة ساس»: **كم مكتباً** يُسمح له. صفر = الوضعُ الحاليّ.
   multiSasOffices?: number;
 };
@@ -439,6 +440,13 @@ export default function OwnerPage() {
                     className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${a.odooSlaSendAllowed ? "bg-violet-600 text-white hover:bg-violet-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                   >
                     📨 رسائل أودو {a.odooSlaSendAllowed ? "مسموحة" : "ممنوعة"}
+                  </button>
+                  <button
+                    onClick={() => patch(a.id, { subDealerCheck: !a.subDealerCheck })}
+                    title={a.subDealerCheck ? "فحص سب-ديلر مفعّلٌ لهذا الوكيل — اضغط للإطفاء" : "مطفأ — لا يظهر له تبويب فحص سب-ديلر. اضغط للتفعيل"}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${a.subDealerCheck ? "bg-rose-600 text-white hover:bg-rose-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                  >
+                    🕵️ سب-ديلر {a.subDealerCheck ? "مفعّل" : "مطفأ"}
                   </button>
                   <button onClick={() => regenKey(a)} className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100" title="إعادة توليد مفتاح قاعدة بيانات الوكيل (عند الشك بتسريب)">🔐 مفتاح القاعدة</button>
                   <LimitInput label="مكاتب" value={a.officeCap} onSave={(v) => { if (v !== a.officeCap) patch(a.id, { officeCap: v }); }} />

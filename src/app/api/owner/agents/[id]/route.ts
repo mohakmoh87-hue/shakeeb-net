@@ -20,6 +20,7 @@ const patchSchema = z.object({
   clearExpiry: z.boolean().optional(), // إزالة تاريخ الانتهاء (بلا انتهاء)
   approve: z.boolean().optional(), // موافقة المالك على تفعيل الوكيل (التجريبي)
   odooSlaSendAllowed: z.boolean().optional(), // إذن «رسائل أودو التلقائيّة» لهذا الوكيل (الميزة ٢)
+  subDealerCheck: z.boolean().optional(), // 🕵️ تفعيلُ «فحص سب-ديلر» لهذا الوكيل
   // أ-٢٣ · حصّةُ المالك: **كم مكتباً** من مكاتب هذا الوكيل يُسمح له بأكثر من لوحة ساس.
   // صفر = الوضعُ الحاليّ (لا خيارَ يظهر للوكيل). طلبُ محمد 2026-08-13.
   multiSasOffices: z.coerce.number().int().min(0).max(50).optional(),
@@ -68,6 +69,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (d.maxSubscribers != null) data.maxSubscribers = d.maxSubscribers;
   if (d.approve) data.approved = true; // تفعيل الوكيل التجريبي
   if (d.odooSlaSendAllowed != null) data.odooSlaSendAllowed = d.odooSlaSendAllowed;
+  if (d.subDealerCheck != null) data.subDealerCheck = d.subDealerCheck;
   // ===== أ-٢٣ · الحصّة =====
   // ⚠️ تخفيضُ الحصّة **لا يُطبَّق بحذف لوحاتٍ زائدة**، بخلاف نمط `odooSlaSendAllowed` أدناه:
   // حذفُ لوحةٍ يُسقط مشتركيها إلى بيانات ساس المكتب ⇒ **تفعيلٌ على مُخدِّمٍ خطأ** بلا أن يُنبَّه

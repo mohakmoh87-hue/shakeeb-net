@@ -7,14 +7,15 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
   // معلومات الوكيل (سقف المكاتب + العدد الحالي) لعرضها في صفحة المكاتب
-  let officeCap: number | null = null, officeCount = 0, agentName: string | null = null;
+  let officeCap: number | null = null, officeCount = 0, agentName: string | null = null, subDealerCheck = false;
   if (session.agentId != null) {
     const [agent, count] = await Promise.all([
-      prisma.agent.findUnique({ where: { id: session.agentId }, select: { officeCap: true, name: true } }),
+      prisma.agent.findUnique({ where: { id: session.agentId }, select: { officeCap: true, name: true, subDealerCheck: true } }),
       prisma.tower.count({ where: { agentId: session.agentId, isDeleted: false } }),
     ]);
     officeCap = agent?.officeCap ?? null;
     agentName = agent?.name ?? null;
+    subDealerCheck = agent?.subDealerCheck ?? false;
     officeCount = count;
   }
   return NextResponse.json({
@@ -31,5 +32,6 @@ export async function GET() {
     agentName,
     officeCap,
     officeCount,
+    subDealerCheck,
   });
 }

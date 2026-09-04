@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import OfficeChat from "@/components/OfficeChat";
 import MoneyHealthButton from "@/components/MoneyHealthButton";
 import ProfitsPanel from "@/components/ProfitsPanel";
+import SubDealerPanel from "@/components/SubDealerPanel";
 import InstallComputer from "@/components/InstallComputer";
 import RewardConfig from "@/components/RewardConfig";
 import SalaryModal from "@/components/SalaryModal";
@@ -71,7 +72,7 @@ const TYPE_LABEL: Record<string, string> = { expense: "مصروف", receipt: "م
 export default function ManagerAccountsPage() {
   // حذف أي حركة يتطلّب صلاحية «مسح الوصولات» صراحةً (شرط محمد 2026-08-04):
   // لم تُمنح لأحد بعد، فالحذف للمدير وحده.
-  const { can } = usePermission();
+  const { can, me } = usePermission();
   const [data, setData] = useState<Data | null>(null);
   const [denied, setDenied] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -419,6 +420,7 @@ export default function ManagerAccountsPage() {
           ["profits", "📈", "أرباح الشركة", true, 0],
           ["reward", "🎁", "مكافأة التفعيل", true, 0],
           ["install", "💻", "تنصيب حاسبة مكتب", true, 0],
+          ["subdealer", "🕵️", "فحص sub dealer", !!me?.subDealerCheck, 0],
         ] as [string, string, string, boolean, number][])
           .filter((x) => x[3])
           .map(([id, icon, label, , badge]) => {
@@ -740,6 +742,7 @@ export default function ManagerAccountsPage() {
 
       {/* 📈 أرباحُ الشركة — لوحةٌ مستقلّةٌ للقراءة (طلبُ محمد 2026-08-22) */}
       {sec === "profits" && <ProfitsPanel />}
+      {sec === "subdealer" && <SubDealerPanel />}
 
       {sec === "reward" && (<>
       {/* مبلغ مكافأة التفعيل لكل باقة (للمدير) */}
