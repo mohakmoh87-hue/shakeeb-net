@@ -388,7 +388,8 @@ export async function computeProfits(
       const netUser = r.netUser ?? sub?.netUser ?? null;
       const cabinet = cabinetOfUser(netUser);
       const pkg = pkgByName.get((r.packageName ?? "").trim().toLowerCase()) ?? (sub?.packageId != null ? pkgById.get(sub.packageId) : undefined);
-      const offer = isOfferPackage(r.packageName);
+      // «عرض» = اسمُ باقةٍ فيه offer، **أو** صفٌّ أنشأه كاشفُ التنصيبات (عرضٌ باسمٍ لا يحمل «offer»)
+      const offer = isOfferPackage(r.packageName) || (r.note ?? "").includes("كشفُ التنصيبات");
       const isLoan = Math.round(r.amount ?? 0) <= 0 && !offer;
 
       if (offer) {

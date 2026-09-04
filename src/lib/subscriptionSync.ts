@@ -1383,6 +1383,21 @@ async function runOfficeSyncInner(
       console.log(`[sync-log] ♻️ مكتب ${officeId}: أُغلق تلقائيّاً ${closedInstalls} تنصيباً و${closedInfo} تحديثَ معلومات و${closedEvents} حدثَ تفعيلٍ بوصلٍ عندنا و${closedStolen} حالةَ كارتٍ مسروقٍ ظهر وصلُها`);
     }
 
+    // 🏠 كشفُ التنصيبات الداخليّة (طلب محمد 2026-09-04): المشترك المطابَق الجديد (أو المنتهي>شهر)
+    //    بباقةِ عرضٍ وله وصلٌ عندنا ⇒ يُنشأ له صفُّ install فيعدّه محرّكُ أرباح الشركة (داخليٌّ بالوصل).
+    //    idempotent (لا يُنشئ إن وُجد صفٌّ سلفاً)، ولا يُفشل المزامنةَ إن تعثّر.
+    try {
+      if (officeId != null) {
+        const tw = await prisma.tower.findUnique({ where: { id: officeId }, select: { agentId: true } });
+        if (tw?.agentId != null) {
+          const iq = new Date(Date.now() + 3 * 60 * 60 * 1000);
+          const monthStart = Date.UTC(iq.getUTCFullYear(), iq.getUTCMonth(), 1) - 3 * 60 * 60 * 1000;
+          const { detectInternalInstalls } = await import("@/lib/installDetect");
+          await detectInternalInstalls(tw.agentId, [officeId], monthStart, {});
+        }
+      }
+    } catch (e) { console.error("[install-detect] فشل:", e instanceof Error ? e.message : e); }
+
     // 📋 الاستيرادُ الجماعيُّ وملءُ الباقات الفارغة **انتقلا إلى سجلّ المزامنة** (2026-08-20):
     // «حفظ» في تبويب التنصيب يستورد، و«تحديث» في تبويب المعلومات يربط الباقة — بيد
     // صاحب صلاحيّة «تحديث سجل المزامنة» لا تلقائيّاً. (toImport/pkgFixQueue حُذفتا.)
