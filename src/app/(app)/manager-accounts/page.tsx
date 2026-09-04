@@ -110,6 +110,9 @@ export default function ManagerAccountsPage() {
   //    («ليبقى حجمها صغير وجميل عند الفتح») — والمتصفّحُ يبقى يفتح «حركة جديدة»
   //    كما اعتاد. (rAF كي لا يُحسب setState متزامناً داخل التأثير)
   useEffect(() => {
+    // 🔗 رابطُ إشعارٍ عميق (?sec=subdealer مثلاً) يفتح التبويبَ مباشرةً — يفوز على الافتراض
+    const deep = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("sec") : null;
+    if (deep) { setSec(deep); return; }
     if (typeof document !== "undefined" && document.documentElement.hasAttribute("data-app-trial")) {
       const raf = requestAnimationFrame(() => setSec(null));
       return () => cancelAnimationFrame(raf);

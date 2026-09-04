@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
-import { credsOfPanel } from "@/lib/sasPanel";
-import { sasBaseUrl, sasLogin, sasFetchAllUsers, sasFetchActivationsSince, type SasUser } from "@/lib/sas4";
-import { sasHostBlocked } from "@/lib/sasProxy";
 import { encryptSecret, decryptSecret } from "@/lib/secretbox";
-import { findSuspects, type SasSub } from "@/lib/subDealerMatch";
+import { runSubDealerScan, type ScanErrCode } from "@/lib/subDealerJob";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +12,12 @@ async function gate() {
   if (g.error) return { error: g.error };
   const agentId = g.session.agentId;
   if (agentId == null) return { error: NextResponse.json({ error: "لا وكيل" }, { status: 403 }) };
-  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { subDealerCheck: true, subDealerSasUser: true, subDealerSasPass: true } });
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { subDealerCheck: true, subDealerSasUser: true, subDealerSasPass: true, subDealerPanelId: true } });
   if (!agent?.subDealerCheck) return { error: NextResponse.json({ error: "الميزة غير مفعّلة لحسابك" }, { status: 403 }) };
   return { agentId, agent };
 }
 
-// لوحاتُ ساس الوكيل (للاختيار) + حالةُ اعتماد الموحّد المحفوظ
+// لوحاتُ ساس الوكيل (للاختيار) + حالةُ اعتماد الموحّد المحفوظ + آخرُ فحصٍ تلقائيّ محفوظ
 export async function GET() {
   const gr = await gate();
   if ("error" in gr) return gr.error;
@@ -31,18 +28,45 @@ export async function GET() {
     select: { id: true, label: true, username: true, towerId: true },
     orderBy: { id: "asc" },
   });
+  // آخرُ فحصٍ تلقائيٍّ (ليليّ) لعرضه في اللوحة
+  const lastAutoRow = await prisma.subDealerScan.findFirst({
+    where: { agentId: gr.agentId, source: "auto" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, panelId: true, rangeFrom: true, rangeTo: true, mineCount: true, unifiedCount: true, inRangeCount: true, suspectCount: true, suspects: true, createdAt: true },
+  });
+  const lastAuto = lastAutoRow
+    ? {
+        id: lastAutoRow.id, panelId: lastAutoRow.panelId,
+        from: lastAutoRow.rangeFrom.toISOString(), to: lastAutoRow.rangeTo.toISOString(),
+        counts: { mine: lastAutoRow.mineCount, unified: lastAutoRow.unifiedCount, inRange: lastAutoRow.inRangeCount, suspects: lastAutoRow.suspectCount },
+        candidates: safeParse(lastAutoRow.suspects),
+        at: lastAutoRow.createdAt.toISOString(),
+      }
+    : null;
   return NextResponse.json({
     panels: panels.map((p) => ({ id: p.id, label: p.label ?? towerName.get(p.towerId) ?? `#${p.id}`, username: p.username })),
     savedUnifiedUser: gr.agent.subDealerSasUser ?? null,
+    savedPanelId: gr.agent.subDealerPanelId ?? null,
+    lastAuto,
   });
 }
 
-const toSub = (u: SasUser, activatedAt: string | null): SasSub => ({
-  sasId: u.sasId, username: u.username, name: u.name, phone: u.phone,
-  expiration: u.expiration, days: u.days, enabled: u.enabled, packageName: u.packageName, activatedAt,
-});
+function safeParse(s: string | null): unknown[] {
+  if (!s) return [];
+  try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; }
+}
 
-// الفحص: يدخل ساسي (لوحةٌ محفوظة) + الساس الموحّد (اعتمادٌ يدويّ/محفوظ) ⇒ قائمةُ المشتبَهين.
+// خريطةُ رمزِ الخطأ ← رمزُ HTTP ورسالةٌ عربيّة
+const ERRS: Record<ScanErrCode, { status: number; msg: string }> = {
+  creds: { status: 400, msg: "أدخل اعتمادَ الساس الموحّد" },
+  panel: { status: 403, msg: "اللوحة لا تتبع حسابك" },
+  ssrf: { status: 400, msg: "خادمُ الساس غير مسموح" },
+  "login-mine": { status: 502, msg: "تعذّر الدخول لساسك (تحقّق من اللوحة)" },
+  "login-uni": { status: 502, msg: "تعذّر الدخول للساس الموحّد (تحقّق من اليوزر/الباسورد)" },
+  fetch: { status: 502, msg: "تعذّر جلبُ المشتركين من الساس" },
+};
+
+// الفحص اليدويّ: يدخل ساسي (لوحةٌ محفوظة) + الساس الموحّد (اعتمادٌ يدويّ/محفوظ) ⇒ قائمةُ المشتبَهين + حفظُ الفحص.
 export async function POST(request: Request) {
   const gr = await gate();
   if ("error" in gr) return gr.error;
@@ -54,57 +78,29 @@ export async function POST(request: Request) {
   if (!myPanelId) return NextResponse.json({ error: "اختر لوحةَ ساسك" }, { status: 400 });
   if (!uniUser || !uniPass) return NextResponse.json({ error: "أدخل اعتمادَ الساس الموحّد" }, { status: 400 });
 
-  // 🔒 عزل: اللوحةُ يجب أن تتبع وكيلَ الجلسة
-  const mine = await credsOfPanel(myPanelId);
-  if (!mine || mine.agentId !== gr.agentId) return NextResponse.json({ error: "اللوحة لا تتبع حسابك" }, { status: 403 });
-  if (await sasHostBlocked(mine.loginUrl)) return NextResponse.json({ error: "خادمُ الساس غير مسموح" }, { status: 400 });
-
   const nowMs = Date.now();
   const from = b?.from ? new Date(b.from) : new Date(nowMs - 90 * 24 * 60 * 60 * 1000); // افتراضُ ٣ أشهر
   const to = b?.to ? new Date(b.to) : new Date(nowMs);
   if (isNaN(from.getTime()) || isNaN(to.getTime())) return NextResponse.json({ error: "تاريخٌ غير صالح" }, { status: 400 });
 
-  const base = sasBaseUrl(mine.loginUrl); // نفسُ خادم سوبر سيل للحسابَين (تأكيدُ محمد)
-  let tokenMine: string, tokenUni: string;
-  try { tokenMine = await sasLogin(base, mine.username, mine.password); }
-  catch { return NextResponse.json({ error: "تعذّر الدخول لساسك (تحقّق من اللوحة)" }, { status: 502 }); }
-  try { tokenUni = await sasLogin(base, uniUser, uniPass); }
-  catch { return NextResponse.json({ error: "تعذّر الدخول للساس الموحّد (تحقّق من اليوزر/الباسورد)" }, { status: 502 }); }
+  const res = await runSubDealerScan({
+    agentId: gr.agentId, panelId: myPanelId, uniUser, uniPass, from, to,
+    threshold: Number(b?.threshold) || 45, source: "manual", persist: true,
+  });
+  if (!res.ok) { const e = ERRS[res.code ?? "fetch"]; return NextResponse.json({ error: e.msg }, { status: e.status }); }
 
-  let mineUsers: SasUser[], uniUsers: SasUser[];
-  try {
-    [mineUsers, uniUsers] = await Promise.all([sasFetchAllUsers(base, tokenMine), sasFetchAllUsers(base, tokenUni)]);
-  } catch { return NextResponse.json({ error: "تعذّر جلبُ المشتركين من الساس" }, { status: 502 }); }
-
-  // تفعيلاتُ الموحّد ضمن المدى ⇒ خريطةُ username→تاريخ تفعيلٍ (أحدثُ تفعيلٍ في المدى)
-  const actMap = new Map<string, string>();
-  try {
-    const { rows } = await sasFetchActivationsSince(base, tokenUni, from);
-    for (const a of rows) {
-      if (!a.username || !a.createdAt) continue;
-      const t = new Date(a.createdAt).getTime();
-      if (isNaN(t) || t > to.getTime()) continue; // خارج المدى الأعلى
-      const key = a.username.trim().toLowerCase();
-      const prev = actMap.get(key);
-      if (!prev || t > new Date(prev).getTime()) actMap.set(key, a.createdAt);
+  // حفظُ الاعتماد + اللوحة (مشفَّراً) للفحص التلقائيّ ولاحقاً — عند طلب الحفظ فقط
+  if (save) {
+    const data: { subDealerPanelId: number; subDealerSasUser?: string; subDealerSasPass?: string } = { subDealerPanelId: myPanelId };
+    if (typeof b?.unifiedUser === "string" && b.unifiedUser.trim() && typeof b?.unifiedPass === "string" && b.unifiedPass.trim()) {
+      data.subDealerSasUser = uniUser;
+      data.subDealerSasPass = encryptSecret(uniPass) ?? undefined;
     }
-  } catch { /* بلا تواريخ ⇒ لا مرشّحين (المدى شرط) */ }
-
-  const mineSubs = mineUsers.map((u) => toSub(u, null));
-  // الموحّد: نُبقي المفعَّلين في المدى فقط (لهم تفعيلٌ ضمن [from,to])
-  const uniInRange = uniUsers
-    .map((u) => toSub(u, actMap.get((u.username ?? "").trim().toLowerCase()) ?? null))
-    .filter((u) => u.activatedAt != null);
-
-  const candidates = findSuspects(mineSubs, uniInRange, Number(b?.threshold) || 45);
-
-  if (save && b?.unifiedUser && b?.unifiedPass) {
-    await prisma.agent.update({ where: { id: gr.agentId }, data: { subDealerSasUser: uniUser, subDealerSasPass: encryptSecret(uniPass) } }).catch(() => {});
+    await prisma.agent.update({ where: { id: gr.agentId }, data }).catch(() => {});
   }
 
   return NextResponse.json({
-    counts: { mine: mineUsers.length, unified: uniUsers.length, inRange: uniInRange.length, suspects: candidates.length },
-    from: from.toISOString(), to: to.toISOString(),
-    candidates: candidates.slice(0, 500),
+    counts: res.counts, from: res.from.toISOString(), to: res.to.toISOString(),
+    candidates: res.candidates.slice(0, 500),
   });
 }

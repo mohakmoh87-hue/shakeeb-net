@@ -103,11 +103,69 @@ async function nightlyBlock(todayKey: string): Promise<void> {
       } catch (e) { console.error(`[internal-cron] جردُ كروت المكتب ${o.id} سقط:`, e instanceof Error ? e.message : e); }
     }
     if (audited) console.log(`[internal-cron] 🎴 جردُ الكروت الليليّ: ${audited} مكتباً · عُلّم مستخدماً ${auditMarked}`);
+    // 🕵️ فحصُ «سب-ديلر» بعد مزامنة كلّ المكاتب (طلب محمد 2026-09-04) — أفضلُ جهد، لا يُسقط الكتلة
+    try { await subDealerNightly(todayKey); } catch (e) { console.error("[internal-cron] فحصُ سب-ديلر الليليّ سقط:", e instanceof Error ? e.message : e); }
     await finalizeDay(c.rowId, todayKey);
     console.log(`[internal-cron] ✅ الكتلة الليليّة (${todayKey}): دعمٌ أُنهي ${r.supportEnded} · أرشيفٌ نُظّف ${purged} · تنبيهاتُ خطط ${warns.notified} · مزامنة ${synced}/${offices.length}${syncFailed ? ` (فشل ${syncFailed})` : ""}`);
   } catch (e) {
     console.error(`[internal-cron] 🔴 الكتلة الليليّة سقطت — تُعاد خلال ٥ دقائق:`, e instanceof Error ? e.message : e);
     await releaseDay(c.rowId, c.prev ?? null);
+  }
+}
+
+// ═════ 🕵️ فحصُ «سب-ديلر» التلقائيّ — لكلّ وكيلٍ مفعَّلٍ مرّةً في اليوم ═════
+// يُنادى بعد مزامنة كلّ المكاتب. يستعمل اللوحةَ المخزّنةَ (subDealerPanelId) والاعتمادَ
+// المحفوظَ للموحّد. يحفظ كلَّ فحصٍ، ويُشعِر **بالجدد فقط** (مقارنةً بالفحص السابق) فلا يتكرّر.
+async function subDealerNightly(todayKey: string): Promise<void> {
+  const agents = await prisma.agent.findMany({
+    where: { isDeleted: false, subDealerCheck: true, subDealerSasUser: { not: null }, subDealerSasPass: { not: null }, subDealerPanelId: { not: null } },
+    select: { id: true, subDealerSasUser: true, subDealerSasPass: true, subDealerPanelId: true },
+  });
+  if (!agents.length) return;
+  const { decryptSecret } = await import("./secretbox");
+  const { runSubDealerScan } = await import("./subDealerJob");
+  const { sendPushToUser } = await import("./push");
+  const nowMs = Date.now();
+  for (const a of agents) {
+    // الحجزُ **داخلَ** try/finally: خطأُ قاعدةٍ عابرٌ في وكيلٍ لا يُسقط بقيّةَ الوكلاء،
+    // وfinalizeDay يجري دائماً متى نجح الحجز (نجاحاً أو فشلاً أو استثناءً).
+    let claimRow: number | null = null;
+    try {
+      // حَجزٌ لكلّ وكيلٍ يومياً — يمنع تكرارَ الفحص/الإشعار لو أُعيدت الكتلةُ الليليّة
+      const claim = await claimDay(`subDealerScan:${a.id}`, todayKey, 30 * 60_000);
+      if (!claim.claimed || claim.rowId == null) continue;
+      claimRow = claim.rowId;
+      const uniPass = decryptSecret(a.subDealerSasPass);
+      if (!a.subDealerSasUser || !uniPass || a.subDealerPanelId == null) continue;
+      // مشتبَهو الفحص السابق — لإشعارٍ بالجدد فقط
+      const prev = await prisma.subDealerScan.findFirst({ where: { agentId: a.id, source: "auto" }, orderBy: { createdAt: "desc" }, select: { suspects: true } });
+      const prevKeys = new Set<string>();
+      if (prev?.suspects) { try { for (const c of JSON.parse(prev.suspects) as { suspect?: { username?: string } }[]) { const u = c?.suspect?.username; if (u) prevKeys.add(String(u).toLowerCase()); } } catch { /* JSON قديمٌ تالف ⇒ يُعامَل كلا سابق */ } }
+
+      const res = await runSubDealerScan({
+        agentId: a.id, panelId: a.subDealerPanelId, uniUser: a.subDealerSasUser, uniPass,
+        from: new Date(nowMs - 90 * 24 * 60 * 60 * 1000), to: new Date(nowMs), source: "auto", persist: true,
+      });
+      if (!res.ok) { console.error(`[internal-cron] 🕵️ فحصُ سب-ديلر للوكيل ${a.id} فشل: ${res.code}`); continue; }
+
+      const fresh = res.candidates.filter((c) => c.suspect?.username && !prevKeys.has(String(c.suspect.username).toLowerCase()));
+      if (res.counts.suspects > 0 && fresh.length > 0) {
+        // إشعارٌ **مقصورٌ على مدراء الوكيل (أدمن)** — هم مَن يملك manager.accounts؛ لا بثٌّ
+        // لكلّ حاملي field.manage (لئلّا يرى مَن لا يملك الميزةَ عددَ المشتبَهين).
+        const admins = await prisma.user.findMany({ where: { agentId: a.id, isAdmin: true, isOwner: false, isDeleted: false, isActive: true }, select: { id: true } });
+        const title = "🕵️ فحص sub dealer: مشتبَهون";
+        const body = `${res.counts.suspects} مشتركاً مشتبَهٌ بسرقته${fresh.length !== res.counts.suspects ? ` (${fresh.length} جديد)` : ""}`;
+        const url = "/manager-accounts?sec=subdealer";
+        for (const adm of admins) {
+          await prisma.notification.create({ data: { agentId: a.id, towerId: null, type: "subdealer", title, body, url, userId: adm.id } }).catch(() => {});
+          await sendPushToUser(adm.id, { title, body, url }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.error(`[internal-cron] 🕵️ فحصُ سب-ديلر للوكيل ${a.id} سقط:`, e instanceof Error ? e.message : e);
+    } finally {
+      if (claimRow != null) await finalizeDay(claimRow, todayKey);
+    }
   }
 }
 

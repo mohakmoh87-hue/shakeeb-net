@@ -48,6 +48,7 @@ model Agent {
   subDealerCheck     Boolean   @default(false)
   subDealerSasUser   String? // اعتمادُ الساس الموحّد للمقارنة (يُدخِله الوكيل، نفسُ خادم ساسه)
   subDealerSasPass   String? // كلمةُ الساس الموحّد — مشفَّرةٌ (enc:v1:)
+  subDealerPanelId   Int? // لوحةُ ساسي المختارةُ للمقارنة — يستعملها الفحصُ الليليُّ التلقائيّ (بلا لوحةٍ ⇒ لا فحصَ تلقائيّ)
   // أ-٢٣ · حصّةُ مالك النظام: **كم مكتباً** من مكاتب هذا الوكيل يُسمح له بأكثر من لوحة ساس.
   // طلبُ محمد 2026-08-13: «إذا الوكيل له ٣ مكاتب فيمكنني اختيار كم مكتبٍ بساسَين وكم بساسٍ
   // واحد، وأيضاً **صفر** ليبقى على الوضع الحالي». فليست مفتاحاً ثنائيّاً بل عدداً.
@@ -1922,4 +1923,25 @@ model StoreOrderItem {
 
   @@index([orderId])
   @@map("store_order_items")
+}
+
+// 🕵️ فحصُ «سب-ديلر»: ترويسةُ فحصٍ واحد + المشتبَهون JSON (كنمط sync_log/card_sas_checks).
+// يحفظ كلَّ فحصٍ يدويٍّ أو تلقائيٍّ ليلي؛ اللوحةُ تعرض آخرَ فحصٍ تلقائيّ، والإشعارُ يقارن
+// المشتبَهين الجددَ بالفحص السابق فلا يتكرّر كلَّ ليلة. معزولٌ بـagentId.
+model SubDealerScan {
+  id           Int      @id @default(autoincrement())
+  agentId      Int
+  panelId      Int? // لوحةُ ساسي المفحوصة (SasPanel.id)
+  source       String   @default("auto") // auto | manual
+  rangeFrom    DateTime
+  rangeTo      DateTime
+  mineCount    Int      @default(0)
+  unifiedCount Int      @default(0)
+  inRangeCount Int      @default(0)
+  suspectCount Int      @default(0)
+  suspects     String? // JSON MatchCandidate[] (slice 0..500 كالرد الحيّ)
+  createdAt    DateTime @default(now())
+
+  @@index([agentId, source, createdAt])
+  @@map("sub_dealer_scans")
 }

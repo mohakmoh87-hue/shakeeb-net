@@ -418,6 +418,44 @@ CREATE POLICY rls_internal_messages ON internal_messages TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
+-- 🎫 تذاكرُ المشتركين (2026-09-04) — يكتبها الموقعُ (التسجيل + إدارة الفنيين + الشركة).
+-- عزلٌ بـagentId المباشر. صفُّ agentId=NULL (تذكرةٌ بلا وكيلٍ مطابق ⇒ سوبر سيل فقط) يبقى
+-- غيرَ مرئيٍّ لأيّ عامل (NULL = current_agent_id() ⇒ NULL ⇒ لا يمرّ) وهو المقصود.
+ALTER TABLE subscriber_tickets ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_subscriber_tickets ON subscriber_tickets;
+CREATE POLICY rls_subscriber_tickets ON subscriber_tickets TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+-- 🏬 منتجاتُ متجر الوكيل (2026-09-04) — يكتبها الموقعُ وحدَه. عزلٌ بـagentId المباشر.
+ALTER TABLE agent_products ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_agent_products ON agent_products;
+CREATE POLICY rls_agent_products ON agent_products TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+-- 🛒 طلباتُ متجر الوكيل (2026-09-04) — يكتبها الموقعُ وحدَه. عزلٌ بـagentId المباشر.
+ALTER TABLE store_orders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_store_orders ON store_orders;
+CREATE POLICY rls_store_orders ON store_orders TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+-- 🛒 بنودُ طلب المتجر (2026-09-04) — بلا عمود agentId؛ عزلٌ متسلسلٌ عبر orderId ← الطلبِ
+-- المملوكِ للوكيل (كنمط بنود الفاتورة/صور الكارت). دفاعٌ عميقٌ ولو أنّ الموقعَ وحدَه يكتب.
+ALTER TABLE store_order_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_store_order_items ON store_order_items;
+CREATE POLICY rls_store_order_items ON store_order_items TO agent_worker
+  USING ("orderId" IN (SELECT o.id FROM store_orders o WHERE o."agentId" = current_agent_id()))
+  WITH CHECK ("orderId" IN (SELECT o.id FROM store_orders o WHERE o."agentId" = current_agent_id()));
+
+-- 🕵️ فحوصُ سب-ديلر (2026-09-04) — يكتبها الموقعُ/الكرون. عزلٌ بـagentId المباشر.
+ALTER TABLE sub_dealer_scans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_sub_dealer_scans ON sub_dealer_scans;
+CREATE POLICY rls_sub_dealer_scans ON sub_dealer_scans TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 ALTER TABLE groups         ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE boxes          ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE box_deps       ENABLE ROW LEVEL SECURITY; -- قديمة
