@@ -12,7 +12,7 @@ async function gate() {
   if (g.error) return { error: g.error };
   const agentId = g.session.agentId;
   if (agentId == null) return { error: NextResponse.json({ error: "لا وكيل" }, { status: 403 }) };
-  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { subDealerCheck: true, subDealerSasUser: true, subDealerSasPass: true, subDealerPanelId: true } });
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { subDealerCheck: true, subDealerSasUser: true, subDealerSasPass: true, subDealerPanelIds: true, subDealerPanelId: true } });
   if (!agent?.subDealerCheck) return { error: NextResponse.json({ error: "الميزة غير مفعّلة لحسابك" }, { status: 403 }) };
   return { agentId, agent };
 }
@@ -43,10 +43,16 @@ export async function GET() {
         at: lastAutoRow.createdAt.toISOString(),
       }
     : null;
+  // اللوحاتُ المحفوظة: الجمعُ الجديد، وإلّا المفردُ المهجور (توافقٌ مع نسخةٍ سابقة)،
+  // ثمّ **تقاطعٌ مع اللوحات الحيّة** فلا تبقى لوحةٌ محذوفةٌ في الاختيار (تعذّر إلغاؤها).
+  const livePanelIds = new Set(panels.map((p) => p.id));
+  const savedRaw = safeParse(gr.agent.subDealerPanelIds).filter((n): n is number => typeof n === "number");
+  const savedIds = (savedRaw.length ? savedRaw : (gr.agent.subDealerPanelId != null ? [gr.agent.subDealerPanelId] : []))
+    .filter((id) => livePanelIds.has(id));
   return NextResponse.json({
     panels: panels.map((p) => ({ id: p.id, label: p.label ?? towerName.get(p.towerId) ?? `#${p.id}`, username: p.username })),
     savedUnifiedUser: gr.agent.subDealerSasUser ?? null,
-    savedPanelId: gr.agent.subDealerPanelId ?? null,
+    savedPanelIds: savedIds,
     lastAuto,
   });
 }
@@ -71,11 +77,13 @@ export async function POST(request: Request) {
   const gr = await gate();
   if ("error" in gr) return gr.error;
   const b = await request.json().catch(() => null);
-  const myPanelId = Number(b?.myPanelId) || 0;
+  // مكاتبي التي يغطّيها الموحّد — «طرفي» اتّحادُها. (توافقٌ خلفيّ: myPanelId المفرد)
+  const rawIds: unknown[] = Array.isArray(b?.myPanelIds) ? b.myPanelIds : (b?.myPanelId ? [b.myPanelId] : []);
+  const myPanelIds = [...new Set(rawIds.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0))];
   const uniUser = typeof b?.unifiedUser === "string" && b.unifiedUser.trim() ? b.unifiedUser.trim() : (gr.agent.subDealerSasUser ?? "");
   const uniPass = typeof b?.unifiedPass === "string" && b.unifiedPass.trim() ? b.unifiedPass.trim() : (decryptSecret(gr.agent.subDealerSasPass) ?? "");
   const save = b?.save === true;
-  if (!myPanelId) return NextResponse.json({ error: "اختر لوحةَ ساسك" }, { status: 400 });
+  if (!myPanelIds.length) return NextResponse.json({ error: "اختر لوحةً واحدةً على الأقلّ من مكاتبك" }, { status: 400 });
   if (!uniUser || !uniPass) return NextResponse.json({ error: "أدخل اعتمادَ الساس الموحّد" }, { status: 400 });
 
   const nowMs = Date.now();
@@ -84,14 +92,14 @@ export async function POST(request: Request) {
   if (isNaN(from.getTime()) || isNaN(to.getTime())) return NextResponse.json({ error: "تاريخٌ غير صالح" }, { status: 400 });
 
   const res = await runSubDealerScan({
-    agentId: gr.agentId, panelId: myPanelId, uniUser, uniPass, from, to,
+    agentId: gr.agentId, panelIds: myPanelIds, uniUser, uniPass, from, to,
     threshold: Number(b?.threshold) || 45, source: "manual", persist: true,
   });
   if (!res.ok) { const e = ERRS[res.code ?? "fetch"]; return NextResponse.json({ error: e.msg }, { status: e.status }); }
 
-  // حفظُ الاعتماد + اللوحة (مشفَّراً) للفحص التلقائيّ ولاحقاً — عند طلب الحفظ فقط
+  // حفظُ الاعتماد + اللوحات (مشفَّراً) للفحص التلقائيّ ولاحقاً — عند طلب الحفظ فقط
   if (save) {
-    const data: { subDealerPanelId: number; subDealerSasUser?: string; subDealerSasPass?: string } = { subDealerPanelId: myPanelId };
+    const data: { subDealerPanelIds: string; subDealerSasUser?: string; subDealerSasPass?: string } = { subDealerPanelIds: JSON.stringify(myPanelIds) };
     if (typeof b?.unifiedUser === "string" && b.unifiedUser.trim() && typeof b?.unifiedPass === "string" && b.unifiedPass.trim()) {
       data.subDealerSasUser = uniUser;
       data.subDealerSasPass = encryptSecret(uniPass) ?? undefined;

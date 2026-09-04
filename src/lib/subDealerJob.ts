@@ -28,7 +28,7 @@ const EMPTY = { mine: 0, unified: 0, inRange: 0, suspects: 0 };
 
 export async function runSubDealerScan(opts: {
   agentId: number;
-  panelId: number;
+  panelIds: number[]; // مكاتبُ الوكيل التي يغطّيها الموحّد — «طرفي» اتّحادُها
   uniUser: string;
   uniPass: string;
   from: Date;
@@ -37,23 +37,41 @@ export async function runSubDealerScan(opts: {
   source: "manual" | "auto";
   persist?: boolean;
 }): Promise<ScanResult> {
-  const { agentId, panelId, uniUser, uniPass, from, to, source } = opts;
+  const { agentId, uniUser, uniPass, from, to, source } = opts;
+  const panelIds = [...new Set((opts.panelIds ?? []).filter((n) => Number.isFinite(n) && n > 0))];
   const fail = (code: ScanErrCode): ScanResult => ({ ok: false, code, from, to, counts: EMPTY, candidates: [] });
   if (!uniUser || !uniPass) return fail("creds");
+  if (!panelIds.length) return fail("panel");
 
-  // 🔒 عزل: اللوحةُ يجب أن تتبع الوكيلَ نفسَه
-  const mine = await credsOfPanel(panelId);
-  if (!mine || mine.agentId !== agentId) return fail("panel");
-  if (await sasHostBlocked(mine.loginUrl)) return fail("ssrf");
+  // 🔒 عزل: لوحةٌ محذوفةٌ (credsOfPanel=null) **تُتجاوز** لا تُفشل الفحص (لئلّا يعلَق
+  //    اختيارٌ قديمٌ بلا مخرج)؛ أمّا لوحةٌ **لوكيلٍ آخر** فخرقُ عزلٍ حقيقيٌّ ⇒ رفضٌ فوريّ.
+  const panels = [];
+  for (const pid of panelIds) {
+    const p = await credsOfPanel(pid);
+    if (!p) continue; // محذوفة/بلا اعتماد ⇒ تُتجاوز
+    if (p.agentId !== agentId) return fail("panel"); // خرقُ عزل ⇒ رفض
+    if (await sasHostBlocked(p.loginUrl)) return fail("ssrf");
+    panels.push(p);
+  }
+  if (!panels.length) return fail("panel"); // لا لوحةَ حيّةٌ صالحة
+  const base = sasBaseUrl(panels[0].loginUrl); // نفسُ خادم سوبر سيل للجميع (تأكيدُ محمد)
 
-  const base = sasBaseUrl(mine.loginUrl); // نفسُ خادم سوبر سيل للحسابَين
-  let tokenMine: string, tokenUni: string;
-  try { tokenMine = await sasLogin(base, mine.username, mine.password); } catch { return fail("login-mine"); }
+  // «طرفي» = اتّحادُ مشتركي كلّ لوحاتي (بإزالة تكرار اليوزر) — فمشتركو مكتبٍ آخرَ لي لا
+  //   يظهرون كمشتبَهين. الموحّدُ يُجلَب مرّةً بحسابه.
+  const mineMap = new Map<string, SasUser>();
+  for (const p of panels) {
+    const pbase = sasBaseUrl(p.loginUrl); // كلُّ لوحةٍ بحسابها على خادمها (نفسِه هنا)
+    let token: string;
+    try { token = await sasLogin(pbase, p.username, p.password); } catch { return fail("login-mine"); }
+    let users: SasUser[];
+    try { users = await sasFetchAllUsers(pbase, token); } catch { return fail("fetch"); }
+    for (const u of users) { const k = (u.username ?? "").trim().toLowerCase(); if (k && !mineMap.has(k)) mineMap.set(k, u); }
+  }
+  let tokenUni: string;
   try { tokenUni = await sasLogin(base, uniUser, uniPass); } catch { return fail("login-uni"); }
-
-  let mineUsers: SasUser[], uniUsers: SasUser[];
-  try { [mineUsers, uniUsers] = await Promise.all([sasFetchAllUsers(base, tokenMine), sasFetchAllUsers(base, tokenUni)]); }
-  catch { return fail("fetch"); }
+  let uniUsers: SasUser[];
+  try { uniUsers = await sasFetchAllUsers(base, tokenUni); } catch { return fail("fetch"); }
+  const mineUsers = [...mineMap.values()];
 
   // تفعيلاتُ الموحّد ضمن المدى ⇒ username→أحدثُ تفعيلٍ في [from,to]
   const actMap = new Map<string, string>();
@@ -81,7 +99,7 @@ export async function runSubDealerScan(opts: {
   if (opts.persist) {
     const row = await prisma.subDealerScan.create({
       data: {
-        agentId, panelId, source, rangeFrom: from, rangeTo: to,
+        agentId, panelId: panelIds[0] ?? null, source, rangeFrom: from, rangeTo: to,
         mineCount: counts.mine, unifiedCount: counts.unified, inRangeCount: counts.inRange, suspectCount: counts.suspects,
         suspects: JSON.stringify(candidates.slice(0, 500)),
       },

@@ -19,6 +19,25 @@ function scoreColor(n: number) {
   return "bg-amber-400 text-amber-950";
 }
 
+// تصدير Excel: CSV بترميز UTF-8 (BOM) — يفتحه إكسل مباشرةً ويعرض العربيّةَ صحيحة، بلا مكتبة
+function exportCsv(rows: Cand[], filename: string) {
+  const head = ["الثقة", "اسمي (منتهٍ)", "يوزري", "هاتفي", "انتهى", "اسم المشتبه", "يوزر المشتبه", "هاتف المشتبه", "فُعِّل", "الإشارات", "الفجوة (يوم)"];
+  const esc = (v: unknown) => {
+    let s = String(v ?? "");
+    // تحييدُ حقن صيغ إكسل: أسماءُ الموحّد قد تكون معادِيةً (حساب السب-ديلر). سابقةُ اقتباسٍ
+    //   تجعل الخليّةَ نصّاً لا معادلةً (=, +, -, @, tab, CR).
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [head.map(esc).join(",")];
+  for (const c of rows) lines.push([c.score, c.mine.name, c.mine.username, c.mine.phone, fmtDate(c.mine.expiration), c.suspect.name, c.suspect.username, c.suspect.phone, fmtDate(c.suspect.activatedAt), c.signals.join(" | "), c.gapDays ?? ""].map(esc).join(","));
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function CountsBar({ counts }: { counts: Counts }) {
   return (
     <div className="mb-3 flex flex-wrap gap-2 text-xs">
@@ -29,6 +48,16 @@ function CountsBar({ counts }: { counts: Counts }) {
         مشتبَهٌ بهم: {counts.suspects.toLocaleString("en-US")}
       </span>
     </div>
+  );
+}
+
+function ExportBtn({ rows, tag }: { rows: Cand[]; tag: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <button onClick={() => exportCsv(rows, `subdealer-${tag}-${ymd(new Date())}.csv`)}
+      className="rounded-lg border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100">
+      📄 استخراج Excel
+    </button>
   );
 }
 
@@ -76,7 +105,7 @@ function CandTable({ candidates }: { candidates: Cand[] }) {
 
 export default function SubDealerPanel() {
   const [panels, setPanels] = useState<Panel[]>([]);
-  const [myPanelId, setMyPanelId] = useState(0);
+  const [myPanelIds, setMyPanelIds] = useState<number[]>([]);
   const [uniUser, setUniUser] = useState("");
   const [uniPass, setUniPass] = useState("");
   const [savedUser, setSavedUser] = useState<string | null>(null);
@@ -93,20 +122,22 @@ export default function SubDealerPanel() {
     fetch("/api/manager/sub-dealer-check").then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (!d) return;
       setPanels(d.panels ?? []);
-      // اللوحةُ المحفوظةُ للفحص التلقائيّ تُنتقى تلقائيّاً؛ وإلّا الوحيدةُ إن كانت واحدة
-      if (d.savedPanelId) setMyPanelId(d.savedPanelId);
-      else if ((d.panels ?? []).length === 1) setMyPanelId(d.panels[0].id);
+      // اللوحاتُ المحفوظةُ للفحص التلقائيّ تُنتقى تلقائيّاً؛ وإلّا الوحيدةُ إن كانت واحدة
+      if (Array.isArray(d.savedPanelIds) && d.savedPanelIds.length) setMyPanelIds(d.savedPanelIds);
+      else if ((d.panels ?? []).length === 1) setMyPanelIds([d.panels[0].id]);
       if (d.savedUnifiedUser) { setSavedUser(d.savedUnifiedUser); setUniUser(d.savedUnifiedUser); }
       if (d.lastAuto) setLastAuto(d.lastAuto);
     }).catch(() => {});
   }, []);
+
+  const togglePanel = (id: number) => setMyPanelIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
   async function run() {
     setErr(""); setRes(null); setBusy(true);
     try {
       const r = await fetch("/api/manager/sub-dealer-check", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ myPanelId, unifiedUser: uniUser, unifiedPass: uniPass, from, to, save }),
+        body: JSON.stringify({ myPanelIds, unifiedUser: uniUser, unifiedPass: uniPass, from, to, save }),
       });
       const d = await r.json().catch(() => null);
       if (!r.ok) { setErr(d?.error ?? "تعذّر الفحص"); return; }
@@ -124,8 +155,8 @@ export default function SubDealerPanel() {
       </div>
       <p className="mb-4 text-xs leading-6 text-slate-500">
         يقارن مشتركيك المنتهين في <b>ساسك</b> بمشتركي <b>الساس الموحّد</b> (المفعّلين بحساب الوكيل الآخر) بالاسم والهاتف،
-        ويعرض المشتبَه بهم بدرجة ثقة. اختر لوحة ساسك، وأدخل اعتماد الساس الموحّد، وحدّد المدى (تفعيلات الموحّد ضمنه).
-        <b> عند حفظ الاعتماد واللوحة</b> يعمل الفحصُ <b>تلقائيّاً كلَّ ليلة</b> بعد مزامنة مكاتبك ويصلك إشعارٌ عند ظهور مشتبَهٍ جديد.
+        ويعرض المشتبَه بهم بدرجة ثقة. <b>اختر كلَّ مكاتبك التي يغطّيها الموحّد</b> (وإلّا ظهر مشتركو مكتبك الآخر كمشتبَهين كذباً)،
+        وأدخل اعتماد الساس الموحّد، وحدّد المدى. <b>عند حفظ اللوحات والاعتماد</b> يعمل الفحصُ <b>تلقائيّاً كلَّ ليلة</b> ويصلك إشعارٌ عند مشتبَهٍ جديد.
       </p>
 
       {lastAuto && (
@@ -141,7 +172,10 @@ export default function SubDealerPanel() {
           </button>
           {showAuto && (
             <div className="mt-3">
-              <CountsBar counts={lastAuto.counts} />
+              <div className="mb-2 flex items-center justify-between">
+                <CountsBar counts={lastAuto.counts} />
+                <ExportBtn rows={lastAuto.candidates} tag="auto" />
+              </div>
               <CandTable candidates={lastAuto.candidates} />
             </div>
           )}
@@ -149,15 +183,19 @@ export default function SubDealerPanel() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-xs font-bold text-slate-600">
-          لوحة ساسك
-          <select value={myPanelId} onChange={(e) => setMyPanelId(Number(e.target.value))}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value={0}>— اختر —</option>
-            {panels.map((p) => <option key={p.id} value={p.id}>{p.label}{p.username ? ` (${p.username})` : ""}</option>)}
-          </select>
-        </label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="text-xs font-bold text-slate-600">
+          مكاتبك التي يغطّيها الموحّد
+          <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-300 p-2">
+            {panels.length === 0 ? <div className="p-1 text-slate-400">لا لوحاتٌ متاحة</div> : panels.map((p) => (
+              <label key={p.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm font-normal hover:bg-slate-50">
+                <input type="checkbox" checked={myPanelIds.includes(p.id)} onChange={() => togglePanel(p.id)} />
+                <span className="text-slate-700">{p.label}{p.username ? <span className="text-slate-400" dir="ltr"> ({p.username})</span> : ""}</span>
+              </label>
+            ))}
+          </div>
+          {myPanelIds.length > 0 && <div className="mt-1 font-normal text-emerald-600">محدَّدٌ {myPanelIds.length} مكتب</div>}
+        </div>
+        <div className="grid grid-cols-2 gap-2 self-start">
           <label className="text-xs font-bold text-slate-600">من
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm" />
           </label>
@@ -184,14 +222,17 @@ export default function SubDealerPanel() {
         </button>
         <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
           <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} />
-          حفظ اللوحة + اعتماد الموحّد (مشفَّراً) للفحص التلقائيّ الليليّ
+          حفظ المكاتب + اعتماد الموحّد (مشفَّراً) للفحص التلقائيّ الليليّ
         </label>
         {err && <span className="text-xs font-bold text-rose-600">{err}</span>}
       </div>
 
       {res && (
         <div className="mt-5">
-          <CountsBar counts={res.counts} />
+          <div className="mb-2 flex items-center justify-between">
+            <CountsBar counts={res.counts} />
+            <ExportBtn rows={res.candidates} tag="manual" />
+          </div>
           <CandTable candidates={res.candidates} />
         </div>
       )}

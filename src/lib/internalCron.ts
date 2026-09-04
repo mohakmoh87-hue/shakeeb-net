@@ -118,8 +118,11 @@ async function nightlyBlock(todayKey: string): Promise<void> {
 // المحفوظَ للموحّد. يحفظ كلَّ فحصٍ، ويُشعِر **بالجدد فقط** (مقارنةً بالفحص السابق) فلا يتكرّر.
 async function subDealerNightly(todayKey: string): Promise<void> {
   const agents = await prisma.agent.findMany({
-    where: { isDeleted: false, subDealerCheck: true, subDealerSasUser: { not: null }, subDealerSasPass: { not: null }, subDealerPanelId: { not: null } },
-    select: { id: true, subDealerSasUser: true, subDealerSasPass: true, subDealerPanelId: true },
+    where: {
+      isDeleted: false, subDealerCheck: true, subDealerSasUser: { not: null }, subDealerSasPass: { not: null },
+      OR: [{ subDealerPanelIds: { not: null } }, { subDealerPanelId: { not: null } }], // الجمعُ أو المفردُ المهجور
+    },
+    select: { id: true, subDealerSasUser: true, subDealerSasPass: true, subDealerPanelIds: true, subDealerPanelId: true },
   });
   if (!agents.length) return;
   const { decryptSecret } = await import("./secretbox");
@@ -136,14 +139,17 @@ async function subDealerNightly(todayKey: string): Promise<void> {
       if (!claim.claimed || claim.rowId == null) continue;
       claimRow = claim.rowId;
       const uniPass = decryptSecret(a.subDealerSasPass);
-      if (!a.subDealerSasUser || !uniPass || a.subDealerPanelId == null) continue;
+      let panelIds: number[] = [];
+      try { const v = JSON.parse(a.subDealerPanelIds ?? "[]"); if (Array.isArray(v)) panelIds = v.map(Number).filter((n) => Number.isFinite(n) && n > 0); } catch { /* JSON تالف ⇒ لا لوحات */ }
+      if (!panelIds.length && a.subDealerPanelId != null) panelIds = [a.subDealerPanelId]; // ارتدادٌ للمفرد المهجور
+      if (!a.subDealerSasUser || !uniPass || !panelIds.length) continue;
       // مشتبَهو الفحص السابق — لإشعارٍ بالجدد فقط
       const prev = await prisma.subDealerScan.findFirst({ where: { agentId: a.id, source: "auto" }, orderBy: { createdAt: "desc" }, select: { suspects: true } });
       const prevKeys = new Set<string>();
       if (prev?.suspects) { try { for (const c of JSON.parse(prev.suspects) as { suspect?: { username?: string } }[]) { const u = c?.suspect?.username; if (u) prevKeys.add(String(u).toLowerCase()); } } catch { /* JSON قديمٌ تالف ⇒ يُعامَل كلا سابق */ } }
 
       const res = await runSubDealerScan({
-        agentId: a.id, panelId: a.subDealerPanelId, uniUser: a.subDealerSasUser, uniPass,
+        agentId: a.id, panelIds, uniUser: a.subDealerSasUser, uniPass,
         from: new Date(nowMs - 90 * 24 * 60 * 60 * 1000), to: new Date(nowMs), source: "auto", persist: true,
       });
       if (!res.ok) { console.error(`[internal-cron] 🕵️ فحصُ سب-ديلر للوكيل ${a.id} فشل: ${res.code}`); continue; }
