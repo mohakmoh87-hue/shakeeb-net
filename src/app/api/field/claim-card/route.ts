@@ -49,6 +49,7 @@ export async function POST(request: Request) {
   await appendCardHistory(cardId, me.name, card.technicianId == null
     ? `استلام البطاقة (كانت بلا فني) بواسطة «${me.name}»`
     : `تحويل البطاقة من «${card.assignee ?? "فني"}» إلى «${me.name}»`);
+  try { const { notifySubscriberCardEvent } = await import("@/lib/subscriberCardNotify"); void notifySubscriberCardEvent(cardId, "👷 أُسند طلبُك لفنيّ"); } catch { /* لا يُفشل العملية */ }
 
   // ===== تحويلٌ بيد الفنيّين يُنهي دعم الأوّل كتحويل المكتب (اصطاده تدقيقٌ عدائيّ 2026-08-09) =====
   // كان النداء في مسار المدير (cards PATCH) ونُسي هنا، فيبقى الفنيّ الأوّل على دعمٍ ببطاقةٍ لم تبقَ

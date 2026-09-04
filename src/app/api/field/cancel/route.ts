@@ -65,5 +65,6 @@ export async function POST(request: Request) {
     },
   });
   await appendCardHistory(cardId, auth.actor.name, `إلغاء البطاقة — ${note}`);
+  try { const { notifySubscriberCardEvent } = await import("@/lib/subscriberCardNotify"); void notifySubscriberCardEvent(cardId, "🚫 أُلغي طلبُك"); } catch { /* لا يُفشل العملية */ }
   return NextResponse.json(updated);
 }

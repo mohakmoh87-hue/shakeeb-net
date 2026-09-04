@@ -355,6 +355,7 @@ export async function POST(request: Request) {
     ? `توصيل ${deliveryAmt.toLocaleString("en-US")} + اشتراك ${(subAmountVal ?? 0).toLocaleString("en-US")} د.ع`
     : `مبيع ${netSale.toLocaleString("en-US")} + اشتراك ${(subAmountVal ?? 0).toLocaleString("en-US")} د.ع`;
   await appendCardHistory(cardId, actor.name, `إنجاز البطاقة — ${amountsLabel}`);
+  try { const { notifySubscriberCardEvent } = await import("@/lib/subscriberCardNotify"); void notifySubscriberCardEvent(cardId, "✅ تمّ إنجازُ طلبك"); } catch { /* لا يُفشل العملية */ }
 
   // إشعار إنجاز البطاقة (جرس + Push للهاتف/المتصفح حتى والبرنامج مغلق) — لا يضيع أي إنجاز
   await notify({

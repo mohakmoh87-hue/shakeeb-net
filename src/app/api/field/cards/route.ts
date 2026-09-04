@@ -253,6 +253,9 @@ export async function DELETE(request: Request) {
     select: { done: true, settled: true, amount: true, subAmount: true, technicianId: true, title: true },
   });
   await prisma.taskCard.update({ where: { id }, data: { isDeleted: true } });
+  // طلبُ مشترك: سجّل الحذفَ في التسلسل وأبلِغه (يراه «حُذف الطلب» بدل أن يختفي)
+  await appendCardHistory(id, s.fullName ?? s.username ?? "مستخدم", "🗑️ حُذف الطلب");
+  try { const { notifySubscriberCardEvent } = await import("@/lib/subscriberCardNotify"); void notifySubscriberCardEvent(id, "🗑️ أُلغي طلبُك (حُذفت البطاقة)"); } catch { /* لا يُفشل العملية */ }
   await prisma.cardPhoto.deleteMany({ where: { cardId: id } });
   let droppedFromSettlement = 0;
   if (before?.done && !before.settled) {

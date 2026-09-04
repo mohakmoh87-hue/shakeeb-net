@@ -107,14 +107,29 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, routed: true, cardId: card.id }, { status: 201 });
 }
 
-// حالةُ بطاقات المشترك (طلب محمد): يرى عند الدخول ما جرى على طلبه — استُلمت/مؤجّلة/قيد التنفيذ/منجزة/أُلغيت.
+// حدثٌ من سجلّ البطاقة مُنقّىً للمشترك — قائمةٌ بيضاءُ صارمة: كلُّ نصٍّ حرٍّ داخليٍّ يُخفى
+// (ملاحظةُ الفنيّ، سببُ التأجيل، المبالغ، أسماءُ الفنيّين) فلا يُسرَّب للمشترك شيءٌ داخليّ.
+function curateEventText(t: string): string | null {
+  if (t.includes("طلبٌ من المشترك") || t === "إنشاء البطاقة") return "📩 تمّ استلامُ طلبك";
+  if (t.startsWith("توزيع تلقائي")) return t.includes("لا يوجد فني") ? null : "👷 أُسند طلبُك لفنيّ";
+  if (t.includes("استلام البطاقة") || t.includes("تحويل البطاقة من")) return "👷 أُسند طلبُك لفنيّ";
+  if (t.includes("بدء العمل")) return "🚗 الفنيُّ باشر التنفيذ";
+  if (t.includes("تأجيل البطاقة إلى")) return "📅 " + t.split(" — ")[0].replace("تأجيل البطاقة", "أُجّل الموعد"); // التاريخُ فقط، بلا سببِ التأجيل الداخليّ
+  if (t.includes("إنجاز البطاقة")) return "✅ تمّ إنجازُ طلبك";
+  if (t.includes("إلغاء البطاقة")) return "🚫 أُلغي طلبُك";
+  if (t.includes("حُذف الطلب")) return "🗑️ حُذف الطلب";
+  return null; // داخليٌّ/نصٌّ حرٌّ/غيرُ معروف ⇒ يُخفى تماماً
+}
+
+// حالةُ بطاقات المشترك + تسلسلُ الأحداث (طلب محمد): يرى ما جرى على طلبه — استُلم/أُسند/باشر/مؤجّل/منجز/ملغى/محذوف.
 export async function GET() {
   const sess = await getSubscriberSession();
   if (!sess) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
+  // نُبقي المحذوفةَ حديثاً (ضمن الأحدث ١٥) ليراها المشترك «حُذف الطلب» بدل أن تختفي فجأة
   const cards = await prisma.taskCard.findMany({
-    where: { subscriberId: sess.subscriberId, isDeleted: false },
+    where: { subscriberId: sess.subscriberId },
     orderBy: { id: "desc" }, take: 15,
-    select: { id: true, kind: true, done: true, startedAt: true, postponedTo: true, technicianId: true, assignee: true, listId: true, createdAt: true },
+    select: { id: true, kind: true, done: true, isDeleted: true, startedAt: true, postponedTo: true, technicianId: true, assignee: true, listId: true, createdAt: true, history: true },
   });
   const listIds = [...new Set(cards.map((c) => c.listId))];
   const lists = listIds.length ? await prisma.taskList.findMany({ where: { id: { in: listIds } }, select: { id: true, name: true } }) : [];
@@ -122,13 +137,19 @@ export async function GET() {
   const fmt = (d: Date) => d.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const items = cards.map((c) => {
     let state: string, label: string, detail: string | null = null;
-    if (c.done) { state = "done"; label = "تمّ الإنجاز ✓"; }
+    if (c.isDeleted) { state = "deleted"; label = "حُذف الطلب"; }
+    else if (c.done) { state = "done"; label = "تمّ الإنجاز ✓"; }
     else if (cancelIds.has(c.listId)) { state = "cancelled"; label = "أُلغيت"; }
     else if (c.postponedTo) { state = "postponed"; label = "مؤجّلة"; detail = `إلى ${fmt(c.postponedTo)}`; }
     else if (c.startedAt) { state = "in_progress"; label = "الفنيُّ باشر التنفيذ"; }
     else if (c.technicianId || c.assignee) { state = "assigned"; label = "استُلمت — أُسندت لفنيّ"; }
     else { state = "new"; label = "بانتظار الاستلام"; }
-    return { id: c.id, kind: c.kind, state, label, detail, createdAt: fmt(c.createdAt) };
+    let hist: { at?: string; text?: string }[] = [];
+    try { hist = c.history ? JSON.parse(c.history) : []; } catch { hist = []; }
+    const timeline = hist
+      .map((e) => { const text = curateEventText(String(e?.text ?? "").trim()); if (!text) return null; const d = e?.at ? new Date(e.at) : null; const ok = d != null && !isNaN(d.getTime()); return { ts: ok ? d!.getTime() : 0, at: ok ? fmt(d!) : "", text }; })
+      .filter((x): x is { ts: number; at: string; text: string } => x != null);
+    return { id: c.id, kind: c.kind, state, label, detail, createdAt: fmt(c.createdAt), timeline };
   });
   return NextResponse.json({ items });
 }

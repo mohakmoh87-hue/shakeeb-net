@@ -53,5 +53,6 @@ export async function POST(request: Request) {
   });
   // سجل التغييرات داخل البطاقة: من أجّل وإلى متى (والملاحظة بعد «—» يقرؤها دافعُ أودو)
   await appendCardHistory(cardId, auth.actor.name, `تأجيل البطاقة إلى ${fmtBg(postponeTo)}${note ? ` — ${note}` : ""}`);
+  try { const { notifySubscriberCardEvent } = await import("@/lib/subscriberCardNotify"); void notifySubscriberCardEvent(cardId, `📅 أُجّل موعدُ طلبك إلى ${fmtBg(postponeTo)}`); } catch { /* لا يُفشل العملية */ }
   return NextResponse.json(updated);
 }

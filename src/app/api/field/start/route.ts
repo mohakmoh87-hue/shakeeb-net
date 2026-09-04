@@ -45,5 +45,6 @@ export async function POST(request: Request) {
     data: { startedAt: new Date(), postponedTo: null },
   });
   await appendCardHistory(cardId, auth.actor.name, "بدء العمل على البطاقة");
+  try { const { notifySubscriberCardEvent } = await import("@/lib/subscriberCardNotify"); void notifySubscriberCardEvent(cardId, "🚗 الفنيُّ باشر تنفيذَ طلبك"); } catch { /* لا يُفشل العملية */ }
   return NextResponse.json(updated);
 }
