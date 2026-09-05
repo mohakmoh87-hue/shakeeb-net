@@ -13,10 +13,19 @@ const timed = () => AbortSignal.timeout(REQ_MS);
 export class ContractsAuthError extends Error {}
 
 /** دخولٌ باليوزر/الباسورد ⇒ توكنُ mng-api (JWT ~١٢س). يرمي ContractsAuthError عند فشل الاعتماد. */
+const FIN = "https://finance.supercellnetwork.com";
+// ترويساتٌ تحاكي المتصفّحَ — بعضُ واجهات .NET تشترط Origin/Referer/UA قبل الدخول
+const browserHeaders = {
+  origin: FIN, referer: `${FIN}/auth/login`,
+  "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
+  "accept-language": "ar,en;q=0.9",
+};
+const redact = (s: string) => s.replace(/eyJ[A-Za-z0-9_.-]{20,}/g, "[token]");
+
 export async function contractsLogin(username: string, password: string): Promise<string> {
   const r = await fetch(`${MNG}/Security/User/Session/Login`, {
     method: "POST", signal: timed(),
-    headers: { "content-type": "application/json", accept: "application/json" },
+    headers: { "content-type": "application/json", accept: "application/json", ...browserHeaders },
     body: JSON.stringify({ username, password }),
   });
   const text = await r.text().catch(() => "");
@@ -24,10 +33,9 @@ export async function contractsLogin(username: string, password: string): Promis
   try { j = JSON.parse(text) as Record<string, unknown>; } catch { /* ليس JSON */ }
   const token = pickToken(j);
   if (token) return token;
-  const apiMsg = String(j?.message ?? j?.error ?? j?.title ?? "").slice(0, 90);
-  if (r.ok) throw new ContractsAuthError(`تشخيص: دخلَ بلا توكن — مفاتيح: ${j ? Object.keys(j).join(",") : "لا JSON"}`);
-  if (r.status === 400 || r.status === 401) throw new ContractsAuthError(apiMsg ? `رُفض الدخول: ${apiMsg}` : "يوزر أو باسورد موقع العقود غير صحيح");
-  throw new ContractsAuthError(`تعذّر الدخول لموقع العقود (HTTP ${r.status}${apiMsg ? " — " + apiMsg : ""})`);
+  // 🔎 تشخيصٌ مؤقّت: ردُّ الموقع الحرفيُّ (مع إخفاء أيّ توكن) يكشف سببَ الرفض بدقّة
+  const snip = redact(text).slice(0, 200) || "(بلا نصّ)";
+  throw new ContractsAuthError(`تشخيص HTTP ${r.status}: ${snip}`);
 }
 
 // التوكن قد يكون في session.token (كما رأينا في الجلسة) أو token/accessToken أو داخل data
