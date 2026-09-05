@@ -73,10 +73,6 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
   const { checkKey, rowKey, note } = parsed.data;
 
-  // 🔴 حالاتٌ لا تُتجاهَل (طلبُ محمد): سرقةُ العقود تبقى حتى تُحَلّ (يُغلقها المحرّكُ فور ظهور الوصل).
-  const NO_DISMISS = new Set(["contract_theft"]);
-  if (NO_DISMISS.has(checkKey)) return NextResponse.json({ error: "هذه الحالةُ لا تُتجاهَل — تُغلَق وحدَها فور ظهور الوصل" }, { status: 403 });
-
   // ⚠️ التجاهلُ **إخفاءٌ من القائمة فقط** — لا يُحذف مالٌ ولا يُصلَح شيءٌ صامتاً.
   await prisma.moneyHealthIgnore.upsert({
     where: { agentId_checkKey_rowKey: { agentId, checkKey, rowKey } },
