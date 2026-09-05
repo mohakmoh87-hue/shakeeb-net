@@ -23,19 +23,20 @@ const browserHeaders = {
 const redact = (s: string) => s.replace(/eyJ[A-Za-z0-9_.-]{20,}/g, "[token]");
 
 export async function contractsLogin(username: string, password: string): Promise<string> {
+  // واجهةُ .NET تشترط device/oSName/platform مع username/password (كشفَها تشخيصُ 400)
   const r = await fetch(`${MNG}/Security/User/Session/Login`, {
     method: "POST", signal: timed(),
     headers: { "content-type": "application/json", accept: "application/json", ...browserHeaders },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, device: "ShakeebNet", oSName: "Windows", platform: "Web" }),
   });
   const text = await r.text().catch(() => "");
   let j: Record<string, unknown> | null = null;
   try { j = JSON.parse(text) as Record<string, unknown>; } catch { /* ليس JSON */ }
   const token = pickToken(j);
   if (token) return token;
-  // 🔎 تشخيصٌ مؤقّت: ردُّ الموقع الحرفيُّ (مع إخفاء أيّ توكن) يكشف سببَ الرفض بدقّة
+  // 🔎 تشخيصٌ مؤقّت: ردُّ الموقع (توكن مُخفًى) + طولُ الباسورد (يكشف فشلَ فكّ التشفير دون كشفه)
   const snip = redact(text).slice(0, 200) || "(بلا نصّ)";
-  throw new ContractsAuthError(`تشخيص HTTP ${r.status}: ${snip}`);
+  throw new ContractsAuthError(`تشخيص HTTP ${r.status} [pwLen:${password.length}]: ${snip}`);
 }
 
 // التوكن قد يكون في session.token (كما رأينا في الجلسة) أو token/accessToken أو داخل data
