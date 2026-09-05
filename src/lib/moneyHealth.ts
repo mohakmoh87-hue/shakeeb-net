@@ -789,21 +789,8 @@ ${s(x.note)}`,
     severity: "warn", amount: Math.abs(n(x.carry)),
   }));
 
-  // ── د-٦ · بيعٌ بأقلَّ من سعرِ الشراء (خسارةٌ صامتة) ──
-  await add("sale_below_cost", "لا بيعَ بأقلَّ من سعرِ الشراء", `
-    SELECT t.id, x.name AS item, t.count, t.price, t."buyPrice", t."invoiceId"
-      FROM invoice_items t
-      JOIN invoices i ON i.id = t."invoiceId"
-      LEFT JOIN items x ON x.id = t."itemId"
-     WHERE t."isDeleted" = false AND i."isDeleted" = false AND i."towerId" IN (${T})
-       AND coalesce(t."buyPrice",0) > 0 AND coalesce(t.price,0) > 0 AND t.price < t."buyPrice"
-     ORDER BY (t."buyPrice" - t.price) * t.count DESC LIMIT 100`, (x) => ({
-    rowKey: `iitem:${s(x.id)}`,
-    title: "قطعةٌ بيعت بأقلَّ من سعرِ شرائها",
-    detail: `${s(x.item) || "مادّة"} · شراء ${n(x.buyPrice)} · بيع ${n(x.price)} · عدد ${n(x.count)} · فاتورة #${s(x.invoiceId)}`,
-    how: "إبلاغٌ فقط — فقرارُ البيع بخسارةٍ قرارُك (تصفيةٌ أو مجاملة). وإن كان خطأَ إدخالٍ فصحّح السعرَ من الفاتورة.",
-    severity: "warn", amount: (n(x.buyPrice) - n(x.price)) * n(x.count),
-  }));
+  // ── د-٦ · «بيعٌ بأقلَّ من سعرِ الشراء» — أُزيل نهائيّاً (طلبُ محمد 2026-09-05): بيعُ المواد
+  //    بسعرها أو أقلَّ طبيعيٌّ جداً (ليس ثابتاً كالاشتراك) فلا يُبلَّغ عنه إطلاقاً.
 
   // ── د-٧ · بندٌ يشير إلى مادّةٍ محذوفةٍ أو غيرِ موجودة ──
   await add("invoice_item_no_material", "كلُّ بندِ بيعٍ له مادّةٌ قائمة", `
