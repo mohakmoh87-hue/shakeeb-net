@@ -2,60 +2,75 @@
 // طلبُ محمد 2026-09-05: موقعُ العقود يسرد تنصيباتِ المكتب (عقودَ الوكيل). نعتمده حصراً
 // لعدِّ التنصيبات الداخليّة. الرابطُ **ثابتٌ لكلّ الوكلاء**؛ يختلف اليوزر/الباسورد فقط.
 //
-// الدخولُ **مباشرةً على mng-api** كما تفعل الصفحة نفسُها: POST /Security/User/Session/Login
-//   بـ{username,password} (JSON) ⇒ الردُّ فيه session.token ⇒ يُستعمل Bearer لـ Contract/GetData.
-// الأمانُ: المضيفُ **ثابتٌ** في الكود (لا SSRF)؛ الباسورد يُخزَّن نصّاً صريحاً كباسوردِ الساس.
+// الدخولُ عبر **بوّابة NextAuth الخاصّة بالموقع** (finance) لا مباشرةً على mng-api: صفحةُ الدخول
+// تستدعي signIn("credentials") فقط باليوزر/الباسورد، وواجهةُ NextAuth على الخادم هي التي تُضيف
+// device/oSName/platform وتنادي mng-api. فنُحاكي هذه البوّابة (csrf ← callback ← session)
+// ونأخذ توكنَ mng-api من الجلسة (user.session.token) — فلا نحتاج قيمةَ platform الخفيّة.
+// الأمانُ: المضيفان **ثابتان** في الكود (لا SSRF)؛ الباسورد يُخزَّن نصّاً صريحاً كباسوردِ الساس.
 
 const MNG = "https://mng-api.supercellnetwork.com";
+const FIN = "https://finance.supercellnetwork.com";
 const REQ_MS = 25_000; // مهلةُ كلّ نداء
 const timed = () => AbortSignal.timeout(REQ_MS);
 
 export class ContractsAuthError extends Error {}
 
-/** دخولٌ باليوزر/الباسورد ⇒ توكنُ mng-api (JWT ~١٢س). يرمي ContractsAuthError عند فشل الاعتماد. */
-const FIN = "https://finance.supercellnetwork.com";
-// ترويساتٌ تحاكي المتصفّحَ — بعضُ واجهات .NET تشترط Origin/Referer/UA قبل الدخول
+// ترويساتٌ تحاكي المتصفّح
 const browserHeaders = {
-  origin: FIN, referer: `${FIN}/auth/login`,
   "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
   "accept-language": "ar,en;q=0.9",
 };
-const redact = (s: string) => s.replace(/eyJ[A-Za-z0-9_.-]{20,}/g, "[token]");
 
-// قيمُ platform المرشّحة (النظامُ «Management System») — نجرّبها حتى تُقبَل واحدة
-const PLATFORMS = ["Management", "Portal", "Dashboard", "Web"];
-
-export async function contractsLogin(username: string, password: string): Promise<string> {
-  // واجهةُ .NET تشترط device/oSName/platform مع username/password (كشفَها تشخيصُ 400)
-  let lastSnip = "";
-  for (const platform of PLATFORMS) {
-    const r = await fetch(`${MNG}/Security/User/Session/Login`, {
-      method: "POST", signal: timed(),
-      headers: { "content-type": "application/json", accept: "application/json", ...browserHeaders },
-      body: JSON.stringify({ username, password, device: "ShakeebNet", oSName: "Windows", platform }),
-    });
-    const text = await r.text().catch(() => "");
-    let j: Record<string, unknown> | null = null;
-    try { j = JSON.parse(text) as Record<string, unknown>; } catch { /* ليس JSON */ }
-    const token = pickToken(j);
-    if (token) return token;
-    lastSnip = redact(text).slice(0, 200);
-    // إن كان الرفضُ بسبب platform فقط ⇒ جرّب القيمةَ التالية؛ وإلّا (اعتماد/غيره) توقّف فوراً
-    if (/platform/i.test(text)) continue;
-    if (r.status === 400 || r.status === 401) throw new ContractsAuthError("يوزر أو باسورد موقع العقود غير صحيح");
-    throw new ContractsAuthError(`تعذّر الدخول لموقع العقود (HTTP ${r.status})`);
+function addCookies(jar: Record<string, string>, setCookies: string[]): void {
+  for (const sc of setCookies) {
+    const first = sc.split(";")[0];
+    const eq = first.indexOf("=");
+    if (eq > 0) jar[first.slice(0, eq).trim()] = first.slice(eq + 1).trim();
   }
-  throw new ContractsAuthError(`تعذّر الدخول — قيمةُ platform مرفوضة كلُّها: ${lastSnip}`);
+}
+const cookieHeader = (jar: Record<string, string>) => Object.entries(jar).map(([k, v]) => `${k}=${v}`).join("; ");
+
+/** دخولٌ عبر بوّابة NextAuth ⇒ توكنُ mng-api من الجلسة. يرمي ContractsAuthError عند فشل الاعتماد. */
+export async function contractsLogin(username: string, password: string): Promise<string> {
+  const jar: Record<string, string> = {};
+
+  // ١) csrf: توكنٌ + كوكي csrf
+  const rc = await fetch(`${FIN}/api/auth/csrf`, { signal: timed(), headers: browserHeaders });
+  addCookies(jar, rc.headers.getSetCookie?.() ?? []);
+  const cj = await rc.json().catch(() => null) as { csrfToken?: string } | null;
+  const csrfToken = cj?.csrfToken;
+  if (!csrfToken) throw new ContractsAuthError("تعذّر تهيئةُ الدخول لموقع العقود (csrf)");
+
+  // ٢) callback/credentials: NextAuth ينادي mng-api (بـplatform الصحيحة) ويضع كوكيَّ الجلسة عند النجاح
+  const form = new URLSearchParams({ csrfToken, username, password, callbackUrl: `${FIN}/`, json: "true" });
+  const rl = await fetch(`${FIN}/api/auth/callback/credentials`, {
+    method: "POST", signal: timed(), redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookieHeader(jar), ...browserHeaders },
+    body: form.toString(),
+  });
+  addCookies(jar, rl.headers.getSetCookie?.() ?? []);
+  const hasSession = Object.keys(jar).some((k) => /next-auth\.session-token/.test(k));
+  if (!hasSession) {
+    const bt = await rl.text().catch(() => "");
+    if (/error=|CredentialsSignin/i.test(bt) || rl.status === 401) throw new ContractsAuthError("يوزر أو باسورد موقع العقود غير صحيح");
+    throw new ContractsAuthError(`تعذّر الدخول لموقع العقود (HTTP ${rl.status})`);
+  }
+
+  // ٣) session: توكنُ mng-api في user.session.token
+  const rs = await fetch(`${FIN}/api/auth/session`, { signal: timed(), headers: { cookie: cookieHeader(jar), ...browserHeaders } });
+  const sj = await rs.json().catch(() => null);
+  const token = pickToken(sj);
+  if (!token) throw new ContractsAuthError("تمّ الدخول لكن تعذّر جلبُ توكن الجلسة");
+  return token;
 }
 
-// التوكن قد يكون في session.token (كما رأينا في الجلسة) أو token/accessToken أو داخل data
-function pickToken(j: Record<string, unknown> | null): string | undefined {
-  if (!j) return undefined;
+// التوكن في user.session.token (كما يقرأه الموقعُ نفسُه) مع بدائلَ احتياطيّة
+function pickToken(j: unknown): string | undefined {
   const g = (o: unknown, k: string): unknown => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined);
   const cands = [
+    g(g(g(j, "user"), "session"), "token"),
     g(g(j, "session"), "token"), g(j, "token"), g(j, "accessToken"),
-    g(g(j, "user"), "session") && g(g(g(j, "user"), "session"), "token"),
-    g(g(j, "data"), "token"), g(g(g(j, "data"), "session"), "token"),
+    g(g(j, "user"), "token"), g(g(j, "data"), "token"),
   ];
   const t = cands.find((x) => typeof x === "string" && x.length > 20);
   return typeof t === "string" ? t : undefined;
