@@ -2,59 +2,45 @@
 // طلبُ محمد 2026-09-05: موقعُ العقود يسرد تنصيباتِ المكتب (عقودَ الوكيل). نعتمده حصراً
 // لعدِّ التنصيبات الداخليّة. الرابطُ **ثابتٌ لكلّ الوكلاء**؛ يختلف اليوزر/الباسورد فقط.
 //
-// الدخولُ خادميّاً عبر مسار NextAuth الرسميّ للموقع (لا عكسُ هندسةٍ خام):
-//   csrf → callback/credentials (يضع كوكي الجلسة) → session (يُرجع توكن mng-api) → GetData.
-// الأمانُ: المضيفان **ثابتان** في الكود (لا SSRF)، والباسورد يُخزَّن مشفَّراً في القاعدة.
+// الدخولُ **مباشرةً على mng-api** كما تفعل الصفحة نفسُها: POST /Security/User/Session/Login
+//   بـ{username,password} (JSON) ⇒ الردُّ فيه session.token ⇒ يُستعمل Bearer لـ Contract/GetData.
+// الأمانُ: المضيفُ **ثابتٌ** في الكود (لا SSRF)، والباسورد يُخزَّن مشفَّراً في القاعدة.
 
-const FIN = "https://finance.supercellnetwork.com";
 const MNG = "https://mng-api.supercellnetwork.com";
-const REQ_MS = 25_000; // مهلةُ كلّ نداءٍ — تمنع تعليقَ مهمّة الفحص (٤ نداءاتٍ ≤ ~١٠٠ث < مهلة إعادة العالق ٥د)
+const REQ_MS = 25_000; // مهلةُ كلّ نداء
 const timed = () => AbortSignal.timeout(REQ_MS);
-
-type Jar = Map<string, string>;
-function absorb(jar: Jar, res: Response): void {
-  const getter = (res.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie;
-  const cookies = typeof getter === "function" ? getter.call(res.headers) : [];
-  for (const c of cookies) { const m = /^([^=]+)=([^;]+)/.exec(c); if (m) jar.set(m[1].trim(), m[2].trim()); }
-}
-const cookieHeader = (jar: Jar) => [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
 
 export class ContractsAuthError extends Error {}
 
 /** دخولٌ باليوزر/الباسورد ⇒ توكنُ mng-api (JWT ~١٢س). يرمي ContractsAuthError عند فشل الاعتماد. */
 export async function contractsLogin(username: string, password: string): Promise<string> {
-  const jar: Jar = new Map();
-  // ١) رمزُ CSRF + كوكي
-  const csrfRes = await fetch(`${FIN}/api/auth/csrf`, { headers: { accept: "application/json" }, cache: "no-store", signal: timed() });
-  absorb(jar, csrfRes);
-  const csrfToken = (await csrfRes.json().catch(() => null))?.csrfToken as string | undefined;
-  if (!csrfToken) throw new ContractsAuthError("تعذّر بدءُ الجلسة (لا csrf) — تأكّد من إنترنت سوبر سيل");
-  // 🔎 تشخيص: هل التُقطت كوكيزُ الاستجابة؟ (getSetCookie قد يغيب على نسخةٍ قديمةٍ من Node)
-  if (jar.size === 0) throw new ContractsAuthError("تشخيص: تعذّر التقاطُ كوكي csrf (الكوكيز)");
-  // ٢) اعتمادُ الدخول — لا يُتَّبَع التحويلُ (redirect:false) والكوكي يعود في الرأس
-  const body = new URLSearchParams({ csrfToken, username, password, redirect: "false", json: "true", callbackUrl: `${FIN}/contract` });
-  const cbRes = await fetch(`${FIN}/api/auth/callback/credentials`, {
-    method: "POST", redirect: "manual", signal: timed(),
-    headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookieHeader(jar), accept: "application/json" },
-    body,
+  const r = await fetch(`${MNG}/Security/User/Session/Login`, {
+    method: "POST", signal: timed(),
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ username, password }),
   });
-  absorb(jar, cbRes);
-  // 🔎 تشخيص: رَدُّ الـcallback يحمل url فيه error عند الرفض (CredentialsSignin/MissingCSRF…)
-  const cbJson = (await cbRes.json().catch(() => null)) as { url?: string } | null;
-  const cbUrl = cbJson?.url ?? "";
-  if (/error=/i.test(cbUrl)) {
-    const code = decodeURIComponent((cbUrl.match(/error=([^&]+)/) ?? [])[1] ?? "?");
-    throw new ContractsAuthError(`تشخيص: رفضَ موقعُ العقود الدخول (${code}) — HTTP ${cbRes.status}`);
-  }
-  // ٣) الجلسة ⇒ التوكن
-  const sessRes = await fetch(`${FIN}/api/auth/session`, { headers: { cookie: cookieHeader(jar), accept: "application/json" }, cache: "no-store", signal: timed() });
-  const sess = await sessRes.json().catch(() => null);
-  const token = sess?.user?.session?.token as string | undefined;
-  if (!token) {
-    const hasUser = !!sess?.user;
-    throw new ContractsAuthError(`تشخيص: ${hasUser ? "دخلَ لكن بلا توكن (بنيةُ الجلسة تغيّرت)" : "الجلسةُ فارغةٌ بعد الدخول (كوكي الجلسة لم يُحمَل)"} — cbUrl:${cbUrl.slice(0, 60)}`);
-  }
-  return token;
+  const text = await r.text().catch(() => "");
+  let j: Record<string, unknown> | null = null;
+  try { j = JSON.parse(text) as Record<string, unknown>; } catch { /* ليس JSON */ }
+  const token = pickToken(j);
+  if (token) return token;
+  const apiMsg = String(j?.message ?? j?.error ?? j?.title ?? "").slice(0, 90);
+  if (r.ok) throw new ContractsAuthError(`تشخيص: دخلَ بلا توكن — مفاتيح: ${j ? Object.keys(j).join(",") : "لا JSON"}`);
+  if (r.status === 400 || r.status === 401) throw new ContractsAuthError(apiMsg ? `رُفض الدخول: ${apiMsg}` : "يوزر أو باسورد موقع العقود غير صحيح");
+  throw new ContractsAuthError(`تعذّر الدخول لموقع العقود (HTTP ${r.status}${apiMsg ? " — " + apiMsg : ""})`);
+}
+
+// التوكن قد يكون في session.token (كما رأينا في الجلسة) أو token/accessToken أو داخل data
+function pickToken(j: Record<string, unknown> | null): string | undefined {
+  if (!j) return undefined;
+  const g = (o: unknown, k: string): unknown => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined);
+  const cands = [
+    g(g(j, "session"), "token"), g(j, "token"), g(j, "accessToken"),
+    g(g(j, "user"), "session") && g(g(g(j, "user"), "session"), "token"),
+    g(g(j, "data"), "token"), g(g(g(j, "data"), "session"), "token"),
+  ];
+  const t = cands.find((x) => typeof x === "string" && x.length > 20);
+  return typeof t === "string" ? t : undefined;
 }
 
 export type ContractRow = {
