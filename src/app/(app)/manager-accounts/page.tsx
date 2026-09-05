@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import OfficeChat from "@/components/OfficeChat";
 import MoneyHealthButton from "@/components/MoneyHealthButton";
 import ProfitsPanel from "@/components/ProfitsPanel";
+import SaleProfitsPanel from "@/components/SaleProfitsPanel";
 import SubDealerPanel from "@/components/SubDealerPanel";
 import InstallComputer from "@/components/InstallComputer";
 import RewardConfig from "@/components/RewardConfig";
@@ -421,6 +422,7 @@ export default function ManagerAccountsPage() {
           ["phantom", "🔴", "الكروت الوهمية", phantomLoaded && !phantomDenied, phantomCards.length],
           ["cardprice", "💳", "أسعار الكروت", !!cardData?.canEdit, 0],
           ["profits", "📈", "أرباح الشركة", true, 0],
+          ["saleprofits", "🏷️", "أرباح المبيع", true, 0],
           ["reward", "🎁", "مكافأة التفعيل", true, 0],
           ["install", "💻", "تنصيب حاسبة مكتب", true, 0],
           ["subdealer", "🕵️", "فحص sub dealer", !!me?.subDealerCheck, 0],
@@ -745,6 +747,7 @@ export default function ManagerAccountsPage() {
 
       {/* 📈 أرباحُ الشركة — لوحةٌ مستقلّةٌ للقراءة (طلبُ محمد 2026-08-22) */}
       {sec === "profits" && <ProfitsPanel />}
+      {sec === "saleprofits" && <SaleProfitsPanel />}
       {sec === "subdealer" && <SubDealerPanel />}
 
       {sec === "reward" && (<>

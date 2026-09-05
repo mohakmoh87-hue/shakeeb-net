@@ -124,6 +124,9 @@ export async function DELETE(request: Request) {
     }
   }
 
+  // 🏬 شراءُ مخزن (تسديدٌ من الكلّيّ): حذفُ حركة المصروف يُلغي قيدَ الدفعة فيعود الدَّين على الوصل
+  //    (يؤثّر فقط في الصفوف المربوطة بهذه الحركة عبر managerTxId — بريءٌ لغيرها).
+  await prisma.purchasePayment.updateMany({ where: { managerTxId: id, agentId, isDeleted: false }, data: { isDeleted: true } });
   await prisma.managerTx.updateMany({ where: { id, isDeleted: false, agentId }, data: { isDeleted: true } });
   return NextResponse.json({ ok: true });
 }

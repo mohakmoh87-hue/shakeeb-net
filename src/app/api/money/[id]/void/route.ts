@@ -176,6 +176,12 @@ export async function POST(
       }
      } // نهاية كتلة الإرجاع العكسي (reverse): بلا إرجاع لا نمسّ التفعيل/الفاتورة/الدين
 
+      // 🏬 شراءُ مخزن: حذفُ حركة التسديد يُلغي قيدَ الدفعة أيضاً — فيعود المتبقّي (الدَّين) على الوصل
+      //    (البضاعةُ تبقى؛ إنّما لم يُسدَّد ثمنُها) — كي لا تبقى دفعةٌ يتيمةٌ تُظهر الوصلَ مسدَّداً.
+      if (tx.sourceType === "purchase") {
+        await t.purchasePayment.updateMany({ where: { moneyTxId: txId, isDeleted: false }, data: { isDeleted: true } });
+      }
+
       // ===== حذف الحركة نفسها (يشمل: بيع، ماستر، نثرية، يدوية) — يتم دائماً =====
       await t.moneyTx.update({ where: { id: txId }, data: { isDeleted: true } });
       await t.auditLog.create({

@@ -585,6 +585,7 @@ model RechargeCard {
   serial       String? // سيريال الكارت
   packageId    Int? // الفئة/الباقة (50/100/150 ميكا)
   price        Float? // سعر شراء/كلفة الكارت الواحد (لحساب ديون الكارتات)
+  sellAtUse    Float? // سعرُ باقة البيع مُجمَّداً لحظةَ التفعيل — لربح الانتشار (لا يتأثّر بتعديل السعر لاحقاً)
   subscriberId Int? // المشترك الذي استُخدم له
   reservedBy   Int? // مستخدم حجز الكارت مؤقتاً (سحب كارت)
   reservedAt   DateTime? // وقت الحجز المؤقت
@@ -670,6 +671,85 @@ model InvoiceItem {
 
   @@index([invoiceId])
   @@map("invoice_items")
+}
+
+// ═════ 🏬🧾 وصولاتُ الشراء + دفعاتُ المخزن (FIFO) — طلب محمد 2026-09-05 ═════
+// كلُّ وصلِ شراءٍ = ترويسةٌ (مورِّد/رقم/تاريخ/مجموع) + عدّةُ دفعات (ItemBatch) بكلفةِ قطعةٍ لكلٍّ.
+// البيعُ يخصم من الأقدم فالأحدث (FIFO) ويسجّل الكلفةَ الفعليّة في SaleConsumption. تسديدٌ نقديٌّ أو دَين.
+model PurchaseReceipt {
+  id            Int      @id @default(autoincrement())
+  agentId       Int
+  towerId       Int // المكتبُ المستلِمُ للمخزن
+  vendorName    String // مكتبُ الشراء (المورِّد) — نصٌّ حرّ (ليس أحدَ مكاتب الوكيل)
+  receiptNumber String?
+  date          DateTime @default(now())
+  total         Float    @default(0)
+  note          String?
+  userId        Int?
+  isDeleted     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@index([agentId, date])
+  @@map("purchase_receipts")
+}
+
+// دفعاتُ تسديدِ وصل: نقديٌّ = دفعةٌ كاملةٌ عند الإنشاء؛ دَينٌ = دفعاتٌ لاحقة. المتبقّي = الإجمالي − Σالدفعات.
+model PurchasePayment {
+  id          Int      @id @default(autoincrement())
+  agentId     Int
+  receiptId   Int
+  amount      Float
+  source      String // daily | total
+  moneyTxId   Int?
+  managerTxId Int?
+  userId      Int?
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([agentId, receiptId])
+  @@map("purchase_payments")
+}
+
+// دفعةُ مخزنٍ (لوت): كلفةُ قطعةٍ ثابتةٌ لهذه الدفعة، والعددُ الأصليُّ والمتبقّي (يُخصَم بـFIFO).
+model ItemBatch {
+  id        Int      @id @default(autoincrement())
+  agentId   Int
+  towerId   Int
+  itemId    Int
+  receiptId Int? // وصلُ الشراء (فارغٌ للدفعة الافتتاحيّة عند التهجير)
+  buyPrice  Float // كلفةُ القطعة لهذه الدفعة (لا تختلط بدفعةٍ أخرى)
+  sellPrice Float? // سعرُ البيع المُدخَل مع الدفعة
+  qty       Float // العددُ الأصليّ
+  remaining Float // المتبقّي (FIFO)
+  date      DateTime @default(now())
+  isDeleted Boolean  @default(false)
+
+  @@index([itemId, isDeleted, date])
+  @@index([agentId])
+  @@map("item_batches")
+}
+
+// دفتر استهلاك الدفعات عند البيع: لكلّ سطر بيعٍ كم استُهلك من كلّ دفعةٍ وبأيّ كلفةٍ وبيع — به يُحسَب
+// ربحُ المبيعات بالكلفة الفعليّة (لا المتوسّط)، ويُستعاد المخزونُ للدفعة نفسِها عند الإلغاء.
+model SaleConsumption {
+  id            Int      @id @default(autoincrement())
+  agentId       Int
+  towerId       Int?
+  sellerUserId  Int? // مُنشئُ الفاتورة (للتفصيل بالمستخدم المنفصل)
+  invoiceId     Int?
+  invoiceItemId Int
+  itemId        Int
+  batchId       Int
+  qty           Float
+  unitCost      Float // كلفةُ القطعة من تلك الدفعة (لقطةٌ ثابتة)
+  unitSell      Float // سعرُ بيع القطعة (لقطة)
+  at            DateTime @default(now())
+  isDeleted     Boolean  @default(false)
+
+  @@index([agentId, at])
+  @@index([invoiceItemId])
+  @@map("sale_consumptions")
 }
 
 // ===== التذاكر (tct) =====

@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/format";
 import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
 import { baghdadDayKey } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
+import { consumeFifo } from "@/lib/fifo";
 
 export const dynamic = "force-dynamic";
 
@@ -307,9 +308,16 @@ export async function POST(request: Request) {
       }
       for (let i = 0; i < soldInfo.length; i++) {
         const s = soldInfo[i];
-        await tx.invoiceItem.create({
-          data: { invoiceId: inv.id, itemId: s.itemId, count: s.qty, price: s.qty > 0 ? scaled[i] / s.qty : 0 },
+        const unitSell = s.qty > 0 ? scaled[i] / s.qty : 0;
+        const li = await tx.invoiceItem.create({
+          data: { invoiceId: inv.id, itemId: s.itemId, count: s.qty, price: unitSell },
+          select: { id: true },
         });
+        // 🏬📦 استهلاكُ الدفعات (FIFO) لكلفةٍ فعليّةٍ لربح المبيعات
+        if (actor.agentId != null) {
+          const unitCost = await consumeFifo(tx, { agentId: actor.agentId, towerId, itemId: s.itemId, qty: s.qty, unitSell, invoiceId: inv.id, invoiceItemId: li.id, sellerUserId: actor.userId ?? null, at: inv.date ?? new Date() });
+          await tx.invoiceItem.update({ where: { id: li.id }, data: { buyPrice: unitCost } });
+        }
       }
       // قيد قبض الفاتورة (كفاتورة المبيع العادية) — المرة الوحيدة التي يدخل فيها المبيع الصندوق
       if (netSale > 0) {

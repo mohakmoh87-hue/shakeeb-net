@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { consumeFifo } from "@/lib/fifo";
 import { requireTower } from "@/lib/requireTower";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -282,11 +283,17 @@ export async function POST(request: Request) {
     }
 
     for (const it of items) {
-      await tx.invoiceItem.create({
+      const li = await tx.invoiceItem.create({
         data: { invoiceId: inv.id, itemId: it.itemId, count: it.count, price: it.price },
+        select: { id: true },
       });
-      // إنقاص المخزون
+      // إنقاص المخزون (العدّ الكلّيّ للعرض)
       await tx.item.update({ where: { id: it.itemId }, data: { count: { decrement: it.count } } });
+      // 🏬📦 استهلاكُ الدفعات (FIFO): كلفةٌ فعليّةٌ لكلّ قطعةٍ لربح المبيعات + استعادةٌ دقيقةٌ عند الإلغاء
+      if (session?.agentId != null) {
+        const unitCost = await consumeFifo(tx, { agentId: session.agentId, towerId, itemId: it.itemId, qty: it.count, unitSell: it.price ?? 0, invoiceId: inv.id, invoiceItemId: li.id, sellerUserId: session.userId ?? null, at: inv.date ?? new Date() });
+        await tx.invoiceItem.update({ where: { id: li.id }, data: { buyPrice: unitCost } });
+      }
     }
 
     // تسجيل القبض: الماستر لحسابه المستقل (لا يدخل التقرير اليومي)، والنقدي للصندوق

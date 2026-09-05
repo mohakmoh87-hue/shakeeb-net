@@ -228,7 +228,8 @@ export async function POST(
       if (cardId) {
         const claim = await tx.rechargeCard.updateMany({
           where: { id: cardId, useDate: null, agentId: session?.agentId ?? -1 }, // عزل: كارت وكيل المستخدم فقط
-          data: { useDate: now, subscriberId, userName: session?.fullName, reservedBy: null, reservedAt: null },
+          // 🟢 لقطةُ سعر باقة البيع لحظةَ التفعيل + المُفعِّل — لربح الانتشار (بالمكتب والمستخدم)
+          data: { useDate: now, subscriberId, userName: session?.fullName, userId: session?.userId ?? null, reservedBy: null, reservedAt: null, sellAtUse: price },
         });
         if (claim.count === 0) throw new Error("CARD_TAKEN");
       }

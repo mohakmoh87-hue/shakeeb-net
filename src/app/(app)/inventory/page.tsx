@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import CrudManager, { type Field } from "@/components/CrudManager";
 import { usePermission } from "@/lib/usePermission";
 import AddItemModal from "@/components/AddItemModal";
+import { PurchaseReceiptModal, PurchaseLogModal } from "@/components/PurchaseReceiptModal";
 
 type Item = {
   id: number;
@@ -30,6 +31,8 @@ export default function InventoryPage() {
   const [transferItem, setTransferItem] = useState<Item | null>(null);
   const [batchItem, setBatchItem] = useState<Item | null>(null); // 📦 سجلّ الدفعات
   const [addOpen, setAddOpen] = useState(false); // ➕ نافذة إضافة مادة
+  const [purchaseOpen, setPurchaseOpen] = useState(false); // 🧾 وصل شراء
+  const [logOpen, setLogOpen] = useState(false); // 📒 سجلّ وصولات الشراء
   const [custodyOpen, setCustodyOpen] = useState(false);
   const [filterTower, setFilterTower] = useState(""); // فلتر مكتب (للمدير)
 
@@ -132,6 +135,17 @@ export default function InventoryPage() {
                 ➕ إضافة مادة
               </button>
             )}
+            {/* 🧾 وصلُ شراءٍ متعدّدُ المواد + دفعاتُ FIFO — للمدير (طلبُ محمد 2026-09-05) */}
+            {isAdmin && (
+              <button onClick={() => setPurchaseOpen(true)} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-700">
+                🧾 وصل شراء
+              </button>
+            )}
+            {isAdmin && (
+              <button onClick={() => setLogOpen(true)} className="rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-slate-700">
+                📒 سجلّ وصولات الشراء
+              </button>
+            )}
           </>
         }
         rowActions={(r) => (
@@ -214,6 +228,15 @@ export default function InventoryPage() {
           onDone={afterChange}
         />
       )}
+      {purchaseOpen && (
+        <PurchaseReceiptModal
+          towers={towers}
+          defaultTowerId={filterTower ? Number(filterTower) : null}
+          onClose={() => setPurchaseOpen(false)}
+          onDone={afterChange}
+        />
+      )}
+      {logOpen && <PurchaseLogModal onClose={() => setLogOpen(false)} />}
     </>
   );
 }

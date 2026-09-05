@@ -485,6 +485,25 @@ CREATE POLICY rls_contract_installs ON contract_installs TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
+-- 🏬🧾 وصولاتُ الشراء + الدفعات (FIFO) + استهلاكُ البيع (2026-09-05) — تُدار من الموقع (المدير)؛
+-- العاملُ لا يلمسها (لا GRANT)، والسياساتُ للعزل عند أيّ وصولٍ مستقبليٍّ ولإرضاء فحص التغطية.
+ALTER TABLE purchase_receipts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_purchase_receipts ON purchase_receipts;
+CREATE POLICY rls_purchase_receipts ON purchase_receipts TO agent_worker
+  USING ("agentId" = current_agent_id()) WITH CHECK ("agentId" = current_agent_id());
+ALTER TABLE purchase_payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_purchase_payments ON purchase_payments;
+CREATE POLICY rls_purchase_payments ON purchase_payments TO agent_worker
+  USING ("agentId" = current_agent_id()) WITH CHECK ("agentId" = current_agent_id());
+ALTER TABLE item_batches ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_item_batches ON item_batches;
+CREATE POLICY rls_item_batches ON item_batches TO agent_worker
+  USING ("agentId" = current_agent_id()) WITH CHECK ("agentId" = current_agent_id());
+ALTER TABLE sale_consumptions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_sale_consumptions ON sale_consumptions;
+CREATE POLICY rls_sale_consumptions ON sale_consumptions TO agent_worker
+  USING ("agentId" = current_agent_id()) WITH CHECK ("agentId" = current_agent_id());
+
 ALTER TABLE groups         ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE boxes          ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE box_deps       ENABLE ROW LEVEL SECURITY; -- قديمة

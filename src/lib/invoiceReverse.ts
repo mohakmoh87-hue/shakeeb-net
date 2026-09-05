@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { restoreFifo } from "@/lib/fifo";
 
 // ═════ و-٢ · إرجاعُ بضاعةِ الفاتورة — **دالّةٌ واحدةٌ لكلّ مسارٍ يحذف فاتورة** ═════
 //
@@ -35,6 +36,7 @@ export async function reverseInvoiceStock(
     if (l.itemId) {
       await tx.item.update({ where: { id: l.itemId }, data: { count: { increment: l.count ?? 0 } } });
       qty += l.count ?? 0;
+      await restoreFifo(tx, l.id); // 🏬📦 إعادةُ المستهلَك إلى دفعاته نفسِها (FIFO)
       if (maintTech != null && (l.count ?? 0) > 0) {
         const custody = await tx.custody.findFirst({
           where: { technicianId: maintTech, itemId: l.itemId, isDeleted: false },
