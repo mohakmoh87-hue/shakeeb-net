@@ -172,12 +172,11 @@ export function startPrintAgent() {
           const tasks = await prisma.contractsTask.findMany({ where: { agentId: cleanupAid, status: "pending" }, orderBy: { id: "asc" }, take: 3 });
           if (tasks.length) {
             const { contractsLoginAndFetch, ContractsAuthError } = await import("@/lib/contractsApi");
-            const { decryptSecret } = await import("@/lib/secretbox");
             for (const t of tasks) {
               const claimed = await prisma.contractsTask.updateMany({ where: { id: t.id, status: "pending" }, data: { status: "running" } });
               if (claimed.count === 0) continue; // التقطتها حاسبةٌ أخرى
               try {
-                const rows = await contractsLoginAndFetch(t.username ?? "", decryptSecret(t.password) ?? "");
+                const rows = await contractsLoginAndFetch(t.username ?? "", t.password ?? "");
                 // updateMany بشرط status=running: لا يكتب فوق مهمّةٍ أُعيد التقاطُها أو نُظّفت
                 await prisma.contractsTask.updateMany({ where: { id: t.id, status: "running" }, data: { status: "done", resultCount: rows.length, error: null, username: null, password: null } });
               } catch (e) {

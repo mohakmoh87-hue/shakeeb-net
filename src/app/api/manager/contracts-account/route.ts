@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
-import { encryptSecret } from "@/lib/secretbox";
-// ملاحظة: التحقّقُ من الاعتماد يجري على **حاسبة المكتب** (العامل المحليّ /contracts-verify)
-// لأنّ موقع العقود لا يُفتَح إلّا من إنترنت سوبر سيل — والخادمُ السحابيُّ لا يصله. فالحفظُ
-// هنا تخزينٌ فقط (بعد أن تحقّق المستخدمُ محليّاً).
+// ملاحظة: التحقّقُ من الاعتماد يجري على **حاسبة المكتب** (العامل المحليّ) لأنّ موقع العقود لا
+// يُفتَح إلّا من إنترنت سوبر سيل — والخادمُ السحابيُّ لا يصله. فالحفظُ هنا تخزينٌ فقط.
+// الباسورد يُخزَّن **نصّاً صريحاً** (كما باسوردُ الساس في sas_panels) لأنّ حاسبةَ المكتب — التي
+// تستعمله — لا تملك CREDS_ENC_KEY، فلا يمكنها فكُّ تشفيرٍ سحابيّ. وحاسبةُ المكتب أصلاً تملك
+// رابطَ القاعدة كاملاً وباسورداتِ الساس الصريحة، فالتخزينُ الصريحُ لا يزيد سطحَ الخطر.
 
 export const dynamic = "force-dynamic";
 
@@ -62,15 +63,13 @@ export async function POST(request: Request) {
   }
 
   // تحقّقٌ مُرحَّل: يُنشئ مهمّةً تلتقطها حاسبةُ مكتبٍ متّصلةٌ للوكيل (تصل موقعَ العقود). الباسورد
-  // مؤقّتٌ مشفَّرٌ يُمسَح فور التنفيذ. يعمل من الهاتف/بعيداً ما دامت حاسبةُ مكتبٍ واحدةٌ تعمل.
+  // مؤقّتٌ يُمسَح فور التنفيذ. يعمل من الهاتف/بعيداً ما دامت حاسبةُ مكتبٍ واحدةٌ تعمل.
   if (action === "verify") {
     const username = typeof b?.username === "string" ? b.username.trim() : "";
     const password = typeof b?.password === "string" ? b.password : "";
     if (!username || !password) return NextResponse.json({ error: "أدخل اليوزر والباسورد" }, { status: 400 });
-    const enc = encryptSecret(password);
-    if (!enc) return NextResponse.json({ error: "تعذّر تشفيرُ الباسورد" }, { status: 500 });
     const towerId = Number(b?.towerId) || null;
-    const task = await prisma.contractsTask.create({ data: { agentId: gr.agentId, kind: "verify", towerId, username, password: enc, status: "pending" }, select: { id: true } });
+    const task = await prisma.contractsTask.create({ data: { agentId: gr.agentId, kind: "verify", towerId, username, password, status: "pending" }, select: { id: true } });
     return NextResponse.json({ ok: true, taskId: task.id });
   }
 
@@ -80,13 +79,11 @@ export async function POST(request: Request) {
     if (!username || !password) return NextResponse.json({ error: "أدخل اليوزر والباسورد" }, { status: 400 });
     const id = Number(b?.id) || 0;
     const label = typeof b?.label === "string" && b.label.trim() ? b.label.trim() : null;
-    const enc = encryptSecret(password);
-    if (!enc) return NextResponse.json({ error: "تعذّر تشفيرُ الباسورد" }, { status: 500 });
     if (id) {
       // تعديلُ اعتمادٍ قائم — عزل: يتبع الوكيل
       const row = await prisma.contractsAccount.findFirst({ where: { id, agentId: gr.agentId, isDeleted: false }, select: { id: true } });
       if (!row) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
-      await prisma.contractsAccount.update({ where: { id }, data: { username, password: enc, label } });
+      await prisma.contractsAccount.update({ where: { id }, data: { username, password, label } });
       return NextResponse.json({ ok: true });
     }
     const towerId = Number(b?.towerId) || 0;
@@ -95,7 +92,7 @@ export async function POST(request: Request) {
     const tw = await prisma.tower.findFirst({ where: { id: towerId, agentId: gr.agentId, isDeleted: false }, select: { id: true } });
     if (!tw) return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
     const sasPanelId = b?.sasPanelId != null && Number(b.sasPanelId) > 0 ? Number(b.sasPanelId) : null;
-    await prisma.contractsAccount.create({ data: { agentId: gr.agentId, towerId, sasPanelId, username, password: enc, label } });
+    await prisma.contractsAccount.create({ data: { agentId: gr.agentId, towerId, sasPanelId, username, password, label } });
     return NextResponse.json({ ok: true });
   }
 

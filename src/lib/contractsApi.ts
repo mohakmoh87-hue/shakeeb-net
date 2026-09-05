@@ -4,7 +4,7 @@
 //
 // الدخولُ **مباشرةً على mng-api** كما تفعل الصفحة نفسُها: POST /Security/User/Session/Login
 //   بـ{username,password} (JSON) ⇒ الردُّ فيه session.token ⇒ يُستعمل Bearer لـ Contract/GetData.
-// الأمانُ: المضيفُ **ثابتٌ** في الكود (لا SSRF)، والباسورد يُخزَّن مشفَّراً في القاعدة.
+// الأمانُ: المضيفُ **ثابتٌ** في الكود (لا SSRF)؛ الباسورد يُخزَّن نصّاً صريحاً كباسوردِ الساس.
 
 const MNG = "https://mng-api.supercellnetwork.com";
 const REQ_MS = 25_000; // مهلةُ كلّ نداء
@@ -22,21 +22,30 @@ const browserHeaders = {
 };
 const redact = (s: string) => s.replace(/eyJ[A-Za-z0-9_.-]{20,}/g, "[token]");
 
+// قيمُ platform المرشّحة (النظامُ «Management System») — نجرّبها حتى تُقبَل واحدة
+const PLATFORMS = ["Management", "Portal", "Dashboard", "Web"];
+
 export async function contractsLogin(username: string, password: string): Promise<string> {
   // واجهةُ .NET تشترط device/oSName/platform مع username/password (كشفَها تشخيصُ 400)
-  const r = await fetch(`${MNG}/Security/User/Session/Login`, {
-    method: "POST", signal: timed(),
-    headers: { "content-type": "application/json", accept: "application/json", ...browserHeaders },
-    body: JSON.stringify({ username, password, device: "ShakeebNet", oSName: "Windows", platform: "Web" }),
-  });
-  const text = await r.text().catch(() => "");
-  let j: Record<string, unknown> | null = null;
-  try { j = JSON.parse(text) as Record<string, unknown>; } catch { /* ليس JSON */ }
-  const token = pickToken(j);
-  if (token) return token;
-  // 🔎 تشخيصٌ مؤقّت: ردُّ الموقع (توكن مُخفًى) + طولُ الباسورد (يكشف فشلَ فكّ التشفير دون كشفه)
-  const snip = redact(text).slice(0, 200) || "(بلا نصّ)";
-  throw new ContractsAuthError(`تشخيص HTTP ${r.status} [pwLen:${password.length}]: ${snip}`);
+  let lastSnip = "";
+  for (const platform of PLATFORMS) {
+    const r = await fetch(`${MNG}/Security/User/Session/Login`, {
+      method: "POST", signal: timed(),
+      headers: { "content-type": "application/json", accept: "application/json", ...browserHeaders },
+      body: JSON.stringify({ username, password, device: "ShakeebNet", oSName: "Windows", platform }),
+    });
+    const text = await r.text().catch(() => "");
+    let j: Record<string, unknown> | null = null;
+    try { j = JSON.parse(text) as Record<string, unknown>; } catch { /* ليس JSON */ }
+    const token = pickToken(j);
+    if (token) return token;
+    lastSnip = redact(text).slice(0, 200);
+    // إن كان الرفضُ بسبب platform فقط ⇒ جرّب القيمةَ التالية؛ وإلّا (اعتماد/غيره) توقّف فوراً
+    if (/platform/i.test(text)) continue;
+    if (r.status === 400 || r.status === 401) throw new ContractsAuthError("يوزر أو باسورد موقع العقود غير صحيح");
+    throw new ContractsAuthError(`تعذّر الدخول لموقع العقود (HTTP ${r.status})`);
+  }
+  throw new ContractsAuthError(`تعذّر الدخول — قيمةُ platform مرفوضة كلُّها: ${lastSnip}`);
 }
 
 // التوكن قد يكون في session.token (كما رأينا في الجلسة) أو token/accessToken أو داخل data

@@ -1927,7 +1927,8 @@ model StoreOrderItem {
 }
 
 // 🏢📄 اعتمادُ «موقع العقود» (SuperCell) لكلّ مكتب — المصدرُ الموثوقُ للتنصيبات الداخليّة
-// (طلب محمد 2026-09-05). الرابطُ ثابتٌ لكلّ الوكلاء؛ يُخزَّن اليوزر والباسورد (مشفَّراً) فقط.
+// (طلب محمد 2026-09-05). الرابطُ ثابتٌ لكلّ الوكلاء؛ يُخزَّن اليوزر والباسورد (نصّاً صريحاً كباسوردِ
+// الساس) فقط — حاسبةُ المكتب التي تستعمله لا تملك CREDS_ENC_KEY فلا تفكُّ تشفيراً سحابيّاً.
 // مكتبٌ بساسَين ⇒ صفّان (sasPanelId يميّز الثانيَ). معزولٌ بـagentId.
 model ContractsAccount {
   id         Int      @id @default(autoincrement())
@@ -1936,7 +1937,7 @@ model ContractsAccount {
   sasPanelId Int? // للمكتب بلوحتَين — الاعتماد الثاني
   label      String? // اسمٌ للعرض
   username   String
-  password   String // مشفَّر (enc:v1:)
+  password   String // نصٌّ صريح (كباسوردِ الساس) — حاسبةُ المكتب لا تملك مفتاحَ التشفير
   isDeleted  Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @default(now()) @updatedAt
@@ -1947,14 +1948,14 @@ model ContractsAccount {
 
 // 🏢📄🔀 مُرحِّلُ فحصِ موقع العقود (طلب محمد 2026-09-05): موقعُ العقود لا يُفتَح إلّا من إنترنت
 // سوبر سيل، فالفحصُ من الهاتف/بعيداً يُنشئ مهمّةً هنا تلتقطها أوّلُ حاسبة مكتبٍ متّصلةٍ للوكيل
-// فتنفّذها وتُعيد النتيجة. اليوزر/الباسورد مؤقّتان (مشفَّران) يُمسحان فور التنفيذ. معزولٌ بـagentId.
+// فتنفّذها وتُعيد النتيجة. اليوزر/الباسورد مؤقّتان (نصٌّ صريح) يُمسحان فور التنفيذ. معزولٌ بـagentId.
 model ContractsTask {
   id          Int      @id @default(autoincrement())
   agentId     Int
   kind        String   @default("verify") // verify
   towerId     Int?
   username    String? // مؤقّت — يُمسح بعد التنفيذ
-  password    String? // مؤقّت مشفَّر — يُمسح بعد التنفيذ
+  password    String? // مؤقّت نصٌّ صريح — يُمسح بعد التنفيذ
   status      String   @default("pending") // pending | running | done | error
   resultCount Int?
   error       String?
