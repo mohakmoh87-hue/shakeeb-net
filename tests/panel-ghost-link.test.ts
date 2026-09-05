@@ -42,7 +42,7 @@ describe("👻 تطابقُ الرقمَين ينفي «رقم الساس تغي
     const src = SYNC();
     assert.equal((src.match(/name: true, netUser: true, sasPanelId: true \}/g) ?? []).length >= 2, true,
       "خريطتا المرحلة الثانية بلا عمود اللوحة");
-    assert.match(src, /select: \{ id: true, sasId: true, name: true, netUser: true, dateTo: true, sasPanelId: true \}/,
+    assert.match(src, /select: \{ id: true, sasId: true, name: true, netUser: true, dateTo: true, sasPanelId: true[,}]/,
       "خريطةُ المرحلة الأولى بلا عمود اللوحة");
   });
 });

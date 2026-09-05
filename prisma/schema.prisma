@@ -1926,6 +1926,25 @@ model StoreOrderItem {
   @@map("store_order_items")
 }
 
+// 🏢📄 اعتمادُ «موقع العقود» (SuperCell) لكلّ مكتب — المصدرُ الموثوقُ للتنصيبات الداخليّة
+// (طلب محمد 2026-09-05). الرابطُ ثابتٌ لكلّ الوكلاء؛ يُخزَّن اليوزر والباسورد (مشفَّراً) فقط.
+// مكتبٌ بساسَين ⇒ صفّان (sasPanelId يميّز الثانيَ). معزولٌ بـagentId.
+model ContractsAccount {
+  id         Int      @id @default(autoincrement())
+  agentId    Int
+  towerId    Int // المكتب
+  sasPanelId Int? // للمكتب بلوحتَين — الاعتماد الثاني
+  label      String? // اسمٌ للعرض
+  username   String
+  password   String // مشفَّر (enc:v1:)
+  isDeleted  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@index([agentId, towerId])
+  @@map("contracts_accounts")
+}
+
 // 🕵️ فحصُ «سب-ديلر»: ترويسةُ فحصٍ واحد + المشتبَهون JSON (كنمط sync_log/card_sas_checks).
 // يحفظ كلَّ فحصٍ يدويٍّ أو تلقائيٍّ ليلي؛ اللوحةُ تعرض آخرَ فحصٍ تلقائيّ، والإشعارُ يقارن
 // المشتبَهين الجددَ بالفحص السابق فلا يتكرّر كلَّ ليلة. معزولٌ بـagentId.

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDate } from "@/lib/format";
+import ContractsAccountPanel from "@/components/ContractsAccountPanel";
 
 // ═════ 📈 أرباحُ الشركة — لوحةٌ للقراءة لا قيدٌ ماليّ (طلبُ محمد 2026-08-22) ═════
 // خمسةُ مربّعات: أربعةٌ متساويةٌ تُضغَط فتفتح تفصيلَها، والخامسُ **صافي الشهر** ومعه
@@ -141,6 +142,12 @@ export default function ProfitsPanel() {
         <h3 className="font-bold text-slate-800">📈 أرباح الشركة</h3>
         <span className="text-[11px] text-slate-400">أرقامٌ للقراءة فقط — لا تدخل صندوقاً ولا حساباً</span>
       </div>
+
+      {/* 🏢📄 إعدادُ موقع العقود — مصدرُ احتساب التنصيبات الداخليّة */}
+      <details className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+        <summary className="cursor-pointer text-sm font-bold text-indigo-800">🏢 موقع العقود — احتسابُ التنصيبات الداخليّة</summary>
+        <div className="mt-3"><ContractsAccountPanel /></div>
+      </details>
 
       {rep?.dormant && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">

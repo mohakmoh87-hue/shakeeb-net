@@ -60,6 +60,7 @@ export async function detectInternalInstalls(
     JOIN sas ON sas."subscriberId" = en."subscriberId"
     JOIN subscribers s ON s.id = en."subscriberId"
     WHERE s."isDeleted" = false AND s."towerId" = ANY(${towerIds})
+      AND s."transferredFrom" IS NULL  -- 🔁 التحويلُ ليس تنصيباً (بلاغ محمد 2026-09-05)
       AND en.date >= ${since}
       AND (en.rn = 1 OR (en."prevTo" IS NOT NULL AND en.date - en."prevTo" > interval '30 days'))
     ORDER BY en."subscriberId", en.date DESC

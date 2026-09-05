@@ -1,8 +1,50 @@
 import { NextResponse } from "next/server";
+import zlib from "zlib";
 import { prisma } from "@/lib/prisma";
 import { guardOwner } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
+
+// KMZ = أرشيفُ ZIP يحوي KML (طلبُ محمد 2026-09-05: اقبل KMZ أيضاً). نستخرج ملفَّ الـKML
+// عبر الفهرس المركزيِّ للأرشيف ثمّ نفكّ ضغطَه (Node zlib.inflateRawSync — بلا مكتبةٍ خارجيّة).
+export function kmzToKml(buf: Buffer): string {
+  const EOCD = 0x06054b50; // نهايةُ الفهرس المركزيّ (PK\x05\x06)
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i >= buf.length - 22 - 65536; i--) {
+    if (buf.readUInt32LE(i) === EOCD) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("ملف KMZ غير صالح (لا فهرس أرشيف)");
+  const cdOffset = buf.readUInt32LE(eocd + 16);
+  const cdCount = buf.readUInt16LE(eocd + 10);
+  let p = cdOffset;
+  let best: { method: number; compSize: number; localOffset: number; name: string } | null = null;
+  for (let i = 0; i < cdCount && p + 46 <= buf.length; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) break; // ترويسةُ فهرسٍ مركزيّ
+    const method = buf.readUInt16LE(p + 10);
+    const compSize = buf.readUInt32LE(p + 20);
+    const nameLen = buf.readUInt16LE(p + 28);
+    const extraLen = buf.readUInt16LE(p + 30);
+    const commentLen = buf.readUInt16LE(p + 32);
+    const localOffset = buf.readUInt32LE(p + 42);
+    const name = buf.toString("utf8", p + 46, p + 46 + nameLen);
+    if (/\.kml$/i.test(name) && (!best || /(^|\/)doc\.kml$/i.test(name))) best = { method, compSize, localOffset, name };
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  if (!best) throw new Error("KMZ لا يحوي ملفَّ KML");
+  const lo = best.localOffset;
+  if (buf.readUInt32LE(lo) !== 0x04034b50) throw new Error("ترويسةٌ محليّةٌ غير صالحة في KMZ");
+  const lNameLen = buf.readUInt16LE(lo + 26);
+  const lExtraLen = buf.readUInt16LE(lo + 28);
+  const dataStart = lo + 30 + lNameLen + lExtraLen;
+  const comp = buf.subarray(dataStart, dataStart + best.compSize);
+  // سقفُ الفكّ ٦٤م ب (خريطةُ أعمدةٍ أكبرُ من ذلك غيرُ واقعيّة) — يمنع قنبلةَ ضغطٍ تُرهق الخادم؛
+  // التجاوزُ يرمي فيُمسَك في الأعلى كـ٤٠٠ لا يُسقط العمليّة.
+  if (best.method !== 0 && best.method !== 8) throw new Error("ضغطُ KMZ غير مدعوم");
+  const raw = best.method === 0
+    ? comp.subarray(0, Math.min(comp.length, 64 * 1024 * 1024))
+    : zlib.inflateRawSync(comp, { maxOutputLength: 64 * 1024 * 1024 });
+  return raw.toString("utf8");
+}
 
 // ===== رفع خريطة الأعمدة (KML) — للمالك وحده (طلب محمد 2026-08-05) =====
 // كانت الخرائط تُدخَل يدوياً على القاعدة، فكل تحديثٍ لمنطقة يحتاج تدخّلاً خارج البرنامج.
@@ -50,10 +92,15 @@ export async function POST(request: Request) {
   if (g.error) return g.error;
 
   const body = await request.json().catch(() => null);
-  const xml = typeof body?.kml === "string" ? body.kml : "";
   const dryRun = body?.dryRun === true;
+  let xml = typeof body?.kml === "string" ? body.kml : "";
+  // KMZ (مضغوط): يصل base64 فيُفكّ إلى KML
+  if (!xml && typeof body?.kmz === "string" && body.kmz) {
+    try { xml = kmzToKml(Buffer.from(body.kmz, "base64")); }
+    catch (e) { return NextResponse.json({ error: e instanceof Error ? e.message : "تعذّرت قراءة ملف KMZ" }, { status: 400 }); }
+  }
   if (!xml.includes("<Placemark")) {
-    return NextResponse.json({ error: "الملف لا يحوي علامات (Placemark) — تأكّد أنه KML" }, { status: 400 });
+    return NextResponse.json({ error: "الملف لا يحوي علامات (Placemark) — تأكّد أنه KML أو KMZ" }, { status: 400 });
   }
 
   const { rows, skipped } = parseKml(xml);

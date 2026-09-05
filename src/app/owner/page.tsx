@@ -525,7 +525,7 @@ type MapPreview = { points: number; added: number; overTech: number; keptKml: nu
 function MapImport() {
   const [areas, setAreas] = useState<{ code: string; count: number }[]>([]);
   const [total, setTotal] = useState(0);
-  const [kml, setKml] = useState<string>("");
+  const [payload, setPayload] = useState<{ kml?: string; kmz?: string } | null>(null);
   const [fileName, setFileName] = useState("");
   const [preview, setPreview] = useState<MapPreview | null>(null);
   const [msg, setMsg] = useState("");
@@ -539,40 +539,52 @@ function MapImport() {
   }, []);
   useEffect(() => { if (open) loadAreas(); }, [open, loadAreas]);
 
+  // KMZ (أرشيف) يُرسَل base64؛ KML (نصّ) يُرسَل نصّاً — الترميزُ مجزّأٌ لئلّا يفيض المكدّس بالملفّات الكبيرة
+  async function fileToPayload(file: File): Promise<{ kml?: string; kmz?: string }> {
+    if (/\.kmz$/i.test(file.name)) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let bin = ""; const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      return { kmz: btoa(bin) };
+    }
+    return { kml: await file.text() };
+  }
+
   async function pick(file: File) {
     setMsg(""); setPreview(null); setFileName(file.name);
-    const text = await file.text();
-    setKml(text);
     setBusy(true);
+    let pl: { kml?: string; kmz?: string };
+    try { pl = await fileToPayload(file); } catch { setBusy(false); setMsg("تعذّرت قراءةُ الملف"); return; }
+    setPayload(pl);
     const r = await fetch("/api/owner/map-import", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kml: text, dryRun: true }),
+      body: JSON.stringify({ ...pl, dryRun: true }),
     });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
-    if (!r.ok) { setMsg(d.error ?? "تعذّرت قراءة الملف"); setKml(""); return; }
+    if (!r.ok) { setMsg(d.error ?? "تعذّرت قراءة الملف"); setPayload(null); return; }
     setPreview(d);
   }
 
   async function apply() {
-    if (!kml) return;
+    if (!payload) return;
     setBusy(true); setMsg("");
     const r = await fetch("/api/owner/map-import", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kml }),
+      body: JSON.stringify(payload),
     });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { setMsg(d.error ?? "تعذّر الرفع"); return; }
     setMsg(`✓ رُفعت ${d.points} نقطة — جديدة ${d.added} · حلّت محلّ نقاط فنيّين ${d.overTech} · مكرّرة تُركت ${d.keptKml}. مجموع نقاط الخريطة الآن ${Number(d.total).toLocaleString("en-US")}`);
-    setPreview(null); setKml(""); setFileName("");
+    setPreview(null); setPayload(null); setFileName("");
     loadAreas();
   }
 
   return (
     <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-bold text-slate-800">🗺️ خريطة الأعمدة (KML)
+        <div className="font-bold text-slate-800">🗺️ خريطة الأعمدة (KML / KMZ)
           <span className="mr-2 text-[11px] font-normal text-slate-400">ارفع منطقة جديدة أو حدّث موجودة</span>
         </div>
         <button onClick={() => setOpen((v) => !v)} className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-200">
@@ -596,10 +608,10 @@ function MapImport() {
           )}
 
           <label className="block cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center hover:border-sky-400 hover:bg-sky-50">
-            <input type="file" accept=".kml,application/vnd.google-earth.kml+xml,text/xml" className="hidden"
+            <input type="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,text/xml" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.currentTarget.value = ""; }} />
             <div className="text-2xl">📂</div>
-            <div className="mt-1 text-sm font-bold text-slate-700">{fileName || "اختر ملف KML"}</div>
+            <div className="mt-1 text-sm font-bold text-slate-700">{fileName || "اختر ملف KML أو KMZ"}</div>
             <div className="mt-0.5 text-[11px] text-slate-400">يُقرأ الملف ويُعرض أثره قبل الكتابة — لا شيء يُحفظ قبل ضغطك «اعتماد»</div>
             <div className="mt-0.5 text-[11px] text-slate-400">المكرّر يُترك كما هو · وما أضافه فنيّ يحلّ ملفُّك محلّه</div>
           </label>
@@ -635,7 +647,7 @@ function MapImport() {
                 <button onClick={apply} disabled={busy} className="flex-1 rounded-lg bg-sky-600 py-2 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-60">
                   {busy ? "…" : `اعتماد ورفع ${preview.points} نقطة`}
                 </button>
-                <button onClick={() => { setPreview(null); setKml(""); setFileName(""); }} className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-500 ring-1 ring-slate-200">إلغاء</button>
+                <button onClick={() => { setPreview(null); setPayload(null); setFileName(""); }} className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-500 ring-1 ring-slate-200">إلغاء</button>
               </div>
             </div>
           )}

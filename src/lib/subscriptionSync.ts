@@ -459,13 +459,20 @@ async function runOfficeSyncInner(
   // تُفعّله سوبر سيل في الساس فيصل تفعيلٌ بـsasId مختلف ⇒ صفٌّ ثانٍ بـ١٠ أيّام.
   // 🔑 والمطابقةُ باليوزر: **«اليوزرُ هو الفيصلُ الأكبرُ الذي لا يُخطئ»** — فإن وُجد
   //    صفُّه استُعمل هو ولم يُنشأ ثانٍ، فيُسجَّل التفعيلُ على صاحبه الصحيح.
-  const subByUserPhase1 = new Map<string, { id: number; sasId: number | null; name: string | null; netUser: string | null; dateTo: Date | null; sasPanelId: number | null }>();
+  type SubMatch = { id: number; sasId: number | null; name: string | null; netUser: string | null; dateTo: Date | null; sasPanelId: number | null };
+  const subByUserPhase1 = new Map<string, SubMatch>();
+  // 🔁 خريطةُ «حُوِّل منه»: عند التحويل يُكتَب في netUser نصُّ ملاحظةٍ حرّ، ويبقى اليوزرُ
+  //    القديمُ في transferredFrom. فيوزرُ الساس القديمُ يُطابَق بمشتركه عبرها فلا يُعَدّ
+  //    تنصيباً خارجيّاً جديداً (بلاغ محمد 2026-09-05).
+  const subByTransferFrom = new Map<string, SubMatch>();
   for (const s of await prisma.subscriber.findMany({
-    where: { towerId: officeId, isDeleted: false, netUser: { not: null } },
-    select: { id: true, sasId: true, name: true, netUser: true, dateTo: true, sasPanelId: true },
+    where: { towerId: officeId, isDeleted: false, OR: [{ netUser: { not: null } }, { transferredFrom: { not: null } }] },
+    select: { id: true, sasId: true, name: true, netUser: true, dateTo: true, sasPanelId: true, transferredFrom: true },
   })) {
     const u = (s.netUser ?? "").trim().toLowerCase();
     if (u && !subByUserPhase1.has(u)) subByUserPhase1.set(u, s);
+    const tf = (s.transferredFrom ?? "").trim().toLowerCase();
+    if (tf && !subByTransferFrom.has(tf)) subByTransferFrom.set(tf, s);
   }
   const subById = new Map(officeSubs.map((s) => [s.id, s]));
   // ═════ 💰 «مقبوضٌ عندي» تُقاس على **اليوزر** لا على صفّ المشترك (العلّةُ الأمّ 2026-08-21) ═════
@@ -670,6 +677,11 @@ async function runOfficeSyncInner(
         sub = byUser;
         subBySasId.set(a.sasUserId, byUser);
         dupUserPhase1++;
+      } else {
+        // 🔁 تحويل: اليوزرُ الخامُّ يطابق «حُوِّل منه» لمشتركٍ قائم (نُقل اسمُه للملاحظة) —
+        //    فهو مشتركُنا لا تنصيبٌ خارجيٌّ جديد (بلاغ محمد 2026-09-05).
+        const byTransfer = uKey ? subByTransferFrom.get(uKey) : undefined;
+        if (byTransfer) { sub = byTransfer; subBySasId.set(a.sasUserId, byTransfer); }
       }
     }
     if (!sub) {
@@ -746,6 +758,7 @@ async function runOfficeSyncInner(
       // 👻 نفسُ الرقم من لوحةٍ أخرى ⇒ حدثُه للوحته لا لهذه الدورة (وهْمُ اللوحتين)
       if (byUser && byUser.sasId === a.sasUserId && byUser.sasPanelId != null && panelId != null && byUser.sasPanelId !== panelId) continue;
       if (byUser) sub = byUser;
+      else { const byTransfer = uk ? subByTransferFrom.get(uk) : undefined; if (byTransfer) sub = byTransfer; } // 🔁 تحويل
     }
     // 🔑 **الإسكاتُ مشروطٌ بوجود بيتٍ للواقعة** (قرارُ محمد 2026-08-22): «له تفعيلةٌ في
     //    النافذة ⇒ بيتُها تبويبُ التفعيل» صحيحةٌ **ما دام الصفُّ معلَّقاً**. أمّا صفٌّ

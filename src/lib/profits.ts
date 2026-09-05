@@ -279,10 +279,15 @@ export async function computeProfits(
   // مشتركو المكاتب — لليوزر والكابينة والباقة
   const subs = await prisma.subscriber.findMany({
     where: { towerId: { in: towerIds }, isDeleted: false },
-    select: { id: true, name: true, netUser: true, towerId: true, packageId: true, sasId: true },
+    select: { id: true, name: true, netUser: true, towerId: true, packageId: true, sasId: true, transferredFrom: true },
   });
   const subById = new Map(subs.map((s) => [s.id, s]));
   const subBySas = new Map(subs.filter((s) => s.sasId != null).map((s) => [`${s.towerId}|${s.sasId}`, s]));
+  // 🔁 يوزراتُ «حُوِّل منها»: أيُّ صفِّ ساسٍ ليوزرٍ قديمٍ لتحويلٍ هو **تحويلٌ لا تنصيب/تفعيل**،
+  //    فلا يُحتسَب في الأرباح مهما بقي صفُّه (حارسٌ نهائيٌّ فوق تصحيح المزامنة — بلاغ محمد 2026-09-05).
+  const transferFromUsers = new Set(
+    subs.map((s) => (s.transferredFrom ?? "").trim().toLowerCase()).filter(Boolean),
+  );
 
   // ═══ ب · المستخدمون المنفصلون — للإسناد «مَن أنجز الداخليّ؟» (طلبُ محمد 2026-08-26) ═══
   // بمنطقه هو: «الداخليُّ له وصلٌ في البرنامج، والوصلُ مختومٌ بقابضه — والخارجيُّ ترصده
@@ -383,6 +388,8 @@ export async function computeProfits(
     });
     const installSeen = new Set<string>(); // «مرّةً واحدة» لكلّ مشترك
     for (const r of logs) {
+      // 🔁 صفُّ يوزرٍ «حُوِّل منه» = تحويلٌ لا تنصيب/تفعيل ⇒ لا يُحتسَب (بلاغ محمد 2026-09-05)
+      if (transferFromUsers.has((r.netUser ?? "").trim().toLowerCase())) continue;
       const at = r.activatedAt ?? r.createdAt;
       const sub = r.subscriberId != null ? subById.get(r.subscriberId) : (r.sasId != null ? subBySas.get(`${r.towerId}|${r.sasId}`) : undefined);
       const netUser = r.netUser ?? sub?.netUser ?? null;

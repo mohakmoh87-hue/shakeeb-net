@@ -456,6 +456,13 @@ CREATE POLICY rls_sub_dealer_scans ON sub_dealer_scans TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
+-- 🏢📄 اعتمادُ موقع العقود (2026-09-05) — يكتبها الموقعُ وحدَه. عزلٌ بـagentId المباشر.
+ALTER TABLE contracts_accounts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_contracts_accounts ON contracts_accounts;
+CREATE POLICY rls_contracts_accounts ON contracts_accounts TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 ALTER TABLE groups         ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE boxes          ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE box_deps       ENABLE ROW LEVEL SECURITY; -- قديمة
