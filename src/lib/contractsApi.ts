@@ -28,7 +28,9 @@ export async function contractsLogin(username: string, password: string): Promis
   const csrfRes = await fetch(`${FIN}/api/auth/csrf`, { headers: { accept: "application/json" }, cache: "no-store", signal: timed() });
   absorb(jar, csrfRes);
   const csrfToken = (await csrfRes.json().catch(() => null))?.csrfToken as string | undefined;
-  if (!csrfToken) throw new ContractsAuthError("تعذّر بدءُ الجلسة مع موقع العقود");
+  if (!csrfToken) throw new ContractsAuthError("تعذّر بدءُ الجلسة (لا csrf) — تأكّد من إنترنت سوبر سيل");
+  // 🔎 تشخيص: هل التُقطت كوكيزُ الاستجابة؟ (getSetCookie قد يغيب على نسخةٍ قديمةٍ من Node)
+  if (jar.size === 0) throw new ContractsAuthError("تشخيص: تعذّر التقاطُ كوكي csrf (الكوكيز)");
   // ٢) اعتمادُ الدخول — لا يُتَّبَع التحويلُ (redirect:false) والكوكي يعود في الرأس
   const body = new URLSearchParams({ csrfToken, username, password, redirect: "false", json: "true", callbackUrl: `${FIN}/contract` });
   const cbRes = await fetch(`${FIN}/api/auth/callback/credentials`, {
@@ -37,11 +39,21 @@ export async function contractsLogin(username: string, password: string): Promis
     body,
   });
   absorb(jar, cbRes);
+  // 🔎 تشخيص: رَدُّ الـcallback يحمل url فيه error عند الرفض (CredentialsSignin/MissingCSRF…)
+  const cbJson = (await cbRes.json().catch(() => null)) as { url?: string } | null;
+  const cbUrl = cbJson?.url ?? "";
+  if (/error=/i.test(cbUrl)) {
+    const code = decodeURIComponent((cbUrl.match(/error=([^&]+)/) ?? [])[1] ?? "?");
+    throw new ContractsAuthError(`تشخيص: رفضَ موقعُ العقود الدخول (${code}) — HTTP ${cbRes.status}`);
+  }
   // ٣) الجلسة ⇒ التوكن
   const sessRes = await fetch(`${FIN}/api/auth/session`, { headers: { cookie: cookieHeader(jar), accept: "application/json" }, cache: "no-store", signal: timed() });
   const sess = await sessRes.json().catch(() => null);
   const token = sess?.user?.session?.token as string | undefined;
-  if (!token) throw new ContractsAuthError("يوزر أو باسورد موقع العقود غير صحيح");
+  if (!token) {
+    const hasUser = !!sess?.user;
+    throw new ContractsAuthError(`تشخيص: ${hasUser ? "دخلَ لكن بلا توكن (بنيةُ الجلسة تغيّرت)" : "الجلسةُ فارغةٌ بعد الدخول (كوكي الجلسة لم يُحمَل)"} — cbUrl:${cbUrl.slice(0, 60)}`);
+  }
   return token;
 }
 
