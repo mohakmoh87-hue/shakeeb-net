@@ -29,8 +29,9 @@ async function writeSetting(type: string, text: string): Promise<void> {
 export type SalePeriod = { from: Date; to: Date; label: string; ended: boolean; nextFrom: Date | null; epoch: Date };
 
 export async function getSalePeriod(agentId: number, now = new Date()): Promise<SalePeriod> {
+  // التأسيسُ من **بداية الشهر الحاليّ** لا لحظةَ أوّل فتح — كي يعرض الشهرَ كاملاً (رجعيّاً)
   let epochTxt = await readSetting(S_EPOCH(agentId));
-  if (!epochTxt) { epochTxt = now.toISOString(); await writeSetting(S_EPOCH(agentId), epochTxt); }
+  if (!epochTxt) { const n0 = baghdadParts(now); epochTxt = monthStart(n0.y, n0.m).toISOString(); await writeSetting(S_EPOCH(agentId), epochTxt); }
   const epoch = new Date(epochTxt);
   let fromTxt = await readSetting(S_PERIOD(agentId));
   if (!fromTxt) { fromTxt = epoch.toISOString(); await writeSetting(S_PERIOD(agentId), fromTxt); }
@@ -141,20 +142,29 @@ export async function computeSaleProfits(agentId: number, towerIds: number[], fr
     out.boxes.delivery.rows.push({ name: d.cardType ?? "توصيل", sub: s?.name ?? s?.netUser ?? null, office: officeName.get(tw) ?? String(tw), user: d.userId != null ? userName.get(d.userId) ?? null : null, at: d.date, amount: amt });
   }
 
-  // ③ مبيعات — من دفتر FIFO: مجموعُ (بيع − كلفةٌ فعليّة) لكلّ قطعةٍ مُستهلَكة
-  const cons = await prisma.saleConsumption.findMany({
-    where: { agentId, isDeleted: false, at: { gte: from, lte: to }, towerId: { in: towerIds } },
-    select: { itemId: true, towerId: true, sellerUserId: true, qty: true, unitCost: true, unitSell: true, at: true },
+  // ③ مبيعات — من فواتير المبيع مباشرةً: (سعرُ البيع − الكلفةُ المُجمَّدة buyPrice) × العدد.
+  //    buyPrice تضعه حلقةُ FIFO لكلّ بيعٍ (متوسّطُ الكلفة الفعليّة = مجموعُ الدفعات)، ويُملأ
+  //    للفواتير السابقة بباك-فيل. يعمل بأثرٍ رجعيٍّ (بيعُ المستخدم والفنّي معاً). العزلُ بالمكتب.
+  const invs = await prisma.invoice.findMany({
+    where: { towerId: { in: towerIds }, isDeleted: false, date: { gte: from, lte: to } },
+    select: { id: true, towerId: true, userId: true, date: true },
   });
-  const itemIds = [...new Set(cons.map((c) => c.itemId))];
+  const invById = new Map(invs.map((i) => [i.id, i]));
+  const invIds = invs.map((i) => i.id);
+  const iitems = invIds.length
+    ? await prisma.invoiceItem.findMany({ where: { invoiceId: { in: invIds }, isDeleted: false }, select: { invoiceId: true, itemId: true, count: true, price: true, buyPrice: true } })
+    : [];
+  const saleItemIds = [...new Set(iitems.map((x) => x.itemId).filter((x): x is number => x != null))];
   const itemName = new Map<number, string>();
-  for (const it of (itemIds.length ? await prisma.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, name: true } }) : [])) itemName.set(it.id, it.name ?? String(it.id));
-  for (const c of cons) {
-    const profit = R((Number(c.unitSell) - Number(c.unitCost)) * Number(c.qty));
-    const tw = c.towerId ?? 0;
+  for (const it of (saleItemIds.length ? await prisma.item.findMany({ where: { id: { in: saleItemIds } }, select: { id: true, name: true } }) : [])) itemName.set(it.id, it.name ?? String(it.id));
+  for (const it of iitems) {
+    const inv = invById.get(it.invoiceId!);
+    if (!inv) continue;
+    const tw = inv.towerId ?? 0;
+    const profit = R((Number(it.price ?? 0) - Number(it.buyPrice ?? 0)) * Number(it.count ?? 0));
     out.boxes.sales.count++; out.boxes.sales.total += profit;
-    bump(c.sellerUserId, "sales", profit);
-    out.boxes.sales.rows.push({ name: itemName.get(c.itemId) ?? String(c.itemId), sub: `×${Number(c.qty)}`, office: officeName.get(tw) ?? String(tw), user: c.sellerUserId != null ? userName.get(c.sellerUserId) ?? null : null, at: c.at, amount: profit });
+    bump(inv.userId, "sales", profit);
+    out.boxes.sales.rows.push({ name: it.itemId != null ? itemName.get(it.itemId) ?? String(it.itemId) : "—", sub: `×${Number(it.count ?? 0)}`, office: officeName.get(tw) ?? String(tw), user: inv.userId != null ? userName.get(inv.userId) ?? null : null, at: inv.date, amount: profit });
   }
 
   // ④ نثرية — صرفُ حسابات «نثرية» (moneyOut) بالمكتب والمستخدم
