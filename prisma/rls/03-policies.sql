@@ -463,6 +463,13 @@ CREATE POLICY rls_contracts_accounts ON contracts_accounts TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
+-- 🏢📄🔀 مُرحِّلُ فحصِ العقود (2026-09-05) — يقرؤه/يكتبه عاملُ حاسبة المكتب (على شبكة سوبر سيل).
+ALTER TABLE contracts_tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_contracts_tasks ON contracts_tasks;
+CREATE POLICY rls_contracts_tasks ON contracts_tasks TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 ALTER TABLE groups         ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE boxes          ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE box_deps       ENABLE ROW LEVEL SECURITY; -- قديمة

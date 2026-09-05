@@ -1,7 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { localSasBase } from "./localSas";
+
+// استطلاعُ نتيجةِ مهمّةِ فحصٍ مُرحَّلة (تنفّذها حاسبةُ مكتبٍ متّصلة) — حتى ~٥٠ث
+async function pollTask(taskId: number): Promise<{ ok: boolean; count?: number; error?: string }> {
+  for (let i = 0; i < 25; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const r = await fetch(`/api/manager/contracts-account?taskId=${taskId}`).then((x) => x.json()).catch(() => ({}));
+    if (r.status === "done") return { ok: true, count: r.count };
+    if (r.status === "error") return { ok: false, error: r.error };
+  }
+  return { ok: false, error: "لم تلتقطها حاسبةُ مكتبٍ بعد — تأكّد أنّ إحدى حاسبات مكاتبك تعمل (على إنترنت سوبر سيل)" };
+}
+
+// تحقّقٌ مُرحَّل: يُنشئ مهمّةً في السحابة تلتقطها حاسبةُ المكتب فتفحص موقعَ العقود وتُعيد النتيجة
+async function verifyRelay(username: string, password: string, towerId: number): Promise<{ ok: boolean; count?: number; error?: string }> {
+  const d = await fetch("/api/manager/contracts-account", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "verify", username, password, towerId }),
+  }).then((x) => x.json()).catch(() => ({}));
+  if (!d?.taskId) return { ok: false, error: d?.error ?? "تعذّر إنشاءُ مهمّة الفحص" };
+  return pollTask(d.taskId);
+}
 
 type Account = { id: number; sasPanelId: number | null; username: string; label: string | null };
 type Office = { towerId: number; name: string; panelCount: number; accounts: Account[] };
@@ -14,25 +34,20 @@ function AddForm({ office, second, onSaved }: { office: Office; second: boolean;
 
   async function call(action: "verify" | "save") {
     if (!username.trim() || !password) { setMsg({ ok: false, text: "أدخل اليوزر والباسورد" }); return; }
-    setBusy(action); setMsg(null);
+    setBusy(action); setMsg({ ok: true, text: "⏳ جارٍ الفحصُ عبر حاسبة المكتب…" });
     try {
-      // ١) التحقّقُ **على حاسبة المكتب** (موقع العقود يُفتَح من إنترنت سوبر سيل فقط، لا من الخادم)
-      const base = await localSasBase({ wait: true }).catch(() => "");
-      if (!base) { setMsg({ ok: false, text: "افتح من حاسبة المكتب (على إنترنت سوبر سيل) — موقعُ العقود لا يُفحَص من غيرها" }); return; }
-      const vr = await fetch(`${base}/contracts-verify`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }),
-      });
-      const vd = await vr.json().catch(() => ({}));
-      if (!vr.ok || !vd.ok) { setMsg({ ok: false, text: vd?.error ?? "تعذّر التحقّق من موقع العقود" }); return; }
-      if (action === "verify") { setMsg({ ok: true, text: `✅ الاعتماد صحيح — ${Number(vd.count ?? 0).toLocaleString("en-US")} عقد` }); return; }
-      // ٢) الحفظُ في القاعدة (تخزينٌ فقط، بعد نجاح التحقّق المحليّ)
+      // ١) تحقّقٌ مُرحَّلٌ عبر حاسبة المكتب (يعمل من الهاتف/بعيداً ما دامت حاسبةُ مكتبٍ تعمل)
+      const v = await verifyRelay(username, password, office.towerId);
+      if (!v.ok) { setMsg({ ok: false, text: v.error ?? "تعذّر التحقّق" }); return; }
+      if (action === "verify") { setMsg({ ok: true, text: `✅ الاعتماد صحيح — ${Number(v.count ?? 0).toLocaleString("en-US")} عقد` }); return; }
+      // ٢) الحفظُ في القاعدة (تخزينٌ، بعد نجاح التحقّق)
       const sr = await fetch("/api/manager/contracts-account", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "save", towerId: office.towerId, username, password, label: second ? "الثاني" : null }),
       });
       const sd = await sr.json().catch(() => ({}));
       if (!sr.ok) { setMsg({ ok: false, text: sd?.error ?? "تعذّر الحفظ" }); return; }
-      setMsg({ ok: true, text: `✅ حُفظ (${Number(vd.count ?? 0).toLocaleString("en-US")} عقد)` }); setUsername(""); setPassword(""); onSaved();
+      setMsg({ ok: true, text: `✅ حُفظ (${Number(v.count ?? 0).toLocaleString("en-US")} عقد)` }); setUsername(""); setPassword(""); onSaved();
     } catch { setMsg({ ok: false, text: "تعذّر الاتصال" }); }
     finally { setBusy(""); }
   }
@@ -110,7 +125,7 @@ export default function ContractsAccountPanel({ compact }: { compact?: boolean }
     <div className={compact ? "space-y-2" : "space-y-3"}>
       <p className="text-xs leading-6 text-slate-500">
         موقعُ العقود هو مصدرُ <b>التنصيبات داخل المكتب</b>. أدخِل يوزر/باسورد موقع العقود لكلّ مكتب (اضغط <b>🔎 تحقّق</b> قبل الحفظ).
-        <b className="text-indigo-700"> يجب الإدخالُ والتحقّقُ من حاسبة المكتب</b> (على إنترنت سوبر سيل) — فموقعُ العقود لا يُفتَح من غيرها.
+        <b className="text-indigo-700"> يمكنك الفحصُ من أيّ مكان (حتى الهاتف)</b> — يمرّ تلقائيّاً بحاسبة مكتبٍ متّصلةٍ على إنترنت سوبر سيل. اترك حاسبةَ مكتبٍ واحدةً تعمل.
         وعند تغيير الباسورد افصِل الاعتماد وأعِد إدخاله.
       </p>
       {offices.length === 0 ? <div className="text-sm text-slate-400">لا مكاتب</div> : offices.map((o) => <OfficeCard key={o.towerId} office={o} onChanged={load} />)}

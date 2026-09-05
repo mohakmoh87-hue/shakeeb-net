@@ -8,6 +8,8 @@
 
 const FIN = "https://finance.supercellnetwork.com";
 const MNG = "https://mng-api.supercellnetwork.com";
+const REQ_MS = 25_000; // مهلةُ كلّ نداءٍ — تمنع تعليقَ مهمّة الفحص (٤ نداءاتٍ ≤ ~١٠٠ث < مهلة إعادة العالق ٥د)
+const timed = () => AbortSignal.timeout(REQ_MS);
 
 type Jar = Map<string, string>;
 function absorb(jar: Jar, res: Response): void {
@@ -23,20 +25,20 @@ export class ContractsAuthError extends Error {}
 export async function contractsLogin(username: string, password: string): Promise<string> {
   const jar: Jar = new Map();
   // ١) رمزُ CSRF + كوكي
-  const csrfRes = await fetch(`${FIN}/api/auth/csrf`, { headers: { accept: "application/json" }, cache: "no-store" });
+  const csrfRes = await fetch(`${FIN}/api/auth/csrf`, { headers: { accept: "application/json" }, cache: "no-store", signal: timed() });
   absorb(jar, csrfRes);
   const csrfToken = (await csrfRes.json().catch(() => null))?.csrfToken as string | undefined;
   if (!csrfToken) throw new ContractsAuthError("تعذّر بدءُ الجلسة مع موقع العقود");
   // ٢) اعتمادُ الدخول — لا يُتَّبَع التحويلُ (redirect:false) والكوكي يعود في الرأس
   const body = new URLSearchParams({ csrfToken, username, password, redirect: "false", json: "true", callbackUrl: `${FIN}/contract` });
   const cbRes = await fetch(`${FIN}/api/auth/callback/credentials`, {
-    method: "POST", redirect: "manual",
+    method: "POST", redirect: "manual", signal: timed(),
     headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookieHeader(jar), accept: "application/json" },
     body,
   });
   absorb(jar, cbRes);
   // ٣) الجلسة ⇒ التوكن
-  const sessRes = await fetch(`${FIN}/api/auth/session`, { headers: { cookie: cookieHeader(jar), accept: "application/json" }, cache: "no-store" });
+  const sessRes = await fetch(`${FIN}/api/auth/session`, { headers: { cookie: cookieHeader(jar), accept: "application/json" }, cache: "no-store", signal: timed() });
   const sess = await sessRes.json().catch(() => null);
   const token = sess?.user?.session?.token as string | undefined;
   if (!token) throw new ContractsAuthError("يوزر أو باسورد موقع العقود غير صحيح");
@@ -59,7 +61,7 @@ export type ContractRow = {
 /** كلُّ عقود المكتب (٦٧٥ للشهداء مثلاً) بنداءٍ واحد. */
 export async function contractsFetch(token: string): Promise<ContractRow[]> {
   const r = await fetch(`${MNG}/Contract/GetData`, {
-    method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: "{}",
+    method: "POST", signal: timed(), headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: "{}",
   });
   if (!r.ok) throw new Error(`Contract/GetData أرجع ${r.status}`);
   const j = await r.json().catch(() => null);

@@ -86,6 +86,12 @@ GRANT USAGE, SELECT ON SEQUENCE guard_assignments_id_seq TO agent_worker;
 GRANT SELECT, INSERT, UPDATE ON card_sas_checks TO agent_worker; -- حكمُ «أين الكارت؟»
 GRANT USAGE, SELECT ON SEQUENCE card_sas_checks_id_seq TO agent_worker;
 
+-- ═════ 🏢📄 موقع العقود (2026-09-05) ═════
+-- العاملُ (حاسبةُ المكتب على إنترنت سوبر سيل) يلتقط مهامَّ الفحص المُرحَّلة وينفّذها،
+-- ويقرأ الاعتماد للفحص الدوريّ (المرحلة ٢). الإدخالُ من الموقع (دور المالك) فلا INSERT له.
+GRANT SELECT ON contracts_accounts TO agent_worker;                 -- يقرأ الاعتماد المخزّن
+GRANT SELECT, UPDATE, DELETE ON contracts_tasks TO agent_worker;    -- يلتقط المهمّة وينفّذها وينظّف
+
 -- install_tokens : رموز التنصيب
 -- manager_tx     : حركات حساب المدير (تُدار من الموقع فقط)
 -- groups, boxes, box_deps, months, notes, events : جداول قديمة لا يلمسها العامل

@@ -160,6 +160,33 @@ export function startPrintAgent() {
         await prisma.printJob.deleteMany({
           where: { agentId: cleanupAid, status: "pending", createdAt: { lt: new Date(Date.now() - 30 * 60_000) } },
         }).catch(() => {});
+        // 🏢📄 تنظيفُ مهامّ الفحص المنتهية (>ساعة) + إنعاشُ العالقة (>٥د)
+        await prisma.contractsTask.deleteMany({ where: { agentId: cleanupAid, status: { in: ["done", "error"] }, updatedAt: { lt: new Date(Date.now() - 60 * 60_000) } } }).catch(() => {});
+        await prisma.contractsTask.updateMany({ where: { agentId: cleanupAid, status: "running", updatedAt: { lt: new Date(Date.now() - 5 * 60_000) } }, data: { status: "pending" } }).catch(() => {});
+      }
+
+      // 🏢📄🔀 مهامُّ فحصِ موقع العقود المُرحَّلة: حاسبةُ المكتب (على إنترنت سوبر سيل) تلتقط
+      // مهمّةً أنشأها الوكيلُ من هاتفه/بعيداً، تنفّذها، تُعيد العدد، وتمسح الاعتمادَ فوراً.
+      if (cleanupAid != null) {
+        try {
+          const tasks = await prisma.contractsTask.findMany({ where: { agentId: cleanupAid, status: "pending" }, orderBy: { id: "asc" }, take: 3 });
+          if (tasks.length) {
+            const { contractsLoginAndFetch, ContractsAuthError } = await import("@/lib/contractsApi");
+            const { decryptSecret } = await import("@/lib/secretbox");
+            for (const t of tasks) {
+              const claimed = await prisma.contractsTask.updateMany({ where: { id: t.id, status: "pending" }, data: { status: "running" } });
+              if (claimed.count === 0) continue; // التقطتها حاسبةٌ أخرى
+              try {
+                const rows = await contractsLoginAndFetch(t.username ?? "", decryptSecret(t.password) ?? "");
+                // updateMany بشرط status=running: لا يكتب فوق مهمّةٍ أُعيد التقاطُها أو نُظّفت
+                await prisma.contractsTask.updateMany({ where: { id: t.id, status: "running" }, data: { status: "done", resultCount: rows.length, error: null, username: null, password: null } });
+              } catch (e) {
+                const msg = e instanceof ContractsAuthError ? e.message : "تعذّر الاتصال بموقع العقود (تأكّد من إنترنت سوبر سيل)";
+                await prisma.contractsTask.updateMany({ where: { id: t.id, status: "running" }, data: { status: "error", error: msg, username: null, password: null } }).catch(() => {});
+              }
+            }
+          }
+        } catch { /* لا يُفشل حلقةَ العامل */ }
       }
 
       // إنعاشُ العالق: أمرٌ بقي "printing" فوق ١٠د (ماتت عمليّتُه وسطَ الطبع) يعود pending

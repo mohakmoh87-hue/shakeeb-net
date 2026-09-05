@@ -1945,6 +1945,26 @@ model ContractsAccount {
   @@map("contracts_accounts")
 }
 
+// 🏢📄🔀 مُرحِّلُ فحصِ موقع العقود (طلب محمد 2026-09-05): موقعُ العقود لا يُفتَح إلّا من إنترنت
+// سوبر سيل، فالفحصُ من الهاتف/بعيداً يُنشئ مهمّةً هنا تلتقطها أوّلُ حاسبة مكتبٍ متّصلةٍ للوكيل
+// فتنفّذها وتُعيد النتيجة. اليوزر/الباسورد مؤقّتان (مشفَّران) يُمسحان فور التنفيذ. معزولٌ بـagentId.
+model ContractsTask {
+  id          Int      @id @default(autoincrement())
+  agentId     Int
+  kind        String   @default("verify") // verify
+  towerId     Int?
+  username    String? // مؤقّت — يُمسح بعد التنفيذ
+  password    String? // مؤقّت مشفَّر — يُمسح بعد التنفيذ
+  status      String   @default("pending") // pending | running | done | error
+  resultCount Int?
+  error       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@index([agentId, status])
+  @@map("contracts_tasks")
+}
+
 // 🕵️ فحصُ «سب-ديلر»: ترويسةُ فحصٍ واحد + المشتبَهون JSON (كنمط sync_log/card_sas_checks).
 // يحفظ كلَّ فحصٍ يدويٍّ أو تلقائيٍّ ليلي؛ اللوحةُ تعرض آخرَ فحصٍ تلقائيّ، والإشعارُ يقارن
 // المشتبَهين الجددَ بالفحص السابق فلا يتكرّر كلَّ ليلة. معزولٌ بـagentId.

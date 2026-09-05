@@ -17,9 +17,16 @@ async function gate() {
 }
 
 // مكاتبُ الوكيل + لوحاتُها + اعتماداتُ موقع العقود المحفوظة (لبناء نوافذ الإدخال)
-export async function GET() {
+export async function GET(request: Request) {
   const gr = await gate();
   if ("error" in gr) return gr.error;
+  // استطلاعُ نتيجةِ مهمّةِ فحصٍ (مُرحَّلة عبر حاسبة المكتب)
+  const taskId = Number(new URL(request.url).searchParams.get("taskId")) || 0;
+  if (taskId) {
+    const t = await prisma.contractsTask.findFirst({ where: { id: taskId, agentId: gr.agentId }, select: { status: true, resultCount: true, error: true } });
+    if (!t) return NextResponse.json({ error: "غير موجودة" }, { status: 404 });
+    return NextResponse.json({ status: t.status, count: t.resultCount, error: t.error });
+  }
   const [towers, panels, accounts] = await Promise.all([
     prisma.tower.findMany({ where: { agentId: gr.agentId, isDeleted: false }, select: { id: true, name: true }, orderBy: { id: "asc" } }),
     prisma.sasPanel.findMany({ where: { isDeleted: false }, select: { id: true, towerId: true }, orderBy: { id: "asc" } }),
@@ -52,6 +59,19 @@ export async function POST(request: Request) {
     if (!row) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
     await prisma.contractsAccount.update({ where: { id }, data: { isDeleted: true } });
     return NextResponse.json({ ok: true });
+  }
+
+  // تحقّقٌ مُرحَّل: يُنشئ مهمّةً تلتقطها حاسبةُ مكتبٍ متّصلةٌ للوكيل (تصل موقعَ العقود). الباسورد
+  // مؤقّتٌ مشفَّرٌ يُمسَح فور التنفيذ. يعمل من الهاتف/بعيداً ما دامت حاسبةُ مكتبٍ واحدةٌ تعمل.
+  if (action === "verify") {
+    const username = typeof b?.username === "string" ? b.username.trim() : "";
+    const password = typeof b?.password === "string" ? b.password : "";
+    if (!username || !password) return NextResponse.json({ error: "أدخل اليوزر والباسورد" }, { status: 400 });
+    const enc = encryptSecret(password);
+    if (!enc) return NextResponse.json({ error: "تعذّر تشفيرُ الباسورد" }, { status: 500 });
+    const towerId = Number(b?.towerId) || null;
+    const task = await prisma.contractsTask.create({ data: { agentId: gr.agentId, kind: "verify", towerId, username, password: enc, status: "pending" }, select: { id: true } });
+    return NextResponse.json({ ok: true, taskId: task.id });
   }
 
   if (action === "save") {
