@@ -362,6 +362,26 @@ export function startLocalSasServer(onBusy: "exit" | "yield" = "exit"): Promise<
         return;
       }
 
+      // ═════ 🏢📄 تحقّقُ اعتماد موقع العقود — من حاسبة المكتب حصراً (طلب محمد 2026-09-05) ═════
+      // موقعُ العقود يُفتَح من إنترنت سوبر سيل فقط، والخادمُ السحابيُّ لا يصله. فالتحقّقُ يجري
+      // هنا (حاسبةُ المكتب على شبكة سوبر سيل) بدخولٍ فعليٍّ وجلبِ عددِ العقود.
+      if (p === "/contracts-verify" && req.method === "POST") {
+        let body: { username?: string; password?: string } = {};
+        try { body = JSON.parse(await readBody(req)); } catch { /* يفشل التحقّق أدناه */ }
+        const username = String(body.username ?? "").trim();
+        const password = String(body.password ?? "");
+        if (!username || !password) { sendJson(res, 400, { error: "أدخل اليوزر والباسورد" }); return; }
+        const { contractsLoginAndFetch, ContractsAuthError } = await import("@/lib/contractsApi");
+        try {
+          const rows = await contractsLoginAndFetch(username, password);
+          sendJson(res, 200, { ok: true, count: rows.length });
+        } catch (e) {
+          if (e instanceof ContractsAuthError) sendJson(res, 401, { error: e.message });
+          else sendJson(res, 502, { error: "تعذّر الاتصال بموقع العقود (تأكّد أنّك على إنترنت سوبر سيل)" });
+        }
+        return;
+      }
+
       // ═════ 🖨️ طباعةٌ محليّةٌ فوريّة (طلب محمد 2026-08-14): «٥ ثوانٍ كبيرةٌ جدّاً» ═════
       // المتصفّحُ على حاسبة المكتب يُرسل هنا مباشرةً (إرسالٌ لحظيّ) بدل انتظار مستطلِع
       // طابور الـ٥ ثوانٍ. وإن لم تكن هذه الحاسبةُ مالكةَ مكتبِ الوصل ⇒ 409 فيرتدّ الزرُّ

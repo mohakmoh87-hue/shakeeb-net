@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 import { encryptSecret } from "@/lib/secretbox";
-import { contractsLoginAndFetch, ContractsAuthError } from "@/lib/contractsApi";
+// ملاحظة: التحقّقُ من الاعتماد يجري على **حاسبة المكتب** (العامل المحليّ /contracts-verify)
+// لأنّ موقع العقود لا يُفتَح إلّا من إنترنت سوبر سيل — والخادمُ السحابيُّ لا يصله. فالحفظُ
+// هنا تخزينٌ فقط (بعد أن تحقّق المستخدمُ محليّاً).
 
 export const dynamic = "force-dynamic";
 
@@ -35,9 +37,7 @@ export async function GET() {
   });
 }
 
-const ERR_MSG = "تعذّر الاتصال بموقع العقود (تحقّق من الإنترنت وحاول ثانيةً)";
-
-// POST: action = verify (تحقّق قبل الحفظ) | save (تحقّق ثمّ حفظٌ مشفَّر) | delete (فصل)
+// POST: action = save (تخزينٌ بعد تحقّقٍ محليّ) | delete (فصل). التحقّقُ على حاسبة المكتب.
 export async function POST(request: Request) {
   const gr = await gate();
   if ("error" in gr) return gr.error;
@@ -54,22 +54,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const username = typeof b?.username === "string" ? b.username.trim() : "";
-  const password = typeof b?.password === "string" ? b.password : "";
-  if (!username || !password) return NextResponse.json({ error: "أدخل اليوزر والباسورد" }, { status: 400 });
-
-  // تحقّق: دخولٌ فعليٌّ لموقع العقود + جلبُ العقود (يؤكّد الاعتماد قبل الحفظ)
-  let count: number;
-  try {
-    count = (await contractsLoginAndFetch(username, password)).length;
-  } catch (e) {
-    if (e instanceof ContractsAuthError) return NextResponse.json({ error: e.message }, { status: 401 });
-    return NextResponse.json({ error: ERR_MSG }, { status: 502 });
-  }
-
-  if (action === "verify") return NextResponse.json({ ok: true, count });
-
   if (action === "save") {
+    const username = typeof b?.username === "string" ? b.username.trim() : "";
+    const password = typeof b?.password === "string" ? b.password : "";
+    if (!username || !password) return NextResponse.json({ error: "أدخل اليوزر والباسورد" }, { status: 400 });
     const id = Number(b?.id) || 0;
     const label = typeof b?.label === "string" && b.label.trim() ? b.label.trim() : null;
     const enc = encryptSecret(password);
@@ -79,7 +67,7 @@ export async function POST(request: Request) {
       const row = await prisma.contractsAccount.findFirst({ where: { id, agentId: gr.agentId, isDeleted: false }, select: { id: true } });
       if (!row) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
       await prisma.contractsAccount.update({ where: { id }, data: { username, password: enc, label } });
-      return NextResponse.json({ ok: true, count });
+      return NextResponse.json({ ok: true });
     }
     const towerId = Number(b?.towerId) || 0;
     if (!towerId) return NextResponse.json({ error: "اختر المكتب" }, { status: 400 });
@@ -88,7 +76,7 @@ export async function POST(request: Request) {
     if (!tw) return NextResponse.json({ error: "المكتب لا يتبع حسابك" }, { status: 403 });
     const sasPanelId = b?.sasPanelId != null && Number(b.sasPanelId) > 0 ? Number(b.sasPanelId) : null;
     await prisma.contractsAccount.create({ data: { agentId: gr.agentId, towerId, sasPanelId, username, password: enc, label } });
-    return NextResponse.json({ ok: true, count });
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: "إجراءٌ غير معروف" }, { status: 400 });

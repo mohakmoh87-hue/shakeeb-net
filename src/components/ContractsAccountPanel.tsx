@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { localSasBase } from "./localSas";
 
 type Account = { id: number; sasPanelId: number | null; username: string; label: string | null };
 type Office = { towerId: number; name: string; panelCount: number; accounts: Account[] };
@@ -15,15 +16,24 @@ function AddForm({ office, second, onSaved }: { office: Office; second: boolean;
     if (!username.trim() || !password) { setMsg({ ok: false, text: "أدخل اليوزر والباسورد" }); return; }
     setBusy(action); setMsg(null);
     try {
-      const r = await fetch("/api/manager/contracts-account", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, towerId: office.towerId, username, password, label: second ? "الثاني" : null }),
+      // ١) التحقّقُ **على حاسبة المكتب** (موقع العقود يُفتَح من إنترنت سوبر سيل فقط، لا من الخادم)
+      const base = await localSasBase({ wait: true }).catch(() => "");
+      if (!base) { setMsg({ ok: false, text: "افتح من حاسبة المكتب (على إنترنت سوبر سيل) — موقعُ العقود لا يُفحَص من غيرها" }); return; }
+      const vr = await fetch(`${base}/contracts-verify`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }),
       });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) { setMsg({ ok: false, text: d?.error ?? "تعذّر" }); return; }
-      if (action === "verify") setMsg({ ok: true, text: `✅ الاعتماد صحيح — ${Number(d.count ?? 0).toLocaleString("en-US")} عقد` });
-      else { setMsg({ ok: true, text: "✅ حُفظ" }); setUsername(""); setPassword(""); onSaved(); }
-    } catch { setMsg({ ok: false, text: "تعذّر الاتصال بالخادم" }); }
+      const vd = await vr.json().catch(() => ({}));
+      if (!vr.ok || !vd.ok) { setMsg({ ok: false, text: vd?.error ?? "تعذّر التحقّق من موقع العقود" }); return; }
+      if (action === "verify") { setMsg({ ok: true, text: `✅ الاعتماد صحيح — ${Number(vd.count ?? 0).toLocaleString("en-US")} عقد` }); return; }
+      // ٢) الحفظُ في القاعدة (تخزينٌ فقط، بعد نجاح التحقّق المحليّ)
+      const sr = await fetch("/api/manager/contracts-account", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", towerId: office.towerId, username, password, label: second ? "الثاني" : null }),
+      });
+      const sd = await sr.json().catch(() => ({}));
+      if (!sr.ok) { setMsg({ ok: false, text: sd?.error ?? "تعذّر الحفظ" }); return; }
+      setMsg({ ok: true, text: `✅ حُفظ (${Number(vd.count ?? 0).toLocaleString("en-US")} عقد)` }); setUsername(""); setPassword(""); onSaved();
+    } catch { setMsg({ ok: false, text: "تعذّر الاتصال" }); }
     finally { setBusy(""); }
   }
 
@@ -100,7 +110,8 @@ export default function ContractsAccountPanel({ compact }: { compact?: boolean }
     <div className={compact ? "space-y-2" : "space-y-3"}>
       <p className="text-xs leading-6 text-slate-500">
         موقعُ العقود هو مصدرُ <b>التنصيبات داخل المكتب</b>. أدخِل يوزر/باسورد موقع العقود لكلّ مكتب (اضغط <b>🔎 تحقّق</b> قبل الحفظ).
-        عند تغيير الباسورد افصِل الاعتماد وأعِد إدخاله.
+        <b className="text-indigo-700"> يجب الإدخالُ والتحقّقُ من حاسبة المكتب</b> (على إنترنت سوبر سيل) — فموقعُ العقود لا يُفتَح من غيرها.
+        وعند تغيير الباسورد افصِل الاعتماد وأعِد إدخاله.
       </p>
       {offices.length === 0 ? <div className="text-sm text-slate-400">لا مكاتب</div> : offices.map((o) => <OfficeCard key={o.towerId} office={o} onChanged={load} />)}
     </div>
