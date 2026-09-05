@@ -90,12 +90,12 @@ function header(tpl: { showLogo: boolean; logo: string; headerText: string }, of
 export async function subscriptionReceiptHtml(entryId: number, agentId: number | null): Promise<string | null> {
   const entry = await prisma.subscriptionEntry.findUnique({ where: { id: entryId } });
   if (!entry) return null;
-  const subscriber = entry.subscriberId
-    ? await prisma.subscriber.findUnique({ where: { id: entry.subscriberId } })
-    : null;
-  const officeName = await brandName(agentId);
-  // قالب مكتب الوصل المخصّص إن وُجد، وإلا قالب الوكيل العام
-  const tpl = await getReceiptTemplate(agentId, entry.towerId);
+  // المشترك + الاسم التجاريّ + قالبُ المكتب — بالتوازي (كانت متسلسلةً عبر الأطلسي فتراكم التأخّر)
+  const [subscriber, officeName, tpl] = await Promise.all([
+    entry.subscriberId ? prisma.subscriber.findUnique({ where: { id: entry.subscriberId } }) : Promise.resolve(null),
+    brandName(agentId),
+    getReceiptTemplate(agentId, entry.towerId),
+  ]);
   const F = tpl.fields;
 
   // صفٌّ واحد حسب مفتاحه — تُبنى الصفوف بترتيب tpl.fieldOrder، وتُعرَض إن كان حقلها ظاهراً
@@ -132,13 +132,14 @@ export async function noticeSlipHtml(subscriberId: number, agentId: number | nul
   if (!s || s.isDeleted) return null;
   // تحصين عزل: مكتب المشترك يجب أن يطابق مكتب أمر الطباعة (الذي كُتب بعد ownsTower)
   if (jobTowerId != null && s.towerId !== jobTowerId) return null;
-  const tpl = await getNoticeTemplate(agentId, s.towerId);
-  const F = tpl.fields as unknown as Record<string, boolean>;
-  const [office, pkg] = await Promise.all([
+  // القالب + المكتب + الباقة + الاسم التجاريّ — بالتوازي (بعد حرّاس العزل أعلاه)
+  const [tpl, office, pkg, brand] = await Promise.all([
+    getNoticeTemplate(agentId, s.towerId),
     s.towerId != null ? prisma.tower.findUnique({ where: { id: s.towerId }, select: { name: true } }) : Promise.resolve(null),
     s.packageId != null ? prisma.package.findUnique({ where: { id: s.packageId }, select: { name: true, priceDinar: true } }) : Promise.resolve(null),
+    brandName(agentId),
   ]);
-  const brand = await brandName(agentId);
+  const F = tpl.fields as unknown as Record<string, boolean>;
 
   const bodyRow = (key: NoticeBodyKey): string => {
     switch (key) {
@@ -180,13 +181,14 @@ export async function debtSlipHtml(txId: number, agentId: number | null, jobTowe
       : null;
     if (!own) return null;
   }
-  const tpl = await getDebtTemplate(agentId, tx.towerId);
-  const F = tpl.fields as unknown as Record<string, boolean>;
-  const [office, user] = await Promise.all([
+  // القالب + المكتب + المستخدم + الاسم التجاريّ — بالتوازي (بعد حرّاس العزل أعلاه)
+  const [tpl, office, user, brand] = await Promise.all([
+    getDebtTemplate(agentId, tx.towerId),
     tx.towerId != null ? prisma.tower.findUnique({ where: { id: tx.towerId }, select: { name: true } }) : Promise.resolve(null),
     tx.userId != null ? prisma.user.findUnique({ where: { id: tx.userId }, select: { username: true } }) : Promise.resolve(null),
+    brandName(agentId),
   ]);
-  const brand = await brandName(agentId);
+  const F = tpl.fields as unknown as Record<string, boolean>;
   const paid = tx.moneyIn ?? 0;
   // الدينُ بعد التسديد هو دينُ المشترك الحاليّ، وقبلَه = بعدَه + المسدَّد.
   // ⚠️ وهذا صحيحٌ **لحظةَ الطبع**: لو سدّد المشتركُ مرّةً أخرى قبل الطبع، تغيّر «قبل».
@@ -219,13 +221,15 @@ export async function debtSlipHtml(txId: number, agentId: number | null, jobTowe
 export async function invoiceReceiptHtml(invoiceId: number, agentId: number | null): Promise<string | null> {
   const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
   if (!invoice) return null;
-  const lines = await prisma.invoiceItem.findMany({ where: { invoiceId: invoice.id, isDeleted: false } });
+  // بنودُ الفاتورة + الاسم التجاريّ + القالب — بالتوازي؛ ثمّ أسماءُ المواد بعد البنود
+  const [lines, officeName, tpl] = await Promise.all([
+    prisma.invoiceItem.findMany({ where: { invoiceId: invoice.id, isDeleted: false } }),
+    brandName(agentId),
+    getReceiptTemplate(agentId, invoice.towerId),
+  ]);
   const itemIds = lines.map((l) => l.itemId).filter(Boolean) as number[];
   const items = await prisma.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, name: true } });
   const nameMap = new Map(items.map((i) => [i.id, i.name]));
-  const officeName = await brandName(agentId);
-  // قالب مكتب الفاتورة المخصّص إن وُجد، وإلا قالب الوكيل العام
-  const tpl = await getReceiptTemplate(agentId, invoice.towerId);
   const F = tpl.fields;
 
   const tableRows = lines.map((l) =>

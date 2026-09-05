@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { prepareSasEmbed } from "@/lib/sasEmbed";
 import { sasScopedPath } from "@/lib/sasScope";
-import { useLocalSasBase } from "./localSas";
+import { useLocalSasBase, localSasBase } from "./localSas";
 import { computeDateTo } from "@/lib/subscription";
 import { announceMoneyChanged } from "@/lib/moneyRefresh";
 
@@ -324,15 +324,37 @@ export default function ActivationModal({
       //   الأخرس. الآن: يُنتظَر ردُّ الطباعة ويُبلَّغ إن تعذّرت — **بلا منعِ الإغلاق** (المالُ
       //   حُفظ سلفاً، فالطباعةُ تالية). كنمط صفحة الفواتير التي تفحص ok/workerOnline.
       if (print && data.entryId) {
-        try {
-          const pr = await fetch("/api/print", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kind: "subscription", id: data.entryId }),
-          });
-          const pd = await pr.json().catch(() => ({}));
-          if (!pr.ok) alert(`✓ حُفظ التفعيل — لكن تعذّرت الطباعة: ${pd.error ?? "خطأ"}`);
-          else if (pd.workerOnline === false) alert("✓ حُفظ التفعيل — حاسبةُ المكتب غير متصلةٍ للطباعة الآن، سيُطبع الوصلُ عند تشغيلها");
-        } catch { alert("✓ حُفظ التفعيل — تعذّر إرسالُ أمر الطباعة (تحقّق من الاتصال)"); }
+        const eid = data.entryId;
+        // ═════ الطباعةُ الفوريّة: المسارُ المحليُّ أوّلاً (يتخطّى استطلاعَ الـ٥ث) ═════
+        // كان يُرسَل مباشرةً للطابور السحابيّ فينتظر مستطلِعَ حاسبة المكتب (حتى ٥ث). الآن
+        // إن كانت هذه حاسبةَ المكتب تطبع فوراً عبر 127.0.0.1؛ وإلّا (هاتف/بعيد/٤٠٩) ترتدّ
+        // للسحابة كما كان — بنفس رسائل الحالة. (كنمط PrintNowButton المجرَّب.)
+        let printedLocal = false;
+        const base = localBase || (await localSasBase({ wait: true }).catch(() => ""));
+        if (base) {
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 25_000);
+            const r = await fetch(`${base}/print`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: "subscription", id: eid }), signal: ctrl.signal,
+            });
+            clearTimeout(t);
+            const d = await r.json().catch(() => ({}));
+            if (r.ok && d?.ok) printedLocal = true; // طُبع فوراً — لا ارتداد
+          } catch { /* فشلُ المحليّ ⇒ ارتدادٌ للسحابة أدناه */ }
+        }
+        if (!printedLocal) {
+          try {
+            const pr = await fetch("/api/print", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: "subscription", id: eid }),
+            });
+            const pd = await pr.json().catch(() => ({}));
+            if (!pr.ok) alert(`✓ حُفظ التفعيل — لكن تعذّرت الطباعة: ${pd.error ?? "خطأ"}`);
+            else if (pd.workerOnline === false) alert("✓ حُفظ التفعيل — حاسبةُ المكتب غير متصلةٍ للطباعة الآن، سيُطبع الوصلُ عند تشغيلها");
+          } catch { alert("✓ حُفظ التفعيل — تعذّر إرسالُ أمر الطباعة (تحقّق من الاتصال)"); }
+        }
       }
       onDone();
     } catch {

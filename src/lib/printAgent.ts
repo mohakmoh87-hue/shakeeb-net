@@ -42,7 +42,9 @@ async function htmlToPdf(html: string): Promise<string> {
   const b = await getBrowser();
   const page = await b.newPage();
   try {
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    // «load» لا «networkidle0»: الوصلُ مكتفٍ ذاتيّاً (شعارُ data: + خطوطُ النظام + CSS مضمّن)
+    // فلا مواردَ شبكيّةٌ تُنتظَر؛ networkidle0 كان يضيف ~٥٠٠مي‑ث انتظارَ خمولٍ بلا فائدة.
+    await page.setContent(html, { waitUntil: "load" });
     // أبعاد الورقة تأتي من القالب موسومةً على <html> (data-paper-w/-h):
     //   • عرض الصفحة = عرض الورقة المختارة (٥٨/٧٦/٨٠مم حراريّة، أو A4/Letter).
     //   • paper-h > 0 (ورق مقصوص): الطول ثابت ⇒ صفحة كاملة والمحتوى أعلى-وسط.
@@ -103,14 +105,8 @@ async function renderJobHtml(kind: string, refId: number, agentId: number | null
 // (مُصدَّرة للطباعة المحليّة الفوريّة من خادم 47615 — الالتقاطُ الذرّيُّ داخلها يمنع
 //  ازدواجَ الطبع مع مستطلِع الـ٥ ثوانٍ مهما تداخلا)
 export async function processJob(job: { id: number; kind: string; refId: number; agentId: number | null; towerId: number | null }): Promise<void> {
-  // التقاط ذرّي: الفائز الوحيد يقلب pending → printing (يمنع طباعة مزدوجة بين حاسبتين)
-  // متوسّط(٢١) · «printing» لم تعد حالةً بالِعة: عمليّةٌ ماتت وسط الطبع كانت تترك
-  // الأمرَ printing إلى الأبد بلا أيّ مسار تعافٍ — فلا يُطبع ولا يفشل. الآن: العالقُ
-  // فوق ١٠ دقائق يعود pending فيلتقطه المستطلِعُ التالي (idempotent — الالتقاطُ ذرّيّ).
-  await prisma.printJob.updateMany({
-    where: { status: "printing", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } },
-    data: { status: "pending" },
-  }).catch(() => {});
+  // التقاط ذرّي: الفائز الوحيد يقلب pending → printing (يمنع طباعة مزدوجة بين حاسبتين).
+  // (إنعاشُ العالق «printing>١٠د» انتقل إلى مستطلِع الـ٥ث — فلا يُثقَل مسارُ الطبع الفوريّ به.)
   const claimed = await prisma.printJob.updateMany({
     where: { id: job.id, status: "pending" },
     data: { status: "printing" },
@@ -118,11 +114,13 @@ export async function processJob(job: { id: number; kind: string; refId: number;
   if (claimed.count === 0) return;
   let file: string | null = null;
   try {
-    const html = await renderJobHtml(job.kind, job.refId, job.agentId, job.towerId);
+    // التصييرُ وجلبُ قالبِ الطابعة بالتوازي — طابعةُ الوصل من قالب **مكتب هذا الأمر نفسه**
+    // (عزل: agentId+towerId الخاصّان بالأمر فقط)؛ فارغ ⇒ الطابعة الافتراضية للحاسبة.
+    const [html, tpl] = await Promise.all([
+      renderJobHtml(job.kind, job.refId, job.agentId, job.towerId),
+      getReceiptTemplate(job.agentId, job.towerId),
+    ]);
     if (!html) throw new Error("الوصل غير موجود");
-    // طابعة الوصل من قالب **مكتب هذا الأمر نفسه** (عزل: agentId+towerId الخاصّان بالأمر
-    // فقط)؛ فارغ ⇒ الطابعة الافتراضية للحاسبة. لا يُستعمل قالب مكتبٍ/وكيلٍ آخر أبداً.
-    const tpl = await getReceiptTemplate(job.agentId, job.towerId);
     file = await htmlToPdf(html);
     await printPdfSilently(file, tpl.printerName);
     await prisma.printJob.update({ where: { id: job.id }, data: { status: "done", doneAt: new Date(), error: null } });
@@ -161,6 +159,16 @@ export function startPrintAgent() {
         lastPendingCleanup = Date.now();
         await prisma.printJob.deleteMany({
           where: { agentId: cleanupAid, status: "pending", createdAt: { lt: new Date(Date.now() - 30 * 60_000) } },
+        }).catch(() => {});
+      }
+
+      // إنعاشُ العالق: أمرٌ بقي "printing" فوق ١٠د (ماتت عمليّتُه وسطَ الطبع) يعود pending
+      // فيُلتقَط ثانيةً — لمكاتب وكيل هذه الحاسبة حصراً (عزل). كان في مسار الطبع الفوريّ
+      // فأُخّر إلى هنا كي لا يُثقَل كلُّ طبعٍ بمسحٍ على الجدول.
+      if (cleanupAid != null) {
+        await prisma.printJob.updateMany({
+          where: { agentId: cleanupAid, status: "printing", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } },
+          data: { status: "pending" },
         }).catch(() => {});
       }
 

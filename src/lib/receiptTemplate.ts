@@ -52,13 +52,18 @@ export function receiptOfficeKey(agentId: number, towerId: number): string {
 // الترتيب: قالب المكتب المخصّص (إن مُرّر towerId ووُجد) ← قالب الوكيل العام ← المفتاح
 // القديم "receipt" (للوكيل الأول حصراً) ← الافتراضي المحايد.
 export async function getReceiptTemplate(agentId?: number | null, towerId?: number | null): Promise<ReceiptTemplate> {
-  let row = agentId != null && towerId != null
-    ? await prisma.systemSetting.findFirst({ where: { type: receiptOfficeKey(agentId, towerId) } })
-    : null;
-  if (!row && agentId != null) row = await prisma.systemSetting.findFirst({ where: { type: `receipt:${agentId}` } });
-  // الارتداد للمفتاح القديم "receipt" للوكيل الأول (1) حصراً — قالبه ما قبل العزل؛
-  // غيره يأخذ الافتراضي المحايد (سدّ تسريب شعار/ترويسة الوكيل الأول لوكلاء جدد)
-  if (!row && agentId === 1) row = await prisma.systemSetting.findFirst({ where: { type: "receipt" } });
+  // مفاتيحُ الأولويّة: قالبُ المكتب ← قالبُ الوكيل ← القديم "receipt" (للوكيل ١ حصراً).
+  // تُجلَب كلُّها بنداءٍ واحدٍ (كانت ٣ نداءاتٍ متسلسلة عبر الأطلسي) ثمّ يُختار الأوّلُ الموجود.
+  const keys: string[] = [];
+  if (agentId != null && towerId != null) keys.push(receiptOfficeKey(agentId, towerId));
+  if (agentId != null) keys.push(`receipt:${agentId}`);
+  if (agentId === 1) keys.push("receipt");
+  let row: { text: string | null } | null = null;
+  if (keys.length) {
+    const rows = await prisma.systemSetting.findMany({ where: { type: { in: keys } }, select: { type: true, text: true } });
+    const byType = new Map(rows.map((r) => [r.type, r] as const));
+    for (const k of keys) { const r = byType.get(k); if (r) { row = r; break; } }
+  }
   if (row?.text) {
     try {
       const raw = { ...DEFAULT_RECEIPT, ...JSON.parse(row.text) };
@@ -101,10 +106,15 @@ export const DEFAULT_DEBT: ReceiptTemplate = {
 
 /** قالبُ وصل تسديد الدين: قالبُ المكتب ← قالبُ الوكيل ← الافتراضي (نفسُ سلَّم النوعَين). */
 export async function getDebtTemplate(agentId?: number | null, towerId?: number | null): Promise<ReceiptTemplate> {
-  let row = agentId != null && towerId != null
-    ? await prisma.systemSetting.findFirst({ where: { type: debtOfficeKey(agentId, towerId) } })
-    : null;
-  if (!row && agentId != null) row = await prisma.systemSetting.findFirst({ where: { type: debtKey(agentId) } });
+  const keys: string[] = [];
+  if (agentId != null && towerId != null) keys.push(debtOfficeKey(agentId, towerId));
+  if (agentId != null) keys.push(debtKey(agentId));
+  let row: { text: string | null } | null = null;
+  if (keys.length) {
+    const rows = await prisma.systemSetting.findMany({ where: { type: { in: keys } }, select: { type: true, text: true } });
+    const byType = new Map(rows.map((r) => [r.type, r] as const));
+    for (const k of keys) { const r = byType.get(k); if (r) { row = r; break; } }
+  }
   if (row?.text) {
     try {
       const raw = { ...DEFAULT_DEBT, ...JSON.parse(row.text) };
@@ -122,10 +132,15 @@ export async function getDebtTemplate(agentId?: number | null, towerId?: number 
 
 // قراءة قالب وصل الإشعار (server-side): قالب المكتب ← قالب الوكيل ← الافتراضي
 export async function getNoticeTemplate(agentId?: number | null, towerId?: number | null): Promise<ReceiptTemplate> {
-  let row = agentId != null && towerId != null
-    ? await prisma.systemSetting.findFirst({ where: { type: noticeOfficeKey(agentId, towerId) } })
-    : null;
-  if (!row && agentId != null) row = await prisma.systemSetting.findFirst({ where: { type: noticeKey(agentId) } });
+  const keys: string[] = [];
+  if (agentId != null && towerId != null) keys.push(noticeOfficeKey(agentId, towerId));
+  if (agentId != null) keys.push(noticeKey(agentId));
+  let row: { text: string | null } | null = null;
+  if (keys.length) {
+    const rows = await prisma.systemSetting.findMany({ where: { type: { in: keys } }, select: { type: true, text: true } });
+    const byType = new Map(rows.map((r) => [r.type, r] as const));
+    for (const k of keys) { const r = byType.get(k); if (r) { row = r; break; } }
+  }
   if (row?.text) {
     try {
       const raw = { ...DEFAULT_NOTICE, ...JSON.parse(row.text) };
