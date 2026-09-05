@@ -350,6 +350,19 @@ export async function computeProfits(
     inWin.sort((a, b) => Math.abs(a.t - at.getTime()) - Math.abs(b.t - at.getTime()));
     return inWin[0].userId;
   };
+  // 🏢📄 نسبةُ تنصيبِ العقود لقابض وصله — بنافذةٍ متماثلة ±span (كما يطابقها محرّكُ العقود)
+  const receiptUserAround = (subId: number, at: Date, span: number): number | null => {
+    const inWin = (allReceipts.get(subId) ?? []).filter((r) => Math.abs(r.t - at.getTime()) <= span);
+    if (!inWin.length) return null;
+    inWin.sort((a, b) => Math.abs(a.t - at.getTime()) - Math.abs(b.t - at.getTime()));
+    return inWin[0].userId;
+  };
+  // خريطةُ اليوزر ⇒ المشترك (لتحديد باقة تنصيبِ العقود بالاسم لا بمعرّفٍ قد يكون فارغاً)
+  const subByNet = new Map<string, { id: number; packageId: number | null }>();
+  for (const su of subById.values()) {
+    const u = (su.netUser ?? "").trim().toLowerCase();
+    if (u && !subByNet.has(u)) subByNet.set(u, { id: su.id, packageId: su.packageId ?? null });
+  }
 
   for (const e of entries) {
     const s = e.subscriberId != null ? subById.get(e.subscriberId) : null;
@@ -368,7 +381,46 @@ export async function computeProfits(
     });
   }
 
-  // ═══ ②③④ من سجلّ المزامنة ═══
+  // ═══ 🏢📄🛠️ ③ التنصيباتُ الداخليّةُ من موقع العقود — المصدرُ الموثوق (طلب محمد 2026-09-05) ═══
+  // كلُّ عقدٍ = تنصيبٌ داخل المكتب (المطابقةُ باليوزر حصراً)؛ يحلُّ محلَّ طريقة «العرض» للداخليّ.
+  // كلُّ من له عقدٌ يُستثنى من العدّ الخارجيّ أدناه (فإمّا داخليٌّ هنا، أو سرقةٌ عند حارس المال).
+  // مجموعةُ الاستثناء = كلُّ من له عقدٌ (أيّ تاريخٍ، غيرُ محذوف) كي لا يُعدَّ خارجيّاً في أيّ شهر.
+  // و`contractsActive`: هل لدى الوكيل بياناتُ عقودٍ أصلاً؟ إن لا (لم يُفحَص/لا اعتماد/غيرُ متّصل)
+  // فالعدُّ الخارجيُّ أدناه يعود للطريقة القديمة كي لا تنقلبَ كلُّ التنصيبات خارجيّةً خطأً.
+  const contractUsers = new Set<string>();
+  let contractsActive = false;
+  try {
+    const skipRows = await prisma.contractInstall.findMany({
+      where: { agentId, towerId: { in: towerIds }, classification: { not: "removed" } },
+      select: { username: true },
+    });
+    contractsActive = skipRows.length > 0;
+    for (const r of skipRows) { const u = (r.username ?? "").trim().toLowerCase(); if (u) contractUsers.add(u); }
+
+    // العدُّ الداخليُّ لهذه الفترة فقط (بتاريخ العقد) — والباقةُ باليوزر (لا بمعرّفٍ قد يكون فارغاً)
+    const cis = await prisma.contractInstall.findMany({
+      where: { agentId, towerId: { in: towerIds }, classification: { not: "removed" }, contractDate: { gte: from, lte: to } },
+      select: { username: true, fullName: true, towerId: true, contractDate: true, hasReceipt: true },
+    });
+    for (const ci of cis) {
+      const cabinet = cabinetOfUser(ci.username);
+      const sub = subByNet.get((ci.username ?? "").trim().toLowerCase());
+      const pkgId = sub?.packageId ?? 0;
+      const profit = rules.installProfit(ci.towerId, cabinet, pkgId, false);
+      const deduct = rules.deduction(ci.towerId, cabinet, pkgId, false);
+      const box = out.boxes.instIn;
+      box.count++; box.months += 1; box.profit += profit; box.deduct += deduct;
+      if (ci.hasReceipt && sub) bump(receiptUserAround(sub.id, ci.contractDate, ACT_RECEIPT_MS), "inst");
+      box.rows.push({
+        netUser: ci.username, name: ci.fullName ?? null, towerId: ci.towerId, cabinet,
+        packageName: pkgId ? (pkgById.get(pkgId)?.name ?? null) : null, months: 1, at: ci.contractDate, profit, deduct,
+      });
+    }
+  } catch (e) {
+    if (!tableMissing(e)) throw e; // جدولُ العقود غائبٌ ⇒ الطريقةُ القديمة (contractsActive=false)
+  }
+
+  // ═══ ②④ من سجلّ المزامنة ═══
   try {
     const logs = await prisma.syncLog.findMany({
       where: {
@@ -400,20 +452,27 @@ export async function computeProfits(
       const isLoan = Math.round(r.amount ?? 0) <= 0 && !offer;
 
       if (offer) {
-        // ③④ تنصيبٌ (أو إعادةُ خدمة) — مرّةً واحدةً لكلّ مشترك
         const key = `${r.towerId}|${r.sasId ?? r.subscriberId ?? r.id}`;
         if (installSeen.has(key)) continue;
         installSeen.add(key);
-        const inside = sub ? hasReceiptAfter(sub.id, at, INSTALL_RECEIPT_MS) : false;
-        const profit = rules.installProfit(r.towerId, cabinet, pkg?.id ?? 0, !inside);
-        const deduct = rules.deduction(r.towerId, cabinet, pkg?.id ?? 0, !inside);
-        const box = inside ? out.boxes.instIn : out.boxes.instExt;
-        box.count++; box.months += 1; box.profit += profit; box.deduct += deduct;
-        if (inside && sub) bump(receiptUserAfter(sub.id, at, INSTALL_RECEIPT_MS), "inst"); // ب
-        box.rows.push({
-          netUser, name: r.name ?? sub?.name ?? null, towerId: r.towerId, cabinet,
-          packageName: r.packageName, months: 1, at, profit, deduct,
-        });
+        if (contractsActive) {
+          // 🏢📄 الداخليُّ من موقع العقود (أعلاه)؛ هنا الخارجيُّ فقط: «عرض» **بلا عقدٍ** في الموقع.
+          if (contractUsers.has((netUser ?? "").trim().toLowerCase())) continue;
+          const profit = rules.installProfit(r.towerId, cabinet, pkg?.id ?? 0, true);
+          const deduct = rules.deduction(r.towerId, cabinet, pkg?.id ?? 0, true);
+          const box = out.boxes.instExt;
+          box.count++; box.months += 1; box.profit += profit; box.deduct += deduct;
+          box.rows.push({ netUser, name: r.name ?? sub?.name ?? null, towerId: r.towerId, cabinet, packageName: r.packageName, months: 1, at, profit, deduct });
+        } else {
+          // 🛟 لا بياناتِ عقودٍ بعد ⇒ الطريقةُ القديمة (عرض+وصل⇒داخليّ وإلّا خارجيّ) كي لا تنقلبَ الأرقام
+          const inside = sub ? hasReceiptAfter(sub.id, at, INSTALL_RECEIPT_MS) : false;
+          const profit = rules.installProfit(r.towerId, cabinet, pkg?.id ?? 0, !inside);
+          const deduct = rules.deduction(r.towerId, cabinet, pkg?.id ?? 0, !inside);
+          const box = inside ? out.boxes.instIn : out.boxes.instExt;
+          box.count++; box.months += 1; box.profit += profit; box.deduct += deduct;
+          if (inside && sub) bump(receiptUserAfter(sub.id, at, INSTALL_RECEIPT_MS), "inst");
+          box.rows.push({ netUser, name: r.name ?? sub?.name ?? null, towerId: r.towerId, cabinet, packageName: r.packageName, months: 1, at, profit, deduct });
+        }
         continue;
       }
       if (isLoan) continue; // 💸 قرضُ سوبر سيل ليس تفعيلاً ولا ربحاً

@@ -33,7 +33,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON print_jobs TO agent_worker; -- الطب�
 GRANT SELECT, INSERT, UPDATE ON subscribers    TO agent_worker; -- المزامنة تنشئ وتحدّث
 GRANT SELECT, INSERT, UPDATE ON wa_sessions    TO agent_worker; -- upsert حالة الجلسة
 GRANT SELECT, INSERT, UPDATE ON hybrid_workers TO agent_worker; -- تسجيل الحاسبة ونبضتها
-GRANT SELECT, INSERT, UPDATE ON system_settings TO agent_worker; -- رفعات عدّاد المشتركين subStats + بصمة workerVer (سياسة RLS تحصرها بهذين المفتاحين)
+GRANT SELECT, INSERT, UPDATE ON system_settings TO agent_worker; -- رفعات عدّاد المشتركين subStats + بصمة workerVer + حجزُ فحص العقود (سياسة RLS تحصرها بهذه المفاتيح)
+GRANT DELETE ON system_settings TO agent_worker; -- تسويةُ سباقِ إنشاء حجزِ فحص العقود فقط (سياسة RLS تحصر الحذفَ بمفتاح contractsInstallScan للوكيل)
 GRANT SELECT, INSERT, UPDATE ON task_boards, task_lists, task_cards TO agent_worker; -- بطاقات/أعمدة تذاكر أودو: العامل ينشئها ويحدّثها محليّاً (سياسات rls_task_* تعزلها بالوكيل تلقائياً)
 
 -- ---------- قراءة + إنشاء ----------
@@ -91,6 +92,8 @@ GRANT USAGE, SELECT ON SEQUENCE card_sas_checks_id_seq TO agent_worker;
 -- ويقرأ الاعتماد للفحص الدوريّ (المرحلة ٢). الإدخالُ من الموقع (دور المالك) فلا INSERT له.
 GRANT SELECT ON contracts_accounts TO agent_worker;                 -- يقرأ الاعتماد المخزّن
 GRANT SELECT, UPDATE, DELETE ON contracts_tasks TO agent_worker;    -- يلتقط المهمّة وينفّذها وينظّف
+GRANT SELECT, INSERT, UPDATE ON contract_installs TO agent_worker;  -- الفحصُ اليوميّ يكتب التنصيباتِ وتصنيفَها
+GRANT USAGE, SELECT ON SEQUENCE contract_installs_id_seq TO agent_worker;
 
 -- install_tokens : رموز التنصيب
 -- manager_tx     : حركات حساب المدير (تُدار من الموقع فقط)

@@ -16,7 +16,7 @@ import GuardFigure, { type GuardMood } from "@/components/GuardFigure";
 
 type Case = {
   checkKey: string; rowKey: string; title: string; detail: string; how: string;
-  severity: "critical" | "warn" | "info"; amount?: number; at?: string;
+  severity: "critical" | "warn" | "info"; amount?: number; at?: string; noDismiss?: boolean;
 };
 type Check = { key: string; name: string; ok: boolean; cases: Case[]; note?: string; hiddenCount?: number };
 type Assignment = {
@@ -326,10 +326,14 @@ ${c.detail}
                             </button>
                           </span>
                         )}
-                        <button onClick={() => void ignore(x)} disabled={busy === x.rowKey}
-                          className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-100 disabled:opacity-50">
-                          {busy === x.rowKey ? "..." : "🙈 تجاهل — لا تُعِدها"}
-                        </button>
+                        {x.noDismiss ? (
+                          <span className="rounded-lg bg-rose-50 px-3 py-1.5 text-[12px] font-bold text-rose-700">🔒 لا يُتجاهَل — يُغلَق وحدَه فور ظهور الوصل</span>
+                        ) : (
+                          <button onClick={() => void ignore(x)} disabled={busy === x.rowKey}
+                            className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-100 disabled:opacity-50">
+                            {busy === x.rowKey ? "..." : "🙈 تجاهل — لا تُعِدها"}
+                          </button>
+                        )}
                       </div>
                     );
                   })}

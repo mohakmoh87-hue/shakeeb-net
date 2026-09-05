@@ -1966,6 +1966,35 @@ model ContractsTask {
   @@map("contracts_tasks")
 }
 
+// 🏢📄🛠️ تنصيباتُ المكتب المستخرَجةُ من موقع العقود (طلب محمد 2026-09-05): كلُّ عقدٍ = تنصيبٌ
+// داخل المكتب، يُنسَب لشهرِ تاريخه. المطابقةُ باليوزر حصراً (accountNo = netUser، الثابتُ الوحيد).
+// شرطُ الوصل (±٣ أيّام) يُطبَّق فقط على عقود الشهر الحاليّ: بلا وصلٍ بعد يومين ⇒ سرقة (حارس المال).
+// عقودُ الأشهر السابقة: داخليّةٌ بلا فحصِ وصل ولا تُعدُّ خارجيّةً أبداً. معزولٌ بـagentId.
+model ContractInstall {
+  id             Int       @id @default(autoincrement())
+  agentId        Int
+  towerId        Int
+  contractId     Int // معرّفُ العقد في الموقع — للتفرّد ومنعِ الاحتساب المزدوج
+  username       String // accountNo = netUser
+  fullName       String?
+  contractDate   DateTime // createDateTime من الموقع
+  monthKey       String // YYYY-MM بتوقيت بغداد (لنسبِ التنصيب لشهره)
+  partialType    String? // New | ReEngagementNew
+  subscriberId   Int? // المشترك المطابَق في البرنامج (إن وُجد)
+  hasReceipt     Boolean   @default(false)
+  receiptAt      DateTime?
+  classification String    @default("internal") // internal | waiting | theft
+  theftNotified  Boolean   @default(false)
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  @@unique([agentId, contractId])
+  @@index([agentId, monthKey])
+  @@index([agentId, classification])
+  @@map("contract_installs")
+}
+
 // 🕵️ فحصُ «سب-ديلر»: ترويسةُ فحصٍ واحد + المشتبَهون JSON (كنمط sync_log/card_sas_checks).
 // يحفظ كلَّ فحصٍ يدويٍّ أو تلقائيٍّ ليلي؛ اللوحةُ تعرض آخرَ فحصٍ تلقائيّ، والإشعارُ يقارن
 // المشتبَهين الجددَ بالفحص السابق فلا يتكرّر كلَّ ليلة. معزولٌ بـagentId.

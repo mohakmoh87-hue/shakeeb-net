@@ -24,6 +24,7 @@ export type HealthCase = {
   amount?: number;
   at?: string; // وقتُ الحادثة (بغداد)
   fix?: string; // مفتاحُ الحلّ الآليّ إن كان له حلٌّ بضغطة زر
+  noDismiss?: boolean; // لا يُتجاهَل (سرقةُ العقود) — يُغلَق وحدَه فور ظهور الوصل
 };
 
 export type HealthCheck = {
@@ -244,6 +245,25 @@ export async function runMoneyHealth(agentId: number): Promise<{ checks: HealthC
     detail: `سيريال ${s(x.serial)} · ${n(x.price)} د.ع · ${s(x.sub) || "؟"}${x.netUser ? ` (${s(x.netUser)})` : ""} · ${s(x.at)}`,
     how: "الكارتُ خرج من مخزنك ولا قيدَ للمشترك في تلك الأيّام: لا وصلَ قبضٍ ولا تفعيلاً على الدَّين. سجّل الوصلَ بتاريخه (قبضاً أو دَيناً)، أو تجاهَلِ الحالةَ إن كان تعويضاً أو تفعيلَ اختبار. ⚠️ والتفعيلُ على الدَّين **لا يُبلَّغ عنه** — فوصلُه مسجَّلٌ والمالُ في دَين المشترك.",
     severity: "critical", amount: n(x.price), at: s(x.at),
+  }));
+
+  // ── أ-٢ب · 🔴🏢 عقدُ تنصيبٍ في موقع العقود بلا وصلٍ في البرنامج (سرقة) — طلبُ محمد 2026-09-05 ──
+  // المكتبُ أنشأ عقدَ تنصيبٍ لكنّ اليوزرَ نفسَه لا وصلَ له عندنا بعد يومين ⇒ يُشتبه أنّ المالَ
+  // لم يُسجَّل. المطابقةُ باليوزر حصراً (تولّاها محرّكُ الفحص اليوميّ ووسمها classification='theft').
+  // **لا يُتجاهَل** (noDismiss) — يُغلَق وحدَه فور ظهور الوصل (يقلبه المحرّكُ إلى internal).
+  await add("contract_theft", "كلُّ عقدٍ في موقع العقود له وصلٌ في البرنامج", `
+    SELECT ci.id, ci.username, ci."fullName", ci."towerId",
+           to_char(ci."contractDate" ${BG}, 'YYYY-MM-DD') AS at,
+           (SELECT name FROM towers t WHERE t.id = ci."towerId") AS office
+      FROM contract_installs ci
+     WHERE ci."agentId" = ${agentId} AND ci."towerId" IN (${T})
+       AND ci.classification = 'theft' AND ci."resolvedAt" IS NULL
+     ORDER BY ci."contractDate" DESC LIMIT 200`, (x) => ({
+    rowKey: `ctheft:${s(x.id)}`,
+    title: "🔴 عقدٌ في موقع العقود بلا وصلٍ في البرنامج — يُشتبه بسرقة",
+    detail: `${s(x.fullName) || s(x.username)} (${s(x.username)}) · مكتب ${s(x.office) || s(x.towerId)} · تاريخُ العقد ${s(x.at)} — مضى أكثرُ من يومين بلا وصل`,
+    how: "المكتبُ أنشأ عقدَ تنصيبٍ في موقع العقود، لكن لا وصلَ في البرنامج باسم المستخدم نفسِه — قد يكون المالُ لم يُسجَّل. ابحث عن وصله باليوزر وسجّله؛ يُغلَق هذا الإنذارُ وحدَه فور ظهوره. لا يمكن تجاهلُه.",
+    severity: "critical", at: s(x.at), noDismiss: true,
   }));
 
   // ── أ-٣ · 🔴 كروتٌ مستخدَمةٌ بسعرِ صفر — **مجموعةً بالفئة** لا صفّاً لكلّ كارت ──

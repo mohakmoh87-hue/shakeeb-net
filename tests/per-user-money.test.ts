@@ -117,8 +117,9 @@ describe("ب · أرباحُ الشركة بحسب المستخدم — الإس
     assert.match(src, /select: \{ id: true, subscriberId: true, date: true, month: true, cardType: true, userId: true \}/,
       "استعلامُ الوصولات لا يقرأ الختم");
     assert.match(src, /bump\(e\.userId, "act", months\);/, "عدُّ التفعيل الداخليّ للمستخدم سقط");
-    assert.match(src, /if \(inside && sub\) bump\(receiptUserAfter\(sub\.id, at, INSTALL_RECEIPT_MS\), "inst"\);/,
-      "التنصيبُ الداخليّ لا يُنسَب لقابض وصله");
+    // 🏢📄 التنصيبُ الداخليُّ صار من موقع العقود؛ يُنسَب لقابض وصله (نافذةٌ متماثلة ±٣ أيّام)
+    assert.match(src, /bump\(receiptUserAround\(sub\.id, ci\.contractDate, ACT_RECEIPT_MS\), "inst"\)/,
+      "التنصيبُ الداخليّ (من العقود) لا يُنسَب لقابض وصله");
     // 🔑 الإسنادُ بأقرب وصلٍ في النافذة — نفسِ الوصل الذي جعل التنصيبَ «داخليّاً»
     assert.match(src, /const receiptUserAfter = \(subId: number, at: Date, span: number\): number \| null =>/,
       "دالّةُ قابض الوصل غائبة");

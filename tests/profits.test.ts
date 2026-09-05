@@ -158,7 +158,9 @@ describe("🔒 تصحيحا محمد بعد أوّل نشر (2026-08-22)", () =>
   test("الاستقطاعُ يُقرأ بنوعَيه لا بنوعٍ واحد", () => {
     const lib = LIB();
     assert.ok(lib.includes('external ? "deductExt" : "deductIn"'), "الاستقطاعُ ما زال واحداً");
-    assert.ok(lib.includes("rules.deduction(r.towerId, cabinet, pkg?.id ?? 0, !inside)"), "الحسابُ لا يفرّق بين النوعين");
+    // 🏢📄 الداخليُّ من العقود (external=false) والخارجيُّ من «العرض» (external=true) — نوعان مختلفان
+    assert.ok(lib.includes("rules.deduction(ci.towerId, cabinet, pkgId, false)"), "الداخليُّ (من العقود) لا يستقطع بنوعه");
+    assert.ok(lib.includes("rules.deduction(r.towerId, cabinet, pkg?.id ?? 0, true)"), "الخارجيُّ لا يستقطع بنوعه");
     const ui = read("src/components/ProfitsPanel.tsx");
     assert.ok(ui.includes("deductIn") && ui.includes("deductExt"), "الشاشةُ بخانةِ استقطاعٍ واحدة");
   });

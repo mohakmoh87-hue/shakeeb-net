@@ -295,15 +295,23 @@ DROP POLICY IF EXISTS rls_system_settings_read ON system_settings;
 CREATE POLICY rls_system_settings_read ON system_settings FOR SELECT TO agent_worker
   USING (true);
 
--- كتابة العامل محصورة بمفتاحيه فقط (2026-07-30): رفعات عدّاد المشتركين subStats:{وكيله}
--- وبصمة إصدار الكود workerVer:{معرّف حاسبته} — لا يكتب أي إعداد آخر (شعارات/قوالب/أسرار)
+-- كتابة العامل محصورة بمفاتيحه فقط (2026-07-30): رفعات عدّاد المشتركين subStats:{وكيله}
+-- وبصمة إصدار الكود workerVer:{معرّف حاسبته}، و(2026-09-05) حجزُ فحص العقود اليوميّ
+-- contractsInstallScan:{وكيله} — لا يكتب أيَّ إعدادٍ آخر (شعارات/قوالب/أسرار)
 DROP POLICY IF EXISTS rls_system_settings_worker_insert ON system_settings;
 CREATE POLICY rls_system_settings_worker_insert ON system_settings FOR INSERT TO agent_worker
-  WITH CHECK (type = 'subStats:' || current_agent_id()::text OR type LIKE 'workerVer:%');
+  WITH CHECK (type = 'subStats:' || current_agent_id()::text OR type LIKE 'workerVer:%'
+              OR type = 'contractsInstallScan:' || current_agent_id()::text);
 DROP POLICY IF EXISTS rls_system_settings_worker_update ON system_settings;
 CREATE POLICY rls_system_settings_worker_update ON system_settings FOR UPDATE TO agent_worker
-  USING (type = 'subStats:' || current_agent_id()::text OR type LIKE 'workerVer:%')
-  WITH CHECK (type = 'subStats:' || current_agent_id()::text OR type LIKE 'workerVer:%');
+  USING (type = 'subStats:' || current_agent_id()::text OR type LIKE 'workerVer:%'
+         OR type = 'contractsInstallScan:' || current_agent_id()::text)
+  WITH CHECK (type = 'subStats:' || current_agent_id()::text OR type LIKE 'workerVer:%'
+              OR type = 'contractsInstallScan:' || current_agent_id()::text);
+-- حذفُ العامل محصورٌ بمفتاح حجزِ فحص العقود لوكيله (تسويةُ سباق الإنشاء) — لا يمسّ أيَّ إعدادٍ آخر
+DROP POLICY IF EXISTS rls_system_settings_worker_delete ON system_settings;
+CREATE POLICY rls_system_settings_worker_delete ON system_settings FOR DELETE TO agent_worker
+  USING (type = 'contractsInstallScan:' || current_agent_id()::text);
 
 ALTER TABLE map_points ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS rls_map_points_read ON map_points;
@@ -467,6 +475,13 @@ CREATE POLICY rls_contracts_accounts ON contracts_accounts TO agent_worker
 ALTER TABLE contracts_tasks ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS rls_contracts_tasks ON contracts_tasks;
 CREATE POLICY rls_contracts_tasks ON contracts_tasks TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+-- 🏢📄🛠️ تنصيباتُ المكتب من العقود (2026-09-05) — الفحصُ اليوميُّ على حاسبة المكتب يكتبها. عزلٌ بـagentId.
+ALTER TABLE contract_installs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_contract_installs ON contract_installs;
+CREATE POLICY rls_contract_installs ON contract_installs TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
