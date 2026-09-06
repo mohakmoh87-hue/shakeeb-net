@@ -201,10 +201,23 @@ export async function setMarketCategories(list: unknown): Promise<string[]> {
   return clean;
 }
 
+// ═════ رقمُ هاتف شركة سوبر سيل (طلبُ محمد 2026-09-06) ═════
+// يظهر في «أماكن التغطية» حين لا وكيلَ مالكٌ للمنطقة والبوّابةُ مطفأة — اتّصالٌ لحجز تنصيب/صيانة/توصيل.
+const COMPANY_PHONE_KEY = "companyPhone";
+const DEFAULT_COMPANY_PHONE = "6033";
+export async function getCompanyPhone(): Promise<string> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: COMPANY_PHONE_KEY }, select: { value: true } });
+  const v = (row?.value ?? "").trim();
+  return v || DEFAULT_COMPANY_PHONE;
+}
+export async function setCompanyPhone(phone: string) {
+  await writeVal(COMPANY_PHONE_KEY, String(phone ?? "").trim().slice(0, 20));
+}
+
 // الحزمةُ الكاملةُ للقراءة العامّة (يقرؤها تطبيقُ Flutter عند الإقلاع)
 export async function getPublicAppConfig() {
-  const [content, companyMode, portalEnabled] = await Promise.all([
-    getAppContent(), getCompanyMode(), getPortalEnabled(),
+  const [content, companyMode, portalEnabled, companyPhone] = await Promise.all([
+    getAppContent(), getCompanyMode(), getPortalEnabled(), getCompanyPhone(),
   ]);
-  return { ...content, companyMode: companyMode && portalEnabled, portalEnabled };
+  return { ...content, companyMode: companyMode && portalEnabled, portalEnabled, companyPhone };
 }

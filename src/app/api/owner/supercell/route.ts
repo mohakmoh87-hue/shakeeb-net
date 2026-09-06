@@ -3,7 +3,7 @@ import { z } from "zod";
 import { guardOwner } from "@/lib/guard";
 import {
   getAppContent, setAppContent, getCompanyMode, setCompanyMode, getPortalEnabled, setPortalEnabled,
-  getCompanyAnalyticsView, setCompanyAnalyticsView,
+  getCompanyAnalyticsView, setCompanyAnalyticsView, getCompanyPhone, setCompanyPhone,
 } from "@/lib/appConfig";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +13,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const g = await guardOwner();
   if (g.error) return g.error;
-  const [content, companyMode, portalEnabled, analyticsView] = await Promise.all([
-    getAppContent(), getCompanyMode(), getPortalEnabled(), getCompanyAnalyticsView(),
+  const [content, companyMode, portalEnabled, analyticsView, companyPhone] = await Promise.all([
+    getAppContent(), getCompanyMode(), getPortalEnabled(), getCompanyAnalyticsView(), getCompanyPhone(),
   ]);
-  return NextResponse.json({ ...content, companyMode, portalEnabled, analyticsView });
+  return NextResponse.json({ ...content, companyMode, portalEnabled, analyticsView, companyPhone });
 }
 
 const schema = z.object({
@@ -24,6 +24,7 @@ const schema = z.object({
   companyMode: z.boolean().optional(),
   portalEnabled: z.boolean().optional(),
   analyticsView: z.enum(["tickets", "field", "both"]).optional(),
+  companyPhone: z.string().max(20).optional(),
 });
 
 export async function PATCH(request: Request) {
@@ -36,5 +37,6 @@ export async function PATCH(request: Request) {
   if (d.companyMode !== undefined) await setCompanyMode(d.companyMode);
   if (d.portalEnabled !== undefined) await setPortalEnabled(d.portalEnabled);
   if (d.analyticsView !== undefined) await setCompanyAnalyticsView(d.analyticsView);
+  if (d.companyPhone !== undefined) await setCompanyPhone(d.companyPhone);
   return NextResponse.json({ ok: true });
 }

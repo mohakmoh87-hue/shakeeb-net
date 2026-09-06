@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 type AnalyticsView = "tickets" | "field" | "both";
-type State = { portalEnabled: boolean; analyticsView: AnalyticsView };
+type State = { portalEnabled: boolean; analyticsView: AnalyticsView; companyPhone: string };
 
 type CompanyUser = { id: number; username: string; password: string | null };
 
@@ -66,7 +66,7 @@ export default function OwnerSupercellPage() {
     try {
       const res = await fetch("/api/owner/supercell", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ portalEnabled: s!.portalEnabled, analyticsView: s!.analyticsView }),
+        body: JSON.stringify({ portalEnabled: s!.portalEnabled, analyticsView: s!.analyticsView, companyPhone: s!.companyPhone }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setMsg(d.error ?? "فشل الحفظ"); return; }
       setMsg("✓ حُفِظ — يظهرُ في التطبيق حيّاً");
@@ -105,6 +105,13 @@ export default function OwnerSupercellPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* ☎️ رقمُ هاتف الشركة — يظهر في «أماكن التغطية» حين لا وكيلَ مالكٌ للمنطقة والبوّابةُ مطفأة */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-1 font-semibold text-slate-800">☎️ رقم هاتف الشركة</div>
+        <div className="mb-3 text-[11px] text-slate-500">يظهر في «أماكن التغطية» بتطبيق المشترك حين لا وكيلَ مالكٌ للمنطقة والبوّابةُ مطفأة — للاتّصال وحجز تنصيب/صيانة/توصيل.</div>
+        <input value={s.companyPhone ?? ""} onChange={(e) => setS({ ...s, companyPhone: e.target.value })} dir="ltr" inputMode="tel" placeholder="6033" className="w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </div>
 
       {/* حساباتُ الشركة — يُنشئها المالكُ يدويّاً حصراً (لا تسجيلَ ذاتيّ) */}

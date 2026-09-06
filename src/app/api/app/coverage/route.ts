@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { resolveCoverageOwner, CELL_M, LAT_CELL, LNG_CELL } from "@/lib/coverageOwners";
 
 export const dynamic = "force-dynamic";
 
@@ -9,11 +10,8 @@ export const dynamic = "force-dynamic";
 //   الأعمدة إطلاقاً**: تُسنَد كلُّ نقطةٍ إلى مركز خليّتها فتُخفى النقطةُ الفعليّة (±٣٠٠م).
 // POST {lat,lng}: هل الموقعُ داخل التغطية؟ + أقربُ مكتبٍ (هاتفُه وموقعُه) — كلُّه معلوماتٌ عامّة.
 
-const CELL_M = 300; // حجمُ خليّة الشبكة (وأيضاً نصفُ قطر «داخل التغطية»)
-const REF_LAT = 33.3; // بغداد — لتثبيت شبكةٍ منتظمةٍ (cos ثابت)
-const LAT_CELL = CELL_M / 111_320;
-const LNG_CELL = CELL_M / (111_320 * Math.cos((REF_LAT * Math.PI) / 180));
-
+// شبكةُ الخلايا (CELL_M/LAT_CELL/LNG_CELL) مصدرُها الوحيد coverageOwners — كي يتطابق «داخل
+// التغطية» مع إسناد المالك على الشبكة نفسِها.
 type Cache = { at: number; cells: [number, number][] };
 let cache: Cache | null = null;
 const TTL = 10 * 60_000;
@@ -64,17 +62,14 @@ export async function POST(request: Request) {
     if (haversine(lat, lng, c[0], c[1]) <= CELL_M) { inside = true; break; }
   }
 
-  // أقربُ مكتبٍ (بموقعٍ وهاتف) — معلوماتُ اتّصالٍ عامّة عبر كلّ الوكلاء
-  // هاتفُ المكتب العامُّ فقط (phone) — لا managerPhone (رقمٌ داخليٌّ للتقرير اليوميّ) على مسارٍ عامّ.
-  const towers = await prisma.tower.findMany({
-    where: { isDeleted: false, lat: { not: null }, lng: { not: null } },
-    select: { id: true, name: true, phone: true, lat: true, lng: true },
-  });
-  let office: { name: string; phone: string | null; lat: number; lng: number; distanceM: number } | null = null;
-  for (const t of towers) {
-    if (t.lat == null || t.lng == null) continue;
-    const d = haversine(lat, lng, t.lat, t.lng);
-    if (!office || d < office.distanceM) office = { name: t.name ?? "مكتب", phone: t.phone ?? null, lat: t.lat, lng: t.lng, distanceM: Math.round(d) };
+  // 🗺️ المكتبُ **المالكُ** لعمود الموقع (بمشتركيه فعليّاً ثمّ بالمنطقة) — لا «أقرب مكتب».
+  // هاتفُ المكتب العامُّ فقط (phone)، لا managerPhone (داخليٌّ) على مسارٍ عامّ.
+  const own = await resolveCoverageOwner(lat, lng);
+  let owner: { name: string; phone: string | null; lat: number | null; lng: number | null; distanceM: number | null } | null = null;
+  if (own) {
+    const o = own.office;
+    const distanceM = o.lat != null && o.lng != null ? Math.round(haversine(lat, lng, o.lat, o.lng)) : null;
+    owner = { name: o.name, phone: o.phone, lat: o.lat, lng: o.lng, distanceM };
   }
-  return NextResponse.json({ inside, office });
+  return NextResponse.json({ inside, owner });
 }
