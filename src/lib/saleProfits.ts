@@ -134,6 +134,9 @@ export async function computeSaleProfits(agentId: number, towerIds: number[], fr
   });
   const delSubIds = [...new Set(dels.map((d) => d.subscriberId).filter((x): x is number => x != null))];
   const delSubById = new Map((delSubIds.length ? await prisma.subscriber.findMany({ where: { id: { in: delSubIds } }, select: { id: true, name: true, netUser: true } }) : []).map((s) => [s.id, s]));
+  // خريطةُ تواريخ addPrice لكلّ مشترك — لتفادي ازدواج بطاقة الميدان مع توصيلٍ سُجِّل عند التفعيل
+  const addDates = new Map<number, number[]>();
+  for (const d of dels) { if (d.subscriberId == null || !d.date) continue; const l = addDates.get(d.subscriberId) ?? []; l.push(d.date.getTime()); addDates.set(d.subscriberId, l); }
   for (const d of dels) {
     const amt = R(Number(d.addPrice ?? 0));
     const tw = d.towerId!;
@@ -142,17 +145,23 @@ export async function computeSaleProfits(agentId: number, towerIds: number[], fr
     bump(d.userId, "delivery", amt);
     out.boxes.delivery.rows.push({ name: d.cardType ?? "توصيل", sub: s?.name ?? s?.netUser ?? null, office: officeName.get(tw) ?? String(tw), user: d.userId != null ? userName.get(d.userId) ?? null : null, at: d.date, amount: amt });
   }
-  // ②ب توصيلُ الميدان — بطاقاتُ توصيلٍ مُنجَزةٌ (نوعُها deliveryOnly أو «توصيل»): مبلغُها إيرادُ
-  //     توصيل. يُنفّذها الفنّيُّ لا مستخدمُ المكتب، فتُحسَب على مستوى المكتب (لا تُنسَب لمستخدمٍ منفصل).
+  // ②ب توصيلُ الميدان — بطاقاتُ توصيلٍ مُنجَزةٌ (نوعُها deliveryOnly أو «توصيل»): مبلغُها إيرادُ توصيل.
+  //     يُنفّذها الفنّيُّ لا مستخدمُ المكتب (مستوى المكتب). **تفادي الازدواج:** لا تُحتسَب بطاقةٌ
+  //     لمشترٍكٍ سُجِّل توصيلُه addPrice ±٧ أيّام (هي نفسُ التوصيل الذي أُدخِل عند التفعيل).
+  const WEEK = 7 * 86400_000;
   const delTypes = await prisma.cardType.findMany({ where: { agentId, isDeleted: false, deliveryOnly: true }, select: { name: true } });
   const delKinds = [...new Set([...delTypes.map((t) => t.name), "توصيل"])];
   const fieldDel = await prisma.taskCard.findMany({
     where: { officeId: { in: towerIds }, kind: { in: delKinds }, done: true, completedAt: { gte: from, lte: to } },
-    select: { id: true, officeId: true, amount: true, completedAt: true, title: true },
+    select: { id: true, officeId: true, subscriberId: true, amount: true, completedAt: true, title: true },
   });
   for (const d of fieldDel) {
     const amt = R(Number(d.amount ?? 0));
     if (amt <= 0) continue;
+    if (d.subscriberId != null && d.completedAt) {
+      const ds = addDates.get(d.subscriberId);
+      if (ds && ds.some((t) => Math.abs(t - d.completedAt!.getTime()) <= WEEK)) continue; // ازدواجٌ ⇒ عُدّ عند التفعيل
+    }
     const tw = d.officeId ?? 0;
     out.boxes.delivery.count++; out.boxes.delivery.total += amt;
     out.boxes.delivery.rows.push({ name: d.title ?? "توصيل ميدان", sub: "🚚 ميدان", office: officeName.get(tw) ?? String(tw), user: null, at: d.completedAt, amount: amt });
