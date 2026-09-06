@@ -14,7 +14,7 @@ const REF_LAT = 33.3; // بغداد — لتثبيت شبكةٍ منتظمةٍ (
 const LAT_CELL = CELL_M / 111_320;
 const LNG_CELL = CELL_M / (111_320 * Math.cos((REF_LAT * Math.PI) / 180));
 
-type Cache = { at: number; cells: [number, number][]; poles: { lat: number; lng: number }[] };
+type Cache = { at: number; cells: [number, number][] };
 let cache: Cache | null = null;
 const TTL = 10 * 60_000;
 
@@ -29,7 +29,7 @@ async function getCoverage(): Promise<Cache> {
     const key = `${ci}|${cj}`;
     if (!seen.has(key)) { seen.add(key); cells.push([Number((ci * LAT_CELL).toFixed(5)), Number((cj * LNG_CELL).toFixed(5))]); }
   }
-  cache = { at: Date.now(), cells, poles: poles.filter((p) => p.lat != null && p.lng != null).map((p) => ({ lat: p.lat!, lng: p.lng! })) };
+  cache = { at: Date.now(), cells };
   return cache;
 }
 
@@ -55,24 +55,26 @@ export async function POST(request: Request) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return NextResponse.json({ error: "موقعٌ غير صالح" }, { status: 400 });
 
   const cov = await getCoverage();
-  // داخل التغطية = عمودٌ ضمن CELL_M من الموقع (بترشيح صندوقٍ سريعٍ قبل haversine)
+  // 🔒 يُقاس «داخل التغطية» من **مراكز الخلايا المُعلَنة في GET** لا من مواقع الأعمدة الخام،
+  // فلا يكشف POST شيئاً زائداً عمّا يكشفه GET (يستحيل استرجاعُ موقع عمودٍ بمسحٍ ثنائيٍّ للحدّ).
   const dLatMax = CELL_M / 111_320, dLngMax = CELL_M / (111_320 * Math.cos(rad(lat)));
   let inside = false;
-  for (const p of cov.poles) {
-    if (Math.abs(p.lat - lat) > dLatMax || Math.abs(p.lng - lng) > dLngMax) continue;
-    if (haversine(lat, lng, p.lat, p.lng) <= CELL_M) { inside = true; break; }
+  for (const c of cov.cells) {
+    if (Math.abs(c[0] - lat) > dLatMax || Math.abs(c[1] - lng) > dLngMax) continue;
+    if (haversine(lat, lng, c[0], c[1]) <= CELL_M) { inside = true; break; }
   }
 
   // أقربُ مكتبٍ (بموقعٍ وهاتف) — معلوماتُ اتّصالٍ عامّة عبر كلّ الوكلاء
+  // هاتفُ المكتب العامُّ فقط (phone) — لا managerPhone (رقمٌ داخليٌّ للتقرير اليوميّ) على مسارٍ عامّ.
   const towers = await prisma.tower.findMany({
     where: { isDeleted: false, lat: { not: null }, lng: { not: null } },
-    select: { id: true, name: true, phone: true, managerPhone: true, lat: true, lng: true },
+    select: { id: true, name: true, phone: true, lat: true, lng: true },
   });
   let office: { name: string; phone: string | null; lat: number; lng: number; distanceM: number } | null = null;
   for (const t of towers) {
     if (t.lat == null || t.lng == null) continue;
     const d = haversine(lat, lng, t.lat, t.lng);
-    if (!office || d < office.distanceM) office = { name: t.name ?? "مكتب", phone: t.phone ?? t.managerPhone ?? null, lat: t.lat, lng: t.lng, distanceM: Math.round(d) };
+    if (!office || d < office.distanceM) office = { name: t.name ?? "مكتب", phone: t.phone ?? null, lat: t.lat, lng: t.lng, distanceM: Math.round(d) };
   }
   return NextResponse.json({ inside, office });
 }
