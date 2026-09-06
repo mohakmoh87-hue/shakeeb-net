@@ -9,7 +9,7 @@ import { formatDate } from "@/lib/format";
 
 type Box = { count: number; total: number; rows: Row[] };
 type Row = { name: string; sub: string | null; office: string; user: string | null; at: string | null; amount: number };
-type UserRow = { userId: number; name: string; spread: number; delivery: number; sales: number; petty: number; net: number };
+type UserRow = { userId: number; name: string; spread: number; spreadN: number; delivery: number; deliveryN: number; sales: number; salesN: number; petty: number; pettyN: number; net: number };
 type Report = {
   from: string; to: string; label: string; warning: string | null; mode: string; monthValue: string; net: number; tower: number;
   boxes: { spread: Box; delivery: Box; sales: Box; petty: Box };
@@ -161,7 +161,7 @@ export default function SaleProfitsPanel() {
             <table className="w-full text-[12px]" style={{ fontVariantNumeric: "tabular-nums" }}>
               <thead>
                 <tr className="text-[10.5px] text-slate-500">
-                  <th className="p-1.5 text-right">المستخدم</th><th className="p-1.5 text-right">انتشار</th><th className="p-1.5 text-right">توصيل</th>
+                  <th className="p-1.5 text-right">المستخدم</th><th className="p-1.5 text-right">انتشار (عدد · مبلغ)</th><th className="p-1.5 text-right">توصيل</th>
                   <th className="p-1.5 text-right">مبيعات</th><th className="p-1.5 text-right">نثرية</th><th className="p-1.5 text-right">الصافي</th>
                 </tr>
               </thead>
@@ -169,10 +169,10 @@ export default function SaleProfitsPanel() {
                 {rep!.byUser.map((u) => (
                   <tr key={u.userId} className="border-t border-slate-200">
                     <td className="p-1.5 font-bold text-slate-700">👤 {u.name}</td>
-                    <td className="p-1.5 text-slate-600">{fmt(u.spread)}</td>
-                    <td className="p-1.5 text-slate-600">{fmt(u.delivery)}</td>
-                    <td className="p-1.5 text-slate-600">{fmt(u.sales)}</td>
-                    <td className="p-1.5 text-rose-600">{fmt(u.petty)}</td>
+                    <td className="p-1.5 text-slate-600">{u.spreadN} · {fmt(u.spread)}</td>
+                    <td className="p-1.5 text-slate-600">{u.deliveryN} · {fmt(u.delivery)}</td>
+                    <td className="p-1.5 text-slate-600">{u.salesN} · {fmt(u.sales)}</td>
+                    <td className="p-1.5 text-rose-600">{u.pettyN} · {fmt(u.petty)}</td>
                     <td className="p-1.5 font-extrabold text-slate-800">{fmt(u.net)}</td>
                   </tr>
                 ))}

@@ -66,7 +66,7 @@ export async function saveSaleView(userId: number, v: SaleView): Promise<void> {
 // ───────── الحساب ─────────
 export type SaleRow = { name: string; sub: string | null; office: string; user: string | null; at: Date | null; amount: number };
 export type SaleBox = { count: number; total: number; rows: SaleRow[] };
-export type SaleUserRow = { userId: number; name: string; spread: number; delivery: number; sales: number; petty: number; net: number };
+export type SaleUserRow = { userId: number; name: string; spread: number; spreadN: number; delivery: number; deliveryN: number; sales: number; salesN: number; petty: number; pettyN: number; net: number };
 export type SaleReport = {
   boxes: { spread: SaleBox; delivery: SaleBox; sales: SaleBox; petty: SaleBox };
   net: number;
@@ -96,11 +96,12 @@ export async function computeSaleProfits(agentId: number, towerIds: number[], fr
   const userName = new Map<number, string>();
   for (const u of officeUsers) userName.set(u.id, u.fullName ?? u.username ?? String(u.id));
   const sepIds = new Set(sepUsers.map((u) => u.id));
-  const acc = new Map<number, { spread: number; delivery: number; sales: number; petty: number }>();
+  type Acc = { spread: number; spreadN: number; delivery: number; deliveryN: number; sales: number; salesN: number; petty: number; pettyN: number };
+  const acc = new Map<number, Acc>();
   const bump = (uid: number | null | undefined, k: "spread" | "delivery" | "sales" | "petty", amt: number) => {
     if (uid == null || !sepIds.has(uid)) return;
-    const a = acc.get(uid) ?? { spread: 0, delivery: 0, sales: 0, petty: 0 };
-    a[k] += amt; acc.set(uid, a);
+    const a = acc.get(uid) ?? { spread: 0, spreadN: 0, delivery: 0, deliveryN: 0, sales: 0, salesN: 0, petty: 0, pettyN: 0 };
+    a[k] += amt; a[`${k}N` as keyof Acc]++; acc.set(uid, a);
   };
 
   // ① انتشار — كلُّ كارتٍ فُعِّل داخل المكتب: (سعرُ الباقة المُجمَّد) − (كلفةُ الكارت المُجمَّدة)
@@ -140,6 +141,21 @@ export async function computeSaleProfits(agentId: number, towerIds: number[], fr
     out.boxes.delivery.count++; out.boxes.delivery.total += amt;
     bump(d.userId, "delivery", amt);
     out.boxes.delivery.rows.push({ name: d.cardType ?? "توصيل", sub: s?.name ?? s?.netUser ?? null, office: officeName.get(tw) ?? String(tw), user: d.userId != null ? userName.get(d.userId) ?? null : null, at: d.date, amount: amt });
+  }
+  // ②ب توصيلُ الميدان — بطاقاتُ توصيلٍ مُنجَزةٌ (نوعُها deliveryOnly أو «توصيل»): مبلغُها إيرادُ
+  //     توصيل. يُنفّذها الفنّيُّ لا مستخدمُ المكتب، فتُحسَب على مستوى المكتب (لا تُنسَب لمستخدمٍ منفصل).
+  const delTypes = await prisma.cardType.findMany({ where: { agentId, isDeleted: false, deliveryOnly: true }, select: { name: true } });
+  const delKinds = [...new Set([...delTypes.map((t) => t.name), "توصيل"])];
+  const fieldDel = await prisma.taskCard.findMany({
+    where: { officeId: { in: towerIds }, kind: { in: delKinds }, done: true, completedAt: { gte: from, lte: to } },
+    select: { id: true, officeId: true, amount: true, completedAt: true, title: true },
+  });
+  for (const d of fieldDel) {
+    const amt = R(Number(d.amount ?? 0));
+    if (amt <= 0) continue;
+    const tw = d.officeId ?? 0;
+    out.boxes.delivery.count++; out.boxes.delivery.total += amt;
+    out.boxes.delivery.rows.push({ name: d.title ?? "توصيل ميدان", sub: "🚚 ميدان", office: officeName.get(tw) ?? String(tw), user: null, at: d.completedAt, amount: amt });
   }
 
   // ③ مبيعات — من فواتير المبيع مباشرةً: (سعرُ البيع − الكلفةُ المُجمَّدة buyPrice) × العدد.
@@ -190,7 +206,7 @@ export async function computeSaleProfits(agentId: number, towerIds: number[], fr
   for (const b of [B.spread, B.delivery, B.sales, B.petty]) { b.total = R(b.total); b.rows.sort((a, c) => (c.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0)); b.rows = b.rows.slice(0, 300); }
   out.net = R(out.net);
   for (const [uid, a] of acc) {
-    out.byUser.push({ userId: uid, name: userName.get(uid) ?? String(uid), spread: R(a.spread), delivery: R(a.delivery), sales: R(a.sales), petty: R(a.petty), net: R(a.spread + a.delivery + a.sales - a.petty) });
+    out.byUser.push({ userId: uid, name: userName.get(uid) ?? String(uid), spread: R(a.spread), spreadN: a.spreadN, delivery: R(a.delivery), deliveryN: a.deliveryN, sales: R(a.sales), salesN: a.salesN, petty: R(a.petty), pettyN: a.pettyN, net: R(a.spread + a.delivery + a.sales - a.petty) });
   }
   out.byUser.sort((a, b2) => b2.net - a.net);
   return out;
