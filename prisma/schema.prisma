@@ -55,6 +55,7 @@ model Agent {
   // واحد، وأيضاً **صفر** ليبقى على الوضع الحالي». فليست مفتاحاً ثنائيّاً بل عدداً.
   // صفر = الوضعُ الحاليُّ تماماً (لا خيارَ يظهر للوكيل). والحصّةُ **تُتيح لا تُشعِل**.
   multiSasOffices    Int       @default(0)
+  isDistributor      Boolean   @default(false)
   // فترة احتساب رواتب الموظفين (عامة لكل مكاتب الوكيل) — يضبطها المدير ويغيّرها متى شاء
   salaryPeriodFrom   String? // (مهجور) YYYY-MM-DD — بداية الفترة بالتاريخ الكامل (النموذج القديم)
   salaryPeriodTo     String? // (مهجور) YYYY-MM-DD — نهاية الفترة بالتاريخ الكامل (النموذج القديم)
@@ -2094,4 +2095,89 @@ model SubDealerScan {
 
   @@index([agentId, source, createdAt])
   @@map("sub_dealer_scans")
+}
+
+// ═════ 🃏 موزّعُ الكروت (طلبُ محمد 2026-09-07) — جداولُ يديرها الموقعُ حصراً (لا عاملَ مكتب) ═════
+model CardDistributor {
+  id                 Int      @id @default(autoincrement())
+  distributorAgentId Int      @unique // الوكيل الموزّع
+  username           String   @unique
+  password      String // bcrypt
+  plainPassword String? // enc:v1: — يعرضه المالك
+  sessionToken  String?
+  isDeleted     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@map("card_distributors")
+}
+
+model DistributorTier { // فئةُ الموزّع (اسم + سعرُ البيع للوكلاء)
+  id            Int      @id @default(autoincrement())
+  distributorId Int
+  name          String
+  price         Float    @default(0)
+  isDeleted     Boolean  @default(false)
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@index([distributorId])
+  @@map("distributor_tiers")
+}
+
+model DistributorCard { // مخزنُ كروت الموزّع (أكوادٌ متاحةٌ للتحويل)
+  id            Int      @id @default(autoincrement())
+  distributorId Int
+  tierId        Int?
+  serial        String?
+  number        String?
+  password      String?
+  transferId    Int? // null = في المخزن؛ غيرُ null = حُوِّل
+  isDeleted     Boolean  @default(false)
+  addedAt       DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@unique([distributorId, serial])
+  @@index([distributorId, tierId, transferId])
+  @@map("distributor_cards")
+}
+
+model DistributorTarget { // الوكلاءُ المسموح لهم (المالكُ يضيف) + رقمُ إشعارٍ (الموزّع)
+  id            Int      @id @default(autoincrement())
+  distributorId Int
+  targetAgentId Int
+  notifyPhone   String?
+  isDeleted     Boolean  @default(false)
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  @@unique([distributorId, targetAgentId])
+  @@index([distributorId])
+  @@map("distributor_targets")
+}
+
+model DistributorTransfer { // تعبئة: تحويلُ عددٍ من الكروت لوكيلٍ (دينٌ +total)
+  id              Int      @id @default(autoincrement())
+  distributorId   Int
+  targetAgentId   Int
+  targetPackageId Int?
+  tierId          Int?
+  count           Int
+  unitPrice       Float
+  total           Float
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@index([distributorId, targetAgentId])
+  @@map("distributor_transfers")
+}
+
+model DistributorPayment { // تسديدٌ (دينٌ −amount)
+  id            Int      @id @default(autoincrement())
+  distributorId Int
+  targetAgentId Int
+  amount        Float
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([distributorId, targetAgentId])
+  @@map("distributor_payments")
 }

@@ -11,6 +11,7 @@ export type WaChannelInfo = { enabled: boolean; provider: "ultramsg"; baseUrl: s
 function blockedWaHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
   if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
+  if (/\.(nip|sslip|xip)\.io$/.test(h)) return true;
   if (h.includes(":")) return true;
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (m) {

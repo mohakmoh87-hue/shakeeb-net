@@ -510,3 +510,13 @@ ALTER TABLE box_deps       ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE months         ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE notes          ENABLE ROW LEVEL SECURITY; -- قديمة
 ALTER TABLE events         ENABLE ROW LEVEL SECURITY; -- قديمة
+
+-- 🃏 موزّعُ الكروت: جداولٌ يديرها الموقعُ حصراً (لا GRANT للعامل ⇒ لا وصولَ له). لا عمودَ
+-- agentId فيها (distributorId/targetAgentId)، فلا سياسةَ عزلٍ للعامل — RLS دفاعٌ في العمق
+-- (لو مُنح العاملُ إذناً يوماً بقيَ محجوباً؛ ومالكُ الجداول يتجاوز RLS فالموقعُ يعمل).
+ALTER TABLE card_distributors    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE distributor_tiers    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE distributor_cards    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE distributor_targets  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE distributor_transfers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE distributor_payments ENABLE ROW LEVEL SECURITY;
