@@ -158,9 +158,20 @@ async function ultraPost(url: string, params: Record<string, string>): Promise<{
       const e = data && (typeof data.error === "string" ? data.error : typeof data.message === "string" ? data.message : "");
       return { ok: false, definite: true, error: `UltraMsg HTTP ${res.status}${e ? `: ${e}` : ""}` };
     }
-    if (data && (data.sent === "true" || data.sent === true)) return { ok: true };
-    const err = (data && (data.error ?? data.message)) ?? (txt ? txt.slice(0, 200) : "استجابةٌ غير متوقّعة من UltraMsg");
-    return { ok: false, definite: true, error: typeof err === "string" ? err : JSON.stringify(err) };
+    if (data) {
+      const sentTrue = data.sent === "true" || data.sent === true;
+      const okTrue = data.ok === true || data.queued === true || data.success === true;
+      const st = typeof data.status === "string" ? data.status.toLowerCase() : "";
+      const statusOk = st === "success" || st === "queued" || st === "sent" || st === "ok";
+      const hasId = typeof data.id === "string" && data.id.length > 0;
+      const errText = typeof data.error === "string" && data.error ? data.error
+        : (typeof data.message === "string" && /error|fail|wrong|invalid|not\s/i.test(data.message)) ? data.message : "";
+      if (!errText && (sentTrue || okTrue || statusOk || hasId)) return { ok: true };
+      if (errText) return { ok: false, definite: true, error: errText };
+    } else if (/"(sent|ok|queued|success)"\s*:\s*(true|"true")/i.test(txt)) {
+      return { ok: true };
+    }
+    return { ok: false, definite: true, error: txt ? txt.slice(0, 200) : "استجابةٌ غير متوقّعة من بوّابة الواتساب" };
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") return { ok: false, definite: false, error: "انتهت مهلةُ الاتصال بـUltraMsg" };
     return { ok: false, definite: false, error: e instanceof Error ? e.message : String(e) };
