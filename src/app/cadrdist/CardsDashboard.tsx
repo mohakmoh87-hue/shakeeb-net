@@ -258,12 +258,15 @@ function DebtsTab({ me, reload, flash }: { me: Me; reload: () => void; flash: (t
   const [sel, setSel] = useState<number | null>(null);
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [debt, setDebt] = useState<{ transferred: number; paid: number; remaining: number } | null>(null);
+  const [pkgStock, setPkgStock] = useState<Pkg[]>([]);
   const [pay, setPay] = useState("");
   const [note, setNote] = useState("");
 
   const openTarget = useCallback((id: number) => {
     setSel(id);
+    setPkgStock([]);
     fetch(`/api/cards/debts?targetAgentId=${id}`).then((r) => (r.ok ? r.json() : null)).then((d) => { setLedger(d?.ledger ?? []); setDebt(d?.debt ?? null); });
+    fetch(`/api/cards/target-packages?targetAgentId=${id}`).then((r) => (r.ok ? r.json() : null)).then((d) => setPkgStock(d?.packages ?? []));
   }, []);
 
   const selTarget = me.targets.find((t) => t.targetAgentId === sel);
@@ -294,6 +297,20 @@ function DebtsTab({ me, reload, flash }: { me: Me; reload: () => void; flash: (t
           <div className="mb-3 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <span className="text-sm text-slate-300">المتبقّي عليه</span>
             {debt && <span className={`text-xl font-black tabular-nums ${debt.remaining > 0 ? "text-rose-300" : "text-emerald-300"}`}>{money(debt.remaining)} <span className="text-xs font-bold text-slate-400">د.ع</span></span>}
+          </div>
+          <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="mb-2 text-xs font-bold text-slate-400">📦 مخزونُه حسب الباقة</div>
+            {pkgStock.length === 0 ? (
+              <div className="text-xs text-slate-500">لا باقاتٍ لهذا الوكيل.</div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {pkgStock.map((p) => (
+                  <span key={p.id} className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${p.stock > 0 ? "bg-cyan-500/10 text-cyan-300" : "bg-rose-500/10 text-rose-300"}`}>
+                    {p.name ?? `#${p.id}`}: <b className="tabular-nums">{money(p.stock)}</b>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="mb-4 flex flex-wrap items-end gap-2">
             <input value={pay} onChange={(e) => setPay(e.target.value)} dir="ltr" inputMode="numeric" placeholder="مبلغ التسديد" className={`${input} sm:w-40`} />
