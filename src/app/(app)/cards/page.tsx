@@ -8,7 +8,7 @@ import { formatDateTime } from "@/lib/format";
 type Stat = { packageId: number; name: string | null; price: number | null; cardCost: number | null; available: number; amount: number };
 type UsedCard = { id: number; serial: string | null; packageName: string | null; subscriber: string | null; office: string | null; useDate: string | null; userName: string | null };
 type AvailCard = { id: number; serial: string | null; packageId: number | null; packageName: string | null; price: number | null; addDate: string | null };
-type DistRow = { id: number; date: string; count: number; unitPrice: number; total: number; note: string | null; packageName: string | null; distributorName: string };
+type DistRow = { id: number; date: string; count: number; unitPrice: number; total: number; packageName: string | null; distributorName: string };
 
 const fmt = (n: number | null) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
 const fmtDT = (d: string | null) => formatDateTime(d);
@@ -317,11 +317,11 @@ export default function CardsPage() {
           <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
             <table className="w-full text-right text-sm">
               <thead className="bg-slate-50 text-slate-600">
-                <tr><th className="p-3">التاريخ</th><th className="p-3">الموزّع</th><th className="p-3">الباقة</th><th className="p-3">العدد</th><th className="p-3">سعر الكارت</th><th className="p-3">المجموع</th><th className="p-3">ملاحظة</th></tr>
+                <tr><th className="p-3">التاريخ</th><th className="p-3">الموزّع</th><th className="p-3">الباقة</th><th className="p-3">العدد</th><th className="p-3">سعر الكارت</th><th className="p-3">المجموع</th></tr>
               </thead>
               <tbody>
                 {distLog.length === 0 ? (
-                  <tr><td colSpan={7} className="p-8 text-center text-slate-400">لا توجد حركاتٌ من الموزّع بعد.</td></tr>
+                  <tr><td colSpan={6} className="p-8 text-center text-slate-400">لا توجد حركاتٌ من الموزّع بعد.</td></tr>
                 ) : distLog.map((r) => (
                   <tr key={r.id} className="border-t border-slate-100">
                     <td className="p-3" dir="ltr">{fmtDT(r.date)}</td>
@@ -330,7 +330,6 @@ export default function CardsPage() {
                     <td className="p-3 font-bold">{fmt(r.count)}</td>
                     <td className="p-3">{fmt(r.unitPrice)} د.ع</td>
                     <td className="p-3 font-bold text-emerald-700">{fmt(r.total)} د.ع</td>
-                    <td className="p-3 text-slate-500">{r.note ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

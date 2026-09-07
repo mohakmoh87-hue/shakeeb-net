@@ -13,7 +13,7 @@ export async function GET() {
     where: { targetAgentId: agentId },
     orderBy: { id: "desc" },
     take: 300,
-    select: { id: true, distributorId: true, targetPackageId: true, count: true, unitPrice: true, total: true, note: true, createdAt: true },
+    select: { id: true, distributorId: true, targetPackageId: true, count: true, unitPrice: true, total: true, createdAt: true },
   });
   if (transfers.length === 0) return NextResponse.json({ rows: [] });
 
@@ -35,7 +35,6 @@ export async function GET() {
     count: t.count,
     unitPrice: t.unitPrice,
     total: t.total,
-    note: t.note,
     packageName: pkgName.get(t.targetPackageId ?? -1) ?? null,
     distributorName: agentName.get(distAgentId.get(t.distributorId) ?? -1) ?? "الموزّع",
   }));
