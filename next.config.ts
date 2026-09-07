@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   // مخرجات standalone: خادم Node مكتفٍ بذاته في .next/standalone للنشر في حاويات
   // (Cloud Run). فرسل يتجاهل هذا الخيار ويستعمل مهايئه الخاص — لا أثر على الإنتاج.
   output: "standalone",
+  productionBrowserSourceMaps: false,
   // undici يُحمَّل كحزمة Node خارجية (لتكامل SAS4 مع الشهادات الموقّعة ذاتياً)
   serverExternalPackages: ["undici", "whatsapp-web.js", "puppeteer", "puppeteer-core", "qrcode"],
   // استبعاد مكتبات العامل الثقيلة (واتساب/متصفّح) من حزم دوال الاستضافة (Vercel) —
