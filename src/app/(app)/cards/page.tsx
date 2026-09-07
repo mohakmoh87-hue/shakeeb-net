@@ -8,6 +8,7 @@ import { formatDateTime } from "@/lib/format";
 type Stat = { packageId: number; name: string | null; price: number | null; cardCost: number | null; available: number; amount: number };
 type UsedCard = { id: number; serial: string | null; packageName: string | null; subscriber: string | null; office: string | null; useDate: string | null; userName: string | null };
 type AvailCard = { id: number; serial: string | null; packageId: number | null; packageName: string | null; price: number | null; addDate: string | null };
+type DistRow = { id: number; date: string; count: number; unitPrice: number; total: number; note: string | null; packageName: string | null; distributorName: string };
 
 const fmt = (n: number | null) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
 const fmtDT = (d: string | null) => formatDateTime(d);
@@ -32,7 +33,8 @@ export default function CardsPage() {
   const [uDateOn, setUDateOn] = useState(false); // مطفأ = كل التواريخ
   const [uLoading, setULoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [view, setView] = useState<"stock" | "available" | "used">("stock");
+  const [view, setView] = useState<"stock" | "available" | "used" | "distributor">("stock");
+  const [distLog, setDistLog] = useState<DistRow[]>([]);
   const [packageId, setPackageId] = useState<number | "">("");
   const [text, setText] = useState("");
   const [costMap, setCostMap] = useState<Record<number, number>>({});
@@ -67,12 +69,16 @@ export default function CardsPage() {
       })
       .catch(() => setULoading(false));
   }, []);
+  const loadDistLog = useCallback(() => {
+    fetch("/api/recharge-cards/distributor-transfers").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setDistLog(d.rows ?? []); });
+  }, []);
   useEffect(() => {
     // تأجيلٌ بدورة واحدة: نداء يضبط الحالة داخل التأثير مباشرةً يُشعل إعادة تصيير متتالية
     if (view === "used") { const t = setTimeout(() => loadUsed(uq, uDateOn ? uFrom : "", uDateOn ? uTo : ""), 0); return () => clearTimeout(t); }
     if (view === "available") loadAvail();
+    if (view === "distributor") loadDistLog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, loadAvail, loadUsed]);
+  }, [view, loadAvail, loadUsed, loadDistLog]);
 
   // ═════ أ-١٨ · البحثُ مربوطٌ بالحالة لا بالحدث ═════
   // هذه الصفحةُ **لم يُبلَّغ عنها** وفيها العلّةُ نفسُها: التأثيرُ أعلاه يعتمد على `view`
@@ -191,6 +197,7 @@ export default function CardsPage() {
         <button onClick={() => setView("stock")} className={`rounded-lg px-4 py-1.5 text-sm font-semibold ${view === "stock" ? "bg-mynet-blue text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}>المتاح والإضافة</button>
         <button onClick={() => setView("available")} className={`rounded-lg px-4 py-1.5 text-sm font-semibold ${view === "available" ? "bg-mynet-blue text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}>الكروت المتاحة</button>
         <button onClick={() => setView("used")} className={`rounded-lg px-4 py-1.5 text-sm font-semibold ${view === "used" ? "bg-mynet-blue text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}>الكروت المستخدمة</button>
+        <button onClick={() => setView("distributor")} className={`rounded-lg px-4 py-1.5 text-sm font-semibold ${view === "distributor" ? "bg-mynet-blue text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}>🃏 سجل الموزّع</button>
       </div>
 
       {view === "available" ? (
@@ -301,6 +308,41 @@ export default function CardsPage() {
           </table>
         </div>
         </>
+      ) : view === "distributor" ? (
+        <div>
+          <div className="mb-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="font-bold text-slate-800">🃏 سجل حركات الموزّع</h3>
+            <p className="text-xs text-slate-500">الكروت التي أضافها موزّعُ الكروت إلى مخزنك — بالتاريخ والعدد وسعر الكارت.</p>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full text-right text-sm">
+              <thead className="bg-slate-50 text-slate-600">
+                <tr><th className="p-3">التاريخ</th><th className="p-3">الموزّع</th><th className="p-3">الباقة</th><th className="p-3">العدد</th><th className="p-3">سعر الكارت</th><th className="p-3">المجموع</th><th className="p-3">ملاحظة</th></tr>
+              </thead>
+              <tbody>
+                {distLog.length === 0 ? (
+                  <tr><td colSpan={7} className="p-8 text-center text-slate-400">لا توجد حركاتٌ من الموزّع بعد.</td></tr>
+                ) : distLog.map((r) => (
+                  <tr key={r.id} className="border-t border-slate-100">
+                    <td className="p-3" dir="ltr">{fmtDT(r.date)}</td>
+                    <td className="p-3 font-semibold text-slate-700">{r.distributorName}</td>
+                    <td className="p-3">{r.packageName ?? "—"}</td>
+                    <td className="p-3 font-bold">{fmt(r.count)}</td>
+                    <td className="p-3">{fmt(r.unitPrice)} د.ع</td>
+                    <td className="p-3 font-bold text-emerald-700">{fmt(r.total)} د.ع</td>
+                    <td className="p-3 text-slate-500">{r.note ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {distLog.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3">
+              <span className="font-bold text-emerald-800">إجماليُّ ما أضافه الموزّع</span>
+              <span className="text-sm text-emerald-700"><b>{fmt(distLog.reduce((s, r) => s + r.count, 0))}</b> كارت · <b>{fmt(distLog.reduce((s, r) => s + r.total, 0))}</b> د.ع</span>
+            </div>
+          )}
+        </div>
       ) : (
       <>
       {/* المتاح لكل فئة */}
