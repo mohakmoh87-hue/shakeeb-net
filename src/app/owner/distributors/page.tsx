@@ -8,23 +8,40 @@ type Data = { distributors: Dist[]; allAgents: AgentLite[] };
 
 export default function OwnerDistributorsPage() {
   const [data, setData] = useState<Data | null>(null);
+  const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [nu, setNu] = useState({ agentId: "", username: "", password: "" });
 
   const load = useCallback(() => {
-    fetch("/api/owner/cadrdists").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setData(d); });
+    setErr("");
+    fetch("/api/owner/card-distributors")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
+      .then((d) => setData(d))
+      .catch(() => setErr("تعذّر تحميلُ الموزّعين — تأكّد من صلاحيّتك ثمّ أعِد المحاولة."));
   }, []);
   useEffect(() => { load(); }, [load]);
 
   async function act(body: Record<string, unknown>, okMsg: string) {
     setMsg("");
-    const r = await fetch("/api/owner/cadrdists", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch("/api/owner/card-distributors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { setMsg(d?.error ?? "فشل"); return false; }
     setMsg(okMsg); load(); return true;
   }
 
-  if (!data) return <div className="p-6 text-slate-400">جاري التحميل...</div>;
+  if (!data) return (
+    <div className="p-6">
+      {err ? (
+        <div className="flex flex-wrap items-center gap-3 text-sm text-red-600">
+          <span>{err}</span>
+          <button type="button" onClick={load} className="rounded-lg bg-slate-100 px-3 py-1.5 text-slate-700 hover:bg-slate-200">إعادة المحاولة</button>
+          <a href="/owner" className="rounded-lg bg-slate-100 px-3 py-1.5 text-slate-600 hover:bg-slate-200">← رجوع</a>
+        </div>
+      ) : (
+        <div className="text-slate-400">جاري التحميل...</div>
+      )}
+    </div>
+  );
 
   const nameOf = (id: number) => data.allAgents.find((a) => a.id === id)?.name ?? `#${id}`;
   const nonDist = data.allAgents.filter((a) => !data.distributors.some((d) => d.agentId === a.id));
