@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 type Tier = { id: number; name: string; price: number; stock: number };
-type Target = { targetAgentId: number; name: string; notifyPhone: string; remaining: number; transferred: number; paid: number; stock: number };
+type Target = { targetAgentId: number; name: string; alias: string; notifyPhone: string; remaining: number; transferred: number; paid: number; stock: number };
 type Wa = { enabled: boolean; baseUrl: string; instanceId: string; tokenSet: boolean };
 type Me = { username: string; tiers: Tier[]; totalStock: number; targets: Target[]; wa: Wa };
 type Pkg = { id: number; name: string | null; priceDinar: number | null; stock: number };
@@ -12,6 +12,7 @@ type SearchRow = { kind: string; id: number; targetAgentId: number; agentName: s
 
 const money = (n: number) => (n ?? 0).toLocaleString("en-US");
 const fmtDate = (s: string) => { try { return new Date(s).toLocaleString("en-GB", { hour12: false }); } catch { return s; } };
+const label = (t: { alias?: string; name: string }) => (t.alias && t.alias.trim() ? t.alias : t.name);
 
 async function post(path: string, body: unknown) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -20,7 +21,7 @@ async function post(path: string, body: unknown) {
 }
 
 const glass = "rounded-2xl border border-white/10 bg-white/[0.04] shadow-xl shadow-black/30 backdrop-blur-sm";
-const input = "w-full rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/15";
+const input = "w-full rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/15 [&>option]:bg-slate-800 [&>option]:text-slate-100 [color-scheme:dark]";
 const btnPrimary = "inline-flex items-center justify-center gap-1 rounded-xl bg-gradient-to-l from-emerald-500 to-teal-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-900/40 transition hover:from-emerald-400 hover:to-teal-400 active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50";
 const btnGhost = "rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10";
 
@@ -167,12 +168,12 @@ function StockTab({ me, reload, flash }: { me: Me; reload: () => void; flash: (t
         </div>
       </Section>
 
-      <Section title="إضافةُ كروتٍ للمخزن" subtitle="لصقُ الأكواد — كلُّ سطرٍ: سيريال [رقم] [باسورد] (يفصلها فراغ/فاصلة/تاب). المكرّرُ يُتجاهَل.">
+      <Section title="إضافةُ كروتٍ للمخزن" subtitle="لصقُ الأكواد — كلُّ سطرٍ كارتٌ واحد (رقمُ الكارت فقط). المكرّرُ يُتجاهَل.">
         <select value={pasteTier} onChange={(e) => setPasteTier(e.target.value)} className={`${input} mb-3`}>
           <option value="">— اختر الفئة —</option>
           {me.tiers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} dir="ltr" rows={6} placeholder="12345 6789 1111&#10;22222 3333 4444" className={`${input} mb-3 font-mono`} />
+        <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} dir="ltr" rows={6} placeholder="12345&#10;13323&#10;15555" className={`${input} mb-3 font-mono`} />
         <button disabled={busy} className={btnPrimary} onClick={async () => { if (!pasteTier || !pasteText.trim()) { flash("اختر الفئةَ والصق الأكواد"); return; } setBusy(true); const { ok, d } = await post("/api/cards/stock", { tierId: Number(pasteTier), text: pasteText }); setBusy(false); if (ok) { flash(`✓ أُضيف ${d.added} كارت (مكرّر: ${d.duplicates})`); setPasteText(""); reload(); } else flash(d.error); }}>{busy ? "جارٍ الإضافة..." : "إضافة للمخزن"}</button>
       </Section>
     </>
@@ -205,7 +206,7 @@ function TransferTab({ me, reload, flash }: { me: Me; reload: () => void; flash:
         <label className="text-xs font-bold text-slate-300">الوكيل الهدف
           <select value={targetAgentId} onChange={(e) => setTargetAgentId(e.target.value)} className={`${input} mt-1.5`}>
             <option value="">— اختر —</option>
-            {me.targets.map((t) => <option key={t.targetAgentId} value={t.targetAgentId}>{t.name} — مخزنه {money(t.stock)} كارت</option>)}
+            {me.targets.map((t) => <option key={t.targetAgentId} value={t.targetAgentId}>{label(t)} — مخزنه {money(t.stock)} كارت</option>)}
           </select>
         </label>
         <label className="text-xs font-bold text-slate-300">باقةُ الوكيل الهدف
@@ -227,7 +228,7 @@ function TransferTab({ me, reload, flash }: { me: Me; reload: () => void; flash:
 
       {target && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-500/[0.07] px-3 py-2.5 text-sm">
-          <span className="text-slate-300">مخزنُ <b className="text-slate-100">{target.name}</b> حاليّاً:</span>
+          <span className="text-slate-300">مخزنُ <b className="text-slate-100">{label(target)}</b> حاليّاً:</span>
           <span className="rounded-lg bg-cyan-500/15 px-2 py-0.5 font-bold text-cyan-300">{money(targetTotalStock ?? target.stock)} كارت</span>
           {selPkg && <span className="rounded-lg bg-white/5 px-2 py-0.5 text-xs text-slate-300">من باقة «{selPkg.name ?? selPkg.id}»: <b className="text-cyan-300">{money(selPkg.stock)}</b></span>}
           <span className="flex-1" />
@@ -279,7 +280,8 @@ function DebtsTab({ me, reload, flash }: { me: Me; reload: () => void; flash: (t
           {me.targets.map((t) => (
             <button key={t.targetAgentId} onClick={() => openTarget(t.targetAgentId)} className={`flex flex-col gap-2 rounded-xl border p-3 text-right transition ${sel === t.targetAgentId ? "border-cyan-400/50 bg-cyan-500/[0.08]" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-100">{t.name}</span>
+                <span className="font-bold text-slate-100">{label(t)}</span>
+                {t.alias?.trim() ? <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-400">{t.name}</span> : null}
                 <span className="flex-1" />
                 <span className={`rounded-lg px-2 py-0.5 text-xs font-bold ${t.remaining > 0 ? "bg-rose-500/10 text-rose-300" : "bg-emerald-500/10 text-emerald-300"}`}>{money(t.remaining)} د.ع</span>
               </div>
@@ -293,7 +295,7 @@ function DebtsTab({ me, reload, flash }: { me: Me; reload: () => void; flash: (t
       </Section>
 
       {sel != null && selTarget && (
-        <Section title={selTarget.name} subtitle={`مخزنه: ${money(selTarget.stock)} كارت`} accent="bg-gradient-to-b from-rose-400 to-rose-600">
+        <Section title={label(selTarget)} subtitle={`${selTarget.alias?.trim() ? selTarget.name + " · " : ""}مخزنه: ${money(selTarget.stock)} كارت`} accent="bg-gradient-to-b from-rose-400 to-rose-600">
           <div className="mb-3 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <span className="text-sm text-slate-300">المتبقّي عليه</span>
             {debt && <span className={`text-xl font-black tabular-nums ${debt.remaining > 0 ? "text-rose-300" : "text-emerald-300"}`}>{money(debt.remaining)} <span className="text-xs font-bold text-slate-400">د.ع</span></span>}
@@ -362,7 +364,7 @@ function SearchTab({ me }: { me: Me }) {
     <Section title="بحثٌ في التعبئة والتسديد" subtitle="بالنوع أو الوكيل أو المدى الزمنيّ أو نصٍّ حرّ">
       <div className="mb-4 grid gap-2 sm:grid-cols-3">
         <select value={kind} onChange={(e) => setKind(e.target.value)} className={input}><option value="all">الكل</option><option value="transfer">تعبئة</option><option value="payment">تسديد</option></select>
-        <select value={targetAgentId} onChange={(e) => setTargetAgentId(e.target.value)} className={input}><option value="">كلُّ الوكلاء</option>{me.targets.map((t) => <option key={t.targetAgentId} value={t.targetAgentId}>{t.name}</option>)}</select>
+        <select value={targetAgentId} onChange={(e) => setTargetAgentId(e.target.value)} className={input}><option value="">كلُّ الوكلاء</option>{me.targets.map((t) => <option key={t.targetAgentId} value={t.targetAgentId}>{label(t)}</option>)}</select>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="بحثٌ نصّيّ" className={input} />
         <input value={from} onChange={(e) => setFrom(e.target.value)} type="date" className={input} />
         <input value={to} onChange={(e) => setTo(e.target.value)} type="date" className={input} />
@@ -390,6 +392,7 @@ function SettingsTab({ me, reload, flash }: { me: Me; reload: () => void; flash:
   const [wa, setWa] = useState({ enabled: me.wa.enabled, baseUrl: me.wa.baseUrl, instanceId: me.wa.instanceId, token: "" });
   const [pw, setPw] = useState({ current: "", next: "" });
   const [phones, setPhones] = useState<Record<number, string>>(Object.fromEntries(me.targets.map((t) => [t.targetAgentId, t.notifyPhone])));
+  const [aliases, setAliases] = useState<Record<number, string>>(Object.fromEntries(me.targets.map((t) => [t.targetAgentId, t.alias])));
 
   return (
     <>
@@ -403,14 +406,21 @@ function SettingsTab({ me, reload, flash }: { me: Me; reload: () => void; flash:
         <button className={btnPrimary} onClick={async () => { const { ok, d } = await post("/api/cards/wa", wa); flash(ok ? "✓ حُفِظ الواتساب" : d.error); if (ok) { setWa({ ...wa, token: "" }); reload(); } }}>حفظ الواتساب</button>
       </Section>
 
-      <Section title="أرقامُ إشعارِ الوكلاء" subtitle="رقمُ واتساب كلِّ وكيلٍ لتصله إشعاراتُ التعبئة والتسديد">
+      <Section title="الوكلاء: الاسمُ المستعار ورقمُ الإشعار" subtitle="اسمٌ تعرفُ به الوكيلَ (يظهر لك وحدَك) + رقمُ واتساب لإشعاراته">
         <div className="space-y-2">
           {me.targets.length === 0 && <div className="text-xs text-slate-500">لا وكلاءَ بعد.</div>}
           {me.targets.map((t) => (
-            <div key={t.targetAgentId} className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-2.5">
-              <span className="w-28 truncate font-bold text-slate-100">{t.name}</span>
-              <input value={phones[t.targetAgentId] ?? ""} onChange={(e) => setPhones({ ...phones, [t.targetAgentId]: e.target.value })} dir="ltr" placeholder="07XXXXXXXXX" className={`${input} sm:w-44`} />
-              <button className={btnGhost} onClick={async () => { const { ok, d } = await post("/api/cards/target", { targetAgentId: t.targetAgentId, notifyPhone: phones[t.targetAgentId] ?? "" }); flash(ok ? "✓ حُفِظ الرقم" : d.error); }}>حفظ</button>
+            <div key={t.targetAgentId} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="mb-2 text-xs text-slate-400">الاسمُ الأصليّ: <b className="text-slate-200">{t.name}</b></div>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="text-[11px] font-bold text-slate-400">اسمٌ مستعار (لك وحدك)
+                  <input value={aliases[t.targetAgentId] ?? ""} onChange={(e) => setAliases({ ...aliases, [t.targetAgentId]: e.target.value })} placeholder={t.name} className={`${input} mt-1 sm:w-48`} />
+                </label>
+                <label className="text-[11px] font-bold text-slate-400">رقمُ الإشعار
+                  <input value={phones[t.targetAgentId] ?? ""} onChange={(e) => setPhones({ ...phones, [t.targetAgentId]: e.target.value })} dir="ltr" placeholder="07XXXXXXXXX" className={`${input} mt-1 sm:w-44`} />
+                </label>
+                <button className={btnGhost} onClick={async () => { const { ok, d } = await post("/api/cards/target", { targetAgentId: t.targetAgentId, alias: aliases[t.targetAgentId] ?? "", notifyPhone: phones[t.targetAgentId] ?? "" }); flash(ok ? "✓ حُفِظ" : d.error); if (ok) reload(); }}>حفظ</button>
+              </div>
             </div>
           ))}
         </div>

@@ -19,14 +19,10 @@ export async function POST(request: Request) {
   const seen = new Set<string>();
   const rows: { distributorId: number; tierId: number; serial: string; number: string; password: string | null }[] = [];
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    const parts = line.split(/[\t,;|]+|\s{2,}|\s+/).map((x: string) => x.trim()).filter(Boolean);
-    if (parts.length === 0) continue;
-    const serial = parts[0].slice(0, 120);
+    const serial = raw.trim().slice(0, 120);
     if (!serial || seen.has(serial)) continue;
     seen.add(serial);
-    rows.push({ distributorId, tierId, serial, number: (parts[1] ?? serial).slice(0, 120), password: parts[2] ? parts[2].slice(0, 120) : null });
+    rows.push({ distributorId, tierId, serial, number: serial, password: null });
     if (rows.length >= 5000) break;
   }
   if (rows.length === 0) return NextResponse.json({ error: "لا أكوادَ صالحة" }, { status: 400 });

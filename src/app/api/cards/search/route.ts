@@ -40,8 +40,10 @@ export async function GET(request: Request) {
   const agentIds = [...new Set(rows.map((r) => r.targetAgentId))];
   const agents = agentIds.length ? await prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, name: true } }) : [];
   const nameById = new Map(agents.map((a) => [a.id, a.name]));
+  const aliasRows = await prisma.distributorTarget.findMany({ where: { distributorId, isDeleted: false }, select: { targetAgentId: true, alias: true } });
+  const aliasById = new Map(aliasRows.filter((a) => a.alias && a.alias.trim()).map((a) => [a.targetAgentId, a.alias as string]));
 
-  let out = rows.map((r) => ({ ...r, agentName: nameById.get(r.targetAgentId) ?? `#${r.targetAgentId}` }));
+  let out = rows.map((r) => ({ ...r, agentName: aliasById.get(r.targetAgentId) ?? nameById.get(r.targetAgentId) ?? `#${r.targetAgentId}` }));
   if (q) { const ql = q.toLowerCase(); out = out.filter((r) => (r.agentName ?? "").toLowerCase().includes(ql) || (r.note ?? "").toLowerCase().includes(ql)); }
   out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   return NextResponse.json({ rows: out.slice(0, 500) });

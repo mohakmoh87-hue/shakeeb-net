@@ -2141,11 +2141,12 @@ model DistributorCard { // مخزنُ كروت الموزّع (أكوادٌ مت
   @@map("distributor_cards")
 }
 
-model DistributorTarget { // الوكلاءُ المسموح لهم (المالكُ يضيف) + رقمُ إشعارٍ (الموزّع)
+model DistributorTarget { // الوكلاءُ المسموح لهم (المالكُ يضيف) + رقمُ إشعارٍ + اسمٌ مستعارٌ خاصٌّ بالموزّع
   id            Int      @id @default(autoincrement())
   distributorId Int
   targetAgentId Int
   notifyPhone   String?
+  alias         String? // اسمٌ يضعه الموزّعُ ليعرف الوكيل به — يظهر للموزّع وحدَه
   isDeleted     Boolean  @default(false)
   updatedAt     DateTime @default(now()) @updatedAt
 

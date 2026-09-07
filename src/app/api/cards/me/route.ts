@@ -28,7 +28,7 @@ export async function GET() {
   const targets = await Promise.all(
     targetsRaw.map(async (t) => {
       const d = await debtFor(distributorId, t.targetAgentId);
-      return { targetAgentId: t.targetAgentId, name: nameById.get(t.targetAgentId) ?? `#${t.targetAgentId}`, notifyPhone: t.notifyPhone ?? "", remaining: d.remaining, transferred: d.transferred, paid: d.paid, stock: stockByAgent.get(t.targetAgentId) ?? 0 };
+      return { targetAgentId: t.targetAgentId, name: nameById.get(t.targetAgentId) ?? `#${t.targetAgentId}`, alias: t.alias ?? "", notifyPhone: t.notifyPhone ?? "", remaining: d.remaining, transferred: d.transferred, paid: d.paid, stock: stockByAgent.get(t.targetAgentId) ?? 0 };
     }),
   );
 
