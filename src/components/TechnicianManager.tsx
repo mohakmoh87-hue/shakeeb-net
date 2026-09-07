@@ -10,7 +10,7 @@ type Tech = {
   salary?: number | null; shiftStart?: string | null; shiftEnd?: string | null; ownCardsOnly?: boolean; seeDeliveryCards?: boolean; canAddCards?: boolean;
   entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null; missedCheckoutPenalty?: number | null;
   autoCheckoutTime?: string | null;
-  paidLeaveTaken?: number; paidLeavePending?: number; unpaidLeaveTaken?: number;
+  paidLeaveTaken?: number; paidLeavePending?: number; unpaidLeaveTaken?: number; timeLeaveTaken?: number;
 };
 type Form = Record<string, string>;
 const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", seeDeliveryCards: "", canAddCards: "1", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0", autoCheckoutTime: "00:15" };
@@ -147,6 +147,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                     <span className="rounded-lg bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">براتب مأخوذة: {et?.paidLeaveTaken ?? 0}{quota ? ` / ${quota}` : ""}</span>
                     {(et?.paidLeavePending ?? 0) > 0 && <span className="rounded-lg bg-amber-50 px-2 py-1 font-semibold text-amber-700">معلّقة تحجز الحصّة: {et?.paidLeavePending}</span>}
                     <span className="rounded-lg bg-slate-100 px-2 py-1 font-semibold text-slate-600">بلا راتب مأخوذة: {et?.unpaidLeaveTaken ?? 0}</span>
+                    <span className="rounded-lg bg-sky-50 px-2 py-1 font-semibold text-sky-700">⏱️ زمنيّة: {et?.timeLeaveTaken ?? 0}</span>
                   </div>
                   <div className="mt-1 text-[11px] text-slate-400">تُصفَّر مع بداية فترة الراتب الجديدة (تُضبط من حسابات المدير).</div>
                 </div>
@@ -281,6 +282,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                     <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">🌿 براتب {t.paidLeaveTaken ?? 0}{t.paidLeavesPerMonth ? `/${t.paidLeavesPerMonth}` : ""}</span>
                     {(t.paidLeavePending ?? 0) > 0 && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">معلّقة {t.paidLeavePending}</span>}
                     <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600">بلا راتب {t.unpaidLeaveTaken ?? 0}</span>
+                    <span className="rounded-md bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">⏱️ زمنيّة {t.timeLeaveTaken ?? 0}</span>
                   </div>
                 )}
                 {/* الخيارات — مربعات واضحة (مستخدم المكتب: التتبع فقط) */}

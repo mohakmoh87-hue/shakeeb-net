@@ -61,20 +61,22 @@ export async function GET(request: Request) {
   const paidByTech = new Map<number, number>();
   const paidPendingByTech = new Map<number, number>();
   const unpaidByTech = new Map<number, number>();
+  const timeByTech = new Map<number, number>();
   let leavePeriod: { from: string; to: string } | null = null;
   if (isManager && rows.length) {
     const agent = agentId ? await prisma.agent.findUnique({ where: { id: agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
     const today = baghdadDayKey(new Date());
     leavePeriod = salaryPeriodBounds(agent?.salaryFromDay, agent?.salaryToDay, today) ?? { from: today.slice(0, 7) + "-01", to: today.slice(0, 7) + "-31" };
     const agg = await prisma.leave.groupBy({
-      by: ["technicianId", "paid", "status"],
-      where: { technicianId: { in: rows.map((r) => r.id) }, kind: "day", isDeleted: false, status: { in: ["approved", "pending"] }, dayKey: { gte: leavePeriod.from, lte: leavePeriod.to } },
+      by: ["technicianId", "kind", "paid", "status"],
+      where: { technicianId: { in: rows.map((r) => r.id) }, isDeleted: false, status: { in: ["approved", "pending"] }, dayKey: { gte: leavePeriod.from, lte: leavePeriod.to } },
       _count: { _all: true },
     });
     for (const a of agg) {
-      if (a.paid && a.status === "approved") paidByTech.set(a.technicianId, a._count._all);
-      else if (a.paid && a.status === "pending") paidPendingByTech.set(a.technicianId, a._count._all);
-      else if (!a.paid && a.status === "approved") unpaidByTech.set(a.technicianId, a._count._all);
+      if (a.kind === "day" && a.paid && a.status === "approved") paidByTech.set(a.technicianId, a._count._all);
+      else if (a.kind === "day" && a.paid && a.status === "pending") paidPendingByTech.set(a.technicianId, a._count._all);
+      else if (a.kind === "day" && !a.paid && a.status === "approved") unpaidByTech.set(a.technicianId, a._count._all);
+      else if (a.kind === "time" && a.status === "approved") timeByTech.set(a.technicianId, (timeByTech.get(a.technicianId) ?? 0) + a._count._all);
     }
   }
 
@@ -90,7 +92,7 @@ export async function GET(request: Request) {
       ownCardsOnly: t.ownCardsOnly, seeDeliveryCards: t.seeDeliveryCards, canAddCards: t.canAddCards,
       lateRatePerMin: t.lateRatePerMin, overtimeRatePerMin: t.overtimeRatePerMin, paidLeavesPerMonth: t.paidLeavesPerMonth,
       missedCheckoutPenalty: t.missedCheckoutPenalty, autoCheckoutTime: t.autoCheckoutTime,
-      paidLeaveTaken: paidByTech.get(t.id) ?? 0, paidLeavePending: paidPendingByTech.get(t.id) ?? 0, unpaidLeaveTaken: unpaidByTech.get(t.id) ?? 0,
+      paidLeaveTaken: paidByTech.get(t.id) ?? 0, paidLeavePending: paidPendingByTech.get(t.id) ?? 0, unpaidLeaveTaken: unpaidByTech.get(t.id) ?? 0, timeLeaveTaken: timeByTech.get(t.id) ?? 0,
     };
   });
   return NextResponse.json({ technicians, officeId, isManager, leavePeriod });
