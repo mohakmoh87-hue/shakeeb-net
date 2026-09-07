@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { decryptSecret } from "./secretbox";
+import { isBlockedHost } from "./ssrfGuard";
 import type { SendResult } from "./whatsapp";
 
 const DEFAULT_BASE = "https://api.ultramsg.com";
@@ -185,6 +186,9 @@ export async function sendViaUltraMsg(cfg: WaChannel, phone: string, text: strin
   const to = toUltraTo(phone);
   if (!to) return { ok: false, error: "رقمٌ غير صالحٍ لواتساب" };
   const root = (cfg.baseUrl || DEFAULT_BASE).replace(/\/+$/, "");
+  let host: string;
+  try { host = new URL(root).hostname; } catch { return { ok: false, error: "رابطُ واتساب غير صالح" }; }
+  if (await isBlockedHost(host)) return { ok: false, error: "مضيفُ واتساب غير مسموح — عنوانٌ داخليّ" };
   const instance = /ultramsg\.com/i.test(root) && /^\d+$/.test(cfg.instanceId) ? `instance${cfg.instanceId}` : cfg.instanceId;
   const base = `${root}/${encodeURIComponent(instance)}`;
   if (image) {

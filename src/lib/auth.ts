@@ -122,8 +122,9 @@ export async function getSession(): Promise<SessionPayload | null> {
   if (!token) return null;
   const payload = await verifyToken(token);
   if (!payload) return null;
-  // جلسة فني ليست جلسة مستخدم — تُرفض في كل مسارات المستخدم للحفاظ على الأمان
-  if ((payload as unknown as { kind?: string }).kind === "technician") return null;
+  // جلسةُ المستخدم لا تحمل kind؛ أيُّ توكنٍ يحمل نوعاً (فنّي/موزّع كروت/أدمن تطبيق…) ليس جلسةَ
+  // مستخدمٍ فيُرفض هنا — قائمةٌ بيضاءُ لا سوداء، فلا يمرّ نوعٌ جديدٌ مستقبلاً بلا userId ويرمي 500.
+  if ((payload as unknown as { kind?: string }).kind != null) return null;
 
   // ردمُ فكِّ ربط الصلاحيّات (2026-08-29): يُثبّت الابنَ المُستلزَمَ صراحةً مرّةً واحدةً
   // **قبل** قراءة الصلاحيّات أدناه، فلا فجوةَ يُزال فيها الاستلزامُ قبل الردم. راجع permSplitBackfill.
