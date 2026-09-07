@@ -36,7 +36,7 @@ export default function OwnerDistributorsPage() {
         <a href="/owner" className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200">← رجوع</a>
       </div>
       <p className="text-xs leading-5 text-slate-500">
-        فعّل وكيلاً موزّعاً، وأنشئ له حسابَ دخولٍ منفصلاً لصفحة <b dir="ltr">/cards</b>، وحدّد الوكلاءَ الذين يضع في مخازنهم كروتاً. الموزّعُ يغيّر كلمةَ مروره بنفسه لاحقاً.
+        فعّل وكيلاً موزّعاً، وأنشئ له حسابَ دخولٍ منفصلاً لصفحة <b dir="ltr">/card-distributor</b>، وحدّد الوكلاءَ الذين يضع في مخازنهم كروتاً. الموزّعُ يغيّر كلمةَ مروره بنفسه لاحقاً.
       </p>
 
       {/* تفعيلُ موزّعٍ جديد */}
@@ -67,7 +67,7 @@ export default function OwnerDistributorsPage() {
               <button type="button" onClick={() => { const p = prompt("كلمةُ مرورٍ جديدة (٨ فأكثر)")?.trim(); if (p) act({ action: "reset", agentId: d.agentId, password: p }, "✓ صُفِّرت"); }} className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-700 hover:bg-amber-100">تصفير كلمة المرور</button>
             </div>
           </div>
-          <div className="mb-3 text-xs text-slate-500">حساب /cards: <b dir="ltr">{d.username ?? "—"}</b> {d.plainPassword && <span dir="ltr" className="text-slate-400">/ {d.plainPassword}</span>}</div>
+          <div className="mb-3 text-xs text-slate-500">حساب /card-distributor: <b dir="ltr">{d.username ?? "—"}</b> {d.plainPassword && <span dir="ltr" className="text-slate-400">/ {d.plainPassword}</span>}</div>
 
           <div className="rounded-lg bg-slate-50 p-3">
             <div className="mb-2 text-xs font-semibold text-slate-600">الوكلاءُ المسموح لهم (يضعُ في مخازنهم كروتاً):</div>
