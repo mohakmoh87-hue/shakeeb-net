@@ -17,5 +17,8 @@ export async function GET(request: Request) {
     orderBy: { id: "asc" },
     select: { id: true, name: true, priceDinar: true },
   });
-  return NextResponse.json({ packages });
+  const stockRows = await prisma.rechargeCard.groupBy({ by: ["packageId"], where: { agentId: targetAgentId, useDate: null }, _count: { _all: true } });
+  const stockByPkg = new Map(stockRows.map((s) => [s.packageId, s._count._all]));
+  const totalStock = stockRows.reduce((a, s) => a + s._count._all, 0);
+  return NextResponse.json({ packages: packages.map((p) => ({ ...p, stock: stockByPkg.get(p.id) ?? 0 })), totalStock });
 }

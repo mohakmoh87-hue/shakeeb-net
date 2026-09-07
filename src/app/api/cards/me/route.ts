@@ -23,10 +23,12 @@ export async function GET() {
   const agentIds = targetsRaw.map((t) => t.targetAgentId);
   const agents = agentIds.length ? await prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, name: true } }) : [];
   const nameById = new Map(agents.map((a) => [a.id, a.name]));
+  const agentStock = agentIds.length ? await prisma.rechargeCard.groupBy({ by: ["agentId"], where: { agentId: { in: agentIds }, useDate: null }, _count: { _all: true } }) : [];
+  const stockByAgent = new Map(agentStock.map((s) => [s.agentId, s._count._all]));
   const targets = await Promise.all(
     targetsRaw.map(async (t) => {
       const d = await debtFor(distributorId, t.targetAgentId);
-      return { targetAgentId: t.targetAgentId, name: nameById.get(t.targetAgentId) ?? `#${t.targetAgentId}`, notifyPhone: t.notifyPhone ?? "", remaining: d.remaining, transferred: d.transferred, paid: d.paid };
+      return { targetAgentId: t.targetAgentId, name: nameById.get(t.targetAgentId) ?? `#${t.targetAgentId}`, notifyPhone: t.notifyPhone ?? "", remaining: d.remaining, transferred: d.transferred, paid: d.paid, stock: stockByAgent.get(t.targetAgentId) ?? 0 };
     }),
   );
 
