@@ -275,6 +275,14 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                     {isManager && <div className="mt-0.5 text-xs text-slate-500">{t.shiftStart && t.shiftEnd ? `⏰ ${t.shiftStart}–${t.shiftEnd}` : "بلا دوام"} · راتب {Number(t.salary ?? 0).toLocaleString("en-US")}</div>}
                   </div>
                 </div>
+                {/* إجازاتُ فترة الراتب الحاليّة — لمحةٌ سريعة في القائمة (للمدير) */}
+                {isManager && (
+                  <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">🌿 براتب {t.paidLeaveTaken ?? 0}{t.paidLeavesPerMonth ? `/${t.paidLeavesPerMonth}` : ""}</span>
+                    {(t.paidLeavePending ?? 0) > 0 && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">معلّقة {t.paidLeavePending}</span>}
+                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600">بلا راتب {t.unpaidLeaveTaken ?? 0}</span>
+                  </div>
+                )}
                 {/* الخيارات — مربعات واضحة (مستخدم المكتب: التتبع فقط) */}
                 {isManager ? (
                   <div className="grid grid-cols-3 gap-2">
