@@ -22,7 +22,9 @@ const SECRET = new TextEncoder().encode(
 //    محاكاةٌ بحتة (بلا أسرار ولا قاعدة ولا جلسات)، فلا بدّ أن يكون عامّاً وإلا انكسر الـiframe للزائر.
 // 🛡️ /app-admin (2026-09-01): لوحةُ أدمن تطبيق المشترك — دخولٌ مستقلٌّ (kabina_appadmin) بحسابٍ
 //    يُنشئه المالك؛ معزولٌ عن جلسة المستخدم، فلا بدّ أن يكون عامّاً ليُظهر نموذجَ دخوله الخاصّ.
-const PUBLIC_PATHS = ["/login", "/reset", "/about", "/supercell", "/app-admin", "/app", "/kabina-web"];
+// 🃏 /cadrdist (2026-09-07): بوّابةُ موزّع الكروت — دخولٌ مستقلٌّ (kabina_cards) بحسابٍ يحدّده المالك؛
+//    معزولٌ عن جلسة المستخدم مثل /app-admin تماماً، فلا بدّ أن يكون عامّاً ليُظهر نموذجَ دخوله الخاصّ.
+const PUBLIC_PATHS = ["/login", "/reset", "/about", "/supercell", "/app-admin", "/app", "/kabina-web", "/cadrdist"];
 
 // يعيد { authed, isTech } من توكن الجلسة (المستخدم أو الفني)
 async function readSession(req: NextRequest): Promise<{ authed: boolean; isTech: boolean }> {

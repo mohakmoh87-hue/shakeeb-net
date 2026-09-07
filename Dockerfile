@@ -16,10 +16,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# كسرُ كاش طبقة البناء (بدّل القيمة لإجبار بناءٍ نظيف حين يتشبّث Railway بطبقةٍ قديمة)
-ARG CACHEBUST=cadrdist-2026-09-07
 # build = prisma generate && next build (لا يتصل بقاعدة البيانات — الرابط يُحقن وقت التشغيل)
-RUN rm -rf .next && npm run build
+RUN npm run build
 
 # ===== 3) التشغيل =====
 FROM node:22-slim AS runner
