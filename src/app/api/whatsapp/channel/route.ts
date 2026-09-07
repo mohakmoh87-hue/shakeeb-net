@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { ownsTower } from "@/lib/guard";
 import { can } from "@/lib/rbac";
-import { getWaChannelInfo, setWaChannel } from "@/lib/waChannel";
+import { getWaChannelInfo, setWaChannel, isSafeWaBase } from "@/lib/waChannel";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +33,12 @@ export async function POST(request: Request) {
   if (g.error) return g.error;
 
   const enabled = body?.enabled === true || body?.enabled === "1";
+  const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl.trim() : undefined;
   const instanceId = typeof body?.instanceId === "string" ? body.instanceId : undefined;
   const token = typeof body?.token === "string" ? body.token : undefined;
+  if (baseUrl && !isSafeWaBase(baseUrl)) {
+    return NextResponse.json({ error: "رابطُ API غير صالح أو غيرُ مسموح — يجب أن يكون http(s) لمضيفٍ عامّ" }, { status: 400 });
+  }
 
   const info = await getWaChannelInfo(officeId);
   const willHaveInstance = (instanceId ?? info.instanceId).trim().length > 0;
@@ -43,5 +47,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "لتفعيل UltraMsg أدخِل Instance ID والToken معاً" }, { status: 400 });
   }
 
-  return NextResponse.json(await setWaChannel(officeId, { enabled, instanceId, token }));
+  return NextResponse.json(await setWaChannel(officeId, { enabled, baseUrl, instanceId, token }));
 }

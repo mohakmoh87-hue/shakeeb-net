@@ -32,7 +32,7 @@ export async function loadOtpWa(): Promise<WaChannel | null> {
   const s = await readStored();
   if (!s || !s.instanceId) return null;
   const token = decryptSecret(s.token) ?? "";
-  return { enabled: true, provider: "ultramsg", instanceId: s.instanceId, token };
+  return { enabled: true, provider: "ultramsg", baseUrl: "https://api.ultramsg.com", instanceId: s.instanceId, token };
 }
 
 export async function getOtpWaInfo(): Promise<OtpWaInfo> {

@@ -2,9 +2,43 @@ import { prisma } from "./prisma";
 import { decryptSecret } from "./secretbox";
 import type { SendResult } from "./whatsapp";
 
-type Stored = { enabled: boolean; provider: string; instanceId: string; token: string | null };
-export type WaChannel = { enabled: boolean; provider: "ultramsg"; instanceId: string; token: string };
-export type WaChannelInfo = { enabled: boolean; provider: "ultramsg"; instanceId: string; tokenSet: boolean };
+const DEFAULT_BASE = "https://api.ultramsg.com";
+
+type Stored = { enabled: boolean; provider: string; baseUrl: string; instanceId: string; token: string | null };
+export type WaChannel = { enabled: boolean; provider: "ultramsg"; baseUrl: string; instanceId: string; token: string };
+export type WaChannelInfo = { enabled: boolean; provider: "ultramsg"; baseUrl: string; instanceId: string; tokenSet: boolean };
+
+function blockedWaHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
+  if (h.includes(":")) return true;
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const a = +m[1], b = +m[2];
+    if (a === 0 || a === 127 || a === 10) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+  }
+  return false;
+}
+
+export function isSafeWaBase(s: string): boolean {
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    if (blockedWaHost(u.hostname)) return false;
+    if (!u.hostname.includes(".")) return false;
+    return true;
+  } catch { return false; }
+}
+
+export function normalizeWaBase(v: string | null | undefined): string {
+  const s = (v ?? "").trim().replace(/\/+$/, "");
+  if (!s) return DEFAULT_BASE;
+  return isSafeWaBase(s) ? s : DEFAULT_BASE;
+}
 
 const KEY = (officeId: number) => `waApi:${officeId}`;
 
@@ -16,6 +50,7 @@ async function readStored(officeId: number): Promise<Stored | null> {
     return {
       enabled: o.enabled === true,
       provider: typeof o.provider === "string" ? o.provider : "ultramsg",
+      baseUrl: normalizeWaBase(typeof o.baseUrl === "string" ? o.baseUrl : null),
       instanceId: typeof o.instanceId === "string" ? o.instanceId.trim() : "",
       token: typeof o.token === "string" ? o.token : null,
     };
@@ -34,7 +69,7 @@ export async function loadWaChannel(officeId: number): Promise<WaChannel | null>
   const s = await readStored(officeId);
   if (!s || !s.instanceId) return null;
   const token = decryptSecret(s.token) ?? "";
-  return { enabled: s.enabled, provider: "ultramsg", instanceId: s.instanceId, token };
+  return { enabled: s.enabled, provider: "ultramsg", baseUrl: s.baseUrl, instanceId: s.instanceId, token };
 }
 
 export async function getWaChannelInfo(officeId: number): Promise<WaChannelInfo> {
@@ -42,6 +77,7 @@ export async function getWaChannelInfo(officeId: number): Promise<WaChannelInfo>
   return {
     enabled: s?.enabled === true,
     provider: "ultramsg",
+    baseUrl: s?.baseUrl ?? DEFAULT_BASE,
     instanceId: s?.instanceId ?? "",
     tokenSet: !!(s?.token && s.token.length > 0),
   };
@@ -49,16 +85,17 @@ export async function getWaChannelInfo(officeId: number): Promise<WaChannelInfo>
 
 export async function setWaChannel(
   officeId: number,
-  input: { enabled?: boolean; instanceId?: string; token?: string | null },
+  input: { enabled?: boolean; baseUrl?: string; instanceId?: string; token?: string | null },
 ): Promise<WaChannelInfo> {
   const prev = await readStored(officeId);
   const enabled = input.enabled ?? prev?.enabled ?? false;
+  const baseUrl = normalizeWaBase(input.baseUrl ?? prev?.baseUrl);
   const instanceId = (input.instanceId ?? prev?.instanceId ?? "").trim();
   let token = prev?.token ?? null;
   if (typeof input.token === "string" && input.token.trim() !== "") token = input.token.trim();
-  await writeText(KEY(officeId), JSON.stringify({ enabled, provider: "ultramsg", instanceId, token }));
+  await writeText(KEY(officeId), JSON.stringify({ enabled, provider: "ultramsg", baseUrl, instanceId, token }));
   invalidateWaChannel(officeId);
-  return { enabled, provider: "ultramsg", instanceId, tokenSet: !!(token && token.length > 0) };
+  return { enabled, provider: "ultramsg", baseUrl, instanceId, tokenSet: !!(token && token.length > 0) };
 }
 
 const cache = new Map<number, { cfg: WaChannel | null; at: number }>();
@@ -135,7 +172,9 @@ async function ultraPost(url: string, params: Record<string, string>): Promise<{
 export async function sendViaUltraMsg(cfg: WaChannel, phone: string, text: string, image?: string | null): Promise<SendResult> {
   const to = toUltraTo(phone);
   if (!to) return { ok: false, error: "رقمٌ غير صالحٍ لواتساب" };
-  const base = `https://api.ultramsg.com/${encodeURIComponent(cfg.instanceId)}`;
+  const root = (cfg.baseUrl || DEFAULT_BASE).replace(/\/+$/, "");
+  const instance = /ultramsg\.com/i.test(root) && /^\d+$/.test(cfg.instanceId) ? `instance${cfg.instanceId}` : cfg.instanceId;
+  const base = `${root}/${encodeURIComponent(instance)}`;
   if (image) {
     const r = await ultraPost(`${base}/messages/image`, { token: cfg.token, to, image, caption: text });
     if (r.ok) return { ok: true, withImage: true };

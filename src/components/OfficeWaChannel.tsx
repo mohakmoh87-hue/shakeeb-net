@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePermission } from "@/lib/usePermission";
 
-type Info = { enabled: boolean; provider: string; instanceId: string; tokenSet: boolean };
+type Info = { enabled: boolean; provider: string; baseUrl: string; instanceId: string; tokenSet: boolean };
 
 export default function OfficeWaChannel({ officeId }: { officeId: number }) {
   const { can } = usePermission();
@@ -11,6 +11,7 @@ export default function OfficeWaChannel({ officeId }: { officeId: number }) {
 
   const [info, setInfo] = useState<Info | null>(null);
   const [mode, setMode] = useState<"qr" | "ultramsg">("qr");
+  const [baseUrl, setBaseUrl] = useState("");
   const [instanceId, setInstanceId] = useState("");
   const [token, setToken] = useState("");
   const [testPhone, setTestPhone] = useState("");
@@ -23,6 +24,7 @@ export default function OfficeWaChannel({ officeId }: { officeId: number }) {
     const d: Info = await r.json();
     setInfo(d);
     setMode(d.enabled ? "ultramsg" : "qr");
+    setBaseUrl(d.baseUrl && d.baseUrl !== "https://api.ultramsg.com" ? d.baseUrl : "");
     setInstanceId(d.instanceId ?? "");
     setToken("");
   }, [officeId]);
@@ -37,7 +39,7 @@ export default function OfficeWaChannel({ officeId }: { officeId: number }) {
       const r = await fetch("/api/whatsapp/channel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ officeId, enabled: mode === "ultramsg", instanceId, token }),
+        body: JSON.stringify({ officeId, enabled: mode === "ultramsg", baseUrl, instanceId, token }),
       });
       const d = await r.json();
       if (!r.ok) { setMsg({ kind: "err", text: d?.error ?? "تعذّر الحفظ" }); return; }
@@ -101,6 +103,16 @@ export default function OfficeWaChannel({ officeId }: { officeId: number }) {
       {/* حقولُ UltraMsg */}
       {mode === "ultramsg" && (
         <div className="mb-3 grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <label className="text-xs font-semibold text-slate-600">رابط API (Base URL)
+            <input
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.ultramsg.com"
+              dir="ltr"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+            <span className="mt-1 block text-[11px] font-normal text-slate-500">اتركه فارغاً لـUltraMsg الرسميّ، أو ضع عنوانَ بوّابةٍ متوافقةٍ مع واجهته (نفسُ الطلبات).</span>
+          </label>
           <label className="text-xs font-semibold text-slate-600">Instance ID
             <input
               value={instanceId}
