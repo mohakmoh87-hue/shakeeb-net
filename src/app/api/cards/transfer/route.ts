@@ -59,7 +59,7 @@ export async function POST(request: Request) {
           serial: c.serial,
           number: c.number ?? c.serial,
           password: c.password,
-          price: 0,
+          price: unitPrice,
           addDate: now,
         })),
       });
