@@ -4,20 +4,30 @@ import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { baghdadDayKey } from "@/lib/attendance";
+import { salaryPeriodBounds } from "@/lib/salary";
 import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
-const monthOf = (dayKey: string) => dayKey.slice(0, 7); // YYYY-MM
+// نافذةُ الحصّة = فترةُ الراتب (salaryFromDay→salaryToDay على الوكيل) التي تحوي اليومَ المطلوب،
+// غيرَ متداخلةٍ مع سابقتها؛ وإن لم تُضبَط فترةُ الراتب تُستعمَل الشهرُ الميلاديُّ احتياطاً.
+function periodBounds(fromDay: number | null | undefined, toDay: number | null | undefined, dayKey: string): { from: string; to: string } {
+  return salaryPeriodBounds(fromDay, toDay, dayKey) ?? { from: dayKey.slice(0, 7) + "-01", to: dayKey.slice(0, 7) + "-31" };
+}
 
-// عدد إجازات اليوم المدفوعة (معتمدة أو معلّقة) لفنيٍّ في شهرٍ معيّن — للحصّة
-async function usedPaidThisMonth(technicianId: number, month: string, excludeId?: number) {
+async function periodForTech(agentId: number | null | undefined, dayKey: string): Promise<{ from: string; to: string }> {
+  const agent = agentId ? await prisma.agent.findUnique({ where: { id: agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
+  return periodBounds(agent?.salaryFromDay, agent?.salaryToDay, dayKey);
+}
+
+// عدد إجازات اليوم المدفوعة (معتمدة أو معلّقة) لفنيٍّ ضمن فترةٍ [from,to] — للحصّة
+async function usedPaidInPeriod(technicianId: number, from: string, to: string, excludeId?: number) {
   return prisma.leave.count({
     where: {
       technicianId, kind: "day", paid: true,
       isDeleted: false, // أ-٨ · إجازةٌ أُزيلت لا تستهلك الحصّة
       status: { in: ["approved", "pending"] },
-      dayKey: { startsWith: month },
+      dayKey: { gte: from, lte: to },
       ...(excludeId ? { id: { not: excludeId } } : {}),
     },
   });
@@ -42,14 +52,14 @@ export async function GET(request: Request) {
   const tech = await getTechSession();
   if (tech) {
     const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { paidLeavesPerMonth: true } });
-    const month = monthOf(baghdadDayKey(new Date()));
+    const period = await periodForTech(tech.agentId, baghdadDayKey(new Date()));
     const quota = Math.max(0, t?.paidLeavesPerMonth ?? 0);
-    const used = await usedPaidThisMonth(tech.technicianId, month);
+    const used = await usedPaidInPeriod(tech.technicianId, period.from, period.to);
     const leaves = await prisma.leave.findMany({
       where: { technicianId: tech.technicianId, isDeleted: false }, // أ-٨ · المُزالةُ لا تُعرَض
       orderBy: { id: "desc" }, take: 40,
     });
-    return NextResponse.json({ role: "technician", quota, used, remaining: Math.max(0, quota - used), leaves });
+    return NextResponse.json({ role: "technician", quota, used, remaining: Math.max(0, quota - used), period, leaves });
   }
 
   const g = await guard("field.payroll");
@@ -120,17 +130,23 @@ async function managerCreate(request: Request, body: unknown) {
     return NextResponse.json({ error: "كلُّ أيّام المدى لها إجازةٌ مسجّلةٌ سلفاً" }, { status: 400 });
   }
 
-  // ⚠️ الحصّةُ تُفحَص **لكلّ شهرٍ على حدة**: مدىً يعبُر شهرَين يستهلك من حصّةِ كلٍّ
-  //   منهما بأيّامه فيه. والفحصُ **قبل الإنشاء** لا بعده، فلا يُنشأ بعضٌ ويُرفَض بعضٌ.
+  // ⚠️ الحصّةُ تُفحَص **لكلّ فترةِ راتبٍ على حدة**: مدىً يعبُر فترتَين يستهلك من حصّةِ كلٍّ
+  //   منهما بأيّامه فيها. والفحصُ **قبل الإنشاء** لا بعده، فلا يُنشأ بعضٌ ويُرفَض بعضٌ.
   if (paid) {
     const quota = Math.max(0, tech.paidLeavesPerMonth ?? 0);
-    const byMonth = new Map<string, number>();
-    for (const d of fresh) byMonth.set(monthOf(d), (byMonth.get(monthOf(d)) ?? 0) + 1);
-    for (const [m, want] of byMonth) {
-      const used = await usedPaidThisMonth(technicianId, m);
+    const agent = tech.agentId ? await prisma.agent.findUnique({ where: { id: tech.agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
+    const byPeriod = new Map<string, { from: string; to: string; want: number }>();
+    for (const d of fresh) {
+      const p = periodBounds(agent?.salaryFromDay, agent?.salaryToDay, d);
+      const cur = byPeriod.get(p.from) ?? { from: p.from, to: p.to, want: 0 };
+      cur.want++;
+      byPeriod.set(p.from, cur);
+    }
+    for (const { from, to, want } of byPeriod.values()) {
+      const used = await usedPaidInPeriod(technicianId, from, to);
       if (used + want > quota) {
         return NextResponse.json({
-          error: `حصّةُ الإجازات المدفوعة في ${m}: ${quota} — المستهلَك ${used}، والمتبقّي ${Math.max(0, quota - used)}`
+          error: `حصّةُ الإجازات المدفوعة للفترة (${from} → ${to}): ${quota} — المستهلَك ${used}، والمتبقّي ${Math.max(0, quota - used)}`
             + ` وأنت تمنح ${want}. قلّل المدى أو امنحها بلا راتب.`,
         }, { status: 400 });
       }
@@ -171,7 +187,6 @@ export async function POST(request: Request) {
   }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   const { kind, dayKey, reason } = parsed.data;
-  const month = monthOf(dayKey);
 
   if (kind === "time") {
     const { startMin, endMin } = parsed.data;
@@ -191,8 +206,9 @@ export async function POST(request: Request) {
   if (paid) {
     const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { paidLeavesPerMonth: true } });
     const quota = Math.max(0, t?.paidLeavesPerMonth ?? 0);
-    const used = await usedPaidThisMonth(tech.technicianId, month);
-    if (used >= quota) return NextResponse.json({ error: "استنفدت حصّة الإجازات المدفوعة لهذا الشهر — اطلبها بلا راتب" }, { status: 400 });
+    const period = await periodForTech(tech.agentId, dayKey);
+    const used = await usedPaidInPeriod(tech.technicianId, period.from, period.to);
+    if (used >= quota) return NextResponse.json({ error: "استنفدت حصّة الإجازات المدفوعة لهذه الفترة — اطلبها بلا راتب" }, { status: 400 });
   }
   const created = await prisma.leave.create({
     data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: tech.towerId, kind: "day", paid, dayKey, reason },
@@ -215,8 +231,9 @@ export async function PATCH(request: Request) {
   if (parsed.data.status === "approved" && leave.kind === "day" && leave.paid) {
     const t = await prisma.technician.findUnique({ where: { id: leave.technicianId }, select: { paidLeavesPerMonth: true } });
     const quota = Math.max(0, t?.paidLeavesPerMonth ?? 0);
-    const used = await usedPaidThisMonth(leave.technicianId, monthOf(leave.dayKey), leave.id);
-    if (used >= quota) return NextResponse.json({ error: "استُنفدت حصّة الإجازات المدفوعة لهذا الشهر — اطلب من الفني إعادتها بلا راتب" }, { status: 400 });
+    const period = await periodForTech(leave.agentId, leave.dayKey);
+    const used = await usedPaidInPeriod(leave.technicianId, period.from, period.to, leave.id);
+    if (used >= quota) return NextResponse.json({ error: "استُنفدت حصّة الإجازات المدفوعة لهذه الفترة — اطلب من الفني إعادتها بلا راتب" }, { status: 400 });
   }
 
   const updated = await prisma.leave.update({

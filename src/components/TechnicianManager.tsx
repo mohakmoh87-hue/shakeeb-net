@@ -10,6 +10,7 @@ type Tech = {
   salary?: number | null; shiftStart?: string | null; shiftEnd?: string | null; ownCardsOnly?: boolean; seeDeliveryCards?: boolean; canAddCards?: boolean;
   entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null; missedCheckoutPenalty?: number | null;
   autoCheckoutTime?: string | null;
+  paidLeaveTaken?: number; paidLeavePending?: number; unpaidLeaveTaken?: number;
 };
 type Form = Record<string, string>;
 const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", seeDeliveryCards: "", canAddCards: "1", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0", autoCheckoutTime: "00:15" };
@@ -26,6 +27,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   const [isManager, setIsManager] = useState(true); // مستخدم المكتب يرى القائمة والتتبع فقط
   const [trackIds, setTrackIds] = useState<number[] | null>(null); // فتح نافذة التتبع بفنيين محدّدين
   // المكاتب الإضافية الدائمة (يضبطها المدير): كل مكاتب الوكيل عدا مكتب الفني الأصلي
+  const [leavePeriod, setLeavePeriod] = useState<{ from: string; to: string } | null>(null);
   const [allOffices, setAllOffices] = useState<{ id: number; name: string | null }[]>([]);
   const [extraSel, setExtraSel] = useState<Set<number>>(new Set());
   const [editHome, setEditHome] = useState<number | null>(null); // مكتب الفني الأصلي (للاستبعاد)
@@ -34,7 +36,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   }, []);
 
   const load = useCallback(() => {
-    fetch(`/api/field/technicians${officeId != null ? `?officeId=${officeId}` : ""}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setTechs(d.technicians ?? []); setIsManager(d.isManager !== false); } });
+    fetch(`/api/field/technicians${officeId != null ? `?officeId=${officeId}` : ""}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setTechs(d.technicians ?? []); setIsManager(d.isManager !== false); setLeavePeriod(d.leavePeriod ?? null); } });
   }, [officeId]);
   useEffect(() => { load(); }, [load]);
 
@@ -132,6 +134,24 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                   الليل: القاعدة «أوّلُ حلولٍ للساعة بعد بصمة دخوله». المختومُ يبقى نهايةَ دوامه. */}
               <L label="وقت الخروج التلقائي"><I v={f.autoCheckoutTime} on={(v) => set("autoCheckoutTime", v)} time /></L>
             </div>
+
+            {editId != null && (() => {
+              const et = techs.find((t) => t.id === editId);
+              const quota = Number(f.paidLeavesPerMonth) || 0;
+              return (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
+                  <div className="mb-1.5 text-xs font-bold text-slate-700">
+                    إجازاتُ فترة الراتب الحاليّة {leavePeriod && <span className="font-normal text-slate-400" dir="ltr">({leavePeriod.from} → {leavePeriod.to})</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-lg bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">براتب مأخوذة: {et?.paidLeaveTaken ?? 0}{quota ? ` / ${quota}` : ""}</span>
+                    {(et?.paidLeavePending ?? 0) > 0 && <span className="rounded-lg bg-amber-50 px-2 py-1 font-semibold text-amber-700">معلّقة تحجز الحصّة: {et?.paidLeavePending}</span>}
+                    <span className="rounded-lg bg-slate-100 px-2 py-1 font-semibold text-slate-600">بلا راتب مأخوذة: {et?.unpaidLeaveTaken ?? 0}</span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-400">تُصفَّر مع بداية فترة الراتب الجديدة (تُضبط من حسابات المدير).</div>
+                </div>
+              );
+            })()}
 
             {/* «رؤية بطاقاته فقط» — الخانة التي كانت ناقصة (تصحيح 2026-08-05).
                 الميزة كانت مبنيّة كاملةً: العمود في القاعدة، وقبولها في الحفظ، وتطبيقها

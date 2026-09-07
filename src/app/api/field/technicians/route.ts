@@ -5,6 +5,8 @@ import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { can } from "@/lib/rbac";
 import { resolveFieldOffice, parseExtraTowers } from "@/lib/field";
 import { encryptSecret, decryptSecret } from "@/lib/secretbox";
+import { salaryPeriodBounds } from "@/lib/salary";
+import { baghdadDayKey } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +56,28 @@ export async function GET(request: Request) {
     t.towerId === (officeId ?? null) ||
     (officeId != null && (t.supportTowerId === officeId || parseExtraTowers(t.extraTowerIds).includes(officeId))),
   );
+  // عدّاداتُ الإجازات (يوم) لفترة الراتب الحاليّة — للمدير فقط. المدفوعةُ نميّز فيها المعتمدَ
+  // (مأخوذ) عن المعلَّق (يحجز الحصّة أيضاً) كي يطابق العرضُ ما يُنفَّذ فعلاً في فحص الحصّة.
+  const paidByTech = new Map<number, number>();
+  const paidPendingByTech = new Map<number, number>();
+  const unpaidByTech = new Map<number, number>();
+  let leavePeriod: { from: string; to: string } | null = null;
+  if (isManager && rows.length) {
+    const agent = agentId ? await prisma.agent.findUnique({ where: { id: agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
+    const today = baghdadDayKey(new Date());
+    leavePeriod = salaryPeriodBounds(agent?.salaryFromDay, agent?.salaryToDay, today) ?? { from: today.slice(0, 7) + "-01", to: today.slice(0, 7) + "-31" };
+    const agg = await prisma.leave.groupBy({
+      by: ["technicianId", "paid", "status"],
+      where: { technicianId: { in: rows.map((r) => r.id) }, kind: "day", isDeleted: false, status: { in: ["approved", "pending"] }, dayKey: { gte: leavePeriod.from, lte: leavePeriod.to } },
+      _count: { _all: true },
+    });
+    for (const a of agg) {
+      if (a.paid && a.status === "approved") paidByTech.set(a.technicianId, a._count._all);
+      else if (a.paid && a.status === "pending") paidPendingByTech.set(a.technicianId, a._count._all);
+      else if (!a.paid && a.status === "approved") unpaidByTech.set(a.technicianId, a._count._all);
+    }
+  }
+
   const technicians = rows.map((t) => {
     const isSupport = officeId != null && t.towerId !== officeId && t.supportTowerId === officeId;
     const isExtra = officeId != null && t.towerId !== officeId && parseExtraTowers(t.extraTowerIds).includes(officeId);
@@ -66,9 +90,10 @@ export async function GET(request: Request) {
       ownCardsOnly: t.ownCardsOnly, seeDeliveryCards: t.seeDeliveryCards, canAddCards: t.canAddCards,
       lateRatePerMin: t.lateRatePerMin, overtimeRatePerMin: t.overtimeRatePerMin, paidLeavesPerMonth: t.paidLeavesPerMonth,
       missedCheckoutPenalty: t.missedCheckoutPenalty, autoCheckoutTime: t.autoCheckoutTime,
+      paidLeaveTaken: paidByTech.get(t.id) ?? 0, paidLeavePending: paidPendingByTech.get(t.id) ?? 0, unpaidLeaveTaken: unpaidByTech.get(t.id) ?? 0,
     };
   });
-  return NextResponse.json({ technicians, officeId, isManager });
+  return NextResponse.json({ technicians, officeId, isManager, leavePeriod });
 }
 
 // حقول الفني القابلة للضبط

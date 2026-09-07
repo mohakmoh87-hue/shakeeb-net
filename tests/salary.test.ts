@@ -10,6 +10,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import {
   computeSalary, roundSalaryToCash, SALARY_CASH_STEP, dailyAmountFor,
+  salaryPeriodBounds, currentPeriodFromDays,
   type SalaryAttendance, type SalaryMoneyTx, type SalaryAdjustment, type SalaryLeave,
 } from "../src/lib/salary";
 
@@ -343,5 +344,42 @@ describe("أ-٨ · إجازةٌ مدفوعةٌ في يومٍ مبصومٍ لا �
     const r = run(500_000, [present(1)], { leaves: [pending] });
     assert.equal(r.daysPaid, 1);
     assert.equal(r.items.filter((i) => i.type.startsWith("leave")).length, 0);
+  });
+});
+
+// ═════ حدودُ فترة الراتب لنافذة الإجازات — غيرُ متداخلة (إصلاح مراجعةٍ عدائيّة) ═════
+// نافذةُ حصّة الإجازات المدفوعة صارت فترةَ الراتب لا الشهرَ الميلاديّ. والخطرُ: دورةٌ تنتهي
+// آخرَ الشهر (أيّام 29/30/31) تجعل يومَ الحدّ ينتمي لفترتَين فيُحتسَب مرّتَين. salaryPeriodBounds
+// يدفع بدايةَ الفترة يوماً كي يُنسَب يومُ الحدّ للأسبق وحدَها.
+describe("salaryPeriodBounds — تبليطٌ بلا تداخل", () => {
+  test("دورةٌ ١٠→٩ (حالة محمد): لا تداخل، والحدود صحيحة", () => {
+    const b = salaryPeriodBounds(10, 9, "2026-03-15");
+    assert.deepEqual(b, { from: "2026-03-10", to: "2026-04-09" });
+  });
+
+  test("يومُ الحدّ في شباط القصير (٢٩/٢٨) يُنسَب لفترةٍ واحدةٍ فقط", () => {
+    // الفترةُ الحاوية ليوم ٢٨ شباط = يناير→فبراير (نهايتُها ٢٨ شباط)
+    const janFeb = salaryPeriodBounds(29, 28, "2026-02-15");
+    // الفترةُ الحاوية ليوم ٥ آذار = فبراير→آذار — بدايتُها يجب أن تتجاوز ٢٨ شباط (لا تداخل)
+    const febMar = salaryPeriodBounds(29, 28, "2026-03-05");
+    assert.ok(janFeb && febMar);
+    assert.equal(janFeb!.to, "2026-02-28");
+    // الحاسم: بدايةُ فبراير→آذار **بعد** نهاية يناير→فبراير (وإلّا احتُسب ٢٨ شباط مرّتَين)
+    assert.ok(febMar!.from > janFeb!.to, `from ${febMar!.from} يجب أن يتجاوز ${janFeb!.to}`);
+    assert.equal(febMar!.from, "2026-03-01");
+  });
+
+  test("بلا فترة راتبٍ مضبوطة ⇒ null (فيرتدّ النداءُ للشهر الميلاديّ)", () => {
+    assert.equal(salaryPeriodBounds(null, null, "2026-03-05"), null);
+    assert.equal(salaryPeriodBounds(0, 0, "2026-03-05"), null);
+  });
+
+  test("لا يفقد يوماً: يومُ الحدّ يقع داخل الفترة الأسبق", () => {
+    const janFeb = salaryPeriodBounds(29, 28, "2026-02-28");
+    assert.ok(janFeb);
+    assert.ok("2026-02-28" >= janFeb!.from && "2026-02-28" <= janFeb!.to);
+    // ومطابقةٌ لدالّة العضويّة: currentPeriodFromDays ليوم ٢٨ شباط يعيد يناير→فبراير
+    const member = currentPeriodFromDays(29, 28, "2026-02-28");
+    assert.equal(member!.to, "2026-02-28");
   });
 });

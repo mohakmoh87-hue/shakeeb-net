@@ -189,6 +189,21 @@ export function addDaysKey(dayKey: string, n: number): string {
   dt.setUTCDate(dt.getUTCDate() + n);
   return dt.toISOString().slice(0, 10);
 }
+// حدودُ فترةِ الراتب التي تحوي dayKey — **غيرُ متداخلةٍ** مع الفترة السابقة: حين تُقصَّر
+// بدايةُ فترةٍ ونهايةُ سابقتها إلى آخر شهرٍ قصير (أيّام 29/30/31) يتطابق يومُ الحدّ، فيُدفَع
+// أوّلُ الفترة يوماً واحداً كي يُنسَب يومُ الحدّ للفترة الأسبق وحدَها. للعدّ الحصريّ [from,to].
+export function salaryPeriodBounds(
+  fromDay: number | null | undefined,
+  toDay: number | null | undefined,
+  dayKey: string,
+): SalaryPeriod | null {
+  const p = currentPeriodFromDays(fromDay, toDay, dayKey);
+  if (!p) return null;
+  const prev = currentPeriodFromDays(fromDay, toDay, addDaysKey(p.from, -1));
+  const from = prev && prev.to >= p.from ? addDaysKey(p.from, 1) : p.from;
+  return { from, to: p.to };
+}
+
 // آخر يوم في شهر مفتاح اليوم
 export function lastDayOfMonthKey(dayKey: string): string {
   const [y, m] = dayKey.split("-").map(Number);
