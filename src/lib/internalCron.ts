@@ -382,6 +382,48 @@ async function migrateLegacyDeferredOnce(now: Date): Promise<void> {
   legacyDeferMigrated = true;
 }
 
+// ═════ باك-فيلٌ مرّةً واحدة: إصلاحُ «دعمٍ داخل المجموعة» + لوحاتٌ يتيمةٌ فارغة ═════
+// «الدعمُ» (supportTowerId) لمكتبٍ هو أصلاً في مجموعة لوحة الفنيّ **زائدٌ وضارّ**: يطوي ذمّةَ
+// الفنيّ على مخزن مكتب الدعم (tech-custody) ويحجب بطاقاتِ مكتبه الأصليّ (complete). المجموعةُ
+// تجعله فنيّاً كاملاً هناك بلا دعم. نُزيله لكلّ فنيٍّ دعمُه ضمن مجموعته (الإعارةُ خارجَ المجموعة
+// لا تُمَسّ). ونحذف حذفاً ناعماً لوحاتِ المكاتب الثانويّة اليتيمةَ **الفارغةَ تماماً** (getOrCreateBoard
+// يحلّها للوحة الرئيسيّ فلا تُستعمل). عَلَمٌ دائمٌ يمنع التكرار.
+let fieldGroupFixDone = false;
+async function fixFieldGroupSupportAndOrphanBoardsOnce(): Promise<void> {
+  if (fieldGroupFixDone) return;
+  if ((await getSetting("fieldGroupSupportBoardFix")) === "1") { fieldGroupFixDone = true; return; }
+  const { fieldGroupOffices, endSupport } = await import("./field");
+  // ١· دعمٌ ضمن مجموعة الفنيّ ⇒ إزالة (يعيد الذمّةَ الموحّدةَ ويفكّ حجبَ مكتبه الأصليّ)
+  let clearedSupport = 0;
+  const supported = await prisma.technician.findMany({
+    where: { supportTowerId: { not: null }, isDeleted: false },
+    select: { id: true, towerId: true, supportTowerId: true },
+  });
+  for (const t of supported) {
+    if (t.towerId == null || t.supportTowerId == null) continue;
+    const group = await fieldGroupOffices(t.towerId);
+    if (group.includes(t.supportTowerId)) { await endSupport(t.id); clearedSupport++; }
+  }
+  // ٢· لوحاتُ المكاتب الثانويّة اليتيمةُ الفارغةُ تماماً (٠ بطاقة إطلاقاً) ⇒ حذفٌ ناعم
+  let deletedBoards = 0;
+  const secondaries = await prisma.tower.findMany({ where: { sharedFieldWith: { not: null }, isDeleted: false }, select: { id: true } });
+  for (const s of secondaries) {
+    const boards = await prisma.taskBoard.findMany({ where: { towerId: s.id, isDeleted: false }, select: { id: true } });
+    for (const b of boards) {
+      const lists = await prisma.taskList.findMany({ where: { boardId: b.id }, select: { id: true } });
+      const cardCount = lists.length ? await prisma.taskCard.count({ where: { listId: { in: lists.map((l) => l.id) } } }) : 0;
+      if (cardCount === 0) {
+        await prisma.taskList.updateMany({ where: { boardId: b.id }, data: { isDeleted: true } });
+        await prisma.taskBoard.update({ where: { id: b.id }, data: { isDeleted: true } });
+        deletedBoards++;
+      }
+    }
+  }
+  await prisma.systemSetting.create({ data: { type: "fieldGroupSupportBoardFix", value: "1" } }).catch(() => {});
+  fieldGroupFixDone = true;
+  if (clearedSupport || deletedBoards) console.log(`[internal-cron] 🔧 إصلاحُ المجموعة: أُزيل دعمٌ داخليٌّ عن ${clearedSupport} فنيّ · حُذفت ${deletedBoards} لوحةٌ يتيمةٌ فارغة`);
+}
+
 async function tick(reason: string): Promise<void> {
   const now = new Date();
   const todayKey = baghdadDayKey(now);
@@ -395,6 +437,9 @@ async function tick(reason: string): Promise<void> {
 
   // ١.٤ · باك-فيلٌ مرّةً واحدة: البطاقاتُ المؤجَّلةُ القديمةُ إلى «مؤجلة»
   await migrateLegacyDeferredOnce(now).catch((e) => console.error("[internal-cron] باك-فيل المؤجّلة:", e instanceof Error ? e.message : e));
+
+  // ١.٤.٢ · باك-فيلٌ مرّةً واحدة: إزالةُ دعمٍ داخل المجموعة + لوحاتٌ يتيمةٌ فارغة
+  await fixFieldGroupSupportAndOrphanBoardsOnce().catch((e) => console.error("[internal-cron] إصلاح المجموعة:", e instanceof Error ? e.message : e));
 
   // ١.٥ · إعادةُ البطاقات المؤجّلة إلى عمودها قبل ساعةٍ من موعدها
   await returnDueDeferredCards(now).catch((e) => console.error("[internal-cron] عودة المؤجّلة:", e instanceof Error ? e.message : e));

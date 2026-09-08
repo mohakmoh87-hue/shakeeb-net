@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { resolveFieldOffice, canOperateOfficeIn, getOrCreateBoard, endSupport } from "@/lib/field";
+import { resolveFieldOffice, canOperateOfficeIn, getOrCreateBoard, endSupport, fieldGroupOffices } from "@/lib/field";
 import { agentTowerIds } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +61,12 @@ export async function POST(request: Request) {
   // فيستطيع أي وكيل ضمّه لمكاتبه. صار الشرط صريحاً: بلا مكتب معروف ⇒ مرفوض (تدقيق 2026-08-03)
   if (tech.towerId == null || !agentTowers.includes(tech.towerId)) {
     return NextResponse.json({ error: "الفني لا يتبع حسابك" }, { status: 403 });
+  }
+  // مجموعةُ لوحة الفنيّين تجعله فنيّاً كاملاً في كلّ مكاتب مجموعته أصلاً؛ فطلبُ «دعم» لمكتبٍ ضمن
+  // مجموعته زائدٌ وضارّ: يطوي ذمّتَه على مخزن مكتب الدعم (tech-custody) ويحجب بطاقاتِ مكتبه
+  // الأصليّ (complete). يُرفَض صراحةً — يعمل فيه بلا دعمٍ عبر المجموعة.
+  if ((await fieldGroupOffices(tech.towerId)).includes(officeId)) {
+    return NextResponse.json({ error: "هذا الفنيّ يعمل في هذا المكتب أصلاً عبر مجموعة لوحة الفنيّين — لا حاجة إلى دعم" }, { status: 400 });
   }
 
   const kind = b?.kind === "cards" ? "cards" : "day";
