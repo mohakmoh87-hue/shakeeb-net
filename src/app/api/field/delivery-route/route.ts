@@ -59,8 +59,9 @@ export async function POST(request: Request) {
   const points: { cardId: number; title: string; lat: number; lng: number }[] = [];
   let unresolved = 0;
   for (const c of cards) {
-    // عزل: وكيلُ مكتب لوحة البطاقة = وكيلُ الفاعل، وإلّا تُتجاهَل تماماً
-    const boardTowerId = boardTower.get(c.listId) ?? null;
+    // عزل: البطاقة → عمود → لوحة → مكتب. (listBoard: listId→boardId · boardTower: boardId→towerId)
+    const boardId = listBoard.get(c.listId) ?? null;
+    const boardTowerId = boardId != null ? (boardTower.get(boardId) ?? null) : null;
     if (boardTowerId == null || towers.get(boardTowerId)?.agentId !== agentId) { continue; }
 
     const sub = c.subscriberId != null ? subs.get(c.subscriberId) : null;
