@@ -151,6 +151,34 @@ const fmtDeferWhen = (d: string | null) => {
 };
 // اسمُ عمود «مؤجلة» النظاميّ (نصّاً — لا نستورد fieldDefaults في العميل كي لا يدخل prisma الحزمةَ)
 const DEFERRED_LIST_NAME = "مؤجلة";
+
+// ═════ «خريطةُ الكلّ» لعمود التوصيل: مسارٌ أقصرُ (تقريبيّ) يمرّ على كلّ التوصيلات ═════
+type RoutePoint = { cardId: number; title: string; lat: number; lng: number };
+const GMAPS_MAX_STOPS = 10; // حدُّ خرائط جوجل: ٩ محطّاتٍ وسطى + وجهة
+const haversineM = (a: { lat: number; lng: number }, b: { lat: number; lng: number }): number => {
+  const R = 6371000, toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+};
+// ترتيبٌ بأقرب-فأقرب من الأصل (heuristic — أقصرُ طريقٍ تقريبيّ بلا تكلفة API)
+const orderNearestFirst = (origin: { lat: number; lng: number }, pts: RoutePoint[]): RoutePoint[] => {
+  const rem = [...pts], out: RoutePoint[] = [];
+  let cur: { lat: number; lng: number } = origin;
+  while (rem.length) {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < rem.length; i++) { const d = haversineM(cur, rem[i]); if (d < bd) { bd = d; bi = i; } }
+    out.push(rem[bi]); cur = rem[bi]; rem.splice(bi, 1);
+  }
+  return out;
+};
+const gmapsMultiUrl = (origin: { lat: number; lng: number }, ordered: RoutePoint[]): string => {
+  const stops = ordered.slice(0, GMAPS_MAX_STOPS);
+  const dest = stops[stops.length - 1];
+  const mid = stops.slice(0, -1);
+  const base = `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${origin.lat},${origin.lng}&destination=${dest.lat},${dest.lng}`;
+  return mid.length ? `${base}&waypoints=${encodeURIComponent(mid.map((p) => `${p.lat},${p.lng}`).join("|"))}` : base;
+};
 type Office = { id: number; name: string | null };
 type Technician = { id: number; name: string; phone: string | null; isSupport?: boolean };
 type CardType = { id: number; name: string; deliveryOnly: boolean; execMinutes?: number | null; overrunDeduction?: number | null };
@@ -229,6 +257,9 @@ export default function FieldManagementPage() {
   const [addingTo, setAddingTo] = useState<number | null>(null);
   const [cardText, setCardText] = useState("");
   const [cardTypes, setCardTypes] = useState<CardType[]>([]);
+  // «خريطةُ الكلّ» لعمود التوصيل: بعد جلب المواقع وحساب الترتيب — نافذةٌ صغيرةٌ بروابط الملاحة
+  const [routePlan, setRoutePlan] = useState<{ googleHref: string; wazeHref: string; count: number; unresolved: number; remaining: number } | null>(null);
+  const [routeBusy, setRouteBusy] = useState(false);
   const [cardKind, setCardKind] = useState("صيانة");
   const [cardTech, setCardTech] = useState("");
   const [cardDue, setCardDue] = useState("");
@@ -829,6 +860,40 @@ export default function FieldManagementPage() {
 
   const isDeliveryKind = (name: string) => cardTypes.find((t) => t.name === name)?.deliveryOnly ?? name === "توصيل";
 
+  // «خريطةُ الكلّ»: يأخذ موقعَك الحاليّ ← يجلب مواقعَ توصيلات العمود ← يرتّبها بأقرب-فأقرب ←
+  // نافذةٌ بروابط الملاحة (جوجل للمسار الكامل · Waze للأقرب). الموقعُ لا يُرسَل للخادم.
+  const planDeliveryRoute = (listCards: { id: number; done: boolean }[]) => {
+    if (routeBusy) return;
+    const ids = listCards.filter((c) => !c.done).map((c) => c.id);
+    if (!ids.length) { alert("لا توجد توصيلاتٌ في هذا العمود"); return; }
+    if (typeof navigator === "undefined" || !navigator.geolocation) { alert("جهازُك لا يدعم تحديدَ الموقع"); return; }
+    setRouteBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const origin = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          const r = await fetch("/api/field/delivery-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cardIds: ids }) });
+          const d = await r.json().catch(() => ({}));
+          const pts: RoutePoint[] = Array.isArray(d?.points) ? d.points : [];
+          if (!pts.length) { alert(`لا توجد توصيلاتٌ لها موقعٌ محدَّدٌ على الخريطة${d?.unresolved ? ` (${d.unresolved} بلا موقع)` : ""}`); return; }
+          const ordered = orderNearestFirst(origin, pts);
+          const used = ordered.slice(0, GMAPS_MAX_STOPS);
+          const nearest = ordered[0];
+          setRoutePlan({
+            googleHref: gmapsMultiUrl(origin, ordered),
+            wazeHref: `https://waze.com/ul?ll=${nearest.lat},${nearest.lng}&navigate=yes`,
+            count: used.length,
+            unresolved: Number(d?.unresolved ?? 0),
+            remaining: Math.max(0, pts.length - used.length),
+          });
+        } catch { alert("تعذّر إعدادُ المسار — حاول ثانيةً"); }
+        finally { setRouteBusy(false); }
+      },
+      () => { setRouteBusy(false); alert("تعذّر تحديدُ موقعك — فعّل صلاحيّةَ الموقع للمتصفّح"); },
+      { enableHighAccuracy: true, timeout: 15000 },
+    );
+  };
+
   // ألوان الأنواع (يغيّرها المدير من «الأنواع والأوقات») — رؤوس الأعمدة وشارات النوع بالمتصفح
   const [typeColors, setTypeColors] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -1205,13 +1270,24 @@ export default function FieldManagementPage() {
                   {l.name} <span className={`text-xs font-normal ${isTech ? "text-slate-400" : "text-white/75"}`}>({listCards.length})</span>
                   {l.timeTracked && <span className={`ml-1 rounded px-1 py-0.5 text-[10px] font-semibold ${isTech ? "bg-sky-100 text-sky-700" : "bg-white/25 text-white"}`} title="عمود محسوب بالوقت">⏱</span>}
                 </span>
-                {canEditLists && (
-                  <div className={`flex gap-1 ${isTech ? "text-slate-400" : "text-white/85"}`}>
-                    <button onClick={() => toggleTimeTracked(l)} className={`rounded px-1 ${l.timeTracked ? (isTech ? "text-sky-600" : "bg-white/25 text-white") : (isTech ? "hover:bg-slate-200" : "hover:bg-white/20")}`} title={l.timeTracked ? "إلغاء الاحتساب بالوقت" : "تفعيل الاحتساب بالوقت"}>⏱</button>
-                    <button onClick={() => renameList(l)} className={`rounded px-1 ${isTech ? "hover:bg-slate-200" : "hover:bg-white/20"}`} title="إعادة تسمية">✏️</button>
-                    <button onClick={() => deleteList(l)} className={`rounded px-1 ${isTech ? "hover:bg-red-100" : "hover:bg-white/20"}`} title="حذف">🗑️</button>
-                  </div>
-                )}
+                <div className="flex items-center gap-1">
+                  {isDeliveryKind(l.name ?? "") && listCards.length > 0 && (
+                    <button
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); planDeliveryRoute(listCards); }}
+                      disabled={routeBusy}
+                      className={`rounded px-1.5 py-0.5 text-[11px] font-semibold disabled:opacity-60 ${isTech ? "bg-sky-100 text-sky-700 hover:bg-sky-200" : "bg-white/25 text-white hover:bg-white/40"}`}
+                      title="خريطةُ كلّ التوصيلات — أقصرُ مسارٍ من موقعك الحاليّ"
+                    >🗺️ {routeBusy ? "…" : "خريطة الكل"}</button>
+                  )}
+                  {canEditLists && (
+                    <div className={`flex gap-1 ${isTech ? "text-slate-400" : "text-white/85"}`}>
+                      <button onClick={() => toggleTimeTracked(l)} className={`rounded px-1 ${l.timeTracked ? (isTech ? "text-sky-600" : "bg-white/25 text-white") : (isTech ? "hover:bg-slate-200" : "hover:bg-white/20")}`} title={l.timeTracked ? "إلغاء الاحتساب بالوقت" : "تفعيل الاحتساب بالوقت"}>⏱</button>
+                      <button onClick={() => renameList(l)} className={`rounded px-1 ${isTech ? "hover:bg-slate-200" : "hover:bg-white/20"}`} title="إعادة تسمية">✏️</button>
+                      <button onClick={() => deleteList(l)} className={`rounded px-1 ${isTech ? "hover:bg-red-100" : "hover:bg-white/20"}`} title="حذف">🗑️</button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex-1 space-y-2 overflow-y-auto px-2" style={drag?.kind === "card" && drag.toList === l.id ? { paddingBottom: drag.h + CARD_GAP } : undefined}>
@@ -1815,6 +1891,30 @@ export default function FieldManagementPage() {
       {/* نافذة الأرشيف: البطاقات المحصَّلة (أسبوع ثم تُحذف نهائياً) بفلاتر تاريخ/فني/نوع */}
       {archiveModal && (
         <ArchiveModal cardTypes={cardTypes} offices={offices} onClose={() => setArchiveModal(false)} onChanged={() => load(officeId)} />
+      )}
+
+      {/* «خريطةُ الكلّ»: روابطُ الملاحة بعد حساب المسار — روابطُ <a> ليضغطها المستخدم (لا window.open
+          بعد await كي لا يحجبها مانعُ النوافذ). جوجل: المسارُ الكامل · Waze: الأقرب فقط. */}
+      {routePlan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4" onClick={() => setRoutePlan(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-800">🗺️ مسارُ التوصيلات</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              مسارٌ بأقصرِ طريقٍ تقريبيٍّ من موقعك عبر <b>{routePlan.count}</b> توصيلة.
+              {routePlan.unresolved > 0 && <span className="text-amber-600"> · {routePlan.unresolved} بلا موقعٍ على الخريطة (مُستثناة)</span>}
+              {routePlan.remaining > 0 && <span className="text-slate-500"> · {routePlan.remaining} خارجَ حدّ جوجل (جولةٌ ثانية)</span>}
+            </p>
+            <a href={routePlan.googleHref} target="_blank" rel="noreferrer" onClick={() => setRoutePlan(null)}
+              className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-bold text-white hover:bg-emerald-700">
+              🗺️ افتح المسارَ الكامل في خرائط جوجل
+            </a>
+            <a href={routePlan.wazeHref} target="_blank" rel="noreferrer" onClick={() => setRoutePlan(null)}
+              className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-sky-500 py-3 font-bold text-white hover:bg-sky-600">
+              🧭 الأقربُ في Waze
+            </a>
+            <button onClick={() => setRoutePlan(null)} className="mt-3 w-full rounded-xl border border-line py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">إغلاق</button>
+          </div>
+        </div>
       )}
 
       {/* نافذة إنجاز البطاقة بحقولها الواجبة */}
