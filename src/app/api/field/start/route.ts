@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { appendCardHistory, resolveCardActor } from "@/lib/field";
+import { DEFERRED_LIST } from "@/lib/fieldDefaults";
 
 export const dynamic = "force-dynamic";
 
@@ -39,10 +40,17 @@ export async function POST(request: Request) {
     }
   }
 
+  // بدءُ العمل على بطاقةٍ في «مؤجلة» يعيدها إلى عمودها الأصليّ فوراً (وإلّا بقيت جاريةً في مؤجلة
+  // بلا عودةٍ تلقائيّة لأنّ postponedTo يصير null). إن حُذف العمودُ الأصليُّ تبقى وتُنظَّف الإشارة.
+  let returnMove: { listId?: number; postponedFromListId?: number | null } = {};
+  if (cardList?.name === DEFERRED_LIST && card.postponedFromListId != null) {
+    const orig = await prisma.taskList.findFirst({ where: { id: card.postponedFromListId, isDeleted: false }, select: { id: true } });
+    returnMove = orig ? { listId: card.postponedFromListId, postponedFromListId: null } : { postponedFromListId: null };
+  }
   // يبدأ الاحتساب من جديد (يلغي أي تأجيل سابق)
   const updated = await prisma.taskCard.update({
     where: { id: cardId },
-    data: { startedAt: new Date(), postponedTo: null },
+    data: { startedAt: new Date(), postponedTo: null, ...returnMove },
   });
   await appendCardHistory(cardId, auth.actor.name, "بدء العمل على البطاقة");
   try { const { notifySubscriberCardEvent } = await import("@/lib/subscriberCardNotify"); void notifySubscriberCardEvent(cardId, "🚗 الفنيُّ باشر تنفيذَ طلبك"); } catch { /* لا يُفشل العملية */ }

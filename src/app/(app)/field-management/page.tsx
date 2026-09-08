@@ -111,15 +111,13 @@ type CardEvent = { at: string; by: string; text: string };
 const parseHistory = (h?: string | null): CardEvent[] => { try { return h ? (JSON.parse(h) as CardEvent[]) : []; } catch { return []; } };
 // بطاقة أُعيدت من الأرشيف (من سجلها) — لعرض شارة «من الأرشيف» على وجهها
 const wasRestored = (h?: string | null): boolean => parseHistory(h).some((e) => e.text.includes("إعادة البطاقة من الأرشيف"));
-// حان يومُ التأجيل المقرّر؟ (مقارنةٌ باليوم بتوقيت بغداد) — عليه يومض شريطُ «مؤجّلة» أحمرَ
+// حان وقتُ التأجيل؟ يبدأ الوميضُ **قبل ساعةٍ واحدةٍ** من الموعد (مقارنةٌ باللحظة لا باليوم).
+// مقارنةٌ مطلقة (UTC) فلا حاجةَ لإزاحة بغداد — postponedTo مخزّنٌ UTC.
 const postponeDueNow = (iso?: string | null): boolean => {
   if (!iso) return false;
-  const off = 3 * 60 * 60 * 1000;
-  const p = new Date(new Date(iso).getTime() + off);
-  const n = new Date(Date.now() + off);
-  const pDay = p.getUTCFullYear() * 10000 + p.getUTCMonth() * 100 + p.getUTCDate();
-  const nDay = n.getUTCFullYear() * 10000 + n.getUTCMonth() * 100 + n.getUTCDate();
-  return pDay <= nDay;
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return false;
+  return Date.now() >= t - 60 * 60 * 1000;
 };
 // لون فئة العمود (طراز المدير الجديد بالمتصفح): اسم أبيض على خلفية لون فئته —
 // توصيل برتقالي · صيانة لاجورد · تنصيب أخضر · بالشوب رمادي · المنجزة أخضر داكن
@@ -143,6 +141,16 @@ function fmtDuration(sec: number | null): string {
   return `${sec} ث`;
 }
 const fmtDateTime = (d: string | null) => (d ? new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
+// موعدُ التأجيل: التاريخُ والساعةُ فقط بلا دقائق (طلب محمد) — بتوقيت بغداد
+const fmtDeferWhen = (d: string | null) => {
+  if (!d) return "";
+  const dt = new Date(d);
+  const date = dt.toLocaleString("en-GB", { day: "2-digit", month: "2-digit", timeZone: "Asia/Baghdad" });
+  const hour = dt.toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: "Asia/Baghdad" });
+  return `${date} · ${hour}`;
+};
+// اسمُ عمود «مؤجلة» النظاميّ (نصّاً — لا نستورد fieldDefaults في العميل كي لا يدخل prisma الحزمةَ)
+const DEFERRED_LIST_NAME = "مؤجلة";
 type Office = { id: number; name: string | null };
 type Technician = { id: number; name: string; phone: string | null; isSupport?: boolean };
 type CardType = { id: number; name: string; deliveryOnly: boolean; execMinutes?: number | null; overrunDeduction?: number | null };
@@ -1219,6 +1227,9 @@ export default function FieldManagementPage() {
                   const isSubscriber = !!c.viaSubscriber && !isOdoo; // بطاقةُ طلبِ مشتركٍ من التطبيق — وسمُ يسارٍ كأودو
                   const odooInbox = isOdoo && l.name === "تذاكر أودو"; // غير مُصنّفة بعد (صندوق الوارد)
                   const odooColor = l.name && l.name !== "تذاكر أودو" ? catColorOf(l.name) : "#7c3aed"; // لون الفئة إن أُسندت، وإلا بنفسجيّ افتراضيّ
+                  // في عمود «مؤجلة» يُشتقّ لونُ البطاقة وأيقونتُها من فئتها (kind) لا من اسم العمود،
+                  // فتبقى صيانةً/تنصيباً/توصيلاً بلونها بدل رماديّ العمود النظاميّ (طلب محمد).
+                  const catName = l.name === DEFERRED_LIST_NAME ? c.kind : (l.name ?? c.kind);
                   const hasLeftSource = isOdoo || isSubscriber; // الحافّةُ اليسرى مشغولةٌ بوسم المصدر
                   // علامةُ «مؤجّلة» الجانبيّة: كأودو تماماً — كهرمانيّةٌ هادئة، وحين يحلّ يومُها المقرّر
                   //    تصير شريطاً أحمرَ يومض والكلمةُ بيضاء. تُوضَع يساراً، وإن كان اليسارُ مشغولاً بمصدرٍ فيميناً.
@@ -1259,7 +1270,7 @@ export default function FieldManagementPage() {
                       <div
                         className={`absolute inset-y-0 ${postponeRight ? "right-0" : "left-0"} flex w-5 items-center justify-center ${postponeDue ? "fm-postpone-due" : ""}`}
                         style={postponeDue ? undefined : { background: "#f59e0b1f" }}
-                        title={postponeDue ? "حان يومُها المقرّر للتنفيذ" : `مؤجّلة إلى ${fmtDateTime(c.postponedTo!)}`}
+                        title={postponeDue ? "حان موعدُها المقرّر للتنفيذ" : `مؤجّلة إلى ${fmtDeferWhen(c.postponedTo!)}`}
                       >
                         <span className="text-[11px] font-extrabold leading-none" style={{ color: postponeDue ? "#fff" : "#b45309", transform: "rotate(-90deg)" }}>مؤجّلة</span>
                       </div>
@@ -1288,11 +1299,11 @@ export default function FieldManagementPage() {
                           نُقلت إلى عمود تنصيب تأخذ لون التنصيب وخصائصه — ويبقى اسمها «صيانة»
                           كما هو (طلب محمد 2026-08-05). فالعمود هو مكان العمل، والفئة هوية العمل. */}
                       {/* شارة الفئة: تُخفى لبطاقة أودو غير المُصنّفة (لا فئة — يميّزها الوسم العاموديّ) */}
-                      {!odooInbox && <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(l.name ?? c.kind)}`} style={!isTech ? { background: catColorOf(l.name ?? "") } : undefined}>{isDeliveryKind(l.name ?? c.kind) ? "🚚" : "🔧"} {c.kind}</span>}
+                      {!odooInbox && <span className={`rounded px-1.5 py-0.5 font-semibold text-white ${kindColor(catName)}`} style={!isTech ? { background: catColorOf(catName) } : undefined}>{isDeliveryKind(catName) ? "🚚" : "🔧"} {c.kind}</span>}
                       {c.assignee && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">👤 {c.assignee}</span>}
                       {c.dueDate && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 {fmtDue(c.dueDate)}</span>}
                       {c.done && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">✓ منجزة {c.amount != null ? `— ${Number(c.amount).toLocaleString("en-US")}` : ""}</span>}
-                      {!c.done && c.postponedTo && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 مؤجّلة {fmtDateTime(c.postponedTo)}</span>}
+                      {!c.done && c.postponedTo && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">📅 مؤجّلة {fmtDeferWhen(c.postponedTo)}</span>}
                       {!c.done && !c.postponedTo && c.startedAt && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-sky-700">⏱ جارية</span>}
                       {/* شارة الإعادة من الأرشيف — يعرفها الفني فيعود إليها */}
                       {!c.done && wasRestored(c.history) && <span className="rounded bg-purple-50 px-1.5 py-0.5 font-semibold text-purple-700">↩️ معادة من الأرشيف</span>}
@@ -1653,7 +1664,7 @@ export default function FieldManagementPage() {
             ) : (
               <div className="mb-3 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
                 {sel.description?.trim() ? descNoDupUser(sel.description, sel.title) : <span className="text-slate-400">لا توجد تفاصيل</span>}
-                {sel.postponedTo && <div className="mt-2 font-bold text-amber-600">📅 مؤجّلة إلى {fmtDateTime(sel.postponedTo)}</div>}
+                {sel.postponedTo && <div className="mt-2 font-bold text-amber-600">📅 مؤجّلة إلى {fmtDeferWhen(sel.postponedTo)}</div>}
                 {canOperate && <div className="mt-2 text-[11px] text-slate-400">اضغط «بدء العمل» لبدء احتساب الوقت والتمكّن من التعديل والإنجاز.</div>}
               </div>
             )}

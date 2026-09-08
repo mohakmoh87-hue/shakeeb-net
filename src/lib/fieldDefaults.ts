@@ -5,10 +5,26 @@ import { prisma } from "@/lib/prisma";
 // يُولّد نوعه تلقائيّاً. الأعمدة النظاميّة (إلغاء/مكتمل/تذاكر أودو) لا تُولَّد لها أنواع.
 export const STANDARD_OPS = ["صيانة", "تنصيب", "تحويل", "توصيل", "اعادة"] as const;
 
+// عمودُ «مؤجلة» النظاميّ (طلب محمد): تنتقل إليه البطاقةُ عند التأجيل محتفظةً بفئتها، وتعود
+// إلى عمودها الأصليّ تلقائيّاً قبل ساعةٍ من الموعد.
+export const DEFERRED_LIST = "مؤجلة";
+export function isDeferredList(name: string | null | undefined): boolean {
+  return String(name ?? "").trim() === DEFERRED_LIST;
+}
+
 // أسماء أعمدةٍ نظاميّة (ليست عمليّات) — تُستثنى من توليد الأنواع ومن قائمة «عمليات»
-const SYSTEM_LISTS = new Set(["الغاء", "الإلغاء", "إلغاء", "مكتمل", "المكتمل", "منجزة", "المنجزة", "تذاكر أودو"]);
+const SYSTEM_LISTS = new Set(["الغاء", "الإلغاء", "إلغاء", "مكتمل", "المكتمل", "منجزة", "المنجزة", "تذاكر أودو", DEFERRED_LIST]);
 export function isSystemList(name: string | null | undefined): boolean {
   return SYSTEM_LISTS.has(String(name ?? "").trim());
+}
+
+// معرّفُ عمود «مؤجلة» للوحةٍ (يُنشئه إن غاب) — يستعمله مسارُ التأجيل
+export async function getDeferredListId(boardId: number): Promise<number> {
+  const found = await prisma.taskList.findFirst({ where: { boardId, name: DEFERRED_LIST, isDeleted: false }, select: { id: true } });
+  if (found) return found.id;
+  const count = await prisma.taskList.count({ where: { boardId, isDeleted: false } });
+  const created = await prisma.taskList.create({ data: { boardId, name: DEFERRED_LIST, position: count } });
+  return created.id;
 }
 
 // عمودُ «الغاء» (بأشكاله) — تُستثنى بطاقاتُه من «المتبقّية» في مربّع الفنيّين
@@ -53,9 +69,9 @@ export async function ensureFieldDefaults(agentId: number | null): Promise<void>
         for (const n of names) await ensureCardType(agentId, n);
       }
 
-      // (٣) الأعمدة الخمسة القياسيّة على كلّ لوحة مكتب
+      // (٣) الأعمدة الخمسة القياسيّة + عمود «مؤجلة» النظاميّ على كلّ لوحة مكتب
       for (const b of boards) {
-        for (const op of STANDARD_OPS) {
+        for (const op of [...STANDARD_OPS, DEFERRED_LIST]) {
           const has = await prisma.taskList.findFirst({ where: { boardId: b.id, name: op, isDeleted: false }, select: { id: true } });
           if (!has) {
             const count = await prisma.taskList.count({ where: { boardId: b.id, isDeleted: false } });

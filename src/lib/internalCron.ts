@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { baghdadDayKey } from "./attendance";
+import { DEFERRED_LIST } from "./fieldDefaults";
 
 // ═════ ⏰ الكرون الداخليّ (قرار محمد 2026-08-20: «إلغاء الكرون الليليّ بشكل كامل») ═════
 // الموقعُ على Railway حيٌّ ٢٤ ساعة — فمهامُّ الليل الخمسُ انتقلت من مهمّة GitHub إلى
@@ -321,6 +322,31 @@ export function kickInternalCron(reason: string): void {
     .finally(() => { g.__internalCron = false; });
 }
 
+// إعادةُ البطاقات المؤجّلة إلى عمودها الأصليّ قبل ساعةٍ من الموعد (تبدأ تومض هناك لأنّ
+// postponedTo يبقى محفوظاً). لو حُذف العمودُ الأصليّ تبقى في «مؤجلة» وتومض فيها.
+async function returnDueDeferredCards(now: Date): Promise<void> {
+  const cutoff = new Date(now.getTime() + 60 * 60 * 1000); // postponedTo ≤ الآن+ساعة ⇒ حان وقتُ العودة
+  // فقط البطاقاتُ التي ما زالت **داخل عمود مؤجلة** — فمن نقلها المستخدمُ يدويّاً لعمودٍ آخر لا تُمَسّ.
+  const deferredIds = (await prisma.taskList.findMany({ where: { name: DEFERRED_LIST, isDeleted: false }, select: { id: true } })).map((l) => l.id);
+  if (!deferredIds.length) return;
+  const due = await prisma.taskCard.findMany({
+    where: { listId: { in: deferredIds }, postponedFromListId: { not: null }, postponedTo: { not: null, lte: cutoff }, done: false, isDeleted: false },
+    select: { id: true, postponedFromListId: true },
+    take: 500,
+  });
+  if (!due.length) return;
+  const listIds = [...new Set(due.map((c) => c.postponedFromListId).filter((x): x is number => x != null))];
+  const valid = new Set((await prisma.taskList.findMany({ where: { id: { in: listIds }, isDeleted: false }, select: { id: true } })).map((l) => l.id));
+  let moved = 0;
+  for (const c of due) {
+    if (c.postponedFromListId != null && valid.has(c.postponedFromListId)) {
+      await prisma.taskCard.update({ where: { id: c.id }, data: { listId: c.postponedFromListId, postponedFromListId: null } });
+      moved++;
+    }
+  }
+  if (moved > 0) console.log(`[internal-cron] 🌿 أُعيدت ${moved} بطاقةً مؤجّلةً إلى عمودها قبل موعدها`);
+}
+
 async function tick(reason: string): Promise<void> {
   const now = new Date();
   const todayKey = baghdadDayKey(now);
@@ -331,6 +357,9 @@ async function tick(reason: string): Promise<void> {
   const { runAutoCheckout } = await import("./autoCheckout");
   const r = await runAutoCheckout().catch((e) => { console.error("[internal-cron] بصمة الخروج:", e instanceof Error ? e.message : e); return { closed: 0, supportEnded: 0 }; });
   if (r.closed > 0) console.log(`[internal-cron] ⏱️ أُغلقت ${r.closed} بصمة خروجٍ تلقائيّاً`);
+
+  // ١.٥ · إعادةُ البطاقات المؤجّلة إلى عمودها قبل ساعةٍ من موعدها
+  await returnDueDeferredCards(now).catch((e) => console.error("[internal-cron] عودة المؤجّلة:", e instanceof Error ? e.message : e));
 
   // ٢ · الكتلة الليليّة بعد 00:15
   if (mins >= NIGHTLY_AT_MIN) await nightlyBlock(todayKey);

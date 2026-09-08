@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { appendCardHistory, resolveCardActor } from "@/lib/field";
+import { getDeferredListId } from "@/lib/fieldDefaults";
 
 // تنسيق وقت بغداد للعرض في سجل التغييرات (dd/MM HH:mm)
 const fmtBg = (d: Date) => d.toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -41,11 +42,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "ابدأ البطاقة أولاً قبل التأجيل" }, { status: 400 });
   }
 
+  // النقلُ إلى عمود «مؤجلة» مع حفظ العمود الأصليّ (تعود إليه تلقائيّاً قبل ساعةٍ من الموعد).
+  // إن كانت أصلاً في «مؤجلة» (إعادةُ تأجيل) لا يُغيَّر العمودُ الأصليّ المحفوظ.
+  let moveData: { listId?: number; postponedFromListId?: number } = {};
+  const curList = card.listId ? await prisma.taskList.findUnique({ where: { id: card.listId }, select: { boardId: true } }) : null;
+  if (curList) {
+    const deferredId = await getDeferredListId(curList.boardId);
+    if (card.listId !== deferredId) moveData = { listId: deferredId, postponedFromListId: card.listId };
+  }
   // يُلغى وقت البدء (المدة لا تُحتسب على التأجيل) ويُسجَّل الموعد الجديد
   const updated = await prisma.taskCard.update({
     where: { id: cardId },
     data: {
-      startedAt: null, postponedTo: postponeTo,
+      startedAt: null, postponedTo: postponeTo, ...moveData,
       // بطاقة أودو: الملاحظة في عمودٍ صريح بطابعها ⇒ يدفعها العامل كما كتبها الفنيّ (ولو بأسطر)،
       // وكلّ تأجيلٍ لاحق يُدفَع لأنّ الطابع يصير أحدث من طابع الدفع.
       ...(card.viaOdoo && note ? { postponeNote: note.slice(0, 2000), postponeNoteAt: new Date() } : {}),

@@ -1204,6 +1204,7 @@ model TaskCard {
   startedAt        DateTime? // وقت ضغط الفني «بدء» (يُخفى المحتوى قبله ويبدأ احتساب المدة)
   durationSec      Int? // مدة الإنجاز بالثواني (completedAt − startedAt)
   postponedTo      DateTime? // موعد التأجيل (عند عدم تواجد المشترك)
+  postponedFromListId Int? // العمودُ الأصليّ قبل النقل إلى «مؤجلة» — تعود إليه تلقائيّاً قبل ساعةٍ من الموعد
   // بيانات الإنجاز
   serviceDetails   String? // تفاصيل الصيانة
   techNote         String? // ملاحظة يكتبها الفني على البطاقة (تُعرض على وجهها)
