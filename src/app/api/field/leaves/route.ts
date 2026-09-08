@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { baghdadDayKey } from "@/lib/attendance";
-import { salaryPeriodBounds } from "@/lib/salary";
+import { salaryPeriodBounds, effectiveLeaveQuota } from "@/lib/salary";
 import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,13 @@ function periodBounds(fromDay: number | null | undefined, toDay: number | null |
 async function periodForTech(agentId: number | null | undefined, dayKey: string): Promise<{ from: string; to: string }> {
   const agent = agentId ? await prisma.agent.findUnique({ where: { id: agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
   return periodBounds(agent?.salaryFromDay, agent?.salaryToDay, dayKey);
+}
+
+// آخرُ يومٍ ضمن فترةٍ مُسدَّدة (كشفٌ غير مُلغى) للفنيّ — لا تُضاف إجازةٌ في يومٍ ≤ منه، وإلّا
+// دخلت فترةً مصروفةً واستُحضِرت في التسوية القادمة فدُفعت (وقد سُدِّد المتبقّي نقداً سلفاً).
+async function settledThroughKey(technicianId: number): Promise<string | null> {
+  const st = await prisma.salaryStatement.findFirst({ where: { technicianId, cancelledAt: null }, orderBy: [{ periodTo: "desc" }, { id: "desc" }], select: { periodTo: true } });
+  return st?.periodTo ?? null;
 }
 
 // عدد إجازات اليوم المدفوعة (معتمدة أو معلّقة) لفنيٍّ ضمن فترةٍ [from,to] — للحصّة
@@ -51,9 +58,9 @@ function daysBetween(from: string, to: string, max = 62): string[] | null {
 export async function GET(request: Request) {
   const tech = await getTechSession();
   if (tech) {
-    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { paidLeavesPerMonth: true } });
+    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { paidLeavesPerMonth: true, leaveCarry: true } });
     const period = await periodForTech(tech.agentId, baghdadDayKey(new Date()));
-    const quota = Math.max(0, t?.paidLeavesPerMonth ?? 0);
+    const quota = effectiveLeaveQuota(t?.paidLeavesPerMonth, t?.leaveCarry);
     const used = await usedPaidInPeriod(tech.technicianId, period.from, period.to);
     const leaves = await prisma.leave.findMany({
       where: { technicianId: tech.technicianId, isDeleted: false }, // أ-٨ · المُزالةُ لا تُعرَض
@@ -68,7 +75,7 @@ export async function GET(request: Request) {
   // تفاصيلُ إجازاتِ فنيٍّ بعينه (للوحة تفاصيل الفنيّ) — لفترة الراتب الحاليّة، مع الملخّص
   const reqTech = Number(new URL(request.url).searchParams.get("technicianId")) || 0;
   if (reqTech) {
-    const t = await prisma.technician.findFirst({ where: { id: reqTech, isDeleted: false }, select: { id: true, name: true, towerId: true, agentId: true, paidLeavesPerMonth: true } });
+    const t = await prisma.technician.findFirst({ where: { id: reqTech, isDeleted: false }, select: { id: true, name: true, towerId: true, agentId: true, paidLeavesPerMonth: true, leaveCarry: true } });
     if (!t || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفنيّ غير موجود" }, { status: 404 });
     const period = await periodForTech(t.agentId, baghdadDayKey(new Date()));
     const rows = await prisma.leave.findMany({
@@ -76,7 +83,7 @@ export async function GET(request: Request) {
       orderBy: [{ dayKey: "desc" }, { id: "desc" }],
       select: { id: true, dayKey: true, kind: true, paid: true, startMin: true, endMin: true, reason: true, status: true, decidedBy: true },
     });
-    const quota = Math.max(0, t.paidLeavesPerMonth ?? 0);
+    const quota = effectiveLeaveQuota(t.paidLeavesPerMonth, t.leaveCarry);
     let paidTaken = 0, paidPending = 0, unpaidTaken = 0, timeTaken = 0;
     for (const l of rows) {
       if (l.kind === "day" && l.paid && l.status === "approved") paidTaken++;
@@ -138,7 +145,7 @@ async function managerCreate(request: Request, body: unknown) {
 
   const tech = await prisma.technician.findFirst({
     where: { id: technicianId, isDeleted: false },
-    select: { id: true, name: true, towerId: true, agentId: true, paidLeavesPerMonth: true },
+    select: { id: true, name: true, towerId: true, agentId: true, paidLeavesPerMonth: true, leaveCarry: true },
   });
   if (!tech || !(await ownsTower(g.session, tech.towerId))) {
     return NextResponse.json({ error: "الفنيّ غير موجود أو لا يتبع مكاتبك" }, { status: 404 });
@@ -157,11 +164,15 @@ async function managerCreate(request: Request, body: unknown) {
   if (!fresh.length) {
     return NextResponse.json({ error: "كلُّ أيّام المدى لها إجازةٌ مسجّلةٌ سلفاً" }, { status: 400 });
   }
+  const sealedGrant = await settledThroughKey(technicianId);
+  if (sealedGrant && fresh.some((d) => d <= sealedGrant)) {
+    return NextResponse.json({ error: `لا يمكن منحُ إجازةٍ في فترةٍ مُسدَّدة (حتى ${sealedGrant}) — أَلغِ الكشفَ أوّلاً` }, { status: 400 });
+  }
 
   // ⚠️ الحصّةُ تُفحَص **لكلّ فترةِ راتبٍ على حدة**: مدىً يعبُر فترتَين يستهلك من حصّةِ كلٍّ
   //   منهما بأيّامه فيها. والفحصُ **قبل الإنشاء** لا بعده، فلا يُنشأ بعضٌ ويُرفَض بعضٌ.
   if (paid) {
-    const quota = Math.max(0, tech.paidLeavesPerMonth ?? 0);
+    const quota = effectiveLeaveQuota(tech.paidLeavesPerMonth, tech.leaveCarry);
     const agent = tech.agentId ? await prisma.agent.findUnique({ where: { id: tech.agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
     const byPeriod = new Map<string, { from: string; to: string; want: number }>();
     for (const d of fresh) {
@@ -216,6 +227,9 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   const { kind, dayKey, reason } = parsed.data;
 
+  const sealedReq = await settledThroughKey(tech.technicianId);
+  if (sealedReq && dayKey <= sealedReq) return NextResponse.json({ error: "لا يمكن طلبُ إجازةٍ في فترةٍ مُسدَّدة" }, { status: 400 });
+
   if (kind === "time") {
     const { startMin, endMin } = parsed.data;
     if (startMin == null || endMin == null || endMin <= startMin) return NextResponse.json({ error: "حدّد فترة زمنية صحيحة (من/إلى)" }, { status: 400 });
@@ -232,8 +246,8 @@ export async function POST(request: Request) {
 
   const paid = !!parsed.data.paid; // (كان `let` ولا يُعاد إسنادُه — خطأُ eslint قديمٌ أُصلح بالمناسبة)
   if (paid) {
-    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { paidLeavesPerMonth: true } });
-    const quota = Math.max(0, t?.paidLeavesPerMonth ?? 0);
+    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { paidLeavesPerMonth: true, leaveCarry: true } });
+    const quota = effectiveLeaveQuota(t?.paidLeavesPerMonth, t?.leaveCarry);
     const period = await periodForTech(tech.agentId, dayKey);
     const used = await usedPaidInPeriod(tech.technicianId, period.from, period.to);
     if (used >= quota) return NextResponse.json({ error: "استنفدت حصّة الإجازات المدفوعة لهذه الفترة — اطلبها بلا راتب" }, { status: 400 });
@@ -256,9 +270,14 @@ export async function PATCH(request: Request) {
   if (!leave || !(await ownsTower(g.session, leave.towerId))) return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
   if (leave.status !== "pending") return NextResponse.json({ error: "الطلب مُقرّر مسبقاً" }, { status: 400 });
 
+  if (parsed.data.status === "approved") {
+    const sealedAp = await settledThroughKey(leave.technicianId);
+    if (sealedAp && leave.dayKey <= sealedAp) return NextResponse.json({ error: "الإجازة تقع في فترةٍ مُسدَّدة — لا تُعتمَد (أَلغِ الكشفَ أوّلاً)" }, { status: 400 });
+  }
+
   if (parsed.data.status === "approved" && leave.kind === "day" && leave.paid) {
-    const t = await prisma.technician.findUnique({ where: { id: leave.technicianId }, select: { paidLeavesPerMonth: true } });
-    const quota = Math.max(0, t?.paidLeavesPerMonth ?? 0);
+    const t = await prisma.technician.findUnique({ where: { id: leave.technicianId }, select: { paidLeavesPerMonth: true, leaveCarry: true } });
+    const quota = effectiveLeaveQuota(t?.paidLeavesPerMonth, t?.leaveCarry);
     const period = await periodForTech(leave.agentId, leave.dayKey);
     const used = await usedPaidInPeriod(leave.technicianId, period.from, period.to, leave.id);
     if (used >= quota) return NextResponse.json({ error: "استُنفدت حصّة الإجازات المدفوعة لهذه الفترة — اطلب من الفني إعادتها بلا راتب" }, { status: 400 });

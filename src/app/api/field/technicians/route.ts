@@ -5,7 +5,7 @@ import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { can } from "@/lib/rbac";
 import { resolveFieldOffice, parseExtraTowers } from "@/lib/field";
 import { encryptSecret, decryptSecret } from "@/lib/secretbox";
-import { salaryPeriodBounds } from "@/lib/salary";
+import { salaryPeriodBounds, effectiveLeaveQuota } from "@/lib/salary";
 import { baghdadDayKey } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +91,7 @@ export async function GET(request: Request) {
       shiftStart: t.shiftStart, shiftEnd: t.shiftEnd, entryGraceMin: t.entryGraceMin, exitGraceMin: t.exitGraceMin,
       ownCardsOnly: t.ownCardsOnly, seeDeliveryCards: t.seeDeliveryCards, canAddCards: t.canAddCards,
       lateRatePerMin: t.lateRatePerMin, overtimeRatePerMin: t.overtimeRatePerMin, paidLeavesPerMonth: t.paidLeavesPerMonth,
+      leaveCarry: t.leaveCarry ?? 0, paidLeaveQuota: effectiveLeaveQuota(t.paidLeavesPerMonth, t.leaveCarry),
       missedCheckoutPenalty: t.missedCheckoutPenalty, autoCheckoutTime: t.autoCheckoutTime,
       paidLeaveTaken: paidByTech.get(t.id) ?? 0, paidLeavePending: paidPendingByTech.get(t.id) ?? 0, unpaidLeaveTaken: unpaidByTech.get(t.id) ?? 0, timeLeaveTaken: timeByTech.get(t.id) ?? 0,
     };

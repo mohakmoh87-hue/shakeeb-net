@@ -11,6 +11,7 @@ type Tech = {
   entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null; missedCheckoutPenalty?: number | null;
   autoCheckoutTime?: string | null;
   paidLeaveTaken?: number; paidLeavePending?: number; unpaidLeaveTaken?: number; timeLeaveTaken?: number;
+  paidLeaveQuota?: number; leaveCarry?: number;
 };
 type Form = Record<string, string>;
 const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", seeDeliveryCards: "", canAddCards: "1", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0", autoCheckoutTime: "00:15" };
@@ -137,7 +138,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
 
             {editId != null && (() => {
               const et = techs.find((t) => t.id === editId);
-              const quota = Number(f.paidLeavesPerMonth) || 0;
+              const quota = et?.paidLeaveQuota ?? (Number(f.paidLeavesPerMonth) || 0);
               return (
                 <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2.5">
                   <div className="mb-1.5 text-xs font-bold text-slate-700">
@@ -279,7 +280,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                 {/* إجازاتُ فترة الراتب الحاليّة — لمحةٌ سريعة في القائمة (للمدير) */}
                 {isManager && (
                   <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px]">
-                    <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">🌿 براتب {t.paidLeaveTaken ?? 0}{t.paidLeavesPerMonth ? `/${t.paidLeavesPerMonth}` : ""}</span>
+                    <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">🌿 براتب {t.paidLeaveTaken ?? 0}{(t.paidLeaveQuota ?? t.paidLeavesPerMonth) ? `/${t.paidLeaveQuota ?? t.paidLeavesPerMonth}` : ""}{(t.leaveCarry ?? 0) > 0 ? ` (+${t.leaveCarry} مرحّلة)` : ""}</span>
                     {(t.paidLeavePending ?? 0) > 0 && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">معلّقة {t.paidLeavePending}</span>}
                     <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600">بلا راتب {t.unpaidLeaveTaken ?? 0}</span>
                     <span className="rounded-md bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">⏱️ زمنيّة {t.timeLeaveTaken ?? 0}</span>

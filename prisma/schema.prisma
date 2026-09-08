@@ -1024,6 +1024,7 @@ model Technician {
   lateRatePerMin        Int?      @default(0) // سعر دقيقة الخصم (تأخير/خروج مبكّر)
   overtimeRatePerMin    Int?      @default(0) // سعر دقيقة الإضافي
   paidLeavesPerMonth    Int?      @default(0) // عدد إجازات الراتب المسموحة شهرياً
+  leaveCarry            Int?      @default(0) // إجازاتٌ مدفوعةٌ مُرحَّلةٌ من فتراتٍ سابقة — تُضاف للحصّة
   missedCheckoutPenalty Int?      @default(0) // غرامة نسيان بصمة الخروج (يضبطها المدير)
   // وقتُ الخروج التلقائي HH:MM بغداد (طلب محمد 2026-08-20) — لكلّ فنيٍّ وقتُه، والافتراضيّ
   // 00:15 يطابق سلوكَ الكرون الليليّ القديم حرفيّاً. القاعدة: «أوّلُ حلولٍ للساعة بعد دخوله».
@@ -1542,10 +1543,18 @@ model SalaryStatement {
   roundingAdd          Int? // ما أُضيف للتقريب (٠…٩٩٩) — يُعرَض سطراً أعلى تفاصيل الراتب
   carryIn              Int? // مُرحَّل من الفترة السابقة (سالب = دَين على الفنيّ) — يُستعمل في ب-٠٠
   carryOut             Int? // المتبقّي المُرحَّل للفترة التالية (سالب أو صفر) — يُستعمل في ب-٠٠
+  // تسويةُ الإجازات المدفوعة المتبقّية عند التسديد (قرارُ محمد): ترحيلٌ أو تسديدٌ كراتب
+  leaveRemaining       Int? // عددُ الإجازات المدفوعة المتبقّية للفترة لحظةَ التسديد
+  leaveAction          String? // "carry" | "pay" | "none"
+  leavePayout          Int? // المبلغُ المُضاف للراتب عند "pay" = المتبقّي × راتب اليوم
+  leaveCarried         Int? // العددُ المُرحَّل عند "carry"
+  leaveCarryBefore     Int? // قيمةُ leaveCarry قبل هذا التسديد — لعكسها عند الإلغاء
   cancelledAt          DateTime? // لحظة إلغاء الكشف؛ والفهرس الفريد الجزئي يستثني الملغى
   details              String // JSON بالبنود المؤثّرة (تاريخ/نوع/مبلغ/سبب)
   paidByUser           String?
-  moneyTxId            Int? // قيد الصرف المرتبط
+  moneyTxId            Int? // قيد الصرف المرتبط (مصدر daily)
+  managerTxId          Int? // قيد صرف الراتب (مصدر total) — يُبطَل عند الإلغاء فلا يُدفَع مرّتَين
+  collectManagerTxId   Int? // قيد استيفاء رصيدٍ سالبٍ نقداً (مصدر total + تصفير) — يُبطَل عند الإلغاء
   createdAt            DateTime  @default(now())
 
   @@index([technicianId])

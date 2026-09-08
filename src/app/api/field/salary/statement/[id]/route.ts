@@ -139,11 +139,32 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       tx.leave.updateMany({ where: { salaryStatementId: st.id }, data: { salaryStatementId: null } }),
     ]);
 
+    // عكسُ تسويةِ الإجازات: يُستعاد leaveCarry لقيمته قبل هذا الكشف **فقط إن كان هذا أحدثَ كشفٍ
+    // غيرِ مُلغى** للفنيّ — فإلغاءُ كشفٍ أقدمَ لا يمسّ رصيداً ضبطه كشفٌ أحدث. (لا نعتمد تساويَ
+    // القيمة لأنّ ٠ شائعٌ فيتصادم.) التسديدُ كراتبٍ يُعكَس بإبطال قيد الصرف أدناه.
+    if (st.leaveCarryBefore != null) {
+      const newer = await tx.salaryStatement.findFirst({
+        where: { technicianId: st.technicianId, cancelledAt: null, OR: [{ periodTo: { gt: st.periodTo } }, { periodTo: st.periodTo, id: { gt: st.id } }] },
+        select: { id: true },
+      });
+      if (!newer) await tx.technician.update({ where: { id: st.technicianId }, data: { leaveCarry: st.leaveCarryBefore } });
+    }
+
     // (٢) قيدُ الصرف يُبطَل فيعود المالُ إلى الصندوق
     let moneyReturned = 0;
     if (st.moneyTxId) {
       const upd = await tx.moneyTx.updateMany({ where: { id: st.moneyTxId, isDeleted: false }, data: { isDeleted: true } });
-      if (upd.count > 0) moneyReturned = st.net;
+      if (upd.count > 0) moneyReturned = st.paidAmount ?? st.net; // المصروفُ الفعليُّ = المُقرَّب لا الصافي الخام
+    }
+    // مصدر total: صرفُ الراتب حركةُ إدارةٍ (managerTx) لا moneyTx — تُبطَل هنا وإلّا بقي المالُ
+    // مصروفاً وأُعيد التسديدُ فدُفع مرّتَين (كان قيدُ الـtotal لا يُعكَس إطلاقاً).
+    if (st.managerTxId) {
+      const upd = await tx.managerTx.updateMany({ where: { id: st.managerTxId, isDeleted: false }, data: { isDeleted: true } });
+      if (upd.count > 0) moneyReturned = st.paidAmount ?? st.net;
+    }
+    // قيدُ استيفاء التصفير بمصدر total (managerTx receipt): يُبطَل أيضاً وإلّا بقي القبضُ على دَينٍ عاد
+    if (st.collectManagerTxId) {
+      await tx.managerTx.updateMany({ where: { id: st.collectManagerTxId, isDeleted: false }, data: { isDeleted: true } });
     }
 
     // (٣) 🔴 وقيدُ **الاستيفاء** (ب) يُبطَل أيضاً: تصفيرُ رصيدٍ سالبٍ أدخل مالاً إلى الصندوق،

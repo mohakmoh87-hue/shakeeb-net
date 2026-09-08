@@ -52,6 +52,9 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
   const [choosing, setChoosing] = useState(false);
   // (ب) · وضعُ الراتب السالب: يُرحَّل (افتراضيّ) أو يُصفَّر باستيفاءٍ نقديّ من الفنيّ
   const [negMode, setNegMode] = useState<"carry" | "zero">("carry");
+  const [leaveRemaining, setLeaveRemaining] = useState(0);
+  const [dailyAmount, setDailyAmount] = useState(0);
+  const [leaveAction, setLeaveAction] = useState<"carry" | "pay">("carry");
   const [expand, setExpand] = useState<string | null>(null); // الخانة المفتوحة لعرض تفاصيلها
   const [archExpand, setArchExpand] = useState<string | null>(null); // خانة كشفٍ سابقٍ مفتوحة التفاصيل
 
@@ -60,6 +63,7 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
     fetch(`/api/field/salary${q}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (!d) return;
       setSt(d.statement ?? null); setHistory(d.history ?? []); setPeriod(d.period ?? null); setCardCounts(d.cardCounts ?? []); if (d.name) setTechName(d.name);
+      setLeaveRemaining(d.leaveRemaining ?? 0); setDailyAmount(d.dailyAmount ?? d.statement?.dailyAmount ?? 0);
     });
   }, [isManager, technicianId]);
   useEffect(() => { load(); }, [load]);
@@ -73,10 +77,14 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
           ? `\n\n🔴 الرصيدُ سالبٌ (${num(st?.roundedDue ?? st?.net ?? 0)}) واخترتَ «تصفيرَ كلّ شيء»:\nسيُقيَّد **قبضُ ${num(Math.abs(st?.roundedDue ?? st?.net ?? 0))} د.ع** ${source === "daily" ? "في التقرير اليومي" : "على المبلغ الكلي"} — أي أنّك أخذتَ الفرقَ نقداً من الفنيّ. ولا يُرحَّل شيءٌ للشهر القادم.`
           : `\n\n🔴 الرصيدُ سالبٌ (${num(st?.roundedDue ?? st?.net ?? 0)}) واخترتَ «الترحيل»:\nلا يخرج مالٌ ولا يدخل، ويُخصم المتبقّي من راتبه القادم.`)
       : "";
+    const la: "carry" | "pay" | "none" = leaveRemaining > 0 ? leaveAction : "none";
+    const leaveMsg = leaveRemaining > 0
+      ? `\n\n🌿 للفنيّ ${leaveRemaining} إجازة براتب متبقّية — ${la === "pay" ? `ستُسدَّد كراتب: ${num(leaveRemaining * dailyAmount)} د.ع (${leaveRemaining} × ${num(dailyAmount)}) وتُضاف للمبلغ.` : "ستُرحَّل للفترة القادمة."}`
+      : "";
     // (أ) · لم تُعد السجلاتُ تُحذف — تُوسَم بالكشف ويُرجعها الإلغاءُ بأوقاتها الحقيقيّة
-    if (!confirm(`تسديد راتب «${techName}» ${where}؟\nتُوسَم بصماتُ الفترة وخصوماتُها وإجازاتُها بهذا الكشف فلا تُحتسَب مرّةً أخرى — **ويُرجعها إلغاءُ الكشف كاملةً**. وأيُّ حركةٍ بعد نهاية الفترة تُرحَّل للفترة القادمة.${neg}`)) return;
+    if (!confirm(`تسديد راتب «${techName}» ${where}؟\nتُوسَم بصماتُ الفترة وخصوماتُها وإجازاتُها بهذا الكشف فلا تُحتسَب مرّةً أخرى — **ويُرجعها إلغاءُ الكشف كاملةً**. وأيُّ حركةٍ بعد نهاية الفترة تُرحَّل للفترة القادمة.${leaveMsg}${neg}`)) return;
     setBusy(true); setMsg("");
-    const r = await fetch("/api/field/salary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId, source, negMode }) });
+    const r = await fetch("/api/field/salary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId, source, negMode, leaveAction: la }) });
     const d = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { setMsg(d.error ?? "تعذّر التسديد"); return; }
@@ -202,6 +210,27 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
               ) : (
                 <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
                   <div className="mb-2 text-center text-sm font-bold text-slate-700">اختر طريقة التسديد ({num(st.paid ?? Math.max(0, st.net))} د.ع)</div>
+
+                  {/* تسويةُ الإجازات المدفوعة المتبقّية (قرارُ محمد): ترحيلٌ أو تسديدٌ كراتب */}
+                  {leaveRemaining > 0 && (
+                    <div className="mb-2.5 rounded-xl border border-emerald-300 bg-emerald-50 p-2.5">
+                      <div className="mb-1.5 text-[12px] font-bold text-emerald-800">
+                        🌿 للفنيّ {leaveRemaining} إجازة براتب متبقّية — ماذا نفعل بها؟
+                      </div>
+                      {([
+                        ["carry", "↪️ ترحيلها للفترة القادمة", `تُضاف ${leaveRemaining} إلى حصّة الفترة القادمة`],
+                        ["pay", "💵 تسديدها كراتب", `تُضاف ${num(leaveRemaining * dailyAmount)} د.ع (${leaveRemaining} × راتب اليوم ${num(dailyAmount)}) إلى الراتب`],
+                      ] as [("carry" | "pay"), string, string][]).map(([m, tt, sub]) => (
+                        <label key={m} className={`mb-1 flex cursor-pointer items-start gap-2 rounded-lg border p-2 text-right ${leaveAction === m ? "border-emerald-500 bg-white" : "border-transparent"}`}>
+                          <input type="radio" name="leaveAction" checked={leaveAction === m} onChange={() => setLeaveAction(m)} className="mt-1 accent-emerald-600" />
+                          <span className="min-w-0">
+                            <span className="block text-[12px] font-bold text-slate-800">{tt}</span>
+                            <span className="block text-[10px] leading-relaxed text-slate-500">{sub}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
 
                   {/* ═════ (ب) · خيارا الراتب السالب (طلب محمد 2026-08-13) =====
                       لا يظهر إلّا إن كان الرصيدُ سالباً — فمَن رصيدُه موجبٌ لا يرى فرقاً. */}

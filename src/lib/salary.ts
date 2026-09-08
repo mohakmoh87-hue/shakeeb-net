@@ -130,6 +130,8 @@ export async function statementForTechnician(
   toDay: number | null | undefined,
   // (ب) · وضعُ الراتب السالب — الافتراضيُّ `carry` = السلوكُ القديم حرفيّاً
   negMode: NegMode = "carry",
+  // تسديدُ الإجازات غير المستعمَلة كراتب (يمرّ في حساب الصافي) — صفرٌ = لا تسديد
+  extraCredit: number = 0,
 ): Promise<SalaryResult> {
   const todayKey = baghdadDayKey(new Date());
   const tech = await prisma.technician.findUnique({ where: { id: technicianId }, select: { accountId: true } });
@@ -168,7 +170,7 @@ export async function statementForTechnician(
     select: { carryOut: true },
   });
   const carryIn = prevSt?.carryOut ?? 0; // الكشوفُ التي سبقت البند تحمل `null` ⇒ صفر
-  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], moneyItems, todayKey, p, carryIn, negMode);
+  return computeSalary(salary, att as SalaryAttendance[], leaves as SalaryLeave[], adj as SalaryAdjustment[], moneyItems, todayKey, p, carryIn, negMode, extraCredit);
 }
 
 // أيام شهر الـ dayKey (YYYY-MM-DD)
@@ -202,6 +204,11 @@ export function salaryPeriodBounds(
   const prev = currentPeriodFromDays(fromDay, toDay, addDaysKey(p.from, -1));
   const from = prev && prev.to >= p.from ? addDaysKey(p.from, 1) : p.from;
   return { from, to: p.to };
+}
+
+// الحصّةُ الفعليّةُ للإجازات المدفوعة = المسموحُ شهريّاً + المُرحَّلُ من فتراتٍ سابقة (لا سالب)
+export function effectiveLeaveQuota(paidLeavesPerMonth: number | null | undefined, leaveCarry: number | null | undefined): number {
+  return Math.max(0, paidLeavesPerMonth ?? 0) + Math.max(0, leaveCarry ?? 0);
 }
 
 // آخر يوم في شهر مفتاح اليوم
@@ -249,6 +256,8 @@ export function computeSalary(
   // رصيدُ الفترة السابقة (`carryOut` لأحدث كشفٍ غير مُلغى). صفرٌ = سلوكُ ما قبل البند حرفيّاً.
   carryIn: number = 0,
   negMode: NegMode = "carry",
+  // إضافةٌ للراتب تمرّ في نفس حساب الصافي/التقريب/الترحيل — تُستعمل لتسديد الإجازات غير المستعمَلة
+  extraCredit: number = 0,
 ): SalaryResult {
   const items: SalaryItem[] = [];
   const dayDetails: SalaryDay[] = [];
@@ -331,6 +340,10 @@ export function computeSalary(
     if (inn) { credits += inn; keys.push(m.dayKey); items.push({ date: m.dayKey, type: "credit", label: "إضافة للحساب", amount: inn, reason: m.notes || undefined, txId: m.txId }); }
   }
 
+  if (extraCredit) {
+    bonuses += extraCredit;
+    items.push({ date: period?.to ?? todayKey, type: "bonus", label: "تسديدُ إجازاتٍ غير مستعمَلة", amount: extraCredit });
+  }
   const net = baseEarned + overtime + bonuses + credits - attDed - confDed - advances;
   const sorted = keys.filter(Boolean).sort();
   const dailyAmount = daysPaid > 0 ? Math.round(baseEarned / daysPaid) : dailyAmountFor(salary, todayKey);

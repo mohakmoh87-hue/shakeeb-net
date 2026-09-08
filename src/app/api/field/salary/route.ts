@@ -4,7 +4,15 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { statementForTechnician as statementFor, cardCountsFor } from "@/lib/salary";
+import { statementForTechnician as statementFor, cardCountsFor, effectiveLeaveQuota, roundSalaryToCash } from "@/lib/salary";
+
+// المتبقّي من الإجازات المدفوعة للفترة = الحصّة الفعليّة − المأخوذ المعتمَد (day/paid/approved) داخل الفترة
+async function paidLeaveRemaining(technicianId: number, paidLeavesPerMonth: number | null, leaveCarry: number | null, from: string, to: string): Promise<{ quota: number; used: number; remaining: number }> {
+  const quota = effectiveLeaveQuota(paidLeavesPerMonth, leaveCarry);
+  // فقط إجازاتُ هذه التسوية (غيرُ المختومة بكشفٍ سابق) — يطابق ما يحتسبه computeSalary
+  const used = await prisma.leave.count({ where: { technicianId, kind: "day", paid: true, status: "approved", isDeleted: false, salaryStatementId: null, dayKey: { gte: from, lte: to } } });
+  return { quota, used, remaining: Math.max(0, quota - used) };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +54,8 @@ export async function GET(request: Request) {
     const history = await prisma.salaryStatement.findMany({ where: { technicianId }, orderBy: { id: "desc" }, take: HISTORY_TAKE });
     const period = days.fromDay ? { from: result.periodFrom, to: result.periodTo } : null;
     const cardCounts = await cardCountsFor(technicianId, result.periodFrom, result.periodTo);
-    return NextResponse.json({ role: "manager", name: t.name, salary: t.salary ?? 0, statement: result, history, period, cardCounts });
+    const lv = await paidLeaveRemaining(technicianId, t.paidLeavesPerMonth, t.leaveCarry, result.periodFrom, result.periodTo);
+    return NextResponse.json({ role: "manager", name: t.name, salary: t.salary ?? 0, statement: result, history, period, cardCounts, leaveQuota: lv.quota, leaveUsed: lv.used, leaveRemaining: lv.remaining, dailyAmount: result.dailyAmount });
   }
 
   // قائمة فنيّي المكتب مع صافي كل واحد — لا يُقبل officeId إلا إن كان أحد مكاتب وكيل المستخدم (عزل)
@@ -68,7 +77,9 @@ export async function POST(request: Request) {
   const parsed = z
     .object({ technicianId: z.coerce.number(), source: z.enum(["daily", "total"]).default("daily"),
       // (ب) · الراتبُ السالب: يُرحَّل (الافتراضيّ = السلوكُ القديم) أو يُصفَّر باستيفاءٍ نقديّ
-      negMode: z.enum(["carry", "zero"]).default("carry") })
+      negMode: z.enum(["carry", "zero"]).default("carry"),
+      // تسويةُ الإجازات المدفوعة المتبقّية: "carry" ترحيل · "pay" تسديد كراتب · "none" لا شيء
+      leaveAction: z.enum(["carry", "pay", "none"]).default("none") })
     .safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "technicianId مطلوب" }, { status: 400 });
   const source = parsed.data.source;
@@ -78,7 +89,25 @@ export async function POST(request: Request) {
   if (!t || t.isDeleted || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفني غير موجود" }, { status: 404 });
 
   const days = await salaryDaysOfAgent(t.agentId ?? g.session.agentId);
-  const result = await statementFor(t.id, t.salary ?? 0, days.fromDay, days.toDay, negMode);
+  const prelim = await statementFor(t.id, t.salary ?? 0, days.fromDay, days.toDay, negMode);
+  // تسويةُ الإجازات المتبقّية للفترة (قرارُ محمد): ترحيلٌ أو تسديدٌ كراتب
+  // لا يُسدَّد وفي الفترة طلبُ إجازةٍ مدفوعةٍ معلّقٌ: المعلّقُ لا يُختَم فيُرحَّل ويُدفَع لاحقاً،
+  // بينما «المتبقّي» يُحسب بالمعتمَد وحدَه — فيُدفَع/يُرحَّل مرّتَين. قرّرْه أوّلاً.
+  const pendingPaid = await prisma.leave.count({ where: { technicianId: t.id, kind: "day", paid: true, status: "pending", isDeleted: false, salaryStatementId: null, dayKey: { gte: prelim.periodFrom, lte: prelim.periodTo } } });
+  if (pendingPaid > 0) {
+    return NextResponse.json({ error: `للفنيّ ${pendingPaid} طلبَ إجازةٍ مدفوعةٍ معلّقٌ في الفترة — اقبلْه أو ارفضْه قبل تسديد الراتب`, pendingLeaves: pendingPaid }, { status: 400 });
+  }
+  const lv = await paidLeaveRemaining(t.id, t.paidLeavesPerMonth, t.leaveCarry, prelim.periodFrom, prelim.periodTo);
+  const la = parsed.data.leaveAction;
+  if (lv.remaining > 0 && la !== "carry" && la !== "pay") {
+    return NextResponse.json({ error: `للفنيّ ${lv.remaining} إجازة براتب متبقّية — اختر ترحيلها للفترة القادمة أو تسديدها كراتب`, needLeaveDecision: true, leaveRemaining: lv.remaining, dailyAmount: prelim.dailyAmount }, { status: 400 });
+  }
+  const doPay = la === "pay" && lv.remaining > 0;
+  const doCarry = la === "carry" && lv.remaining > 0;
+  const leavePayout = doPay ? lv.remaining * prelim.dailyAmount : 0;
+  const newLeaveCarry = doCarry ? lv.remaining : 0;
+  const leaveCarryBefore = t.leaveCarry ?? 0;
+  const result = leavePayout > 0 ? await statementFor(t.id, t.salary ?? 0, days.fromDay, days.toDay, negMode, leavePayout) : prelim;
   // أ-١٦ · يُدفع **المُقرَّب** إلى الألف الأعلى لا الصافي الخام (طلب محمد 2026-08-12):
   // «الدينار العراقي ليس فيه دينار ولا مئة دينار». والتقريب على **المجموع النهائي وحده**
   // لا على كل يوم، و**المستفيد دائماً الفنيّ**: الموجب يُرفع (١٠٠٬٠٠١ ← ١٠١٬٠٠٠) والسالب
@@ -97,6 +126,7 @@ export async function POST(request: Request) {
   const statement = await prisma.$transaction(async (tx) => {
     // قيد الصرف — يُنقص المبلغ الكلي الموجود (فقط إن كان الصافي موجباً)
     let moneyTxId: number | null = null;
+    let managerTxId: number | null = null;
     if (paid > 0) {
       if (source === "daily") {
         // مصروفٌ في التقرير اليومي لذلك اليوم (يُنقص المبلغ الكلي مرّة واحدة عبر التقرير)
@@ -115,7 +145,7 @@ export async function POST(request: Request) {
         moneyTxId = mt.id;
       } else {
         // خصمٌ من المبلغ الكلي دون أثرٍ على التقرير اليومي (حركة إدارة نوعها salary)
-        await tx.managerTx.create({
+        const mmt = await tx.managerTx.create({
           data: {
             type: "salary", amount: paid, userId: g.session.userId,
             agentId: t.agentId ?? g.session.agentId ?? -1, // عزل المستأجر
@@ -128,6 +158,7 @@ export async function POST(request: Request) {
               + (result.roundingAdd > 0 ? ` · صافي ${result.due} + تقريب ${result.roundingAdd} = ${paid}` : ""),
           },
         });
+        managerTxId = mmt.id;
       }
     }
     // أرشفة الكشف
@@ -141,6 +172,8 @@ export async function POST(request: Request) {
         // بعد حذف سجلّ الحضور، ولا بدّ أن يُفسّر بنفسه فرقَ `net` عن المدفوع.
         paidAmount: paid, roundingAdd: result.roundingAdd,
         carryIn: result.carryIn, carryOut: result.carryOut,
+        leaveRemaining: lv.remaining, leaveAction: doPay ? "pay" : doCarry ? "carry" : "none",
+        leavePayout, leaveCarried: newLeaveCarry, leaveCarryBefore,
         // لقطةٌ تفصيليّةٌ كاملة (طلب محمد 2026-08-09): البنود + **تفصيل الأيام** + المشتقّات —
         // فسجلّ الحضور والخصومات يُحذف بعد قليل، وهذه اللقطة تصير المرجع الوحيد للأشهر السابقة.
         // v:2 لتمييزها عن الكشوف القديمة التي حفظت مصفوفة البنود وحدها.
@@ -148,9 +181,12 @@ export async function POST(request: Request) {
           v: 2, items: result.items, dayDetails: result.dayDetails,
           credits: result.credits, advances: result.advances, cleanDays: result.cleanDays,
         }),
-        paidByUser: g.session.fullName ?? g.session.username, moneyTxId,
+        paidByUser: g.session.fullName ?? g.session.username, moneyTxId, managerTxId,
       },
     });
+    // تسويةُ رصيد الإجازات المُرحَّلة: يُضبط الرصيدُ الجديد (ترحيلٌ = المتبقّي · غيرُه = صفر).
+    // ويُعكَس بالإلغاء عبر leaveCarryBefore المخزَّن على الكشف.
+    await tx.technician.update({ where: { id: t.id }, data: { leaveCarry: newLeaveCarry } });
     // تعليم حركات حساب الموظف (المصروفات والمقبوضات) المحتسَبة — تبقى في التقرير اليومي ولا تُعاد
     if (t.accountId) {
       await tx.moneyTx.updateMany({
@@ -190,7 +226,7 @@ export async function POST(request: Request) {
           },
         });
       } else {
-        await tx.managerTx.create({
+        const cmt = await tx.managerTx.create({
           data: {
             type: "receipt", amount: result.collected, userId: g.session.userId,
             agentId: t.agentId ?? g.session.agentId ?? -1,
@@ -198,6 +234,7 @@ export async function POST(request: Request) {
             notes: `${label} · كشف #${st.id}`,
           },
         });
+        await tx.salaryStatement.update({ where: { id: st.id }, data: { collectManagerTxId: cmt.id } });
       }
     }
     return st;
