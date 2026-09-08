@@ -6,7 +6,7 @@ import { agentTowerIds } from "@/lib/guard";
 import { isFieldManager, resolveFieldOffice, getOrCreateBoard, canOperateOfficeIn, parseExtraTowers, fieldGroupOffices } from "@/lib/field";
 import { ensureFieldDefaultsOnce } from "@/app/api/_lib/fieldSeed";
 import { applyPrivateLists, type BoardViewer } from "@/lib/guardAssign";
-import { isCancelList } from "@/lib/fieldDefaults";
+import { isCancelList, getDeferredListId } from "@/lib/fieldDefaults";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,10 @@ export const dynamic = "force-dynamic";
 //   (‎?counts=1‎) — فلا تُضيف استعلامَ عدٍّ على طلبات الموقع العاديّة (شرطُ محمد: صفرُ تغيير على الموقع).
 async function buildBoard(officeId: number | null, agentId: number | null, viewer: BoardViewer = { kind: "manager" }, withCounts = false) {
   const board = await getOrCreateBoard(officeId);
+  // عمودُ «مؤجلة» النظاميّ: يُضمَن على كلّ لوحةٍ عند الفتح (idempotent) — فاللوحاتُ المختومة
+  // قبل هذه الميزة لا يزرعه لها `ensureFieldDefaults` (لا يُعاد للمختوم)، فيُضمَن هنا بلا إحياءِ
+  // الأعمدة الخمسة المحذوفة. عمودٌ نظاميٌّ يُدار آليّاً (التأجيل/الكرون) لا يخضع لختم الحذف.
+  await getDeferredListId(board.id);
   const lists = await prisma.taskList.findMany({ where: { boardId: board.id, isDeleted: false }, orderBy: { position: "asc" } });
   // المؤرشفة (بعد التحصيل) لا تظهر على اللوحة — تُعرض من نافذة الأرشيف
   const rawCards = await prisma.taskCard.findMany({ where: { listId: { in: lists.map((l) => l.id) }, isDeleted: false, archivedAt: null }, orderBy: { position: "asc" } });

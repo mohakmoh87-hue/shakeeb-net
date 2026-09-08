@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { baghdadDayKey } from "./attendance";
-import { DEFERRED_LIST } from "./fieldDefaults";
+import { DEFERRED_LIST, getDeferredListId } from "./fieldDefaults";
 
 // ═════ ⏰ الكرون الداخليّ (قرار محمد 2026-08-20: «إلغاء الكرون الليليّ بشكل كامل») ═════
 // الموقعُ على Railway حيٌّ ٢٤ ساعة — فمهامُّ الليل الخمسُ انتقلت من مهمّة GitHub إلى
@@ -347,6 +347,41 @@ async function returnDueDeferredCards(now: Date): Promise<void> {
   if (moved > 0) console.log(`[internal-cron] 🌿 أُعيدت ${moved} بطاقةً مؤجّلةً إلى عمودها قبل موعدها`);
 }
 
+// ═════ باك-فيل مرّةً واحدة: البطاقاتُ المؤجَّلةُ القديمةُ إلى «مؤجلة» ═════
+// عمودُ «مؤجلة» أُضيف بعد وجود بطاقاتٍ مؤجّلةٍ في أعمدتها الأصليّة (والوكلاءُ مختومون فلم
+// يُزرَع لهم كسولاً). تُنقَل مرّةً واحدةً البطاقاتُ المؤجَّلةُ **المستقبليّة** (> الآن+ساعة) إلى
+// «مؤجلة» في لوحتها حافظةً عمودَها الأصليّ. المستحقّةُ خلال الساعة تبقى في عمودها (تومض)
+// ويتكفّل بها `returnDueDeferredCards`. عَلَمٌ دائمٌ في `systemSetting` يمنع التكرار.
+let legacyDeferMigrated = false;
+async function migrateLegacyDeferredOnce(now: Date): Promise<void> {
+  if (legacyDeferMigrated) return;
+  if ((await getSetting("deferredBackfillDone")) === "1") { legacyDeferMigrated = true; return; }
+  const cutoff = new Date(now.getTime() + 60 * 60 * 1000);
+  const cards = await prisma.taskCard.findMany({
+    where: { postponedFromListId: null, postponedTo: { not: null, gt: cutoff }, done: false, isDeleted: false },
+    select: { id: true, listId: true },
+    take: 2000,
+  });
+  if (cards.length) {
+    const listIds = [...new Set(cards.map((c) => c.listId))];
+    const lists = await prisma.taskList.findMany({ where: { id: { in: listIds }, isDeleted: false }, select: { id: true, name: true, boardId: true } });
+    const listMap = new Map(lists.map((l) => [l.id, l] as const));
+    const deferredByBoard = new Map<number, number>();
+    let moved = 0;
+    for (const c of cards) {
+      const l = listMap.get(c.listId);
+      if (!l || l.name === DEFERRED_LIST) continue; // مفقودٌ/محذوفٌ أو أصلاً في مؤجلة
+      let did = deferredByBoard.get(l.boardId);
+      if (did == null) { did = await getDeferredListId(l.boardId); deferredByBoard.set(l.boardId, did); }
+      await prisma.taskCard.update({ where: { id: c.id }, data: { listId: did, postponedFromListId: c.listId } });
+      moved++;
+    }
+    if (moved > 0) console.log(`[internal-cron] 🌿 باك-فيل: نُقلت ${moved} بطاقةً مؤجّلةً قديمةً إلى «مؤجلة»`);
+  }
+  await prisma.systemSetting.create({ data: { type: "deferredBackfillDone", value: "1" } }).catch(() => {});
+  legacyDeferMigrated = true;
+}
+
 async function tick(reason: string): Promise<void> {
   const now = new Date();
   const todayKey = baghdadDayKey(now);
@@ -357,6 +392,9 @@ async function tick(reason: string): Promise<void> {
   const { runAutoCheckout } = await import("./autoCheckout");
   const r = await runAutoCheckout().catch((e) => { console.error("[internal-cron] بصمة الخروج:", e instanceof Error ? e.message : e); return { closed: 0, supportEnded: 0 }; });
   if (r.closed > 0) console.log(`[internal-cron] ⏱️ أُغلقت ${r.closed} بصمة خروجٍ تلقائيّاً`);
+
+  // ١.٤ · باك-فيلٌ مرّةً واحدة: البطاقاتُ المؤجَّلةُ القديمةُ إلى «مؤجلة»
+  await migrateLegacyDeferredOnce(now).catch((e) => console.error("[internal-cron] باك-فيل المؤجّلة:", e instanceof Error ? e.message : e));
 
   // ١.٥ · إعادةُ البطاقات المؤجّلة إلى عمودها قبل ساعةٍ من موعدها
   await returnDueDeferredCards(now).catch((e) => console.error("[internal-cron] عودة المؤجّلة:", e instanceof Error ? e.message : e));
