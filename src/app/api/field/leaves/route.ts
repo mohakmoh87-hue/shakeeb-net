@@ -64,6 +64,34 @@ export async function GET(request: Request) {
 
   const g = await guard("field.payroll");
   if (g.error) return g.error;
+
+  // تفاصيلُ إجازاتِ فنيٍّ بعينه (للوحة تفاصيل الفنيّ) — لفترة الراتب الحاليّة، مع الملخّص
+  const reqTech = Number(new URL(request.url).searchParams.get("technicianId")) || 0;
+  if (reqTech) {
+    const t = await prisma.technician.findFirst({ where: { id: reqTech, isDeleted: false }, select: { id: true, name: true, towerId: true, agentId: true, paidLeavesPerMonth: true } });
+    if (!t || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفنيّ غير موجود" }, { status: 404 });
+    const period = await periodForTech(t.agentId, baghdadDayKey(new Date()));
+    const rows = await prisma.leave.findMany({
+      where: { technicianId: t.id, isDeleted: false, dayKey: { gte: period.from, lte: period.to } },
+      orderBy: [{ dayKey: "desc" }, { id: "desc" }],
+      select: { id: true, dayKey: true, kind: true, paid: true, startMin: true, endMin: true, reason: true, status: true, decidedBy: true },
+    });
+    const quota = Math.max(0, t.paidLeavesPerMonth ?? 0);
+    let paidTaken = 0, paidPending = 0, unpaidTaken = 0, timeTaken = 0;
+    for (const l of rows) {
+      if (l.kind === "day" && l.paid && l.status === "approved") paidTaken++;
+      else if (l.kind === "day" && l.paid && l.status === "pending") paidPending++;
+      else if (l.kind === "day" && !l.paid && l.status === "approved") unpaidTaken++;
+      else if (l.kind === "time" && l.status === "approved") timeTaken++;
+    }
+    return NextResponse.json({
+      role: "manager", single: true, technicianName: t.name, period, quota,
+      paidTaken, paidPending, unpaidTaken, timeTaken,
+      remaining: Math.max(0, quota - (paidTaken + paidPending)),
+      leaves: rows,
+    });
+  }
+
   const reqOffice = Number(new URL(request.url).searchParams.get("officeId")) || null;
   const agentTowers = await agentTowerIds(g.session);
   // عزل: لا يُقبل مكتب مطلوب إلا ضمن مكاتب وكيل المستخدم (كان يُمرَّر أي معرّف)

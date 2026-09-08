@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { usePermission } from "@/lib/usePermission";
+import TechDetail from "@/components/TechDetail";
 
 type Tech = {
   id: number; name: string | null;
@@ -60,6 +61,7 @@ export default function AttendancePage() {
   const [officeSel, setOfficeSel] = useState<string>("");
   const [showAll, setShowAll] = useState(false); // «سجل» = كلُّ الفنيّين لا مَن بصم اليوم
   const [openTech, setOpenTech] = useState<Tech | null>(null);
+  const [detailTech, setDetailTech] = useState<{ id: number; name: string } | null>(null);
   const [log, setLog] = useState<LogRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -246,7 +248,9 @@ export default function AttendancePage() {
               {shown.map((t) => (
                 <tr key={`${t.id}:${t.dayKey ?? "today"}`} className="border-t border-slate-100 hover:bg-slate-50/70">
                   <td className="px-3 py-2 font-semibold text-slate-800">
-                    {t.name ?? `فنيّ ${t.id}`}
+                    <button onClick={() => setDetailTech({ id: t.id, name: t.name ?? `فنيّ ${t.id}` })} className="text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800" title="تفاصيل الفنيّ (راتب · حضور · إجازات)">
+                      {t.name ?? `فنيّ ${t.id}`}
+                    </button>
                     {/* يومٌ سابقٌ لم يُغلَق — يُميَّز بيومه كي لا يُقرأ كحضورِ اليوم */}
                     {t.dayKey && (
                       <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
@@ -478,6 +482,10 @@ export default function AttendancePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {detailTech && (
+        <TechDetail technicianId={detailTech.id} name={detailTech.name} onSettled={() => load()} onClose={() => setDetailTech(null)} />
       )}
     </div>
   );
