@@ -153,7 +153,14 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
             </div>
 
             {/* لوحة التفاصيل للخانة المختارة */}
-            {expand && <DetailPanel cat={expand} st={st} onClose={() => setExpand(null)} />}
+            {expand && <DetailPanel cat={expand} st={st} onClose={() => setExpand(null)}
+              onClearOvertime={isManager ? async (dayKey) => {
+                if (!confirm(`حذفُ الإضافي ليوم ${dayKey}؟ (يُصفَّر ويُسجَّل في التدقيق)`)) return;
+                const r = await fetch("/api/field/salary/clear-overtime", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId, dayKey }) });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) { alert(d.error ?? "تعذّر حذفُ الإضافي"); return; }
+                load();
+              } : undefined} />}
 
             {/* البطاقات المنجزة خلال فترة الراتب — عدد فقط لكل فئة (من السجل الدائم) */}
             <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -509,7 +516,7 @@ function AttendanceLog({ technicianId, isManager, periodFrom, periodTo }:
 }
 
 // لوحة تفاصيل الخانة المختارة — تعرض بنودها المفصّلة
-function DetailPanel({ cat, st, onClose }: { cat: string; st: Statement; onClose: () => void }) {
+function DetailPanel({ cat, st, onClose, onClearOvertime }: { cat: string; st: Statement; onClose: () => void; onClearOvertime?: (dayKey: string) => void }) {
   const titles: Record<string, string> = {
     days: "تفصيل مبالغ الأيام", overtime: "تفصيل الإضافي", bonus: "تفصيل المكافآت", credit: "تفصيل الإضافات للحساب (قبض)",
     attded: "تفصيل خصم الحضور", confded: "تفصيل الخصومات المؤكّدة", advance: "تفصيل السحب من الحساب (صرف)", clean: "الأيام السليمة",
@@ -547,7 +554,12 @@ function DetailPanel({ cat, st, onClose }: { cat: string; st: Statement; onClose
                 <span className="mr-1 text-slate-400" dir="ltr"> {r.date}</span>
                 {r.reason && <div className="truncate text-[11px] text-slate-500">{r.reason}</div>}
               </div>
-              <span className={`shrink-0 font-bold ${r.amount > 0 ? "text-emerald-600" : r.amount < 0 ? "text-rose-600" : "text-slate-500"}`}>{r.amount === 0 ? "—" : signed(r.amount)}</span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className={`font-bold ${r.amount > 0 ? "text-emerald-600" : r.amount < 0 ? "text-rose-600" : "text-slate-500"}`}>{r.amount === 0 ? "—" : signed(r.amount)}</span>
+                {cat === "overtime" && onClearOvertime && r.amount > 0 && (
+                  <button onClick={() => onClearOvertime(r.date)} title="حذف هذا الإضافي" className="rounded px-1 text-rose-500 hover:bg-rose-50">🗑️</button>
+                )}
+              </div>
             </li>
           ))}
         </ul>

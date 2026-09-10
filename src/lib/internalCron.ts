@@ -424,6 +424,27 @@ async function fixFieldGroupSupportAndOrphanBoardsOnce(): Promise<void> {
   if (clearedSupport || deletedBoards) console.log(`[internal-cron] 🔧 إصلاحُ المجموعة: أُزيل دعمٌ داخليٌّ عن ${clearedSupport} فنيّ · حُذفت ${deletedBoards} لوحةٌ يتيمةٌ فارغة`);
 }
 
+// ═════ إصلاحٌ فوريٌّ لمرّةٍ واحدة: إضافيٌّ وهميٌّ لمحمد نجم (طلب محمد 2026-09-10) ═════
+// بصمةُ خروجٍ خاطئةٌ يوم 2026-08-21 للفنيّ «محمد نجم» (#48) — خروجٌ 05:57 فجراً — أنتجت
+// إضافيّاً وهميّاً (~٥٨ ألفاً). تُصفَّر مرّةً واحدةً إن لم تكن مُسدَّدةً بكشفٍ سابق. عَلَمٌ دائم.
+let najmOtFixDone = false;
+async function fixNajmPhantomOvertimeOnce(): Promise<void> {
+  if (najmOtFixDone) return;
+  if ((await getSetting("najmOvertime0821Fixed")) === "1") { najmOtFixDone = true; return; }
+  const rows = await prisma.attendance.findMany({
+    where: { technicianId: 48, dayKey: "2026-08-21", salaryStatementId: null, overtimeAddition: { gt: 0 } },
+    select: { id: true, overtimeAddition: true },
+  });
+  const total = rows.reduce((s, r) => s + (r.overtimeAddition ?? 0), 0);
+  if (rows.length) {
+    await prisma.attendance.updateMany({ where: { id: { in: rows.map((r) => r.id) } }, data: { overtimeAddition: 0 } });
+    await prisma.auditLog.create({ data: { userId: null, action: "CLEAR_OVERTIME", entity: "attendance", entityId: "48|2026-08-21", details: `تصفيرُ إضافيٍّ وهميٍّ ${total} د.ع — محمد نجم (#48) يوم 2026-08-21 (بصمة خروج خاطئة، إصلاحٌ تلقائيّ بطلب محمد)` } }).catch(() => {});
+    console.log(`[internal-cron] 🧹 صُفّر إضافيٌّ وهميٌّ ${total} لمحمد نجم (08-21)`);
+  }
+  await prisma.systemSetting.create({ data: { type: "najmOvertime0821Fixed", value: "1" } }).catch(() => {});
+  najmOtFixDone = true;
+}
+
 async function tick(reason: string): Promise<void> {
   const now = new Date();
   const todayKey = baghdadDayKey(now);
@@ -440,6 +461,9 @@ async function tick(reason: string): Promise<void> {
 
   // ١.٤.٢ · باك-فيلٌ مرّةً واحدة: إزالةُ دعمٍ داخل المجموعة + لوحاتٌ يتيمةٌ فارغة
   await fixFieldGroupSupportAndOrphanBoardsOnce().catch((e) => console.error("[internal-cron] إصلاح المجموعة:", e instanceof Error ? e.message : e));
+
+  // ١.٤.٣ · إصلاحٌ فوريٌّ لمرّةٍ واحدة: إضافيٌّ وهميٌّ لمحمد نجم (08-21)
+  await fixNajmPhantomOvertimeOnce().catch((e) => console.error("[internal-cron] إصلاح إضافي نجم:", e instanceof Error ? e.message : e));
 
   // ١.٥ · إعادةُ البطاقات المؤجّلة إلى عمودها قبل ساعةٍ من موعدها
   await returnDueDeferredCards(now).catch((e) => console.error("[internal-cron] عودة المؤجّلة:", e instanceof Error ? e.message : e));
