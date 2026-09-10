@@ -449,9 +449,14 @@ export async function computeProfits(
       const pkg = pkgByName.get((r.packageName ?? "").trim().toLowerCase()) ?? (sub?.packageId != null ? pkgById.get(sub.packageId) : undefined);
       // «عرض» = اسمُ باقةٍ فيه offer، **أو** صفٌّ أنشأه كاشفُ التنصيبات (عرضٌ باسمٍ لا يحمل «offer»)
       const offer = isOfferPackage(r.packageName) || (r.note ?? "").includes("كشفُ التنصيبات");
-      const isLoan = Math.round(r.amount ?? 0) <= 0 && !offer;
+      // 🏢 تنصيبٌ = صفُّ «عرض» **أو** صفُّ رصدِ تنصيبٍ نوعُه `install` **غيرُ مؤرَّخٍ** (activatedAt=null)
+      //    كي يظهر عدّادُ التنصيبات الخارجيّة ولو كان ربحُها صفراً (طلب محمد 2026-09-10). التأريخُ هو
+      //    الفيصل: تفعيلاتُ/قروضُ الشركة/الديلر تُخزَّن أيضاً بـ`kind:"install"` **لكنّها مؤرَّخة**
+      //    (recordCompanyActivation) — فتُستثنى هنا وتبقى في مسارها (تفعيلٌ خارجيّ/قرضٌ يُتجاهَل).
+      const isInstall = offer || (r.kind === "install" && r.activatedAt == null);
+      const isLoan = Math.round(r.amount ?? 0) <= 0 && !isInstall;
 
-      if (offer) {
+      if (isInstall) {
         const key = `${r.towerId}|${r.sasId ?? r.subscriberId ?? r.id}`;
         if (installSeen.has(key)) continue;
         installSeen.add(key);
