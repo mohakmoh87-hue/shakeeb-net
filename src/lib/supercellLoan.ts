@@ -1,5 +1,5 @@
 import { fetch as undiciFetch, Agent } from "undici";
-import { sasBaseUrl, sasLogin } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasRawPost, sasFetchUserPassword } from "@/lib/sas4";
 
 // ===== قروض سوبر سيل (فزعة) — وحدة الاتصال الخادميّة (طلب محمد 2026-08-06) =====
 // عمليّة صامتة تماماً: خادمُنا يسجّل الدخول ببيانات المكتب، يقرأ ملفّ المشترك، ثم يمنح
@@ -133,25 +133,25 @@ async function grantFazaa(profileToken: string): Promise<{ ok: boolean; status: 
 
 // ---- منح «فزعة» عبر واجهة SAS4 الأصليّة للمشترك (method=loan) — بديلُ غلاف notify المشدَّد ----
 async function grantFazaaNative(
-  subToken: string,
+  dealerToken: string,
   sasId: number,
+  netUser: string,
   profileId: number | null,
 ): Promise<{ ok: boolean; status: number; message: string; raw: string }> {
-  const res = await undiciFetch(SUB_API_BASE + "user/extend", {
-    method: "POST",
-    headers: {
-      authorization: "Bearer " + subToken,
-      accept: "application/json",
-      "content-type": "application/json",
-      "x-sas": X_SAS,
-    },
-    body: JSON.stringify({ method: "loan", user_id: sasId, profile_id: profileId, transaction_id: null }),
-    dispatcher: insecureAgent,
-  });
-  const text = await res.text();
-  let msg = "";
-  try { const j = JSON.parse(text); msg = String((j?.message ?? j?.error ?? "")); } catch { msg = text.slice(0, 200); }
-  return { ok: res.ok, status: res.status, message: msg, raw: text.slice(0, 600) };
+  const pass = await sasFetchUserPassword(sasBaseUrl(RESELLER_HOST), dealerToken, sasId);
+  if (!pass) return { ok: false, status: 0, message: "تعذّر جلب باسورد المشترك", raw: "" };
+  let subToken: string | undefined;
+  try {
+    const lr = (await sasRawPost(SUB_API_BASE, "", "auth/login", { username: netUser, password: pass })) as Record<string, unknown>;
+    subToken = (lr?.token as string) ?? ((lr?.data as Record<string, unknown> | undefined)?.token as string | undefined);
+    if (!subToken) return { ok: false, status: 0, message: "دخول المشترك بلا رمز", raw: JSON.stringify(lr).slice(0, 300) };
+  } catch (e) {
+    return { ok: false, status: 0, message: "فشل دخول المشترك: " + (e as Error).message, raw: "" };
+  }
+  const resp = (await sasRawPost(SUB_API_BASE, subToken, "user/extend", { method: "loan", user_id: sasId, profile_id: profileId, transaction_id: null })) as Record<string, unknown>;
+  const status = Number(resp?.status ?? 0);
+  const message = String((resp?.message ?? resp?.error ?? ""));
+  return { ok: status === 200, status, message, raw: JSON.stringify(resp).slice(0, 600) };
 }
 
 export type LoanReason =
@@ -217,7 +217,7 @@ export async function grantLoan(opts: {
   if (!prof.token) return { ok: false, reason: "no_token", message: "تعذّر الحصول على رمز المشترك من سوبر سيل" };
 
   // ٤) المنح — واجهة SAS4 الأصليّة للمشترك (method=loan)، مع تحقّقٍ من تحرّك الانتهاء؛ وnotify احتياطاً
-  const n = await grantFazaaNative(prof.token, sasId, rec.profileId);
+  const n = await grantFazaaNative(dealerToken, sasId, rec.username, rec.profileId);
   if (n.ok) {
     const after = await fetchLoanUserRecord(dealerToken, sasId);
     if (after && after.expiration && after.expiration !== rec.expiration) {
