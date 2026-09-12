@@ -107,10 +107,11 @@ async function fetchProfileToken(dealerToken: string, sasId: number): Promise<{ 
   let j: Record<string, unknown> | null = null;
   try { j = JSON.parse(text); } catch { /* ignore */ }
   const u = (j?.data ?? j) as Record<string, unknown> | null;
+  const rawName = (u?.username ?? u?.sasuserName) as string | undefined;
   return {
     token: (u?.token as string) || null,
     loanBalance: Number(u?.loan_balance ?? 0),
-    username: (u?.username as string) ?? null,
+    username: rawName ? String(rawName).split("/").pop() ?? null : null,
   };
 }
 
@@ -193,6 +194,9 @@ export async function grantLoan(opts: {
   const g = await grantFazaa(prof.token);
   if (g.ok) return { ok: true, verifiedUser: rec.username, expiration: rec.expiration };
   if (/user has loans/i.test(g.message)) return { ok: false, reason: "has_loan", message: "لدى المشترك قرضٌ غير مسدَّد", expiration: rec.expiration, status: g.status, raw: g.raw };
+  if (/not expired/i.test(g.message)) {
+    return { ok: false, reason: "rejected", message: `رفضت سوبر سيل: تعدُّ المشترك غيرَ منتهٍ (${g.message})`, expiration: rec.expiration, status: g.status, raw: g.raw };
+  }
   return { ok: false, reason: "rejected", message: g.message || `رفضت سوبر سيل المنح (HTTP ${g.status})`, expiration: rec.expiration, status: g.status, raw: g.raw };
 }
 
