@@ -155,13 +155,13 @@ async function grantFazaaNative(
   if (profileId == null) return { ok: false, status: 0, message: "لا رقم باقة للمشترك", raw: "" };
   const pass = await sasFetchUserPassword(sasBaseUrl(RESELLER_HOST), dealerToken, sasId);
   if (!pass) return { ok: false, status: 0, message: "تعذّر جلب باسورد المشترك", raw: "" };
+  const deviceId = "web-" + sasId;
+  const sessionId = randomUUID();
   let subToken: string | undefined;
-  let sessionId: string | undefined;
   try {
-    const lr = (await sasRawPost(SUB_API_BASE, "", "auth/login", { username: netUser, password: pass })) as Record<string, unknown>;
-    const ld = (lr?.data as Record<string, unknown> | undefined) ?? lr;
+    const lr = (await sasRawPost(SUB_API_BASE, "", "auth/login", { username: netUser, password: pass, device_id: deviceId, session_id: sessionId, language: "en" })) as Record<string, unknown>;
+    const ld = ((lr?.data as Record<string, unknown> | undefined) ?? lr) ?? {};
     subToken = (ld?.token as string) ?? (lr?.token as string);
-    sessionId = (ld?.session_id as string) ?? (lr?.session_id as string);
     if (!subToken) return { ok: false, status: 0, message: "دخول المشترك بلا رمز", raw: JSON.stringify(lr).slice(0, 300) };
   } catch (e) {
     return { ok: false, status: 0, message: "فشل دخول المشترك: " + (e as Error).message, raw: "" };
@@ -170,18 +170,18 @@ async function grantFazaaNative(
   const list = ((ext?.data as Array<{ name?: string; id?: number }> | undefined) ?? []);
   const loans = list.filter((o) => /loan|قرض|فزع/i.test(String(o?.name ?? "")));
   const pick = loans.find((o) => /1\s*-?\s*day|يوم|فزع/i.test(String(o?.name ?? ""))) ?? loans[0];
-  const optsDump = JSON.stringify(list).slice(0, 220);
+  const optsDump = JSON.stringify(list).slice(0, 180);
   if (!pick?.id) return { ok: false, status: 0, message: "لا يوجد خيار قرض لباقة هذا المشترك", raw: "ext=" + optsDump };
   const resp = (await sasRawPost(SUB_API_BASE, subToken, "user/extend", {
     profile_id: String(pick.id),
-    device_id: "web-" + sasId,
-    session_id: sessionId ?? randomUUID(),
+    device_id: deviceId,
+    session_id: sessionId,
     language: "en",
   })) as Record<string, unknown>;
   const status = Number(resp?.status ?? 0);
   const message = String((resp?.message ?? resp?.error ?? ""));
   const ok = status === 200 && /success/i.test(message);
-  return { ok, status, message, raw: `ext=${optsDump} | picked=${pick.id} | resp=${JSON.stringify(resp).slice(0, 240)}` };
+  return { ok, status, message, raw: `picked=${pick.id} | resp=${JSON.stringify(resp).slice(0, 260)}` };
 }
 
 export type LoanReason =
