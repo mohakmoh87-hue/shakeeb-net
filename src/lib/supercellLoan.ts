@@ -18,6 +18,7 @@ const insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
 const RESELLER_HOST = "reseller.scn-ftth.com";
 const RESELLER_AUTH_URL = `https://${RESELLER_HOST}/user/api/index.php/api/auth/login`;
 const NOTIFY_BASE = "https://notify.supercellnetwork.com/api/";
+const SUB_API_BASE = `https://${RESELLER_HOST}/user/api/index.php/api/`;
 const X_SAS = "ftth";
 
 const eq = (a: string | null | undefined, b: string | null | undefined) =>
@@ -70,6 +71,7 @@ export interface LoanUserRecord {
   expiration: string | null;
   loanBalance: number;
   parentId: number | null;
+  profileId: number | null;
 }
 export async function fetchLoanUserRecord(dealerToken: string, sasId: number): Promise<LoanUserRecord | null> {
   const base = sasBaseUrl(RESELLER_HOST); // https://reseller.scn-ftth.com/admin/api/index.php/api/
@@ -90,6 +92,7 @@ export async function fetchLoanUserRecord(dealerToken: string, sasId: number): P
       expiration: (u.expiration as string) || null,
       loanBalance: Number(u.loan_balance ?? 0),
       parentId: u.parent_id != null ? Number(u.parent_id) : null,
+      profileId: u.profile_id != null ? Number(u.profile_id) : null,
     };
   } catch {
     return null;
@@ -120,6 +123,29 @@ async function grantFazaa(profileToken: string): Promise<{ ok: boolean; status: 
   const res = await undiciFetch(NOTIFY_BASE + "users/fzaa/activate", {
     method: "POST",
     headers: { authorization: "Bearer " + profileToken, accept: "application/json", "x-sas": X_SAS },
+    dispatcher: insecureAgent,
+  });
+  const text = await res.text();
+  let msg = "";
+  try { const j = JSON.parse(text); msg = String((j?.message ?? j?.error ?? "")); } catch { msg = text.slice(0, 200); }
+  return { ok: res.ok, status: res.status, message: msg, raw: text.slice(0, 600) };
+}
+
+// ---- منح «فزعة» عبر واجهة SAS4 الأصليّة للمشترك (method=loan) — بديلُ غلاف notify المشدَّد ----
+async function grantFazaaNative(
+  subToken: string,
+  sasId: number,
+  profileId: number | null,
+): Promise<{ ok: boolean; status: number; message: string; raw: string }> {
+  const res = await undiciFetch(SUB_API_BASE + "user/extend", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + subToken,
+      accept: "application/json",
+      "content-type": "application/json",
+      "x-sas": X_SAS,
+    },
+    body: JSON.stringify({ method: "loan", user_id: sasId, profile_id: profileId, transaction_id: null }),
     dispatcher: insecureAgent,
   });
   const text = await res.text();
@@ -190,14 +216,22 @@ export async function grantLoan(opts: {
   }
   if (!prof.token) return { ok: false, reason: "no_token", message: "تعذّر الحصول على رمز المشترك من سوبر سيل" };
 
-  // ٤) المنح
+  // ٤) المنح — واجهة SAS4 الأصليّة للمشترك (method=loan)، مع تحقّقٍ من تحرّك الانتهاء؛ وnotify احتياطاً
+  const n = await grantFazaaNative(prof.token, sasId, rec.profileId);
+  if (n.ok) {
+    const after = await fetchLoanUserRecord(dealerToken, sasId);
+    if (after && after.expiration && after.expiration !== rec.expiration) {
+      return { ok: true, verifiedUser: rec.username, expiration: after.expiration };
+    }
+  }
   const g = await grantFazaa(prof.token);
   if (g.ok) return { ok: true, verifiedUser: rec.username, expiration: rec.expiration };
-  if (/user has loans/i.test(g.message)) return { ok: false, reason: "has_loan", message: "لدى المشترك قرضٌ غير مسدَّد", expiration: rec.expiration, status: g.status, raw: g.raw };
+  const combinedRaw = `native ${n.status}: ${n.raw} || notify ${g.status}: ${g.raw}`;
+  if (/user has loans/i.test(n.message + " " + g.message)) return { ok: false, reason: "has_loan", message: "لدى المشترك قرضٌ غير مسدَّد", expiration: rec.expiration, status: g.status, raw: combinedRaw };
   if (/not expired/i.test(g.message)) {
-    return { ok: false, reason: "rejected", message: `رفضت سوبر سيل: تعدُّ المشترك غيرَ منتهٍ (${g.message})`, expiration: rec.expiration, status: g.status, raw: g.raw };
+    return { ok: false, reason: "rejected", message: `رفضت سوبر سيل: تعدُّ المشترك غيرَ منتهٍ (${g.message})`, expiration: rec.expiration, status: g.status, raw: combinedRaw };
   }
-  return { ok: false, reason: "rejected", message: g.message || `رفضت سوبر سيل المنح (HTTP ${g.status})`, expiration: rec.expiration, status: g.status, raw: g.raw };
+  return { ok: false, reason: "rejected", message: `native(HTTP ${n.status}) ${n.message || "—"} | notify(HTTP ${g.status}) ${g.message || "—"}`, expiration: rec.expiration, status: n.status || g.status, raw: combinedRaw };
 }
 
 // اختبار الاتصال (لزرّ «اختبار» في إعداد المكتب): يسجّل الدخول ويقرأ عيّنة، بلا أيّ منح.
