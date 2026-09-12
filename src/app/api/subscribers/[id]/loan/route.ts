@@ -102,6 +102,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         errMsg += " — المكتبُ متعدّدُ اللوحات والقراءةُ جرت بحساب قروض المكتب: شغّل مزامنةً لتُوسَم لوحةُ المشترك، وأدخِل حسابَ قروض لوحته في «لوحات الساس»";
       }
     }
+    if (res.expiration && (res.reason === "rejected" || res.reason === "has_loan")) {
+      errMsg += ` — انتهاؤه لدى سوبر سيل: ${res.expiration.slice(0, 16)}`;
+    }
+    await prisma.auditLog.create({
+      data: {
+        userId: session?.userId,
+        action: "GRANT_LOAN_FAILED",
+        entity: "subscriber",
+        entityId: String(subscriberId),
+        details: `${res.reason ?? "error"} — ${subscriber.netUser} — مكتب ${office.name ?? subscriber.towerId} — ${res.message ?? ""} — انتهاء سوبر سيل ${res.expiration ?? "—"} — HTTP ${res.status ?? "—"} — ${(res.raw ?? "").slice(0, 400)}`,
+      },
+    }).catch(() => { });
     return NextResponse.json({ error: errMsg, reason: res.reason, got: res.got }, { status });
   }
 

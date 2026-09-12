@@ -115,7 +115,7 @@ async function fetchProfileToken(dealerToken: string, sasId: number): Promise<{ 
 }
 
 // ---- منح «فزعة» عبر الرمز الخاصّ ----
-async function grantFazaa(profileToken: string): Promise<{ ok: boolean; status: number; message: string }> {
+async function grantFazaa(profileToken: string): Promise<{ ok: boolean; status: number; message: string; raw: string }> {
   const res = await undiciFetch(NOTIFY_BASE + "users/fzaa/activate", {
     method: "POST",
     headers: { authorization: "Bearer " + profileToken, accept: "application/json", "x-sas": X_SAS },
@@ -124,7 +124,7 @@ async function grantFazaa(profileToken: string): Promise<{ ok: boolean; status: 
   const text = await res.text();
   let msg = "";
   try { const j = JSON.parse(text); msg = String((j?.message ?? j?.error ?? "")); } catch { msg = text.slice(0, 200); }
-  return { ok: res.ok, status: res.status, message: msg };
+  return { ok: res.ok, status: res.status, message: msg, raw: text.slice(0, 600) };
 }
 
 export type LoanReason =
@@ -137,6 +137,8 @@ export interface GrantLoanResult {
   verifiedUser?: string; // اليوزر المتحقَّق منه (للتدقيق)
   got?: string; // اليوزر العائد عند عدم المطابقة
   expiration?: string | null;
+  status?: number;
+  raw?: string;
 }
 
 // المنح عالي المستوى — يُطبّق ضمانات الأمان الثلاثة ثم يمنح.
@@ -190,8 +192,8 @@ export async function grantLoan(opts: {
   // ٤) المنح
   const g = await grantFazaa(prof.token);
   if (g.ok) return { ok: true, verifiedUser: rec.username, expiration: rec.expiration };
-  if (/user has loans/i.test(g.message)) return { ok: false, reason: "has_loan", message: "لدى المشترك قرضٌ غير مسدَّد" };
-  return { ok: false, reason: "rejected", message: g.message || `رفضت سوبر سيل المنح (HTTP ${g.status})` };
+  if (/user has loans/i.test(g.message)) return { ok: false, reason: "has_loan", message: "لدى المشترك قرضٌ غير مسدَّد", expiration: rec.expiration, status: g.status, raw: g.raw };
+  return { ok: false, reason: "rejected", message: g.message || `رفضت سوبر سيل المنح (HTTP ${g.status})`, expiration: rec.expiration, status: g.status, raw: g.raw };
 }
 
 // اختبار الاتصال (لزرّ «اختبار» في إعداد المكتب): يسجّل الدخول ويقرأ عيّنة، بلا أيّ منح.
