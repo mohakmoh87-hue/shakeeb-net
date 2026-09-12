@@ -3,6 +3,7 @@
 // يُشغَّل على حاسبة المكتب عبر: npx tsx src/worker.ts
 import fs from "node:fs";
 import { execSync } from "node:child_process";
+import { workerImportGraph, workerRestartTrigger } from "@/lib/workerRestart";
 
 // قتل متصفّحات puppeteer اليتيمة التي تستخدم مجلد جلساتنا (.wwebjs_auth) من تشغيل سابق
 // انهار دون إغلاق نظيف — تمنع خطأ "The browser is already running for ...session-office-X".
@@ -130,24 +131,39 @@ function reportWorkerVersion() {
 // كل 10 دقائق: git fetch ومقارنة HEAD مع origin/main. عند وجود تحديث نُغلق بنظافة
 // (حفظ جلسات الواتساب) ونخرج — غلاف التشغيل worker-loop.cmd يسحب الجديد ويعيد التشغيل.
 // النتيجة: تحديثات الكود تصل حواسيب المكاتب تلقائياً بلا أي تدخّل يدوي.
-// ===== أيّ تحديثٍ يستوجب إعادة تشغيل العامل؟ (طلب محمد 2026-08-09) =====
-// كان **أيّ** دفعةٍ إلى main تُعيد تشغيل كلّ حواسيب المكاتب — حتى تغييرُ زرٍّ في الواجهة —
-// وكلّ إعادةٍ تهدم متصفّح واتساب وتُعيد بناءه، فتُفقَد جلساتٌ (حادثة مكتب المواصلات).
-// والعامل لا يستورد إلا من src/lib (تحقُّقٌ بالجرد)، فتحديثات الصفحات/المكوّنات لا تمسّه:
-// تُسحَب بلا إعادة تشغيل، وتصل الحاسبةَ فعليّاً عند أوّل إعادة تشغيلٍ لسببٍ آخر.
-const UI_ONLY = [
-  /^src\/app\//,        // الصفحات ومسارات الـAPI — يشغّلها خادم الموقع لا العامل
-  /^src\/components\//, // مكوّنات الواجهة
-  /^public\//, /^docs\//, /^\.github\//, /^android\//, /^native\//,
-  /^prisma\/rls\//,     // سكربتات SQL مرجعيّة (تُنفَّذ يدويّاً لا وقت التشغيل)
-  /\.md$/,
-  // اختباراتٌ وسكربتاتُ صيانةٍ لا يستوردها العامل إطلاقاً — ولولا استثناؤها لكانت **كلُّ دفعةِ
-  // اختبارٍ تهدم جلسات واتساب في المكاتب السبعة** (وهو عينُ ما بُنيت هذه القائمة لتمنعه).
-  /^tests\//, /\.test\.ts$/, /^scripts\//,
-];
-function needsWorkerRestart(files: string[]): boolean {
-  const relevant = files.filter((f) => f && !UI_ONLY.some((re) => re.test(f)));
-  return relevant.length > 0; // أيّ ملفٍّ غير معروفٍ كواجهة ⇒ نُعيد التشغيل (الأحوط)
+function gitTree(rev: string): Set<string> {
+  return new Set(
+    execSync(`git ls-tree -r -z --name-only ${rev}`, { timeout: 30_000, maxBuffer: 64 * 1024 * 1024 })
+      .toString("utf8").split("\0").filter(Boolean),
+  );
+}
+
+function gitReadMany(rev: string, files: string[]): Map<string, string> {
+  const out = execSync("git cat-file --batch", {
+    input: files.map((f) => `${rev}:${f}`).join("\n") + "\n",
+    timeout: 60_000,
+    maxBuffer: 128 * 1024 * 1024,
+  });
+  const map = new Map<string, string>();
+  let pos = 0;
+  for (const f of files) {
+    const nl = out.indexOf(10, pos);
+    if (nl < 0) break;
+    const header = out.subarray(pos, nl).toString("utf8").split(" ");
+    if (header[1] !== "blob") { pos = nl + 1; continue; }
+    const size = Number(header[2]);
+    map.set(f, out.subarray(nl + 1, nl + 1 + size).toString("utf8"));
+    pos = nl + 1 + size + 1;
+  }
+  return map;
+}
+
+function workerGraphAt(rev: string): Set<string> | null {
+  try {
+    return workerImportGraph(gitTree(rev), (files) => gitReadMany(rev, files));
+  } catch {
+    return null;
+  }
 }
 
 function startSelfUpdateWatcher() {
@@ -165,18 +181,19 @@ function startSelfUpdateWatcher() {
         files = execSync(`git diff --name-only ${local} ${remote}`, { timeout: 30_000 })
           .toString().split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       } catch { known = false; }
-      const restart = !known || files.length === 0 || needsWorkerRestart(files);
+      const graph = known && files.length > 0 ? workerGraphAt(remote) : null;
+      const trigger = known ? workerRestartTrigger(files, graph) : "(تعذّر حساب الفرق)";
 
-      if (!restart) {
-        // تحديثُ واجهةٍ محض: نسحبه ونُكمل العمل — لا نهدم واتساب ولا الطباعة ولا المزامنة
+      if (trigger === null) {
+        // تحديثٌ لا يمسّ ملفّاتِ العامل: نسحبه ونُكمل العمل — لا نهدم واتساب ولا الطباعة ولا المزامنة
         try {
           execSync("git pull --ff-only --quiet", { stdio: "ignore", timeout: 120_000 });
-          console.log(`[worker] ⬇️ تحديث واجهة فقط (${remote.slice(0, 7)}) — سُحب بلا إعادة تشغيل (${files.length} ملفاً)`);
+          console.log(`[worker] ⬇️ تحديثٌ لا يمسّ ملفّات العامل (${remote.slice(0, 7)}) — سُحب بلا إعادة تشغيل (${files.length} ملفاً، العامل ${graph?.size ?? "؟"} ملفاً)`);
         } catch { /* الدورة القادمة */ }
         return;
       }
 
-      console.log(`[worker] 🔄 تحديث يمسّ العامل (${remote.slice(0, 7)}) — سحب وتثبيت ثم إعادة تشغيل...`);
+      console.log(`[worker] 🔄 تحديث يمسّ العامل (${remote.slice(0, 7)}) عبر ${trigger} — سحب وتثبيت ثم إعادة تشغيل...`);
       // التحديث الكامل هنا (لا في الغلاف وحده): بعض مشغّلات الإقلاع تعيد تشغيل
       // العامل بلا سحب فتدور حلقة عقيمة على الكود القديم (حاسبة المواصلات 2026-07-30).
       // السحب + التثبيت + توليد Prisma كلها قبل الإغلاق — فيقلع الجديد جاهزاً مهما كان المشغّل.

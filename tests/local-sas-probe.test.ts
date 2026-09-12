@@ -59,9 +59,9 @@ describe("جسُّ العامل المحلّيّ — خانقٌ لا يخنق", 
   });
 
   test("📍 وموضعُ الملفّ يمنع هدمَ جلسات الواتساب (UI_ONLY)", () => {
-    // `src/lib` خارجَ UI_ONLY في worker.ts ⇒ أيُّ تغييرٍ فيه يُعيد تشغيل الحاسبات السبع
+    // `src/lib` خارجَ UI_ONLY في workerRestart.ts ⇒ أيُّ تغييرٍ فيه يُعيد تشغيل الحاسبات السبع
     // ويهدم جلساتِ الواتساب. وهذا ملفُّ متصفّحٍ خالصٌ لا يستورده العامل.
-    const worker = read("src/worker.ts");
+    const worker = read("src/lib/workerRestart.ts");
     assert.match(worker, /\^src\\\/components\\\//, "components ليست في UI_ONLY");
     assert.ok(fs.existsSync(path.join(ROOT, PROBE)), "الوحدةُ ليست في src/components");
     // ولا مستهلكَ باقٍ على النسخة القديمة
