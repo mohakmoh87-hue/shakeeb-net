@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { fetch as undiciFetch, Agent } from "undici";
 import { sasBaseUrl, sasLogin, sasRawPost, sasFetchUserPassword } from "@/lib/sas4";
 
@@ -131,27 +132,56 @@ async function grantFazaa(profileToken: string): Promise<{ ok: boolean; status: 
   return { ok: res.ok, status: res.status, message: msg, raw: text.slice(0, 600) };
 }
 
-// ---- منح «فزعة» عبر واجهة SAS4 الأصليّة للمشترك (method=loan) — بديلُ غلاف notify المشدَّد ----
+// ---- قراءةٌ خامٌّ من واجهة المشترك (GET، ردٌّ JSON صريح) ----
+async function subGet(token: string, path: string): Promise<Record<string, unknown> | null> {
+  try {
+    const r = await undiciFetch(SUB_API_BASE + path, {
+      method: "GET",
+      headers: { authorization: "Bearer " + token, accept: "application/json" },
+      dispatcher: insecureAgent,
+    });
+    const t = await r.text();
+    try { return JSON.parse(t) as Record<string, unknown>; } catch { return null; }
+  } catch { return null; }
+}
+
+// ---- منح «فزعة» عبر واجهة SAS4 الأصليّة للمشترك: extensions ثم user/extend بمعرّف القرض ----
 async function grantFazaaNative(
   dealerToken: string,
   sasId: number,
   netUser: string,
   profileId: number | null,
 ): Promise<{ ok: boolean; status: number; message: string; raw: string }> {
+  if (profileId == null) return { ok: false, status: 0, message: "لا رقم باقة للمشترك", raw: "" };
   const pass = await sasFetchUserPassword(sasBaseUrl(RESELLER_HOST), dealerToken, sasId);
   if (!pass) return { ok: false, status: 0, message: "تعذّر جلب باسورد المشترك", raw: "" };
   let subToken: string | undefined;
+  let sessionId: string | undefined;
   try {
     const lr = (await sasRawPost(SUB_API_BASE, "", "auth/login", { username: netUser, password: pass })) as Record<string, unknown>;
-    subToken = (lr?.token as string) ?? ((lr?.data as Record<string, unknown> | undefined)?.token as string | undefined);
+    const ld = (lr?.data as Record<string, unknown> | undefined) ?? lr;
+    subToken = (ld?.token as string) ?? (lr?.token as string);
+    sessionId = (ld?.session_id as string) ?? (lr?.session_id as string);
     if (!subToken) return { ok: false, status: 0, message: "دخول المشترك بلا رمز", raw: JSON.stringify(lr).slice(0, 300) };
   } catch (e) {
     return { ok: false, status: 0, message: "فشل دخول المشترك: " + (e as Error).message, raw: "" };
   }
-  const resp = (await sasRawPost(SUB_API_BASE, subToken, "user/extend", { method: "loan", user_id: sasId, profile_id: profileId, transaction_id: null })) as Record<string, unknown>;
+  const ext = await subGet(subToken, "extensions/" + profileId);
+  const list = ((ext?.data as Array<{ name?: string; id?: number }> | undefined) ?? []);
+  const loans = list.filter((o) => /loan|قرض|فزع/i.test(String(o?.name ?? "")));
+  const pick = loans.find((o) => /1\s*-?\s*day|يوم|فزع/i.test(String(o?.name ?? ""))) ?? loans[0];
+  const optsDump = JSON.stringify(list).slice(0, 220);
+  if (!pick?.id) return { ok: false, status: 0, message: "لا يوجد خيار قرض لباقة هذا المشترك", raw: "ext=" + optsDump };
+  const resp = (await sasRawPost(SUB_API_BASE, subToken, "user/extend", {
+    profile_id: String(pick.id),
+    device_id: "web-" + sasId,
+    session_id: sessionId ?? randomUUID(),
+    language: "en",
+  })) as Record<string, unknown>;
   const status = Number(resp?.status ?? 0);
   const message = String((resp?.message ?? resp?.error ?? ""));
-  return { ok: status === 200, status, message, raw: JSON.stringify(resp).slice(0, 600) };
+  const ok = status === 200 && /success/i.test(message);
+  return { ok, status, message, raw: `ext=${optsDump} | picked=${pick.id} | resp=${JSON.stringify(resp).slice(0, 240)}` };
 }
 
 export type LoanReason =
@@ -216,14 +246,9 @@ export async function grantLoan(opts: {
   }
   if (!prof.token) return { ok: false, reason: "no_token", message: "تعذّر الحصول على رمز المشترك من سوبر سيل" };
 
-  // ٤) المنح — واجهة SAS4 الأصليّة للمشترك (method=loan)، مع تحقّقٍ من تحرّك الانتهاء؛ وnotify احتياطاً
+  // ٤) المنح — واجهة SAS4 الأصليّة للمشترك (extensions ثمّ user/extend بمعرّف القرض)؛ وnotify احتياطاً
   const n = await grantFazaaNative(dealerToken, sasId, rec.username, rec.profileId);
-  if (n.ok) {
-    const after = await fetchLoanUserRecord(dealerToken, sasId);
-    if (after && after.expiration && after.expiration !== rec.expiration) {
-      return { ok: true, verifiedUser: rec.username, expiration: after.expiration };
-    }
-  }
+  if (n.ok) return { ok: true, verifiedUser: rec.username, expiration: rec.expiration };
   const g = await grantFazaa(prof.token);
   if (g.ok) return { ok: true, verifiedUser: rec.username, expiration: rec.expiration };
   const combinedRaw = `native ${n.status}: ${n.raw} || notify ${g.status}: ${g.raw}`;
