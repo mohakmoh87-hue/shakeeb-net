@@ -18,7 +18,7 @@ export async function sendAgentBackupEmail(agentId: number): Promise<{ ok: boole
       `احتفظ بهذا الملف. لاسترجاع بياناتك في أي وقت: افتح البرنامج ← الإعدادات ← النسخ الاحتياطي ← «استرجاع عن طريق النسخة الاحتياطية» وارفع هذا الملف.`,
     attachments: [{ filename, content: gz, contentType: "application/gzip" }],
   };
-  return gmailConfigured() ? sendGmail(mail) : sendMail(mail);
+  return mailerConfigured() ? sendMail(mail) : sendGmail(mail);
 }
 
 // المهمة اليومية: إرسال نسخة كل وكيل لديه إيميل نسخ مضبوط إلى إيميله.
