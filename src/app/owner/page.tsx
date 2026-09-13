@@ -170,6 +170,7 @@ export default function OwnerPage() {
           <a href="/owner/supercell" className="rounded-xl bg-sky-100 px-4 py-2 font-semibold text-sky-700 hover:bg-sky-200">🏢 سوبر سيل</a>
           <a href="/owner/app-settings" className="rounded-xl bg-indigo-100 px-4 py-2 font-semibold text-indigo-700 hover:bg-indigo-200">📱 التطبيق</a>
           <a href="/owner/distributors" className="rounded-xl bg-amber-100 px-4 py-2 font-semibold text-amber-700 hover:bg-amber-200">🃏 موزّعو الكروت</a>
+          <a href="/owner/server" className="rounded-xl bg-teal-100 px-4 py-2 font-semibold text-teal-700 hover:bg-teal-200">🖥️ السيرفر</a>
           <button onClick={() => setAdding(true)} className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700">➕ وكيل جديد</button>
           <button onClick={logout} className="rounded-xl bg-slate-200 px-4 py-2 font-semibold text-slate-600 hover:bg-slate-300">خروج</button>
         </div>
