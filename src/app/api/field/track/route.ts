@@ -57,8 +57,8 @@ const idsSchema = z.object({ technicianIds: z.array(z.coerce.number()).min(1).ma
 export async function GET() {
   const tech = await getTechSession();
   if (!tech) return NextResponse.json({ error: "دخول الفني مطلوب" }, { status: 401 });
-  const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { trackReqAt: true } });
-  return NextResponse.json({ tracking: isFresh(t?.trackReqAt ?? null) });
+  const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { trackReqAt: true, trackShiftActive: true } });
+  return NextResponse.json({ tracking: (t?.trackShiftActive ?? false) || isFresh(t?.trackReqAt ?? null) });
 }
 
 // PUT (مدير/مستخدم المكتب): نبضة تتبع لفنيين محدّدين + إرجاع مواقعهم الحالية
@@ -144,8 +144,8 @@ export async function POST(request: Request) {
   if (tech) {
     const parsed = z.object({ lat: z.coerce.number().min(-90).max(90), lng: z.coerce.number().min(-180).max(180) }).safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "إحداثيات غير صحيحة" }, { status: 400 });
-    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { trackReqAt: true } });
-    if (!isFresh(t?.trackReqAt ?? null)) {
+    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { trackReqAt: true, trackShiftActive: true } });
+    if (!((t?.trackShiftActive ?? false) || isFresh(t?.trackReqAt ?? null))) {
       // التتبع لم يعُد مطلوباً — أبلغ التطبيق بالتوقف (نُبقي آخر موقع محفوظاً)
       await prisma.technician.update({ where: { id: tech.technicianId }, data: { trackReqAt: null } });
       return NextResponse.json({ tracking: false });

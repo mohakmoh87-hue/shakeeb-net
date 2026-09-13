@@ -6,6 +6,7 @@ import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { baghdadDayKey, computeAttendance, parseHHMM, baghdadMinutesOfDay } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
 import { endSupport, techEffectiveOffices, approvedTimeLeaveFor } from "@/lib/field";
+import { startShiftTracking, stopShiftTracking } from "@/lib/tracking";
 import { decideStampOffice, fallbackOffice, type StampResult } from "@/app/api/_lib/stampOffice";
 
 export const dynamic = "force-dynamic";
@@ -322,6 +323,7 @@ export async function POST(request: Request) {
       const { distributePending } = await import("@/lib/autoAssign");
       assignedPending = await distributePending(stampOffice, tech.agentId ?? null);
     } catch { /* لا يُفشل البصمة إطلاقاً */ }
+    await startShiftTracking(tech.technicianId); // v2: التتبّع يبدأ ببصمة الدخول
     return NextResponse.json({ ok: true, state: "in", checkIn: created.checkIn, late: isLate, canExcuse: isLate, assignedPending });
   }
 
@@ -365,6 +367,7 @@ export async function POST(request: Request) {
     await endSupport(tech.technicianId);
     await notify({ agentId: tech.agentId, towerId: tech.towerId, type: "checkout", title: "انتهاء الدعم", body: `${tech.name} أنهى الدعم وعاد لمكتبه`, refType: "technician", refId: tech.technicianId });
   }
+  await stopShiftTracking(tech.technicianId); // v2: التتبّع يتوقّف ببصمة الخروج
   return NextResponse.json({ ok: true, state: "done", checkOut: updated.checkOut, calc, supportEnded: onSupport });
 }
 
@@ -465,6 +468,7 @@ export async function PATCH(request: Request) {
   }
   const calc = computeAttendance(t, rec.checkIn, checkoutAt, await approvedTimeLeaveFor(t.id, rec.dayKey));
   await prisma.attendance.update({ where: { id: rec.id }, data: { checkOut: checkoutAt, checkoutBy: "manager", ...calc } });
+  await stopShiftTracking(t.id); // v2: خروجٌ يدويٌّ من المدير يوقف التتبّع أيضاً
   return NextResponse.json({ ok: true, checkOut: checkoutAt, calc, corrected: rec.checkoutBy === "auto" });
 }
 

@@ -57,6 +57,8 @@ export async function GET(request: Request) {
   // تنظيف الأرشيف: حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (لا يعتمد على حواسيب المكاتب)
   const { purgeOldArchivedCards } = await import("@/lib/field");
   const purged = await purgeOldArchivedCards().catch(() => 0);
+  const { purgeOldTrackPoints } = await import("@/lib/tracking");
+  await purgeOldTrackPoints().catch(() => 0);
   // النسخ الاحتياطية اليومية لإيميلات الوكلاء — من السحابة حتى مع إغلاق كل الحاسبات
   const { runDailyBackups } = await import("@/lib/backupJob");
   const backups = await runDailyBackups().catch(() => ({ total: 0, sent: 0, failed: 0 }));

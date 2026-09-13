@@ -765,6 +765,7 @@ export function startScheduler() {
       purgeOldMessages(3).catch((e) => console.error("[scheduler] purge messages:", e));
       // حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (احتياط محلي — الكرون السحابي يفعلها أيضاً)
       import("@/lib/field").then((m) => m.purgeOldArchivedCards()).catch((e) => console.error("[scheduler] purge archive:", e));
+      import("@/lib/tracking").then((m) => m.purgeOldTrackPoints()).catch((e) => console.error("[scheduler] purge track:", e));
     }
   }, { timezone: TZ });
 

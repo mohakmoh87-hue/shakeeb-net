@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 import { baghdadDayKey, computeAttendance, parseHHMM } from "./attendance";
 import { endSupport } from "./field";
 import { notify } from "./notify";
+import { stopShiftTracking } from "./tracking";
 
 // وقت نهاية الدوام (كـ Date) لليوم الذي بدأ فيه الفني — لبصمة خروج تلقائية بلا إضافي.
 function scheduledCheckout(checkIn: Date, shiftEnd: string | null): Date {
@@ -79,6 +80,7 @@ export async function runAutoCheckout(opts?: { resetSupport?: boolean }): Promis
       continue;
     }
     if (updCount === 0) continue;
+    await stopShiftTracking(rec.technicianId); // نسي بصمة الخروج ⇒ أوقف تتبّع ورديّته (v2)
     // إنهاء الدعم إن كان الفني مُعاراً (يعود لمكتبه بنهاية الدوام)
     if (t.supportTowerId != null) await endSupport(rec.technicianId).catch(() => {});
     void notify({ agentId: t.agentId, towerId: t.towerId, type: "checkout", title: "خروج تلقائي", body: `${t.name}: خروج تلقائي (نسيان البصمة)${penalty > 0 ? ` — غرامة ${penalty.toLocaleString("en-US")}` : ""}`, refType: "technician", refId: rec.technicianId });

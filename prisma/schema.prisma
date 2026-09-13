@@ -1040,6 +1040,7 @@ model Technician {
   trackLng              Float?
   trackAt               DateTime? // وقت آخر تحديث موقع
   fcmToken              String? // رمز جهاز FCM (التطبيق الأصلي) — لإيقاظ الخدمة عند طلب التتبع
+  trackShiftActive      Boolean   @default(false) // تتبّع الوردية فعّال الآن (v2): يشعله بصمة الدخول ويطفئه الخروج
   isDeleted             Boolean   @default(false)
   createdAt             DateTime  @default(now())
 
@@ -1104,6 +1105,26 @@ model Attendance {
   @@index([technicianId])
   @@index([agentId])
   @@map("attendances")
+}
+
+// ===== سجلّ تتبّع الفنيّ (v2) — نقاط GPS من بصمة الدخول إلى الخروج، تُحفظ شهراً ثم تُحذف =====
+model TrackPoint {
+  id           Int      @id @default(autoincrement())
+  technicianId Int
+  agentId      Int? // عزل الوكيل (RLS)
+  towerId      Int? // مكتب الفنيّ الأصليّ وقت النقطة
+  lat          Float
+  lng          Float
+  acc          Float? // دقّة GPS بالمتر
+  at           DateTime // وقت أخذ النقطة على الهاتف
+  dayKey       String // YYYY-MM-DD بغداد — للتجميع والحذف الشهريّ
+  createdAt    DateTime @default(now())
+
+  @@index([technicianId, at])
+  @@index([technicianId, dayKey])
+  @@index([agentId])
+  @@index([createdAt])
+  @@map("track_points")
 }
 
 // ===== إجازات الفنيين — يوم (براتب/بلا حسب الحصّة الشهرية) أو زمنية؛ سبب إلزامي؛ قبول/رفض المدير =====

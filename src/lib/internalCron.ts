@@ -81,6 +81,8 @@ async function nightlyBlock(todayKey: string): Promise<void> {
     const r = await runAutoCheckout({ resetSupport: true });
     const { purgeOldArchivedCards } = await import("./field");
     const purged = await purgeOldArchivedCards().catch(() => 0);
+    const { purgeOldTrackPoints } = await import("./tracking");
+    await purgeOldTrackPoints().catch(() => 0);
     const { runPlanWarnings } = await import("./planWarnings");
     const warns = await runPlanWarnings().catch(() => ({ checked: 0, notified: 0 }));
     // مزامنة SAS الليليّة (شبكة أمان سحابيّة) — مكتباً مكتباً، وفشلُ واحدٍ لا يوقف البقيّة

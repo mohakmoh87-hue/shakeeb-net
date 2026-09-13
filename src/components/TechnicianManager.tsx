@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import SalaryModal from "./SalaryModal";
 import TrackModal from "./TrackModal";
+import TrackLogModal from "./TrackLogModal";
 
 type Tech = {
   id: number; name: string; phone: string | null; username: string | null; plainCode?: string | null;
@@ -27,6 +28,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
   const [salaryTech, setSalaryTech] = useState<Tech | null>(null);
   const [isManager, setIsManager] = useState(true); // مستخدم المكتب يرى القائمة والتتبع فقط
   const [trackIds, setTrackIds] = useState<number[] | null>(null); // فتح نافذة التتبع بفنيين محدّدين
+  const [logTech, setLogTech] = useState<{ id: number; name: string } | null>(null); // نافذة سجل التتبع
   // المكاتب الإضافية الدائمة (يضبطها المدير): كل مكاتب الوكيل عدا مكتب الفني الأصلي
   const [leavePeriod, setLeavePeriod] = useState<{ from: string; to: string } | null>(null);
   const [allOffices, setAllOffices] = useState<{ id: number; name: string | null }[]>([]);
@@ -290,6 +292,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                 {isManager ? (
                   <div className="grid grid-cols-3 gap-2">
                     <Act onClick={() => setTrackIds([t.id])} cls="bg-sky-50 text-sky-700" icon="📍" label="تتبع الموقع" />
+                    <Act onClick={() => setLogTech({ id: t.id, name: t.name })} cls="bg-indigo-50 text-indigo-700" icon="🗺️" label="سجل التتبع" />
                     <Act onClick={() => setSalaryTech(t)} cls="bg-emerald-50 text-emerald-700" icon="💰" label="الراتب" />
                     {/* ═════ الحضورُ كلُّه في زرّه المستقلّ (قرارُ محمد 2026-08-14) ═════
                         «أيُّ شيءٍ يتعلّق بحضور الفنيّين يجب أن يكون في الزرّ الجديد» — فنُقلت
@@ -316,6 +319,9 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
       )}
       {trackIds && (
         <TrackModal techs={techs.map((t) => ({ id: t.id, name: t.name }))} initialIds={trackIds} onClose={() => setTrackIds(null)} />
+      )}
+      {logTech && (
+        <TrackLogModal technicianId={logTech.id} techName={logTech.name} onClose={() => setLogTech(null)} />
       )}
 
     </div>

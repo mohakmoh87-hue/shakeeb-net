@@ -426,6 +426,14 @@ CREATE POLICY rls_internal_messages ON internal_messages TO agent_worker
   USING ("agentId" = current_agent_id())
   WITH CHECK ("agentId" = current_agent_id());
 
+-- 📍 سجلّ تتبّع الفنيّ v2 (2026-09-13) — يكتبه الموقع (الهاتف عبر جلسة الفنيّ) ويقرؤه المدير؛
+-- العاملُ لا يلمسه (لا GRANT في 02). عزلٌ بـagentId المباشر — دفاعٌ في العمق وحفظُ العزل عند الاستعادة.
+ALTER TABLE track_points ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_track_points ON track_points;
+CREATE POLICY rls_track_points ON track_points TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 -- 🎫 تذاكرُ المشتركين (2026-09-04) — يكتبها الموقعُ (التسجيل + إدارة الفنيين + الشركة).
 -- عزلٌ بـagentId المباشر. صفُّ agentId=NULL (تذكرةٌ بلا وكيلٍ مطابق ⇒ سوبر سيل فقط) يبقى
 -- غيرَ مرئيٍّ لأيّ عامل (NULL = current_agent_id() ⇒ NULL ⇒ لا يمرّ) وهو المقصود.
