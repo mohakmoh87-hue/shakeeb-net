@@ -253,10 +253,7 @@ export async function grantLoan(opts: {
   if (g.ok) return { ok: true, verifiedUser: rec.username, expiration: rec.expiration };
   const combinedRaw = `native ${n.status}: ${n.raw} || notify ${g.status}: ${g.raw}`;
   if (/user has loans/i.test(n.message + " " + g.message)) return { ok: false, reason: "has_loan", message: "لدى المشترك قرضٌ غير مسدَّد", expiration: rec.expiration, status: g.status, raw: combinedRaw };
-  if (/not expired/i.test(g.message)) {
-    return { ok: false, reason: "rejected", message: `رفضت سوبر سيل: تعدُّ المشترك غيرَ منتهٍ (${g.message})`, expiration: rec.expiration, status: g.status, raw: combinedRaw };
-  }
-  return { ok: false, reason: "rejected", message: `native(HTTP ${n.status}) ${n.message || "—"} | notify(HTTP ${g.status}) ${g.message || "—"}`, expiration: rec.expiration, status: n.status || g.status, raw: combinedRaw };
+  return { ok: false, reason: "rejected", message: `SAS4: ${n.message || "?"} — ${n.raw}`.slice(0, 300), expiration: rec.expiration, status: n.status || g.status, raw: combinedRaw };
 }
 
 // اختبار الاتصال (لزرّ «اختبار» في إعداد المكتب): يسجّل الدخول ويقرأ عيّنة، بلا أيّ منح.
