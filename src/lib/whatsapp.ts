@@ -5,7 +5,7 @@ import type { Client as WAClient } from "whatsapp-web.js";
 import { prisma } from "@/lib/prisma";
 import { scrubRelayImage } from "@/lib/relayScrub"; // 🧹 نزعُ الصورة من صفّ الترحيل بعد تنفيذه
 import { withWaTurn, waGapMs, isWaBusy, type WaLane } from "@/lib/waGate"; // 🚦 فاصلُ الرقم الموحَّد
-import { getWaChannel, sendViaUltraMsg } from "@/lib/waChannel";
+import { getWaChannel, sendViaUltraMsg, listUltraMsgOffices, ultraMsgConnected } from "@/lib/waChannel";
 
 // ═════ 🚦 سقفا انتظار البوّابة — ولماذا رقمان لا رقم ═════
 // **المحلّيّ** ينتظر طويلاً بلا ضرر: لا مهلةَ تحكمه، والرسالةُ في يد صاحبها.
@@ -620,6 +620,16 @@ export async function readOfficeStates(officeIds: number[]): Promise<Record<numb
   const out: Record<number, WaState> = {};
   for (const id of officeIds) out[id] = "disconnected";
   if (officeIds.length === 0) return out;
+  const apiOffices = new Set(
+    (await listUltraMsgOffices().catch(() => [] as number[])).filter((id) => officeIds.includes(id)),
+  );
+  if (apiOffices.size > 0) {
+    const ids = [...apiOffices];
+    const conn = await Promise.all(ids.map((id) => ultraMsgConnected(id).catch(() => false)));
+    ids.forEach((id, i) => { out[id] = conn[i] ? "ready" : "disconnected"; });
+  }
+  const qrIds = officeIds.filter((id) => !apiOffices.has(id));
+  if (qrIds.length === 0) return out;
   // الحواسيب المستضيفة المتصلة الآن (معتمَدة، غير محظورة، نبضة خلال 60ث)
   const onlineWorkers = await prisma.hybridWorker.findMany({
     where: { approved: true, blocked: false, lastSeen: { gte: new Date(Date.now() - 60_000) } },
@@ -628,7 +638,7 @@ export async function readOfficeStates(officeIds: number[]): Promise<Record<numb
   if (onlineWorkers.length === 0) return out; // لا حاسبة نشطة ⇒ لا اتصال واتساب فعلي
   const online = new Set(onlineWorkers.map((w) => w.machineId));
   const rows = await prisma.waSession.findMany({
-    where: { towerId: { in: officeIds } },
+    where: { towerId: { in: qrIds } },
     select: { towerId: true, state: true, hostMachineId: true, updatedAt: true },
   });
   // «ready» لا تُصدَّق إن لم تتجدّد خلال ٥ دقائق: العامل يجدّدها كل دورة ما دام عميل

@@ -133,6 +133,73 @@ export async function listUltraMsgOffices(): Promise<number[]> {
   return ids;
 }
 
+async function ultraGet(url: string): Promise<Record<string, unknown> | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12_000);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const txt = await res.text();
+    try { return JSON.parse(txt) as Record<string, unknown>; } catch { return null; }
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function statusAuthenticated(data: Record<string, unknown> | null): boolean {
+  if (!data) return false;
+  const status = data.status;
+  if (typeof status === "string") return status.toLowerCase() === "authenticated";
+  if (status && typeof status === "object") {
+    const acct = (status as Record<string, unknown>).accountStatus;
+    const st = acct && typeof acct === "object" ? (acct as Record<string, unknown>).status : undefined;
+    if (typeof st === "string") return st.toLowerCase() === "authenticated";
+  }
+  const acct2 = data.accountStatus;
+  if (typeof acct2 === "string") return acct2.toLowerCase() === "authenticated";
+  return false;
+}
+
+type UltraStatusCache = { connected: boolean; at: number; goodAt: number };
+const statusCache = new Map<number, UltraStatusCache>();
+const STATUS_TTL = 60_000;
+const STATUS_GRACE = 5 * 60_000;
+
+export function invalidateUltraMsgStatus(officeId: number) {
+  statusCache.delete(officeId);
+}
+
+export async function ultraMsgConnected(officeId: number): Promise<boolean> {
+  const cfg = await getWaChannel(officeId);
+  if (!cfg) return false;
+  const now = Date.now();
+  const cached = statusCache.get(officeId);
+  if (cached && now - cached.at < STATUS_TTL) return cached.connected;
+
+  const root = (cfg.baseUrl || DEFAULT_BASE).replace(/\/+$/, "");
+  let host: string;
+  try { host = new URL(root).hostname; } catch {
+    return cached && now - cached.goodAt < STATUS_GRACE ? cached.connected : false;
+  }
+  if (await isBlockedHost(host)) return false;
+  const instance = /ultramsg\.com/i.test(root) && /^\d+$/.test(cfg.instanceId) ? `instance${cfg.instanceId}` : cfg.instanceId;
+  const url = `${root}/${encodeURIComponent(instance)}/instance/status?token=${encodeURIComponent(cfg.token)}`;
+  const data = await ultraGet(url);
+  if (data == null) {
+    if (cached && now - cached.goodAt < STATUS_GRACE) {
+      statusCache.set(officeId, { connected: cached.connected, at: now, goodAt: cached.goodAt });
+      return cached.connected;
+    }
+    statusCache.set(officeId, { connected: false, at: now, goodAt: cached?.goodAt ?? 0 });
+    return false;
+  }
+  const connected = statusAuthenticated(data);
+  statusCache.set(officeId, { connected, at: now, goodAt: now });
+  return connected;
+}
+
 function toUltraTo(phoneRaw: string): string | null {
   let p = (phoneRaw || "").replace(/[^\d+]/g, "");
   if (!p) return null;
