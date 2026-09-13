@@ -47,6 +47,13 @@ public class LocationForegroundService extends Service {
     private LocationCallback callback;
     private final Handler main = new Handler(Looper.getMainLooper());
 
+    // v2: التقاط كل ٥ث وإرسال دفعة كل دقيقة (توفير البطارية والبيانات)
+    private final java.util.List<String> buffer = new java.util.ArrayList<>();
+    private Runnable flusher;
+    private static final long CAPTURE_MS = 5_000L;
+    private static final long FLUSH_MS = 60_000L;
+    private static final int MAX_BUFFER = 4000;
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -84,15 +91,16 @@ public class LocationForegroundService extends Service {
 
     private void startLocationUpdates() {
         client = LocationServices.getFusedLocationProviderClient(this);
-        LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 60_000L)
-                .setMinUpdateIntervalMillis(30_000L)
-                .setMinUpdateDistanceMeters(10f)
+        // فاصل ٥ث ومسافة صفر: نلتقط النقاط ولو كان ثابتاً — ضروريّ لكشف التوقّفات
+        LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, CAPTURE_MS)
+                .setMinUpdateIntervalMillis(CAPTURE_MS)
+                .setMinUpdateDistanceMeters(0f)
                 .build();
         callback = new LocationCallback() {
             @Override
             public void onLocationResult(@NonNull LocationResult result) {
                 Location loc = result.getLastLocation();
-                if (loc != null) postLocation(loc.getLatitude(), loc.getLongitude());
+                if (loc != null) bufferLocation(loc);
             }
         };
         try {
@@ -100,17 +108,59 @@ public class LocationForegroundService extends Service {
         } catch (SecurityException e) {
             Log.w(TAG, "requestLocationUpdates SecurityException");
             stopTracking();
+            return;
+        }
+        scheduleFlush();
+    }
+
+    private void bufferLocation(Location loc) {
+        long at = loc.getTime() > 0 ? loc.getTime() : System.currentTimeMillis();
+        String pt = "{\"lat\":" + loc.getLatitude() + ",\"lng\":" + loc.getLongitude()
+                + ",\"at\":" + at + ",\"acc\":" + loc.getAccuracy() + "}";
+        synchronized (buffer) {
+            buffer.add(pt);
+            while (buffer.size() > MAX_BUFFER) buffer.remove(0);
         }
     }
 
-    /** يرسل الموقع للخادم؛ إن ردّ الخادم أن التتبع لم يعُد مطلوباً → إيقاف الخدمة. */
-    private void postLocation(final double lat, final double lng) {
+    private void scheduleFlush() {
+        if (flusher != null) return;
+        flusher = new Runnable() {
+            @Override
+            public void run() {
+                flush(false);
+                if (running) main.postDelayed(this, FLUSH_MS);
+            }
+        };
+        main.postDelayed(flusher, FLUSH_MS);
+    }
+
+    /** يرسل ما جُمع دفعةً واحدة إلى track/batch. فشلُ الشبكة يُعيد النقاط للمخزن؛ tracking:false يُوقف. */
+    private void flush(final boolean isFinal) {
+        final java.util.List<String> batch;
+        synchronized (buffer) {
+            if (buffer.isEmpty()) return;
+            batch = new java.util.ArrayList<>(buffer);
+            buffer.clear();
+        }
         new Thread(() -> {
-            String body = "{\"lat\":" + lat + ",\"lng\":" + lng + "}";
-            String resp = ServerApi.postJson("/api/field/track", body);
-            // الخادم يعيد {"tracking":false} حين يوقف المدير التتبع أو تنتهي الجلسة
-            boolean stop = resp == null || resp.contains("\"tracking\":false");
-            if (stop) main.post(this::stopTracking);
+            StringBuilder sb = new StringBuilder("{\"points\":[");
+            for (int i = 0; i < batch.size(); i++) {
+                if (i > 0) sb.append(',');
+                sb.append(batch.get(i));
+            }
+            sb.append("]}");
+            String resp = ServerApi.postJson("/api/field/track/batch", sb.toString());
+            if (resp == null) {
+                if (!isFinal) {
+                    synchronized (buffer) {
+                        buffer.addAll(0, batch);
+                        while (buffer.size() > MAX_BUFFER) buffer.remove(0);
+                    }
+                }
+            } else if (resp.contains("\"tracking\":false")) {
+                main.post(this::stopTracking);
+            }
         }).start();
     }
 
@@ -147,9 +197,11 @@ public class LocationForegroundService extends Service {
 
     private void stopTracking() {
         running = false;
+        if (flusher != null) { main.removeCallbacks(flusher); flusher = null; }
         try {
             if (client != null && callback != null) client.removeLocationUpdates(callback);
         } catch (Exception ignored) {}
+        flush(true); // إرسال أخير لما تبقّى (أفضل جهد)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
