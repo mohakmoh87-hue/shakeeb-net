@@ -2,12 +2,8 @@
 // الاستعمال على الخادم: node --env-file=.env scripts/test-smtp.mjs recipient@example.com
 import nodemailer from "nodemailer";
 
-const to = process.argv[2];
-if (!to) {
-  console.error("الاستعمال: node --env-file=.env scripts/test-smtp.mjs <إيميل المستلم>");
-  process.exit(1);
-}
 const { SMTP_USER, SMTP_PASS, SMTP_HOST = "smtp.gmail.com", SMTP_PORT = "587", SMTP_FROM } = process.env;
+const to = process.argv[2] || SMTP_USER; // بلا وسيطٍ: يرسل للحساب نفسه
 if (!SMTP_USER || !SMTP_PASS) {
   console.error("❌ لم تُضبط SMTP_USER / SMTP_PASS في .env");
   process.exit(1);
