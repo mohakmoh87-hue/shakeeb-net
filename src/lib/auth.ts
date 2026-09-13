@@ -75,7 +75,7 @@ export async function setSession(payload: SessionPayload) {
   const store = await cookies();
   store.set(COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && process.env.COOKIE_INSECURE !== "1",
     sameSite: "lax",
     maxAge: MAX_AGE,
     path: "/",
@@ -98,7 +98,7 @@ export async function setTechSession(payload: TechSessionPayload) {
   const token = await new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime(`${MAX_AGE}s`).sign(SECRET);
   const store = await cookies();
-  store.set(COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: MAX_AGE, path: "/" });
+  store.set(COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === "production" && process.env.COOKIE_INSECURE !== "1", sameSite: "lax", maxAge: MAX_AGE, path: "/" });
 }
 // يقرأ جلسة الفني الحالية (ويعيد بياناته المحدّثة من القاعدة). null إن لم تكن جلسة فني.
 export async function getTechSession(): Promise<TechSessionPayload | null> {
