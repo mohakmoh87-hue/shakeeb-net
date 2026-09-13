@@ -83,37 +83,4 @@ describe("عطبُ الإنتاج: permission denied for table agents", () => {
   });
 });
 
-describe("عدّادُ النقل الصادر", () => {
-  test("📏 يقيس بلا أن يُكلّف: ذاكرةٌ + تثبيتٌ كلَّ ٥ دقائق لا كتابةٌ لكلّ طلب", () => {
-    const m = read("src/app/api/_lib/egressMeter.ts");
-    assert.match(m, /FLUSH_MS = 5 \* 60_000/, "التثبيتُ ليس كلَّ ٥ دقائق");
-    assert.equal(/prisma\..*create|prisma\..*update/.test(m.split("export function meter")[1]?.split("export async function flush")[0] ?? ""),
-      false, "العدُّ يكتب في القاعدة لكلّ طلب — القياسُ يصنع الكلفة التي يقيسها");
-    // والقياسُ لا يُسقط طلباً أبداً
-    assert.match(m, /catch \{ \/\* القياسُ لا يُفشل طلباً أبداً \*\/ \}/, "القياسُ قد يُفشل طلباً");
-    // ولا يُصفَّر إلّا بعد نجاح الكتابة
-    assert.match(m, /لا يُصفَّر إلّا بعد نجاح الكتابة/, "قد يضيع القياسُ بين محاولتَين");
-  });
-
-  test("🎯 مُثبَّتٌ على المشتبه الأوّل — وبقياسٍ فعليٍّ لا برأسٍ غائب", () => {
-    const route = read("src/app/sas/[towerId]/[[...path]]/route.ts");
-    assert.match(route, /meter\(new URL\(request\.url\)\.pathname, buf\.byteLength\)/,
-      "القياسُ ليس على الجسم الفعليّ");
-    // 🛡️ ولا يصنع القياسُ عطباً: ٢٠٤/٢٠٥/٣٠٤ لا تقبل جسماً، ولمسُ جسمها يُنتج استجابةً
-    //    ميّتة — و٣٠٤ هي أشيعُ ردٍّ لأصلٍ مخزَّنٍ في المتصفّح.
-    assert.match(route, /res\.status === 304\) return res/, "٣٠٤ تمرّ على القياس فتُكسَر");
-    // ⚠️ الرأسُ غائبٌ فعلاً: proxyToSas يُعيد content-type/cache-control/location فقط
-    const proxy = read("src/lib/sasProxy.ts");
-    assert.equal(/respHeaders\["content-length"\]/.test(proxy), false,
-      "صار الوسيطُ يُصرّح بـcontent-length — يمكن تبسيطُ القياس");
-    // وعدّادُ «متى اختير السحابيّ» — مقياسُ فشلِ الجسّ مباشرةً
-    assert.match(read("src/app/api/sas4/token/route.ts"), /meter\("\/api\/sas4\/token", 0\)/,
-      "لا عدَّ لمرّات اختيار المسار السحابيّ");
-  });
-
-  test("🔒 القراءةُ لمالك النظام وحدَه", () => {
-    const r = read("src/app/api/owner/egress/route.ts");
-    assert.match(r, /guardOwner\(\)/, "لوحةُ القياس بلا حرسِ مالك");
-    assert.match(r, /if \(g\.error\) return g\.error/, "الحرسُ لا يُوقف الطلب");
-  });
-});
+// (أُزيل عدّادُ النقل الصادر واختباراتُه 2026-09-13 — لا رسومَ نقلٍ على الخادم الذاتيّ)

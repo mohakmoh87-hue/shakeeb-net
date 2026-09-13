@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ownsTower } from "@/lib/guard";
 import { proxyToSas } from "@/lib/sasProxy";
-import { meter } from "@/app/api/_lib/egressMeter";
 import { cookies } from "next/headers";
 import { parseSasScope, sasScopeSegment } from "@/lib/sasScope";
 import { sasBaseUrl, sasLogin } from "@/lib/sas4";
@@ -107,7 +106,6 @@ async function handle(request: Request, towerSeg: string, path: string[] | undef
   if (res.status === 204 || res.status === 205 || res.status === 304) return res;
   try {
     const buf = await res.arrayBuffer();
-    meter(new URL(request.url).pathname, buf.byteLength);
     return new Response(buf, { status: res.status, headers: res.headers });
   } catch {
     return res; // تعذّرت القراءة (بثٌّ مثلاً) ⇒ تُخدَم كما هي — القياسُ لا يُعطّل خدمة
