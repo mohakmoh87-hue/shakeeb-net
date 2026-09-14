@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 import { hashPassword } from "@/lib/auth";
+import { usernameTaken } from "@/lib/usernameTaken";
 
 // أسماءٌ محجوزة للنظام: تُستعمل في createdByUser للرسائل الآليّة (تقرير المدير/المزامنة)،
 // فتسميةُ مستخدمٍ بها كانت تُستغَلّ لرؤية رسائل وكلاءٍ آخرين (تدقيق عدائيّ 2026-08-09).
@@ -52,8 +53,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const exists = await prisma.user.findUnique({ where: { username: parsed.data.username } });
-  if (exists) {
+  if (await usernameTaken(parsed.data.username)) {
     return NextResponse.json({ error: "اسم المستخدم موجود مسبقاً" }, { status: 400 });
   }
 

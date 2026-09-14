@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 import { hashPassword } from "@/lib/auth";
+import { usernameTaken } from "@/lib/usernameTaken";
 
 // أسماءٌ محجوزة للنظام (نفس قائمة الإنشاء) — لا يُسمَّى بها مستخدمٌ ولا يُعاد تسميته إليها
 const RESERVED_USERNAMES = new Set(["scheduler", "sync-report", "sync", "system", "worker"]);
@@ -41,9 +42,12 @@ export async function PUT(
   const { password, permissions, deniedPermissions, ...rest } = parsed.data;
 
   // عزل المستأجر: لا يُعدَّل إلا مستخدم يتبع وكيل المدير (وليس مالك النظام)
-  const target = await prisma.user.findUnique({ where: { id: Number(id) }, select: { agentId: true, isOwner: true } });
+  const target = await prisma.user.findUnique({ where: { id: Number(id) }, select: { agentId: true, isOwner: true, username: true } });
   if (!target || target.isOwner || target.agentId !== (g.session?.agentId ?? null)) {
     return NextResponse.json({ error: "المستخدم لا يتبع حسابك" }, { status: 403 });
+  }
+  if (rest.username !== target.username && (await usernameTaken(rest.username, { userId: Number(id) }))) {
+    return NextResponse.json({ error: "اسم المستخدم موجود مسبقاً" }, { status: 400 });
   }
   if (rest.towerId != null) {
     const t = await prisma.tower.findFirst({ where: { id: rest.towerId, agentId: g.session?.agentId ?? -1, isDeleted: false }, select: { id: true } });

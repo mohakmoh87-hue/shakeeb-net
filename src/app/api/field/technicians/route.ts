@@ -7,19 +7,9 @@ import { resolveFieldOffice, parseExtraTowers } from "@/lib/field";
 import { encryptSecret, decryptSecret } from "@/lib/secretbox";
 import { salaryPeriodBounds, effectiveLeaveQuota } from "@/lib/salary";
 import { baghdadDayKey } from "@/lib/attendance";
+import { usernameTaken } from "@/lib/usernameTaken";
 
 export const dynamic = "force-dynamic";
-
-// اسم المستخدم فريد على مستوى النظام كلّه (يُفحص ضد المستخدمين والفنيين)
-async function usernameTaken(username: string, exceptTechId?: number): Promise<boolean> {
-  const u = await prisma.user.findUnique({ where: { username }, select: { id: true } });
-  if (u) return true;
-  const t = await prisma.technician.findFirst({
-    where: { username, ...(exceptTechId ? { NOT: { id: exceptTechId } } : {}) },
-    select: { id: true },
-  });
-  return !!t;
-}
 
 // قائمة فنيّي المكتب. الحقول الحسّاسة (الراتب/الرمز/إعدادات الدوام) تُكشف للمدير فقط.
 export async function GET(request: Request) {
@@ -180,7 +170,7 @@ export async function PATCH(request: Request) {
   if (typeof b.username === "string" && b.username.trim() && b.username.trim() !== tech.username) {
     const un = b.username.trim();
     if (!/^[A-Za-z0-9_.-]{3,}$/.test(un)) return NextResponse.json({ error: "اسم مستخدم غير صالح" }, { status: 400 });
-    if (await usernameTaken(un, id)) return NextResponse.json({ error: "اسم المستخدم مستخدَم مسبقاً" }, { status: 400 });
+    if (await usernameTaken(un, { techId: id })) return NextResponse.json({ error: "اسم المستخدم مستخدَم مسبقاً" }, { status: 400 });
     data.username = un;
   }
   if (typeof b.code === "string" && b.code.trim()) {

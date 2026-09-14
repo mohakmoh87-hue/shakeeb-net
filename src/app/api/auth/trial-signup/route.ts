@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { encryptSecret } from "@/lib/secretbox";
+import { usernameTaken } from "@/lib/usernameTaken";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +24,7 @@ export async function POST(request: Request) {
   const { fullName, username, password } = parsed.data;
 
   // منع تكرار اسم المستخدم عبر كامل النظام
-  const exists = await prisma.user.findUnique({ where: { username } });
-  if (exists) return NextResponse.json({ error: "اسم المستخدم مستخدَم مسبقاً — اختر غيره" }, { status: 400 });
+  if (await usernameTaken(username)) return NextResponse.json({ error: "اسم المستخدم مستخدَم مسبقاً — اختر غيره" }, { status: 400 });
 
   const planExpiry = new Date(Date.now() + 7 * 24 * 3600 * 1000); // أسبوع
 
