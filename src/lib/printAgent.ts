@@ -191,9 +191,12 @@ export function startPrintAgent() {
       // 🏢📄🛠️ فحصُ تنصيبات العقود اليوميّ — مرّةً/يوم/وكيل عند أوّل نبضةِ أيّ حاسبة مكتب.
       // منفصلٌ عن المزامنة؛ يعمل هنا لأنّ موقع العقود لا يُفتَح إلّا من إنترنت سوبر سيل.
       if (cleanupAid != null) {
-        import("@/lib/contractsInstall")
-          .then((m) => m.maybeRunDailyContractsScan(cleanupAid!))
-          .catch(() => {}); // لا يُعطّل حلقةَ العامل (فشلُ الجلب يُبقيه للمحاولة التالية)
+        const { centralBeatFresh } = await import("@/lib/centralJobs");
+        if (!(await centralBeatFresh())) {
+          import("@/lib/contractsInstall")
+            .then((m) => m.maybeRunDailyContractsScan(cleanupAid!))
+            .catch(() => {}); // لا يُعطّل حلقةَ العامل (فشلُ الجلب يُبقيه للمحاولة التالية)
+        }
       }
 
       // إنعاشُ العالق: أمرٌ بقي "printing" فوق ١٠د (ماتت عمليّتُه وسطَ الطبع) يعود pending

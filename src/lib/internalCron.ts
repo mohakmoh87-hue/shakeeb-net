@@ -255,19 +255,23 @@ async function agentBackups(now: Date, dayKey: string): Promise<void> {
   }
 }
 
-const ultraReminderAt = new Map<number, number>();
-async function ultraMsgOfficeSends(now: Date): Promise<void> {
-  const { listUltraMsgOffices } = await import("./waChannel");
-  const ids = await listUltraMsgOffices();
-  if (!ids.length) return;
-  const offs = await prisma.tower.findMany({
-    where: { id: { in: ids }, isDeleted: false },
-    select: {
-      id: true, agentId: true, reminderTime: true, silent: true, waEnabled: true, lastReminderDate: true,
-      debtReminderEnabled: true, debtReminderTime: true, lastDebtReminderDate: true,
-      expiredNoticeEnabled: true, expiredNoticeTime: true, lastExpiredNoticeDate: true,
-    },
-  });
+const officeReminderAt = new Map<number, number>();
+async function centralOfficeSends(now: Date): Promise<void> {
+  const { CENTRAL_JOBS } = await import("./centralJobs");
+  const select = {
+    id: true, agentId: true, reminderTime: true, silent: true, waEnabled: true, lastReminderDate: true,
+    debtReminderEnabled: true, debtReminderTime: true, lastDebtReminderDate: true,
+    expiredNoticeEnabled: true, expiredNoticeTime: true, lastExpiredNoticeDate: true,
+  } as const;
+  let offs;
+  if (CENTRAL_JOBS) {
+    offs = await prisma.tower.findMany({ where: { isDeleted: false }, select });
+  } else {
+    const { listUltraMsgOffices } = await import("./waChannel");
+    const ids = await listUltraMsgOffices();
+    if (!ids.length) return;
+    offs = await prisma.tower.findMany({ where: { id: { in: ids }, isDeleted: false }, select });
+  }
   if (!offs.length) return;
   const nowHM = baghdadHM(now);
   const todayK = baghdadDayKey(now);
@@ -284,7 +288,7 @@ async function ultraMsgOfficeSends(now: Date): Promise<void> {
   for (const o of offs) {
     try {
       if (o.waEnabled === "0") continue;
-      const la = ultraReminderAt.get(o.id);
+      const la = officeReminderAt.get(o.id);
       if (la != null && Date.now() - la < 20 * 60_000) continue;
       const base = o.reminderTime?.trim() || (await agentReminder(o.agentId));
       let due = false;
@@ -297,15 +301,15 @@ async function ultraMsgOfficeSends(now: Date): Promise<void> {
         const t = o.expiredNoticeTime?.trim() || base;
         if (nowHM >= t && o.lastExpiredNoticeDate !== todayK) { expired.push(o.id); due = true; }
       }
-      if (due) ultraReminderAt.set(o.id, Date.now());
+      if (due) officeReminderAt.set(o.id, Date.now());
     } catch (e) {
       console.error(`[internal-cron] ↗️ تصنيف مكتب ${o.id}:`, e instanceof Error ? e.message : e);
     }
   }
   const sched = await import("./scheduler");
-  if (expiring.length) await sched.runExpiringReminder(expiring, { claimDay: true }).catch((e) => console.error("[internal-cron] ↗️ تذكير الانتهاء (UltraMsg):", e instanceof Error ? e.message : e));
-  if (debt.length) await sched.runDebtReminder(debt, { claimDay: true }).catch((e) => console.error("[internal-cron] ↗️ الديون (UltraMsg):", e instanceof Error ? e.message : e));
-  if (expired.length) await sched.runExpiredNotice(expired, { claimDay: true }).catch((e) => console.error("[internal-cron] ↗️ المنتهون (UltraMsg):", e instanceof Error ? e.message : e));
+  if (expiring.length) await sched.runExpiringReminder(expiring, { claimDay: true }).catch((e) => console.error("[internal-cron] ↗️ تذكير الانتهاء المركزيّ:", e instanceof Error ? e.message : e));
+  if (debt.length) await sched.runDebtReminder(debt, { claimDay: true }).catch((e) => console.error("[internal-cron] ↗️ الديون المركزيّة:", e instanceof Error ? e.message : e));
+  if (expired.length) await sched.runExpiredNotice(expired, { claimDay: true }).catch((e) => console.error("[internal-cron] ↗️ المنتهون المركزيّ:", e instanceof Error ? e.message : e));
   const selfMod = await import("./selfActivatedNotice");
   const syncMod = await import("./syncAutoMsg");
   for (const o of offs) {
@@ -315,7 +319,7 @@ async function ultraMsgOfficeSends(now: Date): Promise<void> {
 }
 
 // ═════ الدورة — تُركَل كلَّ ٥ دقائق من instrumentation.ts (الموقعُ حصراً) ═════
-const g = globalThis as unknown as { __internalCron?: boolean; __ultraSending?: boolean };
+const g = globalThis as unknown as { __internalCron?: boolean; __centralSending?: boolean };
 export function kickInternalCron(reason: string): void {
   if (g.__internalCron) return; // دورةٌ سابقة ما زالت تعمل (مزامنةٌ طويلة؟) — لا تراكب
   g.__internalCron = true;
@@ -486,10 +490,37 @@ async function tick(reason: string): Promise<void> {
   }
 
   await agentBackups(now, todayKey);
-  if (!g.__ultraSending) {
-    g.__ultraSending = true;
-    void ultraMsgOfficeSends(now)
-      .catch((e) => console.error("[internal-cron] ↗️ إرسال UltraMsg سقط:", e instanceof Error ? e.message : e))
-      .finally(() => { g.__ultraSending = false; });
+  if (!g.__centralSending) {
+    g.__centralSending = true;
+    void centralOfficeSends(now)
+      .catch((e) => console.error("[internal-cron] ↗️ الإرسالُ المركزيّ سقط:", e instanceof Error ? e.message : e))
+      .finally(() => { g.__centralSending = false; });
+  }
+
+  const { CENTRAL_JOBS } = await import("./centralJobs");
+  if (CENTRAL_JOBS) {
+    if (mins >= 180) await centralPurgeMessages(todayKey);
+    if (mins >= NIGHTLY_AT_MIN) await centralContractsScan();
+  }
+}
+
+async function centralContractsScan(): Promise<void> {
+  const { maybeRunDailyContractsScan } = await import("./contractsInstall");
+  const ags = await prisma.agent.findMany({ where: { isDeleted: false }, select: { id: true } });
+  for (const a of ags) {
+    await maybeRunDailyContractsScan(a.id).catch((e) => console.error(`[internal-cron] 🔀 فحص عقود الوكيل ${a.id}:`, e instanceof Error ? e.message : e));
+  }
+}
+
+async function centralPurgeMessages(todayKey: string): Promise<void> {
+  const c = await claimDay("centralPurgeDate", todayKey, 6 * 3600_000);
+  if (!c.claimed || c.rowId == null) return;
+  try {
+    const { purgeOldMessages } = await import("./scheduler");
+    await purgeOldMessages(3);
+    await finalizeDay(c.rowId, todayKey);
+  } catch (e) {
+    await releaseDay(c.rowId, c.prev ?? null);
+    console.error("[internal-cron] 🔀 حذفُ الرسائل القديمة (مركزيّ) سقط:", e instanceof Error ? e.message : e);
   }
 }

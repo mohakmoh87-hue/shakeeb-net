@@ -39,13 +39,15 @@ const reminderCatchupAt = new Map<number, number>();
 const WA_REVIVAL_MAX_MS = 8 * 60_000;
 const WA_REVIVAL_STEP_MS = 10_000;
 async function waitWaRevival(officeId: number): Promise<boolean> {
-  const { waReadyLocal } = await import("@/lib/whatsapp");
+  const { waReadyLocal, waReadyDb, hostsOfficeLocally } = await import("@/lib/whatsapp");
+  const local = hostsOfficeLocally(officeId);
+  const ready = () => local ? Promise.resolve(waReadyLocal(officeId)) : waReadyDb(officeId);
   const until = Date.now() + WA_REVIVAL_MAX_MS;
   while (Date.now() < until) {
-    if (waReadyLocal(officeId)) return true;
+    if (await ready()) return true;
     await new Promise((r) => setTimeout(r, WA_REVIVAL_STEP_MS));
   }
-  return waReadyLocal(officeId);
+  return ready();
 }
 
 // عدد الأيام لكلّ مكتب (Tower.reminderDays) — فارغ = يومان (السلوك القديم). طلب محمد 2026-08-09.
@@ -626,6 +628,8 @@ export function startScheduler() {
     if (!isLeaderNow()) return;
     // القائد يستضيف واتساب لكل المكاتب (يشمل حالة تولّي القيادة بعد انطفاء غيره)
     void ensureOfficeWhatsApp();
+    const { centralBeatFresh } = await import("@/lib/centralJobs");
+    const centralUp = await centralBeatFresh();
     // أوقات وكيل هذا العامل حصراً (عزل الوكلاء): كل قائد وكيلٍ يقرأ أوقاته هو —
     // تغيير وكيلٍ لأوقاته لا يمسّ بقية الوكلاء (كانت المفاتيح عامة مشتركة — سُدّت)
     const { getAgentSetting } = await import("@/lib/agentSettings");
@@ -635,7 +639,7 @@ export function startScheduler() {
     // مكتب يفتح 12:00 وآخر 2:00)، والمكتب بلا وقتٍ خاص يتبع وقت الوكيل العام.
     // الإرسال التلقائي فقط لمكاتب "الإرسال الصامت" (silent != "0")؛
     // مكاتب غير الصامتة تنتظر موافقة المستخدم عند أول دخول يومي.
-    {
+    if (!centralUp) {
       const offs = await prisma.tower.findMany({
         where: {
           isDeleted: false,
@@ -671,7 +675,7 @@ export function startScheduler() {
     }
     // رسائل الديون اليومية: لمكاتب فعّلت الخانة، بوقتها الخاص debtReminderTime (أو وقت تذكير المكتب/الوكيل).
     // عزل: مكاتب وكيل هذا العامل حصراً (agentId).
-    {
+    if (!centralUp) {
       const debtOffs = await prisma.tower.findMany({
         where: { isDeleted: false, debtReminderEnabled: "1", NOT: { waEnabled: "0" }, ...(wAgent != null ? { agentId: wAgent } : {}) },
         select: { id: true, reminderTime: true, debtReminderTime: true },
@@ -686,7 +690,7 @@ export function startScheduler() {
     // (`expiredNoticeTime` ← وقتُ تذكير الانتهاء ← وقتُ الوكيل). وعزلٌ بـ`agentId`.
     // 🔑 والتفعيلُ **صريحٌ لا افتراضيّ**: ميزةٌ تُرسل رسائلَ لا تُشتغل بنفسها على مكاتبَ
     //    لم يطلبها أصحابُها — فمَن لم يُفعّلها لا يتغيّر عنده شيء.
-    {
+    if (!centralUp) {
       const expOffs = await prisma.tower.findMany({
         where: { isDeleted: false, expiredNoticeEnabled: "1", NOT: { waEnabled: "0" }, ...(wAgent != null ? { agentId: wAgent } : {}) },
         select: { id: true, reminderTime: true, expiredNoticeTime: true },
@@ -700,7 +704,7 @@ export function startScheduler() {
     // 🔑 ولا يكفي التصريفُ على حدث «ready»: لو كان الواتسابُ جاهزاً وفشل إرسالٌ عارضٌ
     //    (شبكةٌ لحظيّة) لَبقي الصفُّ معلَّقاً ولا حدثَ جهوزيّةٍ جديدٌ يأتي — فيموت بعد
     //    ٢٤ ساعةً بلا محاولةٍ ثانية. فالحدثُ للاستئناف السريع، والدورةُ للضمان.
-    if (Number(nowHM.slice(3)) % 10 === 0) {
+    if (!centralUp && Number(nowHM.slice(3)) % 10 === 0) {
       const waOffs = await prisma.tower.findMany({
         where: { isDeleted: false, NOT: { waEnabled: "0" }, ...(wAgent != null ? { agentId: wAgent } : {}) },
         select: { id: true },
@@ -762,7 +766,7 @@ export function startScheduler() {
 
     // تنظيف يومي (03:00 بغداد): حذف أرشيف الرسائل >3 أيام
     if (nowHM === "03:00") {
-      purgeOldMessages(3).catch((e) => console.error("[scheduler] purge messages:", e));
+      if (!centralUp) purgeOldMessages(3).catch((e) => console.error("[scheduler] purge messages:", e));
       // حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (احتياط محلي — الكرون السحابي يفعلها أيضاً)
       import("@/lib/field").then((m) => m.purgeOldArchivedCards()).catch((e) => console.error("[scheduler] purge archive:", e));
       import("@/lib/tracking").then((m) => m.purgeOldTrackPoints()).catch((e) => console.error("[scheduler] purge track:", e));

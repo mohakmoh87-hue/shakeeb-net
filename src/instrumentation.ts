@@ -27,6 +27,13 @@ export async function register() {
     };
     setTimeout(() => void cronKick("إقلاع الموقع"), 30_000);
     setInterval(() => void cronKick("دوريّة"), 5 * 60_000);
+
+    const { startCentralHeartbeat, CENTRAL_JOBS } = await import("@/lib/centralJobs");
+    startCentralHeartbeat();
+    if (CENTRAL_JOBS) {
+      const { startOdooSync } = await import("@/lib/odooSync");
+      startOdooSync();
+    }
   }
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.RUN_WORKER === "1") {
     // ═════ ب-١/الأصل ٣ · القفلُ **أوّلاً** (2026-08-13) ═════

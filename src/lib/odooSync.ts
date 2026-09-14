@@ -200,13 +200,33 @@ async function odooOfficeScope(officeId: number): Promise<{ officeId?: number }>
   return group.length > 1 ? { officeId } : {};
 }
 
+async function odooAgentScope(): Promise<number[] | null> {
+  const { CENTRAL_JOBS, centralBeatFresh } = await import("@/lib/centralJobs");
+  if (CENTRAL_JOBS) {
+    const ags = await prisma.agent.findMany({ where: { isDeleted: false }, select: { id: true } });
+    return ags.map((a) => a.id);
+  }
+  if (!isLeaderNow()) return null;
+  if (await centralBeatFresh()) return null;
+  const a = getWorkerAgentId();
+  return a == null ? null : [a];
+}
+
+async function odooTowerScope(): Promise<{ agentId: number; towerId: number }[]> {
+  const { CENTRAL_JOBS, centralBeatFresh } = await import("@/lib/centralJobs");
+  if (CENTRAL_JOBS) {
+    const towers = await prisma.tower.findMany({ where: { isDeleted: false, agentId: { not: null } }, select: { id: true, agentId: true } });
+    return towers.map((t) => ({ agentId: t.agentId as number, towerId: t.id }));
+  }
+  if (await centralBeatFresh()) return [];
+  const agentId = getWorkerAgentId();
+  const towerId = getWorkerTowerId();
+  if (agentId == null || towerId == null) return [];
+  return [{ agentId, towerId }];
+}
+
 // ===== السحب (كلّ ١٠د): تذاكر جديدة + رسيف Change Team + إنشاء بطاقات + مصالحة القائمة =====
-async function runPull(): Promise<void> {
-  if (pulling) return; pulling = true;
-  try {
-    if (!isLeaderNow()) return;
-    const agentId = getWorkerAgentId();
-    if (agentId == null) return;
+async function pullAgent(agentId: number): Promise<void> {
     for (const o of await offices(agentId)) {
       if (!(await isActive(o))) continue; // معطّل بلا بطاقات مفتوحة ⇒ لا مزامنة
       const enabled = o.odooEnabled === "1";
@@ -293,6 +313,16 @@ async function runPull(): Promise<void> {
         await saveOdooState(o, { odooLastOk: null, odooLastError: String((e as Error).message ?? "خطأ").slice(0, 200) }).catch(() => {});
       }
     }
+}
+
+async function runPull(): Promise<void> {
+  if (pulling) return; pulling = true;
+  try {
+    const scope = await odooAgentScope();
+    if (scope) for (const agentId of scope) {
+      try { await pullAgent(agentId); }
+      catch (e) { console.error(`[odoo-sync] pull agent ${agentId}:`, e instanceof Error ? e.message : e); }
+    }
   } catch (e) {
     console.error("[odoo-sync] pull:", e instanceof Error ? e.message : e);
   } finally { pulling = false; }
@@ -302,10 +332,11 @@ async function runPull(): Promise<void> {
 async function runPush(): Promise<void> {
   if (pushing) return; pushing = true;
   try {
-    if (!isLeaderNow()) return;
-    const agentId = getWorkerAgentId();
-    if (agentId == null) return;
-    await pushAgentToOdoo(agentId);
+    const scope = await odooAgentScope();
+    if (scope) for (const agentId of scope) {
+      try { await pushAgentToOdoo(agentId); }
+      catch (e) { console.error(`[odoo-sync] push agent ${agentId}:`, e instanceof Error ? e.message : e); }
+    }
   } catch (e) {
     console.error("[odoo-sync] push:", e instanceof Error ? e.message : e);
   } finally { pushing = false; }
@@ -533,12 +564,7 @@ async function runTechAlerts(o: { id: number; name: string | null; agentId: numb
 //       التشعيل)، ومضت مهلة رؤية ١٠ دقائق على سحبها، وبسقف ٥ رسائل للمكتب في الدورة.
 // الترتيب إلزاميّ: **أودو أوّلاً** (فعلٌ قابل للتكرار) ثمّ إدراج الواتساب في الطابور — كي لا يُبلَّغ
 // المشترك بتأجيلٍ لا تعلمه أودو (فتقع الغرامة والمشترك مُبلَّغ).
-async function runSlaSweep(): Promise<void> {
-  if (slaBusy) return; slaBusy = true;
-  try {
-    if (!isLeaderNow()) return;
-    const agentId = getWorkerAgentId();
-    if (agentId == null) return;
+async function slaSweepAgent(agentId: number): Promise<void> {
     const sendAllowed = await sendAllowedFor(agentId); // إذن مالك النظام — يُفحَص كلّ دورة
     for (const o of await offices(agentId)) {
       const listIds = await listIdsOf(o.id);
@@ -647,6 +673,16 @@ async function runSlaSweep(): Promise<void> {
         }
       }
     }
+}
+
+async function runSlaSweep(): Promise<void> {
+  if (slaBusy) return; slaBusy = true;
+  try {
+    const scope = await odooAgentScope();
+    if (scope) for (const agentId of scope) {
+      try { await slaSweepAgent(agentId); }
+      catch (e) { console.error(`[odoo-sla] sweep agent ${agentId}:`, e instanceof Error ? e.message : e); }
+    }
   } catch (e) {
     console.error("[odoo-sla] sweep:", e instanceof Error ? e.message : e);
   } finally { slaBusy = false; }
@@ -666,12 +702,7 @@ async function ourPhoneFor(bg: string | null, towerId: number): Promise<string |
 // ===== طابور رسائل المشتركين (كلّ ٣٠ث، على **حاسبة المكتب نفسها** لا القائد) =====
 // جلسة الواتساب مربوطةٌ بحاسبة مكتبها، فما دامت مطفأةً تبقى الرسالة مؤرشفةً على البطاقة
 // وتُرسَل لحظة فتحها. وتُلغى بعد يومٍ كامل (قرار محمد) بشارةٍ على البطاقة.
-async function runWaQueue(): Promise<void> {
-  if (waBusy) return; waBusy = true;
-  try {
-    const agentId = getWorkerAgentId();
-    const towerId = getWorkerTowerId();
-    if (agentId == null || towerId == null) return; // حاسبةٌ غير مربوطةٍ بمكتب لا تُرسل
+async function waQueueTower(agentId: number, towerId: number): Promise<void> {
     // عزل: المكتب يتبع وكيل هذه الحاسبة
     const office = await prisma.tower.findFirst({
       where: { id: towerId, agentId, isDeleted: false },
@@ -763,6 +794,15 @@ async function runWaQueue(): Promise<void> {
         await prisma.taskCard.update({ where: { id: c.id }, data: { slaWaSentAt: null, slaWaError: String(res.error ?? "تعذّر الإرسال").slice(0, 160) } });
       }
     }
+}
+
+async function runWaQueue(): Promise<void> {
+  if (waBusy) return; waBusy = true;
+  try {
+    for (const { agentId, towerId } of await odooTowerScope()) {
+      try { await waQueueTower(agentId, towerId); }
+      catch (e) { console.error(`[odoo-sla] wa-queue tower ${towerId}:`, e instanceof Error ? e.message : e); }
+    }
   } catch (e) {
     console.error("[odoo-sla] wa-queue:", e instanceof Error ? e.message : e);
   } finally { waBusy = false; }
@@ -777,5 +817,5 @@ export function startOdooSync(): void {
   setInterval(() => { void runPush(); }, PUSH_MS);
   setInterval(() => { void runSlaSweep(); }, SLA_MS);
   setInterval(() => { void runWaQueue(); }, WA_MS);
-  console.log("[odoo-sync] بدأت مزامنة تذاكر أودو (سحب 10د · دفع 20ث · مهلة 1د · طابور المشتركين 30ث) — محليّ على العامل");
+  console.log("[odoo-sync] بدأت مزامنة تذاكر أودو (سحب 10د · دفع 20ث · مهلة 1د · طابور المشتركين 30ث)");
 }

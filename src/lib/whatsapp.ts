@@ -902,6 +902,12 @@ export function waReadyLocal(officeId: number): boolean {
   return s.state === "ready" && !!s.client;
 }
 
+/** جاهزيّةُ جلسة المكتب من `wa_sessions` — لمسار الخادم المركزيّ (لا عميلَ محلّيّاً). */
+export async function waReadyDb(officeId: number): Promise<boolean> {
+  const s = await prisma.waSession.findUnique({ where: { towerId: officeId }, select: { state: true, updatedAt: true } }).catch(() => null);
+  return !!s && s.state === "ready" && Date.now() - s.updatedAt.getTime() < 5 * 60_000;
+}
+
 /** الإرسالُ الفعليُّ — لا يُنادى إلّا من داخل البوّابة أعلاه. */
 async function sendWhatsAppNow(officeId: number, phone: string, text: string, image?: string | null): Promise<SendResult> {
   const s = store(officeId);
