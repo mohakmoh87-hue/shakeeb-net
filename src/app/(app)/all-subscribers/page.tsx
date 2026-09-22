@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import PageHeader from "@/components/PageHeader";
 import { usePermission } from "@/lib/usePermission";
-import { formatExpiry } from "@/lib/format";
+import { formatExpiry, formatDateTime } from "@/lib/format";
+import { askVoidEffect } from "@/lib/voidPrompt";
 
 // ===== صفحة «كلّ المشتركين» (طلب محمد 2026-08-09) — تُفتح من مربّع المشتركين بالرئيسيّة =====
 // قائمة كلّ المشتركين (كلّ مكتبٍ بمكتبه، والمدير يرى الكلّ) + تحديد بمربّعات + تحديد الكلّ،
@@ -16,6 +17,16 @@ type Row = {
   packageName: string | null; price: number; online: boolean | null;
 };
 type Office = { id: number; name: string | null };
+// ===== قائمة «المفعّلون» (طلب محمد 2026-09-23) — سطرٌ لكلّ تفعيل بين تاريخين =====
+// المبالغ تصل فقط لمن يملك مشاهدة الحسابات أو التقارير (showMoney من الخادم).
+type Act = {
+  id: number; date: string | null; subscriberId: number | null; name: string | null; netUser: string | null;
+  phone: string | null; office: string | null; towerId: number | null; package: string | null;
+  isMaster: boolean; by: string | null; times: number;
+  price?: number; paid?: number; addPrice?: number; carry?: number;
+};
+// يومُ بغداد (UTC+3) بصيغة YYYY-MM-DD — لا يومُ المتصفّح
+const baghdadToday = () => new Date(Date.now() + 3 * 3600000).toISOString().slice(0, 10);
 // القوالب الفعّالة من /api/sms-templates/effective: نصّ المكتب ← الوكيل ← الافتراضيّ،
 // زائداً القوالب الحرّة. (قراءة صفوف القاعدة وحدها كانت تُظهر القائمة فارغة — بلاغ محمد.)
 type Tpl = { key: string; type: string; text: string; scope: "office" | "agent" | "default" | "custom" };
@@ -45,12 +56,21 @@ export default function AllSubscribersPage() {
 
   // الفلاتر
   const [office, setOffice] = useState<string>(sp.get("office") ?? "all");
-  const [status, setStatus] = useState<"all" | "active" | "online" | "expired">("all");
+  const [status, setStatus] = useState<"all" | "active" | "online" | "expired" | "activated">("all");
   const [days, setDays] = useState<string>(""); // "" | "1" | "2" | "3"
   const [until, setUntil] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
+
+  // قائمة «المفعّلون»: مداها مستقلّ عن مدى الانتهاء، ويبدأ بيوم بغداد الحاليّ
+  const [acts, setActs] = useState<Act[]>([]);
+  const [actFrom, setActFrom] = useState(baghdadToday());
+  const [actTo, setActTo] = useState(baghdadToday());
+  const [showMoney, setShowMoney] = useState(false);
+  const [actSums, setActSums] = useState<{ paid: number } | null>(null);
+  const [actSort, setActSort] = useState<{ key: keyof Act; dir: 1 | -1 }>({ key: "id", dir: -1 });
+  const [sort, setSort] = useState<{ key: keyof Row; dir: 1 | -1 } | null>(null);
 
   // إرسال رسالة
   const [sendOpen, setSendOpen] = useState(false);
@@ -79,7 +99,27 @@ export default function AllSubscribersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const loadActs = useCallback(() => {
+    setLoading(true); setMsg("");
+    const p = new URLSearchParams({ office, from: actFrom, to: actTo, limit: "2000" });
+    if (q.trim()) p.set("q", q.trim());
+    fetch(`/api/subscribers/activations?${p.toString()}`)
+      .then(async (r) => {
+        const d = await r.json().catch(() => null);
+        if (!r.ok || !d) throw new Error(d?.error ?? "تعذّر جلب التفعيلات");
+        return d;
+      })
+      .then((d) => {
+        setActs(d.rows ?? []); setTotal(d.total ?? 0); setShowMoney(!!d.showMoney);
+        setActSums(d.sums ?? null); setChecked(new Set());
+        if (d.truncated) setMsg("المعروض أوّل ٢٠٠٠ تفعيل — ضيّق المدى لرؤية الباقي");
+      })
+      .catch((e) => { setActs([]); setTotal(0); setMsg((e as Error).message); })
+      .finally(() => setLoading(false));
+  }, [office, actFrom, actTo, q]);
+
   const load = useCallback(() => {
+    if (status === "activated") { loadActs(); return; }
     setLoading(true); setMsg("");
     const p = new URLSearchParams({ office, status, limit: "1000" });
     if (days) p.set("days", days);
@@ -94,9 +134,69 @@ export default function AllSubscribersPage() {
       })
       .catch(() => setMsg("تعذّر الاتصال"))
       .finally(() => setLoading(false));
-  }, [office, status, days, until, from, to, q]);
+  }, [office, status, days, until, from, to, q, loadActs]);
 
   useEffect(() => { load(); }, [load]);
+
+  // الترتيب: ضغطةٌ على العنوان تصاعديّاً وضغطةٌ تعكسه — للجدولين معاً
+  const cmp = (a: unknown, b: unknown, dir: 1 | -1) => {
+    const empty = (v: unknown) => v == null || v === "";
+    if (empty(a) && empty(b)) return 0;
+    if (empty(a)) return 1;
+    if (empty(b)) return -1;
+    if (typeof a === "number" && typeof b === "number") return (a - b) * dir;
+    if (typeof a === "boolean" && typeof b === "boolean") return ((a ? 1 : 0) - (b ? 1 : 0)) * dir;
+    return String(a).localeCompare(String(b), "ar", { numeric: true }) * dir;
+  };
+  const sortedActs = useMemo(
+    () => [...acts].sort((a, b) => cmp(a[actSort.key], b[actSort.key], actSort.dir)),
+    [acts, actSort],
+  );
+  const sortedRows = useMemo(
+    () => (sort ? [...rows].sort((a, b) => cmp(a[sort.key], b[sort.key], sort.dir)) : rows),
+    [rows, sort],
+  );
+  const toggleActSort = (key: keyof Act) => setActSort((s) => (s.key === key ? { key, dir: (s.dir === 1 ? -1 : 1) as 1 | -1 } : { key, dir: 1 }));
+  const toggleSort = (key: keyof Row) => setSort((s) => (s && s.key === key ? { key, dir: (s.dir === 1 ? -1 : 1) as 1 | -1 } : { key, dir: 1 }));
+  const actArrow = (key: keyof Act) => (actSort.key === key ? (actSort.dir === 1 ? " ↑" : " ↓") : " ↕");
+  const rowArrow = (key: keyof Row) => (sort?.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : " ↕");
+
+  // تصدير إكسل: CSV بترميز UTF-8 (BOM) — يفتحه إكسل بعربيّةٍ سليمة، بلا مكتبة
+  function exportActs() {
+    const head = ["رقم الوصل", "التاريخ", "المشترك", "اليوزر", "الهاتف", "المكتب", "الباقة",
+      ...(showMoney ? ["السعر", "الواصل", "الإضافة", "الدين المرحّل"] : []), "النوع", "بواسطة", "مكرّر"];
+    const cell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [head.map(cell).join(",")];
+    for (const a of sortedActs) {
+      lines.push([
+        a.id, a.date ? formatDateTime(a.date) : "", a.name ?? "", a.netUser ?? "", a.phone ?? "", a.office ?? "", a.package ?? "",
+        ...(showMoney ? [a.price ?? 0, a.paid ?? 0, a.addPrice ?? 0, a.carry ?? 0] : []),
+        a.isMaster ? "ماستر" : "تفعيل", a.by ?? "", a.times,
+      ].map(cell).join(","));
+    }
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `activations-${actFrom}_${actTo}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // حذف وصل تفعيل — نفس مسار سجلّ الوصولات المحروس (عكسيٌّ أو ورقيّ)، لصاحب الصلاحية وحده
+  async function removeAct(a: Act) {
+    if (busy) return;
+    const choice = await askVoidEffect(`وصل التفعيل #${a.id} — ${a.name ?? "مشترك"}`);
+    if (!choice) return;
+    setBusy(true); setMsg("");
+    const r = await fetch(`/api/subscription-entries/${a.id}/void`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reverse: choice.reverse }),
+    }).catch(() => null);
+    const d = await r?.json().catch(() => ({}));
+    setBusy(false);
+    setMsg(r?.ok ? `🗑️ حُذف وصل التفعيل #${a.id}` : (d?.error ?? "تعذّر حذف الوصل"));
+    if (r?.ok) loadActs();
+  }
 
   const allOn = rows.length > 0 && checked.size === rows.length;
   const toggleAll = () => setChecked(allOn ? new Set() : new Set(rows.map((r) => r.id)));
@@ -168,8 +268,20 @@ export default function AllSubscribersPage() {
             <option value="active">الفعّالين</option>
             <option value="online">المتصلين الآن</option>
             <option value="expired">المنتهين</option>
+            <option value="activated">المفعّلين</option>
           </select>
         </L>
+        {status === "activated" && (
+          <L label="تفعيلات بين تاريخين">
+            <div className="flex items-center gap-1">
+              <input type="date" value={actFrom} onChange={(e) => setActFrom(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              <span className="text-slate-400">→</span>
+              <input type="date" value={actTo} onChange={(e) => setActTo(e.target.value)} dir="ltr" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              <button onClick={() => { const t = baghdadToday(); setActFrom(t); setActTo(t); }}
+                className="rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200">اليوم</button>
+            </div>
+          </L>
+        )}
         <L label="ينتهي خلال">
           <select value={days} onChange={(e) => { setDays(e.target.value); setUntil(""); setFrom(""); setTo(""); }} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm">
             <option value="">—</option>
@@ -198,34 +310,94 @@ export default function AllSubscribersPage() {
 
       {/* شريط الإجراءات */}
       <div data-app-bar className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-        <span className="text-sm font-bold text-slate-700">المجموع: {fmt(total)}</span>
-        <span className="text-sm text-slate-500">· المحدَّد: <b className="text-mynet-blue">{checked.size}</b></span>
-        <div className="flex-1" />
-        <button onClick={() => { setSendOpen(true); setMsg(""); }} disabled={!checked.size || busy}
-          className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">📩 إرسال رسالة للمحدَّدين</button>
-        <button onClick={printReceipts} disabled={!checked.size || busy}
-          className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-40">🖨️ طباعة وصولاتهم</button>
+        {status === "activated" ? (
+          <>
+            <span className="text-sm font-bold text-slate-700">التفعيلات: {fmt(total)}</span>
+            {showMoney && actSums && <span className="text-sm text-slate-500">· مجموع الواصل: <b className="text-emerald-700">{fmt(actSums.paid)}</b></span>}
+            <div className="flex-1" />
+            <button onClick={exportActs} disabled={!acts.length}
+              className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">📊 تصدير إكسل</button>
+          </>
+        ) : (
+          <>
+            <span className="text-sm font-bold text-slate-700">المجموع: {fmt(total)}</span>
+            <span className="text-sm text-slate-500">· المحدَّد: <b className="text-mynet-blue">{checked.size}</b></span>
+            <div className="flex-1" />
+            <button onClick={() => { setSendOpen(true); setMsg(""); }} disabled={!checked.size || busy}
+              className="rounded-lg bg-emerald-600 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">📩 إرسال رسالة للمحدَّدين</button>
+            <button onClick={printReceipts} disabled={!checked.size || busy}
+              className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-40">🖨️ طباعة وصولاتهم</button>
+          </>
+        )}
       </div>
       {msg && <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">{msg}</div>}
 
-      {/* الجدول */}
+      {/* جدول التفعيلات — سطرٌ لكلّ تفعيل، وترتيبٌ بكلّ عمود */}
+      {status === "activated" ? (
+        <div className="overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full text-right text-xs">
+            <thead className="sticky top-0 bg-slate-50 text-slate-600">
+              <tr>
+                {([["id", "رقم الوصل"], ["date", "الوقت"], ["name", "المشترك"], ["netUser", "اليوزر"],
+                   ["office", "المكتب"], ["package", "الباقة"],
+                   ...(showMoney ? [["price", "السعر"], ["paid", "الواصل"], ["addPrice", "الإضافة"], ["carry", "الدين المرحّل"]] : []),
+                   ["isMaster", "النوع"], ["by", "بواسطة"], ["times", "مكرّر"]] as [keyof Act, string][]).map(([k, label]) => (
+                  <th key={k} className="cursor-pointer select-none p-2 hover:text-mynet-blue" onClick={() => toggleActSort(k)}>{label}<i className="not-italic text-slate-400">{actArrow(k)}</i></th>
+                ))}
+                {can("receipts.void") && <th className="p-2"></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={14} className="p-8 text-center text-slate-400">جاري التحميل…</td></tr>
+              ) : sortedActs.length === 0 ? (
+                <tr><td colSpan={14} className="p-8 text-center text-slate-400">لا تفعيلات في هذا المدى</td></tr>
+              ) : sortedActs.map((a) => (
+                <tr key={a.id} className={`border-t border-slate-100 ${a.times > 1 ? "bg-amber-50" : ""}`}>
+                  <td className="p-2 text-slate-500" dir="ltr">{a.id}</td>
+                  <td className="whitespace-nowrap p-2 text-slate-600" dir="ltr">{a.date ? formatDateTime(a.date) : "—"}</td>
+                  <td className="p-2 font-semibold text-slate-800">{a.name ?? "—"}</td>
+                  <td className="p-2 text-slate-500" dir="ltr">{a.netUser ?? "—"}</td>
+                  <td className="p-2 text-slate-500">{a.office ?? "—"}</td>
+                  <td className="p-2 text-slate-500">{a.package ?? "—"}</td>
+                  {showMoney && <td className="p-2 text-slate-600">{fmt(a.price)}</td>}
+                  {showMoney && <td className="p-2 font-bold text-emerald-700">{fmt(a.paid)}</td>}
+                  {showMoney && <td className="p-2 text-slate-500">{a.addPrice ? fmt(a.addPrice) : "—"}</td>}
+                  {showMoney && <td className={`p-2 font-bold ${(a.carry ?? 0) > 0 ? "text-red-600" : "text-slate-400"}`}>{(a.carry ?? 0) > 0 ? fmt(a.carry) : "—"}</td>}
+                  <td className="p-2">{a.isMaster ? <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-700">🅜 ماستر</span> : <span className="text-slate-500">تفعيل</span>}</td>
+                  <td className="p-2 text-slate-500">{a.by ?? "—"}</td>
+                  <td className="p-2">{a.times > 1 ? <span className="rounded bg-amber-200 px-1.5 py-0.5 font-extrabold text-amber-900">{a.times}×</span> : <span className="text-slate-300">—</span>}</td>
+                  {can("receipts.void") && (
+                    <td className="p-2">
+                      <button onClick={() => void removeAct(a)} disabled={busy}
+                        className="rounded-lg bg-red-50 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-100 disabled:opacity-40">🗑️ حذف</button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+      /* الجدول */
       <div className="overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-right text-xs">
           <thead className="sticky top-0 bg-slate-50 text-slate-600">
             <tr>
               <th className="p-2"><input type="checkbox" checked={allOn} onChange={toggleAll} title="تحديد الكل" className="h-4 w-4" /></th>
-              <th className="p-2">المشترك</th><th className="p-2">اليوزر</th><th className="p-2">الهاتف</th>
-              <th className="p-2">العنوان</th><th className="p-2">الباقة</th><th className="p-2">الانتهاء</th>
-              <th className="p-2">الدين</th><th className="p-2">المكتب</th>
+              {([["name", "المشترك"], ["netUser", "اليوزر"], ["phone", "الهاتف"], ["address", "العنوان"],
+                 ["packageName", "الباقة"], ["dateTo", "الانتهاء"], ["carry", "الدين"], ["office", "المكتب"]] as [keyof Row, string][]).map(([k, label]) => (
+                <th key={k} className="cursor-pointer select-none p-2 hover:text-mynet-blue" onClick={() => toggleSort(k)}>{label}<i className="not-italic text-slate-400">{rowArrow(k)}</i></th>
+              ))}
               {status === "online" && <th className="p-2">الاتصال</th>}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={10} className="p-8 text-center text-slate-400">جاري التحميل…</td></tr>
-            ) : rows.length === 0 ? (
+            ) : sortedRows.length === 0 ? (
               <tr><td colSpan={10} className="p-8 text-center text-slate-400">لا مشتركين مطابقين</td></tr>
-            ) : rows.map((r) => (
+            ) : sortedRows.map((r) => (
               <tr key={r.id} className={`border-t border-slate-100 ${checked.has(r.id) ? "bg-blue-50" : ""}`} onClick={() => toggle(r.id)} style={{ cursor: "pointer" }}>
                 <td className="p-2"><input type="checkbox" checked={checked.has(r.id)} onChange={() => toggle(r.id)} onClick={(e) => e.stopPropagation()} className="h-4 w-4" /></td>
                 <td className="p-2 font-semibold text-slate-800">{r.name ?? "—"}</td>
@@ -242,6 +414,7 @@ export default function AllSubscribersPage() {
           </tbody>
         </table>
       </div>
+      )}
 
       {/* نافذة إرسال الرسالة */}
       {sendOpen && (
