@@ -30,12 +30,20 @@ export async function POST(request: Request) {
   // و«اسم المنفّذ» يُشتقّ من صفّ الفني لا من العميل — كان يُقبل الاثنان بلا فحص إطلاقاً.
   const officeId = await listOfficeId(Number(b.listId));
   const agentTowers = actor.isTech ? [] : await agentTowerIds(actor.session ?? null);
+  // ═════ مكتبُ البطاقة يُختار يدويّاً (قرارُ محمد 2026-09-25) ═════
+  // «تنصيبٌ تابعٌ لمكتب الشهداء رُفعت بطاقتُه من المواصلات» ⇒ المادةُ خرجت من مخزن الشهداء
+  // والمالُ دخل المواصلات. فصار مكتبُ البطاقة يُختار عند الرفع (للمستخدم/المدير لا الفنيّ)،
+  // ويُصادَق ضدّ مكاتب وكيله — وغيابُه يُبقي السلوكَ القديم حرفيّاً.
+  const pickedOffice = !actor.isTech && b.officeId != null ? Number(b.officeId) : null;
+  if (pickedOffice != null && !agentTowers.includes(pickedOffice)) {
+    return NextResponse.json({ error: "المكتب المحدَّد لا يتبع حسابك" }, { status: 403 });
+  }
   let technicianId: number | null = null;
   let assignee: string | null = null;
   if (actor.isTech) {
     technicianId = actor.technicianId; assignee = actor.name;
   } else if (b.technicianId != null) {
-    const ok = await verifyManualAssignee(Number(b.technicianId), officeId, agentTowers);
+    const ok = await verifyManualAssignee(Number(b.technicianId), pickedOffice ?? officeId, agentTowers);
     if (!ok) return NextResponse.json({ error: "الفني غير موجود أو لا يتبع هذا المكتب" }, { status: 400 });
     technicianId = ok.id; assignee = ok.name;
   }
@@ -71,6 +79,7 @@ export async function POST(request: Request) {
   } else if (actor.session?.towerId != null) {
     cardOffice = actor.session.towerId;
   }
+  if (pickedOffice != null) cardOffice = pickedOffice;
   const count = await prisma.taskCard.count({ where: { listId: Number(b.listId), isDeleted: false } });
   const created = await prisma.taskCard.create({
     data: {

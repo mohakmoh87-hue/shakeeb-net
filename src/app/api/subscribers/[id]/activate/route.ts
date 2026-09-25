@@ -223,6 +223,13 @@ export async function POST(
       const e = requireTower(subscriber.towerId, "التفعيل");
       if (e) return e;
     }
+    // ═════ مكتبُ القبض (قرارُ محمد 2026-09-25) ═════
+    // «المكتبُ الذي يفعّل اشتراكاً لمكتبٍ آخر يُسجَّل المبلغُ له لأنّه هو الذي استلمه فعلاً».
+    // يتبع مكتبَ الموظّف المفعِّل: قيدُ التفعيل وحركاتُه الماليّة (فيخرج الوصلُ من طابعته
+    // ويدخل صندوقَه). ويبقى لمكتب المشترك: الدَّينُ والمكافأةُ والقرضُ والرسائل.
+    // مديرٌ بلا مكتب (towerId = null) ⇒ مكتبُ المشترك كما كان حرفيّاً.
+    const cashTowerId = session?.towerId != null ? session.towerId : subscriber.towerId;
+    const crossOffice = cashTowerId !== subscriber.towerId;
     const result = await prisma.$transaction(async (tx) => {
       // استهلاك الكارت ذرّياً عند التأكيد فقط (يمنع تعارض مكتبين)
       if (cardId) {
@@ -254,7 +261,7 @@ export async function POST(
           subscriberId, date: now, dateFrom: start, dateTo, money: total, moneyIn: effPaid,
           addPrice: delivery, // مبلغ التوصيل (للوصل والتقارير)
           moneyCarry: newCarry, moneyType: 1, month: String(months), cardType: pkg.name,
-          card2: cardSerial, towerId: subscriber.towerId, createdByUser: session?.username,
+          card2: cardSerial, towerId: cashTowerId, createdByUser: session?.username,
           userId: session?.userId ?? null, // للتقرير اليومي لكلّ مستخدم
           isMaster: master,
           notes: note ?? null, // ملاحظة الوصل
@@ -282,7 +289,7 @@ export async function POST(
               moneyIn: masterPart, moneyOut: 0,
               notes: `ماستر ${who}${cashPart > 0 ? ` (مختلط: نقدي ${cashPart.toLocaleString("en-US")})` : ""}`,
               date: now, serverDate: now, userId: session?.userId,
-              sourceType: "master", sourceId: entry.id, towerId: subscriber.towerId,
+              sourceType: "master", sourceId: entry.id, towerId: cashTowerId,
             },
           });
         }
@@ -294,7 +301,7 @@ export async function POST(
                 moneyIn: cashIn, moneyOut: 0,
                 notes: `${master ? "تفعيل (نقدي من مختلط ماستر) " : "تفعيل "}${who}`,
                 date: now, serverDate: now, userId: session?.userId,
-                sourceType: "activation", sourceId: entry.id, towerId: subscriber.towerId,
+                sourceType: "activation", sourceId: entry.id, towerId: cashTowerId,
               },
             });
           }
@@ -309,14 +316,14 @@ export async function POST(
             accountId: activationAccount.id,
             notes: `مكتب تفعيل «${activationAccount.name ?? ""}» - ${pkg.name} - ${subscriber.name ?? subscriberId}`,
             date: now, serverDate: now, userId: session?.userId,
-            sourceType: "manual", sourceId: entry.id, towerId: subscriber.towerId,
+            sourceType: "manual", sourceId: entry.id, towerId: cashTowerId,
           },
         });
       }
       await tx.auditLog.create({
         data: {
           userId: session?.userId, action: "ACTIVATE", entity: "subscriber", entityId: String(subscriberId),
-          details: `تفعيل ${pkg.name} - كارت ${cardSerial ?? "بدون"} - اشتراك ${total}${delivery > 0 ? ` - توصيل ${delivery}` : ""} - واصل ${paid} - دين ${newCarry}${sasStale ? " - ⚠️ الساس ما زال منتهياً عند التأكيد: تاريخ الانتهاء محسوبٌ محليّاً وتُصالحه المزامنة" : ""}`,
+          details: `تفعيل ${pkg.name} - كارت ${cardSerial ?? "بدون"} - اشتراك ${total}${delivery > 0 ? ` - توصيل ${delivery}` : ""} - واصل ${paid} - دين ${newCarry}${crossOffice ? ` - قبضه مكتبٌ آخر (${cashTowerId}) لمشترك مكتب ${subscriber.towerId}` : ""}${sasStale ? " - ⚠️ الساس ما زال منتهياً عند التأكيد: تاريخ الانتهاء محسوبٌ محليّاً وتُصالحه المزامنة" : ""}`,
         },
       });
       // مسح دين القرض (إن وُجد) نهائيّاً بلا أيّ أثرٍ ماليّ — التفعيل العاديّ يُسقط القرض.

@@ -263,6 +263,10 @@ export default function FieldManagementPage() {
   const [cardKind, setCardKind] = useState("صيانة");
   const [cardTech, setCardTech] = useState("");
   const [cardDue, setCardDue] = useState("");
+  // مكتبُ البطاقة (قرارُ محمد 2026-09-25): يُختار يدويّاً، ويُقترح مكتبُ المشترك إن طابق
+  // رقمُ الهاتف المكتوبُ في العنوان مشتركاً — فالتنصيبُ يُسجَّل على مكتبه لا على مكتب الرافع.
+  const [cardOffice, setCardOffice] = useState("");
+  const [officeHint, setOfficeHint] = useState<{ name: string | null; officeId: number; officeName: string | null } | null>(null);
   const [sel, setSel] = useState<Card | null>(null);
   const [completing, setCompleting] = useState<Card | null>(null);
   const [postponing, setPostponing] = useState<Card | null>(null);
@@ -507,6 +511,25 @@ export default function FieldManagementPage() {
     else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّرت الإضافة"); }
   }
 
+  // اقتراحُ مكتب البطاقة من أوّل رقم هاتفٍ يُكتَب في العنوان (بحثٌ مؤجَّلٌ ٤٥٠م.ث، عرضٌ فقط)
+  useEffect(() => {
+    const digits = (cardText.match(/\d[\d\s-]{8,}/)?.[0] ?? "").replace(/\D/g, "");
+    const t = setTimeout(() => {
+      if (isTech || addingTo == null || digits.length < 9) { setOfficeHint(null); return; }
+      fetch(`/api/field/subscriber-office?phone=${encodeURIComponent(digits)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          const m = d?.match ?? null;
+          setOfficeHint(m);
+          // يُملأ الاقتراحُ ما دام المستخدمُ لم يختر مكتباً بنفسه
+          if (m && !cardOffice) setCardOffice(String(m.officeId));
+        })
+        .catch(() => {});
+    }, 450);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardText, addingTo, isTech]);
+
   async function addCard(listId: number) {
     if (!canOperate) return;
     const title = cardText.trim();
@@ -516,6 +539,7 @@ export default function FieldManagementPage() {
       listId, title, kind: cardKind,
       technicianId: tech?.id ?? null, assignee: tech?.name ?? null,
       dueDate: cardDue || null,
+      officeId: cardOffice ? Number(cardOffice) : null,
     };
     // 🔴 عالٍ · لا تُمحَ الحقولُ ولا يُبتلَع الخطأُ (اصطاده الفحصُ العدائيّ 2026-08-19):
     //   كان يُصفَّر الإدخالُ **قبل** الإرسال وبلا else ⇒ فشلٌ (جلسةٌ منتهية · عمودٌ حُذف ·
@@ -525,7 +549,7 @@ export default function FieldManagementPage() {
     if (r.ok) {
       const c = await r.json();
       setCards((x) => [...x, c]);
-      setCardText(""); setCardTech(""); setCardDue(""); setCardKind(cardTypes[0]?.name ?? "صيانة");
+      setCardText(""); setCardTech(""); setCardDue(""); setCardKind(cardTypes[0]?.name ?? "صيانة"); setCardOffice(""); setOfficeHint(null);
     } else { const d = await r.json().catch(() => ({})); alert(d.error ?? "تعذّرت إضافةُ البطاقة — لم تُحفَظ، وبياناتُك باقية"); }
   }
   async function addList() {
@@ -1425,6 +1449,23 @@ export default function FieldManagementPage() {
                       )}
                     </div>
                     <input type="date" value={cardDue} onChange={(e) => setCardDue(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs" />
+                    {/* مكتبُ البطاقة: المالُ والمخزنُ يتبعانه — يُقترح مكتبُ المشترك ويبقى القرارُ للرافع */}
+                    {!isTech && offices.length > 1 && (
+                      <>
+                        <select value={cardOffice} onChange={(e) => setCardOffice(e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                          <option value="">🏢 مكتب البطاقة — مكتبي</option>
+                          {offices.map((o) => <option key={o.id} value={o.id}>🏢 {o.name ?? `مكتب ${o.id}`}</option>)}
+                        </select>
+                        {officeHint && (
+                          <div className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
+                            المشترك «{officeHint.name ?? "؟"}» يتبع مكتب {officeHint.officeName ?? officeHint.officeId}
+                            {String(officeHint.officeId) !== cardOffice && (
+                              <button onClick={() => setCardOffice(String(officeHint.officeId))} className="mr-1 rounded bg-amber-200 px-1.5 py-0.5 font-bold text-amber-900">اختره</button>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
                     <div className="flex gap-1">
                       <button onClick={() => addCard(l.id)} className="flex-1 rounded-lg bg-mynet-blue px-3 py-1 text-sm font-semibold text-white">إضافة البطاقة</button>
                       <button onClick={() => { setAddingTo(null); setCardText(""); setCardTech(""); setCardDue(""); setCardKind("maintenance"); }} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-200">✕</button>
