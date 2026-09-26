@@ -26,6 +26,22 @@ export default function TechDetail({ technicianId, name, onSettled, onClose }: {
   const [loading, setLoading] = useState(true);
   const [openSalary, setOpenSalary] = useState(false);
 
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // مسحُ خصم يومٍ من هنا أيضاً — «زرُّ الحذف في كلّ مكانٍ يظهر فيه الخصم» (طلبُ محمد 2026-09-27).
+  // السببُ إلزاميٌّ، والخادمُ يرفض يوماً مختوماً بكشفِ راتبٍ مصروف.
+  async function clearDeduction(attendanceId: number, dayKey: string) {
+    const reason = prompt(`سببُ مسح خصم يوم ${dayKey} (إلزاميّ):`)?.trim();
+    if (!reason) return;
+    const r = await fetch("/api/field/attendance/clear-deduction", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attendanceId, reason }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(d.error ?? "تعذّر مسحُ الخصم"); return; }
+    setReloadKey((k) => k + 1);
+  }
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -45,7 +61,7 @@ export default function TechDetail({ technicianId, name, onSettled, onClose }: {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [technicianId]);
+  }, [technicianId, reloadKey]);
 
   const period = sal?.period ?? lv?.period ?? null;
   const st = sal?.statement;
@@ -122,7 +138,12 @@ export default function TechDetail({ technicianId, name, onSettled, onClose }: {
                       <div key={a.id} className={`rounded-xl border p-2.5 ${ded > 0 ? "border-amber-200 bg-amber-50/40" : "border-slate-200 bg-white"}`}>
                         <div className="flex items-center justify-between">
                           <span className="font-bold tabular-nums text-slate-800" dir="ltr">{a.dayKey}</span>
-                          {ded > 0 ? <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">خصم {money(ded)}</span> : <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">حضور</span>}
+                          {ded > 0 ? (
+                            <span className="flex items-center gap-1">
+                              <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">خصم {money(ded)}</span>
+                              <button onClick={() => void clearDeduction(a.id, a.dayKey)} title="حذف هذا الخصم" className="rounded px-1 text-rose-500 hover:bg-rose-50">🗑️</button>
+                            </span>
+                          ) : <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">حضور</span>}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
                           <span>دخول <b className="tabular-nums text-slate-700" dir="ltr">{hm(a.checkIn)}</b></span>

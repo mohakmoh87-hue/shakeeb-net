@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import MoneyTxModal from "@/components/MoneyTxModal";
 
-type Item = { date: string; type: string; label: string; amount: number; reason?: string; txId?: number };
+type Item = { date: string; type: string; label: string; amount: number; reason?: string; txId?: number; attendanceId?: number; adjId?: number };
 // أ-٧ · وقتا البصم مع تفصيل اليوم (اختياريّان: الكشوفُ القديمة المحفوظة بلاهما)
 type Day = { date: string; amount: number; note: string; checkIn?: string | null; checkOut?: string | null };
 type Statement = {
@@ -159,6 +159,26 @@ export default function SalaryModal({ technicianId, name, onClose, onSettled }: 
                 const r = await fetch("/api/field/salary/clear-overtime", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ technicianId, dayKey }) });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok) { alert(d.error ?? "تعذّر حذفُ الإضافي"); return; }
+                load();
+              } : undefined}
+              onDeleteDeduction={isManager ? async (row) => {
+                // خصمُ الحضور يُمسَح بسببٍ إلزاميّ (سجلٌّ لا محو)، وخصمُ «مؤكّدة» يُحذف بلقطةِ تدقيق.
+                // والخادمُ يرفض الاثنين إن كان اليومُ مختوماً بكشفِ راتبٍ مصروف.
+                if (row.attendanceId) {
+                  const reason = prompt(`سببُ مسح خصم يوم ${row.date} (إلزاميّ):`)?.trim();
+                  if (!reason) return;
+                  const r = await fetch("/api/field/attendance/clear-deduction", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ attendanceId: row.attendanceId, reason }),
+                  });
+                  const d = await r.json().catch(() => ({}));
+                  if (!r.ok) { alert(d.error ?? "تعذّر مسحُ الخصم"); return; }
+                } else if (row.adjId) {
+                  if (!confirm(`حذفُ خصم يوم ${row.date}؟ (يُسجَّل في التدقيق)`)) return;
+                  const r = await fetch(`/api/field/adjustments?id=${row.adjId}`, { method: "DELETE" });
+                  const d = await r.json().catch(() => ({}));
+                  if (!r.ok) { alert(d.error ?? "تعذّر الحذف"); return; }
+                } else return;
                 load();
               } : undefined} />}
 
@@ -516,12 +536,12 @@ function AttendanceLog({ technicianId, isManager, periodFrom, periodTo }:
 }
 
 // لوحة تفاصيل الخانة المختارة — تعرض بنودها المفصّلة
-function DetailPanel({ cat, st, onClose, onClearOvertime }: { cat: string; st: Statement; onClose: () => void; onClearOvertime?: (dayKey: string) => void }) {
+function DetailPanel({ cat, st, onClose, onClearOvertime, onDeleteDeduction }: { cat: string; st: Statement; onClose: () => void; onClearOvertime?: (dayKey: string) => void; onDeleteDeduction?: (row: { date: string; attendanceId?: number; adjId?: number }) => void }) {
   const titles: Record<string, string> = {
     days: "تفصيل مبالغ الأيام", overtime: "تفصيل الإضافي", bonus: "تفصيل المكافآت", credit: "تفصيل الإضافات للحساب (قبض)",
     attded: "تفصيل خصم الحضور", confded: "تفصيل الخصومات المؤكّدة", advance: "تفصيل السحب من الحساب (صرف)", clean: "الأيام السليمة",
   };
-  let rows: { date: string; label: string; amount: number; reason?: string }[] = [];
+  let rows: { date: string; label: string; amount: number; reason?: string; attendanceId?: number; adjId?: number }[] = [];
   // أ-٧ · يُعرَض وقتا البصم مع كلّ يوم — «للمراجعة» لا لمعرفة المبلغ فقط (طلبُ محمد)
   const withTimes = (d: Day, base: string) => {
     const t = d.checkIn || d.checkOut ? `🕐 ${d.checkIn ?? "—"} ← ${d.checkOut ?? "—"}` : "";
@@ -535,7 +555,7 @@ function DetailPanel({ cat, st, onClose, onClearOvertime }: { cat: string; st: S
       attded: ["late", "early"], confded: ["deduction"], advance: ["advance"],
     };
     const wanted = types[cat] ?? [];
-    rows = st.items.filter((it) => wanted.includes(it.type)).map((it) => ({ date: it.date, label: it.label, amount: it.amount, reason: it.reason }));
+    rows = st.items.filter((it) => wanted.includes(it.type)).map((it) => ({ date: it.date, label: it.label, amount: it.amount, reason: it.reason, attendanceId: it.attendanceId, adjId: it.adjId }));
   }
   return (
     <div className="mb-3 rounded-xl border border-mynet-blue/30 bg-mynet-blue/5 p-3">
@@ -558,6 +578,9 @@ function DetailPanel({ cat, st, onClose, onClearOvertime }: { cat: string; st: S
                 <span className={`font-bold ${r.amount > 0 ? "text-emerald-600" : r.amount < 0 ? "text-rose-600" : "text-slate-500"}`}>{r.amount === 0 ? "—" : signed(r.amount)}</span>
                 {cat === "overtime" && onClearOvertime && r.amount > 0 && (
                   <button onClick={() => onClearOvertime(r.date)} title="حذف هذا الإضافي" className="rounded px-1 text-rose-500 hover:bg-rose-50">🗑️</button>
+                )}
+                {onDeleteDeduction && (r.attendanceId || r.adjId) && r.amount < 0 && (
+                  <button onClick={() => onDeleteDeduction(r)} title="حذف هذا الخصم" className="rounded px-1 text-rose-500 hover:bg-rose-50">🗑️</button>
                 )}
               </div>
             </li>

@@ -118,9 +118,19 @@ describe("أ-١ · شاشةُ بصمات الحضور", () => {
     // 🔒 وإخفاءُ الزرّ ليس منعاً: المسارُ نفسُه يرفض حذفَ يومٍ مختومٍ بكشفِ راتب
     const route = read("src/app/api/field/attendance/route.ts");
     assert.match(route, /salaryStatementId: \{ not: null \}/, "المسارُ يحذف يوماً مختوماً بكشفِ راتب");
-    // وقراءةُ السجلّ في نافذة الراتب تبقى **عرضاً بلا أفعال** (أ-٧) فلا تُكرَّر الإدارة
+    // ═════ تحديثُ القاعدة (قرارُ محمد 2026-09-27): «أريد مسحَ الخصم من كلّ مكانٍ يظهر فيه» ═════
+    // كان: نافذةُ الراتب **عرضٌ بلا أفعال** (أ-٧) فلا تُكرَّر إدارةُ الحضور. وصار: **حذفُ الخصم
+    // وحدَه** مسموحٌ منها (خصمُ الحضور بمسارِ المسح بسببٍ إلزاميّ، والخصمُ المؤكَّد بحذف
+    // `adjustments`) — أمّا **تعديلُ أوقات البصمة** فيبقى في صفحة الحضور وحدَها.
     const sal = read("src/components/SalaryModal.tsx");
-    assert.equal(/method: "DELETE"|method: "PATCH"/.test(sal), false,
-      "نافذةُ الراتب تُعدّل الحضور — والإدارةُ مكانُها زرُّ الحضور وحدَه");
+    assert.match(sal, /attendance\/clear-deduction/, "زرُّ حذف خصم الحضور سقط من كشف الراتب");
+    assert.match(sal, /field\/adjustments\?id=/, "زرُّ حذف الخصم المؤكَّد سقط من كشف الراتب");
+    assert.equal(/"\/api\/field\/attendance"[\s\S]{0,120}method: "PATCH"/.test(sal), false,
+      "نافذةُ الراتب تُعدّل أوقاتَ البصمة — وهذا مكانُه صفحةُ الحضور وحدَها");
+    // 🔒 والحارسُ الحقيقيُّ في الخادم لا في إخفاء الزرّ: لا مسحَ بعد صرف الراتب
+    const clearRoute = read("src/app/api/field/attendance/clear-deduction/route.ts");
+    assert.match(clearRoute, /salaryStatementId != null/, "🔴 يُمسَح خصمٌ في كشفِ راتبٍ مصروف");
+    const adjRoute = read("src/app/api/field/adjustments/route.ts");
+    assert.match(adjRoute, /adj\.salaryStatementId != null/, "🔴 يُحذف خصمٌ محسوبٌ في كشفٍ مُسدَّد");
   });
 });
