@@ -158,10 +158,12 @@ export function isFieldManager(session: SessionPayload): boolean {
   return !!session.isAdmin || session.towerId == null;
 }
 
-// حذف نهائي لبطاقات الأرشيف الأقدم من أسبوع (+ صورها) — يُستدعى من الكرون السحابي وتنظيف العامل.
-// يشمل أيضاً بطاقات النمط القديم (محصَّلة ومحذوفة ناعماً) لتحرير المساحة.
+// عمرُ الأرشيف: **شهران** (طلبُ محمد 2026-09-27؛ كان أسبوعاً) — بعدهما تُحذف البطاقةُ وصورتُها
+// نهائيّاً. يُستدعى من الكرون السحابي وتنظيف العامل، ويشمل أيضاً بطاقات النمط القديم
+// (محصَّلة ومحذوفة ناعماً) لتحرير المساحة.
+export const ARCHIVE_KEEP_DAYS = 60;
 export async function purgeOldArchivedCards(): Promise<number> {
-  const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+  const cutoff = new Date(Date.now() - ARCHIVE_KEEP_DAYS * 24 * 3600 * 1000);
   const old = await prisma.taskCard.findMany({
     where: { OR: [{ archivedAt: { lt: cutoff } }, { settled: true, isDeleted: true }] },
     select: { id: true }, take: 1000,

@@ -1931,7 +1931,7 @@ export default function FieldManagementPage() {
         <SupportModal officeId={officeId} onClose={() => setSupportModal(false)} onChange={() => load(officeId)} />
       )}
 
-      {/* نافذة الأرشيف: البطاقات المحصَّلة (أسبوع ثم تُحذف نهائياً) بفلاتر تاريخ/فني/نوع */}
+      {/* نافذة الأرشيف: البطاقات المحصَّلة (شهران ثم تُحذف نهائياً) بفلاتر تاريخ/فني/نوع */}
       {archiveModal && (
         <ArchiveModal cardTypes={cardTypes} offices={offices} onClose={() => setArchiveModal(false)} onChanged={() => load(officeId)} />
       )}
@@ -2489,7 +2489,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   );
 }
 
-// نافذة أرشيف البطاقات المحصَّلة: تبقى أسبوعاً بعد التحصيل ثم تُحذف نهائياً.
+// نافذة أرشيف البطاقات المحصَّلة: تبقى شهرين بعد التحصيل ثم تُحذف نهائياً.
 // فلاتر: المكتب + تاريخ الإنجاز + الفني + النوع (تُجمع معاً). حذف نهائي يدوي للمدير فقط.
 // قائمة «الفني» تُبنى من الأرشيف نفسه — فتشمل فنيي الدعم/المكاتب الأخرى الذين نفّذوا بطاقات.
 function ArchiveModal({ cardTypes, offices, onClose, onChanged }: { cardTypes: CardType[]; offices: Office[]; onClose: () => void; onChanged?: () => void }) {
@@ -2591,7 +2591,7 @@ function ArchiveModal({ cardTypes, offices, onClose, onChanged }: { cardTypes: C
           {loading ? (
             <div className="p-8 text-center text-sm text-slate-400">جاري التحميل…</div>
           ) : rows.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-400">لا توجد بطاقات بالأرشيف — تُحفظ هنا أسبوعاً بعد التحصيل ثم تُحذف نهائياً</div>
+            <div className="p-8 text-center text-sm text-slate-400">لا توجد بطاقات بالأرشيف — تُحفظ هنا شهرين بعد التحصيل ثم تُحذف نهائياً</div>
           ) : (
             <ul className="space-y-1.5">
               {rows.map((c) => (

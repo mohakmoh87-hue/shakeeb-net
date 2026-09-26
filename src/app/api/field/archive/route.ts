@@ -6,7 +6,7 @@ import { agentTowerIds } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
-// أرشيف البطاقات المحصَّلة: تبقى أسبوعاً بعد التحصيل ثم تُحذف نهائياً (أو يحذفها المدير يدوياً).
+// أرشيف البطاقات المحصَّلة: تبقى **شهرين** بعد التحصيل ثم تُحذف نهائياً (أو يحذفها المدير يدوياً).
 // فلاتر: ?date=YYYY-MM-DD (يوم بغداد للإنجاز) و?technicianId= و?kind= — تُجمع معاً.
 // العزل: مستخدم المكتب يرى أرشيف مكتبه؛ المدير أرشيف كل مكاتب وكيله.
 export async function GET(request: Request) {
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
 }
 
 // أرشفة بطاقةٍ يدويّاً (المشترك لم يرغب بالصيانة): تذهب إلى الأرشيف بدل الحذف النهائيّ،
-// قابلةً للاسترجاع (PATCH) أو الحذف (DELETE للمدير)، وتُنظَّف تلقائيّاً بعد أسبوع كالمحصَّلة.
+// قابلةً للاسترجاع (PATCH) أو الحذف (DELETE للمدير)، وتُنظَّف تلقائيّاً بعد شهرين كالمحصَّلة.
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });

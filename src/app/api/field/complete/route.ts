@@ -346,7 +346,7 @@ export async function POST(request: Request) {
         ...(card.settled && card.archivedAt == null ? { settled: false } : {}),
       },
     });
-    // سجل الإنجاز الدائم (البطاقة تُحذف من الأرشيف بعد أسبوع — هذا يبقى):
+    // سجل الإنجاز الدائم (البطاقة تُحذف من الأرشيف بعد شهرين — هذا يبقى):
     // لعدّ بطاقات الفني حسب الفئة في كشف راتبه
     const onTime = !isDelivery && durationSec != null && (type?.execMinutes ?? 0) > 0
       ? durationSec <= type!.execMinutes! * 60
