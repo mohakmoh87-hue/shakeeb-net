@@ -8,7 +8,9 @@ const schema = z.object({
   // card-debt-add / card-debt-sub: تعديل يدوي لديون الكارتات (زيادة/إنقاص)
   // convert-to-master / convert-from-master: أ-٥/٢ · تحويلُ مبلغٍ بين الكلّي والماستر —
   //   زوجُ حركتَين بالأنواع الأربعة القائمة نفسِها فلا يتغيّر أيُّ حسابٍ في أيّ شاشة
-  type: z.enum(["expense", "receipt", "card-payment", "master-receipt", "master-expense", "card-debt-add", "card-debt-sub", "convert-to-master", "convert-from-master"]),
+  // convert-to-vault / convert-from-vault: «الصندوق» — نقلٌ بين الكلّي والصندوق بزوجِ
+  //   حركتَين كنمطِ الماستر نفسِه، ووظيفتُه النقلُ وحدَه لا غير (طلبُ محمد 2026-09-27).
+  type: z.enum(["expense", "receipt", "card-payment", "master-receipt", "master-expense", "card-debt-add", "card-debt-sub", "convert-to-master", "convert-from-master", "convert-to-vault", "convert-from-vault"]),
   // ب-٠٠ · جذرُ الكسر: لا كسورَ في الدينار العراقي (والكسرُ هنا يسري إلى «ما سحبه» فيُفسده)
   amount: z.coerce.number().int("المبلغ يجب أن يكون عدداً صحيحاً — لا كسور في الدينار العراقي").positive("المبلغ يجب أن يكون أكبر من صفر"),
   notes: z.string().nullable().optional(),
@@ -36,6 +38,52 @@ export async function POST(request: Request) {
     const m = await prisma.manager.findFirst({ where: { id: parsed.data.managerId, agentId, isDeleted: false }, select: { id: true } });
     if (!m) return NextResponse.json({ error: "المدير غير موجود" }, { status: 400 });
     managerId = m.id;
+  }
+
+  // ═════ 🧰 «الصندوق» · نقلٌ بينه وبين «المبلغ الكلّي» (طلبُ محمد 2026-09-27) ═════
+  // زوجُ حركتَين كنمط الماستر: إلى الصندوق = صرفٌ من الكلّي + قبضٌ في الصندوق، ومنه =
+  // صرفٌ من الصندوق + قبضٌ في الكلّي. فمجموعُ (الكلّي + الصندوق) لا يتغيّر — نقلُ دفترٍ
+  // لا خلقُ مال. ولا يمسّ التقاريرَ اليوميّةَ ولا المكاتبَ (سجلُّ المدير طبقةُ وكيلٍ مستقلّة).
+  // 🔒 وقرارُ محمد: **يُمنع نقلُ أكبرَ من رصيد الطرف المصدر** — بالمعادلة المشتركة نفسِها
+  //   التي تعرضها الصفحة، فلا يختلف المحروسُ عن المعروض.
+  if (type === "convert-to-vault" || type === "convert-from-vault") {
+    const toVault = type === "convert-to-vault";
+    const { managerBalances } = await import("@/lib/managerBalances");
+    const { agentTowerIds } = await import("@/lib/guard");
+    const { totalAvailable, vaultBalance } = await managerBalances(agentId, await agentTowerIds(g.session));
+    const source = toVault ? totalAvailable : vaultBalance;
+    if (amount > source) {
+      return NextResponse.json({
+        error: toVault
+          ? `المبلغ أكبر من «المبلغ الكلي الموجود» (${source.toLocaleString("en-US")} د.ع)`
+          : `المبلغ أكبر من رصيد الصندوق (${source.toLocaleString("en-US")} د.ع)`,
+      }, { status: 400 });
+    }
+    const base = toVault ? "⇄ نقل من الكلي إلى الصندوق" : "⇄ نقل من الصندوق إلى الكلي";
+    const common = { amount, userId: session?.userId, agentId, managerId: null, byUser: g.session.fullName ?? g.session.username };
+    const pair = await prisma.$transaction(async (t) => {
+      const a = await t.managerTx.create({
+        data: { ...common, type: toVault ? "expense" : "vault-expense", notes: base },
+      });
+      const b = await t.managerTx.create({
+        data: { ...common, type: toVault ? "vault-receipt" : "receipt", notes: `${base} (زوج #${a.id})` },
+      });
+      await t.managerTx.update({ where: { id: a.id }, data: { notes: `${base} (زوج #${b.id})` } });
+      await t.auditLog.create({
+        data: {
+          userId: session?.userId, action: "TRANSFER_TOTAL_VAULT", entity: "managerTx", entityId: String(a.id),
+          details: `نقل ${amount} ${toVault ? "من الكلي إلى الصندوق" : "من الصندوق إلى الكلي"}` +
+                   ` — الزوج #${a.id}/#${b.id} — ⚖️ مجموعُ (الكلّي + الصندوق) لم يتغيّر`,
+        },
+      });
+      return { aId: a.id, bId: b.id };
+    });
+    return NextResponse.json({
+      ok: true, ...pair,
+      message: toVault
+        ? `نُقل ${amount.toLocaleString("en-US")} من الكلي إلى الصندوق`
+        : `نُقل ${amount.toLocaleString("en-US")} من الصندوق إلى الكلي`,
+    }, { status: 201 });
   }
 
   // ═════ أ-٥/٢ · تحويلٌ بين «المبلغ الكلّي» و«حساب الماستر» (طلب محمد) ═════

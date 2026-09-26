@@ -50,6 +50,9 @@ export async function GET() {
   const managerReceipts = sumBy("receipt");
   const salaryFromTotal = sumBy("salary"); // رواتب سُدِّدت «من المبلغ الكلي» (خارج التقرير اليومي)
 
+  // 🧰 الصندوق: دفترٌ مستقلٌّ وظيفتُه النقلُ من/إلى الكلّي وحدَه (طلبُ محمد 2026-09-27).
+  // المعادلةُ لا تتغيّر: شقُّ الكلّي من كلّ نقلٍ صرفٌ أو قبضٌ عاديّ، فهو محسوبٌ أصلاً أعلاه.
+  const vaultBalance = sumBy("vault-receipt") - sumBy("vault-expense");
   const cardDebtRemaining = cardDebtAdded - cardPayments;
   const totalAvailable = cumulativeDaily - cardPayments - managerExpenses - salaryFromTotal + managerReceipts;
 
@@ -74,6 +77,7 @@ export async function GET() {
   return NextResponse.json({
     cumulativeDaily,
     totalAvailable,
+    vaultBalance,
     cardDebtAdded,
     cardPayments,
     cardDebtRemaining,

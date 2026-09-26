@@ -31,6 +31,7 @@ type DailyLog = {
 type Data = {
   cumulativeDaily: number;
   totalAvailable: number;
+  vaultBalance: number; // 🧰 الصندوق — نقلٌ من/إلى الكلّي وحدَه
   cardDebtAdded: number;
   cardPayments: number;
   cardDebtRemaining: number;
@@ -148,6 +149,10 @@ export default function ManagerAccountsPage() {
   const [masterDetail, setMasterDetail] = useState<MasterDetail | null>(null);
   const [showMaster, setShowMaster] = useState(false);
   const [showTotal, setShowTotal] = useState(false); // تفكيك «المبلغ الكلي الموجود»
+  // 🧰 الصندوق (طلبُ محمد 2026-09-27): نافذةُ نقلٍ باتّجاهٍ واحدٍ حسب المربّع المضغوط
+  const [vaultMove, setVaultMove] = useState<null | "to" | "from">(null);
+  const [vaultAmount, setVaultAmount] = useState("");
+  const [vaultErr, setVaultErr] = useState("");
   // فترة احتساب الرواتب (عامة لكل الموظفين) — يومان من الشهر (بداية/نهاية) تتكرّران شهرياً
   const [pFromDay, setPFromDay] = useState("");
   const [pToDay, setPToDay] = useState("");
@@ -312,7 +317,7 @@ export default function ManagerAccountsPage() {
     }
   }
 
-  async function submit(type: "expense" | "receipt" | "card-payment" | "master-receipt" | "master-expense" | "card-debt-add" | "card-debt-sub" | "convert-to-master" | "convert-from-master") {
+  async function submit(type: "expense" | "receipt" | "card-payment" | "master-receipt" | "master-expense" | "card-debt-add" | "card-debt-sub" | "convert-to-master" | "convert-from-master" | "convert-to-vault" | "convert-from-vault") {
     setError("");
     if (!amount || Number(amount) <= 0) { setError("أدخل مبلغاً صحيحاً"); return; }
     if ((type === "expense" || type === "receipt" || type === "card-debt-add" || type === "card-debt-sub") && !notes.trim()) { setError("اكتب سبب/ملاحظة الحركة"); return; }
@@ -392,6 +397,9 @@ export default function ManagerAccountsPage() {
         <Card label="ديون الكارتات" value={fmt(data.cardDebtRemaining)} color={data.cardDebtRemaining <= 0 ? "text-emerald-700" : "text-red-700"} bg={data.cardDebtRemaining <= 0 ? "bg-emerald-50" : "bg-red-50"} onClick={() => setTxQ("كارتات")} hint="اضغط لتصفية السجل على حركاتها" />
         <Card label="مصروفات الإدارة" value={fmt(data.managerExpenses)} color="text-amber-700" bg="bg-amber-50" onClick={() => setTxQ("مصروف")} hint="اضغط لتصفية السجل عليها" />
         <Card label="🅜 حساب الماستر (مستقل)" value={fmt(data.masterBalance)} color="text-indigo-700" bg="bg-indigo-50" onClick={openMaster} hint="اضغط لعرض تفاصيله اليومية" />
+        {/* 🧰 الصندوق: وظيفتُه النقلُ من/إلى «الكلّي» وحدَه — مجموعُهما لا يتغيّر */}
+        <Card label="🧰 الصندوق" value={fmt(data.vaultBalance)} color="text-cyan-700" bg="bg-cyan-50"
+          onClick={() => { setVaultMove("from"); setVaultAmount(""); setVaultErr(""); }} hint="اضغط لنقل مبلغ منه إلى الكلي" />
         {/* «سلامة المال» (طلب محمد 2026-08-12): بطاقةٌ **مكشوفةٌ دائماً** لا تحت قائمة —
             «الوكيلُ عندما يرى خللاً ماليّاً يتوجّه إلى هذه الصفحة ليرى كلّ شيء».
             وتُخفي نفسَها إن تعذّر الفحصُ فلا تُربك الصفحةَ ببطاقةٍ فارغة. */}
@@ -881,8 +889,51 @@ export default function ManagerAccountsPage() {
                 <tr><td className="p-3">= المبلغ الكلي الموجود</td><td className="p-3 text-left text-emerald-700">{fmt(data.totalAvailable)}</td></tr>
               </tfoot>
             </table>
-            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
-              حساب الماستر خارج هذه المعادلة تماماً — له بطاقته المستقلة.
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="mb-2 text-[11px] text-slate-500">
+                حساب الماستر خارج هذه المعادلة تماماً — له بطاقته المستقلة.
+                <span className="block">🧰 وما في الصندوق الآن <b className="text-cyan-700">{fmt(data.vaultBalance)}</b> — وهو مطروحٌ من الكلي أعلاه (خرج منه صرفاً).</span>
+              </div>
+              <button onClick={() => { setShowTotal(false); setVaultMove("to"); setVaultAmount(""); setVaultErr(""); }}
+                className="w-full rounded-lg bg-cyan-600 py-2.5 text-sm font-bold text-white hover:bg-cyan-700">🧰 نقل مبلغ إلى الصندوق</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🧰 نافذةُ نقل المبلغ بين الكلّي والصندوق — مبلغٌ فقط بلا سبب (قرارُ محمد) */}
+      {vaultMove && data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4" onClick={() => setVaultMove(null)}>
+          <div className="my-auto max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 text-center text-lg font-extrabold text-slate-800">
+              {vaultMove === "to" ? "🧰 نقل إلى الصندوق" : "💰 نقل من الصندوق إلى الكلي"}
+            </div>
+            <p className="mb-3 text-center text-xs text-slate-500">
+              {vaultMove === "to"
+                ? `يُنقص «المبلغ الكلي الموجود» (${fmt(data.totalAvailable)}) ويزيد الصندوق بنفس المبلغ`
+                : `يُنقص الصندوق (${fmt(data.vaultBalance)}) ويزيد «المبلغ الكلي الموجود» بنفس المبلغ`}
+            </p>
+            {vaultErr && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-center text-sm font-semibold text-red-600">{vaultErr}</div>}
+            <input type="number" inputMode="numeric" value={vaultAmount} autoFocus
+              onChange={(e) => { setVaultAmount(e.target.value); setVaultErr(""); }}
+              placeholder="المبلغ" dir="ltr"
+              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-center text-lg font-bold" />
+            <div className="flex gap-2">
+              <button disabled={busy} onClick={async () => {
+                const n = Number(vaultAmount);
+                if (!Number.isInteger(n) || n <= 0) { setVaultErr("أدخل مبلغاً صحيحاً"); return; }
+                const cap = vaultMove === "to" ? data.totalAvailable : data.vaultBalance;
+                if (n > cap) { setVaultErr(`المبلغ أكبر من المتاح (${fmt(cap)})`); return; }
+                setBusy(true);
+                const res = await fetch("/api/manager-accounts/tx", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ type: vaultMove === "to" ? "convert-to-vault" : "convert-from-vault", amount: n }),
+                });
+                setBusy(false);
+                if (!res.ok) { const d = await res.json().catch(() => ({})); setVaultErr(d.error ?? "تعذّر النقل"); return; }
+                setVaultMove(null); setVaultAmount(""); load();
+              }} className="flex-1 rounded-lg bg-cyan-600 py-2.5 font-bold text-white hover:bg-cyan-700 disabled:opacity-60">نقل</button>
+              <button onClick={() => setVaultMove(null)} disabled={busy} className="rounded-lg bg-slate-100 px-4 py-2.5 font-semibold text-slate-600">إلغاء</button>
             </div>
           </div>
         </div>
