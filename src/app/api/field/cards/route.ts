@@ -4,6 +4,7 @@ import { sendCardRaisedMessage } from "@/lib/cardRaisedMessage";
 import { getSession } from "@/lib/auth";
 import { agentOwnsCard, agentOwnsList, appendCardHistory, canOperateCard, canOperateList, cardOfficeId, listOfficeId, resolveListActor, techEffectiveOfficesById, fieldGroupOffices } from "@/lib/field";
 import { agentTowerIds } from "@/lib/guard";
+import { can } from "@/lib/rbac";
 import { autoAssignOn, pickAssignee, verifyManualAssignee } from "@/lib/autoAssign";
 
 const VIEW_ONLY = { error: "مشاهدة فقط — لا يمكنك التعديل على مكتب آخر" };
@@ -136,6 +137,51 @@ export async function PATCH(request: Request) {
   if (typeof b.position === "number") data.position = b.position;
   // ملاحظة: الإنجاز (done=true) يتمّ عبر /api/field/complete فقط (بحقوله الواجبة)
   if (b.done === false) {
+    // ═════ 🔴 إلغاءُ الإنجاز يعكس البيعَ أيضاً (بلاغ محمد 2026-09-27) ═════
+    // كان يمسح أرقامَ البطاقة وسجلَّ إنجازها فقط، بينما **فاتورةُ المبيع وقيدُ الصندوق
+    // يبقيان، والمادّةُ خارج المخزن وخارج ذمّة الفنيّ**: «راوترٌ بيع من ذمّة حسين، أُلغي
+    // الإنجازُ فبقي مباعاً». والعكسُ هنا هو عينُ ما يفعله حذفُ الفاتورة العكسيّ —
+    // بالدالّة الواحدة `reverseInvoiceStock` (درسُ و-٢: لا يُنسَخ منطقُ العكس في مسارَين).
+    const cardId = Number(b.id);
+    const cardRow = await prisma.taskCard.findUnique({ where: { id: cardId }, select: { technicianId: true, done: true } });
+    const maintInvoice = cardRow?.done
+      ? await prisma.invoice.findFirst({
+          where: { isDeleted: false, type: "بيع صيانة", note: { contains: `تكت #${cardId} ` } },
+          select: { id: true, number: true, totalMy: true, subscriberId: true, towerId: true },
+        })
+      : null;
+    if (maintInvoice) {
+      // بطاقةٌ لها فاتورةٌ حيّة: إلغاءُ إنجازها **حذفٌ عكسيٌّ لوصل**، فلا يمرّ إلّا لمن يملكه
+      if (!can(s, "receipts.void")) {
+        return NextResponse.json(
+          { error: `هذه البطاقة لها فاتورة مبيع #${maintInvoice.number} — إلغاءُ إنجازها يُرجع المواد ويُلغي المبلغ، ويحتاج صلاحية «حذف وصل»` },
+          { status: 403 },
+        );
+      }
+      const { reverseInvoiceStock } = await import("@/lib/invoiceReverse");
+      const { reverseRewardRedeem } = await import("@/lib/rewards");
+      await prisma.$transaction(async (tx) => {
+        await reverseInvoiceStock(tx, maintInvoice.id, cardRow?.technicianId ?? null);
+        if (maintInvoice.subscriberId) {
+          await reverseRewardRedeem(tx, {
+            invoiceId: maintInvoice.id, subscriberId: maintInvoice.subscriberId, towerId: maintInvoice.towerId ?? null,
+            agentId: s.agentId ?? null, createdByUser: s.username,
+          });
+        }
+        await tx.moneyTx.updateMany({
+          where: { sourceType: { in: ["invoice", "master-invoice"] }, sourceId: maintInvoice.id, isDeleted: false },
+          data: { isDeleted: true },
+        });
+        await tx.invoice.update({ where: { id: maintInvoice.id }, data: { isDeleted: true } });
+        await tx.auditLog.create({
+          data: {
+            userId: s.userId, action: "VOID_RECEIPT", entity: "invoice", entityId: String(maintInvoice.id),
+            details: `إلغاءُ إنجاز البطاقة #${cardId} — حذفٌ عكسيٌّ لفاتورة المبيع #${maintInvoice.number} (${maintInvoice.totalMy ?? 0}): المواد رجعت للمخزن ولذمّة الفنيّ والمبلغُ أُلغي من الصندوق`,
+          },
+        });
+      });
+      await appendCardHistory(cardId, s.fullName ?? s.username, `إلغاء الإنجاز — أُلغيت فاتورة المبيع #${maintInvoice.number} ورجعت المواد لذمّة الفنيّ`);
+    }
     data.done = false; data.completedAt = null;
     // ===== إلغاء الإنجاز يُنظّف أثره كاملاً (طلب محمد 2026-08-05) =====
     // البطاقة تعود للانتظار **كما كانت قبل الإنجاز**: بلا مبالغ ولا تفاصيل ولا مواد،

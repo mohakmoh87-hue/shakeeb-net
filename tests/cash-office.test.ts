@@ -58,3 +58,22 @@ describe("قائمةُ مكتب البطاقة لا تُبقي اختياراً 
     assert.ok(/سيُسجَّلان لمكتب/.test(c), "لا تنبيهَ قبل الحفظ — يمرّ الاختيارُ صامتاً");
   });
 });
+
+// ═════ إلغاءُ الإنجاز يعكس البيع (بلاغ محمد 2026-09-27) ═════
+// «راوترٌ بيع من ذمّة حسين، أُلغي إنجازُ البطاقة فرجعت كأنّها لم تُنجَز — والراوترُ بقي مباعاً».
+describe("إلغاءُ الإنجاز يُرجع المادّة ويُلغي الفاتورة", () => {
+  const c = code("src/app/api/field/cards/route.ts");
+  test("يستعمل دالّةَ العكس الواحدة لا منطقاً منسوخاً", () => {
+    assert.ok(/reverseInvoiceStock\(tx, maintInvoice\.id, cardRow\?\.technicianId \?\? null\)/.test(c),
+      "🔴 المادّةُ لا ترجع للمخزن ولا لذمّة الفنيّ عند إلغاء الإنجاز");
+    assert.ok(/reverseRewardRedeem\(tx, \{/.test(c), "رصيدُ المكافأة المخصوم لا يرجع");
+  });
+  test("المالُ يُلغى من الصندوق والفاتورةُ تُحذف", () => {
+    assert.ok(/sourceType: \{ in: \["invoice", "master-invoice"\] \}, sourceId: maintInvoice\.id[\s\S]{0,80}isDeleted: true/.test(c),
+      "🔴 قيدُ الصندوق يبقى بعد إلغاء الإنجاز");
+    assert.ok(/tx\.invoice\.update\(\{ where: \{ id: maintInvoice\.id \}, data: \{ isDeleted: true \} \}\)/.test(c), "الفاتورةُ تبقى حيّةً بلا بطاقة");
+  });
+  test("بطاقةٌ بفاتورةٍ حيّة لا يُلغى إنجازُها إلّا بصلاحية حذف الوصل", () => {
+    assert.ok(/if \(!can\(s, "receipts\.void"\)\)/.test(c), "🔴 يمرّ حذفُ فاتورةٍ بلا صلاحيّته");
+  });
+});
