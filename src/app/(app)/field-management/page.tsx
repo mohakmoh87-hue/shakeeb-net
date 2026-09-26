@@ -518,12 +518,10 @@ export default function FieldManagementPage() {
       if (isTech || addingTo == null || digits.length < 9) { setOfficeHint(null); return; }
       fetch(`/api/field/subscriber-office?phone=${encodeURIComponent(digits)}`)
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          const m = d?.match ?? null;
-          setOfficeHint(m);
-          // يُملأ الاقتراحُ ما دام المستخدمُ لم يختر مكتباً بنفسه
-          if (m && !cardOffice) setCardOffice(String(m.officeId));
-        })
+        // 🔴 عرضٌ فقط: الاقتراحُ **لا يختار** المكتبَ (قرارُ محمد: القائمةُ يدويّة). كان يملؤه
+        //   تلقائيّاً فبقي الاختيارُ عالقاً للبطاقة التالية ⇒ بطاقةُ تنصيبٍ للمواصلات قُيّد
+        //   مالُها (٦٠ ألفاً) لمكتب الرسالة صامتاً (تكت #7372، 2026-09-26).
+        .then((d) => setOfficeHint(d?.match ?? null))
         .catch(() => {});
     }, 450);
     return () => clearTimeout(t);
@@ -1456,23 +1454,27 @@ export default function FieldManagementPage() {
                           <option value="">🏢 مكتب البطاقة — مكتبي</option>
                           {offices.map((o) => <option key={o.id} value={o.id}>🏢 {o.name ?? `مكتب ${o.id}`}</option>)}
                         </select>
-                        {officeHint && (
+                        {officeHint && String(officeHint.officeId) !== cardOffice && (
                           <div className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
                             المشترك «{officeHint.name ?? "؟"}» يتبع مكتب {officeHint.officeName ?? officeHint.officeId}
-                            {String(officeHint.officeId) !== cardOffice && (
-                              <button onClick={() => setCardOffice(String(officeHint.officeId))} className="mr-1 rounded bg-amber-200 px-1.5 py-0.5 font-bold text-amber-900">اختره</button>
-                            )}
+                            <button onClick={() => setCardOffice(String(officeHint.officeId))} className="mr-1 rounded bg-amber-200 px-1.5 py-0.5 font-bold text-amber-900">اختره</button>
+                          </div>
+                        )}
+                        {/* تنبيهٌ صريحٌ قبل الحفظ: مالُ البطاقة ومخزنُها يتبعان هذا المكتب */}
+                        {cardOffice && (
+                          <div className="rounded-lg bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-700">
+                            ⚠️ مالُ هذه البطاقة ومخزنُها سيُسجَّلان لمكتب «{offices.find((o) => String(o.id) === cardOffice)?.name ?? cardOffice}» لا لمكتبك
                           </div>
                         )}
                       </>
                     )}
                     <div className="flex gap-1">
                       <button onClick={() => addCard(l.id)} className="flex-1 rounded-lg bg-mynet-blue px-3 py-1 text-sm font-semibold text-white">إضافة البطاقة</button>
-                      <button onClick={() => { setAddingTo(null); setCardText(""); setCardTech(""); setCardDue(""); setCardKind("maintenance"); }} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-200">✕</button>
+                      <button onClick={() => { setAddingTo(null); setCardText(""); setCardTech(""); setCardDue(""); setCardKind("maintenance"); setCardOffice(""); setOfficeHint(null); }} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-200">✕</button>
                     </div>
                   </div>
                 ) : (
-                  <button onClick={() => { setAddingTo(l.id); setCardText(""); }} className="w-full rounded-lg px-2 py-1.5 text-right text-sm text-slate-500 hover:bg-slate-200">+ إضافة بطاقة</button>
+                  <button onClick={() => { setAddingTo(l.id); setCardText(""); setCardOffice(""); setOfficeHint(null); }} className="w-full rounded-lg px-2 py-1.5 text-right text-sm text-slate-500 hover:bg-slate-200">+ إضافة بطاقة</button>
                 )}
               </div>
               )}
