@@ -36,6 +36,12 @@ export async function detectInternalInstalls(
   agentId: number, towerIds: number[], sinceMs: number, opts: { dryRun?: boolean } = {},
 ): Promise<DetectedInstall[]> {
   if (!towerIds.length) return [];
+  // ═════ حارسان دائمان (قرارُ محمد 2026-10-03 بعد حادثة أسماء «هيرو») ═════
+  // ① الوكيلُ صاحبُ بيانات العقود: تنصيباتُه الداخليّةُ تأتي من موقع العقود (المصدرُ الموثوق
+  //   منذ 2026-09-05)، وهذا الكاشفُ أقدمُ منه بيوم — فإبقاؤه عنده لا يضيف داخليّاً ويُنتج
+  //   خارجيّاً وهميّاً. (كاسبر: ٩٦٩ صفّاً وهميّاً أُبطلت يدويّاً، ومثلُها عند غيره.)
+  const contracts = await prisma.contractInstall.count({ where: { agentId, classification: { not: "removed" } } });
+  if (contracts > 0) return [];
   const heroKeys = await agentPkgKeys(agentId);
   const since = new Date(sinceMs);
   // أوّلُ وصلٍ للمشترك أو فجوةُ انتهاءٍ سابقةٌ > شهر (تنصيبٌ جديدٌ لا تجديد) — مع اسم باقة الساس الخام.
@@ -50,7 +56,7 @@ export async function detectInternalInstalls(
       FROM subscription_entries e WHERE e."isDeleted" = false
     ),
     sas AS (
-      SELECT DISTINCT ON (sl."subscriberId") sl."subscriberId", sl."packageName"
+      SELECT DISTINCT ON (sl."subscriberId") sl."subscriberId", sl."packageName", sl."createdAt"
       FROM sync_log sl WHERE sl."packageName" IS NOT NULL AND sl."subscriberId" IS NOT NULL
       ORDER BY sl."subscriberId", sl."createdAt" DESC
     )
@@ -62,6 +68,10 @@ export async function detectInternalInstalls(
     WHERE s."isDeleted" = false AND s."towerId" = ANY(${towerIds})
       AND s."transferredFrom" IS NULL  -- 🔁 التحويلُ ليس تنصيباً (بلاغ محمد 2026-09-05)
       AND en.date >= ${since}
+      -- ② لا يُحكَم على تفعيلٍ باسمِ باقةٍ **أقدمَ منه**: اسمُ الساس المحفوظُ قد يكون ميّتاً
+      --    (أسماءُ «هيرو» بقيت شهوراً بعد تغييرها في الساس لأنّ التطابقَ يمنع كتابةَ سطرٍ جديد)
+      --    فيصير كلُّ تجديدٍ عاديٍّ «عرضاً» ثمّ تنصيباً خارجيّاً. والعرضُ الحقيقيُّ يُرصَد لحظتَه.
+      AND sas."createdAt" >= en.date - interval '7 days'
       AND (en.rn = 1 OR (en."prevTo" IS NOT NULL AND en.date - en."prevTo" > interval '30 days'))
     ORDER BY en."subscriberId", en.date DESC
   `;
