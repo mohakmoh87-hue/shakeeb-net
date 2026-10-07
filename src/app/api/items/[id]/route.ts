@@ -32,7 +32,7 @@ export async function PUT(
   const body = await request.json().catch(() => null);
 
   // منع تعديل مادة مكتب آخر
-  const existing = await prisma.item.findUnique({ where: { id: Number(id) }, select: { towerId: true, count: true, name: true, priceDinar: true } });
+  const existing = await prisma.item.findUnique({ where: { id: Number(id) }, select: { towerId: true, count: true, name: true, priceDinar: true, priceSale: true, priceSale2: true } });
   if (!existing || !(await ownsTower(g.session, existing.towerId))) {
     return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   }
@@ -121,10 +121,29 @@ export async function PUT(
       movingAverage(before, existing.priceDinar, (parsed.data.count ?? 0) - before, batchBuyPrice ?? 0),
     );
   }
+  // 💲 تغييرُ سعرِ بيعٍ يُسجَّل كما تُسجَّل الكميّة (طلبُ محمد 2026-10-07: عاد تعديلُ أسعار
+  //    البيع إلى نافذة التعديل) — فسعرٌ تغيّر بلا أثرٍ لا يُفسَّر حين يُسأل عن ربحٍ اختلف.
+  const priceMoves: string[] = [];
+  const movedPrice = (label: string, before: number | null, after: number | null | undefined) => {
+    if (after === undefined || after === null) return;
+    if (Math.round(before ?? 0) === Math.round(after)) return;
+    priceMoves.push(`${label} من ${Math.round(before ?? 0)} إلى ${Math.round(after)}`);
+  };
+  movedPrice("سعر البيع", existing.priceSale, parsed.data.priceSale);
+  movedPrice("سعر البيع الثاني", existing.priceSale2, parsed.data.priceSale2);
   const updated = await prisma.item.update({
     where: { id: Number(id) },
     data: itemData,
   });
+  if (priceMoves.length) {
+    await prisma.auditLog.create({
+      data: {
+        userId: g.session?.userId ?? null, action: "ITEM_PRICE_CHANGE", entity: "item", entityId: String(id),
+        details: `تغييرُ سعرٍ لـ«${existing.name ?? id}»: ${priceMoves.join(" · ")} — مكتب ${existing.towerId ?? "—"}` +
+          (g.session?.fullName || g.session?.username ? ` — بواسطة ${g.session.fullName ?? g.session.username}` : ""),
+      },
+    }).catch(() => { /* لا نُفشل التعديل بسبب القيد */ });
+  }
   // حتى تعديل المدير يُسجَّل — فالسجل لا يُفيد إن كان يوثّق نصف الأيدي
   // 🔑 والسجلُّ يحفظ **سعرَ الدفعة نفسِه** لا المتوسّط — فالمتوسّطُ يُشتقّ منه، وحفظُه
   //    مكانَه كان سيُضيع السعرَ الحقيقيَّ الذي اشتُريت به هذه الدفعة.
