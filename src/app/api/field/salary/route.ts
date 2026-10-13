@@ -4,11 +4,11 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { statementForTechnician as statementFor, cardCountsFor, effectiveLeaveQuota, roundSalaryToCash } from "@/lib/salary";
+import { statementForTechnician as statementFor, cardCountsFor, periodLeaveQuota, type QuotaAdjustable, roundSalaryToCash } from "@/lib/salary";
 
 // المتبقّي من الإجازات المدفوعة للفترة = الحصّة الفعليّة − المأخوذ المعتمَد (day/paid/approved) داخل الفترة
-async function paidLeaveRemaining(technicianId: number, paidLeavesPerMonth: number | null, leaveCarry: number | null, from: string, to: string): Promise<{ quota: number; used: number; remaining: number }> {
-  const quota = effectiveLeaveQuota(paidLeavesPerMonth, leaveCarry);
+async function paidLeaveRemaining(technicianId: number, tech: QuotaAdjustable | null, from: string, to: string): Promise<{ quota: number; used: number; remaining: number }> {
+  const quota = periodLeaveQuota(tech, from);
   // فقط إجازاتُ هذه التسوية (غيرُ المختومة بكشفٍ سابق) — يطابق ما يحتسبه computeSalary
   const used = await prisma.leave.count({ where: { technicianId, kind: "day", paid: true, status: "approved", isDeleted: false, salaryStatementId: null, dayKey: { gte: from, lte: to } } });
   return { quota, used, remaining: Math.max(0, quota - used) };
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
     const history = await prisma.salaryStatement.findMany({ where: { technicianId }, orderBy: { id: "desc" }, take: HISTORY_TAKE });
     const period = days.fromDay ? { from: result.periodFrom, to: result.periodTo } : null;
     const cardCounts = await cardCountsFor(technicianId, result.periodFrom, result.periodTo);
-    const lv = await paidLeaveRemaining(technicianId, t.paidLeavesPerMonth, t.leaveCarry, result.periodFrom, result.periodTo);
+    const lv = await paidLeaveRemaining(technicianId, t, result.periodFrom, result.periodTo);
     return NextResponse.json({ role: "manager", name: t.name, salary: t.salary ?? 0, statement: result, history, period, cardCounts, leaveQuota: lv.quota, leaveUsed: lv.used, leaveRemaining: lv.remaining, dailyAmount: result.dailyAmount });
   }
 
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
   if (pendingPaid > 0) {
     return NextResponse.json({ error: `للفنيّ ${pendingPaid} طلبَ إجازةٍ مدفوعةٍ معلّقٌ في الفترة — اقبلْه أو ارفضْه قبل تسديد الراتب`, pendingLeaves: pendingPaid }, { status: 400 });
   }
-  const lv = await paidLeaveRemaining(t.id, t.paidLeavesPerMonth, t.leaveCarry, prelim.periodFrom, prelim.periodTo);
+  const lv = await paidLeaveRemaining(t.id, t, prelim.periodFrom, prelim.periodTo);
   const la = parsed.data.leaveAction;
   if (lv.remaining > 0 && la !== "carry" && la !== "pay") {
     return NextResponse.json({ error: `للفنيّ ${lv.remaining} إجازة براتب متبقّية — اختر ترحيلها للفترة القادمة أو تسديدها كراتب`, needLeaveDecision: true, leaveRemaining: lv.remaining, dailyAmount: prelim.dailyAmount }, { status: 400 });

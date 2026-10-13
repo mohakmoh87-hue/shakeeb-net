@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { baghdadDayKey } from "@/lib/attendance";
-import { salaryPeriodBounds, effectiveLeaveQuota } from "@/lib/salary";
+import { salaryPeriodBounds, periodLeaveQuota, QUOTA_FIELDS } from "@/lib/salary";
 import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -58,9 +58,9 @@ function daysBetween(from: string, to: string, max = 62): string[] | null {
 export async function GET(request: Request) {
   const tech = await getTechSession();
   if (tech) {
-    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { paidLeavesPerMonth: true, leaveCarry: true } });
+    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: QUOTA_FIELDS });
     const period = await periodForTech(tech.agentId, baghdadDayKey(new Date()));
-    const quota = effectiveLeaveQuota(t?.paidLeavesPerMonth, t?.leaveCarry);
+    const quota = periodLeaveQuota(t, period.from);
     const used = await usedPaidInPeriod(tech.technicianId, period.from, period.to);
     const leaves = await prisma.leave.findMany({
       where: { technicianId: tech.technicianId, isDeleted: false }, // أ-٨ · المُزالةُ لا تُعرَض
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
       orderBy: [{ dayKey: "desc" }, { id: "desc" }],
       select: { id: true, dayKey: true, kind: true, paid: true, startMin: true, endMin: true, reason: true, status: true, decidedBy: true },
     });
-    const quota = effectiveLeaveQuota(t.paidLeavesPerMonth, t.leaveCarry);
+    const quota = periodLeaveQuota(t, period.from);
     let paidTaken = 0, paidPending = 0, unpaidTaken = 0, timeTaken = 0;
     for (const l of rows) {
       if (l.kind === "day" && l.paid && l.status === "approved") paidTaken++;
@@ -145,7 +145,7 @@ async function managerCreate(request: Request, body: unknown) {
 
   const tech = await prisma.technician.findFirst({
     where: { id: technicianId, isDeleted: false },
-    select: { id: true, name: true, towerId: true, agentId: true, paidLeavesPerMonth: true, leaveCarry: true },
+    select: { id: true, name: true, towerId: true, agentId: true, ...QUOTA_FIELDS },
   });
   if (!tech || !(await ownsTower(g.session, tech.towerId))) {
     return NextResponse.json({ error: "الفنيّ غير موجود أو لا يتبع مكاتبك" }, { status: 404 });
@@ -172,7 +172,6 @@ async function managerCreate(request: Request, body: unknown) {
   // ⚠️ الحصّةُ تُفحَص **لكلّ فترةِ راتبٍ على حدة**: مدىً يعبُر فترتَين يستهلك من حصّةِ كلٍّ
   //   منهما بأيّامه فيها. والفحصُ **قبل الإنشاء** لا بعده، فلا يُنشأ بعضٌ ويُرفَض بعضٌ.
   if (paid) {
-    const quota = effectiveLeaveQuota(tech.paidLeavesPerMonth, tech.leaveCarry);
     const agent = tech.agentId ? await prisma.agent.findUnique({ where: { id: tech.agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
     const byPeriod = new Map<string, { from: string; to: string; want: number }>();
     for (const d of fresh) {
@@ -183,9 +182,10 @@ async function managerCreate(request: Request, body: unknown) {
     }
     for (const { from, to, want } of byPeriod.values()) {
       const used = await usedPaidInPeriod(technicianId, from, to);
-      if (used + want > quota) {
+      const quotaP = periodLeaveQuota(tech, from);
+      if (used + want > quotaP) {
         return NextResponse.json({
-          error: `حصّةُ الإجازات المدفوعة للفترة (${from} → ${to}): ${quota} — المستهلَك ${used}، والمتبقّي ${Math.max(0, quota - used)}`
+          error: `حصّةُ الإجازات المدفوعة للفترة (${from} → ${to}): ${quotaP} — المستهلَك ${used}، والمتبقّي ${Math.max(0, quotaP - used)}`
             + ` وأنت تمنح ${want}. قلّل المدى أو امنحها بلا راتب.`,
         }, { status: 400 });
       }
@@ -246,9 +246,9 @@ export async function POST(request: Request) {
 
   const paid = !!parsed.data.paid; // (كان `let` ولا يُعاد إسنادُه — خطأُ eslint قديمٌ أُصلح بالمناسبة)
   if (paid) {
-    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { paidLeavesPerMonth: true, leaveCarry: true } });
-    const quota = effectiveLeaveQuota(t?.paidLeavesPerMonth, t?.leaveCarry);
+    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: QUOTA_FIELDS });
     const period = await periodForTech(tech.agentId, dayKey);
+    const quota = periodLeaveQuota(t, period.from);
     const used = await usedPaidInPeriod(tech.technicianId, period.from, period.to);
     if (used >= quota) return NextResponse.json({ error: "استنفدت حصّة الإجازات المدفوعة لهذه الفترة — اطلبها بلا راتب" }, { status: 400 });
   }
@@ -276,9 +276,9 @@ export async function PATCH(request: Request) {
   }
 
   if (parsed.data.status === "approved" && leave.kind === "day" && leave.paid) {
-    const t = await prisma.technician.findUnique({ where: { id: leave.technicianId }, select: { paidLeavesPerMonth: true, leaveCarry: true } });
-    const quota = effectiveLeaveQuota(t?.paidLeavesPerMonth, t?.leaveCarry);
+    const t = await prisma.technician.findUnique({ where: { id: leave.technicianId }, select: QUOTA_FIELDS });
     const period = await periodForTech(leave.agentId, leave.dayKey);
+    const quota = periodLeaveQuota(t, period.from);
     const used = await usedPaidInPeriod(leave.technicianId, period.from, period.to, leave.id);
     if (used >= quota) return NextResponse.json({ error: "استُنفدت حصّة الإجازات المدفوعة لهذه الفترة — اطلب من الفني إعادتها بلا راتب" }, { status: 400 });
   }

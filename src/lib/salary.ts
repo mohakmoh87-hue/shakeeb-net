@@ -214,6 +214,20 @@ export function effectiveLeaveQuota(paidLeavesPerMonth: number | null | undefine
   return Math.max(0, paidLeavesPerMonth ?? 0) + Math.max(0, leaveCarry ?? 0);
 }
 
+// حصّةُ **فترةٍ بعينها** = الحصّةُ الدائمة + تعديلُ المدير لهذه الفترة وحدَها (طلبُ محمد 2026-10-13:
+// «إذا كان له إجازتان هذا الشهر وقرّرتُ في أيّ وقتٍ إضافةَ واحدةٍ أو حذفَها»). التعديلُ لا يسري
+// إلّا على الفترة التي وُسِم بها، فينقضي بانقضائها ولا يُغيّر شهراً قادماً.
+export type QuotaAdjustable = {
+  paidLeavesPerMonth?: number | null; leaveCarry?: number | null;
+  leaveQuotaAdj?: number | null; leaveQuotaAdjPeriod?: string | null;
+};
+export function periodLeaveQuota(t: QuotaAdjustable | null | undefined, periodFrom: string | null | undefined): number {
+  const base = effectiveLeaveQuota(t?.paidLeavesPerMonth, t?.leaveCarry);
+  const adj = periodFrom && t?.leaveQuotaAdjPeriod === periodFrom ? (t?.leaveQuotaAdj ?? 0) : 0;
+  return Math.max(0, base + adj);
+}
+export const QUOTA_FIELDS = { paidLeavesPerMonth: true, leaveCarry: true, leaveQuotaAdj: true, leaveQuotaAdjPeriod: true } as const;
+
 // آخر يوم في شهر مفتاح اليوم
 export function lastDayOfMonthKey(dayKey: string): string {
   const [y, m] = dayKey.split("-").map(Number);

@@ -11,7 +11,7 @@ type Tech = {
   entryGraceMin?: number | null; exitGraceMin?: number | null; lateRatePerMin?: number | null; overtimeRatePerMin?: number | null; paidLeavesPerMonth?: number | null; missedCheckoutPenalty?: number | null;
   autoCheckoutTime?: string | null;
   paidLeaveTaken?: number; paidLeavePending?: number; unpaidLeaveTaken?: number; timeLeaveTaken?: number;
-  paidLeaveQuota?: number; leaveCarry?: number;
+  paidLeaveQuota?: number; leaveCarry?: number; leaveQuotaAdj?: number;
 };
 type Form = Record<string, string>;
 const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", seeDeliveryCards: "", canAddCards: "1", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0", autoCheckoutTime: "00:15" };
@@ -40,6 +40,21 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
     fetch(`/api/field/technicians${officeId != null ? `?officeId=${officeId}` : ""}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setTechs(d.technicians ?? []); setIsManager(d.isManager !== false); setLeavePeriod(d.leavePeriod ?? null); } });
   }, [officeId]);
   useEffect(() => { load(); }, [load]);
+
+  // ± حصّةُ إجازاتِ **فترة الراتب الحاليّة** وحدَها (طلبُ محمد 2026-10-13) — لا تمسّ الحصّةَ الشهريّة
+  async function adjustQuota(t: Tech, delta: 1 | -1) {
+    if (busy) return;
+    setBusy(true); setMsg("");
+    const r = await fetch("/api/field/leave-quota", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ technicianId: t.id, delta }),
+    }).catch(() => null);
+    const d = await r?.json().catch(() => ({}));
+    setBusy(false);
+    if (!r?.ok) { setMsg(d?.error ?? "تعذّر تعديل الحصّة"); return; }
+    setMsg(`🌿 حصّةُ ${t.name} لهذه الفترة صارت ${d.quota} (المأخوذ ${d.used})`);
+    load();
+  }
 
   const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v }));
   function startAdd() { setEditId(null); setF(EMPTY); setExtraSel(new Set()); setEditHome(officeId); setOpenForm(true); setMsg(""); }
@@ -280,7 +295,11 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                 {/* إجازاتُ فترة الراتب الحاليّة — لمحةٌ سريعة في القائمة (للمدير) */}
                 {isManager && (
                   <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px]">
-                    <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">🌿 براتب {t.paidLeaveTaken ?? 0}{(t.paidLeaveQuota ?? t.paidLeavesPerMonth) ? `/${t.paidLeaveQuota ?? t.paidLeavesPerMonth}` : ""}{(t.leaveCarry ?? 0) > 0 ? ` (+${t.leaveCarry} مرحّلة)` : ""}</span>
+                    <span className="flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">
+                      <button onClick={() => void adjustQuota(t, -1)} disabled={busy} title="إنقاص حصّة هذه الفترة إجازةً" className="rounded bg-white px-1 font-extrabold text-rose-600 shadow-sm hover:bg-rose-50 disabled:opacity-40">−</button>
+                      🌿 براتب {t.paidLeaveTaken ?? 0}{(t.paidLeaveQuota ?? t.paidLeavesPerMonth) ? `/${t.paidLeaveQuota ?? t.paidLeavesPerMonth}` : ""}{(t.leaveCarry ?? 0) > 0 ? ` (+${t.leaveCarry} مرحّلة)` : ""}{(t.leaveQuotaAdj ?? 0) !== 0 ? ` (${(t.leaveQuotaAdj ?? 0) > 0 ? "+" : "−"}${Math.abs(t.leaveQuotaAdj ?? 0)} لهذه الفترة)` : ""}
+                      <button onClick={() => void adjustQuota(t, 1)} disabled={busy} title="زيادة حصّة هذه الفترة إجازةً" className="rounded bg-white px-1 font-extrabold text-emerald-700 shadow-sm hover:bg-emerald-100 disabled:opacity-40">+</button>
+                    </span>
                     {(t.paidLeavePending ?? 0) > 0 && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">معلّقة {t.paidLeavePending}</span>}
                     <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600">بلا راتب {t.unpaidLeaveTaken ?? 0}</span>
                     <span className="rounded-md bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">⏱️ زمنيّة {t.timeLeaveTaken ?? 0}</span>
