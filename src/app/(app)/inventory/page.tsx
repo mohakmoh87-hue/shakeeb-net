@@ -24,7 +24,7 @@ type Custody = { id: number; technicianId: number; itemId: number; qty: number; 
 const fmt = (n: number | null) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
 
 export default function InventoryPage() {
-  const { me } = usePermission();
+  const { me, can } = usePermission();
   const [towers, setTowers] = useState<Tower[]>([]);
   const [custodies, setCustodies] = useState<Custody[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -88,7 +88,7 @@ export default function InventoryPage() {
         // ➕ الإضافةُ لها نافذتُها الخاصّة (بحثٌ في القائمة · اختيارٌ · أو اسمٌ جديد) —
         //    اقتراحُ محمد 2026-08-25. فزرُّ الإضافة المدمَج مُطفأ، وزرُّنا في الترويسة.
         canAdd={false}
-        canDelete={isAdmin}
+        canDelete={isAdmin && can("inventory.reduce")}
         summary={(rows) => {
           // قيمة المخزون = الكمية × السعر (تعكس البحث/فلتر المكتب المعروض)
           const cost = rows.reduce((s, r) => s + (r.count ?? 0) * (r.priceDinar ?? 0), 0);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
+import { can } from "@/lib/rbac";
 import { batchTag, movingAverage } from "@/app/api/_lib/itemBatchLog";
 
 const schema = z.object({
@@ -107,6 +108,13 @@ export async function PUT(
   //    الكلفة فيُكتب فوق **المخزون كلِّه** («يتغيّر معه سعرُ الشراء لكلّ العدد السابق»).
   const { batchBuyPrice, ...itemData } = parsed.data;
   const before = existing.count ?? 0;
+  // 🔻 إنقاصُ الكميّة صلاحيّةٌ مستقلّة: مديرٌ يزيد ويُسعّر ولا يُنقص إن مُنعت عنه.
+  //    (كلُّ مديرٍ يملكها تلقائيّاً — `can` تُرجع true للمدير ما لم تكن في منعِه صراحةً.)
+  if (parsed.data.count != null && parsed.data.count < before && !can(g.session, "inventory.reduce")) {
+    return NextResponse.json({
+      error: `إنقاصُ الكميّة غيرُ مسموحٍ لك (الحاليّة ${before}) — صلاحيّةُ «إنقاص كمية المخزن وحذف المواد» ممنوعةٌ عن حسابك`,
+    }, { status: 403 });
+  }
   const hasBatchPrice = batchBuyPrice != null && Number.isFinite(batchBuyPrice) && batchBuyPrice > 0;
   const isIncrease = parsed.data.count != null && parsed.data.count > before;
   // ═════ ✏️ «زرُّ تعديل يعود إلى ما كان عليه: يزيد أو ينقص عددَ مادة» (محمد 2026-08-25) ═════
@@ -160,6 +168,10 @@ export async function DELETE(
   if (g.error) return g.error;
   if (!g.session?.isAdmin) {
     return NextResponse.json({ error: "حذف المواد من صلاحية المدير فقط" }, { status: 403 });
+  }
+  // 🔻 ومديرٌ مُنع من «إنقاص كمية المخزن وحذف المواد» لا يحذف (طلبُ محمد 2026-10-19)
+  if (!can(g.session, "inventory.reduce")) {
+    return NextResponse.json({ error: "حذفُ المواد غيرُ مسموحٍ لك — صلاحيّةُ «إنقاص كمية المخزن وحذف المواد» ممنوعةٌ عن حسابك" }, { status: 403 });
   }
 
   const { id } = await params;
