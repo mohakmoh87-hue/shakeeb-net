@@ -99,12 +99,16 @@ export async function subscriberAgentId(subscriberId: number): Promise<number | 
   return t?.agentId ?? null;
 }
 
-// رسومُ التوصيل/التنصيب لكلّ منتجٍ حسب شريحة المشترِي: مشتركُ الوكيلِ البائع ⇒ رسومُ المشتركين، وإلّا غيرُهم.
-export async function feesForProducts(
-  products: { id: number; agentId: number }[],
+// رسومُ التوصيل/التنصيب لكلّ منتج: رسمُ المنتج نفسِه إن وضعه الوكيل، وإلّا رسمُ الوكيل
+// بشريحة المشترِي (مشتركُ الوكيل البائع ⇒ رسومُ المشتركين، وإلّا غيرُهم). والصفرُ رسمٌ موضوعٌ لا غياب.
+export type FeePair = { deliveryFee: bigint | null; installFee: bigint | null };
+type FeeProduct = { id: number; agentId: number; deliveryFee?: bigint | null; installFee?: bigint | null };
+
+export async function rawFeesForProducts(
+  products: FeeProduct[],
   viewerAgentId: number | null,
-): Promise<Map<number, { deliveryFee: number | null; installFee: number | null }>> {
-  const result = new Map<number, { deliveryFee: number | null; installFee: number | null }>();
+): Promise<Map<number, FeePair>> {
+  const result = new Map<number, FeePair>();
   if (products.length === 0) return result;
   const agentIds = [...new Set(products.map((p) => p.agentId))];
   const agents = await prisma.agent.findMany({
@@ -116,9 +120,31 @@ export async function feesForProducts(
     const a = byAgent.get(p.agentId);
     const isSub = viewerAgentId != null && viewerAgentId === p.agentId;
     result.set(p.id, {
-      deliveryFee: priceToNum((isSub ? a?.storeDeliverySub : a?.storeDeliveryOther) ?? null),
-      installFee: priceToNum((isSub ? a?.storeInstallSub : a?.storeInstallOther) ?? null),
+      deliveryFee: p.deliveryFee ?? ((isSub ? a?.storeDeliverySub : a?.storeDeliveryOther) ?? null),
+      installFee: p.installFee ?? ((isSub ? a?.storeInstallSub : a?.storeInstallOther) ?? null),
     });
   }
   return result;
+}
+
+export async function feesForProducts(
+  products: FeeProduct[],
+  viewerAgentId: number | null,
+): Promise<Map<number, { deliveryFee: number | null; installFee: number | null }>> {
+  const raw = await rawFeesForProducts(products, viewerAgentId);
+  const result = new Map<number, { deliveryFee: number | null; installFee: number | null }>();
+  for (const [id, f] of raw) result.set(id, { deliveryFee: priceToNum(f.deliveryFee), installFee: priceToNum(f.installFee) });
+  return result;
+}
+
+// حسابُ الطلب: أعلى رسمِ توصيلٍ وأعلى رسمِ تنصيبٍ بين المواد المطلوبة، مرّةً واحدةً لكامل
+// الطلب أيّاً كان عددُ كلّ مادّة، ويُهمل ما دونهما.
+export function maxOrderFees(fees: FeePair[]): FeePair {
+  let deliveryFee: bigint | null = null;
+  let installFee: bigint | null = null;
+  for (const f of fees) {
+    if (f.deliveryFee != null && (deliveryFee == null || f.deliveryFee > deliveryFee)) deliveryFee = f.deliveryFee;
+    if (f.installFee != null && (installFee == null || f.installFee > installFee)) installFee = f.installFee;
+  }
+  return { deliveryFee, installFee };
 }

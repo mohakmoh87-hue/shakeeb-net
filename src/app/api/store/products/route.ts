@@ -7,7 +7,13 @@ import { cleanPhoto, priceToNum } from "@/lib/market";
 export const dynamic = "force-dynamic";
 
 // متجرُ الوكيل — إدارةُ الوكيل لكتالوجه (معزولٌ بـagentId؛ متجرٌ على مستوى الوكيل لا المكتب).
-// الرسومُ (توصيل/تنصيب) على مستوى الوكيل في /api/store/settings، لا لكلّ منتج.
+// الرسومُ (توصيل/تنصيب) لكلّ منتجٍ على حدة، ورسومُ /api/store/settings احتياطٌ لمن لا رسمَ له.
+function feeOf(v: unknown): bigint | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= 1e13 ? BigInt(Math.round(n)) : null;
+}
+
 export async function GET() {
   const g = await guard("store.manage");
   if (g.error) return g.error;
@@ -46,6 +52,7 @@ export async function POST(request: Request) {
       agentId, agentName: agent?.name ?? null, title, itemName,
       price: price != null ? BigInt(price) : null, description: description || null,
       category: category || null, stock, photo, status: "visible",
+      deliveryFee: feeOf(b?.deliveryFee), installFee: feeOf(b?.installFee),
     },
     select: { id: true },
   });
@@ -84,6 +91,8 @@ export async function PATCH(request: Request) {
     data.stock = Number.isFinite(s) && s >= 0 && s <= 1e9 ? Math.round(s) : null;
   }
   if (b?.photo !== undefined) data.photo = cleanPhoto(b.photo);
+  if (b?.deliveryFee !== undefined) data.deliveryFee = feeOf(b.deliveryFee);
+  if (b?.installFee !== undefined) data.installFee = feeOf(b.installFee);
   if (Object.keys(data).length === 0) return NextResponse.json({ error: "لا تغيير" }, { status: 400 });
   await prisma.agentProduct.update({ where: { id }, data });
   return NextResponse.json({ ok: true });

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
 import { getSubscriberSession } from "@/lib/subscriberAuth";
-import { ensureAgentStoreTables, subscriberAgentId, storeOrderLines } from "@/lib/agentStore";
+import { ensureAgentStoreTables, subscriberAgentId, storeOrderLines, rawFeesForProducts, maxOrderFees } from "@/lib/agentStore";
 import { priceToNum } from "@/lib/market";
 
 export const dynamic = "force-dynamic";
@@ -43,17 +43,16 @@ export async function POST(request: Request) {
   if (!address) return NextResponse.json({ error: "عنوانُ التوصيل مطلوب" }, { status: 400 });
   if (!phone.trim()) return NextResponse.json({ error: "رقمُ الهاتف مطلوب" }, { status: 400 });
   const ids = [...new Set(wanted.map((it) => it.productId))];
-  const products = await prisma.agentProduct.findMany({ where: { id: { in: ids }, status: "visible" }, select: { id: true, agentId: true, title: true, price: true } });
+  const products = await prisma.agentProduct.findMany({ where: { id: { in: ids }, status: "visible" }, select: { id: true, agentId: true, title: true, price: true, deliveryFee: true, installFee: true } });
   if (products.length !== ids.length) return NextResponse.json({ error: "بعضُ المنتجات لم تعد متاحة" }, { status: 404 });
   if (new Set(products.map((p) => p.agentId)).size > 1) return NextResponse.json({ error: "منتجاتٌ من متاجرَ مختلفة — اطلب من متجرٍ واحدٍ في كلّ مرّة" }, { status: 400 });
   const agentId = products[0].agentId;
   const pById = new Map(products.map((p) => [p.id, p]));
-  // رسومُ الوكيل البائع حسب شريحة المشترِي — مرّةً لكامل الفاتورة.
+  // رسومُ كلّ مادّةٍ على حدة (وإلّا رسمُ الوكيل بشريحة المشترِي)، ثمّ أعلى توصيلٍ وأعلى
+  // تنصيبٍ بين المواد المطلوبة مرّةً واحدةً لكامل الفاتورة — وما دونهما يُهمل.
   const viewerAgentId = await subscriberAgentId(sub.id);
-  const isSub = viewerAgentId != null && viewerAgentId === agentId;
-  const ag = await prisma.agent.findUnique({ where: { id: agentId }, select: { storeDeliverySub: true, storeInstallSub: true, storeDeliveryOther: true, storeInstallOther: true } });
-  const deliveryFee = (isSub ? ag?.storeDeliverySub : ag?.storeDeliveryOther) ?? null;
-  const installFee = (isSub ? ag?.storeInstallSub : ag?.storeInstallOther) ?? null;
+  const perProduct = await rawFeesForProducts(products, viewerAgentId);
+  const { deliveryFee, installFee } = maxOrderFees(products.map((p) => perProduct.get(p.id)).filter((f): f is NonNullable<typeof f> => !!f));
   const wantInstall = b?.fulfillment === "delivery_install" && installFee != null;
   const fulfillment = wantInstall ? "delivery_install" : "delivery";
   let goods = BigInt(0);

@@ -11,12 +11,15 @@ export async function GET() {
   if (!sess) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
   const sub = await prisma.subscriber.findUnique({
     where: { id: sess.subscriberId },
-    select: { id: true, name: true, netUser: true, phone: true, packageId: true, dateFrom: true, dateTo: true, carry: true, appBanned: true },
+    select: { id: true, name: true, netUser: true, phone: true, packageId: true, dateFrom: true, dateTo: true, carry: true, appBanned: true, towerId: true, rewardBalance: true },
   });
   if (!sub) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   // حظرُ أدمن التطبيق: تُبطَل جلسةُ المحظور فوراً (يُخرَجُ من التطبيق عند أوّل طلب)
   if (sub.appBanned) return NextResponse.json({ error: "محظور" }, { status: 403 });
   const pkg = sub.packageId ? await prisma.package.findUnique({ where: { id: sub.packageId }, select: { name: true, priceDinar: true, priceDollar: true } }) : null;
+  // رصيدُ المكافآت: يظهر للمشترك إن كان مكتبُه مفعّلاً نظامَ المكافآت — وإلّا لا يُرسَل أصلاً.
+  const office = sub.towerId ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { rewardsEnabled: true } }) : null;
+  const rewardsEnabled = office?.rewardsEnabled === "1";
   const st = subscriberState(sub.dateTo);
   const rem = remaining(sub.dateTo);
   const daysLeft = rem && !rem.negative ? rem.days : 0;
@@ -31,6 +34,7 @@ export async function GET() {
     package: pkg?.name ?? null, priceLabel,
     dateTo: sub.dateTo, expiryLabel: sub.dateTo ? formatExpiryDay(sub.dateTo) : "",
     daysLeft, expired, carry: sub.carry ?? 0,
+    rewardsEnabled, rewardBalance: rewardsEnabled ? (sub.rewardBalance ?? 0) : null,
     state: st.state, daysExpired: st.daysExpired,
   });
 }

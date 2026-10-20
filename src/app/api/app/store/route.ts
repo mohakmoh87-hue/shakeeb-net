@@ -20,18 +20,19 @@ export async function GET(request: Request) {
   const [items, total, catRows] = await Promise.all([
     prisma.agentProduct.findMany({
       where, orderBy: { id: "desc" }, skip: (page - 1) * PAGE, take: PAGE,
-      select: { id: true, agentId: true, agentName: true, title: true, price: true, description: true, photo: true, category: true, stock: true, itemName: true, createdAt: true },
+      select: { id: true, agentId: true, agentName: true, title: true, price: true, description: true, photo: true, category: true, stock: true, itemName: true, deliveryFee: true, installFee: true, createdAt: true },
     }),
     prisma.agentProduct.count({ where }),
     prisma.agentProduct.findMany({ where: { status: "visible", NOT: { category: null } }, select: { category: true }, distinct: ["category"], take: 60 }),
   ]);
   const categories = catRows.map((c) => c.category).filter((c): c is string => !!c).sort();
-  // شريحةُ المشترِي: مشتركٌ لدى الوكيل البائع أم لا (الزائرُ ⇒ غيرُ مشترك) — تُحدّد رسومَ الوكيل.
+  // شريحةُ المشترِي: مشتركٌ لدى الوكيل البائع أم لا (الزائرُ ⇒ غيرُ مشترك) — تُحدّد رسومَ الوكيل
+  // الاحتياطيّة للمواد التي لم يضع لها الوكيلُ رسماً خاصّاً بها.
   const sess = await getSubscriberSession();
   const viewerAgentId = sess ? await subscriberAgentId(sess.subscriberId) : null;
   const [live, fees] = await Promise.all([
     liveStockFor(items.map((i) => ({ id: i.id, agentId: i.agentId, itemName: i.itemName }))),
-    feesForProducts(items.map((i) => ({ id: i.id, agentId: i.agentId })), viewerAgentId),
+    feesForProducts(items.map((i) => ({ id: i.id, agentId: i.agentId, deliveryFee: i.deliveryFee, installFee: i.installFee })), viewerAgentId),
   ]);
   return NextResponse.json({
     items: items.map((i) => ({
