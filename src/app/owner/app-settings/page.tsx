@@ -74,7 +74,7 @@ function AppAdminAccounts() {
   );
 }
 
-type OtpWaInfo = { instanceId: string; tokenSet: boolean };
+type OtpWaInfo = { baseUrl: string; instanceId: string; tokenSet: boolean };
 type TicketDest = "supercell" | "agent" | "both";
 type State = AppContentT & { otpWa: OtpWaInfo; ticketDest: TicketDest; subsVisibleToCompany: boolean };
 
@@ -82,6 +82,7 @@ export default function OwnerAppSettingsPage() {
   const [s, setS] = useState<State | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
   const [instanceId, setInstanceId] = useState("");
   const [token, setToken] = useState("");
   const [testPhone, setTestPhone] = useState("");
@@ -91,7 +92,7 @@ export default function OwnerAppSettingsPage() {
 
   const load = useCallback(() => {
     fetch("/api/owner/app-settings").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d) { setS(d); setInstanceId(d.otpWa?.instanceId ?? ""); setToken(""); setTicketDest(d.ticketDest ?? "both"); setSubsVisible(!!d.subsVisibleToCompany); }
+      if (d) { setS(d); setBaseUrl(d.otpWa?.baseUrl ?? ""); setInstanceId(d.otpWa?.instanceId ?? ""); setToken(""); setTicketDest(d.ticketDest ?? "both"); setSubsVisible(!!d.subsVisibleToCompany); }
     });
   }, []);
   useEffect(() => { const t = setTimeout(() => load(), 0); return () => clearTimeout(t); }, [load]);
@@ -105,7 +106,7 @@ export default function OwnerAppSettingsPage() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: { ads: s!.ads, offers: s!.offers, quick: s!.quick },
-          otpWa: { instanceId, token },
+          otpWa: { baseUrl, instanceId, token },
           ticketDest,
           subsVisibleToCompany: subsVisible,
         }),
@@ -140,9 +141,13 @@ export default function OwnerAppSettingsPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="mb-1 font-semibold text-slate-800">واتساب رسائل OTP</div>
         <div className="mb-3 text-[11px] leading-5 text-slate-500">
-          رقمُ UltraMsg مركزيٌّ يُرسِلُ رموزَ التحقّق للمشتركين عند الدخول. أدخِل Instance ID والToken من لوحة UltraMsg (Instances ← Manage).
+          رقمٌ مركزيٌّ يُرسِلُ رموزَ التحقّق للمشتركين عند الدخول. أدخِل رابطَ البوّابة وInstance ID والToken — من بوّابتك الخاصّة، أو من لوحة UltraMsg (Instances ← Manage).
         </div>
         <div className="grid gap-2">
+          <label className="text-xs font-semibold text-slate-600">رابطُ البوّابة
+            <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} dir="ltr" placeholder="https://api.ultramsg.com" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <span className="mt-1 block text-[11px] font-normal text-slate-400">بوّابتُك: <button type="button" onClick={() => setBaseUrl("https://wa.shakeebnet.com")} className="font-semibold text-sky-700 underline" dir="ltr">https://wa.shakeebnet.com</button> — أو اتركه على UltraMsg.</span>
+          </label>
           <label className="text-xs font-semibold text-slate-600">Instance ID
             <input value={instanceId} onChange={(e) => setInstanceId(e.target.value)} dir="ltr" placeholder="instance000000" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           </label>

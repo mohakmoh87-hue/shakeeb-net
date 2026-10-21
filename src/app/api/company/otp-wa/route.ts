@@ -15,7 +15,7 @@ export async function PATCH(request: Request) {
   const s = await getCompanySession();
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   if (s.role !== "manager") return NextResponse.json({ error: "للمدير فقط" }, { status: 403 }); // OTP للمدير حصراً
-  const body = (await request.json().catch(() => null)) as { instanceId?: string; token?: string } | null;
-  await setOtpWa({ instanceId: body?.instanceId, token: body?.token });
+  const body = (await request.json().catch(() => null)) as { baseUrl?: string; instanceId?: string; token?: string } | null;
+  await setOtpWa({ baseUrl: body?.baseUrl, instanceId: body?.instanceId, token: body?.token });
   return NextResponse.json(await getOtpWaInfo());
 }

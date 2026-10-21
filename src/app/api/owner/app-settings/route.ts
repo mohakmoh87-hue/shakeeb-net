@@ -15,7 +15,7 @@ export async function GET() {
 
 const schema = z.object({
   content: z.unknown().optional(),
-  otpWa: z.object({ instanceId: z.string().optional(), token: z.string().optional() }).optional(),
+  otpWa: z.object({ baseUrl: z.string().optional(), instanceId: z.string().optional(), token: z.string().optional() }).optional(),
   ticketDest: z.enum(["supercell", "agent", "both"]).optional(),
   subsVisibleToCompany: z.boolean().optional(),
 });
