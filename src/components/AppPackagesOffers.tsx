@@ -33,6 +33,9 @@ export default function AppPackagesOffers() {
   const [pkgs, setPkgs] = useState<AppPkg[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [msg, setMsg] = useState("");
+  // ⚠️ الابتلاعُ الصامت كان يُظهر فشلَ الجلب بصورة «لا باقات» — الآن يُقال السبب
+  const [loadErr, setLoadErr] = useState("");
+  const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -43,11 +46,27 @@ export default function AppPackagesOffers() {
   const [to, setTo] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
 
-  const load = useCallback(() => {
-    fetch("/api/store/app-packages").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setPkgs(d.items || []); }).catch(() => {});
-    fetch("/api/store/offers").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOffers(d.items || []); }).catch(() => {});
+  const load = useCallback(async () => {
+    setLoadErr("");
+    try {
+      const r = await fetch("/api/store/app-packages");
+      if (!r.ok) {
+        const d = await r.json().catch(() => null);
+        setLoadErr(d?.error || `تعذّر جلبُ الباقات (${r.status})`);
+      } else {
+        const d = await r.json();
+        setPkgs(d.items || []);
+      }
+    } catch {
+      setLoadErr("تعذّر الاتصالُ بالخادم");
+    }
+    try {
+      const r = await fetch("/api/store/offers");
+      if (r.ok) setOffers((await r.json()).items || []);
+    } catch { /* العروضُ ثانويّةٌ هنا */ }
+    setLoaded(true);
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   async function patchPkg(p: AppPkg, body: Record<string, unknown>) {
     setMsg("");
@@ -119,8 +138,18 @@ export default function AppPackagesOffers() {
       {tab === "packages" ? (
         <>
           <div className="mb-2 text-[11px] text-slate-500">الأسعارُ من صفحة «الباقات» حيّاً — عدّلها هناك ويتبعها التطبيق. ولا يظهر للمشترك إلّا ما نشرتَه.</div>
-          {pkgs.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-400">لا باقاتٍ في حسابك — أضِفها من صفحة «الباقات»</div>
+          {loadErr ? (
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+              {loadErr}
+              <button onClick={() => void load()} className="mr-3 rounded bg-red-100 px-2 py-1 text-xs font-bold hover:bg-red-200">إعادة المحاولة</button>
+            </div>
+          ) : !loaded ? (
+            <div className="py-8 text-center text-sm text-slate-400">جاري التحميل…</div>
+          ) : pkgs.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-400">
+              لا باقاتٍ في حسابك — أضِفها من صفحة «الباقات»
+              <div className="mt-1 text-[11px] text-slate-400">تُجلب باقاتُ وكيلك بنفسِ ترشيح صفحة «الباقات» تماماً.</div>
+            </div>
           ) : (
             <div className="divide-y divide-slate-100">
               {pkgs.map((p) => {
