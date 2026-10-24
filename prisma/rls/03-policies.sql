@@ -457,6 +457,28 @@ CREATE POLICY rls_store_order_items ON store_order_items TO agent_worker
   USING ("orderId" IN (SELECT o.id FROM store_orders o WHERE o."agentId" = current_agent_id()))
   WITH CHECK ("orderId" IN (SELECT o.id FROM store_orders o WHERE o."agentId" = current_agent_id()));
 
+-- 📦 باقاتُ الاشتراك المنشورةُ في التطبيق (2026-10-24) — يكتبها الموقعُ وحدَه. عزلٌ بـagentId.
+ALTER TABLE agent_app_packages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_agent_app_packages ON agent_app_packages;
+CREATE POLICY rls_agent_app_packages ON agent_app_packages TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+-- 🎁 عروضُ الوكيل الخاصّة (2026-10-24) — يكتبها الموقعُ وحدَه. عزلٌ بـagentId المباشر.
+ALTER TABLE agent_offers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_agent_offers ON agent_offers;
+CREATE POLICY rls_agent_offers ON agent_offers TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+-- 🎁 جمهورُ العرض المثبَّت (2026-10-24) — بلا عمود agentId؛ عزلٌ متسلسلٌ عبر offerId ←
+-- العرضِ المملوكِ للوكيل (كنمط بنود طلب المتجر). دفاعٌ عميقٌ ولو أنّ الموقعَ وحدَه يكتب.
+ALTER TABLE agent_offer_targets ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_agent_offer_targets ON agent_offer_targets;
+CREATE POLICY rls_agent_offer_targets ON agent_offer_targets TO agent_worker
+  USING ("offerId" IN (SELECT o.id FROM agent_offers o WHERE o."agentId" = current_agent_id()))
+  WITH CHECK ("offerId" IN (SELECT o.id FROM agent_offers o WHERE o."agentId" = current_agent_id()));
+
 -- 🕵️ فحوصُ سب-ديلر (2026-09-04) — يكتبها الموقعُ/الكرون. عزلٌ بـagentId المباشر.
 ALTER TABLE sub_dealer_scans ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS rls_sub_dealer_scans ON sub_dealer_scans;

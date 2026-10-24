@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import Modal from "@/components/Modal";
 import { usePermission } from "@/lib/usePermission";
+import AppPackagesOffers from "@/components/AppPackagesOffers";
 
 type Product = { id: number; title: string; price: number | null; description: string | null; category: string | null; stock: number | null; photo: string | null; status: string; agentName: string | null; createdAt: string; itemName: string | null; linked: boolean; deliveryFee: number | null; installFee: number | null };
 type WhItem = { name: string; price: number | null; category: string | null; count: number };
@@ -124,6 +125,8 @@ export default function StorePage() {
   return (
     <div className="p-4 sm:p-6">
       <PageHeader title="متجري" subtitle="منتجاتُ متجرك في التطبيق — تصل الطلباتُ إلى «طلبات المتجر» في إدارة الفنيين" action={<button onClick={openAdd} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">+ منتج</button>} />
+
+      <AppPackagesOffers />
 
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
         <div className="mb-1 text-sm font-bold text-slate-800">رسومٌ احتياطيّة — لمن لا رسمَ خاصٌّ به</div>

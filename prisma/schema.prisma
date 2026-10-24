@@ -1982,6 +1982,60 @@ model AgentProduct {
   @@map("agent_products")
 }
 
+// ═════ صفحةُ «الباقات والعروض» في تطبيق المشترك — يؤلّفها كلُّ وكيلٍ من «متجري» ═════
+// (طلبُ محمد 2026-10-24). كلُّ شيءٍ معزولٌ بـagentId، والمشتركُ لا يرى إلّا ما نشره وكيلُه.
+
+// نشرُ باقةِ اشتراكٍ في التطبيق — سطرٌ لكلّ باقةٍ نشرها الوكيل. والسعرُ يُقرأ من
+// `packages` حيّاً (لا يُنسَخ)، فلا يختلف المعروضُ عن صفحة الباقات أبداً.
+// ولا عمودَ في `packages` نفسِه: تمرّ به مساراتُ المال فلا نقترب منه.
+model AgentAppPackage {
+  id        Int      @id @default(autoincrement())
+  agentId   Int // الوكيلُ الناشر (مفتاحُ العزل)
+  packageId Int // الباقةُ في `packages` — تتبع الوكيلَ نفسَه (يُتحقَّق قبل الكتابة)
+  visible   Boolean  @default(true)
+  note      String? // سطرُ وصفٍ اختياريٌّ يظهر تحت اسم الباقة
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([agentId, packageId])
+  @@index([agentId, visible])
+  @@map("agent_app_packages")
+}
+
+// عرضٌ خاصٌّ يرسله الوكيل لمشتركٍ أو لمجموعةٍ — نصٌّ فقط، أو صورةٌ فقط، أو الاثنان.
+// 🔑 الجمهورُ **يُثبَّت لحظةَ الإنشاء** في `agent_offer_targets`: الاستهدافُ بتاريخ
+//    الانتهاء، والمشتركُ يجدّد فيتغيّر تاريخُه — فلو بقي الاستهدافُ حيّاً لخرج من
+//    العرض بعد تجديده. ويبقى `targetFrom/To` للتوثيق لا للتقييم.
+model AgentOffer {
+  id          Int       @id @default(autoincrement())
+  agentId     Int // الوكيلُ المُرسِل (مفتاحُ العزل)
+  text        String? // نصُّ العرض (قد يكون فارغاً إن كانت صورةٌ فقط)
+  image       String? // data:image مقيّدة (cleanPhoto)
+  targetFrom  DateTime? // توثيقُ نافذة الانتهاء التي اختيرت بها المجموعة
+  targetTo    DateTime?
+  targetCount Int       @default(0) // عددُ الجمهور لحظةَ الإنشاء
+  status      String    @default("visible") // visible | hidden
+  isDeleted   Boolean   @default(false) // لا حذفَ نهائيّ — يُؤرشَف
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  @@index([agentId, status])
+  @@map("agent_offers")
+}
+
+// جمهورُ العرض المثبَّت — المشتركُ يرى العرضَ إن كان سطرُه هنا وكان العرضُ لوكيله.
+model AgentOfferTarget {
+  id           Int @id @default(autoincrement())
+  offerId      Int
+  subscriberId Int
+
+  @@unique([offerId, subscriberId])
+  @@index([subscriberId])
+  @@map("agent_offer_targets")
+}
+
 // طلبُ شراءٍ (توصيل) من المشترك ⇒ يصل الوكيلَ البائع. لا مالَ ولا خصمَ مخزون؛ لقطةٌ للمنتج.
 model StoreOrder {
   id             Int      @id @default(autoincrement())
