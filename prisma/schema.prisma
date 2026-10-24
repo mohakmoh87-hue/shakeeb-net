@@ -322,6 +322,7 @@ model Subscriber {
   // تطبيقُ المشترك (كابينة): حظرٌ يمنعُ الدخولَ (يفرضه أدمن التطبيق)، وطابعُ آخرِ دخولٍ للتطبيق (لعدّ مستعمليه)
   appBanned        Boolean   @default(false)
   lastAppLoginAt   DateTime?
+  appNickname      String? // اسمٌ مستعارٌ يختاره المشترك — يظهر في سوق المستعمل بدل اسمه (فارغ = اسمُه)
   appPasswordHash  String? // كلمةُ مرور دخول التطبيق (bcrypt) — الدخولُ بالهاتف+الباسورد؛ الرمزُ للتحقّق من الملكيّة عند الضبط
   // ═════ البند ٤-أ · ختمُ رسالة «انتهى منذ N يوم» ═════
   // 🔑 يُختَم **قبل الإرسال ذرّيّاً** (`updateMany` بشرط `null` — درسُ ب-١: الحَجزُ قبل
@@ -1956,6 +1957,23 @@ model MarketListing {
   @@index([status, createdAt])
   @@index([sellerId])
   @@map("market_listings")
+}
+
+// تعليقُ مشتركٍ على إعلانٍ في سوق المستعمل (طلبُ محمد 2026-10-24).
+// الاسمُ المعروض يُحَلُّ عند القراءة من `appNickname` ثمّ `name`، و`authorName` لقطةٌ
+// ارتداديّةٌ إن حُذف المشترك. ولا حذفَ نهائيّ — `isDeleted` فقط.
+model MarketComment {
+  id           Int      @id @default(autoincrement())
+  listingId    Int
+  subscriberId Int
+  authorName   String? // لقطةُ الاسم وقتَ الكتابة (ارتدادٌ لا أكثر)
+  text         String
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([listingId, isDeleted])
+  @@index([subscriberId])
+  @@map("market_comments")
 }
 
 // متجرُ الوكيل — كتالوجٌ يؤلّفه الوكيلُ للتطبيق، مستقلٌّ تماماً عن مخزنه الداخليّ (Item).

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
 import { getSubscriberSession } from "@/lib/subscriberAuth";
-import { ensureMarketTable, cleanPhoto, priceToNum } from "@/lib/market";
+import { ensureMarketTable, cleanPhoto, priceToNum, displayName } from "@/lib/market";
 import { getMarketCategories } from "@/lib/appConfig";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +21,32 @@ export async function GET(request: Request) {
   const [items, total, categories] = await Promise.all([
     prisma.marketListing.findMany({
       where, orderBy: { id: "desc" }, skip: (page - 1) * PAGE, take: PAGE,
-      select: { id: true, sellerName: true, title: true, price: true, description: true, phone: true, photo: true, category: true, createdAt: true },
+      select: { id: true, sellerId: true, sellerName: true, title: true, price: true, description: true, phone: true, photo: true, category: true, createdAt: true },
     }),
     prisma.marketListing.count({ where }),
     getMarketCategories(),
   ]);
-  return NextResponse.json({ items: items.map((i) => ({ ...i, price: priceToNum(i.price) })), total, page, pages: Math.ceil(total / PAGE), categories });
+  // 🪪 الاسمُ المعروض يُحَلُّ **عند القراءة**: فمن وضع اسماً مستعاراً تتبعه إعلاناتُه
+  // القديمةُ أيضاً، لا الجديدةُ وحدَها. و`sellerName` المخزَّنُ ارتدادٌ إن حُذف المشترك.
+  const sellerIds = [...new Set(items.map((i) => i.sellerId))];
+  const sellers = sellerIds.length
+    ? await prisma.subscriber.findMany({ where: { id: { in: sellerIds } }, select: { id: true, name: true, appNickname: true } })
+    : [];
+  const byId = new Map(sellers.map((x) => [x.id, x]));
+  // عددُ تعليقات كلّ إعلانٍ — ليظهر على البطاقة بلا فتحها
+  const counts = sellerIds.length
+    ? await prisma.marketComment.groupBy({ by: ["listingId"], where: { listingId: { in: items.map((i) => i.id) }, isDeleted: false }, _count: { _all: true } })
+    : [];
+  const cmt = new Map(counts.map((c) => [c.listingId, c._count._all]));
+  return NextResponse.json({
+    items: items.map((i) => ({
+      ...i,
+      price: priceToNum(i.price),
+      sellerName: displayName(byId.get(i.sellerId), i.sellerName),
+      comments: cmt.get(i.id) ?? 0,
+    })),
+    total, page, pages: Math.ceil(total / PAGE), categories,
+  });
 }
 
 // POST: نشرُ إعلان — يحتاج جلسةَ مشترك + غيرَ محظور + خانقاً.
@@ -37,7 +57,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "إعلاناتٌ كثيرة، انتظر قليلاً" }, { status: 429 });
   }
   await ensureMarketTable();
-  const sub = await prisma.subscriber.findUnique({ where: { id: sess.subscriberId }, select: { id: true, name: true, phone: true, appBanned: true } });
+  const sub = await prisma.subscriber.findUnique({ where: { id: sess.subscriberId }, select: { id: true, name: true, phone: true, appBanned: true, appNickname: true } });
   if (!sub) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   if (sub.appBanned) return NextResponse.json({ error: "محظور" }, { status: 403 });
   const b = await request.json().catch(() => null);
@@ -57,7 +77,7 @@ export async function POST(request: Request) {
     if ((await tx.marketListing.count({ where: { sellerId: sub.id } })) >= 30) return null;
     return tx.marketListing.create({
       data: {
-        sellerId: sub.id, sellerName: sub.name ?? null, title, price: price != null ? BigInt(price) : null, description: description || null,
+        sellerId: sub.id, sellerName: displayName(sub, sub.name), title, price: price != null ? BigInt(price) : null, description: description || null,
         phone: phone.trim(), photo, category: cats.includes(category) ? category : null, status: "visible",
       },
       select: { id: true },
