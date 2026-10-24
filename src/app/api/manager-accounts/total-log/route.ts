@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import { dailyLogData } from "@/lib/dailyLogAgg";
 import { managerBalances } from "@/lib/managerBalances";
-import { TOTAL_SIGN, totalLogTotal, type TotalLogEntry } from "@/lib/totalLog";
+import { TOTAL_SIGN, totalLogTotal, withRunningBalance, type TotalLogEntry } from "@/lib/totalLog";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +73,7 @@ export async function GET() {
   // حارسٌ حيّ: مجموعُ الحركات بإشاراتها يجب أن يساوي الرصيدَ المعروض بالمعادلة.
   const sum = totalLogTotal(entries);
   return NextResponse.json({
-    entries,
+    entries: withRunningBalance(entries),
     sum,
     totalAvailable: balances.totalAvailable,
     balanced: Math.round(sum) === Math.round(balances.totalAvailable),

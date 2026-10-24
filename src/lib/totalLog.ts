@@ -35,3 +35,17 @@ export function entrySigned(e: TotalLogEntry): number {
 export function totalLogTotal(entries: TotalLogEntry[]): number {
   return entries.reduce((s, e) => s + entrySigned(e), 0);
 }
+
+export type TotalLogRow = TotalLogEntry & { balanceAfter: number };
+
+// 💰 الرصيدُ بعد كلّ حركة («كم أصبح المبلغ» — طلبُ محمد 2026-10-24): يُحسَب من الأقدم
+// صعوداً فيتراكم كدفترٍ حقيقيّ، والقائمةُ تبقى معروضةً من الأحدث. فرصيدُ أوّلِ سطرٍ
+// معروضٍ = المبلغُ الكلّيُّ الموجود، ورصيدُ آخرِ سطرٍ = أثرُ أوّلِ عمليّةٍ وحدَها.
+export function withRunningBalance(newestFirst: TotalLogEntry[]): TotalLogRow[] {
+  let balance = 0;
+  const ascending = [...newestFirst].reverse().map((e) => {
+    balance += entrySigned(e);
+    return { ...e, balanceAfter: balance };
+  });
+  return ascending.reverse();
+}

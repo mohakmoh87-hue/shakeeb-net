@@ -35,6 +35,7 @@ type TotalLogEntryView = {
   notes: string | null;
   byName: string | null;
   forManager?: boolean;
+  balanceAfter: number; // الرصيدُ بعد هذه الحركة — «كم أصبح المبلغ»
 };
 type TotalLog = { entries: TotalLogEntryView[]; sum: number; totalAvailable: number; balanced: boolean };
 type DayRow = DayAgg & { day: string; byOffice: Record<string, DayAgg>; byUser: Record<string, DayAgg> };
@@ -926,7 +927,7 @@ export default function ManagerAccountsPage() {
               <div className="flex items-center justify-between bg-white px-4 py-3">
                 <div>
                   <div className="text-sm font-bold text-slate-800">📜 الحركات</div>
-                  <div className="text-[11px] text-slate-500">كلُّ ما أُضيف وما صُرف — من أوّل عمليّة. اضغط سطرَ «تقرير يوميّ» لتفصيله.</div>
+                  <div className="text-[11px] text-slate-500">كلُّ ما أُضيف وما صُرف — من أوّل عمليّة، ومعه ما أصبح المبلغ بعد كلِّ حركة. اضغط سطرَ «تقرير يوميّ» لتفصيله.</div>
                 </div>
                 {totalLog && !totalLog.balanced && (
                   <span className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700">⚠️ مجموعُ الحركات {fmt(totalLog.sum)}</span>
@@ -971,8 +972,12 @@ export default function ManagerAccountsPage() {
                               </>
                             )}
                           </td>
-                          <td className={`py-2.5 pl-3 text-left align-top font-bold ${up ? "text-emerald-600" : "text-red-600"}`}>
+                          <td className={`py-2.5 px-2 text-left align-top font-bold ${up ? "text-emerald-600" : "text-red-600"}`}>
                             {up ? "+" : "−"}{fmt(shown)}
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 pl-3 text-left align-top">
+                            <div className="text-[10px] text-slate-400">أصبح</div>
+                            <div className={`font-bold ${e.balanceAfter < 0 ? "text-red-700" : "text-slate-800"}`}>{fmt(e.balanceAfter)}</div>
                           </td>
                         </tr>
                       );
@@ -982,6 +987,7 @@ export default function ManagerAccountsPage() {
                     <tr>
                       <td></td>
                       <td className="p-3">= المبلغ الكلي الموجود</td>
+                      <td></td>
                       <td className="p-3 text-left text-emerald-700">{fmt(totalLog.sum)}</td>
                     </tr>
                   </tfoot>

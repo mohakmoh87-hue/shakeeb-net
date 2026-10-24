@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { TOTAL_SIGN, totalLogTotal, entrySigned, type TotalLogEntry } from "../src/lib/totalLog";
+import { TOTAL_SIGN, totalLogTotal, entrySigned, withRunningBalance, type TotalLogEntry } from "../src/lib/totalLog";
 
 const ROOT = process.cwd();
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -50,12 +50,38 @@ describe("حركاتُ «المبلغ الكلّي الموجود» تساوي �
     assert.deepEqual([...new Set(usedInTotal)].sort(), Object.keys(TOTAL_SIGN).sort());
   });
 
+  // 🔒 «كم أصبح المبلغ» بعد كلّ حركة — بمثال محمد حرفيّاً
+  test("الرصيدُ الجاري يتراكم من الأقدم: ١٠٠ ← صرفُ ٥٠ ⇒ ٥٠ ← قبضُ ١٠٠ ⇒ ١٥٠", () => {
+    // الأحدثُ أوّلاً كما يُرسله المسار
+    const newestFirst: TotalLogEntry[] = [
+      { ...mgr("receipt", 100_000), at: "2026-10-24T12:00:00.000Z", key: "c" },
+      { ...mgr("expense", 50_000), at: "2026-10-24T11:00:00.000Z", key: "b" },
+      daily("2026-10-23", 100_000),
+    ];
+    const rows = withRunningBalance(newestFirst);
+    assert.deepEqual(rows.map((r) => r.balanceAfter), [150_000, 50_000, 100_000]);
+    // رصيدُ أوّلِ سطرٍ معروضٍ = المجموعُ الكلّيّ
+    assert.equal(rows[0].balanceAfter, totalLogTotal(newestFirst));
+    // والترتيبُ المعروضُ لم يُمَسّ
+    assert.deepEqual(rows.map((r) => r.key), ["c", "b", "daily:2026-10-23"]);
+  });
+
+  test("الرصيدُ الجاري يسمح بالسالب ولا يُقصّ", () => {
+    const rows = withRunningBalance([mgr("expense", 30_000), daily("2026-10-20", 10_000)]);
+    assert.deepEqual(rows.map((r) => r.balanceAfter), [-20_000, 10_000]);
+  });
+
   test("الماستر لا يدخل القائمة أبداً", () => {
     for (const t of ["master-receipt", "master-expense"]) {
       assert.equal(TOTAL_SIGN[t], undefined, `${t} يجب أن يبقى خارج حركات الكلّي`);
     }
     const route = read("src/app/api/manager-accounts/total-log/route.ts");
     assert.ok(route.includes("type: { in: Object.keys(TOTAL_SIGN) }"), "الاستعلام يجب أن يقتصر على أنواع المعادلة");
+  });
+
+  test("المسارُ يُرسل الرصيدَ الجاري محسوباً في الخادم", () => {
+    const route = read("src/app/api/manager-accounts/total-log/route.ts");
+    assert.ok(route.includes("withRunningBalance(entries)"), "entries يجب أن تمرّ بالرصيد الجاري");
   });
 
   test("المسارُ قراءةٌ محضة — لا كتابةَ ولا حذفَ فيه", () => {
