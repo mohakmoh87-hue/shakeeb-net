@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { TOTAL_SIGN, totalLogTotal, entrySigned, withRunningBalance, type TotalLogEntry } from "../src/lib/totalLog";
+import { TOTAL_SIGN, MASTER_SIGN, totalLogTotal, entrySigned, withRunningBalance, type TotalLogEntry } from "../src/lib/totalLog";
 
 const ROOT = process.cwd();
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
@@ -100,5 +100,59 @@ describe("حركاتُ «المبلغ الكلّي الموجود» تساوي �
       assert.ok(!src.includes("moneyTx.findMany"), `${name} يجب ألّا ينسخ تجميعَ moneyTx`);
     }
     assert.ok(read("src/lib/dailyLogAgg.ts").includes("moneyTx.findMany"), "التجميعُ في المكتبة");
+  });
+});
+
+describe("حركاتُ «حساب الماستر» — نظيرُ الكلّيّ، ودفترٌ لا يختلط به", () => {
+  const MASTER = "src/app/api/manager-accounts/master-log/route.ts";
+  const TOTAL = "src/app/api/manager-accounts/total-log/route.ts";
+
+  test("الدفتران لا يختلطان: أنواعُ كلٍّ خارج الآخر", () => {
+    for (const t of Object.keys(MASTER_SIGN)) assert.equal(TOTAL_SIGN[t], undefined, `${t} في دفتر الكلّيّ`);
+    for (const t of Object.keys(TOTAL_SIGN)) assert.equal(MASTER_SIGN[t], undefined, `${t} في دفتر الماستر`);
+    assert.deepEqual(Object.keys(MASTER_SIGN).sort(), ["master-expense", "master-receipt"]);
+  });
+
+  test("الماستر يحصر حركاتِ المكاتب بوسمه، والكلّيّ يستثنيه", () => {
+    const m = read(MASTER), t = read(TOTAL);
+    assert.ok(m.includes("onlyMaster"), "الماستر يحصر بـonlyMaster");
+    assert.ok(!m.includes("notMaster"), "ولا يستعمل notMaster");
+    assert.ok(m.includes("type: { in: Object.keys(MASTER_SIGN) }"), "أنواعُ المدير محصورة");
+    assert.ok(t.includes("dailyLogData"), "والكلّيُّ على تجميعه (notMaster داخله)");
+  });
+
+  test("لا قصَّ للحركات في الماستر — القصُّ يُفسد «أصبح» والمجموع", () => {
+    const m = read(MASTER);
+    assert.ok(!/take:\s*\d+/.test(m), "لا take في استعلامات السجلّ");
+  });
+
+  test("مسارُ الماستر قراءةٌ محضة", () => {
+    const m = read(MASTER);
+    for (const w of ["create(", "createMany", "update(", "updateMany", "delete(", "deleteMany", "$executeRaw"]) {
+      assert.ok(!m.includes(w), `يجب ألّا يحتوي ${w}`);
+    }
+    assert.ok(!/export async function (POST|PATCH|PUT|DELETE)/.test(m), "لا يُصدَّر إلّا GET");
+  });
+
+  test("رصيدُ الماستر المحسوبُ = مجموعُ حركاته بإشاراتها", () => {
+    const daily = (day: string, net: number): TotalLogEntry => ({
+      kind: "daily", key: `mday:${day}`, at: `${day}T00:00:00.000Z`, day, label: "تقرير يوميّ",
+      amount: net, sign: net >= 0 ? 1 : -1, notes: null, byName: null,
+    });
+    const mtx = (type: string, amount: number): TotalLogEntry => ({
+      kind: "manager", key: `mtx:${type}`, at: "2026-10-24T10:00:00.000Z", day: null,
+      label: type, type, amount, sign: MASTER_SIGN[type], notes: null, byName: null,
+    });
+    const entries = [daily("2026-10-20", 80_000), daily("2026-10-21", -5_000), mtx("master-receipt", 10_000), mtx("master-expense", 20_000)];
+    assert.equal(totalLogTotal(entries), 80_000 - 5_000 + 10_000 - 20_000);
+    const rows = withRunningBalance([...entries].reverse());
+    assert.equal(rows[0].balanceAfter, 65_000, "رصيدُ أوّلِ سطرٍ معروضٍ = المجموع");
+    assert.equal(entrySigned(mtx("master-expense", 7_000)), -7_000);
+  });
+
+  test("الواجهةُ مصدرٌ واحدٌ للاثنين — لا نسختان تفترقان", () => {
+    const page = read("src/app/(app)/manager-accounts/page.tsx");
+    assert.equal((page.match(/<MoneyLog\s/g) ?? []).length, 2, "المكوّنُ نفسُه للكلّيّ وللماستر");
+    assert.ok(!page.includes("balanceAfter"), "لا نسخةَ عرضٍ مضمَّنةٌ في الصفحة");
   });
 });

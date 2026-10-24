@@ -11,6 +11,7 @@ import InstallComputer from "@/components/InstallComputer";
 import RewardConfig from "@/components/RewardConfig";
 import SalaryModal from "@/components/SalaryModal";
 import { usePermission } from "@/lib/usePermission";
+import MoneyLog, { type MoneyLogData } from "@/components/MoneyLog";
 import TxDrillModal, { SubjectCell, hms } from "@/components/TxDrillModal";
 
 type WaOffice = { id: number; name: string | null; state: string };
@@ -19,25 +20,7 @@ type MgrTx = { id: number; type: string; amount: number; notes: string | null; d
 
 // سجل المبالغ اليومية: كل يوم بإجماليه وتفصيله حسب المكتب (البرج)
 type DayAgg = { moneyIn: number; moneyOut: number; net: number; count: number };
-// 💰 حركاتُ «المبلغ الكلّي الموجود» — سطرُ «تقرير يوميّ» (صافي اليوم) أو حركةُ إدارة
-type TotalLogEntryView = {
-  kind: "daily" | "manager";
-  key: string;
-  at: string;
-  day: string | null;
-  label: string;
-  type?: string;
-  amount: number;
-  sign: 1 | -1;
-  moneyIn?: number;
-  moneyOut?: number;
-  count?: number;
-  notes: string | null;
-  byName: string | null;
-  forManager?: boolean;
-  balanceAfter: number; // الرصيدُ بعد هذه الحركة — «كم أصبح المبلغ»
-};
-type TotalLog = { entries: TotalLogEntryView[]; sum: number; totalAvailable: number; balanced: boolean };
+// حركاتُ الرصيد (الكلّيّ والماستر) — شكلُها وعرضُها في `components/MoneyLog`
 type DayRow = DayAgg & { day: string; byOffice: Record<string, DayAgg>; byUser: Record<string, DayAgg> };
 type DailyLog = {
   offices: { id: number; name: string }[];
@@ -170,7 +153,9 @@ export default function ManagerAccountsPage() {
   const [showTotal, setShowTotal] = useState(false); // تفكيك «المبلغ الكلي الموجود»
   // 💰 حركاتُ «المبلغ الكلّي الموجود» (طلبُ محمد 2026-10-24): سهمٌ أخضر لما أُضيف وأحمر
   // لما صُرف، بتاريخه وساعته وسببه — بأثرٍ رجعيٍّ لأوّل عمليّة. قراءةٌ محضةٌ لا تمسّ مبلغاً.
-  const [totalLog, setTotalLog] = useState<TotalLog | null>(null);
+  const [totalLog, setTotalLog] = useState<MoneyLogData | null>(null);
+  // 💳 حركاتُ الماستر — نظيرُ حركات الكلّيّ حرفيّاً (طلبُ محمد: «نفس الشيء بالضبط»)
+  const [masterLog, setMasterLog] = useState<MoneyLogData | null>(null);
   // 🧰 الصندوق (طلبُ محمد 2026-09-27): نافذةُ نقلٍ باتّجاهٍ واحدٍ حسب المربّع المضغوط
   const [vaultMove, setVaultMove] = useState<null | "to" | "from">(null);
   const [vaultAmount, setVaultAmount] = useState("");
@@ -200,8 +185,12 @@ export default function ManagerAccountsPage() {
   const [txQ, setTxQ] = useState(""); // بحث في سجل حركات المدير
 
   function openMaster() {
-    setShowMaster(true); setMasterDetail(null);
+    setShowMaster(true); setMasterDetail(null); setMasterLog(null);
     fetch("/api/manager-accounts/master").then((r) => void (r.ok && r.json().then(setMasterDetail)));
+    fetch("/api/manager-accounts/master-log")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setMasterLog(d); })
+      .catch(() => {});
   }
 
   function openTotalLog() {
@@ -920,80 +909,13 @@ export default function ManagerAccountsPage() {
                 <tr><td className="p-3">= المبلغ الكلي الموجود</td><td className="p-3 text-left text-emerald-700">{fmt(data.totalAvailable)}</td></tr>
               </tfoot>
             </table>
-            {/* 💰 الحركاتُ — سهمٌ أخضر لما أُضيف وأحمر لما صُرف، بأثرٍ رجعيٍّ لأوّل عمليّة.
-                وسطرُ «تقرير يوميّ» يُفتَح بنفسِ ما يفتحه صفُّ اليوم في «مجموع التقارير
-                اليوميّة» — `openDay` نفسُها، فالتفصيلُ واحدٌ لا نسختان. */}
-            <div className="border-t-4 border-emerald-100">
-              <div className="flex items-center justify-between bg-white px-4 py-3">
-                <div>
-                  <div className="text-sm font-bold text-slate-800">📜 الحركات</div>
-                  <div className="text-[11px] text-slate-500">كلُّ ما أُضيف وما صُرف — من أوّل عمليّة، ومعه ما أصبح المبلغ بعد كلِّ حركة. اضغط سطرَ «تقرير يوميّ» لتفصيله.</div>
-                </div>
-                {totalLog && !totalLog.balanced && (
-                  <span className="rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700">⚠️ مجموعُ الحركات {fmt(totalLog.sum)}</span>
-                )}
-              </div>
-              {!totalLog ? (
-                <div className="p-6 text-center text-sm text-slate-400">جاري تحميل الحركات…</div>
-              ) : totalLog.entries.length === 0 ? (
-                <div className="p-6 text-center text-sm text-slate-400">لا حركاتٍ بعد</div>
-              ) : (
-                <table className="w-full text-right text-sm">
-                  <tbody>
-                    {totalLog.entries.map((e) => {
-                      const up = e.kind === "daily" ? e.amount >= 0 : e.sign === 1;
-                      const shown = e.kind === "daily" ? Math.abs(e.amount) : e.amount;
-                      const isDay = e.kind === "daily" && e.day;
-                      return (
-                        <tr key={e.key}
-                          onClick={isDay ? () => { setShowTotal(false); void openDay(e.day!, null, "all"); } : undefined}
-                          title={isDay ? "اضغط لعرض تقرير هذا اليوم كاملاً" : undefined}
-                          className={`border-b border-slate-100 ${isDay ? "cursor-pointer hover:bg-indigo-50/60" : ""}`}>
-                          <td className="w-9 py-2.5 pr-3 align-top text-lg leading-none">
-                            <span className={up ? "text-emerald-600" : "text-red-600"}>{up ? "▲" : "▼"}</span>
-                          </td>
-                          <td className="py-2.5 align-top">
-                            <div className="font-semibold text-slate-800">
-                              {e.label}
-                              {isDay && <span className="text-mynet-blue"> ↗</span>}
-                              {e.forManager && e.byName && <span className="text-[11px] font-normal text-slate-500"> — {e.byName}</span>}
-                            </div>
-                            {e.kind === "daily" ? (
-                              <div className="text-[11px] text-slate-500" dir="ltr">
-                                {e.day} · قبض {fmt(e.moneyIn ?? 0)} · صرف {fmt(e.moneyOut ?? 0)} · {e.count} حركة
-                              </div>
-                            ) : (
-                              <>
-                                {e.notes && <div className="text-[11px] leading-5 text-slate-500">{e.notes}</div>}
-                                <div className="text-[11px] text-slate-400" dir="ltr">
-                                  {new Date(e.at).toLocaleString("en-GB", { timeZone: "Asia/Baghdad", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}
-                                  {!e.forManager && e.byName ? ` · ${e.byName}` : ""}
-                                </div>
-                              </>
-                            )}
-                          </td>
-                          <td className={`py-2.5 px-2 text-left align-top font-bold ${up ? "text-emerald-600" : "text-red-600"}`}>
-                            {up ? "+" : "−"}{fmt(shown)}
-                          </td>
-                          <td className="whitespace-nowrap py-2.5 pl-3 text-left align-top">
-                            <div className="text-[10px] text-slate-400">أصبح</div>
-                            <div className={`font-bold ${e.balanceAfter < 0 ? "text-red-700" : "text-slate-800"}`}>{fmt(e.balanceAfter)}</div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="bg-emerald-50 font-extrabold">
-                    <tr>
-                      <td></td>
-                      <td className="p-3">= المبلغ الكلي الموجود</td>
-                      <td></td>
-                      <td className="p-3 text-left text-emerald-700">{fmt(totalLog.sum)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              )}
-            </div>
+            <MoneyLog
+              data={totalLog}
+              title="الحركات"
+              hint="كلُّ ما أُضيف وما صُرف — من أوّل عمليّة، ومعه ما أصبح المبلغ بعد كلِّ حركة. اضغط سطرَ «تقرير يوميّ» لتفصيله."
+              footer="المبلغ الكلي الموجود"
+              onDayClick={(day) => { setShowTotal(false); void openDay(day, null, "all"); }}
+            />
             <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
               <div className="mb-2 text-[11px] text-slate-500">
                 حساب الماستر خارج هذه المعادلة تماماً — له بطاقته المستقلة.
@@ -1229,6 +1151,14 @@ export default function ManagerAccountsPage() {
 
               {/* الحركات المفردة — المكان الوحيد الذي تُرى فيه حركة ماستر بعينها وتُحذف
                   (صفحة الصندوق تعرض اليدوي فقط، فحركة الماستر كانت تختفي بعد تسجيلها) */}
+              <MoneyLog
+                data={masterLog}
+                title="الحركات"
+                hint="كلُّ ما أُضيف وما صُرف في الماستر — من أوّل عمليّة، ومعه ما أصبح الرصيد بعد كلِّ حركة."
+                footer="رصيد الماستر"
+                accent="indigo"
+                onDayClick={(day) => setMasterDay(day)}
+              />
               {masterDetail && masterDetail.transactions.length > 0 && (
                 <div className="border-t-4 border-slate-100">
                   <div className="bg-slate-50 px-4 py-2 text-xs font-bold text-slate-600">كل حركات الماستر ({masterDetail.transactions.length}) — اضغط 🗑 لحذف حركة خاطئة</div>

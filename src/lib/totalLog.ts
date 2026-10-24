@@ -9,6 +9,13 @@ export const TOTAL_SIGN: Record<string, 1 | -1> = {
   salary: -1,
 };
 
+// وإشاراتُ حساب الماستر — مشتقّةٌ من معادلته في `api/manager-accounts/route.ts`:
+//   الماستر = (Σ moneyIn − Σ moneyOut بوسم الماستر) + master-receipt − master-expense
+export const MASTER_SIGN: Record<string, 1 | -1> = {
+  "master-receipt": 1,
+  "master-expense": -1,
+};
+
 export type TotalLogEntry = {
   kind: "daily" | "manager";
   key: string;
