@@ -23,7 +23,8 @@ describe("الاسمُ المستعار وتعليقاتُ سوق المستعم
 
   test("الاسمُ يُحَلُّ عند القراءة — فتتبعه الإعلاناتُ القديمة لا الجديدةُ وحدَها", () => {
     const src = read(MKT);
-    assert.ok(src.includes("sellerName: displayName(byId.get(i.sellerId), i.sellerName)"), "القراءةُ تحلّ الاسم");
+    // (صارت تمرّ بـidentityOf التي تلفّ displayName وتضيف الصورةَ وهويّةَ المدير)
+    assert.ok(src.includes("identityOf(byId.get(i.sellerId), i.sellerName"), "القراءةُ تحلّ الاسم");
     assert.ok(src.includes("appNickname: true"), "المستعارُ يُجلَب مع البائع");
   });
 

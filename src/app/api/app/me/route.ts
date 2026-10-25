@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSubscriberSession } from "@/lib/subscriberAuth";
 import { subscriberState } from "@/lib/subscriberLogin";
 import { remaining, formatExpiryDay } from "@/lib/format";
-import { ensureMarketTable } from "@/lib/market";
+import { ensureMarketTable, cleanPhoto, defaultAvatar } from "@/lib/market";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export async function GET() {
   await ensureMarketTable(); // عمودُ الاسم المستعار يُنشأ كسولاً مع جداول السوق
   const sub = await prisma.subscriber.findUnique({
     where: { id: sess.subscriberId },
-    select: { id: true, name: true, netUser: true, phone: true, address: true, sector: true, packageId: true, dateFrom: true, dateTo: true, carry: true, appBanned: true, towerId: true, rewardBalance: true, appNickname: true },
+    select: { id: true, name: true, netUser: true, phone: true, address: true, sector: true, packageId: true, dateFrom: true, dateTo: true, carry: true, appBanned: true, towerId: true, rewardBalance: true, appNickname: true, appPhoto: true },
   });
   if (!sub) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   // حظرُ أدمن التطبيق: تُبطَل جلسةُ المحظور فوراً (يُخرَجُ من التطبيق عند أوّل طلب)
@@ -40,6 +40,8 @@ export async function GET() {
     daysLeft, expired, carry: sub.carry ?? 0,
     address: sub.address ?? "", sector: sub.sector ?? "",
     nickname: sub.appNickname ?? "",
+    photo: sub.appPhoto ?? null,
+    avatar: defaultAvatar(sub.name),
     officeName: office?.name ?? "", agentName: agent?.name ?? "",
     dateFrom: sub.dateFrom, startLabel: sub.dateFrom ? formatExpiryDay(sub.dateFrom) : "",
     rewardsEnabled, rewardBalance: rewardsEnabled ? (sub.rewardBalance ?? 0) : null,
@@ -61,10 +63,22 @@ export async function PATCH(request: Request) {
   if (sub.appBanned) return NextResponse.json({ error: "محظور" }, { status: 403 });
 
   const b = await request.json().catch(() => null);
-  if (typeof b?.nickname !== "string") return NextResponse.json({ error: "لا تغيير" }, { status: 400 });
-  const raw = b.nickname.replace(/\s+/g, " ").trim();
-  if (raw && raw.length < 2) return NextResponse.json({ error: "الاسمُ المستعار حرفان على الأقلّ" }, { status: 400 });
-  if (raw.length > 40) return NextResponse.json({ error: "الاسمُ المستعار طويلٌ جدّاً" }, { status: 400 });
-  await prisma.subscriber.update({ where: { id: sub.id }, data: { appNickname: raw || null } });
-  return NextResponse.json({ ok: true, nickname: raw });
+  const data: { appNickname?: string | null; appPhoto?: string | null } = {};
+
+  if (typeof b?.nickname === "string") {
+    const raw = b.nickname.replace(/\s+/g, " ").trim();
+    if (raw && raw.length < 2) return NextResponse.json({ error: "الاسمُ المستعار حرفان على الأقلّ" }, { status: 400 });
+    if (raw.length > 40) return NextResponse.json({ error: "الاسمُ المستعار طويلٌ جدّاً" }, { status: 400 });
+    data.appNickname = raw || null;
+  }
+  // 🖼️ صورتُه الشخصيّة — null يمسحها. بنفس منقّي صور السوق (نقطيّةٌ وبحدِّ حجم).
+  if (b?.photo === null) data.appPhoto = null;
+  else if (typeof b?.photo === "string") {
+    const clean = cleanPhoto(b.photo);
+    if (!clean) return NextResponse.json({ error: "صورةٌ غيرُ صالحة أو كبيرةٌ جدّاً" }, { status: 400 });
+    data.appPhoto = clean;
+  }
+  if (Object.keys(data).length === 0) return NextResponse.json({ error: "لا تغيير" }, { status: 400 });
+  await prisma.subscriber.update({ where: { id: sub.id }, data });
+  return NextResponse.json({ ok: true, nickname: data.appNickname ?? undefined, photo: data.appPhoto ?? null });
 }

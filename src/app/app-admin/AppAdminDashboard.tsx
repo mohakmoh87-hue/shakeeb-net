@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
 import MarketModeration from "./MarketModeration";
+import PopupAds from "./PopupAds";
 
 type OtpWaInfo = { baseUrl: string; instanceId: string; tokenSet: boolean };
 type State = AppContentT & { otpWa: OtpWaInfo };
@@ -136,6 +137,8 @@ export default function AppAdminDashboard({ username }: { username: string }) {
       </div>
 
       {/* سوق المستعمل — الموديريشن */}
+      <PopupAds />
+
       <MarketModeration />
 
       {/* ربط واتساب OTP */}

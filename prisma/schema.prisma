@@ -322,6 +322,7 @@ model Subscriber {
   // تطبيقُ المشترك (كابينة): حظرٌ يمنعُ الدخولَ (يفرضه أدمن التطبيق)، وطابعُ آخرِ دخولٍ للتطبيق (لعدّ مستعمليه)
   appBanned        Boolean   @default(false)
   lastAppLoginAt   DateTime?
+  appPhoto         String? // صورةُ المشترك الشخصيّة (data:image مقيّدة) — تظهر في السوق
   appNickname      String? // اسمٌ مستعارٌ يختاره المشترك — يظهر في سوق المستعمل بدل اسمه (فارغ = اسمُه)
   appPasswordHash  String? // كلمةُ مرور دخول التطبيق (bcrypt) — الدخولُ بالهاتف+الباسورد؛ الرمزُ للتحقّق من الملكيّة عند الضبط
   // ═════ البند ٤-أ · ختمُ رسالة «انتهى منذ N يوم» ═════
@@ -1957,6 +1958,24 @@ model MarketListing {
   @@index([status, createdAt])
   @@index([sellerId])
   @@map("market_listings")
+}
+
+// نافذةٌ إعلانيّةٌ منبثقةٌ تملأ شاشةَ التطبيق عند فتحه، تُغلَق بـ✕ فتظهر التي بعدها
+// (طلبُ محمد 2026-10-25). ولكلٍّ جمهورُها: all | subs | guests — فيرى المشتركُ نوافذَه
+// والزائرُ نوافذَه، وقد تكون للاثنين نوافذُ مختلفةٌ في الوقت نفسِه.
+model AppPopup {
+  id        Int      @id @default(autoincrement())
+  text      String?
+  image     String? // data:image مقيّدة
+  audience  String   @default("all") // all | subs | guests
+  sort      Int      @default(0)
+  status    String   @default("visible") // visible | hidden
+  isDeleted Boolean  @default(false) // لا حذفَ نهائيّ — أرشفة
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([status, isDeleted, sort])
+  @@map("app_popups")
 }
 
 // تعليقُ مشتركٍ على إعلانٍ في سوق المستعمل (طلبُ محمد 2026-10-24).

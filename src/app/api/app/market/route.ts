@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
 import { getSubscriberSession } from "@/lib/subscriberAuth";
-import { ensureMarketTable, cleanPhoto, priceToNum, displayName } from "@/lib/market";
+import { ensureMarketTable, cleanPhoto, priceToNum, identityOf } from "@/lib/market";
 import { getMarketCategories } from "@/lib/appConfig";
+import { getAppAdminSession } from "@/lib/appAdminAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +27,14 @@ export async function GET(request: Request) {
     prisma.marketListing.count({ where }),
     getMarketCategories(),
   ]);
+  // 🪪 أدمنُ التطبيق وحدَه يرى الهويّةَ الحقيقيّة (الاسمَ الكاملَ واليوزر) مع الاسم
+  // المعروض — ويُحسَم ذلك **بكوكي الأدمن في الخادم** لا بعلَمٍ يرسله التطبيق.
+  const isAdmin = (await getAppAdminSession()) != null;
   // 🪪 الاسمُ المعروض يُحَلُّ **عند القراءة**: فمن وضع اسماً مستعاراً تتبعه إعلاناتُه
   // القديمةُ أيضاً، لا الجديدةُ وحدَها. و`sellerName` المخزَّنُ ارتدادٌ إن حُذف المشترك.
   const sellerIds = [...new Set(items.map((i) => i.sellerId))];
   const sellers = sellerIds.length
-    ? await prisma.subscriber.findMany({ where: { id: { in: sellerIds } }, select: { id: true, name: true, appNickname: true } })
+    ? await prisma.subscriber.findMany({ where: { id: { in: sellerIds } }, select: { id: true, name: true, netUser: true, appNickname: true, appPhoto: true } })
     : [];
   const byId = new Map(sellers.map((x) => [x.id, x]));
   // عددُ تعليقات كلّ إعلانٍ — ليظهر على البطاقة بلا فتحها
@@ -42,7 +46,7 @@ export async function GET(request: Request) {
     items: items.map((i) => ({
       ...i,
       price: priceToNum(i.price),
-      sellerName: displayName(byId.get(i.sellerId), i.sellerName),
+      ...identityOf(byId.get(i.sellerId), i.sellerName, isAdmin),
       comments: cmt.get(i.id) ?? 0,
     })),
     total, page, pages: Math.ceil(total / PAGE), categories,
@@ -77,12 +81,15 @@ export async function POST(request: Request) {
     if ((await tx.marketListing.count({ where: { sellerId: sub.id } })) >= 30) return null;
     return tx.marketListing.create({
       data: {
-        sellerId: sub.id, sellerName: displayName(sub, sub.name), title, price: price != null ? BigInt(price) : null, description: description || null,
-        phone: phone.trim(), photo, category: cats.includes(category) ? category : null, status: "visible",
+        sellerId: sub.id, sellerName: identityOf(sub, sub.name, false).sellerName, title, price: price != null ? BigInt(price) : null, description: description || null,
+        phone: phone.trim(), photo, category: cats.includes(category) ? category : null,
+        // ⏳ ينتظر موافقةَ أدمن التطبيق (طلبُ محمد 2026-10-25). والمنشورُ قبل اليوم
+        //    يبقى ظاهراً كما هو — لا يُعاد أحدٌ إلى الانتظار.
+        status: "pending",
       },
       select: { id: true },
     });
   });
   if (!created) return NextResponse.json({ error: "بلغتَ حدَّ الإعلانات (٣٠) — احذف قديماً لتنشر جديداً" }, { status: 400 });
-  return NextResponse.json({ ok: true, id: created.id });
+  return NextResponse.json({ ok: true, id: created.id, pending: true });
 }

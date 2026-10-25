@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
 import { getSubscriberSession } from "@/lib/subscriberAuth";
-import { ensureMarketTable, displayName, MAX_COMMENT } from "@/lib/market";
+import { ensureMarketTable, displayName, identityOf, MAX_COMMENT } from "@/lib/market";
+import { getAppAdminSession } from "@/lib/appAdminAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   });
   const ids = [...new Set(rows.map((r) => r.subscriberId))];
   const subs = ids.length
-    ? await prisma.subscriber.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, appNickname: true } })
+    ? await prisma.subscriber.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, netUser: true, appNickname: true, appPhoto: true } })
     : [];
   const byId = new Map(subs.map((x) => [x.id, x]));
 
@@ -33,16 +34,25 @@ export async function GET(request: Request) {
   const sess = await getSubscriberSession();
   const me = sess?.subscriberId ?? null;
   const owner = me != null && me === listing.sellerId;
+  // 🔒 المديرُ وحدَه يرى الهويّةَ الحقيقيّة — بكوكي الأدمن لا بعلَمٍ من العميل
+  const isAdmin = (await getAppAdminSession()) != null;
 
   return NextResponse.json({
-    items: rows.map((r) => ({
+    items: rows.map((r) => {
+      const ident = identityOf(byId.get(r.subscriberId), r.authorName, isAdmin);
+      return {
       id: r.id,
-      name: displayName(byId.get(r.subscriberId), r.authorName),
+      name: ident.sellerName,
+      photo: ident.photo,
+      avatar: ident.avatar,
+      realName: ident.realName,
+      netUser: ident.netUser,
       text: r.text,
       createdAt: r.createdAt,
       mine: me != null && r.subscriberId === me,
-      canDelete: owner || (me != null && r.subscriberId === me),
-    })),
+      canDelete: isAdmin || owner || (me != null && r.subscriberId === me),
+      };
+    }),
   });
 }
 
@@ -77,14 +87,15 @@ export async function POST(request: Request) {
 // حذفٌ ناعم: صاحبُ التعليق، أو صاحبُ الإعلان على إعلانه — ولا حذفَ نهائيّ أبداً
 export async function DELETE(request: Request) {
   const sess = await getSubscriberSession();
-  if (!sess) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
+  const admin = await getAppAdminSession();
+  if (!sess && !admin) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
   await ensureMarketTable();
   const id = Number(new URL(request.url).searchParams.get("id")) || 0;
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
   const row = await prisma.marketComment.findFirst({ where: { id, isDeleted: false }, select: { id: true, subscriberId: true, listingId: true } });
   if (!row) return NextResponse.json({ ok: true });
   const listing = await prisma.marketListing.findUnique({ where: { id: row.listingId }, select: { sellerId: true } });
-  const allowed = row.subscriberId === sess.subscriberId || listing?.sellerId === sess.subscriberId;
+  const allowed = admin != null || (sess != null && (row.subscriberId === sess.subscriberId || listing?.sellerId === sess.subscriberId));
   if (!allowed) return NextResponse.json({ error: "لا تملك حذفَ هذا التعليق" }, { status: 403 });
   await prisma.marketComment.update({ where: { id }, data: { isDeleted: true } });
   return NextResponse.json({ ok: true });

@@ -23,6 +23,13 @@ export async function ensureMarketTable(): Promise<void> {
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "market_comments_listingId_isDeleted_idx" ON "market_comments" ("listingId","isDeleted")`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "market_comments_subscriberId_idx" ON "market_comments" ("subscriberId")`);
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "app_popups" (
+    "id" SERIAL PRIMARY KEY, "text" TEXT, "image" TEXT,
+    "audience" TEXT NOT NULL DEFAULT 'all', "sort" INTEGER NOT NULL DEFAULT 0,
+    "status" TEXT NOT NULL DEFAULT 'visible', "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "app_popups_status_sort_idx" ON "app_popups" ("status","isDeleted","sort")`);
   ready = true;
 }
 
@@ -40,6 +47,47 @@ export function displayName(
 }
 
 export const MAX_COMMENT = 300;
+
+// أسماءٌ أنثويّةٌ قاطعةٌ شائعةٌ في العراق + لواحقُ لا تلتبس. والملتبسُ يأخذ أيقونةً
+// محايدةً عمداً: تخمينُ جنسِ إنسانٍ خطأً أسوأُ من أيقونةٍ عامّة (لا حقلَ جنسٍ في القاعدة).
+const FEMALE = new Set(["فاطمة","زهراء","زينب","رقية","مريم","سارة","نور","هدى","رنا","دعاء","شهد","آية","إسراء","اسراء","بتول","تبارك","حوراء","سجى","غفران","مروة","منار","ميساء","نرجس","هبة","وفاء","ايمان","إيمان","امل","أمل","سناء","رحمة","زهرة","بشرى","صابرين","سحر","عبير","لمى","ليلى","نجلاء","هناء"]);
+export function defaultAvatar(name: string | null | undefined): "f" | "m" | "n" {
+  const first = (name ?? "").trim().split(/\s+/)[0] ?? "";
+  if (!first) return "n";
+  if (FEMALE.has(first)) return "f";
+  if (/^(أم|ام)$/.test(first)) return "f";
+  if (/^(أبو|ابو)$/.test(first)) return "m";
+  return "n";
+}
+
+// 🪪 هويّةُ مشتركٍ كما تُعرَض: الاسمُ العامُّ للجميع، والحقيقيُّ لأدمن التطبيق وحدَه.
+// 🔒 `isAdmin` يأتي من كوكي الأدمن في الخادم — لا من علَمٍ يرسله العميل أبداً.
+export function identityOf(
+  sub: { appNickname?: string | null; name?: string | null; netUser?: string | null; appPhoto?: string | null } | null | undefined,
+  snapshot: string | null | undefined,
+  isAdmin: boolean,
+): { sellerName: string; photo: string | null; avatar: "f" | "m" | "n"; realName?: string; netUser?: string } {
+  const pub = publicIdentity(sub, snapshot);
+  const base = { sellerName: pub.name, photo: pub.photo, avatar: pub.avatar };
+  if (!isAdmin) return base;
+  return {
+    ...base,
+    realName: (sub?.name ?? "").trim() || pub.name,
+    netUser: (sub?.netUser ?? "").trim(),
+  };
+}
+// 🪪 هويّةُ مشتركٍ كما تُعرَض: الاسمُ العامُّ للجميع، والحقيقيُّ لأدمن التطبيق وحدَه.
+export type PublicIdentity = { name: string; photo: string | null; avatar: "f" | "m" | "n" };
+export function publicIdentity(
+  sub: { appNickname?: string | null; name?: string | null; appPhoto?: string | null } | null | undefined,
+  snapshot?: string | null,
+): PublicIdentity {
+  return {
+    name: displayName(sub, snapshot),
+    photo: sub?.appPhoto ?? null,
+    avatar: defaultAvatar(sub?.name),
+  };
+}
 
 export const MAX_MARKET_IMG = 400_000; // سقفُ صورة الإعلان
 // صورةٌ نقطيّةٌ حصراً (png/jpg/webp/gif) — تُرفَض svg (قد تحمل سكربتاً) وأيُّ data:text/*.
