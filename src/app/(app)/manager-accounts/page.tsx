@@ -909,6 +909,10 @@ export default function ManagerAccountsPage() {
                 <tr><td className="p-3">= المبلغ الكلي الموجود</td><td className="p-3 text-left text-emerald-700">{fmt(data.totalAvailable)}</td></tr>
               </tfoot>
             </table>
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
+              حساب الماستر خارج هذه المعادلة تماماً — له بطاقته المستقلة.
+              <span className="block">🧰 وما في الصندوق الآن <b className="text-cyan-700">{fmt(data.vaultBalance)}</b> — وهو مطروحٌ من الكلي أعلاه (خرج منه صرفاً).</span>
+            </div>
             <MoneyLog
               data={totalLog}
               title="الحركات"
@@ -916,13 +920,13 @@ export default function ManagerAccountsPage() {
               footer="المبلغ الكلي الموجود"
               onDayClick={(day) => { setShowTotal(false); void openDay(day, null, "all"); }}
             />
-            <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="mb-2 text-[11px] text-slate-500">
-                حساب الماستر خارج هذه المعادلة تماماً — له بطاقته المستقلة.
-                <span className="block">🧰 وما في الصندوق الآن <b className="text-cyan-700">{fmt(data.vaultBalance)}</b> — وهو مطروحٌ من الكلي أعلاه (خرج منه صرفاً).</span>
-              </div>
+            {/* 🧰 شريطٌ لاصقٌ بأسفل النافذة كما الرأسُ لاصقٌ بأعلاها (بلاغُ محمد 2026-10-27):
+                كان الزرُّ آخرَ عنصرٍ بعد كلّ الحركات، فكلَّما كثرت ابتعد. والحركاتُ تمرّ
+                تحته الآن فلا يُطارَد بالتمرير. */}
+            <div className="sticky bottom-0 z-10 flex items-center gap-3 border-t border-slate-200 bg-slate-50/95 px-4 py-2.5 backdrop-blur">
+              <span className="flex-1 text-[11px] text-slate-500">🧰 الصندوق الآن <b className="text-cyan-700">{fmt(data.vaultBalance)}</b></span>
               <button onClick={() => { setShowTotal(false); setVaultMove("to"); setVaultAmount(""); setVaultErr(""); }}
-                className="w-full rounded-lg bg-cyan-600 py-2.5 text-sm font-bold text-white hover:bg-cyan-700">🧰 نقل مبلغ إلى الصندوق</button>
+                className="shrink-0 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-bold text-white hover:bg-cyan-700">🧰 نقل مبلغ إلى الصندوق</button>
             </div>
           </div>
         </div>
