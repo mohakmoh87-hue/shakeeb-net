@@ -301,7 +301,7 @@ export default function FieldManagementPage() {
   // 🎫 تذاكرُ المشتركين: طلباتُ اشتراكٍ جديدةٌ من التطبيق، مُوجَّهةٌ لهذا الوكيل بأقرب عامود
   const [subTickets, setSubTickets] = useState<{ id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; towerId: number | null; type: string | null; status: string; createdAt: string; source: string | null; dueAt: string | null }[]>([]);
   // 🏬 طلباتُ متجر الوكيل الواصلةُ له — عمودٌ خاصٌّ يظهر حين تأتيه طلبات (يختفي حين يفرغ)
-  const [storeOrders, setStoreOrders] = useState<{ id: number; subscriberName: string | null; productTitle: string; price: number | null; qty: number; phone: string; address: string; note: string | null; status: string; createdAt: string; fulfillment: string; deliveryFee: number | null; installFee: number | null; total: number | null; lines: { productTitle: string; price: number | null; qty: number }[] }[]>([]);
+  const [storeOrders, setStoreOrders] = useState<{ id: number; subscriberName: string | null; productTitle: string; price: number | null; qty: number; phone: string; address: string; note: string | null; status: string; createdAt: string; fulfillment: string; deliveryFee: number | null; installFee: number | null; total: number | null; rewardBalance?: number; lines: { productTitle: string; price: number | null; qty: number }[] }[]>([]);
   const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
@@ -1204,6 +1204,14 @@ export default function FieldManagementPage() {
                       {o.installFee != null && <span className="text-slate-500">· تنصيب {o.installFee.toLocaleString("en-US")}</span>}
                     </div>
                     {o.subscriberName && <div className="mt-0.5 text-[11px] font-semibold text-slate-600">{o.subscriberName}</div>}
+                    {/* 🎁 رصيدُ مكافأة المشترك (طلبُ محمد 2026-10-26): بيانٌ للمكتب لا خصمٌ —
+                        الخصمُ يبقى عند إصدار الفاتورة كما هو، فلا يُستهلَك رصيدٌ على طلبٍ لم يُسلَّم.
+                        ولا يظهر إلّا لمشتركٍ من مكاتب هذا الوكيل (الخادمُ يحسم ذلك). */}
+                    {(o.rewardBalance ?? 0) > 0 && (
+                      <div className="mt-1 rounded bg-emerald-50 px-1.5 py-1 text-[10px] font-bold text-emerald-700">
+                        🎁 لديه رصيدُ مكافأة {(o.rewardBalance ?? 0).toLocaleString("en-US")} د.ع — يُخصَم عند إصدار الفاتورة
+                      </div>
+                    )}
                     <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={o.phone} /></div>
                     <div className="mt-1 text-[11px] text-slate-600">📍 {o.address}</div>
                     {o.note && <div className="mt-1 rounded bg-slate-50 p-1.5 text-[11px] text-slate-600">{o.note}</div>}

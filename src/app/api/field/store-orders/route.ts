@@ -16,7 +16,26 @@ export async function GET() {
   // الطلباتُ الفاعلةُ فقط (new/accepted) فيختفي العمودُ حين تُنجَز كلُّها (طلب محمد)
   const orders = await prisma.storeOrder.findMany({ where: { agentId, status: { in: ["new", "accepted"] } }, orderBy: { id: "desc" }, take: 200 });
   const byOrder = await storeOrderLines(orders);
-  return NextResponse.json({ orders: orders.map((o) => ({ ...o, price: priceToNum(o.price), deliveryFee: priceToNum(o.deliveryFee), installFee: priceToNum(o.installFee), total: priceToNum(o.total), lines: byOrder.get(o.id) ?? [] })) });
+  // 🎁 «لديه رصيدُ مكافأة» (طلبُ محمد 2026-10-26): الرصيدُ **لا يُخصَم هنا** — قرارُ محمد
+  //    أن يبقى الخصمُ عند الفنيّ في الفاتورة الحقيقيّة. هذا بيانٌ للوكيل فقط ليعلم.
+  // 🔒 والعزل: لا يُكشَف الرصيدُ إلّا لمشتركٍ **من مكاتب هذا الوكيل**؛ فمشتركُ وكيلٍ
+  //    آخرَ يشتري من متجرنا لا يُرى رصيدُه (مكافأتُه عند وكيله لا عندنا أصلاً).
+  const subIds = [...new Set(orders.map((o) => o.subscriberId))];
+  const reward = new Map<number, number>();
+  if (subIds.length) {
+    const myTowers = await prisma.tower.findMany({
+      where: { agentId, isDeleted: false, rewardsEnabled: "1" },
+      select: { id: true },
+    });
+    if (myTowers.length) {
+      const subs = await prisma.subscriber.findMany({
+        where: { id: { in: subIds }, isDeleted: false, rewardBalance: { gt: 0 }, towerId: { in: myTowers.map((t) => t.id) } },
+        select: { id: true, rewardBalance: true },
+      });
+      for (const x of subs) reward.set(x.id, x.rewardBalance ?? 0);
+    }
+  }
+  return NextResponse.json({ orders: orders.map((o) => ({ ...o, price: priceToNum(o.price), deliveryFee: priceToNum(o.deliveryFee), installFee: priceToNum(o.installFee), total: priceToNum(o.total), rewardBalance: reward.get(o.subscriberId) ?? 0, lines: byOrder.get(o.id) ?? [] })) });
 }
 
 export async function PATCH(request: Request) {

@@ -42,5 +42,8 @@ export async function GET(request: Request) {
       stock: i.itemName ? (live.get(i.id) ?? 0) : i.stock,
     })),
     total, page, pages: Math.ceil(total / PAGE), categories,
+    // 🎁 وكيلُ المشترك — تحتاجه السلّةُ لتعرف أنّ المتجرَ متجرُ **وكيله** فتعرض خصمَ
+    //    المكافأة (طلبُ محمد 2026-10-26). معرّفُ وكيله هو، لا معرّفَ غيره.
+    myAgentId: viewerAgentId,
   });
 }
