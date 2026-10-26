@@ -34,3 +34,46 @@ export async function getSubscriberSession(): Promise<{ subscriberId: number } |
     return null;
   }
 }
+
+// ═════ 👤 جلسةُ «غير المشترك» — نفسُ الكوكي بنوعٍ مغاير ═════
+// 🔒 الأمانُ ببنيته لا بحذرِ المحرّر: `getSubscriberSession` أعلاه ترفض كلَّ ما
+//    `kind` فيه ليس "subscriber"، فحسابُ غير المشترك **لا يصل إلى أيّ مسارِ مشتركٍ
+//    قائمٍ أبداً** بلا أن نعدّل فيها حرفاً. وما نريد فتحَه للاثنين يُنادي `appViewer`.
+
+export async function setAccountSession(accountId: number) {
+  const token = await new SignJWT({ kind: "account", accountId })
+    .setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime(`${MAX_AGE}s`).sign(SECRET);
+  const store = await cookies();
+  store.set(COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: MAX_AGE, path: "/" });
+}
+
+export async function getAccountSession(): Promise<{ accountId: number } | null> {
+  const store = await cookies();
+  const token = store.get(COOKIE)?.value;
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, SECRET, { algorithms: ["HS256"] });
+    if ((payload as { kind?: string }).kind !== "account") return null;
+    const accountId = Number((payload as { accountId?: number }).accountId);
+    if (!Number.isFinite(accountId)) return null;
+    const acc = await prisma.appAccount.findUnique({ where: { id: accountId }, select: { id: true, isBanned: true } });
+    if (!acc || acc.isBanned) return null;
+    return { accountId };
+  } catch {
+    return null;
+  }
+}
+
+export type AppViewer =
+  | { kind: "subscriber"; subscriberId: number }
+  | { kind: "account"; accountId: number }
+  | null;
+
+// من يتصفّح الآن؟ مشتركٌ أم حسابُ غير مشترك أم زائرٌ بلا جلسة.
+export async function appViewer(): Promise<AppViewer> {
+  const sub = await getSubscriberSession();
+  if (sub) return { kind: "subscriber", subscriberId: sub.subscriberId };
+  const acc = await getAccountSession();
+  if (acc) return { kind: "account", accountId: acc.accountId };
+  return null;
+}

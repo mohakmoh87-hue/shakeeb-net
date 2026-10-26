@@ -21,7 +21,9 @@ export async function POST(request: Request) {
   if (sub.appBanned) return NextResponse.json({ status: "banned", error: "حُظِر حسابُك من التطبيق — راجِع الدعم" }, { status: 403 });
 
   const st = subscriberState(sub.dateTo);
-  if (st.state === "expired") return NextResponse.json({ status: "expired", days: st.daysExpired });
+  // 🔓 المنتهي **يدخل** (قرارُ محمد 2026-10-26): كان يُمنَع فيُحرَم من بابٍ يعيده
+  //    زبوناً. يدخل ويُعامَل معاملةَ غير المشترك، ويرى «اشترك مع سوبر سيل».
+  //    والحظرُ وحدَه يمنع (أعلاه).
 
   const r = await issueOtp(core, sub.id, sub.phone ?? core);
   if (!r.ok) return NextResponse.json({ status: "send_failed", error: r.error ?? "تعذّر إرسالُ الرمز" }, { status: 502 });

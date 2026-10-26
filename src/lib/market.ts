@@ -33,6 +33,13 @@ export async function ensureMarketTable(): Promise<void> {
   // عمودُ النوع على جدولٍ **من جداولي** لا جدولٍ مركزيّ — فالكسولُ مسموحٌ هنا
   // (حارسُ lazy-ddl يحصر المنعَ بالجداول المركزيّة).
   await prisma.$executeRawUnsafe(`ALTER TABLE "app_popups" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'popup'`);
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "app_accounts" (
+    "id" SERIAL PRIMARY KEY, "phoneCore" TEXT NOT NULL, "phone" TEXT NOT NULL,
+    "name" TEXT NOT NULL, "area" TEXT NOT NULL,
+    "isBanned" BOOLEAN NOT NULL DEFAULT false, "lastLogin" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "app_accounts_phoneCore_key" ON "app_accounts" ("phoneCore")`);
   ready = true;
 }
 
