@@ -1960,6 +1960,19 @@ model MarketListing {
   @@map("market_listings")
 }
 
+// 🖼️ صورُ إعلان السوق (حتّى ٥ — طلبُ محمد 2026-10-26). جدولٌ منفصلٌ عن الإعلان كي
+// لا تُثقِل خمسُ صورٍ كلَّ استعلامٍ يقرأ صفَّ الإعلان بلا `select`.
+model MarketPhoto {
+  id        Int      @id @default(autoincrement())
+  listingId Int
+  sort      Int      @default(0)
+  image     String // data:image مقيّدة
+  createdAt DateTime @default(now())
+
+  @@index([listingId, sort])
+  @@map("market_photos")
+}
+
 // 👤 حسابُ «غير مشترك» في التطبيق (طلبُ محمد 2026-10-26): من ليس زبوناً يسجّل
 // برقمه واسمه الثلاثيّ ومنطقته ويتصفّح كزائرٍ معروفِ الهويّة.
 // 🔴 **جدولٌ مستقلٌّ عمداً — ولا صفَّ وهميٌّ في `subscribers`**: ذلك الجدولُ تقرؤه

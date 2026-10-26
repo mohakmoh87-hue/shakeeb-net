@@ -25,6 +25,8 @@ export async function DELETE(request: Request) {
   await ensureMarketTable();
   const own = await prisma.marketListing.findFirst({ where: { id, sellerId: sess.subscriberId }, select: { id: true } });
   if (!own) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+  // 🖼️ صورُ الإعلان تُحذَف معه — لا مفتاحَ أجنبيّاً في الإنشاء الكسول فيُحذف صراحةً
+  await prisma.marketPhoto.deleteMany({ where: { listingId: id } });
   await prisma.marketListing.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

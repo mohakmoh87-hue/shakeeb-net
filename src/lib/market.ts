@@ -39,7 +39,15 @@ export async function ensureMarketTable(): Promise<void> {
     "isBanned" BOOLEAN NOT NULL DEFAULT false, "lastLogin" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
-  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "app_accounts_phoneCore_key" ON "app_accounts" ("phoneCore")`);
+  // 🖼️ صورُ الإعلان الإضافيّة (حتّى ٥ — طلبُ محمد 2026-10-26) في **جدولٍ منفصل**
+  //    لا في أعمدةٍ على `market_listings`: فاستعلاماتُ لوحة الإدارة تقرأ الصفَّ بلا
+  //    `select`، وخمسُ صورٍ في الصفّ تُثقِل كلَّ قراءةٍ للسوق. الغلافُ يبقى في
+  //    `photo` كما كان فلا يتغيّر شيءٌ لإعلانٍ قديم.
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "market_photos" (
+    "id" SERIAL PRIMARY KEY, "listingId" INTEGER NOT NULL,
+    "sort" INTEGER NOT NULL DEFAULT 0, "image" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
+  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "market_photos_listingId_sort_idx" ON "market_photos" ("listingId","sort")`);
   ready = true;
 }
 
@@ -107,6 +115,19 @@ export function cleanPhoto(v: unknown): string | null {
   if (typeof v !== "string" || v.length > MAX_MARKET_IMG) return null;
   return /^data:image\/(png|jpe?g|webp|gif);/i.test(v) ? v : null;
 }
+// 🖼️ حتّى خمسُ صورٍ للإعلان (طلبُ محمد 2026-10-26) — أوّلُها الغلاف.
+export const MAX_PHOTOS = 5;
+export function cleanPhotos(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const out: string[] = [];
+  for (const x of v) {
+    const ok = cleanPhoto(x);
+    if (ok) out.push(ok);
+    if (out.length >= MAX_PHOTOS) break;
+  }
+  return out;
+}
+
 // price في القاعدة BigInt؛ يُحوَّل Number للاستجابة (الأسعارُ الواقعيّة < 2^53 فلا فقدَ دقّة).
 export function priceToNum(p: bigint | null | undefined): number | null {
   return p == null ? null : Number(p);

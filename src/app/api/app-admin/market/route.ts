@@ -65,6 +65,7 @@ export async function DELETE(request: Request) {
   await ensureMarketTable();
   const row = await prisma.marketListing.findFirst({ where: { id }, select: { id: true } });
   if (!row) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+  await prisma.marketPhoto.deleteMany({ where: { listingId: id } });
   await prisma.marketListing.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

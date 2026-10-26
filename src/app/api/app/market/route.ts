@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
 import { getSubscriberSession } from "@/lib/subscriberAuth";
-import { ensureMarketTable, cleanPhoto, priceToNum, identityOf } from "@/lib/market";
+import { ensureMarketTable, cleanPhoto, cleanPhotos, priceToNum, identityOf } from "@/lib/market";
 import { getMarketCategories } from "@/lib/appConfig";
 import { getAppAdminSession } from "@/lib/appAdminAuth";
 
@@ -42,12 +42,18 @@ export async function GET(request: Request) {
     ? await prisma.marketComment.groupBy({ by: ["listingId"], where: { listingId: { in: items.map((i) => i.id) }, isDeleted: false }, _count: { _all: true } })
     : [];
   const cmt = new Map(counts.map((c) => [c.listingId, c._count._all]));
+  // 🖼️ عددُ صور كلّ إعلان — لتظهر «٣ صور» على البطاقة، والصورُ نفسُها تُجلَب عند فتحه
+  const shots = items.length
+    ? await prisma.marketPhoto.groupBy({ by: ["listingId"], where: { listingId: { in: items.map((i) => i.id) } }, _count: { _all: true } })
+    : [];
+  const shotCount = new Map(shots.map((c) => [c.listingId, c._count._all]));
   return NextResponse.json({
     items: items.map((i) => ({
       ...i,
       price: priceToNum(i.price),
       ...identityOf(byId.get(i.sellerId), i.sellerName, isAdmin),
       comments: cmt.get(i.id) ?? 0,
+      photoCount: shotCount.get(i.id) ?? (i.photo ? 1 : 0),
     })),
     total, page, pages: Math.ceil(total / PAGE), categories,
   });
@@ -71,7 +77,10 @@ export async function POST(request: Request) {
   const category = typeof b?.category === "string" ? b.category.trim().slice(0, 80) : "";
   const priceRaw = Number(b?.price);
   const price = Number.isFinite(priceRaw) && priceRaw >= 0 && priceRaw <= 1e13 ? Math.round(priceRaw) : null;
-  const photo = cleanPhoto(b?.photo);
+  // 🖼️ حتّى خمسُ صور: أوّلُ المقبولة هي الغلافُ في `photo` (توافقٌ مع كلّ قارئٍ قديم)،
+  //    وكلُّها تُحفَظ في `market_photos`. و`photo` المفردةُ تبقى مقبولةً وحدَها.
+  const photos = cleanPhotos(b?.photos);
+  const photo = photos.length ? photos[0] : cleanPhoto(b?.photo);
   if (!title || !phone.trim()) return NextResponse.json({ error: "العنوان ورقم الهاتف مطلوبان" }, { status: 400 });
   const cats = await getMarketCategories();
   // سقفٌ صارمٌ لعدد إعلانات البائع (٣٠): قفلٌ استشاريٌّ لكلّ بائعٍ يُسلسِل العدَّ+الإنشاءَ داخل
@@ -90,6 +99,12 @@ export async function POST(request: Request) {
       select: { id: true },
     });
   });
+  if (created && photos.length > 1) {
+    const listingId = created.id;
+    await prisma.marketPhoto.createMany({
+      data: photos.map((image, i) => ({ listingId, sort: i, image })),
+    });
+  }
   if (!created) return NextResponse.json({ error: "بلغتَ حدَّ الإعلانات (٣٠) — احذف قديماً لتنشر جديداً" }, { status: 400 });
   return NextResponse.json({ ok: true, id: created.id, pending: true });
 }
