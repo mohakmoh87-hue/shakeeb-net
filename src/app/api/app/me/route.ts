@@ -21,7 +21,7 @@ export async function GET() {
   const pkg = sub.packageId ? await prisma.package.findUnique({ where: { id: sub.packageId }, select: { name: true, priceDinar: true, priceDollar: true } }) : null;
   // مكتبُه ووكيله — لشاشة «بياناتي الشخصيّة»، ومنه حالةُ المكافآت.
   // صفُّ المشترك نفسِه بجلسته وحدَها: لا ملاحظاتٍ داخليّةً ولا رقمَ غيره.
-  const office = sub.towerId ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { name: true, agentId: true, rewardsEnabled: true } }) : null;
+  const office = sub.towerId ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { name: true, agentId: true, rewardsEnabled: true, phone: true, lat: true, lng: true } }) : null;
   const agent = office?.agentId ? await prisma.agent.findUnique({ where: { id: office.agentId }, select: { name: true } }) : null;
   const rewardsEnabled = office?.rewardsEnabled === "1";
   const st = subscriberState(sub.dateTo);
@@ -43,6 +43,8 @@ export async function GET() {
     photo: sub.appPhoto ?? null,
     avatar: defaultAvatar(sub.name),
     officeName: office?.name ?? "", agentName: agent?.name ?? "",
+    // 🏬 مكتبُه على خريطة التغطية: هاتفُه العامُّ وموقعُه (طلبُ محمد 2026-10-26)
+    officePhone: office?.phone ?? "", officeLat: office?.lat ?? null, officeLng: office?.lng ?? null,
     dateFrom: sub.dateFrom, startLabel: sub.dateFrom ? formatExpiryDay(sub.dateFrom) : "",
     rewardsEnabled, rewardBalance: rewardsEnabled ? (sub.rewardBalance ?? 0) : null,
     state: st.state, daysExpired: st.daysExpired,

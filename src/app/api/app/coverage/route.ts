@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
-import { resolveCoverageOwner, CELL_M, LAT_CELL, LNG_CELL } from "@/lib/coverageOwners";
+import { resolveCoverageOwner, getCoverageOffices, CELL_M, LAT_CELL, LNG_CELL } from "@/lib/coverageOwners";
 
 export const dynamic = "force-dynamic";
 
 // ═════ 📡🗺️ أماكنُ تغطية سوبر سيل — للتطبيق (طلب محمد 2026-09-06) ═════
 // GET: ظلُّ التغطية الشفّاف — خلايا شبكةٍ (٣٠٠م) فيها عمودٌ واحدٌ على الأقلّ. **لا تُرجَع مواقعُ
 //   الأعمدة إطلاقاً**: تُسنَد كلُّ نقطةٍ إلى مركز خليّتها فتُخفى النقطةُ الفعليّة (±٣٠٠م).
+//   ومعها **مواقعُ المكاتب** بأسمائها وهواتفها العامّة (طلبُ محمد 2026-10-26) — واجهةُ
+//   محلٍّ وهاتفٌ معلَن، وهي الحقولُ نفسُها التي يكشفها POST للمكتب المالك.
 // POST {lat,lng}: هل الموقعُ داخل التغطية؟ + أقربُ مكتبٍ (هاتفُه وموقعُه) — كلُّه معلوماتٌ عامّة.
 
 // شبكةُ الخلايا (CELL_M/LAT_CELL/LNG_CELL) مصدرُها الوحيد coverageOwners — كي يتطابق «داخل
@@ -40,8 +42,12 @@ function haversine(aLat: number, aLng: number, bLat: number, bLng: number): numb
 }
 
 export async function GET() {
-  const cov = await getCoverage();
-  return NextResponse.json({ cellM: CELL_M, cells: cov.cells });
+  const [cov, offices] = await Promise.all([getCoverage(), getCoverageOffices()]);
+  return NextResponse.json({
+    cellM: CELL_M,
+    cells: cov.cells,
+    offices: offices.map((o) => ({ name: o.name, phone: o.phone, lat: o.lat, lng: o.lng })),
+  });
 }
 
 export async function POST(request: Request) {

@@ -137,6 +137,15 @@ export async function getCoverageCells(): Promise<[number, number][]> {
   return (await getIndex()).cells;
 }
 
+// 🏬 مكاتبُ الشبكة بمواقعها على الخريطة (طلبُ محمد 2026-10-26: «مواقع كلّ المكاتب»).
+// نفسُ الحقول التي يكشفها POST للمكتب المالك: الاسمُ والهاتفُ العامُّ والموقع — لا
+// managerPhone ولا agentId ولا عددَ مشتركين ولا أيَّ رقمٍ يقارن وكيلاً بوكيل.
+// ومن لا إحداثيّاتَ له يُستبعَد، فلا نرسم مكتباً في وسط بغداد افتراضاً.
+export async function getCoverageOffices(): Promise<OfficeInfo[]> {
+  const index = await getIndex();
+  return [...index.offices.values()].filter((o) => o.lat != null && o.lng != null);
+}
+
 export type CoverageOwner = { agentId: number; towerId: number; area: string | null; office: OfficeInfo };
 
 // المالكُ لموقعٍ = مالكُ أقربِ **خليّةٍ مملوكةٍ** مركزُها ضمن CELL_M (كاختبار inside تماماً).
