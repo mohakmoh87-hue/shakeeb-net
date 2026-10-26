@@ -6,6 +6,7 @@ import { ensureMarketTable, cleanPhoto } from "@/lib/market";
 export const dynamic = "force-dynamic";
 
 const AUDIENCES = ["all", "subs", "guests"] as const;
+const KINDS = ["popup", "strip"] as const;
 
 // 🪟 إدارةُ النوافذ المنبثقة — لأدمن التطبيق وحدَه (من /app-admin أو من الهاتف:
 // نفسُ المسار يخدم الاثنين، كما أراد محمد). ولا حذفَ نهائيّ — أرشفةٌ بعلَم.
@@ -22,7 +23,7 @@ export async function GET() {
   const items = await prisma.appPopup.findMany({
     where: { isDeleted: false },
     orderBy: [{ sort: "asc" }, { id: "asc" }],
-    select: { id: true, text: true, image: true, audience: true, sort: true, status: true, createdAt: true },
+    select: { id: true, text: true, image: true, kind: true, audience: true, sort: true, status: true, createdAt: true },
   });
   return NextResponse.json({ items });
 }
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
   const sortRaw = Number(b?.sort);
   const sort = Number.isFinite(sortRaw) ? Math.max(0, Math.min(999, Math.round(sortRaw))) : 0;
   const created = await prisma.appPopup.create({
-    data: { text: text || null, image, audience, sort, status: "visible" },
+    data: { text: text || null, image, kind: KINDS.includes(b?.kind) ? b.kind : "popup", audience, sort, status: "visible" },
     select: { id: true },
   });
   return NextResponse.json({ ok: true, id: created.id }, { status: 201 });
@@ -56,9 +57,10 @@ export async function PATCH(request: Request) {
     await prisma.appPopup.update({ where: { id }, data: { isDeleted: true } });
     return NextResponse.json({ ok: true, archived: true });
   }
-  const data: { status?: string; audience?: string; sort?: number; text?: string | null; image?: string | null } = {};
+  const data: { status?: string; kind?: string; audience?: string; sort?: number; text?: string | null; image?: string | null } = {};
   if (b?.status === "hidden" || b?.status === "visible") data.status = b.status;
   if (AUDIENCES.includes(b?.audience)) data.audience = b.audience;
+  if (KINDS.includes(b?.kind)) data.kind = b.kind;
   if (Number.isFinite(Number(b?.sort))) data.sort = Math.max(0, Math.min(999, Math.round(Number(b.sort))));
   if (typeof b?.text === "string") data.text = b.text.trim().slice(0, 600) || null;
   if (b?.image === null) data.image = null;

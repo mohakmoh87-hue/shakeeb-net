@@ -1967,6 +1967,8 @@ model AppPopup {
   id        Int      @id @default(autoincrement())
   text      String?
   image     String? // data:image مقيّدة
+  // popup = نافذةٌ تملأ الشاشة عند الفتح · strip = شريطٌ سفليٌّ يتبدّل كلّ ٥ ثوان
+  kind      String   @default("popup")
   audience  String   @default("all") // all | subs | guests
   sort      Int      @default(0)
   status    String   @default("visible") // visible | hidden

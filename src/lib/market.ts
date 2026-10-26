@@ -30,6 +30,9 @@ export async function ensureMarketTable(): Promise<void> {
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "app_popups_status_sort_idx" ON "app_popups" ("status","isDeleted","sort")`);
+  // عمودُ النوع على جدولٍ **من جداولي** لا جدولٍ مركزيّ — فالكسولُ مسموحٌ هنا
+  // (حارسُ lazy-ddl يحصر المنعَ بالجداول المركزيّة).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "app_popups" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'popup'`);
   ready = true;
 }
 
@@ -66,9 +69,11 @@ export function identityOf(
   sub: { appNickname?: string | null; name?: string | null; netUser?: string | null; appPhoto?: string | null } | null | undefined,
   snapshot: string | null | undefined,
   isAdmin: boolean,
-): { sellerName: string; photo: string | null; avatar: "f" | "m" | "n"; realName?: string; netUser?: string } {
+): { sellerName: string; sellerPhoto: string | null; avatar: "f" | "m" | "n"; realName?: string; netUser?: string } {
+  // ⚠️ `sellerPhoto` لا `photo`: صفُّ الإعلان فيه `photo` (صورةُ السلعة)، ونشرُ هذه
+  //    فوقه كان يطمسها. اسمان متمايزان يقطعان الالتباسَ عند أيّ دمجٍ لاحق.
   const pub = publicIdentity(sub, snapshot);
-  const base = { sellerName: pub.name, photo: pub.photo, avatar: pub.avatar };
+  const base = { sellerName: pub.name, sellerPhoto: pub.photo, avatar: pub.avatar };
   if (!isAdmin) return base;
   return {
     ...base,

@@ -43,7 +43,7 @@ export async function GET(request: Request) {
       return {
       id: r.id,
       name: ident.sellerName,
-      photo: ident.photo,
+      photo: ident.sellerPhoto,
       avatar: ident.avatar,
       realName: ident.realName,
       netUser: ident.netUser,

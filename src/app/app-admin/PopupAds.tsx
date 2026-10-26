@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type Popup = { id: number; text: string | null; image: string | null; audience: string; sort: number; status: string; createdAt: string };
+type Popup = { id: number; text: string | null; image: string | null; kind: string; audience: string; sort: number; status: string; createdAt: string };
 
 const AUD: Record<string, string> = { all: "الكل", subs: "المشتركون فقط", guests: "غير المشتركين فقط" };
+const KIND: Record<string, string> = { popup: "🪟 نافذة منبثقة", strip: "📰 شريط سفليّ" };
 
 async function shrink(file: File): Promise<string | null> {
   const dataUrl = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
@@ -30,6 +31,7 @@ export default function PopupAds() {
   const [text, setText] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [audience, setAudience] = useState("all");
+  const [kind, setKind] = useState("popup");
 
   const load = useCallback(async () => {
     setErr("");
@@ -54,7 +56,7 @@ export default function PopupAds() {
   async function add() {
     if (!text.trim() && !image) { setErr("اكتب نصّاً أو أضِف صورة"); return; }
     setBusy(true);
-    const r = await fetch("/api/app-admin/popups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.trim(), image, audience }) });
+    const r = await fetch("/api/app-admin/popups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.trim(), image, audience, kind }) });
     setBusy(false);
     if (!r.ok) { const d = await r.json().catch(() => null); setErr(d?.error || "فشل الحفظ"); return; }
     setText(""); setImage(null); setErr("");
@@ -69,9 +71,9 @@ export default function PopupAds() {
 
   return (
     <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
-      <div className="mb-1 text-sm font-bold text-slate-800">🪟 الإعلانات المنبثقة</div>
+      <div className="mb-1 text-sm font-bold text-slate-800">🪟 إعلانات التطبيق</div>
       <div className="mb-3 text-[11px] leading-5 text-slate-500">
-        تملأ شاشةَ التطبيق عند فتحه، ويغلقها المشتركُ بـ✕ فتظهر التي بعدها مباشرةً. ولكلِّ نافذةٍ جمهورُها — فيمكن أن يرى المشتركُ نافذةً ويرى الزائرُ غيرَها.
+        <b>النافذةُ المنبثقة</b> تملأ شاشةَ التطبيق عند فتحه ويغلقها المشتركُ بـ✕ فتظهر التي بعدها. و<b>الشريطُ السفليّ</b> يظهر أسفلَ الصفحة الرئيسيّة ويتبدّل كلَّ ٥ ثوانٍ في حلقةٍ مستمرّة. ولكلٍّ جمهورُه — فيمكن أن يرى المشتركُ إعلاناً ويرى الزائرُ غيرَه.
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -87,6 +89,12 @@ export default function PopupAds() {
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="block">
+            <span className="mb-1 block text-[11px] text-slate-600">النوع</span>
+            <select value={kind} onChange={(e) => setKind(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              {Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </label>
           <label className="block">
             <span className="mb-1 block text-[11px] text-slate-600">تظهر لِـ</span>
             <select value={audience} onChange={(e) => setAudience(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -111,12 +119,16 @@ export default function PopupAds() {
                 <div className="min-w-0 flex-1">
                   {p.text && <div className="text-xs leading-5 text-slate-700">{p.text}</div>}
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
+                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-bold text-indigo-700">{KIND[p.kind] ?? p.kind}</span>
                     <span className="rounded bg-sky-50 px-1.5 py-0.5 font-bold text-sky-700">{AUD[p.audience] ?? p.audience}</span>
                     <span>الترتيب {p.sort}</span>
                     {p.status === "hidden" && <span className="font-bold text-slate-500">· مخفيّة</span>}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     <button onClick={() => void patch(p.id, { status: p.status === "visible" ? "hidden" : "visible" })} className="rounded bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">{p.status === "visible" ? "إخفاء" : "إظهار"}</button>
+                    <select value={p.kind} onChange={(e) => void patch(p.id, { kind: e.target.value })} className="rounded border border-slate-200 px-1.5 py-1 text-[11px]">
+                      {Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
                     <select value={p.audience} onChange={(e) => void patch(p.id, { audience: e.target.value })} className="rounded border border-slate-200 px-1.5 py-1 text-[11px]">
                       {Object.entries(AUD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>

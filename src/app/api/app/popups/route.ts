@@ -20,8 +20,10 @@ export async function GET() {
       audience: { in: ["all", isSub ? "subs" : "guests"] },
     },
     orderBy: [{ sort: "asc" }, { id: "asc" }],
-    take: 10,
-    select: { id: true, text: true, image: true },
+    take: 30,
+    select: { id: true, text: true, image: true, kind: true },
   });
-  return NextResponse.json({ items: rows.filter((r) => (r.text ?? "").trim() || r.image) });
+  const usable = rows.filter((r) => (r.text ?? "").trim() || r.image);
+  const pick = (k: string) => usable.filter((r) => r.kind === k).map((r) => ({ id: r.id, text: r.text, image: r.image }));
+  return NextResponse.json({ items: pick("popup"), strip: pick("strip") });
 }

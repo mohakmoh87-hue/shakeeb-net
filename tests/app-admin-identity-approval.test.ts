@@ -21,7 +21,9 @@ describe("🪪 هويّةُ المشترك: المستعارُ للجميع وا
     assert.equal(pub.sellerName, "أمّ أحمد");
     assert.equal(pub.realName, undefined, "لا اسمَ حقيقيّاً لغير المدير");
     assert.equal(pub.netUser, undefined, "ولا يوزر");
-    assert.equal(pub.photo, SUB.appPhoto, "وصورتُه تظهر للجميع");
+    assert.equal(pub.sellerPhoto, SUB.appPhoto, "وصورتُه تظهر للجميع");
+    // ⚠️ المفتاحُ `sellerPhoto` لا `photo` — فصفُّ الإعلان فيه `photo` لصورة السلعة
+    assert.ok(!("photo" in pub), "لا يصطدم بصورة الإعلان عند الدمج");
   });
 
   test("المديرُ يرى الاسمَ الكاملَ واليوزرَ مع الاسم المعروض", () => {
