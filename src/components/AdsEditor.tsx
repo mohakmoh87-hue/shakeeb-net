@@ -9,7 +9,9 @@ export type AppContentT = { ads: Record<string, Ad>; offers: Ad[]; quick: string
 
 const AD_SLOTS: { key: string; label: string }[] = [
   { key: "hero", label: "إعلان الرئيسية (البطل)" },
-  { key: "home2", label: "إعلان الرئيسية (الثاني)" },
+  // «إعلان الرئيسية (الثاني)» حُذف من التطبيق بطلب محمد 2026-10-26 وأخذ «الشريط
+  // السفليّ» مكانَه (/app-admin ← إعلانات التطبيق)، فأُخفيت خانتُه كي لا يُملأ إعلانٌ
+  // لا يظهر. وسلوتُ home2 باقٍ في appConfig فما حُفظ لا يُمسّ ويعود بسطرٍ إن أُريد.
   { key: "plan", label: "إعلان صفحة الباقة" },
   { key: "activate", label: "إعلان صفحة التفعيل" },
 ];
