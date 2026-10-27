@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type CardType = { id: number; name: string; deliveryOnly: boolean; autoAssign?: boolean; execMinutes?: number | null; overrunDeduction?: number | null;
   // نقاطُ الإنجاز: `achievementWeight` ما ضبطه المديرُ (فارغٌ = غيرُ مضبوط، 0 = لا تُحتسَب)،
@@ -14,6 +14,23 @@ export default function CardTypeManager({ types, colors, onColor, onClose, onCha
   const [msg, setMsg] = useState("");
   const [newName, setNewName] = useState("");
   const [newDelivery, setNewDelivery] = useState(false);
+  // 📲 نقاطُ تنصيب التطبيق — إعدادُ وكيلٍ لا فئةٍ (طلبُ محمد 2026-10-27)
+  const [appPts, setAppPts] = useState("");
+  const [appBusy, setAppBusy] = useState(false);
+  useEffect(() => {
+    fetch("/api/field/card-types")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && typeof d.appInstallPoints === "number") setAppPts(String(d.appInstallPoints)); })
+      .catch(() => {});
+  }, []);
+  async function saveAppPts() {
+    setAppBusy(true); setMsg("");
+    const r = await fetch("/api/field/card-types", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ appInstallPoints: Number(appPts) || 0 }) });
+    const d = await r.json().catch(() => ({}));
+    setAppBusy(false);
+    if (!r.ok) { setMsg(d.error ?? "تعذّر الحفظ"); return; }
+    setAppPts(String(d.appInstallPoints ?? 0));
+  }
 
   async function patch(id: number, body: Record<string, unknown>) {
     setBusyId(id); setMsg("");
@@ -47,6 +64,25 @@ export default function CardTypeManager({ types, colors, onColor, onClose, onCha
         </div>
         <p className="mb-3 text-[11px] text-slate-500">الوقت المسموح + خصم دقيقة التجاوز يُطبَّقان على الأعمدة «المحسوبة بالوقت» فقط. التوصيل مُستثنى.</p>
         {msg && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{msg}</div>}
+
+        {/* 📲 نقاطُ تنصيب التطبيق — تُمنح لفنيّ البطاقة مرّةً واحدةً لكلّ مشترك */}
+        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-sm font-bold text-emerald-900">📲 نقاط تنصيب التطبيق</span>
+            <input
+              type="number" min={0} step="0.25" dir="ltr" value={appPts}
+              onChange={(e) => setAppPts(e.target.value)}
+              className="w-24 rounded-lg border border-emerald-300 bg-white px-2 py-1 text-center text-sm"
+            />
+            <button onClick={() => void saveAppPts()} disabled={appBusy}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+              {appBusy ? "…" : "حفظ"}
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-emerald-800">
+            لفنيّ البطاقة حين يكون المشتركُ قد نصّب التطبيقَ وسجّل دخولَه — مرّةً واحدةً لكلّ مشترك. وصفرٌ = بلا نقاط.
+          </p>
+        </div>
 
         <ul className="mb-4 space-y-2">
           {types.map((t) => (

@@ -20,6 +20,10 @@ export async function ensureAgentAppTables(): Promise<void> {
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "agent_offers_agentId_status_idx" ON "agent_offers" ("agentId","status")`);
+  // جمهورُ العرض (2026-10-27) — عمودٌ على جدولٍ **غيرِ مركزيٍّ** يُنشأ هنا، وهذه
+  // الدالّةُ تُنادى في كلّ مسارٍ يقرأ `agent_offers` **قبل** أوّل استعلامٍ فيه،
+  // فلا تتكرّر حادثةُ `subscribers.appNickname` (Prisma يطلب كلَّ عمودٍ بلا select).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "agent_offers" ADD COLUMN IF NOT EXISTS "audience" TEXT NOT NULL DEFAULT 'subs'`);
   await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "agent_offer_targets" (
     "id" SERIAL PRIMARY KEY, "offerId" INTEGER NOT NULL, "subscriberId" INTEGER NOT NULL )`);
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "agent_offer_targets_offerId_subscriberId_key" ON "agent_offer_targets" ("offerId","subscriberId")`);

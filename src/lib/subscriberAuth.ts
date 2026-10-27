@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { prisma } from "./prisma";
+import { subscriberState } from "./subscriberLogin";
 
 const SECRET = new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-secret-change-me");
 const COOKIE = "kabina_subscriber";
@@ -76,4 +77,19 @@ export async function appViewer(): Promise<AppViewer> {
   const acc = await getAccountSession();
   if (acc) return { kind: "account", accountId: acc.accountId };
   return null;
+}
+
+// ═════ 🔓 صنفُ الجمهور — قاعدةُ محمد 2026-10-27 ═════
+// «الغير مشترك والمنتهي لمدة أكثر من شهر والضيف… الثلاثة يعتبرون هم نفس الشيء».
+// فالفيصلُ **ليس** وجودَ جلسةٍ (كما كان) بل حالةُ الاشتراك: النشطُ والمنتهي أقلَّ من
+// شهرٍ جمهورُ "subs"، ومن تجاوز الشهرَ يُرَى **زائراً** في كلّ ما يُعرَض ويُخفى.
+// والشهرُ هو `GRACE_DAYS` في `subscriberLogin` — مصدرٌ واحدٌ للحدّ لا رقمٌ مكرَّر.
+// 🔒 يبقى `subscriberId` مُعاداً لمن له جلسةٌ حقيقيّة: بياناتُه وإشعاراتُه وطلباتُه
+//    له وحدَه (قرارُ محمد: «تبقى له») — الصنفُ يحكم المعروضَ لا ملكيّةَ حسابه.
+export async function appAudience(): Promise<{ audience: "subs" | "guests"; subscriberId: number | null }> {
+  const sess = await getSubscriberSession();
+  if (!sess) return { audience: "guests", subscriberId: null };
+  const row = await prisma.subscriber.findUnique({ where: { id: sess.subscriberId }, select: { dateTo: true } });
+  const st = subscriberState(row?.dateTo ?? null);
+  return { audience: st.state === "expired" ? "guests" : "subs", subscriberId: sess.subscriberId };
 }

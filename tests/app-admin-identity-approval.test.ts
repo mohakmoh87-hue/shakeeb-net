@@ -85,9 +85,19 @@ describe("⏳ موافقةُ الإعلانات", () => {
 describe("🪟 النوافذُ المنبثقة", () => {
   test("الجمهورُ يُحسَم في الخادم من وجود جلسة المشترك", () => {
     const src = read(POP);
-    assert.ok(src.includes('audience: { in: ["all", isSub ? "subs" : "guests"] }'), "المشتركُ نوافذَه والزائرُ نوافذَه");
+    assert.ok(src.includes('audience: { in: ["all", audience] }'), "المشتركُ نوافذَه والزائرُ نوافذَه");
+    // 🔓 2026-10-27: الصنفُ من **حالة الاشتراك** لا من وجود الجلسة — وإلّا أخذ المنتهي
+    //    منذ سنةٍ إعلاناتَ المشتركين، وقاعدةُ محمد: الثلاثةُ معاملةٌ واحدة.
+    assert.ok(src.includes("appAudience()"), "والصنفُ من appAudience");
     assert.ok(!/searchParams|body/.test(src), "ولا يُقبَل جمهورٌ من الطلب");
     assert.ok(src.includes('status: "visible"') && src.includes("isDeleted: false"), "المخفيُّ والمؤرشَفُ لا يظهران");
+  });
+
+  test("صنفُ الجمهور: المنتهي أكثرَ من شهرٍ زائرٌ", () => {
+    const src = read("src/lib/subscriberAuth.ts");
+    assert.ok(src.includes("export async function appAudience()"), "الدالّةُ موجودة");
+    assert.ok(src.includes("subscriberState("), "والحدُّ من الخادم (GRACE_DAYS) لا رقمٌ مكرّر");
+    assert.ok(/st\.state === "expired" \? "guests" : "subs"/.test(src), "المنتهي أكثرَ من شهرٍ يُرى زائراً");
   });
 
   test("إدارتُها لأدمن التطبيق وحدَه، ولا حذفَ نهائيّ", () => {

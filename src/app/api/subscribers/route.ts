@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
+import { installedSubscriberIds } from "@/lib/appInstall";
 
 const schema = z.object({
   name: z.string().min(1, "اسم المشترك مطلوب"),
@@ -46,6 +47,14 @@ async function attachLoanFlag<T extends { id: number; towerId: number | null }>(
     : [];
   const onSet = new Set(onTowers.map((t) => t.id));
   return items.map((i) => ({ ...i, hasLoan: loanSet.has(i.id) && i.towerId != null && onSet.has(i.towerId) }));
+}
+
+// 📲 راية «نصّب التطبيق وسجّل دخولَه» — شريطٌ سماويٌّ على صفّه (طلبُ محمد 2026-10-27).
+// عزل: يُستعلَم بمعرّفات المشتركين المسحوبين أصلاً (المعزولين بالمكتب/الوكيل) كـ`attachLoanFlag`.
+async function attachAppInstall<T extends { id: number }>(items: T[]): Promise<(T & { appInstalled: boolean })[]> {
+  if (!items.length) return [];
+  const on = await installedSubscriberIds(items.map((i) => i.id)).catch(() => new Set<number>());
+  return items.map((i) => ({ ...i, appInstalled: on.has(i.id) }));
 }
 
 export async function GET(request: Request) {
@@ -115,7 +124,7 @@ export async function GET(request: Request) {
     ]);
     const rank = new Map(ids.map((id, i) => [id, i]));
     items.sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
-    return NextResponse.json(await attachLoanFlag(items), { headers: { "X-Total-Count": String(total), "X-Limit": "50" } });
+    return NextResponse.json(await attachAppInstall(await attachLoanFlag(items)), { headers: { "X-Total-Count": String(total), "X-Limit": "50" } });
   }
 
   // حدّ التحميل: نجلب أول 300 فقط (القائمة كبيرة — 5000+)، والبحث يغطّي الباقي.
@@ -137,7 +146,7 @@ export async function GET(request: Request) {
     prisma.subscriber.count({ where }),
   ]);
   // نُبقي الرد مصفوفةً (توافقاً مع بقية الصفحات)، والمجموع/الحدّ في ترويسات
-  return NextResponse.json(await attachLoanFlag(items), {
+  return NextResponse.json(await attachAppInstall(await attachLoanFlag(items)), {
     headers: { "X-Total-Count": String(total), "X-Limit": String(LIMIT) },
   });
 }

@@ -426,6 +426,18 @@ export async function POST(request: Request) {
     },
   }).catch(() => {});
 
+  // ===== 📲 نقاطُ تنصيب التطبيق (طلبُ محمد 2026-10-27) =====
+  // البطاقةُ صارت `done` قبل هذا السطر فيراها استعلامُ الجائزة. والنداءُ الثاني لحظةَ
+  // أوّلِ دخولٍ للمشترك (`markAppLogin`) يُغطّي من سجّل دخولَه **بعد** الإنجاز — فالنافذةُ
+  // من الجهتَين كما قرّر محمد. ولا يُمنَح مرّتَين: الحارسُ `awarded: false` في المنح.
+  try {
+    const appSubId = card.subscriberId ?? matchedSub?.id ?? null;
+    if (appSubId != null) {
+      const { maybeAwardAppInstall } = await import("@/lib/appInstall");
+      await maybeAwardAppInstall(appSubId);
+    }
+  } catch { /* لا يُفشل الإنجاز */ }
+
   // ===== ما بعد الإنجاز (لا يُفشل الإنجاز إن تعثّر): سجل الصيانات + رسالة واتساب =====
   // الرسالة تُرسَل عند إنجاز أي نوع (توصيل/تحويل/صيانة/…) — المطابقة تمت أعلاه مرة واحدة
   let matchedSubscriber: number | null = null;

@@ -11,6 +11,7 @@ type KindRow = { kind: string; count: number; avgMin: number | null; weight: num
 type Row = {
   technicianId: number; name: string; office: string | null;
   cards: number; points: number; avgMin: number | null; timed: number; byKind: KindRow[];
+  appInstalls?: number; appInstallPoints?: number; // 📲 جوائزُ تنصيب التطبيق في الفترة
 };
 type Tally = { towerId: number | null; office: string; total: number; kinds: { kind: string; count: number }[] };
 type Data = {
@@ -19,6 +20,7 @@ type Data = {
   kindAvg: { kind: string; avgMin: number | null; count: number; weight: number }[];
   byOffice: Tally[]; totals: { total: number; kinds: { kind: string; count: number }[] };
   weights: { label: string; weight: number }[]; defaultWeight: number; minCards: number;
+  appInstallWeight?: number;
 };
 
 const MEDAL = ["🥇", "🥈", "🥉"];
@@ -89,6 +91,11 @@ export default function AchievementsModal({ onClose }: { onClose: () => void }) 
                           {/* معدّل الإنجاز **لكل فئة على حدة** — ظاهرٌ بلا فتح الجدول (طلب محمد).
                               التوصيل بلا زمن فيُعرض بعدده وحده. */}
                           <span className="mt-1 flex flex-wrap gap-1">
+                            {(r.appInstalls ?? 0) > 0 && (
+                              <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                                📲 تنصيب التطبيق <b>{r.appInstalls}</b> · +{r.appInstallPoints}
+                              </span>
+                            )}
                             {r.byKind.map((k) => (
                               <span key={k.kind} className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ring-1 ${k.avgMin != null ? "bg-sky-50 text-sky-700 ring-sky-200" : "bg-slate-50 text-slate-500 ring-slate-200"}`}>
                                 {k.kind} <b>{k.count}</b>
@@ -185,6 +192,9 @@ export default function AchievementsModal({ onClose }: { onClose: () => void }) 
                   <span key={w.label} className="rounded-lg bg-slate-100 px-2 py-1 font-semibold text-slate-700">{w.label} ×{w.weight}</span>
                 ))}
                 <span className="rounded-lg bg-slate-100 px-2 py-1 text-slate-500">أي نوع جديد ×{d.defaultWeight}</span>
+                {(d.appInstallWeight ?? 0) > 0 && (
+                  <span className="rounded-lg bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">📲 تنصيب التطبيق ×{d.appInstallWeight}</span>
+                )}
               </div>
               {d.kindAvg.length > 0 && (
                 <div className="mt-2 text-[11px] text-slate-500">

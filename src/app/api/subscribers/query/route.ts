@@ -4,6 +4,7 @@ import { baghdadStart, baghdadEnd } from "@/lib/dayRange";
 import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import { decryptSecret } from "@/lib/secretbox";
+import { installedSubscriberIds } from "@/lib/appInstall";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +121,8 @@ export async function GET(request: Request) {
     }
   }
 
+  // 📲 من نصّب التطبيق — بمعرّفاتٍ معزولةٍ سلفاً (طلبُ محمد 2026-10-27)
+  const installed = await installedSubscriberIds(rows.map((s) => s.id)).catch(() => new Set<number>());
   let mapped = rows.map((s) => {
     const p = s.packageId != null ? pkg.get(s.packageId) : null;
     const onlineSet = onlineSets && s.towerId != null ? onlineSets.get(s.towerId) : undefined;
@@ -131,6 +134,7 @@ export async function GET(request: Request) {
       towerId: s.towerId,
       packageName: p?.name ?? null, price: p?.priceDinar ?? 0,
       online,
+      appInstalled: installed.has(s.id),
     };
   });
   if (status === "online") mapped = mapped.filter((r) => r.online === true);

@@ -28,6 +28,7 @@ type Subscriber = {
   note: string | null; smsEnabled: number | null; waEnabled: boolean | null;
   transferredTo: string | null; transferredFrom?: string | null; rewardBalance: number | null; rewardCode: string | null;
   hasLoan?: boolean; // عليه دين قرضٍ قائم (للوسم والتنبيه ومنع قرضٍ ثانٍ)
+  appInstalled?: boolean; // 📲 نصّب التطبيق وسجّل دخولَه ⇒ شريطٌ سماويٌّ على طول صفّه
 };
 type Pkg = { id: number; name: string | null; priceDinar: number | null };
 type Tower = { id: number; name: string | null; panels?: { id: number; label: string | null }[]; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null; loanMode?: string | null; rewardsEnabled?: string | null };
@@ -647,11 +648,14 @@ export default function SubscribersBoard() {
               const isActive = selectedId === s.id;
               return [
                 <tr key={s.id} onClick={() => { if (!inTrial()) selectRow(s); }}
-                  className={`clickable ${checked.has(s.id) ? "picked" : ""} ${isActive ? "active" : ""}`}>
+                  className={`clickable ${checked.has(s.id) ? "picked" : ""} ${isActive ? "active" : ""}`}
+                  /* 📲 الشريطُ السماويُّ لمن نصّب التطبيق — ويتنازل للتحديد والصفّ النشط
+                     كي لا يُلبِّس على المستخدم أيَّ صفٍّ اختار (طلبُ محمد 2026-10-27) */
+                  style={s.appInstalled && !checked.has(s.id) && !isActive ? { background: "#D7F0FC" } : undefined}>
                   <td className="cbcol" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" className="cb" checked={checked.has(s.id)} onChange={() => toggleCheck(s.id)} />
                   </td>
-                  <td>{s.name}{s.hasLoan && <span className="loan-badge" title="لديه قرض قائم">قرض</span>}</td>
+                  <td>{s.appInstalled && <span title="نصّب التطبيق">📲 </span>}{s.name}{s.hasLoan && <span className="loan-badge" title="لديه قرض قائم">قرض</span>}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <button className="op" title="عمليات المشترك" onClick={() => { setOpsSub(s); setOpsMsg(""); loadOpsTechs(s.towerId); loadOps(s.towerId); }}>🛠️</button>
                     {/* 🧪 «المزيد» بجانب عمليات: يفتح المنبثقةَ الكبيرة بكلّ خيارات المشترك

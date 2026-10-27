@@ -15,6 +15,7 @@ type Row = {
   id: number; name: string | null; phone: string | null; address: string | null; netUser: string | null;
   dateTo: string | null; carry: number; waEnabled: boolean; office: string | null; towerId: number | null;
   packageName: string | null; price: number; online: boolean | null;
+  appInstalled?: boolean; // 📲 نصّب التطبيق ⇒ شريطٌ سماويّ
 };
 type Office = { id: number; name: string | null };
 // ===== قائمة «المفعّلون» (طلب محمد 2026-09-23) — سطرٌ لكلّ تفعيل بين تاريخين =====
@@ -398,7 +399,7 @@ export default function AllSubscribersPage() {
             ) : sortedRows.length === 0 ? (
               <tr><td colSpan={10} className="p-8 text-center text-slate-400">لا مشتركين مطابقين</td></tr>
             ) : sortedRows.map((r) => (
-              <tr key={r.id} className={`border-t border-slate-100 ${checked.has(r.id) ? "bg-blue-50" : ""}`} onClick={() => toggle(r.id)} style={{ cursor: "pointer" }}>
+              <tr key={r.id} className={`border-t border-slate-100 ${checked.has(r.id) ? "bg-blue-50" : r.appInstalled ? "bg-sky-100" : ""}`} onClick={() => toggle(r.id)} style={{ cursor: "pointer" }}>
                 <td className="p-2"><input type="checkbox" checked={checked.has(r.id)} onChange={() => toggle(r.id)} onClick={(e) => e.stopPropagation()} className="h-4 w-4" /></td>
                 <td className="p-2 font-semibold text-slate-800">{r.name ?? "—"}</td>
                 <td className="p-2 text-slate-500" dir="ltr">{r.netUser ?? "—"}</td>

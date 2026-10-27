@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 
 type AppPkg = { id: number; name: string; price: number | null; published: boolean; visible: boolean; note: string; sort: number };
-type Offer = { id: number; text: string | null; image: string | null; status: string; targetFrom: string | null; targetTo: string | null; targetCount: number; createdBy: string | null; createdAt: string };
+type Aud = "subs" | "guests" | "all";
+type Offer = { id: number; text: string | null; image: string | null; status: string; audience?: string; targetFrom: string | null; targetTo: string | null; targetCount: number; createdBy: string | null; createdAt: string };
+
+// جمهورُ العرض (طلبُ محمد 2026-10-27) — والمنتهي أكثرَ من شهرٍ محسوبٌ مع غير المشتركين
+const AUDS: { key: Aud; label: string; hint: string }[] = [
+  { key: "subs", label: "للمشتركين", hint: "مجموعةٌ تُحدَّد بتاريخ انتهاء الاشتراك" },
+  { key: "guests", label: "لغير المشتركين والمنتهين والزوّار", hint: "من لا اشتراكَ له، ومن انتهى اشتراكُه قبل أكثرَ من شهر" },
+  { key: "all", label: "للكلّ", hint: "يظهر لكلّ من يفتح التطبيق" },
+];
+const audLabel = (a?: string) => AUDS.find((x) => x.key === a)?.label ?? AUDS[0].label;
 type Preview = { count: number; sample: { name: string | null; netUser: string | null; dateTo: string | null }[] };
 
 const fmt = (n: number | null) => (n == null ? "بلا سعر" : `${n.toLocaleString("en-US")} د.ع`);
@@ -42,6 +51,7 @@ export default function AppPackagesOffers() {
   const [text, setText] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [photoInfo, setPhotoInfo] = useState<{ w: number; h: number; kb: number } | null>(null);
+  const [aud, setAud] = useState<Aud>("subs");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -100,14 +110,15 @@ export default function AppPackagesOffers() {
   async function send() {
     setErr("");
     if (!text.trim() && !photo) { setErr("اكتب نصَّ العرض أو أضِف صورةً (أو الاثنين)"); return; }
-    if (!from || !to) { setErr("حدّد تاريخَي الانتهاء"); return; }
+    if (aud === "subs" && (!from || !to)) { setErr("حدّد تاريخَي الانتهاء"); return; }
     setBusy(true);
-    const r = await fetch("/api/store/offers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.trim(), image: photo, from, to }) });
+    const body = aud === "subs" ? { text: text.trim(), image: photo, from, to, audience: aud } : { text: text.trim(), image: photo, audience: aud };
+    const r = await fetch("/api/store/offers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => null);
     setBusy(false);
     if (!r.ok) { setErr(d?.error || "فشل الإرسال"); return; }
     setText(""); setPhoto(null); setPhotoInfo(null); setPreview(null);
-    setMsg(`✓ وصل العرضُ ${d?.count ?? 0} مشتركاً`);
+    setMsg(aud === "subs" ? `✓ وصل العرضُ ${d?.count ?? 0} مشتركاً` : `✓ نُشر العرضُ ${audLabel(aud)}`);
     load();
   }
 
@@ -199,7 +210,18 @@ export default function AppPackagesOffers() {
               })()}
             </div>
 
-            <div className="mt-3 text-xs font-bold text-slate-700">لمن يُرسَل؟ — بتاريخ انتهاء الاشتراك</div>
+            <div className="mt-3 text-xs font-bold text-slate-700">لمن يُرسَل؟</div>
+            <div className="mt-1 grid gap-1.5 sm:grid-cols-3">
+              {AUDS.map((a) => (
+                <button key={a.key} onClick={() => { setAud(a.key); setPreview(null); setErr(""); }}
+                  className={`rounded-lg px-3 py-2 text-right text-[11px] font-bold leading-4 ${aud === a.key ? "bg-mynet-blue text-white" : "bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-slate-100"}`}>
+                  {a.label}
+                  <span className={`mt-0.5 block text-[10px] font-normal ${aud === a.key ? "text-white/80" : "text-slate-500"}`}>{a.hint}</span>
+                </button>
+              ))}
+            </div>
+            {aud === "subs" && <>
+            <div className="mt-2 text-xs font-bold text-slate-700">بتاريخ انتهاء الاشتراك</div>
             <div className="mt-1 grid gap-2 sm:grid-cols-2">
               <label className="block"><span className="mb-1 block text-[11px] text-slate-600">من تاريخ</span>
                 <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPreview(null); }} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></label>
@@ -218,11 +240,16 @@ export default function AppPackagesOffers() {
                 )}
               </div>
             )}
+            </>}
             {err && <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{err}</div>}
             <button disabled={busy} onClick={() => void send()} className="mt-3 w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
               {busy ? "جارٍ الإرسال…" : "إرسالُ العرض"}
             </button>
-            <div className="mt-1.5 text-[11px] text-slate-400">الجمهورُ يُثبَّت لحظةَ الإرسال — فتجديدُ المشترك لا يُخرجه من عرضٍ وصله.</div>
+            <div className="mt-1.5 text-[11px] text-slate-400">
+              {aud === "subs"
+                ? "الجمهورُ يُثبَّت لحظةَ الإرسال — فتجديدُ المشترك لا يُخرجه من عرضٍ وصله."
+                : "يظهر لمن يفتح التطبيق وهو من هذا الجمهور — بلا تثبيتِ أسماء."}
+            </div>
           </div>
 
           <div className="mt-3">
@@ -237,7 +264,8 @@ export default function AppPackagesOffers() {
                     <div className="min-w-0 flex-1">
                       {o.text && <div className="text-xs leading-5 text-slate-700">{o.text}</div>}
                       <div className="mt-1 text-[10px] text-slate-400">
-                        <span dir="ltr">{day(o.targetFrom)} → {day(o.targetTo)}</span> · {o.targetCount.toLocaleString("en-US")} مشترك
+                        <span className="font-bold text-slate-600">{audLabel(o.audience)}</span>
+                        {(o.audience ?? "subs") === "subs" && <> · <span dir="ltr">{day(o.targetFrom)} → {day(o.targetTo)}</span> · {o.targetCount.toLocaleString("en-US")} مشترك</>}
                         {o.createdBy ? ` · ${o.createdBy}` : ""}
                         {o.status === "hidden" && <span className="font-bold text-slate-500"> · مخفيّ</span>}
                       </div>

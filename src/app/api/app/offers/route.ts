@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSubscriberSession } from "@/lib/subscriberAuth";
+import { appAudience } from "@/lib/subscriberAuth";
 import { subscriberAgentId } from "@/lib/agentStore";
 import { ensureAgentAppTables } from "@/lib/agentAppOffers";
 
@@ -10,23 +10,53 @@ export const dynamic = "force-dynamic";
 // 🔒 طبقتا عزل: الوكيلُ مستنبَطٌ من مكتب المشترك (لا يُقبَل من الطلب)، والعرضُ يجب أن
 // يكون **لوكيله** و**المشتركُ في جمهوره المثبَّت** — فلا يرى عرضَ غيره ولو شارك وكيله.
 // 🔓 **للجميع** (قرارُ محمد 2026-10-26): الضيفُ وغيرُ المشترك والمنتهي يرون الباقاتِ
-// المنشورةَ كي يعرفوا قبل أن يشتركوا. والعروضُ الخاصّةُ تبقى لصاحبها وحدَه — فمن لا
-// جلسةَ مشتركٍ له **لا عروضَ خاصّةً له** بطبيعة الحال.
+// المنشورةَ كي يعرفوا قبل أن يشتركوا.
+// 🔓 وجمهورُ العرض يختاره الوكيل (طلبُ محمد 2026-10-27):
+//   • `subs`   → المجموعةُ المثبَّتةُ بتاريخ الانتهاء، ولصنف "subs" وحدَه.
+//   • `guests` → لغير المشتركين والمنتهين **أكثرَ من شهرٍ** والزوّار (الثلاثةُ سواء).
+//   • `all`    → للجميع بلا تثبيتِ جمهور.
+// ومن لا وكيلَ له (زائرٌ/حسابُ غير مشتركٍ/مشتركٌ بلا مكتب) ⇒ عروضُ كلّ الوكلاء
+// المفتوحةُ له، كما هي الباقاتُ سلفاً: لا سبيلَ لنسبته إلى وكيلٍ بعينه.
 export async function GET() {
-  const sess = await getSubscriberSession();
   await ensureAgentAppTables();
+  const { audience, subscriberId } = await appAudience();
   let agentId: number | null = null;
   let myPackageId: number | null = null;
-  if (sess) {
+  if (subscriberId != null) {
     const sub = await prisma.subscriber.findUnique({
-      where: { id: sess.subscriberId },
+      where: { id: subscriberId },
       select: { packageId: true, appBanned: true },
     });
     if (sub?.appBanned) return NextResponse.json({ error: "محظور" }, { status: 403 });
     myPackageId = sub?.packageId ?? null;
-    agentId = await subscriberAgentId(sess.subscriberId);
+    agentId = await subscriberAgentId(subscriberId);
   }
-  // بلا وكيل (ضيفٌ/حسابُ غير مشتركٍ/مشتركٌ بلا مكتب) ⇒ الباقاتُ المنشورةُ لكلّ الوكلاء، ولا عروضَ خاصّة
+
+  // جمهورُ العرض: صنفُ "subs" يرى مجموعتَه المثبَّتةَ و«للكلّ»؛ وصنفُ "guests" يرى
+  // «لغير المشتركين» و«للكلّ» — ولا يرى مجموعةً مثبَّتةً ولو كان صفُّه فيها.
+  async function visibleOffers(): Promise<{ id: number; text: string | null; image: string | null }[]> {
+    const scope = agentId == null ? {} : { agentId };
+    let match: object;
+    if (audience === "subs") {
+      const targets = subscriberId == null
+        ? []
+        : await prisma.agentOfferTarget.findMany({ where: { subscriberId }, select: { offerId: true } });
+      const ids = targets.map((t) => t.offerId);
+      const or: object[] = [{ audience: "all" }];
+      if (ids.length) or.push({ id: { in: ids }, audience: "subs" });
+      match = { OR: or };
+    } else {
+      match = { audience: { in: ["guests", "all"] } };
+    }
+    return prisma.agentOffer.findMany({
+      where: { ...scope, isDeleted: false, status: "visible", ...match },
+      select: { id: true, text: true, image: true },
+      orderBy: { id: "desc" },
+      take: 30,
+    });
+  }
+
+  // بلا وكيل (ضيفٌ/حسابُ غير مشتركٍ/مشتركٌ بلا مكتب) ⇒ الباقاتُ المنشورةُ لكلّ الوكلاء
   if (agentId == null) {
     const published = await prisma.agentAppPackage.findMany({ where: { visible: true }, select: { packageId: true, note: true, sort: true } });
     const metaAll = new Map(published.map((p) => [p.packageId, p]));
@@ -42,17 +72,13 @@ export async function GET() {
         note: metaAll.get(p.id)?.note ?? "", current: false, sort: metaAll.get(p.id)?.sort ?? 0,
       }))
       .sort((a, b) => a.sort - b.sort || (a.price ?? 0) - (b.price ?? 0));
-    return NextResponse.json({ packages, offers: [] });
+    return NextResponse.json({ packages, offers: await visibleOffers() });
   }
-  const sub = { packageId: myPackageId };
 
-  const [published, targets] = await Promise.all([
-    prisma.agentAppPackage.findMany({
-      where: { agentId, visible: true },
-      select: { packageId: true, note: true, sort: true },
-    }),
-    sess ? prisma.agentOfferTarget.findMany({ where: { subscriberId: sess.subscriberId }, select: { offerId: true } }) : Promise.resolve([] as { offerId: number }[]),
-  ]);
+  const published = await prisma.agentAppPackage.findMany({
+    where: { agentId, visible: true },
+    select: { packageId: true, note: true, sort: true },
+  });
 
   const pkgIds = published.map((p) => p.packageId);
   const pkgs = pkgIds.length
@@ -69,20 +95,10 @@ export async function GET() {
       name: (p.name ?? "").trim(),
       price: p.priceDinar != null ? Math.round(p.priceDinar) : null,
       note: meta.get(p.id)?.note ?? "",
-      current: p.id === sub.packageId,
+      current: p.id === myPackageId,
       sort: meta.get(p.id)?.sort ?? 0,
     }))
     .sort((a, b) => a.sort - b.sort || (a.price ?? 0) - (b.price ?? 0));
 
-  const offerIds = targets.map((t) => t.offerId);
-  const offers = offerIds.length
-    ? await prisma.agentOffer.findMany({
-        where: { id: { in: offerIds }, agentId, isDeleted: false, status: "visible" },
-        select: { id: true, text: true, image: true, createdAt: true },
-        orderBy: { id: "desc" },
-        take: 30,
-      })
-    : [];
-
-  return NextResponse.json({ packages, offers });
+  return NextResponse.json({ packages, offers: await visibleOffers() });
 }

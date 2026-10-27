@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { guard } from "@/lib/guard";
 import { ensureFieldDefaultsOnce } from "@/app/api/_lib/fieldSeed";
 import { weightOfKind } from "@/lib/achievements";
+import { agentAppInstallPoints, setAgentAppInstallPoints } from "@/lib/appInstall";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ export async function GET() {
   // فلو استُورد في مكوّنٍ عميلٍ لسُحبت القاعدةُ كلُّها إلى حزمة المتصفّح.
   return NextResponse.json({
     types: types.map((t) => ({ ...t, builtinWeight: weightOfKind(t.name) })),
+    // 📲 نقاطُ تنصيب التطبيق — إعدادٌ للوكيل لا لفئةٍ (طلبُ محمد 2026-10-27)
+    appInstallPoints: await agentAppInstallPoints(s.agentId ?? null),
   });
 }
 
@@ -68,6 +71,15 @@ export async function PATCH(request: Request) {
   const g = await guard("field.manage");
   if (g.error) return g.error;
   const b = await request.json().catch(() => null);
+  // 📲 نقاطُ تنصيب التطبيق: إعدادُ وكيلٍ لا فئةٍ ⇒ يأتي بلا `id`.
+  // وصفرٌ قيمةٌ صريحةٌ هنا (= لا نقاطَ لهذه الميزة)، لا «أعِدها إلى المبنيّ» كأوزان الفئات.
+  if (b && b.id == null && "appInstallPoints" in b) {
+    const ag = g.session?.agentId ?? null;
+    if (ag == null) return NextResponse.json({ error: "لا وكيلَ لهذه الجلسة" }, { status: 400 });
+    const n = Number(b.appInstallPoints);
+    const v = await setAgentAppInstallPoints(ag, Number.isFinite(n) && n >= 0 ? n : 0);
+    return NextResponse.json({ ok: true, appInstallPoints: v });
+  }
   const id = Number(b?.id);
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
   const agentId = g.session?.agentId ?? -1;

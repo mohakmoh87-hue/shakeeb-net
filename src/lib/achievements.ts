@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { currentPeriodFromDays } from "@/lib/salary";
 import { baghdadDayKey } from "@/lib/attendance";
+import { appInstallBonuses, agentAppInstallPoints } from "@/lib/appInstall";
 
 // ===== إنجازات الفنيين ومسابقة الشهر (طلب محمد 2026-08-05) =====
 // كان الترتيب بالعدد وحده مضلّلاً: التوصيل **نصف كل ما يُنجَز** (٢٦٧ من ٥٣٥ في فترة
@@ -67,6 +68,9 @@ export const MIN_CARDS_FOR_CROWN = 5; // لا تتويج بأقلّ من خمس 
 export type TechRow = {
   technicianId: number; name: string; office: string | null;
   cards: number; points: number;
+  // 📲 نقاطُ تنصيب التطبيق (2026-10-27): لا بطاقةَ تحملها فتُجمَع بجانب أوزان الفئات،
+  //    ولا تُعدّ في `cards` — فهي مكافأةٌ على التنصيب لا بطاقةٌ أخرى أنجزها.
+  appInstalls: number; appInstallPoints: number;
   byKind: { kind: string; count: number; avgMin: number | null; weight: number }[];
   avgMin: number | null; // متوسط عام (للفئات ذات الزمن فقط) — للعرض السريع
   timed: number; // كم بطاقة لها زمن صالح
@@ -85,6 +89,7 @@ export type Achievements = {
   weights: { label: string; weight: number }[];
   defaultWeight: number;
   minCards: number;
+  appInstallWeight: number; // ما ضبطه المديرُ لتنصيب التطبيق — للأسطورة تحت الجدول
 };
 
 // الفترة الافتراضية = فترة الراتب الحالية للوكيل (تبدأ يوم كذا وتنتهي يوم كذا)
@@ -123,12 +128,16 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
   };
 
   // أوزانُ المدير تُحمَّل مع البيانات (استعلامٌ واحدٌ لا واحدٌ لكلّ بطاقة)
-  const [comps, custom] = await Promise.all([
+  const [comps, custom, bonuses, appInstallWeight] = await Promise.all([
     prisma.cardCompletion.findMany({
       where,
       select: { technicianId: true, kind: true, durationSec: true, towerId: true },
     }),
     agentKindWeights(agentId),
+    // جوائزُ تنصيب التطبيق تُنسَب إلى **فترةِ منحها** (`awardedAt`) لا إلى تاريخ البطاقة:
+    // فالمنحُ قد يتأخّر إلى ما بعد الإنجاز (نافذةُ الـ٢٤ ساعة من الجهتَين).
+    appInstallBonuses(agentId, period ? dayStart(period.from) : null, period ? dayEnd(period.to) : null),
+    agentAppInstallPoints(agentId),
   ]);
   /** وزنُ الفئة الفعليُّ: ما ضبطه المديرُ إن ضبطه (ولو صفراً)، وإلّا المبنيُّ في الكود. */
   const wOf = (k: string | null | undefined): number => {
@@ -144,11 +153,12 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
     for (const [label, weight] of custom) if (!seen.has(label)) out.push({ label, weight });
     return out;
   })();
-  if (!comps.length) {
+  if (!comps.length && bonuses.size === 0) {
     return {
       from: period?.from ?? null, to: period?.to ?? null,
       rows: [], leader: null, kindAvg: [], byOffice: [], totals: { total: 0, kinds: [] },
       weights: effectiveWeights, defaultWeight: DEFAULT_WEIGHT, minCards: MIN_CARDS_FOR_CROWN,
+      appInstallWeight,
     };
   }
 
@@ -167,15 +177,15 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
   const kindAvgSec = new Map<string, number>();
   for (const [k, arr] of kindTimes) kindAvgSec.set(k, arr.reduce((s, v) => s + v, 0) / arr.length);
 
-  // أسماء الفنيين ومكاتبهم
-  const techIds = [...new Set(comps.map((c) => c.technicianId))];
+  // أسماء الفنيين ومكاتبهم — ومعهم من ناله جائزةُ تنصيبٍ بلا بطاقةٍ في الفترة
+  const techIds = [...new Set([...comps.map((c) => c.technicianId), ...bonuses.keys()])];
   const techs = await prisma.technician.findMany({ where: { id: { in: techIds } }, select: { id: true, name: true, towerId: true } });
   const towerIds = [...new Set([...techs.map((t) => t.towerId), ...comps.map((c) => c.towerId)].filter((x): x is number => x != null))];
   const towers = await prisma.tower.findMany({ where: { id: { in: towerIds } }, select: { id: true, name: true } });
   const towerName = new Map(towers.map((t) => [t.id, t.name]));
   const techById = new Map(techs.map((t) => [t.id, t]));
 
-  type Acc = { cards: number; points: number; timedSec: number[]; kinds: Map<string, { count: number; secs: number[] }> };
+  type Acc = { cards: number; points: number; timedSec: number[]; kinds: Map<string, { count: number; secs: number[] }>; installs: number; installPoints: number };
   const acc = new Map<number, Acc>();
   for (const c of comps) {
     const k = norm(c.kind) || "—";
@@ -186,7 +196,7 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
     // والتوصيل مستبعَد منها (لا زمن له).
     const valid = !isDeliveryKind(k) && d > 0 && d <= MAX_VALID_SEC;
 
-    const a: Acc = acc.get(c.technicianId) ?? { cards: 0, points: 0, timedSec: [] as number[], kinds: new Map() };
+    const a: Acc = acc.get(c.technicianId) ?? { cards: 0, points: 0, timedSec: [] as number[], kinds: new Map(), installs: 0, installPoints: 0 };
     a.cards += 1;
     a.points += weight;
     if (valid) a.timedSec.push(d);
@@ -195,6 +205,15 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
     if (valid) kk.secs.push(d);
     a.kinds.set(k, kk);
     acc.set(c.technicianId, a);
+  }
+
+  // 📲 جائزةُ تنصيب التطبيق تُضاف إلى النقاط ولا تُعدّ بطاقةً
+  for (const [techId, b] of bonuses) {
+    const a: Acc = acc.get(techId) ?? { cards: 0, points: 0, timedSec: [] as number[], kinds: new Map(), installs: 0, installPoints: 0 };
+    a.installs += b.count;
+    a.installPoints += b.points;
+    a.points += b.points;
+    acc.set(techId, a);
   }
 
   const rows: TechRow[] = [...acc.entries()].map(([id, a]) => {
@@ -206,6 +225,8 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
       office: t?.towerId != null ? towerName.get(t.towerId) ?? null : null,
       cards: a.cards,
       points: Math.round(a.points * 10) / 10,
+      appInstalls: a.installs,
+      appInstallPoints: Math.round(a.installPoints * 10) / 10,
       timed: a.timedSec.length,
       avgMin: avgOf(a.timedSec),
       byKind: [...a.kinds.entries()]
@@ -260,5 +281,6 @@ export async function computeAchievements(agentId: number | null, fromKey: strin
     // لا يُصاب إلّا حين لا بطاقةَ في الفترة). فلو بقي مبنيّاً لبقيت الأسطورةُ تقول «توصيل
     // ×٠٫٢٥» بعد تصفيره، فيكذب الشرحُ على الحساب في نفس الشاشة.
     weights: effectiveWeights, defaultWeight: DEFAULT_WEIGHT, minCards: MIN_CARDS_FOR_CROWN,
+    appInstallWeight,
   };
 }

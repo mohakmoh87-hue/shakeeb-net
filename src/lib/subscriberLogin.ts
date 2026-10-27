@@ -32,7 +32,16 @@ export async function findSubscriberByPhone(core: string): Promise<SubMatch | nu
 }
 
 // طابعُ آخرِ دخولٍ للتطبيق — لعدّ مستعملي التطبيق (أدمن التطبيق). أفضلُ جهدٍ لا يُفشل الدخول.
+// 📲 ومعه قيدُ «منصِّبي التطبيق» وجائزةُ فنيّ البطاقة (طلبُ محمد 2026-10-27).
+// ⚠️ **الترتيبُ مقصود**: `recordAppInstall` **قبل** طابعِ آخر الدخول. فالختمُ الأوّليُّ
+//    لمن دخل قبل الميزة يُبنى من `lastAppLoginAt`؛ فلو طُبع أوّلاً لصار المنصِّبُ الجديدُ
+//    نفسُه صفّاً `legacy` بلا جائزةٍ أبداً.
 export async function markAppLogin(subscriberId: number): Promise<void> {
+  try {
+    const { recordAppInstall, maybeAwardAppInstall } = await import("./appInstall");
+    await recordAppInstall(subscriberId);
+    await maybeAwardAppInstall(subscriberId);
+  } catch { /* لا يُفشل الدخول */ }
   try { await prisma.subscriber.update({ where: { id: subscriberId }, data: { lastAppLoginAt: new Date() } }); }
   catch { /* لا يُفشل الدخول */ }
 }

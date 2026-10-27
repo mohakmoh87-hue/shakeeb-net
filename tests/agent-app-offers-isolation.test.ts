@@ -16,23 +16,40 @@ describe("عزلُ «الباقات والعروض» — المشتركُ لا �
   test("مسارا المشترك يستنبطان الوكيلَ من مكتبه ولا يقبلانه من الطلب", () => {
     for (const p of [SUB_OFFERS, SUB_PKGS]) {
       const src = read(p);
-      assert.ok(src.includes("subscriberAgentId(sess.subscriberId)"), `${p}: الوكيلُ يُستنبَط من جلسة المشترك`);
+      assert.ok(/subscriberAgentId\((sess\.subscriberId|subscriberId)\)/.test(src), `${p}: الوكيلُ يُستنبَط من جلسة المشترك`);
       assert.ok(!/searchParams\.get\(["']agentId/.test(src), `${p}: لا يُقرأ agentId من الطلب`);
       assert.ok(!/body.*agentId/.test(src), `${p}: لا يُقرأ agentId من الجسم`);
-      assert.ok(src.includes("getSubscriberSession"), `${p}: جلسةُ مشتركٍ إلزاميّة`);
+      // الهويّةُ من الكوكي وحدَها: إمّا `getSubscriberSession` مباشرةً أو `appAudience`
+      // التي تُناديها — ولا سبيلَ ثالثَ لتعريف المتصفّح.
+      assert.ok(/getSubscriberSession|appAudience/.test(src), `${p}: الهويّةُ من الكوكي وحدَها`);
       assert.ok(src.includes("appBanned"), `${p}: المحظورُ يُمنع`);
     }
   });
 
   test("العرضُ لا يصل مشتركاً إلّا إن كان لوكيله وهو في جمهوره المثبَّت", () => {
     const src = read(SUB_OFFERS);
-    assert.ok(src.includes("agentOfferTarget.findMany"), "الجمهورُ يُقرأ من الجدول المثبَّت");
-    assert.ok(src.includes("subscriberId: sess.subscriberId"), "الجمهورُ مقيَّدٌ بالمشترك نفسِه");
-    // الاستعلامُ النهائيُّ يجمع: ضمن جمهوره + لوكيله + غيرُ محذوفٍ + ظاهر
-    const q = src.slice(src.indexOf("agentOffer.findMany"), src.indexOf("return NextResponse.json({ packages, offers })"));
-    for (const need of ["id: { in: offerIds }", "agentId", "isDeleted: false", 'status: "visible"']) {
-      assert.ok(q.includes(need), `شرطُ ${need} غائبٌ عن استعلام العروض`);
+    const fn = src.slice(src.indexOf("async function visibleOffers"), src.indexOf("// بلا وكيل"));
+    assert.ok(fn.includes("agentOfferTarget.findMany"), "الجمهورُ يُقرأ من الجدول المثبَّت");
+    assert.ok(/where: \{ subscriberId \}/.test(fn), "الجمهورُ مقيَّدٌ بالمشترك نفسِه");
+    assert.ok(fn.includes("agentId == null ? {} : { agentId }"), "وكيلُه وحدَه إن كان له وكيل");
+    for (const need of ['{ id: { in: ids }, audience: "subs" }', "...scope", "isDeleted: false", 'status: "visible"']) {
+      assert.ok(fn.includes(need), `شرطُ ${need} غائبٌ عن استعلام العروض`);
     }
+    // 🔓 2026-10-27: صنفُ الزائر (ومنه المنتهي أكثرَ من شهر) **لا يرى مجموعةً مثبَّتة**
+    //    ولو كان صفُّه فيها — يرى المفتوحَ له وحدَه. وهذه هي قاعدةُ «الثلاثةُ سواء».
+    assert.ok(fn.includes('audience: { in: ["guests", "all"] }'), "صنفُ الزائر: المفتوحُ له وحدَه");
+    assert.ok(fn.indexOf("agentOfferTarget.findMany") > fn.indexOf('audience === "subs"'), "والمجموعةُ لا تُقرأ إلّا لصنف المشترك");
+  });
+
+  test("جمهورُ العرض ثلاثةٌ لا غير، ولا تاريخَ ولا تثبيتَ لغير المشتركين", () => {
+    const src = read(AGENT_OFFERS);
+    assert.ok(src.includes('b?.audience === "guests" || b?.audience === "all" ? b.audience : "subs"'), "القيمُ الثلاثُ وحدَها، والافتراضُ subs");
+    const guestBranch = src.slice(src.indexOf('if (audience !== "subs")'), src.lastIndexOf("const from ="));
+    assert.ok(guestBranch.includes("agentId, text: text || null, image, audience"), "العرضُ يُنشأ بوكيل الجلسة");
+    assert.ok(!guestBranch.includes("agentOfferTarget"), "ولا جمهورَ يُثبَّت لمن لا اشتراكَ له");
+    assert.ok(!guestBranch.includes("targetWindow"), "ولا نافذةَ تاريخ");
+    // ومسارُ المشتركين يبقى كما كان: نافذةٌ + تثبيتُ أسماء
+    assert.ok(src.indexOf("agentOfferTarget.createMany") > src.lastIndexOf("const from ="), "تثبيتُ الجمهور لمسار المشتركين وحدَه");
   });
 
   test("الباقةُ المنشورةُ تُقرأ بشرط الوكيل أيضاً — لا بالمعرّف وحدَه", () => {

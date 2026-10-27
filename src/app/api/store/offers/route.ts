@@ -10,6 +10,9 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 // 🎁 العروضُ الخاصّة — نصٌّ فقط، أو صورةٌ فقط، أو الاثنان؛ لمشتركٍ أو لمجموعةٍ تُحدَّد
 // بتاريخ الانتهاء بين تاريخَين (طلبُ محمد 2026-10-24). معزولٌ كلُّه بـagentId.
+// 🔓 والجمهورُ يُختار (طلبُ محمد 2026-10-27): `subs` المجموعةُ بتاريخ الانتهاء كما كان ·
+// `guests` غيرُ المشتركين والمنتهون أكثرَ من شهرٍ والزوّار · `all` الجميع. وتاريخا
+// الاستهدافِ والمجموعةُ المثبَّتةُ لا معنى لهما إلّا في `subs`.
 export async function GET(request: Request) {
   const g = await guard("store.manage");
   if (g.error) return g.error;
@@ -43,7 +46,7 @@ export async function GET(request: Request) {
   });
   return NextResponse.json({
     items: rows.map((o) => ({
-      id: o.id, text: o.text, image: o.image, status: o.status,
+      id: o.id, text: o.text, image: o.image, status: o.status, audience: o.audience,
       targetFrom: o.targetFrom, targetTo: o.targetTo, targetCount: o.targetCount,
       createdBy: o.createdBy, createdAt: o.createdAt,
     })),
@@ -61,6 +64,19 @@ export async function POST(request: Request) {
   const text = typeof b?.text === "string" ? b.text.trim().slice(0, 1000) : "";
   const image = cleanPhoto(b?.image);
   if (!text && !image) return NextResponse.json({ error: "اكتب نصَّ العرض أو أضِف صورةً (أو الاثنين)" }, { status: 400 });
+
+  const audience = b?.audience === "guests" || b?.audience === "all" ? b.audience : "subs";
+  // جمهورٌ لا اشتراكَ له ⇒ لا تاريخَ انتهاءٍ ولا مجموعةً تُثبَّت
+  if (audience !== "subs") {
+    const o = await prisma.agentOffer.create({
+      data: {
+        agentId, text: text || null, image, audience, targetCount: 0,
+        status: "visible", createdBy: g.session.fullName ?? g.session.username ?? null,
+      },
+      select: { id: true },
+    });
+    return NextResponse.json({ ok: true, id: o.id, count: 0, audience }, { status: 201 });
+  }
 
   const from = typeof b?.from === "string" ? b.from : "";
   const to = typeof b?.to === "string" ? b.to : "";
@@ -81,7 +97,7 @@ export async function POST(request: Request) {
   const offer = await prisma.$transaction(async (t) => {
     const o = await t.agentOffer.create({
       data: {
-        agentId, text: text || null, image,
+        agentId, text: text || null, image, audience,
         targetFrom: w.gte, targetTo: w.lte, targetCount: ids.length,
         status: "visible", createdBy: g.session.fullName ?? g.session.username ?? null,
       },
@@ -91,7 +107,7 @@ export async function POST(request: Request) {
     await t.agentOfferTarget.createMany({ data: ids.map((subscriberId) => ({ offerId: o.id, subscriberId })) });
     return o;
   });
-  return NextResponse.json({ ok: true, id: offer.id, count: ids.length }, { status: 201 });
+  return NextResponse.json({ ok: true, id: offer.id, count: ids.length, audience }, { status: 201 });
 }
 
 // إخفاءٌ/إظهار — ولا حذفَ نهائيّ: الأرشفةُ بـisDeleted ويبقى الصفُّ وجمهورُه

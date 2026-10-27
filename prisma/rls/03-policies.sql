@@ -479,6 +479,21 @@ CREATE POLICY rls_agent_offer_targets ON agent_offer_targets TO agent_worker
   USING ("offerId" IN (SELECT o.id FROM agent_offers o WHERE o."agentId" = current_agent_id()))
   WITH CHECK ("offerId" IN (SELECT o.id FROM agent_offers o WHERE o."agentId" = current_agent_id()));
 
+-- 📲 جدولُ منصِّبي التطبيق ونقاطُه (2026-10-27) — يكتبهما الموقعُ وحدَه (الدخولُ وإنجازُ
+-- البطاقة)، فلا إذنَ للعامل عليهما كما هو حالُ `agent_offers`. عزلٌ بـagentId المباشر،
+-- وصفُّ مشتركٍ بلا مكتبٍ (agentId NULL) لا يراه عاملُ أيّ وكيل.
+ALTER TABLE subscriber_app_installs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_subscriber_app_installs ON subscriber_app_installs;
+CREATE POLICY rls_subscriber_app_installs ON subscriber_app_installs TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
+ALTER TABLE agent_points_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_agent_points_settings ON agent_points_settings;
+CREATE POLICY rls_agent_points_settings ON agent_points_settings TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 -- 🕵️ فحوصُ سب-ديلر (2026-09-04) — يكتبها الموقعُ/الكرون. عزلٌ بـagentId المباشر.
 ALTER TABLE sub_dealer_scans ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS rls_sub_dealer_scans ON sub_dealer_scans;

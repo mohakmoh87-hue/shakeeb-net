@@ -2083,6 +2083,10 @@ model AgentOffer {
   agentId     Int // الوكيلُ المُرسِل (مفتاحُ العزل)
   text        String? // نصُّ العرض (قد يكون فارغاً إن كانت صورةٌ فقط)
   image       String? // data:image مقيّدة (cleanPhoto)
+  // جمهورُ العرض (طلبُ محمد 2026-10-27): subs = المجموعةُ المثبَّتةُ أدناه · guests =
+  // غيرُ المشتركين والمنتهون أكثرَ من شهرٍ والزوّار · all = الجميع. وتاريخا الاستهداف
+  // لا معنى لهما إلّا في subs — فالزائرُ لا تاريخَ انتهاءٍ له.
+  audience    String    @default("subs")
   targetFrom  DateTime? // توثيقُ نافذة الانتهاء التي اختيرت بها المجموعة
   targetTo    DateTime?
   targetCount Int       @default(0) // عددُ الجمهور لحظةَ الإنشاء
@@ -2094,6 +2098,40 @@ model AgentOffer {
 
   @@index([agentId, status])
   @@map("agent_offers")
+}
+
+// ═════ 📲 تنصيبُ التطبيق: تمييزُ المشترك ونقاطُ الفنيّ (طلبُ محمد 2026-10-27) ═════
+// صفٌّ واحدٌ لكلّ مشتركٍ دخل التطبيق — وهو **جدولُ المنصِّبين** الذي يمنع تكرارَ الجائزة.
+// `legacy` = دخل قبل الميزة (زمنُ تنصيبه مجهول) ⇒ شريطٌ سماويٌّ بلا جائزةٍ أبداً.
+// والمنطقُ وقواعدُه الأربعُ في `src/lib/appInstall.ts`.
+model SubscriberAppInstall {
+  id           Int       @id @default(autoincrement())
+  agentId      Int? // وكيلُ مكتبه لحظةَ الدخول (مفتاحُ العزل) — null لمشتركٍ بلا مكتب
+  subscriberId Int       @unique // صفٌّ واحدٌ لا أكثر: الجائزةُ لأوّلِ تنصيبٍ فقط
+  towerId      Int?
+  firstLoginAt DateTime  @default(now()) // **أوّلُ** دخولٍ لا آخرُه — عليه تُقاس نافذةُ الـ٢٤ ساعة
+  legacy       Boolean   @default(false)
+  awarded      Boolean   @default(false)
+  awardedAt    DateTime?
+  technicianId Int? // الفنيُّ الذي نال النقاط
+  cardId       Int? // البطاقةُ التي مُنحت عليها
+  points       Float? // لقطةُ المقدار لحظةَ المنح — تغييرُ الإعداد لا يُعيد حسابَ الماضي
+  createdAt    DateTime  @default(now())
+
+  @@index([agentId])
+  @@index([awarded, awardedAt])
+  @@map("subscriber_app_installs")
+}
+
+// إعداداتُ نقاطٍ لا تتبع فئةَ بطاقة — لكلّ وكيلٍ صفٌّ واحد. أوزانُ الفئات تبقى في
+// `CardType.achievementWeight` كما هي؛ هذا للنقاط التي لا بطاقةَ لها نوعٌ يحملها.
+model AgentPointsSettings {
+  id               Int      @id @default(autoincrement())
+  agentId          Int      @unique
+  appInstallPoints Float    @default(0) // صفرٌ = لا نقاطَ لتنصيب التطبيق عند هذا الوكيل
+  updatedAt        DateTime @default(now()) @updatedAt
+
+  @@map("agent_points_settings")
 }
 
 // جمهورُ العرض المثبَّت — المشتركُ يرى العرضَ إن كان سطرُه هنا وكان العرضُ لوكيله.
