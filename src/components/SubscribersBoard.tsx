@@ -651,7 +651,7 @@ export default function SubscribersBoard() {
                   className={`clickable ${checked.has(s.id) ? "picked" : ""} ${isActive ? "active" : ""}`}
                   /* 📲 الشريطُ السماويُّ لمن نصّب التطبيق — ويتنازل للتحديد والصفّ النشط
                      كي لا يُلبِّس على المستخدم أيَّ صفٍّ اختار (طلبُ محمد 2026-10-27) */
-                  style={s.appInstalled && !checked.has(s.id) && !isActive ? { background: "#D7F0FC" } : undefined}>
+                  style={s.appInstalled && !checked.has(s.id) && !isActive ? { background: "#E0F2FE" } : undefined}>
                   <td className="cbcol" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" className="cb" checked={checked.has(s.id)} onChange={() => toggleCheck(s.id)} />
                   </td>
