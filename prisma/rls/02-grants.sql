@@ -37,6 +37,18 @@ GRANT SELECT, INSERT, UPDATE ON system_settings TO agent_worker; -- رفعات �
 GRANT DELETE ON system_settings TO agent_worker; -- تسويةُ سباقِ إنشاء حجزِ فحص العقود فقط (سياسة RLS تحصر الحذفَ بمفتاح contractsInstallScan للوكيل)
 GRANT SELECT, INSERT, UPDATE ON task_boards, task_lists, task_cards TO agent_worker; -- بطاقات/أعمدة تذاكر أودو: العامل ينشئها ويحدّثها محليّاً (سياسات rls_task_* تعزلها بالوكيل تلقائياً)
 
+-- ---------- 📲 تنصيبُ التطبيق (2026-10-27) ----------
+-- حاسبةُ المكتب تعرض الشريطَ السماويَّ (SELECT)، و**تُنجز البطاقات** فتمنح الجائزةَ
+-- (UPDATE على صفٍّ قائم). ولا INSERT: القيدُ الأوّليُّ يجري لحظةَ دخول المشترك وذلك
+-- على الموقع العامّ وحدَه. والسياستان في 03-policies.sql تحصران الصفوفَ بوكيل الحاسبة.
+-- 🔑 وبلا هذه الأذون كانت الجائزةُ **تسقط صامتةً** لكلّ بطاقةٍ تُنجَز من حاسبة مكتب —
+--    وهو بعينه عطبُ `odooSlaSendAllowed` المسجَّلُ أعلاه: ميزةٌ لا تعمل أبداً بلا رسالة.
+GRANT SELECT, UPDATE ON subscriber_app_installs TO agent_worker;
+-- ومقدارُ النقاط: المديرُ قد يضبطه من حاسبة مكتبه، فيلزم الإنشاءُ والتحديثُ ومعهما
+-- التسلسلُ — وبلا GRANT على التسلسل يفشل الإدخالُ بلا سببٍ ظاهر (درسٌ مسجَّلٌ أدناه).
+GRANT SELECT, INSERT, UPDATE ON agent_points_settings TO agent_worker;
+GRANT USAGE, SELECT ON SEQUENCE agent_points_settings_id_seq TO agent_worker;
+
 -- ---------- قراءة + إنشاء ----------
 GRANT SELECT, INSERT ON adjustments   TO agent_worker; -- غرامة نسيان الخروج
 GRANT SELECT, INSERT ON notifications TO agent_worker; -- إشعارات الأحداث

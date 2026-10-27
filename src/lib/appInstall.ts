@@ -29,9 +29,26 @@ export const APP_INSTALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // جدولانِ جديدانِ يُنشآن كسولاً — غيرُ مركزيَّين، ويُنادى `ensure` قبل أوّلِ استعلامٍ
 // عليهما في كلّ مسار (درسُ `subscribers.appNickname`: Prisma يطلب كلَّ عمودٍ بلا select).
+//
+// 🔴 **وحاسبةُ المكتب تُشغّل نفسَ الموقع** بدور `agent_N_worker` **بلا أيّ صلاحيّةِ DDL**
+//    (رابطُها `agents."workerDbUrl"`). فلو رُمي خطأُ الإنشاء هناك لانكسرت صفحاتٌ قائمةٌ
+//    لا علاقةَ لها بالميزة (أنواعُ البطاقات · الإنجازات · المشتركون). ولذلك:
+//    • الإنشاءُ يُحاوَل **مرّةً واحدةً** ويُبتلَع فشلُه (الموقعُ أنشأ الجدولَين أصلاً).
+//    • وكلُّ قراءةٍ هنا تتحمّل غيابَ الجدول/الإذن فتُرجِع قيمةً محيّدة.
+//    • والعاملُ له `SELECT/UPDATE` في `02-grants.sql` ⇒ الشريطُ والنقاطُ والجائزةُ تعمل
+//      على حاسبة المكتب أيضاً، فلا ميزةٌ نصفُ ميّتةٍ بصمت («كتابةٌ/قراءةٌ جديدة = GRANT»).
 let ready = false;
+let tried = false;
 export async function ensureAppInstallTables(): Promise<void> {
-  if (ready) return;
+  if (ready || tried) return;
+  tried = true;
+  try {
+    await ensureDdl();
+    ready = true;
+  } catch { /* حاسبةُ مكتبٍ بلا DDL — الجدولانِ منشأانِ من الموقع */ }
+}
+
+async function ensureDdl(): Promise<void> {
   await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "subscriber_app_installs" (
     "id" SERIAL PRIMARY KEY,
     "agentId" INTEGER, "subscriberId" INTEGER NOT NULL, "towerId" INTEGER,
@@ -57,15 +74,16 @@ export async function ensureAppInstallTables(): Promise<void> {
     FROM subscribers s LEFT JOIN towers t ON t.id = s."towerId"
     WHERE s."isDeleted" = false AND s."purgedAt" IS NULL AND s."lastAppLoginAt" IS NOT NULL
     ON CONFLICT ("subscriberId") DO NOTHING`);
-  ready = true;
 }
 
 /** نقاطُ تنصيب التطبيق كما ضبطها مديرُ الوكيل — صفرٌ = الميزةُ بلا نقاطٍ عنده. */
 export async function agentAppInstallPoints(agentId: number | null): Promise<number> {
   if (agentId == null) return 0;
   await ensureAppInstallTables();
-  const row = await prisma.agentPointsSettings.findUnique({ where: { agentId }, select: { appInstallPoints: true } });
-  return row?.appInstallPoints ?? 0;
+  try {
+    const row = await prisma.agentPointsSettings.findUnique({ where: { agentId }, select: { appInstallPoints: true } });
+    return row?.appInstallPoints ?? 0;
+  } catch { return 0; } // لا جدولَ/إذن ⇒ بلا نقاطٍ، ولا تنكسر الصفحةُ التي استدعتها
 }
 
 export async function setAgentAppInstallPoints(agentId: number, points: number): Promise<number> {
@@ -83,6 +101,7 @@ export async function setAgentAppInstallPoints(agentId: number, points: number):
 /** أوّلُ دخولٍ للمشترك ⇒ صفٌّ في جدول المنصِّبين. والدخولُ التالي لا يحرّك `firstLoginAt`. */
 export async function recordAppInstall(subscriberId: number): Promise<void> {
   await ensureAppInstallTables();
+  // (الدخولُ لا يجري إلّا على الموقع العامّ، فالإنشاءُ هنا مضمون)
   const sub = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { towerId: true } });
   const towerId = sub?.towerId ?? null;
   const agentId = towerId != null
@@ -146,11 +165,13 @@ export async function maybeAwardAppInstall(subscriberId: number): Promise<void> 
 export async function installedSubscriberIds(ids: number[]): Promise<Set<number>> {
   if (!ids.length) return new Set();
   await ensureAppInstallTables();
-  const rows = await prisma.subscriberAppInstall.findMany({
-    where: { subscriberId: { in: ids } },
-    select: { subscriberId: true },
-  });
-  return new Set(rows.map((r) => r.subscriberId));
+  try {
+    const rows = await prisma.subscriberAppInstall.findMany({
+      where: { subscriberId: { in: ids } },
+      select: { subscriberId: true },
+    });
+    return new Set(rows.map((r) => r.subscriberId));
+  } catch { return new Set(); } // لا شريطَ سماويّاً، ولا تنكسر صفحةُ المشتركين
 }
 
 /** جوائزُ تنصيب التطبيق في فترةٍ، مجموعةً بالفنيّ — لحساب الإنجازات. */
@@ -164,7 +185,7 @@ export async function appInstallBonuses(agentId: number | null, from: Date | nul
       ...(from && to ? { awardedAt: { gte: from, lte: to } } : {}),
     },
     select: { technicianId: true, points: true },
-  });
+  }).catch(() => [] as { technicianId: number | null; points: number | null }[]); // لا تنكسر لوحةُ الإنجازات
   for (const r of rows) {
     if (r.technicianId == null) continue;
     const a = out.get(r.technicianId) ?? { count: 0, points: 0 };

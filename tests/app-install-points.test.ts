@@ -91,6 +91,25 @@ describe("📲 نقاطُ تنصيب التطبيق للفنيّ", () => {
     assert.ok(read(LIB).includes("row?.appInstallPoints ?? 0"), "والافتراضيُّ صفرٌ = بلا نقاط");
   });
 
+  test("🖥️ حاسبةُ المكتب: لا DDL لها ⇒ الإنشاءُ يُبتلَع والقراءةُ تتحمّل", () => {
+    const src = read(LIB);
+    // 🔴 حاسبةُ المكتب تُشغّل **نفسَ الموقع** بدور `agent_N_worker` بلا صلاحيّةِ إنشاء.
+    //    فلو رُمي الخطأُ لانكسرت صفحاتٌ قائمةٌ (أنواعُ البطاقات · الإنجازات · المشتركون).
+    assert.ok(/if \(ready \|\| tried\) return;/.test(src), "محاولةٌ واحدةٌ لا حلقةُ فشلٍ في كلّ نداء");
+    assert.ok(/catch \{ \/\* حاسبةُ مكتبٍ بلا DDL/.test(src), "وفشلُ الإنشاء يُبتلَع");
+    assert.ok(src.includes("catch { return 0; }"), "ومقدارُ النقاط يتحمّل");
+    assert.ok(src.includes("catch { return new Set(); }"), "والشريطُ السماويُّ يتحمّل");
+    assert.ok(src.includes(".catch(() => [] as { technicianId"), "ولوحةُ الإنجازات تتحمّل");
+    // «كتابةٌ/قراءةٌ جديدة = GRANT»: وإلّا سقطت الجائزةُ صامتةً لكلّ بطاقةٍ تُنجَز من مكتب
+    const gr = read("prisma/rls/02-grants.sql");
+    assert.ok(/GRANT SELECT, UPDATE ON subscriber_app_installs TO agent_worker;/.test(gr), "إذنُ الجائزة للعامل");
+    assert.ok(gr.includes("agent_points_settings_id_seq"), "وتسلسلُ إعداد النقاط");
+    const pol = read("prisma/rls/03-policies.sql");
+    for (const t of ["subscriber_app_installs", "agent_points_settings"]) {
+      assert.ok(pol.includes(`rls_${t}`), `لا سياسةَ عزلٍ لـ${t}`);
+    }
+  });
+
   test("🔓 كلُّ بطاقةٍ تصلح — لا نوعٌ بعينه («أي بطاقة كانت»)", () => {
     const src = read(LIB);
     const q = src.slice(src.indexOf("prisma.taskCard.findMany"), src.indexOf("orderBy: { completedAt"));
