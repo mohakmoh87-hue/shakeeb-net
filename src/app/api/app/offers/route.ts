@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { appAudience } from "@/lib/subscriberAuth";
+import { appClass } from "@/lib/subscriberAuth";
+import { offerVisibleTo } from "@/lib/agentAppOffers";
 import { subscriberAgentId } from "@/lib/agentStore";
 import { ensureAgentAppTables } from "@/lib/agentAppOffers";
 
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 // المفتوحةُ له، كما هي الباقاتُ سلفاً: لا سبيلَ لنسبته إلى وكيلٍ بعينه.
 export async function GET() {
   await ensureAgentAppTables();
-  const { audience, subscriberId } = await appAudience();
+  const { klass, subscriberId, packageId: myPkg } = await appClass();
   let agentId: number | null = null;
   let myPackageId: number | null = null;
   if (subscriberId != null) {
@@ -32,28 +33,26 @@ export async function GET() {
     agentId = await subscriberAgentId(subscriberId);
   }
 
-  // جمهورُ العرض: صنفُ "subs" يرى مجموعتَه المثبَّتةَ و«للكلّ»؛ وصنفُ "guests" يرى
-  // «لغير المشتركين» و«للكلّ» — ولا يرى مجموعةً مثبَّتةً ولو كان صفُّه فيها.
+  // جمهورُ العرض: صنفُ المتصفّح (أربعةٌ) + ترشيحُ الباقة + **المجموعةُ المثبَّتةُ حيث وُجدت**.
+  // 🔑 والقاعدةُ الحاكمة: عرضٌ له مجموعةٌ مثبَّتةٌ (`targetCount > 0`) لا يراه إلّا من هو فيها —
+  //    وهو ما يُبقي كلَّ عرضٍ أُرسل قبل اليوم يعمل كما كان حرفاً بحرف. وما لا مجموعةَ له
+  //    يحكمه الصنفُ والباقةُ وحدَهما.
   async function visibleOffers(): Promise<{ id: number; text: string | null; image: string | null }[]> {
     const scope = agentId == null ? {} : { agentId };
-    let match: object;
-    if (audience === "subs") {
-      const targets = subscriberId == null
-        ? []
-        : await prisma.agentOfferTarget.findMany({ where: { subscriberId }, select: { offerId: true } });
-      const ids = targets.map((t) => t.offerId);
-      const or: object[] = [{ audience: "all" }];
-      if (ids.length) or.push({ id: { in: ids }, audience: "subs" });
-      match = { OR: or };
-    } else {
-      match = { audience: { in: ["guests", "all"] } };
-    }
-    return prisma.agentOffer.findMany({
-      where: { ...scope, isDeleted: false, status: "visible", ...match },
-      select: { id: true, text: true, image: true },
+    const mine = subscriberId == null
+      ? new Set<number>()
+      : new Set((await prisma.agentOfferTarget.findMany({ where: { subscriberId }, select: { offerId: true } })).map((t) => t.offerId));
+    const rows = await prisma.agentOffer.findMany({
+      where: { ...scope, isDeleted: false, status: "visible" },
+      select: { id: true, text: true, image: true, audience: true, packages: true, targetCount: true },
       orderBy: { id: "desc" },
-      take: 30,
+      take: 200,
     });
+    return rows
+      .filter((o) => (o.targetCount > 0 ? mine.has(o.id) : true))
+      .filter((o) => offerVisibleTo(o, klass, myPkg))
+      .slice(0, 30)
+      .map((o) => ({ id: o.id, text: o.text, image: o.image }));
   }
 
   // بلا وكيل (ضيفٌ/حسابُ غير مشتركٍ/مشتركٌ بلا مكتب) ⇒ الباقاتُ المنشورةُ لكلّ الوكلاء

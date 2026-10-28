@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { resolveCoverageOwner, getCoverageOffices, CELL_M, LAT_CELL, LNG_CELL } from "@/lib/coverageOwners";
+import { towerHoursMap } from "@/lib/officeHours";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +44,12 @@ function haversine(aLat: number, aLng: number, bLat: number, bLng: number): numb
 
 export async function GET() {
   const [cov, offices] = await Promise.all([getCoverage(), getCoverageOffices()]);
+  // 🕘 أوقاتُ العمل مع كلّ مكتب (طلبُ محمد 2026-10-28) — ولا يُعاد `towerId` نفسُه.
+  const hours = await towerHoursMap(offices.map((o) => o.towerId));
   return NextResponse.json({
     cellM: CELL_M,
     cells: cov.cells,
-    offices: offices.map((o) => ({ name: o.name, phone: o.phone, lat: o.lat, lng: o.lng })),
+    offices: offices.map((o) => ({ name: o.name, phone: o.phone, lat: o.lat, lng: o.lng, hours: hours.get(o.towerId) ?? "" })),
   });
 }
 
@@ -70,12 +73,30 @@ export async function POST(request: Request) {
 
   // 🗺️ المكتبُ **المالكُ** لعمود الموقع (بمشتركيه فعليّاً ثمّ بالمنطقة) — لا «أقرب مكتب».
   // هاتفُ المكتب العامُّ فقط (phone)، لا managerPhone (داخليٌّ) على مسارٍ عامّ.
+  // 🔁 ومعه **أقربُ مكتبٍ جغرافيّاً** حين يختلف عنه (قرارُ محمد 2026-10-28): المالكُ يبقى
+  //    هو مَن يُرفَع إليه الطلبُ — فهو الذي يخدم الشارعَ فعلاً — والأقربُ يُعرَض للعلم
+  //    وحدَه، فلا يضيع التوجيهُ الصحيح ولا يُحيَّر الزبونُ بمكتبٍ بعيدٍ بلا تفسير.
   const own = await resolveCoverageOwner(lat, lng);
-  let owner: { name: string; phone: string | null; lat: number | null; lng: number | null; distanceM: number | null } | null = null;
-  if (own) {
-    const o = own.office;
-    const distanceM = o.lat != null && o.lng != null ? Math.round(haversine(lat, lng, o.lat, o.lng)) : null;
-    owner = { name: o.name, phone: o.phone, lat: o.lat, lng: o.lng, distanceM };
+  const offices = await getCoverageOffices();
+  const hours = await towerHoursMap([
+    ...(own ? [own.towerId] : []),
+    ...offices.map((o) => o.towerId),
+  ]);
+  const card = (o: { name: string; phone: string | null; lat: number | null; lng: number | null }, towerId: number) => ({
+    name: o.name, phone: o.phone, lat: o.lat, lng: o.lng,
+    distanceM: o.lat != null && o.lng != null ? Math.round(haversine(lat, lng, o.lat, o.lng)) : null,
+    hours: hours.get(towerId) ?? "",
+  });
+
+  const owner = own ? card(own.office, own.towerId) : null;
+
+  let nearest: ReturnType<typeof card> | null = null;
+  let bestD = Infinity;
+  for (const o of offices) {
+    if (own && o.towerId === own.towerId) continue; // المالكُ معروضٌ أصلاً
+    const d = haversine(lat, lng, o.lat as number, o.lng as number);
+    if (d < bestD) { bestD = d; nearest = card(o, o.towerId); }
   }
-  return NextResponse.json({ inside, owner });
+
+  return NextResponse.json({ inside, owner, nearest });
 }

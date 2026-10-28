@@ -88,6 +88,12 @@ export async function GET() {
   // حرفيّاً ولا يرى أحدٌ فرقاً.**
   // ⚠️ ولا تُكشف بياناتُ دخولٍ هنا: المعرّفُ والاسمُ فقط.
   const ids = towers.map((t) => t.id);
+  // 🕘 أوقاتُ العمل من جدولها الجانبيّ (طلبُ محمد 2026-10-28) — بمعرّفاتٍ معزولةٍ سلفاً
+  {
+    const { towerHoursMap } = await import("@/lib/officeHours");
+    const hrs = await towerHoursMap(ids);
+    for (const row of safe) row.hours = hrs.get(row.id as number) ?? "";
+  }
   if (ids.length) {
     const panels = await prisma.sasPanel.findMany({
       where: { towerId: { in: ids }, isDeleted: false },

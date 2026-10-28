@@ -479,6 +479,14 @@ CREATE POLICY rls_agent_offer_targets ON agent_offer_targets TO agent_worker
   USING ("offerId" IN (SELECT o.id FROM agent_offers o WHERE o."agentId" = current_agent_id()))
   WITH CHECK ("offerId" IN (SELECT o.id FROM agent_offers o WHERE o."agentId" = current_agent_id()));
 
+-- 🕘 أوقاتُ عمل المكاتب (2026-10-28) — يكتبها المديرُ من صفحة المكاتب (موقعاً أو حاسبةَ
+-- مكتب)، ويقرؤها مسارُ التغطية العامّ. عزلٌ بـagentId المباشر.
+ALTER TABLE tower_hours ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_tower_hours ON tower_hours;
+CREATE POLICY rls_tower_hours ON tower_hours TO agent_worker
+  USING ("agentId" = current_agent_id())
+  WITH CHECK ("agentId" = current_agent_id());
+
 -- 📲 جدولُ منصِّبي التطبيق ونقاطُه (2026-10-27) — يكتبهما الموقعُ وحدَه (الدخولُ وإنجازُ
 -- البطاقة)، فلا إذنَ للعامل عليهما كما هو حالُ `agent_offers`. عزلٌ بـagentId المباشر،
 -- وصفُّ مشتركٍ بلا مكتبٍ (agentId NULL) لا يراه عاملُ أيّ وكيل.

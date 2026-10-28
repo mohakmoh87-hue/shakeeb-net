@@ -47,10 +47,15 @@ export async function markAppLogin(subscriberId: number): Promise<void> {
 }
 
 export type SubState = { state: "active" | "grace" | "expired"; daysExpired: number };
+// 🔴 بلاغُ محمد 2026-10-28: مشتركٌ (90907) ظهر في «باقتي» **«نشطة» و«غير متصل»** معاً وهو
+//    منتهٍ في الساس. والسببُ أنّ `dateTo` و`dateFrom` **فارغان** في قاعدتنا، وكان الفارغُ
+//    يسقط هنا في فرع «نشط» (`!to`) ⇒ نَدَّعي اشتراكاً لا نعرف له تاريخاً أصلاً.
+//    ومن لا تاريخَ انتهاءٍ له **لا اشتراكَ مسجَّلاً له**، فالصوابُ «منتهٍ» لا «نشط».
 export function subscriberState(dateTo: Date | null): SubState {
   const to = dateTo ? new Date(dateTo).getTime() : 0;
   const now = Date.now();
-  if (!to || to >= now) return { state: "active", daysExpired: 0 };
+  if (!to) return { state: "expired", daysExpired: 0 };
+  if (to >= now) return { state: "active", daysExpired: 0 };
   const daysExpired = Math.floor((now - to) / 86_400_000);
   return daysExpired <= GRACE_DAYS ? { state: "grace", daysExpired } : { state: "expired", daysExpired };
 }

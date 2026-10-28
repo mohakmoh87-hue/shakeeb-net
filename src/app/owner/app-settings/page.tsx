@@ -105,7 +105,7 @@ export default function OwnerAppSettingsPage() {
       const res = await fetch("/api/owner/app-settings", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: { ads: s!.ads, offers: s!.offers, quick: s!.quick },
+          content: { ads: s!.ads, offers: s!.offers, quick: s!.quick, videos: s!.videos ?? [], faqs: s!.faqs ?? [], about: s!.about ?? "" },
           otpWa: { baseUrl, instanceId, token },
           ticketDest,
           subsVisibleToCompany: subsVisible,
@@ -201,7 +201,7 @@ export default function OwnerAppSettingsPage() {
 
       <AppAdminAccounts />
 
-      <AdsEditor content={{ ads: s.ads, offers: s.offers, quick: s.quick }} onChange={(c) => setS({ ...s, ...c })} />
+      <AdsEditor content={{ ads: s.ads, offers: s.offers, quick: s.quick, videos: s.videos ?? [], faqs: s.faqs ?? [], about: s.about ?? "" }} onChange={(c) => setS({ ...s, ...c })} />
 
       <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-200 bg-white/90 py-3 backdrop-blur">
         {msg && <span className="text-sm text-slate-600">{msg}</span>}

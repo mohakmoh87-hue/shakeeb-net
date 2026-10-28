@@ -5,7 +5,13 @@
 import { useState } from "react";
 
 export type Ad = { text: string; image: string };
-export type AppContentT = { ads: Record<string, Ad>; offers: Ad[]; quick: string[] };
+export type VideoItemT = { title: string; url: string };
+export type FaqItemT = { q: string; a: string };
+export type AppContentT = {
+  ads: Record<string, Ad>; offers: Ad[]; quick: string[];
+  videos: VideoItemT[]; faqs: FaqItemT[]; about: string;
+};
+const MAX_VIDEOS = 30, MAX_FAQS = 40;
 
 const AD_SLOTS: { key: string; label: string }[] = [
   { key: "hero", label: "إعلان الرئيسية (البطل)" },
@@ -55,6 +61,9 @@ function ImageField({ value, onChange }: { value: string; onChange: (v: string) 
 export default function AdsEditor({ content, onChange }: { content: AppContentT; onChange: (c: AppContentT) => void }) {
   const setAd = (slot: string, patch: Partial<Ad>) =>
     onChange({ ...content, ads: { ...content.ads, [slot]: { ...content.ads[slot], ...patch } } });
+  // محتوًى محفوظٌ قبل هذه الميزة لا يحمل الحقولَ الثلاثة — تُقرأ بحارسٍ فلا تنهار الشاشة
+  const videos = content.videos ?? [];
+  const faqs = content.faqs ?? [];
   const setOffer = (i: number, patch: Partial<Ad>) =>
     onChange({ ...content, offers: content.offers.map((o, j) => (j === i ? { ...o, ...patch } : o)) });
 
@@ -113,6 +122,67 @@ export default function AdsEditor({ content, onChange }: { content: AppContentT;
             if (v) onChange({ ...content, quick: [...content.quick, v].slice(0, 8) });
           }} className="rounded-full border border-dashed border-slate-300 px-3 py-1 text-xs text-slate-500 hover:bg-slate-50">+ إضافة</button>
         </div>
+      </div>
+
+      {/* 🎬 الفيديوهاتُ التعليميّة — تظهر في «الخدمات» بالتطبيق (طلبُ محمد 2026-10-28) */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="font-semibold text-slate-800">🎬 الفيديوهات التعليمية</span>
+          <button type="button" disabled={videos.length >= MAX_VIDEOS}
+            onClick={() => onChange({ ...content, videos: [...videos, { title: "", url: "" }] })}
+            className="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100 disabled:opacity-40">+ فيديو</button>
+        </div>
+        <div className="space-y-2">
+          {videos.length === 0 && <div className="text-xs text-slate-400">لا فيديوهات — أضف واحداً.</div>}
+          {videos.map((v, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2">
+              <input value={v.title} maxLength={120} placeholder="عنوان الفيديو"
+                onChange={(e) => onChange({ ...content, videos: videos.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })}
+                className="min-w-[8rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+              <input value={v.url} maxLength={500} placeholder="https://…" dir="ltr"
+                onChange={(e) => onChange({ ...content, videos: videos.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)) })}
+                className="min-w-[10rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+              <button type="button" onClick={() => onChange({ ...content, videos: videos.filter((_, j) => j !== i) })}
+                className="rounded-lg bg-red-50 px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-100">حذف</button>
+            </div>
+          ))}
+        </div>
+        <div className="mt-1 text-[11px] text-slate-400">الرابطُ http/https فقط — وغيرُه يُهمَل عند الحفظ.</div>
+      </div>
+
+      {/* ❓ الأسئلةُ الشائعة */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="font-semibold text-slate-800">❓ الأسئلة الشائعة</span>
+          <button type="button" disabled={faqs.length >= MAX_FAQS}
+            onClick={() => onChange({ ...content, faqs: [...faqs, { q: "", a: "" }] })}
+            className="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100 disabled:opacity-40">+ سؤال</button>
+        </div>
+        <div className="space-y-2">
+          {faqs.length === 0 && <div className="text-xs text-slate-400">لا أسئلة — أضف واحداً.</div>}
+          {faqs.map((f, i) => (
+            <div key={i} className="rounded-lg border border-slate-200 p-2">
+              <div className="flex items-center gap-2">
+                <input value={f.q} maxLength={200} placeholder="السؤال"
+                  onChange={(e) => onChange({ ...content, faqs: faqs.map((x, j) => (j === i ? { ...x, q: e.target.value } : x)) })}
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold" />
+                <button type="button" onClick={() => onChange({ ...content, faqs: faqs.filter((_, j) => j !== i) })}
+                  className="rounded-lg bg-red-50 px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-100">حذف</button>
+              </div>
+              <textarea value={f.a} maxLength={1500} rows={2} placeholder="الجواب"
+                onChange={(e) => onChange({ ...content, faqs: faqs.map((x, j) => (j === i ? { ...x, a: e.target.value } : x)) })}
+                className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 🏢 من نحن — يظهر في «حسابي» */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-2 font-semibold text-slate-800">🏢 من نحن</div>
+        <textarea value={content.about ?? ""} maxLength={3000} rows={5} placeholder="نبذةٌ عن الشركة تظهر في «حسابي ← من نحن»"
+          onChange={(e) => onChange({ ...content, about: e.target.value })}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </div>
     </>
   );

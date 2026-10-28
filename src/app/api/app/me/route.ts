@@ -4,6 +4,7 @@ import { getSubscriberSession } from "@/lib/subscriberAuth";
 import { subscriberState } from "@/lib/subscriberLogin";
 import { remaining, formatExpiryDay } from "@/lib/format";
 import { ensureMarketTable, cleanPhoto, defaultAvatar } from "@/lib/market";
+import { towerHoursMap } from "@/lib/officeHours";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,8 @@ export async function GET() {
   const st = subscriberState(sub.dateTo);
   const rem = remaining(sub.dateTo);
   const daysLeft = rem && !rem.negative ? rem.days : 0;
-  const expired = rem ? rem.negative : false;
+  // بلا تاريخٍ لا `remaining` ⇒ تُؤخَذ الحقيقةُ من `subscriberState` كي لا تتناقض الشاشة
+  const expired = rem ? rem.negative : st.state === "expired";
   const priceLabel = pkg?.priceDinar
     ? `${Math.round(pkg.priceDinar).toLocaleString("en-US")} د.ع`
     : pkg?.priceDollar
@@ -45,6 +47,8 @@ export async function GET() {
     officeName: office?.name ?? "", agentName: agent?.name ?? "",
     // 🏬 مكتبُه على خريطة التغطية: هاتفُه العامُّ وموقعُه (طلبُ محمد 2026-10-26)
     officePhone: office?.phone ?? "", officeLat: office?.lat ?? null, officeLng: office?.lng ?? null,
+    // 🕘 أوقاتُ عمل مكتبه — يراها قبل أن يرسل طلبَ صيانةٍ أو توصيل (طلبُ محمد 2026-10-28)
+    officeHours: sub.towerId != null ? (await towerHoursMap([sub.towerId])).get(sub.towerId) ?? "" : "",
     dateFrom: sub.dateFrom, startLabel: sub.dateFrom ? formatExpiryDay(sub.dateFrom) : "",
     rewardsEnabled, rewardBalance: rewardsEnabled ? (sub.rewardBalance ?? 0) : null,
     state: st.state, daysExpired: st.daysExpired,

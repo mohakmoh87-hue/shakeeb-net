@@ -18,6 +18,7 @@ const schema = z.object({
   groupId: z.coerce.number().nullable().optional(),
   activationMode: z.enum(["month", "days30"]).nullable().optional(), // نظام التفعيل
   managerPhone: z.string().nullable().optional(), // رقم مدير المكتب
+  hours: z.string().nullable().optional(), // 🕘 أوقاتُ العمل — جدولٌ جانبيٌّ لا عمودٌ على towers
   mapArea: z.string().nullable().optional(), // رمز منطقة الخريطة
   rewardsEnabled: z.string().nullable().optional(), // 1 = تفعيل نظام المكافآت للمكتب
   silent: z.string().nullable().optional(), // 1 = إرسال صامت
@@ -98,6 +99,17 @@ export async function PUT(
     where: { id: Number(id) },
     data,
   });
+
+  // 🕘 أوقاتُ العمل في جدولها الجانبيّ — بعد تحديث المكتب كي يُؤخَذ وكيلُه منه (مفتاحُ العزل).
+  // أفضلُ جهدٍ: لا يُفشل حفظَ المكتب (حاسبةُ مكتبٍ بلا إذنٍ على الجدول الجديد مثلاً).
+  if ("hours" in parsed.data) {
+    try {
+      const { setTowerHours } = await import("@/lib/officeHours");
+      await setTowerHours(Number(id), updated.agentId ?? null, parsed.data.hours ?? "");
+    } catch (e) {
+      console.error(`[towers] تعذّر حفظُ أوقات عمل المكتب ${id}:`, e instanceof Error ? e.message : e);
+    }
+  }
 
   // مجموعةُ اللوحة: عند جعل المكتب ثانويّاً لأوّل مرّة (null → رئيسيّ) نرحّل بطاقاتِه الحيّة إلى
   // اللوحة المشتركة كي لا تختفي، ونختم officeId على بطاقات الرئيسيّ القديمة (أفضلُ جهد).

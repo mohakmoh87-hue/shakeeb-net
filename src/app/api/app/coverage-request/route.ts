@@ -17,8 +17,6 @@ export async function POST(request: Request) {
   if (!rateLimit(`coverage-request:${clientIp(request)}`, 10, 60_000)) {
     return NextResponse.json({ error: "محاولاتٌ كثيرة، انتظر قليلاً" }, { status: 429 });
   }
-  if (!(await getPortalEnabled())) return NextResponse.json({ error: "الخدمةُ غيرُ متاحة حاليّاً" }, { status: 403 });
-
   const body = await request.json().catch(() => null);
   const type = typeof body?.type === "string" && TYPES.includes(body.type) ? body.type : null;
   const name = typeof body?.name === "string" ? body.name.trim().slice(0, 120) : "";
@@ -35,6 +33,14 @@ export async function POST(request: Request) {
   }
 
   const own = lat != null && lng != null ? await resolveCoverageOwner(lat, lng) : null;
+
+  // 🔌 البوّابةُ مطفأةٌ ⇒ لا شركةَ تستقبل. لكنّ **الوكيلَ المالكَ للمنطقة يستقبل** (قرارُ محمد
+  // 2026-10-28): `getEffectiveTicketDest` تُرجِع «agent» حتماً حين تُطفأ البوّابة، فالتذكرةُ
+  // تصل وكيلَها وحدَه ولا يُخرَق شرطُ «الإطفاء = لا وجودَ لسوبر سيل في أيّ مكان».
+  // وبلا مالكٍ معروفٍ لا جهةَ تستقبل ⇒ يبقى الحجبُ كما كان، فلا يضيع طلبٌ في الفراغ.
+  if (!(await getPortalEnabled()) && own?.agentId == null) {
+    return NextResponse.json({ error: "الخدمةُ غيرُ متاحة حاليّاً" }, { status: 403 });
+  }
 
   await ensureSubscriberTicketsTable();
   await prisma.subscriberTicket.create({

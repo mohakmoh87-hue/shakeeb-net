@@ -97,7 +97,10 @@ describe("🪟 النوافذُ المنبثقة", () => {
     const src = read("src/lib/subscriberAuth.ts");
     assert.ok(src.includes("export async function appAudience()"), "الدالّةُ موجودة");
     assert.ok(src.includes("subscriberState("), "والحدُّ من الخادم (GRACE_DAYS) لا رقمٌ مكرّر");
-    assert.ok(/st\.state === "expired" \? "guests" : "subs"/.test(src), "المنتهي أكثرَ من شهرٍ يُرى زائراً");
+    assert.ok(/st\.state === "expired" \? "sub_expired" : "sub_active"/.test(src), "المنتهي أكثرَ من شهرٍ ليس مشتركاً فعّالاً");
+    assert.ok(/c\.klass === "sub_active" \? "subs" : "guests"/.test(src), "والاختزالُ الثنائيُّ: الفعّالُ وحدَه subs");
+    // 🔑 مصدرُ حقيقةٍ واحد: `appAudience` مشتقّةٌ من `appClass` لا حسابٌ موازٍ يتفرّع عنها
+    assert.ok(src.includes("const c = await appClass();"), "appAudience مشتقّةٌ من appClass");
   });
 
   test("إدارتُها لأدمن التطبيق وحدَه، ولا حذفَ نهائيّ", () => {

@@ -9,7 +9,14 @@ import { prisma } from "./prisma";
 // يفوز** — قرار محمد)، ويقرؤه تطبيقُ Flutter عبر `GET /api/app/config` العامّ للقراءة فقط.
 
 export type Ad = { text: string; image: string }; // نصّ + صورة (data: مقيّدة)
-export type AppContent = { ads: Record<string, Ad>; offers: Ad[]; quick: string[] };
+// 🎬 فيديو تعليميّ · ❓ سؤالٌ شائع · 🏢 «من نحن» (طلبُ محمد 2026-10-28) — محتوى شركةٍ عامّ
+//    يضعه أدمن التطبيق، فمكانُه هنا لا في جدولٍ جديد.
+export type VideoItem = { title: string; url: string };
+export type FaqItem = { q: string; a: string };
+export type AppContent = {
+  ads: Record<string, Ad>; offers: Ad[]; quick: string[];
+  videos: VideoItem[]; faqs: FaqItem[]; about: string;
+};
 
 const CONTENT_KEY = "appContent"; // JSON فيه صورٌ ⇒ يُخزَّن في العمود text
 const COMPANY_MODE_KEY = "companyModeEnabled";
@@ -21,6 +28,19 @@ export const MAX_IMG = 300_000; // سقفُ الصورة (data:) — نفسُ ح
 export const MAX_TEXT = 400; // سقفُ نصّ الإعلان
 export const MAX_OFFERS = 8;
 export const MAX_QUICK = 8;
+export const MAX_VIDEOS = 30;
+export const MAX_FAQS = 40;
+export const MAX_ABOUT = 3000;
+export const MAX_FAQ_Q = 200;
+export const MAX_FAQ_A = 1500;
+
+// 🔒 رابطُ الفيديو: http/https وحدَهما. فالنصُّ يصل تطبيقَ المشترك ويُفتَح، و`javascript:`
+//    أو `data:` فيه فتحُ بابٍ لا داعيَ له إطلاقاً.
+export function cleanUrl(v: unknown): string {
+  const s = typeof v === "string" ? v.trim().slice(0, 500) : "";
+  if (!/^https?:\/\//i.test(s)) return "";
+  return s;
+}
 
 function emptyAd(): Ad { return { text: "", image: "" }; }
 export function defaultContent(): AppContent {
@@ -28,6 +48,9 @@ export function defaultContent(): AppContent {
     ads: { hero: emptyAd(), home2: emptyAd(), plan: emptyAd(), activate: emptyAd() },
     offers: [],
     quick: ["طلب صيانة", "طلب تنصيب"],
+    videos: [],
+    faqs: [],
+    about: "",
   };
 }
 
@@ -69,6 +92,28 @@ export function sanitizeContent(input: unknown): AppContent {
       .map((q) => q.trim().slice(0, 40))
       .slice(0, MAX_QUICK);
   }
+  if (Array.isArray(o.videos)) {
+    out.videos = o.videos
+      .map((v) => {
+        const x = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+        return { title: typeof x.title === "string" ? x.title.trim().slice(0, 120) : "", url: cleanUrl(x.url) };
+      })
+      .filter((v) => v.url)
+      .slice(0, MAX_VIDEOS);
+  }
+  if (Array.isArray(o.faqs)) {
+    out.faqs = o.faqs
+      .map((f) => {
+        const x = (f && typeof f === "object" ? f : {}) as Record<string, unknown>;
+        return {
+          q: typeof x.q === "string" ? x.q.trim().slice(0, MAX_FAQ_Q) : "",
+          a: typeof x.a === "string" ? x.a.trim().slice(0, MAX_FAQ_A) : "",
+        };
+      })
+      .filter((f) => f.q && f.a)
+      .slice(0, MAX_FAQS);
+  }
+  if (typeof o.about === "string") out.about = o.about.trim().slice(0, MAX_ABOUT);
   return out;
 }
 

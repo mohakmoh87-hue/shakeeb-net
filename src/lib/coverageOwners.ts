@@ -141,9 +141,12 @@ export async function getCoverageCells(): Promise<[number, number][]> {
 // نفسُ الحقول التي يكشفها POST للمكتب المالك: الاسمُ والهاتفُ العامُّ والموقع — لا
 // managerPhone ولا agentId ولا عددَ مشتركين ولا أيَّ رقمٍ يقارن وكيلاً بوكيل.
 // ومن لا إحداثيّاتَ له يُستبعَد، فلا نرسم مكتباً في وسط بغداد افتراضاً.
-export async function getCoverageOffices(): Promise<OfficeInfo[]> {
+export async function getCoverageOffices(): Promise<(OfficeInfo & { towerId: number })[]> {
   const index = await getIndex();
-  return [...index.offices.values()].filter((o) => o.lat != null && o.lng != null);
+  // المعرّفُ داخليٌّ: يُستعمَل لوصلِ أوقاتِ العمل وحسابِ الأقرب، ولا يُعاد في الاستجابة العامّة.
+  return [...index.offices.entries()]
+    .map(([towerId, o]) => ({ ...o, towerId }))
+    .filter((o) => o.lat != null && o.lng != null);
 }
 
 export type CoverageOwner = { agentId: number; towerId: number; area: string | null; office: OfficeInfo };

@@ -87,9 +87,31 @@ export async function appViewer(): Promise<AppViewer> {
 // 🔒 يبقى `subscriberId` مُعاداً لمن له جلسةٌ حقيقيّة: بياناتُه وإشعاراتُه وطلباتُه
 //    له وحدَه (قرارُ محمد: «تبقى له») — الصنفُ يحكم المعروضَ لا ملكيّةَ حسابه.
 export async function appAudience(): Promise<{ audience: "subs" | "guests"; subscriberId: number | null }> {
+  const c = await appClass();
+  // المشتركُ النشطُ (ومنه المنتهي أقلَّ من شهر) وحدَه جمهورُ "subs"؛ والثلاثةُ الباقية سواء.
+  return { audience: c.klass === "sub_active" ? "subs" : "guests", subscriberId: c.subscriberId };
+}
+
+// ═════ 🎯 صنفُ المتصفّح بدقّة — طلبُ محمد 2026-10-28 ═════
+// جمهورُ العرض الخاصّ صار يُختار من أربعةٍ لا ثلاثة: مشتركٌ فعّال · مشتركٌ منتهٍ · غيرُ
+// مشتركٍ (له حساب) · زائرٌ بلا جلسة. و`appAudience` أعلاه تبقى الاختزالَ الثنائيَّ الذي
+// تحتاجه النوافذُ المنبثقةُ — مصدرُ حقيقةٍ واحدٌ لا حسابان متوازيان.
+// 🔒 والصنفُ من الكوكي وحدَها: لا يُقبَل من الطلب بحالٍ.
+export type AppClass = "sub_active" | "sub_expired" | "account" | "guest";
+export async function appClass(): Promise<{ klass: AppClass; subscriberId: number | null; packageId: number | null }> {
   const sess = await getSubscriberSession();
-  if (!sess) return { audience: "guests", subscriberId: null };
-  const row = await prisma.subscriber.findUnique({ where: { id: sess.subscriberId }, select: { dateTo: true } });
-  const st = subscriberState(row?.dateTo ?? null);
-  return { audience: st.state === "expired" ? "guests" : "subs", subscriberId: sess.subscriberId };
+  if (sess) {
+    const row = await prisma.subscriber.findUnique({
+      where: { id: sess.subscriberId },
+      select: { dateTo: true, packageId: true },
+    });
+    const st = subscriberState(row?.dateTo ?? null);
+    return {
+      klass: st.state === "expired" ? "sub_expired" : "sub_active",
+      subscriberId: sess.subscriberId,
+      packageId: row?.packageId ?? null,
+    };
+  }
+  const acc = await getAccountSession();
+  return { klass: acc ? "account" : "guest", subscriberId: null, packageId: null };
 }

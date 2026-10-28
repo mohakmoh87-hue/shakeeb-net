@@ -16,6 +16,7 @@ type Office = {
   address: string | null;
   phone: string | null;
   managerPhone: string | null;
+  hours?: string | null; // 🕘 أوقاتُ عمل المكتب — تظهر للمشترك على خريطة التغطية
   mapArea: string | null;
   rewardsEnabled: string | null;
   activationMode: string | null;
@@ -242,6 +243,7 @@ export default function OfficesPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <F label="اسم المكتب"><I v={form.name} on={(v) => set("name", v)} ro={ro} /></F>
                   <F label="رقم مدير المكتب (للتقرير)"><I v={form.managerPhone} on={(v) => set("managerPhone", v)} ro={ro} dir="ltr" /></F>
+                  <F label="أوقات العمل (تظهر للمشترك على الخريطة)"><I v={form.hours ?? ""} on={(v) => set("hours", v)} ro={ro} /></F>
                   <F label="هاتف المكتب"><I v={form.phone} on={(v) => set("phone", v)} ro={ro} dir="ltr" /></F>
                   {/* ═════ إزالةُ الازدواج (قرارُ محمد 2026-08-19) ═════
                       كانت بياناتُ الساس تُدخَل هنا **وأيضاً** في نافذة «لوحات الساس»

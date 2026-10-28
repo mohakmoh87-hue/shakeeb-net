@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import { cleanPhoto } from "@/lib/market";
-import { ensureAgentAppTables, targetWindow, targetedSubscriberIds } from "@/lib/agentAppOffers";
+import { ensureAgentAppTables, targetWindow, targetedSubscriberIds, cleanClasses, cleanPackageIds } from "@/lib/agentAppOffers";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   });
   return NextResponse.json({
     items: rows.map((o) => ({
-      id: o.id, text: o.text, image: o.image, status: o.status, audience: o.audience,
+      id: o.id, text: o.text, image: o.image, status: o.status, audience: o.audience, packages: o.packages,
       targetFrom: o.targetFrom, targetTo: o.targetTo, targetCount: o.targetCount,
       createdBy: o.createdBy, createdAt: o.createdAt,
     })),
@@ -65,21 +65,25 @@ export async function POST(request: Request) {
   const image = cleanPhoto(b?.image);
   if (!text && !image) return NextResponse.json({ error: "اكتب نصَّ العرض أو أضِف صورةً (أو الاثنين)" }, { status: 400 });
 
-  const audience = b?.audience === "guests" || b?.audience === "all" ? b.audience : "subs";
-  // جمهورٌ لا اشتراكَ له ⇒ لا تاريخَ انتهاءٍ ولا مجموعةً تُثبَّت
-  if (audience !== "subs") {
+  // 🎯 الجمهورُ قائمةُ أصنافٍ (طلبُ محمد 2026-10-28)، والقديمُ `audience` المفردُ يُقبَل كما هو
+  const audience = cleanClasses(b?.audiences ?? b?.audience) || "sub_active";
+  const packages = cleanPackageIds(b?.packageIds);
+
+  // 🗓️ تثبيتُ مجموعةٍ بتاريخ الانتهاء **اختياريٌّ الآن**: يُطلَب بإرسال التاريخَين. وبدونه
+  //    يُحكَم العرضُ بالصنف والباقة وحدَهما (ولا مجموعةَ تُثبَّت) — وهو ما يلزم للزوّار
+  //    وغير المشتركين أصلاً، فلا تاريخَ انتهاءٍ لهم.
+  const from = typeof b?.from === "string" ? b.from : "";
+  const to = typeof b?.to === "string" ? b.to : "";
+  if (!from && !to) {
     const o = await prisma.agentOffer.create({
       data: {
-        agentId, text: text || null, image, audience, targetCount: 0,
+        agentId, text: text || null, image, audience, packages, targetCount: 0,
         status: "visible", createdBy: g.session.fullName ?? g.session.username ?? null,
       },
       select: { id: true },
     });
     return NextResponse.json({ ok: true, id: o.id, count: 0, audience }, { status: 201 });
   }
-
-  const from = typeof b?.from === "string" ? b.from : "";
-  const to = typeof b?.to === "string" ? b.to : "";
   if (!DAY.test(from) || !DAY.test(to)) return NextResponse.json({ error: "حدّد تاريخَي الانتهاء" }, { status: 400 });
   const w = targetWindow(from, to);
   if (!w) return NextResponse.json({ error: "تاريخُ البداية بعد تاريخ النهاية" }, { status: 400 });
@@ -97,7 +101,7 @@ export async function POST(request: Request) {
   const offer = await prisma.$transaction(async (t) => {
     const o = await t.agentOffer.create({
       data: {
-        agentId, text: text || null, image, audience,
+        agentId, text: text || null, image, audience, packages,
         targetFrom: w.gte, targetTo: w.lte, targetCount: ids.length,
         status: "visible", createdBy: g.session.fullName ?? g.session.username ?? null,
       },

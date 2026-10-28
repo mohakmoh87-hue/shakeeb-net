@@ -2086,7 +2086,8 @@ model AgentOffer {
   // جمهورُ العرض (طلبُ محمد 2026-10-27): subs = المجموعةُ المثبَّتةُ أدناه · guests =
   // غيرُ المشتركين والمنتهون أكثرَ من شهرٍ والزوّار · all = الجميع. وتاريخا الاستهداف
   // لا معنى لهما إلّا في subs — فالزائرُ لا تاريخَ انتهاءٍ له.
-  audience    String    @default("subs")
+  audience    String    @default("subs") // قائمةٌ بفواصل من الأصناف الأربعة (والقيمُ الثلاثُ القديمةُ تُوسَّع عند القراءة)
+  packages    String? // معرّفاتُ الباقات المستهدَفة بفواصل — فارغ = كلُّ الباقات
   targetFrom  DateTime? // توثيقُ نافذة الانتهاء التي اختيرت بها المجموعة
   targetTo    DateTime?
   targetCount Int       @default(0) // عددُ الجمهور لحظةَ الإنشاء
@@ -2098,6 +2099,20 @@ model AgentOffer {
 
   @@index([agentId, status])
   @@map("agent_offers")
+}
+
+// 🕘 أوقاتُ عمل المكتب (طلبُ محمد 2026-10-28) — **جدولٌ جانبيٌّ لا عمودٌ على `towers`**:
+// جدولُ المكاتب مركزيٌّ تقرؤه مساراتٌ كثيرةٌ بلا select، فالعمودُ الكسولُ عليه ممنوع.
+// نصٌّ حرٌّ عمداً («٩ ص – ٩ م · الجمعة عطلة») — أوقاتُ المكاتب لا تنضبط بقالبٍ واحد.
+model TowerHours {
+  id        Int      @id @default(autoincrement())
+  towerId   Int      @unique
+  agentId   Int? // مفتاحُ العزل — من مكتب الصفّ لحظةَ الكتابة
+  hours     String   @default("")
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([agentId])
+  @@map("tower_hours")
 }
 
 // ═════ 📲 تنصيبُ التطبيق: تمييزُ المشترك ونقاطُ الفنيّ (طلبُ محمد 2026-10-27) ═════

@@ -21,7 +21,7 @@ describe("عزلُ «الباقات والعروض» — المشتركُ لا �
       assert.ok(!/body.*agentId/.test(src), `${p}: لا يُقرأ agentId من الجسم`);
       // الهويّةُ من الكوكي وحدَها: إمّا `getSubscriberSession` مباشرةً أو `appAudience`
       // التي تُناديها — ولا سبيلَ ثالثَ لتعريف المتصفّح.
-      assert.ok(/getSubscriberSession|appAudience/.test(src), `${p}: الهويّةُ من الكوكي وحدَها`);
+      assert.ok(/getSubscriberSession|appAudience|appClass/.test(src), `${p}: الهويّةُ من الكوكي وحدَها`);
       assert.ok(src.includes("appBanned"), `${p}: المحظورُ يُمنع`);
     }
   });
@@ -32,24 +32,35 @@ describe("عزلُ «الباقات والعروض» — المشتركُ لا �
     assert.ok(fn.includes("agentOfferTarget.findMany"), "الجمهورُ يُقرأ من الجدول المثبَّت");
     assert.ok(/where: \{ subscriberId \}/.test(fn), "الجمهورُ مقيَّدٌ بالمشترك نفسِه");
     assert.ok(fn.includes("agentId == null ? {} : { agentId }"), "وكيلُه وحدَه إن كان له وكيل");
-    for (const need of ['{ id: { in: ids }, audience: "subs" }', "...scope", "isDeleted: false", 'status: "visible"']) {
+    for (const need of ["...scope", "isDeleted: false", 'status: "visible"']) {
       assert.ok(fn.includes(need), `شرطُ ${need} غائبٌ عن استعلام العروض`);
     }
-    // 🔓 2026-10-27: صنفُ الزائر (ومنه المنتهي أكثرَ من شهر) **لا يرى مجموعةً مثبَّتة**
-    //    ولو كان صفُّه فيها — يرى المفتوحَ له وحدَه. وهذه هي قاعدةُ «الثلاثةُ سواء».
-    assert.ok(fn.includes('audience: { in: ["guests", "all"] }'), "صنفُ الزائر: المفتوحُ له وحدَه");
-    assert.ok(fn.indexOf("agentOfferTarget.findMany") > fn.indexOf('audience === "subs"'), "والمجموعةُ لا تُقرأ إلّا لصنف المشترك");
+    // 🔑 القاعدةُ الحاكمةُ التي تُبقي كلَّ عرضٍ قديمٍ يعمل كما كان: ما له مجموعةٌ مثبَّتةٌ
+    //    لا يراه إلّا من هو فيها — مهما كان صنفُه.
+    assert.ok(fn.includes("o.targetCount > 0 ? mine.has(o.id) : true"), "المجموعةُ المثبَّتةُ حاكمةٌ حيث وُجدت");
+    assert.ok(fn.includes("offerVisibleTo(o, klass, myPkg)"), "ثمّ الصنفُ والباقة");
   });
 
-  test("جمهورُ العرض ثلاثةٌ لا غير، ولا تاريخَ ولا تثبيتَ لغير المشتركين", () => {
+  test("جمهورُ العرض أربعةُ أصنافٍ لا غير، وترشيحُ الباقة للمشتركين وحدَهم", () => {
+    const lib = read("src/lib/agentAppOffers.ts");
+    assert.ok(lib.includes('["sub_active", "sub_expired", "account", "guest"]'), "الأصنافُ الأربعة");
+    // 🔒 القيمُ القديمةُ تُوسَّع **بما يطابق سلوكَ الأمس**: فلا يتغيّر عرضٌ أُرسل قبل اليوم
+    assert.ok(/subs: \["sub_active"\]/.test(lib), "subs ⇒ الفعّالُ وحدَه");
+    assert.ok(/guests: \["sub_expired", "account", "guest"\]/.test(lib), "guests ⇒ الثلاثةُ الباقية");
+    // وترشيحُ الباقة لا يُطبَّق على من لا باقةَ له، وإلّا اختفى عنه عرضٌ اختِير له
+    const fn = lib.slice(lib.indexOf("export function offerVisibleTo"), lib.indexOf("// نافذةُ الاستهداف"));
+    assert.ok(fn.includes("if (!isSub) return true;"), "الزائرُ لا يسقط بترشيح الباقة");
+    assert.ok(fn.includes("if (!pkgs.length) return true;"), "وبلا ترشيحٍ يراه الجميع");
+  });
+
+  test("الوكيلُ يرسل بلا تاريخٍ فلا تُثبَّت مجموعة، وبتاريخٍ فتُثبَّت", () => {
     const src = read(AGENT_OFFERS);
-    assert.ok(src.includes('b?.audience === "guests" || b?.audience === "all" ? b.audience : "subs"'), "القيمُ الثلاثُ وحدَها، والافتراضُ subs");
-    const guestBranch = src.slice(src.indexOf('if (audience !== "subs")'), src.lastIndexOf("const from ="));
-    assert.ok(guestBranch.includes("agentId, text: text || null, image, audience"), "العرضُ يُنشأ بوكيل الجلسة");
-    assert.ok(!guestBranch.includes("agentOfferTarget"), "ولا جمهورَ يُثبَّت لمن لا اشتراكَ له");
-    assert.ok(!guestBranch.includes("targetWindow"), "ولا نافذةَ تاريخ");
-    // ومسارُ المشتركين يبقى كما كان: نافذةٌ + تثبيتُ أسماء
-    assert.ok(src.indexOf("agentOfferTarget.createMany") > src.lastIndexOf("const from ="), "تثبيتُ الجمهور لمسار المشتركين وحدَه");
+    assert.ok(src.includes('cleanClasses(b?.audiences ?? b?.audience) || "sub_active"'), "الأصنافُ تُنقّى والافتراضُ الفعّال");
+    assert.ok(src.includes("cleanPackageIds(b?.packageIds)"), "ومعرّفاتُ الباقات تُنقّى");
+    const noWindow = src.slice(src.indexOf("if (!from && !to) {"), src.lastIndexOf("if (!DAY.test(from)"));
+    assert.ok(noWindow.includes("targetCount: 0"), "بلا تاريخٍ لا مجموعة");
+    assert.ok(!noWindow.includes("agentOfferTarget"), "ولا تثبيتَ أسماء");
+    assert.ok(src.indexOf("agentOfferTarget.createMany") > src.lastIndexOf("if (!DAY.test(from)"), "التثبيتُ لمسار التاريخ وحدَه");
   });
 
   test("الباقةُ المنشورةُ تُقرأ بشرط الوكيل أيضاً — لا بالمعرّف وحدَه", () => {

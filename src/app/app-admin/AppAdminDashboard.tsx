@@ -49,7 +49,7 @@ export default function AppAdminDashboard({ username }: { username: string }) {
     try {
       const res = await fetch("/api/app-admin/config", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: { ads: s!.ads, offers: s!.offers, quick: s!.quick }, otpWa: { baseUrl, instanceId, token } }),
+        body: JSON.stringify({ content: { ads: s!.ads, offers: s!.offers, quick: s!.quick, videos: s!.videos ?? [], faqs: s!.faqs ?? [], about: s!.about ?? "" }, otpWa: { baseUrl, instanceId, token } }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setMsg(d.error ?? "فشل الحفظ"); return; }
       setMsg("✓ حُفِظ"); loadConfig();
@@ -170,7 +170,7 @@ export default function AppAdminDashboard({ username }: { username: string }) {
       </div>
 
       {/* الإعلانات والعروض */}
-      <AdsEditor content={{ ads: s.ads, offers: s.offers, quick: s.quick }} onChange={(c) => setS({ ...s, ...c })} />
+      <AdsEditor content={{ ads: s.ads, offers: s.offers, quick: s.quick, videos: s.videos ?? [], faqs: s.faqs ?? [], about: s.about ?? "" }} onChange={(c) => setS({ ...s, ...c })} />
 
       <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-200 bg-white/90 py-3 backdrop-blur">
         {msg && <span className="text-sm text-slate-600">{msg}</span>}
