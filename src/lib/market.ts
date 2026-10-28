@@ -1,9 +1,20 @@
 import { prisma } from "@/lib/prisma";
 
 // إنشاءٌ كسولٌ لجدول سوق المستعمل (النشرُ لا يُشغّل migrate) — تحصينٌ للتعافي.
+// 🛡️ محاولةٌ واحدةٌ مبتلَعةُ الفشل: الـDDL يشترط ملكيّةَ الجدول، وحاسبةُ المكتب تُشغّل
+//    نفسَ الموقع بدورٍ غيرِ مالك ⇒ لا تُسقط صفحةً بسبب عمودٍ منشأٍ أصلاً من الموقع.
 let ready = false;
+let tried = false;
 export async function ensureMarketTable(): Promise<void> {
-  if (ready) return;
+  if (ready || tried) return;
+  tried = true;
+  try {
+    await ensureMarketDdl();
+    ready = true;
+  } catch { /* بلا ملكيّةٍ — الجداولُ منشأةٌ من الموقع */ }
+}
+
+async function ensureMarketDdl(): Promise<void> {
   await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "market_listings" (
     "id" SERIAL PRIMARY KEY, "sellerId" INTEGER NOT NULL, "sellerName" TEXT,
     "title" TEXT NOT NULL, "price" BIGINT, "description" TEXT, "phone" TEXT NOT NULL,
@@ -52,7 +63,6 @@ export async function ensureMarketTable(): Promise<void> {
     "sort" INTEGER NOT NULL DEFAULT 0, "image" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "market_photos_listingId_sort_idx" ON "market_photos" ("listingId","sort")`);
-  ready = true;
 }
 
 // الاسمُ المعروضُ للمشترك في سوق المستعمل: المستعارُ إن وضعه، وإلّا اسمُه، وإلّا اللقطةُ

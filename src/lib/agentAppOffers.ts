@@ -3,8 +3,17 @@ import { prisma } from "@/lib/prisma";
 // إنشاءٌ كسولٌ لجداول «الباقات والعروض» — النشرُ لا يشغّل migrate (نفسُ وصفة
 // `ensureAgentStoreTables`): تحصينٌ للتعافي ولأوّل نشرةٍ على قاعدةٍ قائمة.
 let ready = false;
+let tried = false;
 export async function ensureAgentAppTables(): Promise<void> {
-  if (ready) return;
+  if (ready || tried) return;
+  tried = true;
+  try {
+    await ensureAgentAppDdl();
+    ready = true;
+  } catch { /* حاسبةُ مكتبٍ بلا ملكيّةٍ — الجداولُ منشأةٌ من الموقع */ }
+}
+
+async function ensureAgentAppDdl(): Promise<void> {
   await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "agent_app_packages" (
     "id" SERIAL PRIMARY KEY, "agentId" INTEGER NOT NULL, "packageId" INTEGER NOT NULL,
     "visible" BOOLEAN NOT NULL DEFAULT true, "note" TEXT, "sort" INTEGER NOT NULL DEFAULT 0,
@@ -30,7 +39,6 @@ export async function ensureAgentAppTables(): Promise<void> {
     "id" SERIAL PRIMARY KEY, "offerId" INTEGER NOT NULL, "subscriberId" INTEGER NOT NULL )`);
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "agent_offer_targets_offerId_subscriberId_key" ON "agent_offer_targets" ("offerId","subscriberId")`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "agent_offer_targets_subscriberId_idx" ON "agent_offer_targets" ("subscriberId")`);
-  ready = true;
 }
 
 // ═════ 🎯 جمهورُ العرض (طلبُ محمد 2026-10-28) ═════

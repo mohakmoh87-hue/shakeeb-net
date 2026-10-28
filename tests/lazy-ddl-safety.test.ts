@@ -27,6 +27,26 @@ function srcFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+// ═══ 🛡️ والإنشاءُ الكسولُ لا يُسقط صفحةً على حاسبة مكتب (2026-10-28) ═══
+// `ALTER TABLE … ADD COLUMN IF NOT EXISTS` **يشترط ملكيّةَ الجدول**؛ و«IF NOT EXISTS»
+// تكتم خطأَ التكرار لا فحصَ الملكيّة. وحاسبةُ المكتب تُشغّل **نفسَ الموقع** بدور
+// `agent_N_worker` (ليس مالكاً) ⇒ أوّلُ فتحٍ لصفحةٍ تنادي `ensure` هناك كان يرمي
+// فتسقط الصفحةُ كلُّها — ومنها **«الباقات والعروض» في برنامج الوكيل** (`store/offers`).
+// فكلُّ `ensure` تُجرَّب **مرّةً واحدةً** ويُبتلَع فشلُها، والجداولُ منشأةٌ من الموقع.
+describe("🛡️ كلُّ إنشاءٍ كسولٍ يتحمّل غيابَ الملكيّة (حاسبةُ المكتب)", () => {
+  const LIBS = ["market", "agentAppOffers", "appInstall", "officeHours"];
+  for (const lib of LIBS) {
+    test(`${lib}: محاولةٌ واحدةٌ ويُبتلَع فشلُها`, () => {
+      const src = fs.readFileSync(path.join(ROOT, `src/lib/${lib}.ts`), "utf8");
+      assert.ok(/let tried = false;/.test(src), `${lib}: لا علَمَ «جُرِّب» ⇒ حلقةُ فشلٍ في كلّ نداء`);
+      assert.ok(/if \(ready \|\| tried\) return;/.test(src), `${lib}: الحارسُ لا يمنع التكرار`);
+      assert.ok(/\} catch \{ \/\*/.test(src), `${lib}: فشلُ الإنشاء غيرُ مبتلَع ⇒ يُسقط الصفحة`);
+      // و`ready = true` لا يُكتَب إلّا بعد نجاح الـDDL كلِّه
+      assert.ok(!/\n  ready = true;\n\}/.test(src), `${lib}: ready تُرفَع داخل دالّة الـDDL لا بعد نجاحها`);
+    });
+  }
+});
+
 describe("🔒 الإنشاءُ الكسولُ لا يمسّ أعمدةَ الجداول المركزيّة", () => {
   const files = srcFiles("src");
 
