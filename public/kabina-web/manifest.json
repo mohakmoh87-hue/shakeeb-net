@@ -1,11 +1,11 @@
 {
-    "name": "kabina_diag",
-    "short_name": "kabina_diag",
+    "name": "سوبرسيل هب",
+    "short_name": "سوبرسيل هب",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "تطبيق سوبرسيل هب",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
