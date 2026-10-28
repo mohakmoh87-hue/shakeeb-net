@@ -37,6 +37,21 @@ GRANT SELECT, INSERT, UPDATE ON system_settings TO agent_worker; -- رفعات �
 GRANT DELETE ON system_settings TO agent_worker; -- تسويةُ سباقِ إنشاء حجزِ فحص العقود فقط (سياسة RLS تحصر الحذفَ بمفتاح contractsInstallScan للوكيل)
 GRANT SELECT, INSERT, UPDATE ON task_boards, task_lists, task_cards TO agent_worker; -- بطاقات/أعمدة تذاكر أودو: العامل ينشئها ويحدّثها محليّاً (سياسات rls_task_* تعزلها بالوكيل تلقائياً)
 
+-- ---------- 📦🎁 «الباقات والعروض» في برنامج الوكيل (ثغرةٌ منذ 2026-10-24) ----------
+-- 🔴 الجداولُ الثلاثةُ أُنشئت بسياسات RLS ولم تُمنَح للعامل أيَّ إذنٍ إطلاقاً — وصفحةُ
+--    «الباقات والعروض» صفحةُ **وكيلٍ** تُفتَح من حاسبة المكتب كما تُفتَح من الموقع
+--    (`store/app-packages` · `store/offers`) ⇒ كانت تسقط هناك بـ«permission denied»
+--    بلا أن يُنبَّه أحد. وهو بعينه عطبُ `odooSlaSendAllowed` المسجَّلُ أعلاه.
+-- 🔒 والعزلُ مضمونٌ قبل الإذن: سياساتُها في 03-policies.sql تحصر الصفوفَ بوكيل الحاسبة،
+--    وجمهورُ العرض عبر `offerId` ← عرضِ الوكيل نفسِه.
+-- ولا DELETE: العرضُ يُؤرشَف بـ`isDeleted` ولا يُحذَف نهائيّاً.
+GRANT SELECT, INSERT, UPDATE ON agent_app_packages TO agent_worker;
+GRANT SELECT, INSERT, UPDATE ON agent_offers       TO agent_worker;
+GRANT SELECT, INSERT         ON agent_offer_targets TO agent_worker;
+GRANT USAGE, SELECT ON SEQUENCE agent_app_packages_id_seq  TO agent_worker;
+GRANT USAGE, SELECT ON SEQUENCE agent_offers_id_seq        TO agent_worker;
+GRANT USAGE, SELECT ON SEQUENCE agent_offer_targets_id_seq TO agent_worker;
+
 -- ---------- 🕘 أوقاتُ عمل المكاتب (2026-10-28) ----------
 -- المديرُ يضبط أوقاتَ مكتبه من صفحة المكاتب، وقد تُفتَح من حاسبة المكتب.
 GRANT SELECT, INSERT, UPDATE ON tower_hours TO agent_worker;
