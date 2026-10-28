@@ -4,7 +4,7 @@ import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { phoneCore, findSubscriberByPhone } from "@/lib/subscriberLogin";
 import { sendOtpWhatsApp } from "@/lib/otpWa";
 import { setAccountSession, getAccountSession } from "@/lib/subscriberAuth";
-import { ensureMarketTable } from "@/lib/market";
+import { ensureMarketTable, cleanPhoto } from "@/lib/market";
 import { hashPassword } from "@/lib/auth";
 import crypto from "crypto";
 
@@ -117,8 +117,38 @@ export async function GET() {
   if (!sess) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
   const acc = await prisma.appAccount.findUnique({
     where: { id: sess.accountId },
-    select: { name: true, phone: true, area: true, nickname: true, createdAt: true },
+    select: { name: true, phone: true, area: true, nickname: true, photo: true, createdAt: true },
   });
   if (!acc) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   return NextResponse.json({ ...acc, kind: "account" });
+}
+
+// ✏️🖼️ تعديلُ صاحبِ الحساب لبياناته: صورتُه الشخصيّة واسمُه المستعار (طلبُ محمد 2026-10-28).
+// 🔒 صفُّ صاحب الجلسة وحدَه — ولا يُقبَل معرّفٌ من الطلب. وهو نظيرُ `PATCH /api/app/me`
+//    للمشترك حرفاً بحرف، بنفس منقّي الصور وبنفس الحدود.
+export async function PATCH(request: Request) {
+  const sess = await getAccountSession();
+  if (!sess) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
+  await ensureMarketTable();
+  const acc = await prisma.appAccount.findUnique({ where: { id: sess.accountId }, select: { id: true, isBanned: true } });
+  if (!acc) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
+  if (acc.isBanned) return NextResponse.json({ error: "محظور" }, { status: 403 });
+
+  const b = await request.json().catch(() => null);
+  const data: { photo?: string | null; nickname?: string | null } = {};
+  if (b?.photo === null) data.photo = null;
+  else if (typeof b?.photo === "string") {
+    const clean = cleanPhoto(b.photo);
+    if (!clean) return NextResponse.json({ error: "صورةٌ غيرُ صالحة أو كبيرةٌ جدّاً" }, { status: 400 });
+    data.photo = clean;
+  }
+  if (typeof b?.nickname === "string") {
+    const raw = b.nickname.replace(/\s+/g, " ").trim();
+    if (raw && raw.length < 2) return NextResponse.json({ error: "الاسمُ المستعار حرفان على الأقلّ" }, { status: 400 });
+    if (raw.length > 40) return NextResponse.json({ error: "الاسمُ المستعار طويلٌ جدّاً" }, { status: 400 });
+    data.nickname = raw || null;
+  }
+  if (Object.keys(data).length === 0) return NextResponse.json({ error: "لا تغيير" }, { status: 400 });
+  await prisma.appAccount.update({ where: { id: acc.id }, data });
+  return NextResponse.json({ ok: true });
 }

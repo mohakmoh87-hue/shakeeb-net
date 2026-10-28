@@ -54,6 +54,8 @@ async function ensureMarketDdl(): Promise<void> {
   // 👤 الاسمُ المستعار وكلمةُ المرور لحساب غير المشترك (طلبُ محمد 2026-10-28)
   await prisma.$executeRawUnsafe(`ALTER TABLE "app_accounts" ADD COLUMN IF NOT EXISTS "nickname" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "app_accounts" ADD COLUMN IF NOT EXISTS "passHash" TEXT`);
+  // 🖼️ صورتُه الشخصيّة — يظهر بها في سوق المستعمل كالمشترك (طلبُ محمد 2026-10-28)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "app_accounts" ADD COLUMN IF NOT EXISTS "photo" TEXT`);
   // 🖼️ صورُ الإعلان الإضافيّة (حتّى ٥ — طلبُ محمد 2026-10-26) في **جدولٍ منفصل**
   //    لا في أعمدةٍ على `market_listings`: فاستعلاماتُ لوحة الإدارة تقرأ الصفَّ بلا
   //    `select`، وخمسُ صورٍ في الصفّ تُثقِل كلَّ قراءةٍ للسوق. الغلافُ يبقى في

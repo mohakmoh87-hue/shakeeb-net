@@ -64,8 +64,6 @@ export default function AdsEditor({ content, onChange }: { content: AppContentT;
   // محتوًى محفوظٌ قبل هذه الميزة لا يحمل الحقولَ الثلاثة — تُقرأ بحارسٍ فلا تنهار الشاشة
   const videos = content.videos ?? [];
   const faqs = content.faqs ?? [];
-  const setOffer = (i: number, patch: Partial<Ad>) =>
-    onChange({ ...content, offers: content.offers.map((o, j) => (j === i ? { ...o, ...patch } : o)) });
 
   return (
     <>
@@ -84,27 +82,10 @@ export default function AdsEditor({ content, onChange }: { content: AppContentT;
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="font-semibold text-slate-800">العروض والباقات (تظهر في «الباقات والعروض»)</span>
-          <button type="button" onClick={() => onChange({ ...content, offers: [...content.offers, { text: "", image: "" }] })}
-            className="rounded-lg bg-mynet-blue px-3 py-1.5 text-xs font-semibold text-white hover:bg-mynet-blue-dark">+ عرض</button>
-        </div>
-        <div className="space-y-3">
-          {content.offers.length === 0 && <div className="text-xs text-slate-400">لا عروضَ — أضف واحداً.</div>}
-          {content.offers.map((o, i) => (
-            <div key={i} className="rounded-lg border border-slate-100 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] text-slate-500">عرض {i + 1}</span>
-                <button type="button" onClick={() => onChange({ ...content, offers: content.offers.filter((_, j) => j !== i) })}
-                  className="text-xs text-red-500 hover:underline">حذف</button>
-              </div>
-              <textarea value={o.text} onChange={(e) => setOffer(i, { text: e.target.value })} rows={2} maxLength={400}
-                placeholder="نصّ العرض…" className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <ImageField value={o.image} onChange={(v) => setOffer(i, { image: v })} />
-            </div>
-          ))}
-        </div>
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-[12px] leading-6 text-amber-900">
+        <b>العروض الخاصة</b> ليست هنا: مكانُها <b>صفحة المتجر ← «الباقات والعروض»</b>، وفيها
+        اختيارُ الجمهور (مشترك فعّال · منتهٍ · غير مشترك · زائر) وترشيحُ الباقة.
+        <span className="mt-1 block text-amber-700">وما كان محفوظاً في خانة «عروض الشركة» القديمة باقٍ ولم يُمسّ — لكنّه لا يظهر في التطبيق.</span>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">

@@ -24,6 +24,7 @@ type Index = {
   cells: [number, number][]; // مراكزُ كلّ الخلايا المأهولة (للـGET والـinside) — بلا أعمدة
   ownedCells: Cell[]; // الخلايا التي لها مالكٌ فقط (لتحديد المالك بالموقع)
   offices: Map<number, OfficeInfo>;
+  towerAgent: Map<number, number | null>; // لاختيار أقربِ مكاتب **الوكيل نفسِه**
 };
 
 let idx: Index | null = null;
@@ -128,7 +129,7 @@ async function getIndex(): Promise<Index> {
     if (owner) ownedCells.push({ lat: center[0], lng: center[1], owner, area: cellArea.get(key) ?? null });
   }
 
-  idx = { at: Date.now(), cells, ownedCells, offices };
+  idx = { at: Date.now(), cells, ownedCells, offices, towerAgent: new Map([...towerMap].map(([id, t]) => [id, t.agentId])) };
   return idx;
 }
 
@@ -165,6 +166,20 @@ export async function resolveCoverageOwner(lat: number, lng: number): Promise<Co
     if (d < bestD) { bestD = d; best = c; }
   }
   if (!best || bestD > CELL_M) return null;
-  const office = index.offices.get(best.owner.towerId) ?? { name: "مكتب", phone: null, lat: null, lng: null };
-  return { agentId: best.owner.agentId, towerId: best.owner.towerId, area: best.area, office };
+
+  // 🏬 **الوكيلُ** يبقى محسوماً بمشتركي المربّع (فلا ينتقل عملٌ إلى وكيلٍ آخر)، أمّا
+  //    **أيُّ مكاتبه يستقبل** فيُحسَم بالمسافة لا بعدد المشتركين — قرارُ محمد 2026-10-28
+  //    بعد أن وقف داخل مكتب المواصلات فقيل له «منطقتك: مكتب العطيفية». فمن يقف أمام
+  //    مكتبٍ يذهب طلبُه إليه. وبلا إحداثيّاتٍ لأيّ مكتبٍ منها يبقى اختيارُ المشتركين.
+  let towerId = best.owner.towerId;
+  let bestOfficeD = Infinity;
+  for (const [tid, o] of index.offices) {
+    if (index.towerAgent.get(tid) !== best.owner.agentId) continue;
+    if (o.lat == null || o.lng == null) continue;
+    const d = haversine(lat, lng, o.lat, o.lng);
+    if (d < bestOfficeD) { bestOfficeD = d; towerId = tid; }
+  }
+
+  const office = index.offices.get(towerId) ?? { name: "مكتب", phone: null, lat: null, lng: null };
+  return { agentId: best.owner.agentId, towerId, area: best.area, office };
 }
