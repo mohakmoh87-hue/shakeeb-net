@@ -1984,6 +1984,8 @@ model AppAccount {
   phone     String
   name      String // الاسمُ الثلاثيّ (إلزاميّ)
   area      String // المنطقة (إلزاميّة)
+  nickname  String? // الاسمُ المستعار (طلبُ محمد 2026-10-28)
+  passHash  String? // كلمةُ مرورِه — يدخل بها كالمشترك بدل رمزٍ في كلّ مرّة
   isBanned  Boolean  @default(false)
   lastLogin DateTime?
   createdAt DateTime @default(now())

@@ -39,6 +39,10 @@ export async function ensureMarketTable(): Promise<void> {
     "isBanned" BOOLEAN NOT NULL DEFAULT false, "lastLogin" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "app_accounts_phoneCore_key" ON "app_accounts" ("phoneCore")`);
+  // 👤 الاسمُ المستعار وكلمةُ المرور لحساب غير المشترك (طلبُ محمد 2026-10-28)
+  await prisma.$executeRawUnsafe(`ALTER TABLE "app_accounts" ADD COLUMN IF NOT EXISTS "nickname" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "app_accounts" ADD COLUMN IF NOT EXISTS "passHash" TEXT`);
   // 🖼️ صورُ الإعلان الإضافيّة (حتّى ٥ — طلبُ محمد 2026-10-26) في **جدولٍ منفصل**
   //    لا في أعمدةٍ على `market_listings`: فاستعلاماتُ لوحة الإدارة تقرأ الصفَّ بلا
   //    `select`، وخمسُ صورٍ في الصفّ تُثقِل كلَّ قراءةٍ للسوق. الغلافُ يبقى في

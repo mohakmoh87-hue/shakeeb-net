@@ -5,6 +5,7 @@ import { phoneCore, findSubscriberByPhone } from "@/lib/subscriberLogin";
 import { sendOtpWhatsApp } from "@/lib/otpWa";
 import { setAccountSession, getAccountSession } from "@/lib/subscriberAuth";
 import { ensureMarketTable } from "@/lib/market";
+import { hashPassword } from "@/lib/auth";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
   const core = phoneCore(typeof b?.phone === "string" ? b.phone : "");
   const name = typeof b?.name === "string" ? b.name.replace(/\s+/g, " ").trim().slice(0, 80) : "";
   const area = typeof b?.area === "string" ? b.area.replace(/\s+/g, " ").trim().slice(0, 120) : "";
+  const nickname = typeof b?.nickname === "string" ? b.nickname.replace(/\s+/g, " ").trim().slice(0, 40) : "";
 
   if (!core) return NextResponse.json({ error: "رقمُ هاتفٍ غير صالح" }, { status: 400 });
   if (!name) return NextResponse.json({ error: "الاسمُ الثلاثيُّ مطلوب" }, { status: 400 });
@@ -50,7 +52,7 @@ export async function POST(request: Request) {
   const code = String(crypto.randomInt(100000, 1000000));
   await prisma.systemSetting.deleteMany({ where: { type: OTP_KEY(core) } });
   await prisma.systemSetting.create({
-    data: { type: OTP_KEY(core), value: JSON.stringify({ code, name, area, phone: "0" + core, expiresAt: Date.now() + OTP_TTL, attempts: 0 }) },
+    data: { type: OTP_KEY(core), value: JSON.stringify({ code, name, area, nickname, phone: "0" + core, expiresAt: Date.now() + OTP_TTL, attempts: 0 }) },
   });
   const r = await sendOtpWhatsApp("0" + core, `رمزُ دخولك إلى تطبيق سوبر سيل: ${code}\nصالحٌ ٥ دقائق. لا تُشاركه مع أحد.`);
   if (!r.ok) {
@@ -73,7 +75,7 @@ export async function PUT(request: Request) {
 
   const row = await prisma.systemSetting.findFirst({ where: { type: OTP_KEY(core) }, orderBy: { id: "desc" }, select: { id: true, value: true } });
   if (!row?.value) return NextResponse.json({ error: "اطلب رمزاً جديداً" }, { status: 400 });
-  let d: { code?: string; name?: string; area?: string; phone?: string; expiresAt?: number; attempts?: number };
+  let d: { code?: string; name?: string; area?: string; nickname?: string; phone?: string; expiresAt?: number; attempts?: number };
   try { d = JSON.parse(row.value); } catch { return NextResponse.json({ error: "اطلب رمزاً جديداً" }, { status: 400 }); }
   if (!d.expiresAt || Date.now() > d.expiresAt) {
     await prisma.systemSetting.delete({ where: { id: row.id } }).catch(() => {});
@@ -89,10 +91,19 @@ export async function PUT(request: Request) {
   }
   await prisma.systemSetting.delete({ where: { id: row.id } }).catch(() => {});
 
+  // 🔑 كلمةُ المرور تُضبَط مع التحقّق (طلبُ محمد 2026-10-28): فالرمزُ أثبت ملكيّةَ الرقم،
+  //    وبعدها يدخل بكلمته كالمشترك بدل رمزٍ في كلّ مرّة. وهي اختياريّةٌ فلا ينكسر
+  //    تطبيقٌ قديمٌ لا يرسلها.
+  const password = typeof b?.password === "string" ? b.password : "";
+  if (password && password.length < 6) {
+    return NextResponse.json({ error: "كلمةُ المرور ٦ أحرفٍ على الأقلّ" }, { status: 400 });
+  }
+  const passHash = password ? await hashPassword(password) : undefined;
+
   const acc = await prisma.appAccount.upsert({
     where: { phoneCore: core },
-    create: { phoneCore: core, phone: d.phone ?? "0" + core, name: d.name ?? "", area: d.area ?? "", lastLogin: new Date() },
-    update: { name: d.name ?? undefined, area: d.area ?? undefined, lastLogin: new Date() },
+    create: { phoneCore: core, phone: d.phone ?? "0" + core, name: d.name ?? "", area: d.area ?? "", nickname: d.nickname || null, passHash: passHash ?? null, lastLogin: new Date() },
+    update: { name: d.name ?? undefined, area: d.area ?? undefined, nickname: d.nickname || undefined, passHash, lastLogin: new Date() },
     select: { id: true, isBanned: true },
   });
   if (acc.isBanned) return NextResponse.json({ error: "حُظِر حسابُك من التطبيق — راجِع الدعم" }, { status: 403 });
@@ -106,7 +117,7 @@ export async function GET() {
   if (!sess) return NextResponse.json({ error: "غير مسجّل" }, { status: 401 });
   const acc = await prisma.appAccount.findUnique({
     where: { id: sess.accountId },
-    select: { name: true, phone: true, area: true, createdAt: true },
+    select: { name: true, phone: true, area: true, nickname: true, createdAt: true },
   });
   if (!acc) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   return NextResponse.json({ ...acc, kind: "account" });
