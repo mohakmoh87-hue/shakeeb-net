@@ -316,7 +316,7 @@ export async function computeProfits(
   // ═══ ① التفعيلاتُ التي لها وصلٌ في البرنامج ═══
   const entries = await prisma.subscriptionEntry.findMany({
     where: { subscriberId: { in: subs.map((s) => s.id) }, isDeleted: false, date: { gte: from, lte: to } },
-    select: { id: true, subscriberId: true, date: true, month: true, cardType: true, userId: true },
+    select: { id: true, subscriberId: true, date: true, month: true, cardType: true, userId: true, moneyType: true },
     orderBy: { id: "asc" },
   });
   /** تواريخُ وصولات كلّ مشترك — تُستعمل للفصل بين «داخليّ» و«خارجيّ» */
@@ -367,6 +367,7 @@ export async function computeProfits(
   for (const e of entries) {
     const s = e.subscriberId != null ? subById.get(e.subscriberId) : null;
     if (!s) continue;
+    if (e.moneyType === 2) continue;
     const months = Math.max(1, Number(e.month) || 1);
     const pkg = pkgByName.get((e.cardType ?? "").trim().toLowerCase()) ?? (s.packageId != null ? pkgById.get(s.packageId) : undefined);
     const cabinet = cabinetOfUser(s.netUser);
@@ -484,9 +485,10 @@ export async function computeProfits(
       // ② تفعيلٌ خارجيّ — إلّا إن كان له وصلٌ عندنا فيصير داخليّاً (وقد عُدّ أعلاه)
       if (sub && hasReceiptAround(sub.id, at, ACT_RECEIPT_MS)) continue;
       let months = 1; let estimated = true;
-      if (r.sasDateTo && r.oldSasDateTo) {
-        months = Math.max(1, Math.round((r.sasDateTo.getTime() - r.oldSasDateTo.getTime()) / (30 * DAY)));
-        estimated = false;
+      if (r.sasDateTo) {
+        const base = Math.max(r.oldSasDateTo?.getTime() ?? 0, at.getTime());
+        months = Math.max(1, Math.round((r.sasDateTo.getTime() - base) / (30 * DAY)));
+        estimated = r.oldSasDateTo == null;
       }
       const per = rules.actPerMonth(r.towerId, cabinet, pkg?.id ?? 0, priceOf(pkg?.id ?? null));
       const profit = per * months;

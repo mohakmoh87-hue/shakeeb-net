@@ -125,10 +125,8 @@ export async function recordCompanyActivation(
   p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean; managerName?: string | null; oldSasDateTo?: Date | null },
 ): Promise<EventOutcome> {
   try {
-    const from = new Date(p.activatedAt.getTime() - 30 * 60_000);
-    const to = new Date(p.activatedAt.getTime() + 30 * 60_000);
     const existing = await prisma.syncLog.findFirst({
-      where: { towerId: p.towerId, sasId: p.sasId, kind: "install", activatedAt: { gte: from, lte: to } },
+      where: { towerId: p.towerId, sasId: p.sasId, kind: "install", activatedAt: p.activatedAt },
       select: { id: true, status: true },
     });
     // كسابقتها: الحالةُ تُقال — فصفٌّ مُغلَقٌ لا بيتَ للواقعة فيه ولا يُسكِت فرقَ الأيّام
@@ -267,13 +265,12 @@ export type EventOutcome = "created" | "open" | "closed";
 /** حدثُ تفعيلٍ (تبويب ٣ ذاتيّ · تبويب ٤ صفحة بلا وصل) — صفٌّ لكلّ تفعيلة */
 export async function recordActivationEvent(kind: "self" | "sas", p: StatePayload & { subscriberId: number; amount: number; activatedAt: Date; loan?: boolean; oldSasDateTo?: Date | null }): Promise<EventOutcome> {
   try {
-    // ⏱️ **دقّةُ منع التكرار ±٣٠ دقيقة لا ±١٢ ساعة** (مراجعة 2026-08-21): النافذةُ الواسعة
-    // كانت تبتلع **الحدثَ الثاني في اليوم نفسِه** — وهي حالةٌ في تصنيف محمد (نوع ٢: ديلر
-    // ثمّ برنامج). وإعادةُ قراءةِ التفعيلة نفسِها تحمل وقتَها نفسَه فيبقى المنعُ محكماً.
-    const dayStart = new Date(p.activatedAt.getTime() - 30 * 60_000);
-    const dayEnd = new Date(p.activatedAt.getTime() + 30 * 60_000);
+    // ⏱️ **منعُ التكرار باللحظة نفسِها** (قاعدةُ محمد 2026-10-30: «كارتٌ مختلف ⇒ تفعيلٌ
+    // يُحسَب»): إعادةُ قراءةِ التفعيلة تحمل وقتَها نفسَه بالضبط، وتفعيلتان بكارتَين لا
+    // تشتركان فيه — قِيس على ٧٩٦٨ تفعيلاً في أربعة مكاتب فلم تتكرّر لحظةٌ واحدة. والنافذةُ
+    // السابقة ±٣٠ دقيقةً كانت تبتلع تفعيلَ الأشهر المتعدّدة (ثلاثةُ كروتٍ بفارق ٦ ثوانٍ).
     const existing = await prisma.syncLog.findFirst({
-      where: { towerId: p.towerId, sasId: p.sasId, kind, activatedAt: { gte: dayStart, lte: dayEnd } },
+      where: { towerId: p.towerId, sasId: p.sasId, kind, activatedAt: p.activatedAt },
       select: { id: true, status: true },
     });
     // الحدثُ مسجَّلٌ ⇒ لا يتوالد مع كلّ دورة، لكن **تُقال حالتُه** ليُعرَف أله بيتٌ أم لا

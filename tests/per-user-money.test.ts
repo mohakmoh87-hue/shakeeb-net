@@ -114,8 +114,8 @@ describe("ج · «بين تاريخين» — نفسُ المحرّك بنافذ
 describe("ب · أرباحُ الشركة بحسب المستخدم — الإسنادُ بالوصل المختوم", () => {
   test("التفعيلُ الداخليّ يُنسَب لختم وصله، والتنصيبُ لقابض وصل نافذته", () => {
     const src = PROFITS();
-    assert.match(src, /select: \{ id: true, subscriberId: true, date: true, month: true, cardType: true, userId: true \}/,
-      "استعلامُ الوصولات لا يقرأ الختم");
+    assert.match(src, /select: \{ id: true, subscriberId: true, date: true, month: true, cardType: true, userId: true, moneyType: true \}/,
+      "استعلامُ الوصولات لا يقرأ الختم أو نوعَ المال");
     assert.match(src, /bump\(e\.userId, "act", months\);/, "عدُّ التفعيل الداخليّ للمستخدم سقط");
     // 🏢📄 التنصيبُ الداخليُّ صار من موقع العقود؛ يُنسَب لقابض وصله (نافذةٌ متماثلة ±٣ أيّام)
     assert.match(src, /bump\(receiptUserAround\(sub\.id, ci\.contractDate, ACT_RECEIPT_MS\), "inst"\)/,
