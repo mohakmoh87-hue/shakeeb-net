@@ -44,4 +44,14 @@ describe("🎴 أرباحُ الشركة تطابق تفعيلاتِ الساس"
     assert.ok(src.includes('kind: "install", activatedAt: p.activatedAt }'),
       "🔴 تفعيلُ الشركة/الديلر لا يُميَّز بلحظته");
   });
+
+  test("④ لا عدَّ مزدوجاً — نافذةُ «له وصل» عشرةُ أيّام", () => {
+    const src = read("src/lib/profits.ts");
+    assert.match(src, /export const ACT_INTERNAL_MS = 10 \* DAY;/,
+      "🔴 نافذةُ «له وصل» رجعت ٣ أيّامٍ ⇒ الواقعةُ تُحسَب مرّتَين");
+    assert.match(src, /const NEAR_SPAN_MS = Math\.max\(INSTALL_RECEIPT_MS, ACT_INTERNAL_MS\);/,
+      "🔴 مدى جلب الوصولات أضيقُ من النافذة ⇒ عمىً عند حافّتَي الفترة");
+    assert.ok(!/gte: new Date\(from\.getTime\(\) - INSTALL_RECEIPT_MS\)/.test(src),
+      "🔴 جلبُ الوصولات رجع ٧ أيّام");
+  });
 });

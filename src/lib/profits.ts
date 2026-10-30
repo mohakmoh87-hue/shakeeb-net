@@ -16,10 +16,14 @@ const EPOCH_KEY = (agentId: number) => `profitEpoch:${agentId}`;
 const PERIOD_KEY = (agentId: number) => `profitPeriod:${agentId}`;
 
 const DAY = 86400_000;
-/** ±٣ أيّامٍ بين وقت التفعيل ووصلِ البرنامج (قرارُ محمد) */
+/** ±٣ أيّامٍ بين وقت التفعيل ووصلِ البرنامج (قرارُ محمد) — نسبةُ التنصيب لقابض وصله */
 export const ACT_RECEIPT_MS = 3 * DAY;
+/** ±١٠ أيّامٍ لاختبار «له وصلٌ ⇒ داخليّ» وحدَه (قياسُ 2026-10-30) */
+export const ACT_INTERNAL_MS = 10 * DAY;
 /** ٧ أيّامٍ **بعد** التنصيب لظهور وصله (قرارُ محمد) */
 export const INSTALL_RECEIPT_MS = 7 * DAY;
+/** مدى جلب الوصولات المجاورة — أوسعُ النوافذ كي لا تعمى حافّتا الفترة */
+const NEAR_SPAN_MS = Math.max(INSTALL_RECEIPT_MS, ACT_INTERNAL_MS);
 
 /** رقمُ الكابينة من اليوزر: `bg-**47**-33-1@shu` ⇒ 47 (نفسُ اشتقاق `cabinetOf` في سجلّ المزامنة) */
 export function cabinetOfUser(netUser: string | null | undefined): number {
@@ -329,7 +333,7 @@ export async function computeProfits(
   const near = await prisma.subscriptionEntry.findMany({
     where: {
       subscriberId: { in: subs.map((s) => s.id) }, isDeleted: false,
-      date: { gte: new Date(from.getTime() - INSTALL_RECEIPT_MS), lte: new Date(to.getTime() + INSTALL_RECEIPT_MS) },
+      date: { gte: new Date(from.getTime() - NEAR_SPAN_MS), lte: new Date(to.getTime() + NEAR_SPAN_MS) },
     },
     select: { subscriberId: true, date: true, userId: true },
   });
@@ -483,7 +487,7 @@ export async function computeProfits(
       }
       if (isLoan) continue; // 💸 قرضُ سوبر سيل ليس تفعيلاً ولا ربحاً
       // ② تفعيلٌ خارجيّ — إلّا إن كان له وصلٌ عندنا فيصير داخليّاً (وقد عُدّ أعلاه)
-      if (sub && hasReceiptAround(sub.id, at, ACT_RECEIPT_MS)) continue;
+      if (sub && hasReceiptAround(sub.id, at, ACT_INTERNAL_MS)) continue;
       let months = 1; let estimated = true;
       if (r.sasDateTo) {
         const base = Math.max(r.oldSasDateTo?.getTime() ?? 0, at.getTime());

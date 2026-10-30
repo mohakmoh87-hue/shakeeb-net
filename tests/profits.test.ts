@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { Rules, cabinetOfUser, daysInMonth, monthRange, monthLabel, rangeWarning, ACT_RECEIPT_MS, INSTALL_RECEIPT_MS } from "@/lib/profits";
+import { Rules, cabinetOfUser, daysInMonth, monthRange, monthLabel, rangeWarning, ACT_RECEIPT_MS, ACT_INTERNAL_MS, INSTALL_RECEIPT_MS } from "@/lib/profits";
 
 // ═════ 📈 أرباحُ الشركة — إملاءُ محمد 2026-08-22 ═════
 //   · خمسةُ مربّعات: تفعيلٌ داخليّ/خارجيّ **بالأشهر**، وتنصيبٌ داخليّ/خارجيّ **مرّةً واحدة**،
@@ -91,6 +91,7 @@ describe("⚠️ تنبيهُ المدى — «من ١» يوجب آخرَ يو�
 describe("🔒 نوافذُ الوصل كما أقرّها محمد", () => {
   test("التفعيل ±٣ أيّام · التنصيب ٧ أيّام", () => {
     assert.equal(ACT_RECEIPT_MS, 3 * 86400_000);
+    assert.equal(ACT_INTERNAL_MS, 10 * 86400_000);
     assert.equal(INSTALL_RECEIPT_MS, 7 * 86400_000);
   });
 });
@@ -113,7 +114,7 @@ describe("💰 صفرُ أثرٍ ماليّ — شرطُ محمد الأوّل",
 
 describe("🔗 الوصلُ والعزلُ والتهيئة", () => {
   test("الفيصلُ وجودُ الوصل: تفعيلٌ له وصلٌ لا يُعدّ خارجيّاً", () => {
-    assert.ok(LIB().includes("if (sub && hasReceiptAround(sub.id, at, ACT_RECEIPT_MS)) continue;"), "لم يُطبَّق فيصلُ الوصل");
+    assert.ok(LIB().includes("if (sub && hasReceiptAround(sub.id, at, ACT_INTERNAL_MS)) continue;"), "لم يُطبَّق فيصلُ الوصل");
   });
   test("والتنصيبُ يُحسَب مرّةً واحدةً لكلّ مشترك", () => {
     assert.ok(LIB().includes("if (installSeen.has(key)) continue;"), "التنصيبُ قد يتكرّر");
