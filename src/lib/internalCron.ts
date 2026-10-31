@@ -162,7 +162,7 @@ async function subDealerNightly(todayKey: string): Promise<void> {
         const admins = await prisma.user.findMany({ where: { agentId: a.id, isAdmin: true, isOwner: false, isDeleted: false, isActive: true }, select: { id: true } });
         const title = "🕵️ فحص sub dealer: مشتبَهون";
         const body = `${res.counts.suspects} مشتركاً مشتبَهٌ بسرقته${fresh.length !== res.counts.suspects ? ` (${fresh.length} جديد)` : ""}`;
-        const url = "/manager-accounts?sec=subdealer";
+        const url = res.scanId ? `/manager-accounts?sec=subdealer&scan=${res.scanId}&new=1` : "/manager-accounts?sec=subdealer&new=1";
         for (const adm of admins) {
           await prisma.notification.create({ data: { agentId: a.id, towerId: null, type: "subdealer", title, body, url, userId: adm.id } }).catch(() => {});
           await sendPushToUser(adm.id, { title, body, url }).catch(() => {});

@@ -18,9 +18,10 @@ async function gate() {
 }
 
 // لوحاتُ ساس الوكيل (للاختيار) + حالةُ اعتماد الموحّد المحفوظ + آخرُ فحصٍ تلقائيّ محفوظ
-export async function GET() {
+export async function GET(request: Request) {
   const gr = await gate();
   if ("error" in gr) return gr.error;
+  const wantScan = Number(new URL(request.url).searchParams.get("scan")) || 0;
   const towers = await prisma.tower.findMany({ where: { agentId: gr.agentId, isDeleted: false }, select: { id: true, name: true } });
   const towerName = new Map(towers.map((t) => [t.id, t.name] as const));
   const panels = await prisma.sasPanel.findMany({
@@ -28,21 +29,39 @@ export async function GET() {
     select: { id: true, label: true, username: true, towerId: true },
     orderBy: { id: "asc" },
   });
-  // آخرُ فحصٍ تلقائيٍّ (ليليّ) لعرضه في اللوحة
-  const lastAutoRow = await prisma.subDealerScan.findFirst({
+  // ليالي الفحص التلقائيّ — من أعمدة الترويسة وحدَها (لا يُجلب JSON المشتبَهين)
+  const nights = await prisma.subDealerScan.findMany({
     where: { agentId: gr.agentId, source: "auto" },
+    orderBy: { createdAt: "desc" }, take: 20,
+    select: { id: true, createdAt: true, suspectCount: true },
+  });
+  // 🔒 الفحصُ المطلوب بالرابط محروسٌ بـagentId وsource — لا يُقرأ فحصُ وكيلٍ آخر بمعرّفٍ مخمّن
+  const lastAutoRow = await prisma.subDealerScan.findFirst({
+    where: wantScan > 0
+      ? { id: wantScan, agentId: gr.agentId, source: "auto" }
+      : { agentId: gr.agentId, source: "auto" },
     orderBy: { createdAt: "desc" },
     select: { id: true, panelId: true, rangeFrom: true, rangeTo: true, mineCount: true, unifiedCount: true, inRangeCount: true, suspectCount: true, suspects: true, createdAt: true },
   });
-  const lastAuto = lastAutoRow
-    ? {
-        id: lastAutoRow.id, panelId: lastAutoRow.panelId,
-        from: lastAutoRow.rangeFrom.toISOString(), to: lastAutoRow.rangeTo.toISOString(),
-        counts: { mine: lastAutoRow.mineCount, unified: lastAutoRow.unifiedCount, inRange: lastAutoRow.inRangeCount, suspects: lastAutoRow.suspectCount },
-        candidates: safeParse(lastAutoRow.suspects),
-        at: lastAutoRow.createdAt.toISOString(),
-      }
-    : null;
+  let lastAuto: unknown = null;
+  if (lastAutoRow) {
+    // «الجدد» = مَن ليس في الفحص **الذي قبله مباشرةً** — نفسُ تعريف إشعار الكرون حرفيّاً
+    const prevRow = await prisma.subDealerScan.findFirst({
+      where: { agentId: gr.agentId, source: "auto", createdAt: { lt: lastAutoRow.createdAt } },
+      orderBy: { createdAt: "desc" },
+      select: { suspects: true, createdAt: true },
+    });
+    const prevKeys = new Set(suspectKeys(prevRow?.suspects ?? null));
+    const newKeys = [...new Set(suspectKeys(lastAutoRow.suspects).filter((u) => !prevKeys.has(u)))];
+    lastAuto = {
+      id: lastAutoRow.id, panelId: lastAutoRow.panelId,
+      from: lastAutoRow.rangeFrom.toISOString(), to: lastAutoRow.rangeTo.toISOString(),
+      counts: { mine: lastAutoRow.mineCount, unified: lastAutoRow.unifiedCount, inRange: lastAutoRow.inRangeCount, suspects: lastAutoRow.suspectCount },
+      candidates: safeParse(lastAutoRow.suspects),
+      at: lastAutoRow.createdAt.toISOString(),
+      newKeys, prevAt: prevRow?.createdAt.toISOString() ?? null,
+    };
+  }
   // اللوحاتُ المحفوظة: الجمعُ الجديد، وإلّا المفردُ المهجور (توافقٌ مع نسخةٍ سابقة)،
   // ثمّ **تقاطعٌ مع اللوحات الحيّة** فلا تبقى لوحةٌ محذوفةٌ في الاختيار (تعذّر إلغاؤها).
   const livePanelIds = new Set(panels.map((p) => p.id));
@@ -54,7 +73,17 @@ export async function GET() {
     savedUnifiedUser: gr.agent.subDealerSasUser ?? null,
     savedPanelIds: savedIds,
     lastAuto,
+    nights: nights.map((s) => ({ id: s.id, at: s.createdAt.toISOString(), suspects: s.suspectCount })),
   });
+}
+
+function suspectKeys(s: string | null): string[] {
+  const out: string[] = [];
+  for (const c of safeParse(s) as { suspect?: { username?: unknown } }[]) {
+    const u = c?.suspect?.username;
+    if (typeof u === "string" && u.trim()) out.push(u.trim().toLowerCase());
+  }
+  return out;
 }
 
 function safeParse(s: string | null): unknown[] {

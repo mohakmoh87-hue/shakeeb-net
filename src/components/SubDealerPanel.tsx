@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Panel = { id: number; label: string; username: string | null };
 type Sub = { sasId: number; username: string; name: string | null; phone: string | null; expiration: string | null; days: number; activatedAt?: string | null };
 type Cand = { mine: Sub; suspect: Sub; score: number; signals: string[]; gapDays: number | null };
 type Counts = { mine: number; unified: number; inRange: number; suspects: number };
 type Result = { counts: Counts; from: string; to: string; candidates: Cand[] };
-type LastAuto = { id: number; panelId: number | null; from: string; to: string; counts: Counts; candidates: Cand[]; at: string };
+type LastAuto = { id: number; panelId: number | null; from: string; to: string; counts: Counts; candidates: Cand[]; at: string; newKeys: string[]; prevAt: string | null };
+type Night = { id: number; at: string; suspects: number };
+
+const uKey = (c: Cand) => (c.suspect.username ?? "").trim().toLowerCase();
+
+const fetchScan = (scanId?: number) =>
+  fetch(`/api/manager/sub-dealer-check${scanId ? `?scan=${scanId}` : ""}`).then((r) => (r.ok ? r.json() : null));
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 const fmtDate = (s: string | null | undefined) => { if (!s) return "—"; const d = new Date(s); return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }); };
@@ -61,8 +67,8 @@ function ExportBtn({ rows, tag }: { rows: Cand[]; tag: string }) {
   );
 }
 
-function CandTable({ candidates }: { candidates: Cand[] }) {
-  if (candidates.length === 0) return <div className="rounded-lg bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">لا اشتباهَ ضمن هذا المدى ✓</div>;
+function CandTable({ candidates, newKeys, emptyText }: { candidates: Cand[]; newKeys?: Set<string>; emptyText?: string }) {
+  if (candidates.length === 0) return <div className="rounded-lg bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">{emptyText ?? "لا اشتباهَ ضمن هذا المدى ✓"}</div>;
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
       <table className="min-w-full text-xs">
@@ -85,7 +91,10 @@ function CandTable({ candidates }: { candidates: Cand[] }) {
                 <div className="text-rose-600">انتهى: {fmtDate(c.mine.expiration)}</div>
               </td>
               <td className="p-2 text-right">
-                <div className="font-bold text-slate-800">{c.suspect.name ?? "—"}</div>
+                <div className="flex flex-wrap items-center gap-1 font-bold text-slate-800">
+                  {newKeys?.has(uKey(c)) && <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-extrabold text-white">🆕 جديد</span>}
+                  <span>{c.suspect.name ?? "—"}</span>
+                </div>
                 <div className="text-slate-500" dir="ltr">{c.suspect.phone ?? "—"} · {c.suspect.username}</div>
                 <div className="text-emerald-700">فُعِّل: {fmtDate(c.suspect.activatedAt)}</div>
               </td>
@@ -117,18 +126,52 @@ export default function SubDealerPanel() {
   const [res, setRes] = useState<Result | null>(null);
   const [lastAuto, setLastAuto] = useState<LastAuto | null>(null);
   const [showAuto, setShowAuto] = useState(false);
+  const [nights, setNights] = useState<Night[]>([]);
+  const [onlyNew, setOnlyNew] = useState(true);
+  const [autoBusy, setAutoBusy] = useState(false);
 
+  // اختيارُ ليلةٍ أخرى — يُعيد جلبَ الفحص وجددَه وحدَهما (الاعتمادُ واللوحاتُ لا تُمَسّ)
+  const pickNight = (id: number) => {
+    setAutoBusy(true);
+    fetchScan(id).then((d) => {
+      if (!d) return;
+      setNights(Array.isArray(d.nights) ? d.nights : []);
+      setLastAuto(d.lastAuto ?? null);
+      setOnlyNew((d.lastAuto?.newKeys?.length ?? 0) > 0);
+    }).catch(() => {}).finally(() => setAutoBusy(false));
+  };
+
+  // 🔗 إشعارُ الكرون يحمل ?scan=<id>&new=1 ⇒ يفتح تلك الليلةَ بذاتها على قائمة الجدد
   useEffect(() => {
-    fetch("/api/manager/sub-dealer-check").then((r) => (r.ok ? r.json() : null)).then((d) => {
+    const sp = new URLSearchParams(window.location.search);
+    const sid = Number(sp.get("scan")) || 0;
+    const open = sid > 0 || sp.get("new") === "1";
+    fetchScan(sid || undefined).then((d) => {
       if (!d) return;
       setPanels(d.panels ?? []);
       // اللوحاتُ المحفوظةُ للفحص التلقائيّ تُنتقى تلقائيّاً؛ وإلّا الوحيدةُ إن كانت واحدة
       if (Array.isArray(d.savedPanelIds) && d.savedPanelIds.length) setMyPanelIds(d.savedPanelIds);
       else if ((d.panels ?? []).length === 1) setMyPanelIds([d.panels[0].id]);
       if (d.savedUnifiedUser) { setSavedUser(d.savedUnifiedUser); setUniUser(d.savedUnifiedUser); }
-      if (d.lastAuto) setLastAuto(d.lastAuto);
+      setNights(Array.isArray(d.nights) ? d.nights : []);
+      setLastAuto(d.lastAuto ?? null);
+      setOnlyNew((d.lastAuto?.newKeys?.length ?? 0) > 0);
+      if (open && d.lastAuto) setShowAuto(true);
     }).catch(() => {});
   }, []);
+
+  const autoNew = useMemo(() => new Set((lastAuto?.newKeys ?? []).map((s) => s.trim().toLowerCase())), [lastAuto]);
+  const autoSorted = useMemo(
+    () => [...(lastAuto?.candidates ?? [])].sort((a, b) => (autoNew.has(uKey(b)) ? 1 : 0) - (autoNew.has(uKey(a)) ? 1 : 0) || b.score - a.score),
+    [lastAuto, autoNew],
+  );
+  const newRows = useMemo(() => autoSorted.filter((c) => autoNew.has(uKey(c))), [autoSorted, autoNew]);
+  const autoRows = onlyNew ? newRows : autoSorted;
+  const nightList = useMemo(() => {
+    const list = [...nights];
+    if (lastAuto && !list.some((s) => s.id === lastAuto.id)) list.unshift({ id: lastAuto.id, at: lastAuto.at, suspects: lastAuto.counts.suspects });
+    return list;
+  }, [nights, lastAuto]);
 
   const togglePanel = (id: number) => setMyPanelIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
@@ -156,27 +199,46 @@ export default function SubDealerPanel() {
       <p className="mb-4 text-xs leading-6 text-slate-500">
         يقارن مشتركيك المنتهين في <b>ساسك</b> بمشتركي <b>الساس الموحّد</b> (المفعّلين بحساب الوكيل الآخر) بالاسم والهاتف،
         ويعرض المشتبَه بهم بدرجة ثقة. <b>اختر كلَّ مكاتبك التي يغطّيها الموحّد</b> (وإلّا ظهر مشتركو مكتبك الآخر كمشتبَهين كذباً)،
-        وأدخل اعتماد الساس الموحّد، وحدّد المدى. <b>عند حفظ اللوحات والاعتماد</b> يعمل الفحصُ <b>تلقائيّاً كلَّ ليلة</b> ويصلك إشعارٌ عند مشتبَهٍ جديد.
+        وأدخل اعتماد الساس الموحّد، وحدّد المدى. <b>عند حفظ اللوحات والاعتماد</b> يعمل الفحصُ <b>تلقائيّاً كلَّ ليلة</b> ويصلك إشعارٌ عند مشتبَهٍ جديد — وفتحُ الإشعار يُظهر <b>الجددَ وحدَهم</b> في تلك الليلة.
       </p>
 
       {lastAuto && (
         <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
-          <button onClick={() => setShowAuto((v) => !v)} className="flex w-full items-center justify-between text-right">
-            <span className="text-xs font-bold text-indigo-800">
-              🌙 آخر فحصٍ تلقائيّ — {fmtDateTime(lastAuto.at)}
+          <button onClick={() => setShowAuto((v) => !v)} className="flex w-full items-center justify-between gap-2 text-right">
+            <span className="flex flex-wrap items-center gap-2 text-xs font-bold text-indigo-800">
+              <span>🌙 فحصٌ تلقائيّ — {fmtDateTime(lastAuto.at)}</span>
+              {newRows.length > 0 && <span className="rounded-full bg-rose-600 px-2 py-0.5 font-extrabold text-white">🆕 {newRows.length} جديد</span>}
               {lastAuto.counts.suspects > 0
-                ? <span className="mr-2 rounded-full bg-rose-600 px-2 py-0.5 font-extrabold text-white">{lastAuto.counts.suspects} مشتبَه</span>
-                : <span className="mr-2 rounded-full bg-emerald-100 px-2 py-0.5 font-bold text-emerald-700">لا اشتباه</span>}
+                ? <span className="rounded-full bg-slate-700 px-2 py-0.5 font-extrabold text-white">{lastAuto.counts.suspects} مشتبَه</span>
+                : <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-bold text-emerald-700">لا اشتباه</span>}
             </span>
-            <span className="text-xs text-indigo-500">{showAuto ? "▲ إخفاء" : "▼ عرض"}</span>
+            <span className="shrink-0 text-xs text-indigo-500">{showAuto ? "▲ إخفاء" : "▼ عرض"}</span>
           </button>
           {showAuto && (
             <div className="mt-3">
-              <div className="mb-2 flex items-center justify-between">
-                <CountsBar counts={lastAuto.counts} />
-                <ExportBtn rows={lastAuto.candidates} tag="auto" />
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <select value={lastAuto.id} onChange={(e) => pickNight(Number(e.target.value))} disabled={autoBusy}
+                  className="rounded-lg border border-indigo-300 bg-white px-2 py-1.5 text-xs font-bold text-indigo-800 disabled:opacity-50">
+                  {nightList.map((s) => <option key={s.id} value={s.id}>{fmtDateTime(s.at)} — {s.suspects} مشتبَه</option>)}
+                </select>
+                <div className="flex overflow-hidden rounded-lg border border-indigo-300">
+                  <button onClick={() => setOnlyNew(true)} className={`px-3 py-1.5 text-xs font-bold transition ${onlyNew ? "bg-rose-600 text-white" : "bg-white text-indigo-700 hover:bg-indigo-50"}`}>🆕 الجدد فقط ({newRows.length})</button>
+                  <button onClick={() => setOnlyNew(false)} className={`px-3 py-1.5 text-xs font-bold transition ${onlyNew ? "bg-white text-indigo-700 hover:bg-indigo-50" : "bg-indigo-600 text-white"}`}>الكلّ ({autoSorted.length})</button>
+                </div>
+                <ExportBtn rows={autoRows} tag={onlyNew ? "new" : "auto"} />
+                {autoBusy && <span className="text-xs font-bold text-indigo-500">جارٍ الجلب…</span>}
               </div>
-              <CandTable candidates={lastAuto.candidates} />
+              <div className="mb-2 text-[11px] font-semibold text-indigo-700">
+                {lastAuto.prevAt ? `«جديد» = لم يكن في فحص ${fmtDateTime(lastAuto.prevAt)}` : "لا فحصَ قبله ⇒ كلُّهم جدد"}
+              </div>
+              {lastAuto.counts.suspects >= 500 && (
+                <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-[11px] font-bold leading-5 text-amber-800">
+                  ⚠️ الحفظُ مقطوعٌ عند ٥٠٠ مشتبَهاً — فمَن كان خارج القطع في الفحص السابق قد يظهر «جديداً» وهو ليس كذلك. ضيّق المدى لتقلّ القائمة.
+                </div>
+              )}
+              <CountsBar counts={lastAuto.counts} />
+              <CandTable candidates={autoRows} newKeys={autoNew}
+                emptyText={onlyNew ? "لا مشتبَهَ جديداً في هذا الفحص ✓" : "لا اشتباهَ ضمن هذا المدى ✓"} />
             </div>
           )}
         </div>
