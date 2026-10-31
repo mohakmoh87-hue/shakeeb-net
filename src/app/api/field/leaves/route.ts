@@ -3,8 +3,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, getTechSession } from "@/lib/auth";
 import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
-import { baghdadDayKey } from "@/lib/attendance";
-import { salaryPeriodBounds, periodLeaveQuota, QUOTA_FIELDS } from "@/lib/salary";
+import { baghdadDayKey, forgiveByTimeLeave, parseHHMM } from "@/lib/attendance";
+import { approvedTimeLeaveFor } from "@/lib/field";
+import { salaryPeriodBounds, periodLeaveQuota, QUOTA_FIELDS, timeMinutesQuota, sumLeaveMinutes, TIME_QUOTA_FIELDS } from "@/lib/salary";
 import { notify } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,22 @@ async function usedPaidInPeriod(technicianId: number, from: string, to: string, 
   });
 }
 
+// دقائقُ الإجازة الزمنيّة (معتمدةً أو معلّقةً) لفنيٍّ ضمن فترةٍ [from,to] — للحصّة.
+// المعلَّقةُ تحجز كالمدفوعة، وإلّا طلب ألفَ دقيقةٍ معلّقةٍ وفاز بها كلِّها عند الاعتماد.
+async function usedTimeMinutesInPeriod(technicianId: number, from: string, to: string, excludeId?: number) {
+  const rows = await prisma.leave.findMany({
+    where: {
+      technicianId, kind: "time",
+      isDeleted: false,
+      status: { in: ["approved", "pending"] },
+      dayKey: { gte: from, lte: to },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { startMin: true, endMin: true },
+  });
+  return sumLeaveMinutes(rows);
+}
+
 /** أيّامُ مدىٍ شامل (YYYY-MM-DD) — أو `null` إن كان المدى مقلوباً أو أطولَ من الحدّ.
  *  والحدُّ ٦٢ يوماً: إجازةٌ أطولُ من شهرَين ليست إجازةً بل انفصالٌ، وهو حرزٌ من
  *  خطأِ كتابةٍ في السنة يُنشئ آلافَ الصفوف بضغطةٍ واحدة. */
@@ -58,15 +75,20 @@ function daysBetween(from: string, to: string, max = 62): string[] | null {
 export async function GET(request: Request) {
   const tech = await getTechSession();
   if (tech) {
-    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: QUOTA_FIELDS });
+    const t = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: { ...QUOTA_FIELDS, ...TIME_QUOTA_FIELDS } });
     const period = await periodForTech(tech.agentId, baghdadDayKey(new Date()));
     const quota = periodLeaveQuota(t, period.from);
     const used = await usedPaidInPeriod(tech.technicianId, period.from, period.to);
+    const timeQuota = timeMinutesQuota(t);
+    const timeUsed = await usedTimeMinutesInPeriod(tech.technicianId, period.from, period.to);
     const leaves = await prisma.leave.findMany({
       where: { technicianId: tech.technicianId, isDeleted: false }, // أ-٨ · المُزالةُ لا تُعرَض
       orderBy: { id: "desc" }, take: 40,
     });
-    return NextResponse.json({ role: "technician", quota, used, remaining: Math.max(0, quota - used), period, leaves });
+    return NextResponse.json({
+      role: "technician", quota, used, remaining: Math.max(0, quota - used), period, leaves,
+      timeQuota, timeUsed, timeRemaining: timeQuota == null ? null : Math.max(0, timeQuota - timeUsed),
+    });
   }
 
   const g = await guard("field.payroll");
@@ -75,7 +97,7 @@ export async function GET(request: Request) {
   // تفاصيلُ إجازاتِ فنيٍّ بعينه (للوحة تفاصيل الفنيّ) — لفترة الراتب الحاليّة، مع الملخّص
   const reqTech = Number(new URL(request.url).searchParams.get("technicianId")) || 0;
   if (reqTech) {
-    const t = await prisma.technician.findFirst({ where: { id: reqTech, isDeleted: false }, select: { id: true, name: true, towerId: true, agentId: true, paidLeavesPerMonth: true, leaveCarry: true } });
+    const t = await prisma.technician.findFirst({ where: { id: reqTech, isDeleted: false }, select: { id: true, name: true, towerId: true, agentId: true, ...QUOTA_FIELDS, ...TIME_QUOTA_FIELDS } });
     if (!t || !(await ownsTower(g.session, t.towerId))) return NextResponse.json({ error: "الفنيّ غير موجود" }, { status: 404 });
     const period = await periodForTech(t.agentId, baghdadDayKey(new Date()));
     const rows = await prisma.leave.findMany({
@@ -85,6 +107,8 @@ export async function GET(request: Request) {
     });
     const quota = periodLeaveQuota(t, period.from);
     let paidTaken = 0, paidPending = 0, unpaidTaken = 0, timeTaken = 0;
+    const timeQuota = timeMinutesQuota(t);
+    const timeUsed = sumLeaveMinutes(rows.filter((l) => l.kind === "time" && l.status !== "rejected"));
     for (const l of rows) {
       if (l.kind === "day" && l.paid && l.status === "approved") paidTaken++;
       else if (l.kind === "day" && l.paid && l.status === "pending") paidPending++;
@@ -94,6 +118,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       role: "manager", single: true, technicianName: t.name, period, quota,
       paidTaken, paidPending, unpaidTaken, timeTaken,
+      timeQuota, timeUsed, timeRemaining: timeQuota == null ? null : Math.max(0, timeQuota - timeUsed),
       remaining: Math.max(0, quota - (paidTaken + paidPending)),
       leaves: rows,
     });
@@ -233,6 +258,19 @@ export async function POST(request: Request) {
   if (kind === "time") {
     const { startMin, endMin } = parsed.data;
     if (startMin == null || endMin == null || endMin <= startMin) return NextResponse.json({ error: "حدّد فترة زمنية صحيحة (من/إلى)" }, { status: 400 });
+    const tq = await prisma.technician.findUnique({ where: { id: tech.technicianId }, select: TIME_QUOTA_FIELDS });
+    const quotaMin = timeMinutesQuota(tq);
+    if (quotaMin != null) {
+      const period = await periodForTech(tech.agentId, dayKey);
+      const usedMin = await usedTimeMinutesInPeriod(tech.technicianId, period.from, period.to);
+      const want = endMin - startMin;
+      if (usedMin + want > quotaMin) {
+        return NextResponse.json({
+          error: `حصّةُ دقائق الإجازة الزمنيّة لهذه الفترة ${quotaMin} دقيقة — المستهلَك ${usedMin}`
+            + `، والمتبقّي ${Math.max(0, quotaMin - usedMin)}، وأنت تطلب ${want}.`,
+        }, { status: 400 });
+      }
+    }
     const created = await prisma.leave.create({
       data: { technicianId: tech.technicianId, agentId: tech.agentId, towerId: tech.towerId, kind: "time", paid: false, dayKey, startMin, endMin, reason },
     });
@@ -275,6 +313,22 @@ export async function PATCH(request: Request) {
     if (sealedAp && leave.dayKey <= sealedAp) return NextResponse.json({ error: "الإجازة تقع في فترةٍ مُسدَّدة — لا تُعتمَد (أَلغِ الكشفَ أوّلاً)" }, { status: 400 });
   }
 
+  if (parsed.data.status === "approved" && leave.kind === "time") {
+    const tq = await prisma.technician.findUnique({ where: { id: leave.technicianId }, select: TIME_QUOTA_FIELDS });
+    const quotaMin = timeMinutesQuota(tq);
+    if (quotaMin != null) {
+      const period = await periodForTech(leave.agentId, leave.dayKey);
+      const usedMin = await usedTimeMinutesInPeriod(leave.technicianId, period.from, period.to, leave.id);
+      const want = sumLeaveMinutes([leave]);
+      if (usedMin + want > quotaMin) {
+        return NextResponse.json({
+          error: `استُنفدت حصّةُ دقائق الإجازة الزمنيّة لهذه الفترة: ${quotaMin} دقيقة`
+            + ` — المستهلَك ${usedMin}، وهذا الطلب ${want}.`,
+        }, { status: 400 });
+      }
+    }
+  }
+
   if (parsed.data.status === "approved" && leave.kind === "day" && leave.paid) {
     const t = await prisma.technician.findUnique({ where: { id: leave.technicianId }, select: QUOTA_FIELDS });
     const period = await periodForTech(leave.agentId, leave.dayKey);
@@ -304,36 +358,58 @@ export async function PATCH(request: Request) {
   if (parsed.data.status === "approved" && leave.kind === "time" && leave.dayKey) {
     const rec = await prisma.attendance.findFirst({
       where: { technicianId: leave.technicianId, dayKey: leave.dayKey },
-      select: { id: true, lateDeduction: true, earlyDeduction: true, salaryStatementId: true, deductionClearedAt: true },
+      select: {
+        id: true, checkIn: true, checkOut: true,
+        lateMinutes: true, earlyMinutes: true, lateDeduction: true, earlyDeduction: true,
+        salaryStatementId: true, deductionClearedAmount: true,
+      },
       orderBy: { id: "desc" },
     });
     const total = (rec?.lateDeduction ?? 0) + (rec?.earlyDeduction ?? 0);
     if (rec && total > 0) {
+      const sh = await prisma.technician.findUnique({
+        where: { id: leave.technicianId },
+        select: { shiftStart: true, shiftEnd: true, entryGraceMin: true, exitGraceMin: true, lateRatePerMin: true, overtimeRatePerMin: true },
+      });
       if (rec.salaryStatementId != null) {
         sealedNotice = `الخصمُ (${total}) لم يُمسَح: يومُ ${leave.dayKey} مختومٌ بكشف راتبٍ مصروف.`;
+      } else if (!rec.checkIn || !rec.checkOut) {
+        sealedNotice = `الخصمُ (${total}) لم يُمسَح الآن: لا بصمةَ خروجٍ ليوم ${leave.dayKey} — ويُحسَب عند الخروج مع الإجازة.`;
+      } else if (!sh || parseHHMM(sh.shiftStart) == null || parseHHMM(sh.shiftEnd) == null) {
+        sealedNotice = `الخصمُ (${total}) لم يُمسَح: دوامُ الفنيّ غير محدَّدٍ فلا تُقاس دقائقُ الإجازة.`;
       } else {
-        // الحَجزُ قبل الأثر — وبشرطِ أنّه لم يُمسَح سلفاً ولم يُختَم بين القراءة والكتابة
-        const done = await prisma.attendance.updateMany({
-          where: { id: rec.id, deductionClearedAt: null, salaryStatementId: null },
-          data: {
-            lateDeduction: 0, earlyDeduction: 0,
-            deductionClearedBy: g.session.fullName ?? g.session.username,
-            deductionClearedAt: new Date(),
-            deductionClearReason: `موافقةُ إجازةٍ زمنيّة #${leave.id}`,
-            deductionClearedAmount: total,
-          },
-        });
-        if (done.count === 1) {
-          clearedAmount = total;
-          await prisma.auditLog.create({
+        // الإجازةُ تُقرأ بدالّة الحساب نفسِها (`approvedTimeLeaveFor`) فيطابق المسحُ المتأخّرُ
+        // ما كان سيُحسَب لحظةَ البصمة — وهذا الطلبُ صار معتمَداً قبل هذه القراءة.
+        const tl = await approvedTimeLeaveFor(leave.technicianId, leave.dayKey);
+        const fg = forgiveByTimeLeave(sh, rec.checkIn, rec.checkOut, tl, rec);
+        if (fg.cleared <= 0) {
+          sealedNotice = `الخصمُ (${total}) باقٍ: الإجازةُ لا تلامس بدايةَ الدوام ولا نهايتَه، فلا دقائقَ منه تُعفى.`;
+        } else {
+          // الحَجزُ قبل الأثر: القيمُ المقروءةُ نفسُها شرطٌ في الكتابة — فلا يُطرَح الإعفاءُ
+          // مرّتَين ولا يُمسَح خصمٌ تغيّر (أو خُتم بكشف) بين القراءة والكتابة.
+          const done = await prisma.attendance.updateMany({
+            where: { id: rec.id, salaryStatementId: null, lateDeduction: rec.lateDeduction, earlyDeduction: rec.earlyDeduction },
             data: {
-              userId: g.session.userId,
-              action: "CLEAR_DEDUCTION",
-              entity: "attendance",
-              entityId: String(rec.id),
-              details: `مسحُ خصمٍ ${total} بموافقة إجازةٍ زمنيّة #${leave.id} — يوم ${leave.dayKey}`,
+              lateMinutes: fg.lateMinutes, earlyMinutes: fg.earlyMinutes,
+              lateDeduction: fg.lateDeduction, earlyDeduction: fg.earlyDeduction,
+              deductionClearedBy: g.session.fullName ?? g.session.username,
+              deductionClearedAt: new Date(),
+              deductionClearReason: `موافقةُ إجازةٍ زمنيّة #${leave.id} — بقدر دقائقها`,
+              deductionClearedAmount: (rec.deductionClearedAmount ?? 0) + fg.cleared,
             },
-          }).catch(() => {});
+          });
+          if (done.count === 1) {
+            clearedAmount = fg.cleared;
+            await prisma.auditLog.create({
+              data: {
+                userId: g.session.userId,
+                action: "CLEAR_DEDUCTION",
+                entity: "attendance",
+                entityId: String(rec.id),
+                details: `مسحُ ${fg.cleared} من خصمٍ ${total} بموافقة إجازةٍ زمنيّة #${leave.id} — يوم ${leave.dayKey}`,
+              },
+            }).catch(() => {});
+          }
         }
       }
     }

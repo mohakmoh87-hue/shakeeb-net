@@ -21,6 +21,8 @@ export default function TechLeaveModal({ mode, onClose }: { mode: "day" | "time"
   const [tab, setTab] = useState<"day" | "time">(mode);
   const [remaining, setRemaining] = useState(0);
   const [quota, setQuota] = useState(0);
+  const [timeQuota, setTimeQuota] = useState<number | null>(null);
+  const [timeUsed, setTimeUsed] = useState(0);
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [date, setDate] = useState(todayKey());
   const [paid, setPaid] = useState(false);
@@ -34,6 +36,7 @@ export default function TechLeaveModal({ mode, onClose }: { mode: "day" | "time"
     fetch("/api/field/leaves").then((r) => (r.ok ? r.json() : null)).then((d) => {
       if (!d) return;
       setRemaining(d.remaining ?? 0); setQuota(d.quota ?? 0); setLeaves(d.leaves ?? []);
+      setTimeQuota(d.timeQuota ?? null); setTimeUsed(d.timeUsed ?? 0);
     });
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -99,6 +102,18 @@ export default function TechLeaveModal({ mode, onClose }: { mode: "day" | "time"
             {remaining <= 0 && <p className="mt-1 text-[11px] text-amber-600">استنفدت حصّة الإجازات المدفوعة هذا الشهر — الطلب سيكون بلا راتب.</p>}
           </div>
         ) : (
+          <>
+          {timeQuota != null && (() => {
+            const left = Math.max(0, timeQuota - timeUsed);
+            const s = hhmmToMin(from), e = hhmmToMin(to);
+            const want = s != null && e != null && e > s ? e - s : 0;
+            return (
+              <div className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                المتبقّي من حصّة الدقائق لهذه الفترة: <b className={left > 0 ? "text-emerald-600" : "text-red-500"}>{left}</b>/{timeQuota} دقيقة
+                {want > left && <span className="mt-0.5 block font-bold text-red-600">طلبُك {want} دقيقة — يتجاوز المتبقّي وسيُرفض.</span>}
+              </div>
+            );
+          })()}
           <div className="mb-3 grid grid-cols-2 gap-2">
             <div>
               <label className="mb-1 block text-xs font-semibold text-slate-500">من الساعة</label>
@@ -109,6 +124,7 @@ export default function TechLeaveModal({ mode, onClose }: { mode: "day" | "time"
               <input type="time" value={to} onChange={(e) => setTo(e.target.value)} dir="ltr" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-mynet-blue" />
             </div>
           </div>
+          </>
         )}
 
         <label className="mb-1 block text-xs font-semibold text-slate-500">السبب (إلزامي)</label>

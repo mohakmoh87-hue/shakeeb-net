@@ -228,6 +228,22 @@ export function periodLeaveQuota(t: QuotaAdjustable | null | undefined, periodFr
 }
 export const QUOTA_FIELDS = { paidLeavesPerMonth: true, leaveCarry: true, leaveQuotaAdj: true, leaveQuotaAdjPeriod: true } as const;
 
+// حصّةُ **دقائق** الإجازة الزمنيّة لفترة الراتب (طلبُ محمد 2026-10-31). والقاعدةُ هنا:
+// null أو صفر ⇒ `null` = **بلا حدّ**، فالفنيُّ الذي لم يُحدَّد له رقمٌ يبقى كما كان قبل الميزة.
+export type TimeQuotaTech = { leaveMinutesPerMonth?: number | null };
+export const TIME_QUOTA_FIELDS = { leaveMinutesPerMonth: true } as const;
+export function timeMinutesQuota(t: TimeQuotaTech | null | undefined): number | null {
+  const v = t?.leaveMinutesPerMonth;
+  return v == null || v <= 0 ? null : Math.round(v);
+}
+export function sumLeaveMinutes(rows: { startMin?: number | null; endMin?: number | null }[]): number {
+  let n = 0;
+  for (const r of rows) {
+    if (r.startMin != null && r.endMin != null && r.endMin > r.startMin) n += r.endMin - r.startMin;
+  }
+  return n;
+}
+
 // آخر يوم في شهر مفتاح اليوم
 export function lastDayOfMonthKey(dayKey: string): string {
   const [y, m] = dayKey.split("-").map(Number);

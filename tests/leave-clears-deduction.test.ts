@@ -10,6 +10,10 @@ import path from "node:path";
 // (٦) «موافقةُ المدير تُزيل أيَّ خصمٍ بسبب أيّ حادث مخالفةِ بصمةٍ في الوقت الذي طلبه».
 //
 // ⛔ **وقاعدةُ محمد الحاكمة: «إذا أُعطي الموظّفُ راتبَه فلن يُمسَح شيءٌ له بعدها».**
+//
+// 🔄 **وقرارُ محمد 2026-10-31 عدّل مقدارَ المسح لا موضعَه**: «مسحُ الخصم **بقدر الدقائق
+//    فقط**» — فبعد أن كان الخصمُ يُصفَّر كلُّه صار يُعاد حسابُه بالإجازة، فيبقى ما لا
+//    تغطّيه. وحرّاسُ الدقائق في `tests/leave-minutes.test.ts`.
 
 const ROOT = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -41,15 +45,18 @@ describe("البندان ٤ و٦ · الموافقةُ تمسح الخصم", () 
 
   test("🛡️ الحَجزُ قبل الأثر: لا مسحَ مزدوجٌ ولا مسحٌ بعد ختمٍ طرأ", () => {
     const api = API();
-    assert.match(api, /where: \{ id: rec\.id, deductionClearedAt: null, salaryStatementId: null \}/,
-      "جملةُ المسح بلا شرطَي «لم يُمسَح» و«غيرُ مختوم» ⇒ سباقٌ يمسح خصماً من كشفٍ مصروف");
+    // المسحُ صار جزئيّاً فقد تتكرّر إجازتان في يومٍ واحد ⇒ الشرطُ على **القيم المقروءة**
+    // نفسِها بدل «لم يُمسَح سلفاً»: أقوى ضدّ السباق وأدقّ من مَنعِ الإعفاء الثاني.
+    assert.match(api, /where: \{ id: rec\.id, salaryStatementId: null, lateDeduction: rec\.lateDeduction, earlyDeduction: rec\.earlyDeduction \}/,
+      "جملةُ المسح بلا شرطِ القيم المقروءة و«غيرُ مختوم» ⇒ سباقٌ يطرح الإعفاءَ مرّتَين أو يمسح من كشفٍ مصروف");
     assert.match(api, /if \(done\.count === 1\)/, "لا فحصَ لنتيجة الحَجز");
   });
 
   test("🛡️ الأصلُ محفوظٌ والسببُ مكتوبٌ — سجلٌّ لا محو", () => {
     const api = API();
-    assert.match(api, /deductionClearedAmount: total/, "المبلغُ الأصليُّ لا يُحفظ ⇒ لا يُعرَف ما أُعفي عنه");
-    assert.match(api, /deductionClearReason: `موافقةُ إجازةٍ زمنيّة #\$\{leave\.id\}`/, "السببُ لا يُربط بالإجازة");
+    assert.match(api, /deductionClearedAmount: \(rec\.deductionClearedAmount \?\? 0\) \+ fg\.cleared/, "الممسوحُ لا يُجمَع ⇒ إعفاءٌ ثانٍ يمحو أثرَ الأوّل");
+    assert.match(api, /details: `مسحُ \$\{fg\.cleared\} من خصمٍ \$\{total\}/, "السجلُّ لا يذكر كم مُسِح من كم");
+    assert.match(api, /deductionClearReason: `موافقةُ إجازةٍ زمنيّة #\$\{leave\.id\} — بقدر دقائقها`/, "السببُ لا يُربط بالإجازة");
     assert.match(api, /action: "CLEAR_DEDUCTION"/, "لا سجلَّ تدقيقٍ للمسح");
   });
 

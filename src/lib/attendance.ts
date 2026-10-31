@@ -60,6 +60,31 @@ function shiftWithLeave(startMin: number, endMin: number, leave?: TimeLeave | nu
   return { s: startMin, e: endMin }; // وسطَ الدوام ⇒ بلا إزاحة (الحالةُ ٣ الملغاة)
 }
 
+export type StoredDeduction = {
+  lateMinutes?: number | null; earlyMinutes?: number | null;
+  lateDeduction?: number | null; earlyDeduction?: number | null;
+};
+
+// ═════ مسحُ الخصم **بقدر دقائق الإجازة وحدَها** (قرارُ محمد 2026-10-31) ═════
+// الموافقةُ المتأخّرةُ كانت تصفّر خصمَ اليوم كلَّه، فإجازةُ ربعِ ساعةٍ تمسح خصمَ ثلاثِ ساعات.
+// والحسابُ هنا **إعادةُ حسابٍ بالدالّة نفسِها** (`computeAttendance` مع الإجازة) لا معادلةٌ
+// ثانية — فما يُمسَح متأخّراً يطابق ما كان سيُحسَب لو وافق المديرُ قبل البصمة.
+// 🔒 ولا تزيد مالاً أبداً: كلُّ قيمةٍ محدودةٌ بالمخزَّن (`Math.min`) والإضافيُّ لا يُمَسّ.
+export function forgiveByTimeLeave(
+  tech: TechShift, checkIn: Date, checkOut: Date, leave: TimeLeave | null | undefined, stored: StoredDeduction,
+): { lateMinutes: number; earlyMinutes: number; lateDeduction: number; earlyDeduction: number; cleared: number } {
+  const calc = computeAttendance(tech, checkIn, checkOut, leave);
+  const lateDeduction = Math.min(stored.lateDeduction ?? 0, calc.lateDeduction);
+  const earlyDeduction = Math.min(stored.earlyDeduction ?? 0, calc.earlyDeduction);
+  const before = (stored.lateDeduction ?? 0) + (stored.earlyDeduction ?? 0);
+  return {
+    lateMinutes: Math.min(stored.lateMinutes ?? 0, calc.lateMinutes),
+    earlyMinutes: Math.min(stored.earlyMinutes ?? 0, calc.earlyMinutes),
+    lateDeduction, earlyDeduction,
+    cleared: Math.max(0, before - (lateDeduction + earlyDeduction)),
+  };
+}
+
 // حساب التأخير/الخروج المبكّر/الإضافي وفق القواعد المؤكّدة.
 // `timeLeave`: إجازةٌ زمنيّةٌ معتمدةٌ لذلك اليوم — تُزيح حدَّ الدوام فيسقط خصمُها.
 export function computeAttendance(tech: TechShift, checkIn: Date, checkOut: Date, timeLeave?: TimeLeave | null): AttendanceCalc {

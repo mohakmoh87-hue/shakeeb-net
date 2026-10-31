@@ -12,9 +12,10 @@ type Tech = {
   autoCheckoutTime?: string | null;
   paidLeaveTaken?: number; paidLeavePending?: number; unpaidLeaveTaken?: number; timeLeaveTaken?: number;
   paidLeaveQuota?: number; leaveCarry?: number; leaveQuotaAdj?: number;
+  leaveMinutesPerMonth?: number | null; timeMinutesQuota?: number | null; timeMinutesTaken?: number; timeMinutesPending?: number;
 };
 type Form = Record<string, string>;
-const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", seeDeliveryCards: "", canAddCards: "1", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", missedCheckoutPenalty: "0", autoCheckoutTime: "00:15" };
+const EMPTY: Form = { name: "", username: "", code: "", phone: "", salary: "", ownCardsOnly: "", seeDeliveryCards: "", canAddCards: "1", shiftStart: "", shiftEnd: "", entryGraceMin: "0", exitGraceMin: "0", lateRatePerMin: "0", overtimeRatePerMin: "0", paidLeavesPerMonth: "0", leaveMinutesPerMonth: "", missedCheckoutPenalty: "0", autoCheckoutTime: "00:15" };
 
 // إدارة الفنيين للمدير: إضافة/تعديل بكل الإعدادات + حذف نهائي + بصمة خروج يدوية.
 export default function TechnicianManager({ officeId, officeName, onClose, onChange }: { officeId: number | null; officeName: string; onClose: () => void; onChange: () => void }) {
@@ -67,6 +68,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
       canAddCards: t.canAddCards === false ? "" : "1", // الغياب/القديم = مسموح
       entryGraceMin: String(t.entryGraceMin ?? 0), exitGraceMin: String(t.exitGraceMin ?? 0),
       lateRatePerMin: String(t.lateRatePerMin ?? 0), overtimeRatePerMin: String(t.overtimeRatePerMin ?? 0), paidLeavesPerMonth: String(t.paidLeavesPerMonth ?? 0),
+      leaveMinutesPerMonth: t.leaveMinutesPerMonth == null ? "" : String(t.leaveMinutesPerMonth),
       missedCheckoutPenalty: String(t.missedCheckoutPenalty ?? 0),
       autoCheckoutTime: t.autoCheckoutTime ?? "00:15",
     });
@@ -139,6 +141,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
               <L label={editId ? "رمز الدخول (اتركه فارغاً لإبقائه)" : "رمز الدخول"}><I v={f.code} on={(v) => set("code", v)} ltr /></L>
               <L label="الراتب الشهري"><I v={f.salary} on={(v) => set("salary", v)} num /></L>
               <L label="عدد إجازات الراتب/شهر"><I v={f.paidLeavesPerMonth} on={(v) => set("paidLeavesPerMonth", v)} num /></L>
+              <L label="دقائق الإجازة الزمنيّة/فترة (فارغ = بلا حدّ)"><I v={f.leaveMinutesPerMonth} on={(v) => set("leaveMinutesPerMonth", v)} num /></L>
               <L label="بداية الدوام"><I v={f.shiftStart} on={(v) => set("shiftStart", v)} time /></L>
               <L label="نهاية الدوام"><I v={f.shiftEnd} on={(v) => set("shiftEnd", v)} time /></L>
               <L label="سماحية الدخول (دقيقة)"><I v={f.entryGraceMin} on={(v) => set("entryGraceMin", v)} num /></L>
@@ -163,7 +166,10 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                     <span className="rounded-lg bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">براتب مأخوذة: {et?.paidLeaveTaken ?? 0}{quota ? ` / ${quota}` : ""}</span>
                     {(et?.paidLeavePending ?? 0) > 0 && <span className="rounded-lg bg-amber-50 px-2 py-1 font-semibold text-amber-700">معلّقة تحجز الحصّة: {et?.paidLeavePending}</span>}
                     <span className="rounded-lg bg-slate-100 px-2 py-1 font-semibold text-slate-600">بلا راتب مأخوذة: {et?.unpaidLeaveTaken ?? 0}</span>
-                    <span className="rounded-lg bg-sky-50 px-2 py-1 font-semibold text-sky-700">⏱️ زمنيّة: {et?.timeLeaveTaken ?? 0}</span>
+                    <span className="rounded-lg bg-sky-50 px-2 py-1 font-semibold text-sky-700">
+                      ⏱️ زمنيّة: {et?.timeLeaveTaken ?? 0} ({et?.timeMinutesTaken ?? 0}{et?.timeMinutesQuota != null ? ` / ${et.timeMinutesQuota}` : ""} دقيقة{et?.timeMinutesQuota == null ? " — بلا حدّ" : ""})
+                      {(et?.timeMinutesPending ?? 0) > 0 ? ` · معلّق ${et?.timeMinutesPending} د` : ""}
+                    </span>
                   </div>
                   <div className="mt-1 text-[11px] text-slate-400">تُصفَّر مع بداية فترة الراتب الجديدة (تُضبط من حسابات المدير).</div>
                 </div>
@@ -302,7 +308,7 @@ export default function TechnicianManager({ officeId, officeName, onClose, onCha
                     </span>
                     {(t.paidLeavePending ?? 0) > 0 && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">معلّقة {t.paidLeavePending}</span>}
                     <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600">بلا راتب {t.unpaidLeaveTaken ?? 0}</span>
-                    <span className="rounded-md bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">⏱️ زمنيّة {t.timeLeaveTaken ?? 0}</span>
+                    <span className="rounded-md bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">⏱️ زمنيّة {t.timeMinutesTaken ?? 0}{t.timeMinutesQuota != null ? `/${t.timeMinutesQuota}` : ""} د{(t.timeMinutesPending ?? 0) > 0 ? ` (+${t.timeMinutesPending} معلّق)` : ""}</span>
                   </div>
                 )}
                 {/* الخيارات — مربعات واضحة (مستخدم المكتب: التتبع فقط) */}

@@ -10,7 +10,7 @@ type Statement = {
 type SalaryResp = { name?: string; salary?: number; statement: Statement; period: { from: string; to: string } | null };
 type AttRow = { id: number; dayKey: string; checkIn: string | null; checkOut: string | null; lateDeduction: number; earlyDeduction: number };
 type LeaveRow = { id: number; dayKey: string; kind: string; paid: boolean; startMin: number | null; endMin: number | null; reason: string; status: string; decidedBy: string | null };
-type LeaveResp = { period: { from: string; to: string }; quota: number; paidTaken: number; paidPending: number; unpaidTaken: number; timeTaken: number; remaining: number; leaves: LeaveRow[] };
+type LeaveResp = { period: { from: string; to: string }; quota: number; paidTaken: number; paidPending: number; unpaidTaken: number; timeTaken: number; remaining: number; leaves: LeaveRow[]; timeQuota: number | null; timeUsed: number; timeRemaining: number | null };
 
 const money = (n: number | null | undefined) => Number(n ?? 0).toLocaleString("en-US");
 const hm = (iso: string | null) => { if (!iso) return "—"; try { return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Baghdad" }); } catch { return "—"; } };
@@ -174,7 +174,11 @@ export default function TechDetail({ technicianId, name, onSettled, onClose }: {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <div className="flex-1 rounded-2xl border border-sky-200 bg-sky-50 p-3 text-center"><div className="text-[11px] font-semibold text-sky-700">⏱️ زمنيّة</div><div className="mt-0.5 text-xl font-black tabular-nums text-sky-800">{lv.timeTaken}</div></div>
+                  <div className="flex-1 rounded-2xl border border-sky-200 bg-sky-50 p-3 text-center">
+                    <div className="text-[11px] font-semibold text-sky-700">⏱️ زمنيّة</div>
+                    <div className="mt-0.5 text-xl font-black tabular-nums text-sky-800">{lv.timeUsed ?? 0}{lv.timeQuota != null && <span className="text-sm font-bold text-sky-600"> / {lv.timeQuota}</span>}<span className="text-[11px] font-bold text-sky-600"> دقيقة</span></div>
+                    <div className="text-[11px] text-sky-700">{lv.timeQuota == null ? "بلا حدّ" : `المتبقّي: ${lv.timeRemaining ?? 0}`} · {lv.timeTaken} طلباً</div>
+                  </div>
                   {lv.paidPending > 0 && <div className="flex-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-center"><div className="text-[11px] font-semibold text-amber-700">معلّقة (تحجز الحصّة)</div><div className="mt-0.5 text-xl font-black tabular-nums text-amber-800">{lv.paidPending}</div></div>}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-3">

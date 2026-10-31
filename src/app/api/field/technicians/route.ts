@@ -5,7 +5,7 @@ import { guard, ownsTower, agentTowerIds } from "@/lib/guard";
 import { can } from "@/lib/rbac";
 import { resolveFieldOffice, parseExtraTowers } from "@/lib/field";
 import { encryptSecret, decryptSecret } from "@/lib/secretbox";
-import { salaryPeriodBounds, periodLeaveQuota } from "@/lib/salary";
+import { salaryPeriodBounds, periodLeaveQuota, timeMinutesQuota, sumLeaveMinutes } from "@/lib/salary";
 import { baghdadDayKey } from "@/lib/attendance";
 import { usernameTaken } from "@/lib/usernameTaken";
 
@@ -52,6 +52,9 @@ export async function GET(request: Request) {
   const paidPendingByTech = new Map<number, number>();
   const unpaidByTech = new Map<number, number>();
   const timeByTech = new Map<number, number>();
+  // دقائقُ الزمنيّة لا عددُها: الحصّةُ بالدقائق (طلبُ محمد 2026-10-31) فيُعرَض ما يُنفَّذ
+  const timeMinByTech = new Map<number, number>();
+  const timePendMinByTech = new Map<number, number>();
   let leavePeriod: { from: string; to: string } | null = null;
   if (isManager && rows.length) {
     const agent = agentId ? await prisma.agent.findUnique({ where: { id: agentId }, select: { salaryFromDay: true, salaryToDay: true } }) : null;
@@ -67,6 +70,18 @@ export async function GET(request: Request) {
       else if (a.kind === "day" && a.paid && a.status === "pending") paidPendingByTech.set(a.technicianId, a._count._all);
       else if (a.kind === "day" && !a.paid && a.status === "approved") unpaidByTech.set(a.technicianId, a._count._all);
       else if (a.kind === "time" && a.status === "approved") timeByTech.set(a.technicianId, (timeByTech.get(a.technicianId) ?? 0) + a._count._all);
+    }
+    // `groupBy` يعدّ الصفوفَ ولا يجمع الدقائق — فتُقرأ صفوفُ الزمنيّة وتُجمع هنا
+    const timeRows = await prisma.leave.findMany({
+      where: {
+        technicianId: { in: rows.map((r) => r.id) }, kind: "time", isDeleted: false,
+        status: { in: ["approved", "pending"] }, dayKey: { gte: leavePeriod.from, lte: leavePeriod.to },
+      },
+      select: { technicianId: true, status: true, startMin: true, endMin: true },
+    });
+    for (const r of timeRows) {
+      const map = r.status === "approved" ? timeMinByTech : timePendMinByTech;
+      map.set(r.technicianId, (map.get(r.technicianId) ?? 0) + sumLeaveMinutes([r]));
     }
   }
 
@@ -85,6 +100,8 @@ export async function GET(request: Request) {
       leaveQuotaAdj: t.leaveQuotaAdjPeriod === leavePeriod?.from ? (t.leaveQuotaAdj ?? 0) : 0,
       missedCheckoutPenalty: t.missedCheckoutPenalty, autoCheckoutTime: t.autoCheckoutTime,
       paidLeaveTaken: paidByTech.get(t.id) ?? 0, paidLeavePending: paidPendingByTech.get(t.id) ?? 0, unpaidLeaveTaken: unpaidByTech.get(t.id) ?? 0, timeLeaveTaken: timeByTech.get(t.id) ?? 0,
+      leaveMinutesPerMonth: t.leaveMinutesPerMonth, timeMinutesQuota: timeMinutesQuota(t),
+      timeMinutesTaken: timeMinByTech.get(t.id) ?? 0, timeMinutesPending: timePendMinByTech.get(t.id) ?? 0,
     };
   });
   return NextResponse.json({ technicians, officeId, isManager, leavePeriod });
@@ -105,6 +122,8 @@ function readFields(b: Record<string, unknown>) {
     entryGraceMin: num(b.entryGraceMin) ?? 0, exitGraceMin: num(b.exitGraceMin) ?? 0,
     lateRatePerMin: num(b.lateRatePerMin) ?? 0, overtimeRatePerMin: num(b.overtimeRatePerMin) ?? 0,
     paidLeavesPerMonth: num(b.paidLeavesPerMonth) ?? 0,
+    // فارغٌ (أو صفر) = بلا حدٍّ لدقائق الزمنيّة — فلا يتغيّر شيءٌ لفنيٍّ لم يُحدَّد له رقم
+    leaveMinutesPerMonth: num(b.leaveMinutesPerMonth),
     missedCheckoutPenalty: num(b.missedCheckoutPenalty) ?? 0,
     // وقتُ الخروج التلقائي لكلّ فنيّ (2026-08-20) — صيغةٌ فاسدة/فارغة ⇒ الافتراضيّ 00:15
     autoCheckoutTime: /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(b.autoCheckoutTime ?? "").trim())
