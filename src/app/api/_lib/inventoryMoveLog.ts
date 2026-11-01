@@ -14,10 +14,9 @@ import { prisma } from "@/lib/prisma";
 //   صرفُ ذمّةٍ (`CARD_USE`) وما سواه بيعٌ من المخزن (`SELL`) — لا صفَّ في الاثنين.
 
 export type MoveKind =
-  | "TRANSFER" | "SUPPORT" | "GIVE" | "RETURN" | "CARD_USE" | "QTY_UP" | "QTY_DOWN" | "BUY" | "SELL" | "HELD";
+  | "TRANSFER" | "SUPPORT" | "GIVE" | "RETURN" | "CARD_USE" | "QTY_UP" | "QTY_DOWN" | "BUY" | "SELL";
 
 export const MOVE_LABEL: Record<MoveKind, string> = {
-  HELD: "ذمّةٌ قائمةٌ بيد الفنيّ",
   TRANSFER: "ترحيل بين مكتبين",
   SUPPORT: "ترحيل ذمّة (انتهاء دعم)",
   GIVE: "تسليم ذمّة لفنيّ",
@@ -127,10 +126,7 @@ export async function readInventoryMoves(qy: MoveQuery): Promise<{ rows: MoveRow
   const offices = qy.officeId != null && qy.offices.includes(qy.officeId) ? [qy.officeId] : qy.offices;
   if (!offices.length) return { rows: [], truncated: false };
 
-  // 🧰 «الذمّةُ القائمة» رصيدٌ لا حركة، فلا تُخلَط بـ«كلّ الحركات» ولا يحكمها مدى التاريخ —
-  //    تُطلَب صراحةً وحدَها (تبويبُ الذمم)، وإلّا بدا الرصيدُ حركةً بتاريخِ آخرِ تغييره.
-  const want = (k: MoveKind) =>
-    k === "HELD" ? !!qy.kinds?.includes("HELD") : (!qy.kinds?.length || qy.kinds.includes(k));
+  const want = (k: MoveKind) => !qy.kinds?.length || qy.kinds.includes(k);
   const range = (field: string) => {
     const r: Record<string, Date> = {};
     if (qy.from) r.gte = qy.from;
@@ -146,7 +142,7 @@ export async function readInventoryMoves(qy: MoveQuery): Promise<{ rows: MoveRow
   if (want("QTY_UP")) actions.push("ITEM_QTY_UP");
   if (want("QTY_DOWN")) actions.push("ITEM_QTY_DOWN");
 
-  const [audits, batches, sales, held] = await Promise.all([
+  const [audits, batches, sales] = await Promise.all([
     actions.length
       ? prisma.auditLog.findMany({
           where: { action: { in: actions }, ...range("createdAt") },
@@ -169,14 +165,6 @@ export async function readInventoryMoves(qy: MoveQuery): Promise<{ rows: MoveRow
           where: { agentId: qy.agentId, towerId: { in: offices }, ...range("at") },
           orderBy: { id: "desc" }, take: SRC_CAP,
           select: { id: true, itemId: true, towerId: true, qty: true, unitCost: true, unitSell: true, at: true, invoiceId: true, invoiceItemId: true, isDeleted: true },
-        }).catch(() => [])
-      : [],
-    // 🧰 ما بيد كلّ فنيٍّ الآن — مكتبُ الذمّة قد يكون فارغاً في صفوفٍ قديمة، فيُسنَد من مادّتها
-    want("HELD")
-      ? prisma.custody.findMany({
-          where: { isDeleted: false, qty: { gt: 0 }, OR: [{ towerId: { in: offices } }, { towerId: null }] },
-          orderBy: { id: "desc" }, take: SRC_CAP,
-          select: { id: true, technicianId: true, itemId: true, towerId: true, qty: true, updatedAt: true },
         }).catch(() => [])
       : [],
   ]);
@@ -225,7 +213,6 @@ export async function readInventoryMoves(qy: MoveQuery): Promise<{ rows: MoveRow
 
   const itemIds = new Set<number>();
   for (const l of legacyLines) if (l.itemId != null) itemIds.add(l.itemId);
-  for (const h of held) itemIds.add(h.itemId);
   for (const b of batches) itemIds.add(b.itemId);
   for (const s of sales) itemIds.add(s.itemId);
   for (const c of custodies) itemIds.add(c.itemId);
@@ -240,7 +227,7 @@ export async function readInventoryMoves(qy: MoveQuery): Promise<{ rows: MoveRow
 
   const [items, techs, towers] = await Promise.all([
     itemIds.size
-      ? prisma.item.findMany({ where: { id: { in: [...itemIds] } }, select: { id: true, name: true, towerId: true, priceDinar: true } })
+      ? prisma.item.findMany({ where: { id: { in: [...itemIds] } }, select: { id: true, name: true, towerId: true } })
       : [],
     prisma.technician.findMany({ where: { towerId: { in: offices } }, select: { id: true, name: true, towerId: true } }).catch(() => []),
     // أسماءُ **كلّ** مكاتب النطاق لا المكتبِ المنتقى — فالطرفُ الآخر للترحيل يُسمّى أيضاً
@@ -252,7 +239,6 @@ export async function readInventoryMoves(qy: MoveQuery): Promise<{ rows: MoveRow
 
   const extraTechIds = [...new Set([
     ...custodies.map((c) => c.technicianId),
-    ...held.map((h) => h.technicianId),
     ...cards.map((c) => c.technicianId).filter((n): n is number => n != null),
     ...audits.map((a) => parseMoveTag(a.details)?.techId).filter((n): n is number => n != null),
   ])].filter((id) => !techName.has(id));
@@ -372,22 +358,6 @@ export async function readInventoryMoves(qy: MoveQuery): Promise<{ rows: MoveRow
       technicianName: card?.technicianId != null ? (techName.get(card.technicianId) ?? `فنيّ #${card.technicianId}`) : null,
       unitCost: null, total: Math.round((l.price ?? 0) * (l.count ?? 0)),
       user: null, note: `بطاقة #${cardId}${card?.title ? ` «${card.title}»` : ""} — قبل عهد الدفعات`,
-    });
-  }
-
-  for (const h of held) {
-    const it = itemById.get(h.itemId);
-    const office = h.towerId ?? it?.towerId ?? null;
-    if (!inScope(office)) continue;
-    const cost = it?.priceDinar ?? null;
-    rows.push({
-      key: `h${h.id}`, at: h.updatedAt.toISOString(), kind: "HELD", recorded: true, voided: false,
-      itemId: h.itemId, itemName: it?.name ?? `مادّة #${h.itemId}`, qty: h.qty,
-      fromTowerId: office, toTowerId: null,
-      technicianId: h.technicianId, technicianName: techName.get(h.technicianId) ?? `فنيّ #${h.technicianId}`,
-      unitCost: qy.showCost ? (cost != null ? Math.round(cost) : null) : null,
-      total: qy.showCost && cost != null ? Math.round(cost * h.qty) : null,
-      user: null, note: "آخرُ تغييرٍ للذمّة",
     });
   }
 

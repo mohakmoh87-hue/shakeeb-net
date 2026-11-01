@@ -19,15 +19,14 @@ type Tech = { id: number; name: string; towerId: number | null };
 
 const TABS = [
   { id: "transfers", label: "🔁 الترحيلات", kinds: ["TRANSFER", "SUPPORT"] },
-  { id: "held", label: "🧰 الذمم", kinds: ["HELD"] },
-  { id: "flow", label: "📥📤 التسليم والاستلام", kinds: ["GIVE", "RETURN", "CARD_USE"] },
+  { id: "custody", label: "🧰 الذمم", kinds: ["GIVE", "RETURN"] },
+  { id: "cardsales", label: "💰 مبيعات الذمم", kinds: ["CARD_USE"] },
   { id: "all", label: "📊 كلُّ الحركات", kinds: [] as string[] },
 ] as const;
 
 const fmt = (n: number | null) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
 
 const KIND_CLS: Record<string, string> = {
-  HELD: "bg-amber-200 text-amber-900",
   TRANSFER: "bg-sky-100 text-sky-800", SUPPORT: "bg-indigo-100 text-indigo-800",
   GIVE: "bg-amber-100 text-amber-800", RETURN: "bg-emerald-100 text-emerald-800",
   CARD_USE: "bg-violet-100 text-violet-800", QTY_UP: "bg-teal-100 text-teal-800",
@@ -105,7 +104,6 @@ export default function InventoryMovesModal({ onClose }: { onClose: () => void }
 
   const officeName = (id: number | null) => (id == null ? "—" : offices.find((o) => o.id === id)?.name ?? `#${id}`);
   const totalQty = rows.reduce((s, r) => s + (r.voided ? 0 : r.qty), 0);
-  const isHeld = tab === "held";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-2 sm:p-3" onClick={onClose}>
@@ -129,8 +127,8 @@ export default function InventoryMovesModal({ onClose }: { onClose: () => void }
 
         <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Fld label={isHeld ? "من تاريخ (لا ينطبق)" : "من تاريخ"}><input type="date" disabled={isHeld} value={from} onChange={(e) => setFrom(e.target.value)} className={INP} /></Fld>
-            <Fld label={isHeld ? "إلى تاريخ (لا ينطبق)" : "إلى تاريخ"}><input type="date" disabled={isHeld} value={to} onChange={(e) => setTo(e.target.value)} className={INP} /></Fld>
+            <Fld label="من تاريخ"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={INP} /></Fld>
+            <Fld label="إلى تاريخ"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={INP} /></Fld>
             {offices.length > 1 && (
               <Fld label="المكتب">
                 <select value={officeId} onChange={(e) => setOfficeId(e.target.value)} className={INP}>
@@ -170,11 +168,11 @@ export default function InventoryMovesModal({ onClose }: { onClose: () => void }
           <table className="w-full min-w-[640px] text-right text-[12px] sm:text-[13px]">
             <thead className="sticky top-0 bg-slate-100 text-slate-600">
               <tr>
-                <th className="px-2 py-2 font-bold">{isHeld ? "آخرُ تغيير" : "الوقت"}</th>
+                <th className="px-2 py-2 font-bold">الوقت</th>
                 <th className="px-2 py-2 font-bold">الحركة</th>
                 <th className="px-2 py-2 font-bold">المادّة</th>
-                <th className="px-2 py-2 font-bold">{isHeld ? "العدد بذمّته" : "العدد"}</th>
-                <th className="px-2 py-2 font-bold">{isHeld ? "المكتب" : "من ← إلى"}</th>
+                <th className="px-2 py-2 font-bold">العدد</th>
+                <th className="px-2 py-2 font-bold">من ← إلى</th>
                 <th className="px-2 py-2 font-bold">الفنيّ</th>
                 {showCost && <th className="px-2 py-2 font-bold">السعر</th>}
                 <th className="hidden px-2 py-2 font-bold sm:table-cell">بواسطة</th>
@@ -183,7 +181,10 @@ export default function InventoryMovesModal({ onClose }: { onClose: () => void }
             </thead>
             <tbody>
               {!rows.length && !busy && (
-                <tr><td colSpan={showCost ? 9 : 8} className="px-3 py-8 text-center text-slate-400">لا حركةَ في هذا النطاق</td></tr>
+                <tr><td colSpan={showCost ? 9 : 8} className="px-3 py-8 text-center text-slate-400">
+                  لا حركةَ في هذا النطاق
+                  {tab === "custody" && <span className="mt-1 block text-[11px]">وتسليمُ الذمم واستلامُها يُسجَّلان من 2026-11-01 — وما قبلَه لم يُكتب في القاعدة</span>}
+                </td></tr>
               )}
               {rows.map((r) => (
                 <tr key={r.key} className={`border-t border-slate-100 ${r.voided ? "bg-rose-50/40 text-slate-400 line-through" : "hover:bg-slate-50"}`}>
@@ -196,8 +197,7 @@ export default function InventoryMovesModal({ onClose }: { onClose: () => void }
                   <td className="px-2 py-1.5 font-semibold text-slate-700">{r.itemName}</td>
                   <td className="px-2 py-1.5 font-bold tabular-nums">{fmt(r.qty)}</td>
                   <td className="whitespace-nowrap px-2 py-1.5 text-slate-600">
-                    {r.kind === "HELD" ? officeName(r.fromTowerId)
-                      : r.fromTowerId != null && r.toTowerId != null
+                    {r.fromTowerId != null && r.toTowerId != null
                       ? `${officeName(r.fromTowerId)} ← ${officeName(r.toTowerId)}`
                       : r.fromTowerId != null ? `من ${officeName(r.fromTowerId)}`
                       : r.toTowerId != null ? `إلى ${officeName(r.toTowerId)}` : "—"}
@@ -219,9 +219,9 @@ export default function InventoryMovesModal({ onClose }: { onClose: () => void }
         </div>
 
         <p className="mt-2 text-[11px] leading-5 text-slate-500">
-          {isHeld
-            ? "هذه أرصدةُ الذمم كما هي الآن: ما بيد كلّ فنيٍّ من كلّ مادّةٍ وتاريخُ آخرِ تغييرٍ لها — فلا يحكمها مدى التاريخ. وحركةُ التسليم والاستلام في تبويبها."
-            : "«مُسجَّل» قيدٌ كُتب لحظةَ الحركة · «مشتَقّ» مستنتَجٌ من فاتورةٍ أو دفعةٍ أو قيدِ كميّة. وحركاتُ الترحيل والتسليم والاستلام تُسجَّل من 2026-11-01 — وما قبلها لم يكن له أثرٌ في القاعدة إلّا ترحيلاتِ الدعم وصرفَ الموادّ على البطاقات."}
+          «مُسجَّل» قيدٌ كُتب لحظةَ الحركة · «مشتَقّ» مستنتَجٌ من فاتورةٍ أو دفعةٍ أو قيدِ كميّة.
+          وحركاتُ الترحيل والتسليم والاستلام تُسجَّل من 2026-11-01 — وما قبلها لم يكن له أثرٌ في القاعدة
+          إلّا ترحيلاتِ الدعم ومبيعاتِ الذمم على البطاقات.
         </p>
       </div>
     </div>

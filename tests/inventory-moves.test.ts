@@ -83,17 +83,13 @@ describe("🔁🧰 سجلُّ الترحيلات والذمم", () => {
     assert.match(ROUTE, /\+03:00/, "يومُ المستخدم يُقرأ بـUTC ⇒ ثلاثُ ساعاتٍ تهاجر لليوم السابق");
   });
 
-  test("🧰 الذمّةُ القائمةُ رصيدٌ لا حركة: تُطلَب صراحةً ولا يحكمها التاريخ", () => {
-    assert.match(LOG, /k === "HELD" \? !!qy\.kinds\?\.includes\("HELD"\)/, "الرصيدُ يظهر في «كلّ الحركات» كأنّه حركةٌ بتاريخ آخرِ تغييره");
-    const held = LOG.slice(LOG.indexOf('want("HELD")'), LOG.indexOf("]);", LOG.indexOf('want("HELD")')));
-    assert.doesNotMatch(held, /range\(/, "مدى التاريخ يُطبَّق على رصيدٍ حاليٍّ ⇒ تبويبٌ فارغ");
-    assert.match(held, /qty: \{ gt: 0 \}/, "ذمّةٌ صفريّةٌ تُعرَض");
-    assert.match(held, /isDeleted: false/, "ذمّةٌ مشطوبةٌ تُعرَض");
-  });
-
-  test("🔒 مكتبُ الذمّة قد يكون فارغاً — يُسنَد من المادّة ولا يمرّ بلا نطاق", () => {
-    assert.match(LOG, /\{ towerId: \{ in: offices \} \}, \{ towerId: null \}/, "ذممُ الصفوف القديمة (بلا مكتب) تسقط من العرض");
-    assert.match(LOG, /const office = h\.towerId \?\? it\?\.towerId \?\? null;\s*\n\s*if \(!inScope\(office\)\) continue;/, "صفُّ ذمّةٍ يمرّ بلا فحصِ نطاق");
+  test("🧰 التبويباتُ الأربعةُ مفصولةٌ بما طلبه محمد: ذممٌ · مبيعاتُ ذممٍ · ترحيلاتٌ · الكلّ", () => {
+    const tabs = MODAL.slice(MODAL.indexOf("const TABS"), MODAL.indexOf("] as const"));
+    assert.match(tabs, /"🧰 الذمم", kinds: \["GIVE", "RETURN"\]/, "تبويبُ الذمم ليس حركاتِ التسليم والاستلام وحدَها");
+    assert.match(tabs, /"💰 مبيعات الذمم", kinds: \["CARD_USE"\]/, "مبيعاتُ الذمم ليست مبيعاتِ البطاقات وحدَها");
+    assert.match(tabs, /"🔁 الترحيلات", kinds: \["TRANSFER", "SUPPORT"\]/, "تبويبُ الترحيلات تغيّر");
+    assert.doesNotMatch(MODAL, /HELD/, "رصيدُ الذمّة القائم عاد تبويباً — وقرارُ محمد أنّ الذمم حركاتٌ لا رصيد");
+    assert.doesNotMatch(LOG, /HELD/, "بنيةُ الرصيد القائم باقيةٌ بلا مستهلك");
   });
 
   test("الزرُّ في المخزن والنافذةُ تميّز المُسجَّل من المشتَقّ", () => {
@@ -104,9 +100,8 @@ describe("🔁🧰 سجلُّ الترحيلات والذمم", () => {
     for (const f of ["from", "to", "officeId", "techId", "q", "minPrice"]) {
       assert.ok(MODAL.includes(`sp.set("${f}"`), `البحثُ بلا ${f}`);
     }
-    for (const t of ["الترحيلات", "الذمم", "التسليم والاستلام", "كلُّ الحركات"]) {
+    for (const t of ["الترحيلات", "الذمم", "مبيعات الذمم", "كلُّ الحركات"]) {
       assert.ok(MODAL.includes(t), `التبويبُ «${t}» غائب`);
     }
-    assert.match(MODAL, /disabled=\{isHeld\}/, "خانتا التاريخ مفتوحتان في تبويب الأرصدة ⇒ بحثٌ لا يُجدي");
   });
 });
