@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
+import { moveTag } from "@/app/api/_lib/inventoryMoveLog";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `المتوفّر بالمخزن ${atOffice} فقط` }, { status: 400 });
   }
 
+  const src = await prisma.tower.findFirst({ where: { id: item.towerId }, select: { name: true } });
+
   await prisma.$transaction(async (tx) => {
     // خصم من المصدر
     await tx.item.update({ where: { id: itemId }, data: { count: (item.count ?? 0) - qty } });
@@ -84,6 +87,15 @@ export async function POST(request: Request) {
       });
     }
   });
+
+  // 🔁 قيدُ الترحيل — كان يُنقص مخزناً ويزيد آخرَ بلا سطرٍ واحدٍ في أيّ جدول.
+  //    وإدراجٌ خامٌّ بلا RETURNING: دورُ حاسبة المكتب له على `audit_logs` «إدراجٌ فقط».
+  await prisma.$executeRaw`INSERT INTO audit_logs ("userId", action, entity, "entityId", details)
+    VALUES (${session?.userId ?? null}, 'INV_TRANSFER', 'item', ${String(itemId)}, ${
+      `ترحيل «${item.name ?? itemId}»×${qty} من مكتب ${src?.name ?? item.towerId} إلى مكتب ${dest.name ?? toTowerId}`
+      + (session?.fullName || session?.username ? ` — بواسطة ${session.fullName ?? session.username}` : "")
+      + moveTag({ kind: "TRANSFER", itemId, qty, fromTower: item.towerId, toTower: toTowerId, cost: item.priceDinar })
+    })`;
 
   return NextResponse.json({ ok: true, moved: qty, to: dest.name });
 }

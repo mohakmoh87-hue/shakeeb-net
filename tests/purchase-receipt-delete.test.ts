@@ -50,9 +50,9 @@ describe("🗑️ حذفُ وصل الشراء", () => {
   });
 
   test("التسديدُ القائم يُعكَس مرّةً واحدة — والمُبطَلُ سلفاً لا يُمَسّ", () => {
-    assert.match(del, /purchasePayment\.findMany\([^)]*isDeleted: false/s, "الدفعاتُ المُبطَلة تُعكَس ثانيةً ⇒ مالٌ يعود مرّتين");
-    assert.match(del, /moneyTx\.updateMany\([^)]*isDeleted: false/s, "حركةُ اليوميّ تُشطب بلا شرط");
-    assert.match(del, /managerTx\.updateMany\([^)]*agentId/s, "حركةُ الكلّيّ بلا عزلِ وكيل");
+    assert.match(del, /purchasePayment\.findMany\([^)]*isDeleted: false/, "الدفعاتُ المُبطَلة تُعكَس ثانيةً ⇒ مالٌ يعود مرّتين");
+    assert.match(del, /moneyTx\.updateMany\([^)]*isDeleted: false/, "حركةُ اليوميّ تُشطب بلا شرط");
+    assert.match(del, /managerTx\.updateMany\([^)]*agentId/, "حركةُ الكلّيّ بلا عزلِ وكيل");
   });
 
   test("المادّةُ لا تُشطب إلّا إن كانت فارغةً بلا دفعةٍ ولا بيعٍ ولا فاتورة", () => {

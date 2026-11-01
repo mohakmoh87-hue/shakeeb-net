@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, towerScope, agentTowerIds } from "@/lib/guard";
 import { techEffectiveOffices } from "@/lib/field";
+import { moveTag } from "@/app/api/_lib/inventoryMoveLog";
 
 export const dynamic = "force-dynamic";
 
@@ -111,6 +112,24 @@ export async function POST(request: Request) {
     }
     await prisma.custody.update({ where: { id: existing.id }, data: { qty: existing.qty - qty } });
   }
+
+  // 🧰 قيدُ التسليم والاستلام — `custodies` تحفظ الرصيدَ القائمَ وحدَه، فكانت الحركةُ تذهب
+  //    بلا أثر. وإدراجٌ خامٌّ بلا RETURNING لأجل دور حاسبة المكتب («إدراجٌ فقط»).
+  const office = item.towerId ?? tech.towerId ?? null;
+  await prisma.$executeRaw`INSERT INTO audit_logs ("userId", action, entity, "entityId", details)
+    VALUES (${session?.userId ?? null}, ${direction === "give" ? "CUSTODY_GIVE" : "CUSTODY_RETURN"}, 'custody', ${String(technicianId)}, ${
+      (direction === "give"
+        ? `تسليم ذمّة «${item.name ?? itemId}»×${qty} إلى الفنيّ ${tech.name}`
+        : `استلام ذمّة «${item.name ?? itemId}»×${qty} من الفنيّ ${tech.name}`)
+      + ` — مكتب ${office ?? "—"}`
+      + (session?.fullName || session?.username ? ` — بواسطة ${session.fullName ?? session.username}` : "")
+      + moveTag({
+          kind: direction === "give" ? "GIVE" : "RETURN", itemId, qty, techId: technicianId,
+          fromTower: direction === "give" ? office : null,
+          toTower: direction === "give" ? null : office,
+          cost: item.priceDinar,
+        })
+    })`;
 
   return NextResponse.json({ ok: true });
 }

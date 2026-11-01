@@ -5,6 +5,7 @@ import CrudManager, { type Field } from "@/components/CrudManager";
 import { usePermission } from "@/lib/usePermission";
 import AddItemModal from "@/components/AddItemModal";
 import { PurchaseReceiptModal, PurchaseLogModal } from "@/components/PurchaseReceiptModal";
+import InventoryMovesModal from "@/components/InventoryMovesModal";
 
 type Item = {
   id: number;
@@ -34,6 +35,7 @@ export default function InventoryPage() {
   const [purchaseOpen, setPurchaseOpen] = useState(false); // 🧾 وصل شراء
   const [logOpen, setLogOpen] = useState(false); // 📒 سجلّ وصولات الشراء
   const [custodyOpen, setCustodyOpen] = useState(false);
+  const [movesOpen, setMovesOpen] = useState(false); // 🔁🧰 سجلّ الترحيلات والذمم
   const [filterTower, setFilterTower] = useState(""); // فلتر مكتب (للمدير)
 
   const loadCustodies = useCallback(() => {
@@ -132,6 +134,13 @@ export default function InventoryPage() {
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-amber-600"
             >
               🧰 ذمم الفنيين
+            </button>
+            {/* 🔁🧰 سجلُّ الترحيلات والذمم بأثرٍ رجعيّ (طلبُ محمد 2026-11-01) */}
+            <button
+              onClick={() => setMovesOpen(true)}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-700"
+            >
+              🔁🧰 الترحيلات والذمم
             </button>
             {/* ➕ نافذةُ الإضافة الجديدة — للمدير حصراً (قرارُ محمد 2026-08-25) */}
             {isAdmin && (
@@ -244,6 +253,7 @@ export default function InventoryPage() {
         />
       )}
       {logOpen && <PurchaseLogModal onClose={() => setLogOpen(false)} />}
+      {movesOpen && <InventoryMovesModal onClose={() => setMovesOpen(false)} />}
     </>
   );
 }
