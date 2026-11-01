@@ -327,6 +327,33 @@ export interface SasActivation {
   price: number;
 }
 
+const SAS_ZONE_RE = /(z|[+-]\d{2}:?\d{2})$/i;
+
+function sasParse(raw: string | null | undefined, zone: string): Date | null {
+  const t = (raw ?? "").trim();
+  if (!t) return null;
+  if (SAS_ZONE_RE.test(t)) {
+    const z = new Date(t);
+    return isNaN(z.getTime()) ? null : z;
+  }
+  const m = t.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?/);
+  if (!m) return null;
+  const d = new Date(`${m[1]}T${m[2] ?? "00:00:00"}${zone}`);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** اللحظةُ الحقيقيّةُ لتفعيلةِ الساس — نصُّ الساس بتوقيت بغداد بلا منطقة،
+ *  فيُفسّر `+03:00` صراحةً لا بتوقيت الجهاز القارئ. */
+export function sasInstant(raw: string | null | undefined): Date | null {
+  return sasParse(raw, "+03:00");
+}
+
+/** تاريخُ انتهاءِ الساس بقاعدةِ «المخزّنُ أرقامُ بغداد والعرضُ يقرأ UTC»:
+ *  يُفسّر `Z` صراحةً فتبقى الأرقامُ كما يعرضها الساس على أيّ جهاز. */
+export function sasExpiry(raw: string | null | undefined): Date | null {
+  return sasParse(raw, "Z");
+}
+
 function normalizeActivation(a: Record<string, unknown>): SasActivation {
   const u = a.user_details as { id?: number; username?: string; firstname?: string; lastname?: string } | undefined;
   const m = a.manager_details as { username?: string } | undefined;
@@ -502,18 +529,12 @@ export async function sasSearchActivation(
 //   `sorted: false`. فلا يُبنى حكمٌ على نافذةٍ يُظنّ أنّها كاملةٌ وهي ليست كذلك.
 const SORT_BODY = { sortBy: "created_at", sortDir: "desc" } as const;
 
-/** ⏱️ حدُّ مقارنةٍ بتوقيت الساس: أرقامُ `created_at` ساعةُ بغداد وتُقرأ UTC ⇒ يُزاح الحدُّ ٣ ساعات.
- *  (بلا هذا كانت نافذةُ «اليوم» تقف عند ٢١:٠٠ بغداد فتسقط تفعيلاتُ الليل — قِيس 2026-08-21.) */
-export function sasWindowBound(d: Date): Date {
-  return new Date(d.getTime() + 3 * 60 * 60 * 1000);
-}
-
 /** صفوفُ الصفحة تنازليّةٌ بالتاريخ؟ (حارسُ الصدق — لا يُبنى حكمٌ على ترتيبٍ لم يُطبَّق) */
 function isDescending(rows: Record<string, unknown>[]): boolean {
   let prev = Infinity;
   let seen = 0;
   for (const r of rows) {
-    const c = r.created_at ? new Date(r.created_at as string).getTime() : NaN;
+    const c = sasInstant(r.created_at as string)?.getTime() ?? NaN;
     if (isNaN(c)) continue;
     if (c > prev) return false;
     prev = c; seen++;
@@ -532,7 +553,7 @@ async function fetchSortedActivations(
   const COUNT = opts.count ?? 500;
   const GAP_MS = opts.gapMs ?? 1200;
   const MAX_PAGES = opts.maxPages ?? 60;
-  const bound = sasWindowBound(since).getTime();
+  const bound = since.getTime();
 
   const first = await fetchAnyPage(base, token, "index/activations", 1, COUNT, SORT_BODY);
   const firstData: Record<string, unknown>[] = first.data ?? [];
@@ -544,7 +565,7 @@ async function fetchSortedActivations(
   let reachedOlder = false;
   const collect = (data: Record<string, unknown>[]) => {
     for (const r of data) {
-      const c = r.created_at ? new Date(r.created_at as string).getTime() : NaN;
+      const c = sasInstant(r.created_at as string)?.getTime() ?? NaN;
       if (isNaN(c)) continue;
       if (c < bound) { reachedOlder = true; continue; }
       rows.push(normalizeActivation(r));
@@ -583,10 +604,10 @@ export async function sasFetchActivationsForDay(
   try {
     const s = await fetchSortedActivations(base, token, dayStart);
     if (s.sorted) {
-      const lo = sasWindowBound(dayStart).getTime();
-      const hi = sasWindowBound(dayEnd).getTime();
+      const lo = dayStart.getTime();
+      const hi = dayEnd.getTime();
       return s.rows.filter((a) => {
-        const c = a.createdAt ? new Date(a.createdAt).getTime() : NaN;
+        const c = sasInstant(a.createdAt)?.getTime() ?? NaN;
         return !isNaN(c) && c >= lo && c <= hi;
       });
     }
@@ -612,15 +633,14 @@ async function legacyFetchActivationsForDay(
   if (!total) return [];
   const lastPage = Math.max(1, Math.ceil(total / COUNT));
 
-  // ⏱️ الحدودُ تُزاح ٣ ساعاتٍ لتطابق أرقامَ الساس (شرحُها عند `sasWindowBound`)
-  const lo = sasWindowBound(dayStart);
-  const hi = sasWindowBound(dayEnd);
+  const lo = dayStart;
+  const hi = dayEnd;
   const rows: SasActivation[] = [];
   // يجمع صفوف النطاق من صفحة، ويُبلّغ هل ظهرت صفوف أقدم من بداية اليوم (إشارة توقّف)
   const collect = (data: Record<string, unknown>[]): boolean => {
     let sawOlder = false;
     for (const r of data) {
-      const c = r.created_at ? new Date(r.created_at as string) : null;
+      const c = sasInstant(r.created_at as string);
       if (!c || isNaN(c.getTime())) continue;
       if (c >= lo && c <= hi) rows.push(normalizeActivation(r));
       if (c < lo) sawOlder = true;
@@ -632,7 +652,7 @@ async function legacyFetchActivationsForDay(
   const first = await fetchAnyPage(base, token, "index/activations", 1, COUNT);
   const firstData: Record<string, unknown>[] = first.data ?? [];
   const descending = firstData.some((r) => {
-    const c = r.created_at ? new Date(r.created_at as string) : null;
+    const c = sasInstant(r.created_at as string);
     return c && !isNaN(c.getTime()) && c >= lo;
   });
 
@@ -756,13 +776,12 @@ async function legacyFetchActivationsSince(
   if (!total) return { rows: [], complete: true };
   const lastPage = Math.max(1, Math.ceil(total / COUNT));
 
-  // ⏱️ الحدُّ مُزاحٌ ٣ ساعاتٍ ليطابق أرقامَ الساس (شرحُها عند `sasWindowBound`)
-  const lo = sasWindowBound(since);
+  const lo = since;
   const rows: SasActivation[] = [];
   let reachedOlder = false; // بلغنا صفوفاً أقدم من النافذة ⇒ لا حاجة للمتابعة
   const collect = (data: Record<string, unknown>[]) => {
     for (const r of data) {
-      const c = r.created_at ? new Date(r.created_at as string) : null;
+      const c = sasInstant(r.created_at as string);
       if (c && !isNaN(c.getTime()) && c < lo) { reachedOlder = true; continue; }
       rows.push(normalizeActivation(r));
     }
@@ -772,7 +791,7 @@ async function legacyFetchActivationsSince(
   const first = await fetchAnyPage(base, token, "index/activations", 1, COUNT);
   const firstData: Record<string, unknown>[] = first.data ?? [];
   const descending = firstData.some((r) => {
-    const c = r.created_at ? new Date(r.created_at as string) : null;
+    const c = sasInstant(r.created_at as string);
     return c && !isNaN(c.getTime()) && c >= lo;
   });
 

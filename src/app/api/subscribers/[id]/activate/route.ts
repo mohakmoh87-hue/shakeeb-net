@@ -8,7 +8,7 @@ import { computeDateTo } from "@/lib/subscription";
 import { renderTemplate, sendViaProvider } from "@/lib/messaging";
 import { formatExpiryOrEmpty } from "@/lib/format";
 import { messageDedupKey, alreadySentToday } from "@/lib/messageDedup"; // حارسُ تكرار الرسائل (طلبُ محمد 2026-08-19)
-import { sasBaseUrl, sasLogin, sasFetchUser } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasFetchUser, sasExpiry } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
 import { credsOfSubscriber } from "@/lib/sasPanel";
 import { grantReward, sendRewardGrantMessage } from "@/lib/rewards";
@@ -165,8 +165,8 @@ export async function POST(
         const token = await sasLogin(base, sasCreds.username, sasCreds.password);
         const info = await sasFetchUser(base, token, subscriber.sasId);
         if (info?.expiration) {
-          const d = new Date(info.expiration);
-          if (!isNaN(d.getTime())) {
+          const d = sasExpiry(info.expiration);
+          if (d) {
             if (d > now) dateTo = d; // تاريخٌ مستقبليّ ⇒ الشحن ثبت في الساس
             else sasStale = true; // ما زال منتهياً ⇒ الساس لم يُشحَن بعد
           }

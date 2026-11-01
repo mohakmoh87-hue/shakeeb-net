@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import {
   sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers,
   sasProbeSerial, sasUserActivations,
-  sasFetchActivationsSince, sasWindowBound,
+  sasFetchActivationsSince, sasInstant, sasExpiry,
   type SasActivation,
 } from "@/lib/sas4";
 import { sendViaProvider } from "@/lib/messaging";
@@ -391,11 +391,9 @@ async function runOfficeSyncInner(
   }
   // السيناريوهات المُبلَّغة (تكرار/كارت خارجي/استيراد/تحديث حالة) تبقى على تفعيلات **الأمس**
   // حصراً — كي لا تتكرّر التقارير ولا تظهر «تفعيلات مكرّرة» كاذبة لمن فعّل أمس واليوم.
-  // ⏱️ الحدودُ تُزاح ٣ ساعاتٍ لتطابق أرقامَ الساس (شرحُها عند `sasWindowBound`): بلا ذلك
-  //    كانت نافذةُ «أمس» تنتهي ٢١:٠٠ بغداد فتسقط تفعيلاتُ الليل من كلّ السيناريوهات.
-  const actsLo = sasWindowBound(start), actsHi = sasWindowBound(end);
+  const actsLo = start, actsHi = end;
   const acts = actsWide.filter((a) => {
-    const d = a.createdAt ? new Date(a.createdAt) : null;
+    const d = sasInstant(a.createdAt);
     return d != null && !isNaN(d.getTime()) && d >= actsLo && d <= actsHi;
   });
 
@@ -581,7 +579,7 @@ async function runOfficeSyncInner(
     netUser: string | null,
     name: string | null,
   ): Promise<void> => {
-    const raw = a.createdAt ? new Date(a.createdAt) : new Date();
+    const raw = sasInstant(a.createdAt) ?? new Date();
     const when = isNaN(raw.getTime()) ? new Date() : raw;
     const wasHuman = consumedByHuman(card); // يُقرأ **قبل** أن نكتب عليه
     if (!card.useDate) {
@@ -650,7 +648,7 @@ async function runOfficeSyncInner(
     const l = actsByUserAll.get(uk) ?? []; l.push(a); actsByUserAll.set(uk, l);
   }
   for (const l of actsByUserAll.values()) {
-    l.sort((x, y) => new Date(y.createdAt ?? 0).getTime() - new Date(x.createdAt ?? 0).getTime());
+    l.sort((x, y) => (sasInstant(y.createdAt)?.getTime() ?? 0) - (sasInstant(x.createdAt)?.getTime() ?? 0));
   }
 
   // 🎴 كروتٌ خارجُ المخزن استُعملت في الساس — تُجمَع لكلّ مشترك ثمّ تُحلَّل مرّةً واحدة
@@ -687,7 +685,7 @@ async function runOfficeSyncInner(
     if (!sub) {
       // ═════ 📋 لا استيرادَ تلقائيّاً (قرار محمد 2026-08-20): يُرصَد في تبويب «تنصيب
       // خارجي» بسجلّ المزامنة، والحفظُ بيد صاحب الصلاحيّة. (السيناريو 7 القديم أُلغي.)
-      const newDate = a.newExpiration ? new Date(a.newExpiration) : null;
+      const newDate = sasExpiry(a.newExpiration);
       await recordInstall({
         agentId: office.agentId ?? -1, towerId: officeId, sasId: a.sasUserId, subscriberId: null,
         netUser: a.username, name: a.name, phone: null, address: null,
@@ -711,10 +709,10 @@ async function runOfficeSyncInner(
       events.push({ scenario: 6, subscriber: sub.name ?? sub.netUser, pin, detail: "تفعيل بكارت خارجي غير موجود بالمخزن" });
       // 💰 ويُجمَع ليُحلَّل ويُخزَّن في حارس المال بعد الحلقة (إملاءُ محمد: لا حالةَ بلا بيت)
       const key = `${sub.id}|${a.sasUserId}`;
-      const g = extCards.get(key) ?? { sub, sasId: a.sasUserId, pins: [] as string[], at: a.createdAt ? new Date(a.createdAt) : new Date(), price: 0 };
+      const g = extCards.get(key) ?? { sub, sasId: a.sasUserId, pins: [] as string[], at: sasInstant(a.createdAt) ?? new Date(), price: 0 };
       g.pins.push(pin);
       g.price += Math.round(a.price || 0);
-      const t = a.createdAt ? new Date(a.createdAt) : null;
+      const t = sasInstant(a.createdAt);
       if (t && !isNaN(t.getTime()) && t > g.at) g.at = t;
       extCards.set(key, g);
     } else if (isCardActivation(a)) {
@@ -749,7 +747,7 @@ async function runOfficeSyncInner(
   // 💰 وفي الأنواع الثلاثة: «مقبوضٌ عندي ⇒ ليس خارجيّاً» (وصلٌ ±٣ أيّام **أو** تاريخُنا
   //   يغطّي انتهاءَ الساس)، وصاحبُ القرض مستثنًى من الغطاء.
   for (const a of actsWide) {
-    const actAt = a.createdAt ? new Date(a.createdAt) : null;
+    const actAt = sasInstant(a.createdAt);
     if (!actAt || isNaN(actAt.getTime())) continue;
     let sub = subBySasId.get(a.sasUserId);
     if (!sub) {
@@ -768,7 +766,7 @@ async function runOfficeSyncInner(
     const mgr = (a.managerUsername ?? "").trim();
     const managerIsPage = mgr.toLowerCase() === officeUser;
     const ownCabinet = isOwnCabinet(a.username ?? sub.netUser, mgr);
-    const newExp = a.newExpiration ? new Date(a.newExpiration) : null;
+    const newExp = sasExpiry(a.newExpiration);
     const validNewExp = newExp && !isNaN(newExp.getTime()) ? newExp : null;
     const evBase = {
       agentId: office.agentId ?? -1, towerId: officeId, sasId: a.sasUserId, subscriberId: sub.id,
@@ -776,7 +774,7 @@ async function runOfficeSyncInner(
       amount: Math.round(a.price || 0), activatedAt: actAt,
       sasDateTo: validNewExp,
       // 📈 الانتهاءُ **قبل** التفعيلة كما يعطيه تقريرُ الساس — به تُعرَف المدّةُ بالأشهر
-      oldSasDateTo: a.oldExpiration ? new Date(a.oldExpiration) : null,
+      oldSasDateTo: sasExpiry(a.oldExpiration),
     };
     // «مقبوضٌ عندي» — الغطاءُ بالتاريخ ثمّ الوصلُ بنافذة ±٣ أيّام
     const COVER_TOL_MS = 24 * 3600_000;
@@ -882,7 +880,7 @@ async function runOfficeSyncInner(
     const sub = subBySasId.get(sasUserId);
     const totalActs = cardActs.reduce((x, a) => x + Math.round(a.price || 0), 0);
     if (totalActs <= 0) continue; // بلا مالٍ في الميزان لا إنذار (قروضُ الصفر)
-    const times = cardActs.map((a) => (a.createdAt ? new Date(a.createdAt).getTime() : 0)).filter(Boolean);
+    const times = cardActs.map((a) => sasInstant(a.createdAt)?.getTime() ?? 0).filter(Boolean);
     const at = new Date(times.length ? Math.max(...times) : Date.now());
     const uKey = (list[0]?.username ?? sub?.netUser ?? "").trim().toLowerCase();
     const paid = await receiptsSumNear(uKey, sub?.id ?? null, at);
@@ -1103,10 +1101,10 @@ async function runOfficeSyncInner(
       const last = rows[0];
       if (last && Math.round(last.price || 0) <= 0) { actedSasIds.add(sasId); return true; }
       // التفعيلةُ التي أنتجت تاريخَ الساس الحاليّ (±١٢ ساعة)، وإلّا فآخرُ تفعيلاته
-      const hit = (newSasExp && rows.find((r) => sameExpiry(r.newExpiration ? new Date(r.newExpiration) : null, newSasExp))) || last;
-      const actAt = hit.createdAt ? new Date(hit.createdAt) : null;
+      const hit = (newSasExp && rows.find((r) => sameExpiry(sasExpiry(r.newExpiration), newSasExp))) || last;
+      const actAt = sasInstant(hit.createdAt);
       if (!actAt || isNaN(actAt.getTime())) return false;
-      const newExp = hit.newExpiration ? new Date(hit.newExpiration) : null;
+      const newExp = sasExpiry(hit.newExpiration);
       // 💰 مقبوضٌ عندي (وصلٌ قريبٌ أو وصلٌ ينتهي بانتهائه) ⇒ ليس خارجيّاً — يبقى فرقَ تاريخٍ يدويّاً
       if (await collectedByUs(uKey, sub.id, actAt, newExp ?? newSasExp)) return false;
       const mgr = (hit.managerUsername ?? "").trim();
@@ -1118,7 +1116,7 @@ async function runOfficeSyncInner(
         netUser: hit.username ?? sub.netUser, name: hit.name ?? sub.name,
         amount: Math.round(hit.price || 0), activatedAt: actAt,
         sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
-        oldSasDateTo: hit.oldExpiration ? new Date(hit.oldExpiration) : null,
+        oldSasDateTo: sasExpiry(hit.oldExpiration),
       };
       const isLoanAct = Math.round(hit.price || 0) <= 0;
       let outcome: EventOutcome;
@@ -1148,7 +1146,7 @@ async function runOfficeSyncInner(
       //    في «تحديث معلومات»، والاستبدالُ (تركَ الخدمة وحلَّ محلَّه آخر) صار فعلاً صريحاً
       //    بزرِّه لا نتيجةً جانبيّةً لزرّ «تحديث» (كان يؤرشف الصفَّ الصحيح ويُنشئ مكرَّراً).
       let sasLinkDiff: InfoChange | null = null;
-      const sasDate = u.expiration ? new Date(u.expiration) : null;
+      const sasDate = sasExpiry(u.expiration);
       const validDate = sasDate && !isNaN(sasDate.getTime()) ? sasDate : null;
 
       if (!p) {
@@ -1893,7 +1891,7 @@ export async function runFullCardAudit(
       res.checkedAvailable++;
       // 🔎 لم تُذكر تفعيلتُه في قائمة المكتب ⇒ يُبحَث عنه **بسيرياله** لاحقاً (أدناه)
       if (!hit) { availUnmatched.push({ id: c.id, serial, number: c.number ?? null }); continue; }
-      const when = hit.createdAt ? new Date(hit.createdAt) : new Date();
+      const when = sasInstant(hit.createdAt) ?? new Date();
       // 🔑 الربطُ **باليوزر أوّلاً ثمّ بالرقم** (بلاغ محمد 2026-08-21): رقمُ الساس قد يكون
       // مغلوطاً على صفٍّ (حالة bg-7-4-2@mu) فيُربَط الكارتُ بمشتركٍ خاطئ أو لا يُربَط —
       // واليوزرُ هو الفيصلُ الذي لا يُخطئ. فإن عرفنا يوزرَ التفعيلة اعتمدناه.
@@ -1998,7 +1996,7 @@ export async function runFullCardAudit(
         // مستخدَمٌ فعلاً — يُعلَّم ويُربَط **باليوزر أوّلاً** (الرقمُ قد يكذب)
         const hu = (found.username ?? "").trim().toLowerCase();
         const owner = (hu ? subsByUser.get(hu) : null) ?? (found.sasUserId != null ? subsBySasId.get(found.sasUserId) : null);
-        const when = found.createdAt ? new Date(found.createdAt) : new Date();
+        const when = sasInstant(found.createdAt) ?? new Date();
         await prisma.rechargeCard.update({
           where: { id },
           data: {

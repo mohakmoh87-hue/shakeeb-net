@@ -39,10 +39,14 @@ describe("🎴 أرباحُ الشركة تطابق تفعيلاتِ الساس"
     const src = read("src/lib/syncLog.ts");
     assert.ok(!/30 \* 60_000/.test(src),
       "🔴 نافذةُ ±٣٠ دقيقةً عادت ⇒ تفعيلُ الأشهر المتعدّدة يُبتلَع");
-    assert.ok(src.includes('kind, activatedAt: p.activatedAt }'),
+    assert.ok(src.includes('kind, activatedAt: { in: tzWindow(p.activatedAt) } }'),
       "🔴 حدثُ التفعيل لا يُميَّز بلحظته");
-    assert.ok(src.includes('kind: "install", activatedAt: p.activatedAt }'),
+    assert.ok(src.includes('kind: "install", activatedAt: { in: tzWindow(p.activatedAt) } }'),
       "🔴 تفعيلُ الشركة/الديلر لا يُميَّز بلحظته");
+    // 🕒 والتسامحُ **ثلاثُ لحظاتٍ بعينها** لا مدًى: كروتُ الأشهر تقع بفارق ثوانٍ فتبقى متمايزة،
+    //    والنسخةُ المزاحةُ ٣ ساعاتٍ (إزاحةُ توقيت الجهاز القارئ) وحدَها تُبتلَع.
+    assert.ok(src.includes("return [at, new Date(at.getTime() + TZ_SHIFT_MS), new Date(at.getTime() - TZ_SHIFT_MS)];"),
+      "🔴 نافذةُ التسامح صارت مدًى ⇒ تفعيلُ الأشهر المتعدّدة يُبتلَع ثانيةً");
   });
 
   test("④ لا عدَّ مزدوجاً — نافذةُ «له وصل» عشرةُ أيّام", () => {

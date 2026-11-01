@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { isOfferPackage } from "@/lib/syncLog";
+import { isOfferPackage, TZ_DUP_MARK } from "@/lib/syncLog";
 
 // ═════ 📈 أرباحُ الشركة — حسابٌ للقراءة لا قيدٌ ماليّ (طلبُ محمد 2026-08-22) ═════
 //
@@ -447,6 +447,7 @@ export async function computeProfits(
     for (const r of logs) {
       // 🔁 صفُّ يوزرٍ «حُوِّل منه» = تحويلٌ لا تنصيب/تفعيل ⇒ لا يُحتسَب (بلاغ محمد 2026-09-05)
       if (transferFromUsers.has((r.netUser ?? "").trim().toLowerCase())) continue;
+      if ((r.note ?? "").includes(TZ_DUP_MARK)) continue;
       const at = r.activatedAt ?? r.createdAt;
       const sub = r.subscriberId != null ? subById.get(r.subscriberId) : (r.sasId != null ? subBySas.get(`${r.towerId}|${r.sasId}`) : undefined);
       const netUser = r.netUser ?? sub?.netUser ?? null;

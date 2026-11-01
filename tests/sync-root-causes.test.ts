@@ -63,7 +63,7 @@ describe("🕵️ الأعطالُ الجذريّةُ السبعة", () => {
     assert.ok(src.includes("const EXP_TOL_MS = 12 * 3600_000;"), "لا سماحيّةَ على تاريخ الانتهاء");
     assert.ok(src.includes("if (oday !== nday && !sameExpiry(p.dateTo, validDate)) {"), "فرقُ التاريخ يُرصَد بلا سماحيّة");
     // (المصدرُ صار \`rows\`: فهرسُ الصفحة المحمَّلة أوّلاً ثمّ البحثُ للنادر — 2026-08-22)
-    assert.ok(src.includes("rows.find((r) => sameExpiry(r.newExpiration ? new Date(r.newExpiration) : null, newSasExp))"), "المُصنِّفُ يطابق التاريخَ حرفيّاً");
+    assert.ok(src.includes("rows.find((r) => sameExpiry(sasExpiry(r.newExpiration), newSasExp))"), "المُصنِّفُ يطابق التاريخَ حرفيّاً");
   });
 
   test("٥ · «تحديث» لا يكتب إلّا ما رُصد — الملاحظاتُ في الأسماء تُصان", () => {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
-import { sasBaseUrl, sasLogin, sasFindUserByUsername, type SasUser } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasFindUserByUsername, sasExpiry, type SasUser } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
 import { credsOfSubscriber } from "@/lib/sasPanel";
 import { matcherForAgent } from "@/lib/packageMatch";
@@ -103,7 +103,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         sasPanelId: old.sasPanelId,
         groupId: old.groupId,
         packageId: pkg?.id ?? old.packageId,
-        dateTo: sas.expiration ? new Date(sas.expiration) : null,
+        dateTo: sasExpiry(sas.expiration),
         dateFrom: new Date(),
         address: old.address, sector: old.sector,
         wifiUser: old.wifiUser, wifiPass: old.wifiPass,

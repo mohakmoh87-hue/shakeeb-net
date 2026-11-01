@@ -114,6 +114,17 @@ export async function recordInstall(p: StatePayload): Promise<boolean> {
 }
 
 /** وسمُ القرض في `note` — تقرؤه الواجهةُ والخادمُ فيمنعان صناعةَ وصلِ بيعٍ له */
+/** إزاحةُ توقيتِ بغداد — نسخةُ التفعيلة التي كتبها طرفٌ قرأ نصَّ الساس بـUTC */
+export const TZ_SHIFT_MS = 3 * 3600_000;
+/** وسمُ النسخة المزاحة في `note` — يتجاهلها محرّكُ الأرباح ولا تُحذَف أبداً */
+export const TZ_DUP_MARK = "نسخةٌ مزاحةٌ ٣ ساعات";
+export const TZ_DUP_NOTE = `مُلغى — ${TZ_DUP_MARK} (تصحيح 2026-11-01)`;
+
+/** لحظةُ التفعيلة ونسختاها المزاحتان ٣ ساعات — فلا تتولّد نسخةٌ ثانيةٌ لتفعيلةٍ مسجَّلة */
+function tzWindow(at: Date): Date[] {
+  return [at, new Date(at.getTime() + TZ_SHIFT_MS), new Date(at.getTime() - TZ_SHIFT_MS)];
+}
+
 export const LOAN_NOTE = "💸 قرض (مبلغ صفر بلا كارت)";
 
 /** 🏢 تفعيلُ الشركة/الديلر لمشتركٍ قائم = «إعادةُ خدمة» (تصنيف محمد ٦-ب) ⇒ تبويب «تنصيب
@@ -126,7 +137,7 @@ export async function recordCompanyActivation(
 ): Promise<EventOutcome> {
   try {
     const existing = await prisma.syncLog.findFirst({
-      where: { towerId: p.towerId, sasId: p.sasId, kind: "install", activatedAt: p.activatedAt },
+      where: { towerId: p.towerId, sasId: p.sasId, kind: "install", activatedAt: { in: tzWindow(p.activatedAt) } },
       select: { id: true, status: true },
     });
     // كسابقتها: الحالةُ تُقال — فصفٌّ مُغلَقٌ لا بيتَ للواقعة فيه ولا يُسكِت فرقَ الأيّام
@@ -270,7 +281,7 @@ export async function recordActivationEvent(kind: "self" | "sas", p: StatePayloa
     // تشتركان فيه — قِيس على ٧٩٦٨ تفعيلاً في أربعة مكاتب فلم تتكرّر لحظةٌ واحدة. والنافذةُ
     // السابقة ±٣٠ دقيقةً كانت تبتلع تفعيلَ الأشهر المتعدّدة (ثلاثةُ كروتٍ بفارق ٦ ثوانٍ).
     const existing = await prisma.syncLog.findFirst({
-      where: { towerId: p.towerId, sasId: p.sasId, kind, activatedAt: p.activatedAt },
+      where: { towerId: p.towerId, sasId: p.sasId, kind, activatedAt: { in: tzWindow(p.activatedAt) } },
       select: { id: true, status: true },
     });
     // الحدثُ مسجَّلٌ ⇒ لا يتوالد مع كلّ دورة، لكن **تُقال حالتُه** ليُعرَف أله بيتٌ أم لا

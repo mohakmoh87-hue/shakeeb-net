@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { guard, ownsTower } from "@/lib/guard";
 import { matcherForAgent } from "@/lib/packageMatch";
+import { sasExpiry } from "@/lib/sas4";
 import { getSession } from "@/lib/auth";
 
 const schema = z.object({
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
     .map((u) => {
       // تاريخ الانتهاء الحقيقي من SAS4 (يعرض السالب للمنتهين)، أو حساب من الأيام
       let dateTo: Date | null = null;
-      if (u.expiration) dateTo = new Date(u.expiration);
+      if (u.expiration) dateTo = sasExpiry(u.expiration);
       else if (u.days) { dateTo = new Date(now); dateTo.setDate(dateTo.getDate() + u.days); }
       const pkgId = matcher.match(u.packageName);
       return {

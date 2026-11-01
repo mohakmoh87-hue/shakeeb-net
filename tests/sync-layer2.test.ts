@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { sasWindowBound } from "@/lib/sas4";
+import { sasInstant, sasExpiry } from "@/lib/sas4";
 
 // ═════ 🎴 الطبقةُ الثانية: صفحةُ التفعيلات المرتَّبة وقواعدُ الكروت (إملاءُ محمد 2026-08-22) ═════
 //
@@ -39,22 +39,27 @@ describe("🗓️ الجالبُ مرتَّبٌ بالتاريخ لا مُجمَ
   });
 });
 
-describe("⏱️ نافذةٌ بلا إزاحةِ الثلاث ساعات", () => {
-  test("الحدُّ يُزاح ٣ ساعاتٍ ليطابق أرقامَ الساس", () => {
-    const d = new Date("2026-08-21T21:00:00.000Z");
-    assert.equal(sasWindowBound(d).toISOString(), "2026-08-22T00:00:00.000Z");
+describe("⏱️ تاريخُ الساس يُفسَّر بمنطقته لا بتوقيت الجهاز", () => {
+  test("لحظةُ التفعيل تُقرأ +03:00 — فالخادمُ وحاسبةُ المكتب على رقمٍ واحد", () => {
+    assert.equal(sasInstant("2026-08-21 22:41:39")?.toISOString(), "2026-08-21T19:41:39.000Z");
+    assert.equal(sasInstant("2026-10-30T16:15:15+03:00")?.toISOString(), "2026-10-30T13:15:15.000Z");
+    assert.equal(sasInstant("N/A"), null);
   });
 
-  test("🔴 الحالةُ التي كانت تسقط: تفعيلُ ٢٢:٤١ بغداد داخلَ نافذة اليوم", () => {
-    // نهايةُ «اليوم» بتوقيت بغداد كلحظةٍ حقيقيّة = 20:59:59Z، وأرقامُ الساس 22:41 ⇒ كان يسقط
+  test("وتاريخُ الانتهاء يُقرأ Z — فتبقى أرقامُ الساس كما يعرضها (قاعدةُ «صحّحه بالعرض»)", () => {
+    assert.equal(sasExpiry("2026-09-17 17:00:00")?.toISOString(), "2026-09-17T17:00:00.000Z");
+    assert.equal(sasExpiry("2026-09-17")?.toISOString(), "2026-09-17T00:00:00.000Z");
+  });
+
+  test("🔴 الحالةُ التي كانت تسقط: تفعيلُ ٢٢:٤١ بغداد داخلَ نافذة اليوم بلا إزاحةِ حدود", () => {
     const dayEnd = new Date("2026-08-21T20:59:59.999Z");
-    const sasRow = new Date("2026-08-21T22:41:39.000Z"); // أرقامُ الساس تُقرأ UTC
-    assert.ok(sasRow > dayEnd, "المقدّمةُ خاطئة");
-    assert.ok(sasRow <= sasWindowBound(dayEnd), "ما زال يسقط من النافذة");
+    const row = sasInstant("2026-08-21 22:41:39");
+    assert.ok(row != null && row <= dayEnd, "ما زال يسقط من النافذة");
   });
 
-  test("والمزامنةُ ترشّح تفعيلاتِ أمسٍ بالحدود المُزاحة", () => {
-    assert.ok(SYNC().includes("const actsLo = sasWindowBound(start), actsHi = sasWindowBound(end);"), "الترشيحُ لم يُصحَّح");
+  test("والمزامنةُ ترشّح بالحدود الحقيقيّة — لا حدٌّ مُزاحٌ ٣ ساعات", () => {
+    assert.ok(SYNC().includes("const actsLo = start, actsHi = end;"), "الحدودُ ما زالت مُزاحة");
+    assert.ok(!SAS().includes("sasWindowBound"), "إزاحةُ الحدود عادت");
   });
 });
 

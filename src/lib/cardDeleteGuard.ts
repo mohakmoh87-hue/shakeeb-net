@@ -17,7 +17,7 @@
 //   بالسيريال يجد التفعيل مهما كان تاريخُه ومَن أجراه. وهي التي وجدت ٧٤ من ٧٤ بينما
 //   القائمةُ الجماعيّةُ لم تُظهر واحداً.
 import { prisma } from "@/lib/prisma";
-import { sasBaseUrl, sasLogin, sasProbeSerial, type SasActivation } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasProbeSerial, sasInstant, type SasActivation } from "@/lib/sas4";
 import { notify } from "@/lib/notify";
 
 /** حذفٌ بهذا الحجم أو أقلّ يُفحَص **فوراً قبل الردّ** (طلبُ محمد: «يتصرّف الحارسُ فور
@@ -236,7 +236,7 @@ export async function inspectPendingDeletedCards(
             //
             // ⇒ فإن وُجد لصاحب اليوزر وصلٌ قائمٌ قربَ تفعيل الساس فالعمليّةُ مكتملةٌ ⇒ طبيعيّ.
             const uname = (hit.username ?? "").trim();
-            const when = hit.createdAt ? new Date(hit.createdAt) : null;
+            const when = sasInstant(hit.createdAt);
             let matched: { id: number; moneyIn: number | null; money: number | null; subName: string | null } | null = null;
             if (uname && when && !isNaN(when.getTime()) && row.agentId != null) {
               // 🔒 العزل: المشتركُ من مكاتب **وكيلِ الكارت** حصراً — لا يُطابَق بيوزرٍ عابرٍ للوكلاء
@@ -274,7 +274,7 @@ export async function inspectPendingDeletedCards(
           } else {
             // وصلُ القبض: تفعيلٌ للمشترك بمبلغٍ مقبوضٍ قرب تاريخ تفعيل الساس (±٣ أيّام —
             // فتاريخُ الإدخال قد يختلف عن تاريخ الساس بيومٍ أو يومَين)
-            const when = hit.createdAt ? new Date(hit.createdAt) : null;
+            const when = sasInstant(hit.createdAt);
             const entry = row.subscriberId != null && when && !isNaN(when.getTime())
               ? await prisma.subscriptionEntry.findFirst({
                   where: {

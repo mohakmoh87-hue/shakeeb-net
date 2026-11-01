@@ -148,12 +148,12 @@ describe("🖥️ الشاشاتُ التي تعرض الانتهاء", () => {
 describe("🔒 لا تُمَسّ القاعدةُ ولا طريقةُ الجلب (قرارُ محمد)", () => {
   test("المزامنةُ تحفظ ما يعطيه الساسُ كما هو — بلا إزاحةٍ عند الكتابة", () => {
     const src = read("src/lib/subscriptionSync.ts");
-    assert.ok(src.includes("const sasDate = u.expiration ? new Date(u.expiration) : null;"), "تغيّرت طريقةُ الجلب");
+    assert.ok(src.includes("const sasDate = sasExpiry(u.expiration);"), "تغيّرت طريقةُ الجلب");
     assert.ok(!src.includes("expiryInstant("), "أُقحمت إزاحةٌ في مسار الكتابة");
   });
 
   test("التفعيلُ يحفظ انتهاءَ الساس كما هو", () => {
     const src = read("src/app/api/subscribers/[id]/activate/route.ts");
-    assert.ok(src.includes("const d = new Date(info.expiration);"), "تغيّرت طريقةُ الجلب في التفعيل");
+    assert.ok(src.includes("const d = sasExpiry(info.expiration);"), "تغيّرت طريقةُ الجلب في التفعيل");
   });
 });

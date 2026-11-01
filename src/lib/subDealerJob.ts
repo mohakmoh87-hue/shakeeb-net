@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { credsOfPanel } from "@/lib/sasPanel";
-import { sasBaseUrl, sasLogin, sasFetchAllUsers, sasFetchActivationsSince, type SasUser } from "@/lib/sas4";
+import { sasBaseUrl, sasLogin, sasFetchAllUsers, sasFetchActivationsSince, sasInstant, type SasUser } from "@/lib/sas4";
 import { sasHostBlocked } from "@/lib/sasProxy";
 import { findSuspects, type SasSub, type MatchCandidate } from "@/lib/subDealerMatch";
 
@@ -79,11 +79,11 @@ export async function runSubDealerScan(opts: {
     const { rows } = await sasFetchActivationsSince(base, tokenUni, from);
     for (const a of rows) {
       if (!a.username || !a.createdAt) continue;
-      const t = new Date(a.createdAt).getTime();
+      const t = sasInstant(a.createdAt)?.getTime() ?? NaN;
       if (isNaN(t) || t > to.getTime()) continue;
       const key = a.username.trim().toLowerCase();
       const prev = actMap.get(key);
-      if (!prev || t > new Date(prev).getTime()) actMap.set(key, a.createdAt);
+      if (!prev || t > (sasInstant(prev)?.getTime() ?? 0)) actMap.set(key, a.createdAt);
     }
   } catch { /* بلا تواريخ ⇒ لا مرشّحين (المدى شرط) */ }
 
