@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { formatDate } from "@/lib/format";
+import { usePermission } from "@/lib/usePermission";
 
 // ═════ 🏬🧾 نافذةُ وصل شراءٍ متعدّدِ المواد + سجلُّ الوصولات (طلبُ محمد 2026-09-05) ═════
 // ترويسة (مكتبُ الشراء = المورِّد · رقم · تاريخ · مكتبٌ مستلِم) + أسطرٌ (مادةٌ من القائمة أو
@@ -156,8 +157,13 @@ export function PurchaseReceiptModal({ towers, defaultTowerId, onClose, onDone }
 
 // ─────────── سجلُّ وصولات الشراء + تسديدُ الدَّين ───────────
 type Receipt = { id: number; office: string; vendorName: string; receiptNumber: string | null; date: string; total: number; paid: number; remaining: number; note: string | null };
+type DetailLine = { id: number; itemId: number; name: string; qty: number; remaining: number; sold: number; buyPrice: number; sellPrice: number | null; total: number };
+type DetailPay = { id: number; amount: number; source: string; at: string };
+type Detail = { lines: DetailLine[]; payments: DetailPay[] };
 
 export function PurchaseLogModal({ onClose }: { onClose: () => void }) {
+  const { can } = usePermission();
+  const canDelete = can("receipts.void");
   const [rows, setRows] = useState<Receipt[]>([]);
   const [totalDebt, setTotalDebt] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -165,6 +171,10 @@ export function PurchaseLogModal({ onClose }: { onClose: () => void }) {
   const [payAmount, setPayAmount] = useState("");
   const [paySource, setPaySource] = useState<"daily" | "total">("daily");
   const [msg, setMsg] = useState("");
+  const [msgOk, setMsgOk] = useState(false);
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [details, setDetails] = useState<Record<number, Detail>>({});
+  const [loadingId, setLoadingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -189,6 +199,42 @@ export function PurchaseLogModal({ onClose }: { onClose: () => void }) {
     } catch { setMsg("تعذّر الاتصال"); setBusy(false); }
   }
 
+  async function toggle(id: number) {
+    if (openId === id) { setOpenId(null); return; }
+    setOpenId(id);
+    if (details[id]) return;
+    setLoadingId(id);
+    try {
+      const r = await fetch(`/api/purchase-receipts/${id}`, { credentials: "same-origin" });
+      if (r.ok) {
+        const d = await r.json();
+        setDetails((m) => ({ ...m, [id]: { lines: d.lines ?? [], payments: d.payments ?? [] } }));
+      }
+    } catch { /* صمت */ }
+    finally { setLoadingId(null); }
+  }
+
+  async function remove(r: Receipt) {
+    const lines = details[r.id]?.lines ?? [];
+    const qty = lines.reduce((a, l) => a + l.qty, 0);
+    const what = lines.length ? `\nستُنقَص ${lines.length} مادّةً بعدد ${qty} من مخزن «${r.office}».` : "\nستُنقَص موادُّه من المخزن.";
+    const money = r.paid > 0 ? `\nويُعاد المسدَّدُ منه ${fmt(r.paid)} د.ع إلى مصدره.` : "";
+    if (!confirm(`حذفُ وصل «${r.vendorName}» بمجموع ${fmt(r.total)} د.ع؟${what}${money}`)) return;
+    setBusy(true); setMsg(""); setMsgOk(false);
+    try {
+      const resp = await fetch(`/api/purchase-receipts/${r.id}`, { method: "DELETE", credentials: "same-origin" });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) { setMsg(d.error ?? "تعذّر الحذف"); setBusy(false); return; }
+      setOpenId(null);
+      setDetails((m) => { const n = { ...m }; delete n[r.id]; return n; });
+      setMsgOk(true);
+      setMsg(`حُذف الوصل — أُنقصت ${d.removedQty ?? 0} قطعةً من ${d.lines ?? 0} مادّة`
+        + (d.droppedItems ? ` وشُطبت ${d.droppedItems} مادّةً وُلدت به` : "")
+        + (d.refunded ? ` وأُعيد ${fmt(d.refunded)} د.ع` : ""));
+      await load();
+    } catch { setMsg("تعذّر الاتصال"); setBusy(false); }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-3" onClick={onClose}>
       <div className="my-4 w-full max-w-3xl rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -197,7 +243,7 @@ export function PurchaseLogModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
         </div>
         {totalDebt > 0 && <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] font-bold text-rose-700">إجماليُّ الدَّين المتبقّي عليك: {fmt(totalDebt)} د.ع</div>}
-        {msg && <div className="mb-2 text-[12px] font-bold text-rose-700">{msg}</div>}
+        {msg && <div className={`mb-2 text-[12px] font-bold ${msgOk ? "text-emerald-700" : "text-rose-700"}`}>{msg}</div>}
         <div className="max-h-[65vh] overflow-auto rounded-xl border border-slate-200">
           <table className="w-full text-right text-[12px]" style={{ fontVariantNumeric: "tabular-nums" }}>
             <thead className="sticky top-0 bg-slate-50 text-slate-500">
@@ -205,15 +251,17 @@ export function PurchaseLogModal({ onClose }: { onClose: () => void }) {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-t border-slate-100">
-                  <td className="p-2 text-slate-500">{r.receiptNumber || `#${r.id}`}</td>
+                <Fragment key={r.id}>
+                <tr onClick={() => void toggle(r.id)} className={`cursor-pointer border-t border-slate-100 hover:bg-slate-50 ${openId === r.id ? "bg-slate-50" : ""}`}>
+                  <td className="p-2 text-slate-500">{openId === r.id ? "▾" : "◂"} {r.receiptNumber || `#${r.id}`}</td>
                   <td className="p-2 font-semibold text-slate-700">{r.vendorName}</td>
                   <td className="p-2 text-slate-500">{r.office}</td>
                   <td className="p-2 text-slate-500" dir="ltr">{formatDate(r.date)}</td>
                   <td className="p-2 text-slate-700">{fmt(r.total)}</td>
                   <td className="p-2 text-emerald-700">{fmt(r.paid)}</td>
                   <td className={`p-2 font-bold ${r.remaining > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmt(r.remaining)}</td>
-                  <td className="p-2">
+                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                    <span className="flex flex-wrap items-center justify-end gap-1">
                     {r.remaining > 0 && (payId === r.id ? (
                       <span className="flex flex-wrap items-center gap-1">
                         <input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder={String(r.remaining)} className="w-20 rounded border border-slate-300 px-1 py-0.5" />
@@ -227,8 +275,49 @@ export function PurchaseLogModal({ onClose }: { onClose: () => void }) {
                     ) : (
                       <button onClick={() => { setPayId(r.id); setPayAmount(String(r.remaining)); }} className="rounded-lg bg-rose-600 px-3 py-1 font-bold text-white hover:bg-rose-700">تسديد الدَّين</button>
                     ))}
+                    {canDelete && (
+                      <button onClick={() => void remove(r)} disabled={busy} title="حذفُ الوصل وإرجاعُ موادّه" className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50">🗑️</button>
+                    )}
+                    </span>
                   </td>
                 </tr>
+                {openId === r.id && (
+                  <tr className="border-t border-slate-100 bg-slate-50/60">
+                    <td colSpan={8} className="p-3">
+                      {loadingId === r.id && !details[r.id] ? <div className="text-center text-slate-400">…</div> : (
+                        <div className="space-y-3">
+                          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                            <table className="w-full text-right text-[12px]">
+                              <thead className="bg-slate-100 text-slate-500">
+                                <tr><th className="p-1.5">المادّة</th><th className="p-1.5">العدد</th><th className="p-1.5">سعرُ الشراء</th><th className="p-1.5">سعرُ البيع</th><th className="p-1.5">المجموع</th><th className="p-1.5">المتبقّي بالمخزن</th></tr>
+                              </thead>
+                              <tbody>
+                                {(details[r.id]?.lines ?? []).map((l) => (
+                                  <tr key={l.id} className="border-t border-slate-100">
+                                    <td className="p-1.5 font-semibold text-slate-700">{l.name}</td>
+                                    <td className="p-1.5 text-slate-600">{fmt(l.qty)}</td>
+                                    <td className="p-1.5 text-slate-600">{fmt(l.buyPrice)}</td>
+                                    <td className="p-1.5 text-slate-500">{l.sellPrice == null ? "—" : fmt(l.sellPrice)}</td>
+                                    <td className="p-1.5 font-bold text-slate-700">{fmt(l.total)}</td>
+                                    <td className={`p-1.5 ${l.sold > 0 ? "font-bold text-amber-700" : "text-slate-500"}`}>{fmt(l.remaining)}{l.sold > 0 ? ` (بِيع ${fmt(l.sold)})` : ""}</td>
+                                  </tr>
+                                ))}
+                                {!(details[r.id]?.lines ?? []).length && <tr><td colSpan={6} className="p-3 text-center text-slate-400">لا موادَّ مسجّلةً بهذا الوصل</td></tr>}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="text-[12px] text-slate-600">
+                            <b className="text-slate-700">التسديدات:</b>{" "}
+                            {(details[r.id]?.payments ?? []).length
+                              ? (details[r.id]?.payments ?? []).map((p) => `${fmt(p.amount)} د.ع ${p.source === "daily" ? "من اليوميّ" : "من الكلّيّ"} (${formatDate(p.at)})`).join(" · ")
+                              : "لا تسديدَ قائماً — الوصلُ دَينٌ كامل"}
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
               {!rows.length && <tr><td colSpan={8} className="p-6 text-center text-slate-400">{busy ? "…" : "لا وصولاتِ شراءٍ بعد"}</td></tr>}
             </tbody>
