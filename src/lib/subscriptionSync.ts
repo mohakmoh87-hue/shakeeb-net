@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import {
   sasBaseUrl, sasLogin, sasFetchActivationsForDay, sasFetchAllUsers,
   sasProbeSerial, sasUserActivations,
-  sasFetchActivationsSince, sasInstant, sasExpiry,
+  sasFetchActivationsSince, sasInstant, sasExpiry, jumpCards,
   type SasActivation,
 } from "@/lib/sas4";
 import { sendViaProvider } from "@/lib/messaging";
@@ -1102,32 +1102,43 @@ async function runOfficeSyncInner(
       if (last && Math.round(last.price || 0) <= 0) { actedSasIds.add(sasId); return true; }
       // التفعيلةُ التي أنتجت تاريخَ الساس الحاليّ (±١٢ ساعة)، وإلّا فآخرُ تفعيلاته
       const hit = (newSasExp && rows.find((r) => sameExpiry(sasExpiry(r.newExpiration), newSasExp))) || last;
-      const actAt = sasInstant(hit.createdAt);
-      if (!actAt || isNaN(actAt.getTime())) return false;
-      const newExp = sasExpiry(hit.newExpiration);
+      const hitAt = sasInstant(hit.createdAt);
+      if (!hitAt) return false;
       // 💰 مقبوضٌ عندي (وصلٌ قريبٌ أو وصلٌ ينتهي بانتهائه) ⇒ ليس خارجيّاً — يبقى فرقَ تاريخٍ يدويّاً
-      if (await collectedByUs(uKey, sub.id, actAt, newExp ?? newSasExp)) return false;
-      const mgr = (hit.managerUsername ?? "").trim();
-      // 🏷️ منجرُ صفحةِ المكتب ⇒ «تفعيلاتُ ساس» · منجرُ كابينةِ صاحبه ⇒ «تفعيلٌ خارجيّ» · غيرُهما ⇒ شركة
-      const managerIsPage = mgr.toLowerCase() === officeUser;
-      const ownCabinet = isOwnCabinet(hit.username ?? sub.netUser, mgr);
-      const evBase = {
-        agentId: office.agentId ?? -1, towerId: officeId, sasId, subscriberId: sub.id,
-        netUser: hit.username ?? sub.netUser, name: hit.name ?? sub.name,
-        amount: Math.round(hit.price || 0), activatedAt: actAt,
-        sasDateTo: newExp && !isNaN(newExp.getTime()) ? newExp : null,
-        oldSasDateTo: sasExpiry(hit.oldExpiration),
-      };
-      const isLoanAct = Math.round(hit.price || 0) <= 0;
-      let outcome: EventOutcome;
-      if (managerIsPage || ownCabinet) {
-        outcome = await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
-      } else {
-        stillInstalls.add(sasId);
-        outcome = await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });
+      if (await collectedByUs(uKey, sub.id, hitAt, sasExpiry(hit.newExpiration) ?? newSasExp)) return false;
+      // 🎴 **كلُّ كارتٍ تفعيلٌ** (قاعدةُ محمد): وثبةُ ثلاثةِ أشهرٍ تقع بثلاثة كروتٍ بفارق ثوانٍ،
+      //    وكان يُكتب صفٌّ واحدٌ لها فيضيع شهران. والمدى: ما بين تاريخِنا وانتهاءِ الساس.
+      const cards = jumpCards(rows, sub.dateTo, newSasExp, EXP_TOL_MS);
+      const list = cards.length ? cards : [hit];
+      let anyOpen = false;
+      let anyLoan = false;
+      for (const card of list) {
+        const actAt = sasInstant(card.createdAt);
+        if (!actAt) continue;
+        const mgr = (card.managerUsername ?? "").trim();
+        // 🏷️ منجرُ صفحةِ المكتب ⇒ «تفعيلاتُ ساس» · منجرُ كابينةِ صاحبه ⇒ «تفعيلٌ خارجيّ» · غيرُهما ⇒ شركة
+        const managerIsPage = mgr.toLowerCase() === officeUser;
+        const ownCabinet = isOwnCabinet(card.username ?? sub.netUser, mgr);
+        const evBase = {
+          agentId: office.agentId ?? -1, towerId: officeId, sasId, subscriberId: sub.id,
+          netUser: card.username ?? sub.netUser, name: card.name ?? sub.name,
+          amount: Math.round(card.price || 0), activatedAt: actAt,
+          sasDateTo: sasExpiry(card.newExpiration),
+          oldSasDateTo: sasExpiry(card.oldExpiration),
+        };
+        const isLoanAct = Math.round(card.price || 0) <= 0;
+        if (isLoanAct) anyLoan = true;
+        let outcome: EventOutcome;
+        if (managerIsPage || ownCabinet) {
+          outcome = await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });
+        } else {
+          stillInstalls.add(sasId);
+          outcome = await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });
+        }
+        if (outcome !== "closed") anyOpen = true;
       }
-      // 🔓 الواقعةُ مُغلَقةٌ سلفاً ⇒ **غيرُ مصنَّفة**: يظهر فرقُ التاريخ في «تحديث معلومات»
-      if (outcome === "closed" && !isLoanAct) return false;
+      // 🔓 كلُّ كروتِ الوثبة مُغلَقةٌ سلفاً ⇒ **غيرُ مصنَّفة**: يظهر فرقُ التاريخ في «تحديث معلومات»
+      if (!anyOpen && !anyLoan) return false;
       actedSasIds.add(sasId);
       return true;
     };

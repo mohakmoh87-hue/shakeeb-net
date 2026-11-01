@@ -216,12 +216,12 @@ describe("🔓 صفُّ حدثٍ مُغلَقٌ لا يُسكِت فرقَ ال�
   });
 
   test("والمُصنِّفُ يُعيد false لواقعةٍ مُغلَقةٍ فيظهر فرقُ التاريخ", () => {
-    assert.ok(SYNC().includes('if (outcome === "closed" && !isLoanAct) return false;'), "المُصنِّفُ ما زال يبتلع المُغلَق");
+    assert.ok(SYNC().includes('if (!anyOpen && !anyLoan) return false;'), "المُصنِّفُ ما زال يبتلع المُغلَق");
   });
 
   test("💸 والقرضُ يبقى مُسكَتاً في الحالتين", () => {
     const s = SYNC();
     assert.ok(s.includes("|| isLoanAct) actedSasIds.add(a.sasUserId);"), "القرضُ قد يظهر فرقَ أيّام");
-    assert.ok(s.includes('if (outcome === "closed" && !isLoanAct)'), "القرضُ قد يُصنَّف غيرَ مصنَّف");
+    assert.ok(s.includes("if (isLoanAct) anyLoan = true;") && s.includes("if (!anyOpen && !anyLoan)"), "القرضُ قد يُصنَّف غيرَ مصنَّف");
   });
 });

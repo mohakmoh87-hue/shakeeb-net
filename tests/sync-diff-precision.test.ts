@@ -59,7 +59,7 @@ describe("🎯 دقّةُ فروق سجلّ المزامنة — البنودُ 
     assert.ok(src.includes("const classifyDateJump = async ("), "لا تصنيفَ لقفزة التاريخ");
     assert.ok(src.includes("classified = await classifyDateJump(p, u.sasId, u.username, validDate);"), "المُصنِّفُ لا يُنادى من كتلة الفروق");
     // 💰 قاعدةُ محمد: وصلٌ عندي ⇒ ليس خارجيّاً
-    assert.ok(src.includes("if (await collectedByUs(uKey, sub.id, actAt, newExp ?? newSasExp)) return false;"), "المُصنِّفُ يتجاوز قاعدةَ الوصل");
+    assert.ok(src.includes("if (await collectedByUs(uKey, sub.id, hitAt, sasExpiry(hit.newExpiration) ?? newSasExp)) return false;"), "المُصنِّفُ يتجاوز قاعدةَ الوصل");
     // والتصنيفُ ثلاثيٌّ بالمنجر كما في حلقة الأحداث
     assert.ok(src.includes(`await recordActivationEvent(managerIsPage ? "sas" : "self", { ...evBase, loan: isLoanAct });`), "التصنيفُ بالمنجر غاب عن المُصنِّف");
     assert.ok(src.includes("await recordCompanyActivation({ ...evBase, loan: isLoanAct, managerName: mgr || null });"), "تفعيلُ الشركة غاب عن المُصنِّف");

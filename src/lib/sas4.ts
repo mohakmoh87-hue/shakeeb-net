@@ -354,6 +354,22 @@ export function sasExpiry(raw: string | null | undefined): Date | null {
   return sasParse(raw, "Z");
 }
 
+/** كروتُ وثبةِ التاريخ: تفعيلاتُ اليوزر التي انتهاءاتُها بين تاريخِنا المخزّن
+ *  وانتهاءِ الساس الحاليّ — مرتّبةً بالأقدم. دفعةُ ثلاثةِ أشهرٍ = ثلاثةُ كروتٍ لا واحد. */
+export function jumpCards(
+  rows: SasActivation[], prevTo: Date | null, newSasExp: Date | null, tolMs: number,
+): SasActivation[] {
+  const near = (a: Date, b: Date) => Math.abs(a.getTime() - b.getTime()) <= tolMs;
+  const out = rows.filter((r) => {
+    const ne = sasExpiry(r.newExpiration);
+    if (!ne || !sasInstant(r.createdAt)) return false;
+    if (prevTo && (ne.getTime() < prevTo.getTime() || near(ne, prevTo))) return false;
+    if (newSasExp && ne.getTime() > newSasExp.getTime() && !near(ne, newSasExp)) return false;
+    return true;
+  });
+  return out.sort((a, b) => sasInstant(a.createdAt)!.getTime() - sasInstant(b.createdAt)!.getTime());
+}
+
 function normalizeActivation(a: Record<string, unknown>): SasActivation {
   const u = a.user_details as { id?: number; username?: string; firstname?: string; lastname?: string } | undefined;
   const m = a.manager_details as { username?: string } | undefined;
