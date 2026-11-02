@@ -2273,6 +2273,8 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   const nSale = noSale ? 0 : Number(saleStr) || 0;
   const nSub = Number(subStr) || 0;
   const nAmount = Number(amount) || 0; // للتوصيل فقط
+  // خصمُ كود المكافأة كما يحسبه الخادم تماماً: بحدّ المبيع، ومن «المبيع» وحدَه
+  const rewardDiscount = rewardPulled && reward ? Math.min(reward.balance, nSale) : 0;
 
   // «المبيع» يتزامن تلقائياً مع مجموع المواد حتى أول تعديل يدوي (زر ↺ يعيد المزامنة)
   useEffect(() => {
@@ -2479,8 +2481,15 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
         {fullFlow && (nSale > 0 || nSub > 0) && (
           <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
             <div>🧾 المبيع (فاتورة): <b className="text-emerald-700">{nSale.toLocaleString("en-US")}</b>{materialsTotal > 0 && nSale !== materialsTotal && <span className="text-slate-400"> (مجموع المواد {materialsTotal.toLocaleString("en-US")} — يوزَّع الفرق نسبياً)</span>}</div>
+            {/* الخصمُ يُطرح من المبيع على الخادم، فيُعرَض هنا كما يُسجَّل على الفنيّ تماماً */}
+            {rewardDiscount > 0 && (
+              <>
+                <div>🎁 كود الخصم: <b className="text-fuchsia-700">−{rewardDiscount.toLocaleString("en-US")}</b></div>
+                <div>🧾 المبيع بعد الخصم: <b className="text-emerald-700">{(nSale - rewardDiscount).toLocaleString("en-US")}</b></div>
+              </>
+            )}
             <div>📄 اشتراك (بذمّتك — يُسجَّل عند التفعيل): <b className="text-indigo-700">{nSub.toLocaleString("en-US")}</b></div>
-            <div>💰 الكلي المستلم منك عند الاكمال: <b>{(nSale + nSub).toLocaleString("en-US")}</b> د.ع</div>
+            <div>💰 الكلي المستلم منك عند الاكمال: <b>{(nSale - rewardDiscount + nSub).toLocaleString("en-US")}</b> د.ع</div>
           </div>
         )}
 

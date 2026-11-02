@@ -5,6 +5,7 @@ import { phoneCore } from "@/lib/subscriberLogin";
 import { ensureSubscriberTicketsTable } from "@/lib/subscriberTicket";
 import { resolveCoverageOwner } from "@/lib/coverageOwners";
 import { getPortalEnabled } from "@/lib/appConfig";
+import { inviterOf, inviteTag, normalizeInvite } from "@/lib/invite";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,14 @@ export async function POST(request: Request) {
 
   const own = lat != null && lng != null ? await resolveCoverageOwner(lat, lng) : null;
 
+  // 🎁 كودُ دعوةِ صديق (اختياريّ): يُحفَظ وسماً في الملاحظة، ولا يُمنَح صاحبُه شيئاً الآن —
+  //    المنحُ عند إنجاز الطلب فعلاً. ونُثبت صحّتَه هنا كي يُخبَر الكاتبُ بخطئه فوراً.
+  // 🔒 ولا يدعو أحدٌ نفسَه: كودُه على رقمه هو لا يُقبَل.
+  const invite = normalizeInvite(body?.inviteCode);
+  const found = invite ? await inviterOf(invite) : null;
+  const inviter = found && phoneCore(found.phone ?? "") !== core ? found : null;
+  const inviteOk = !invite || inviter != null;
+
   // 🔌 البوّابةُ مطفأةٌ ⇒ لا شركةَ تستقبل. لكنّ **الوكيلَ المالكَ للمنطقة يستقبل** (قرارُ محمد
   // 2026-10-28): `getEffectiveTicketDest` تُرجِع «agent» حتماً حين تُطفأ البوّابة، فالتذكرةُ
   // تصل وكيلَها وحدَه ولا يُخرَق شرطُ «الإطفاء = لا وجودَ لسوبر سيل في أيّ مكان».
@@ -48,7 +57,7 @@ export async function POST(request: Request) {
       name,
       phone: "0" + core,
       area: own?.area ?? null,
-      note: note || null,
+      note: (note + (inviter ? inviteTag(invite) : "")).trim() || null,
       lat,
       lng,
       nearestPole: null,
@@ -60,5 +69,5 @@ export async function POST(request: Request) {
       source: "app",
     },
   });
-  return NextResponse.json({ ok: true, routed: own?.agentId != null });
+  return NextResponse.json({ ok: true, routed: own?.agentId != null, inviteOk });
 }

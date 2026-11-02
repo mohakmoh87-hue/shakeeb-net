@@ -259,10 +259,22 @@ export async function setCompanyPhone(phone: string) {
   await writeVal(COMPANY_PHONE_KEY, String(phone ?? "").trim().slice(0, 20));
 }
 
+// 🎁 مبلغُ مكافأة «دعوة صديق» (دينار) — يضعه أدمنُ التطبيق، وصفرٌ يوقف البرنامجَ كلَّه.
+const INVITE_BONUS_KEY = "inviteBonus";
+export async function getInviteBonus(): Promise<number> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: INVITE_BONUS_KEY }, select: { value: true } });
+  const n = Math.round(Number(row?.value ?? 0));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+export async function setInviteBonus(value: unknown) {
+  const n = Math.max(0, Math.min(10_000_000, Math.round(Number(value) || 0)));
+  await writeVal(INVITE_BONUS_KEY, String(n));
+}
+
 // الحزمةُ الكاملةُ للقراءة العامّة (يقرؤها تطبيقُ Flutter عند الإقلاع)
 export async function getPublicAppConfig() {
-  const [content, companyMode, portalEnabled, companyPhone] = await Promise.all([
-    getAppContent(), getCompanyMode(), getPortalEnabled(), getCompanyPhone(),
+  const [content, companyMode, portalEnabled, companyPhone, inviteBonus] = await Promise.all([
+    getAppContent(), getCompanyMode(), getPortalEnabled(), getCompanyPhone(), getInviteBonus(),
   ]);
-  return { ...content, companyMode: companyMode && portalEnabled, portalEnabled, companyPhone };
+  return { ...content, companyMode: companyMode && portalEnabled, portalEnabled, companyPhone, inviteBonus };
 }

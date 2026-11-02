@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCompanySession } from "@/lib/companyAuth";
 import { getEffectiveTicketDest, getCompanyCardSlaHours, getCompanyCardCategories } from "@/lib/appConfig";
 import { ensureSubscriberTicketsTable } from "@/lib/subscriberTicket";
+import { creditInviteForTicket } from "@/lib/invite";
 
 export const dynamic = "force-dynamic";
 
@@ -109,8 +110,10 @@ export async function PATCH(request: Request) {
   // تغييرُ الحالة (كما كان)
   const status = typeof body?.status === "string" ? body.status : "";
   if (!ALLOWED.has(status)) return NextResponse.json({ error: "طلبٌ غير صالح" }, { status: 400 });
-  const t = await prisma.subscriberTicket.findFirst({ where: { id }, select: { id: true } });
+  const t = await prisma.subscriberTicket.findFirst({ where: { id }, select: { id: true, status: true } });
   if (!t) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   await prisma.subscriberTicket.update({ where: { id }, data: { status, handledAt: new Date() } });
+  // 🎁 نفسُ منحِ الدعوة في مسار الوكيل: أوّلُ انتقالٍ إلى «منجزة» وحدَه
+  if (status === "done" && t.status !== "done") await creditInviteForTicket(id);
   return NextResponse.json({ ok: true });
 }

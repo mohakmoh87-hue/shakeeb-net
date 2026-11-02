@@ -6,7 +6,7 @@ import MarketModeration from "./MarketModeration";
 import PopupAds from "./PopupAds";
 
 type OtpWaInfo = { baseUrl: string; instanceId: string; tokenSet: boolean };
-type State = AppContentT & { otpWa: OtpWaInfo };
+type State = AppContentT & { otpWa: OtpWaInfo; inviteBonus?: number };
 type Counts = { totalAppUsers: number; active30: number; banned: number };
 type Sub = { id: number; name: string | null; phone: string | null; appBanned: boolean; lastAppLoginAt: string | null; state: string; daysExpired: number };
 
@@ -19,6 +19,7 @@ export default function AppAdminDashboard({ username }: { username: string }) {
   const [baseUrl, setBaseUrl] = useState("");
   const [instanceId, setInstanceId] = useState("");
   const [token, setToken] = useState("");
+  const [inviteBonus, setInviteBonus] = useState("0");
   const [testPhone, setTestPhone] = useState("");
   const [testMsg, setTestMsg] = useState("");
   // مشتركو التطبيق
@@ -31,7 +32,7 @@ export default function AppAdminDashboard({ username }: { username: string }) {
 
   const loadConfig = useCallback(() => {
     fetch("/api/app-admin/config").then((r) => (r.ok ? r.json() : null)).then((d) => {
-      if (d) { setS(d); setBaseUrl(d.otpWa?.baseUrl ?? ""); setInstanceId(d.otpWa?.instanceId ?? ""); setToken(""); }
+      if (d) { setS(d); setBaseUrl(d.otpWa?.baseUrl ?? ""); setInstanceId(d.otpWa?.instanceId ?? ""); setToken(""); setInviteBonus(String(d.inviteBonus ?? 0)); }
     });
   }, []);
   const loadSubs = useCallback((query: string, p: number) => {
@@ -49,7 +50,7 @@ export default function AppAdminDashboard({ username }: { username: string }) {
     try {
       const res = await fetch("/api/app-admin/config", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: { ads: s!.ads, offers: s!.offers, quick: s!.quick, videos: s!.videos ?? [], faqs: s!.faqs ?? [], about: s!.about ?? "" }, otpWa: { baseUrl, instanceId, token } }),
+        body: JSON.stringify({ content: { ads: s!.ads, offers: s!.offers, quick: s!.quick, videos: s!.videos ?? [], faqs: s!.faqs ?? [], about: s!.about ?? "" }, otpWa: { baseUrl, instanceId, token }, inviteBonus: Number(inviteBonus) || 0 }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setMsg(d.error ?? "فشل الحفظ"); return; }
       setMsg("✓ حُفِظ"); loadConfig();
@@ -167,6 +168,18 @@ export default function AppAdminDashboard({ username }: { username: string }) {
           </div>
           <p className="text-[11px] text-slate-400">احفظ أوّلاً ثمّ اختبر.</p>
         </div>
+      </div>
+
+      {/* 🎁 دعوة صديق */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-1 font-semibold text-slate-800">🎁 دعوةُ صديق</div>
+        <div className="mb-3 text-[11px] leading-5 text-slate-500">
+          المشتركُ الفعّالُ يولّد كوداً من «حسابي» ويعطيه صديقَه؛ يضعه صديقُه في طلب التنصيب، فحين يُنجَز الطلبُ فعلاً
+          يُضاف هذا المبلغُ إلى رصيد كود خصمِ الداعي ويُستعمَل كأيّ رصيدٍ عند الفنيّ. صفرٌ = البرنامجُ متوقّف.
+        </div>
+        <label className="text-xs font-semibold text-slate-600">مبلغُ المكافأة للداعي (دينار)
+          <input type="number" min={0} value={inviteBonus} onChange={(e) => setInviteBonus(e.target.value)} dir="ltr" className="mt-1 w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
       </div>
 
       {/* الإعلانات والعروض */}

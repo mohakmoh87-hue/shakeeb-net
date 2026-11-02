@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
 import { getEffectiveTicketDest, getPortalEnabled } from "@/lib/appConfig";
 import { ensureSubscriberTicketsTable } from "@/lib/subscriberTicket";
+import { creditInviteForTicket } from "@/lib/invite";
 
 export const dynamic = "force-dynamic";
 
@@ -40,11 +41,15 @@ export async function PATCH(request: Request) {
   if (!id || !ALLOWED.has(status)) return NextResponse.json({ error: "طلبٌ غير صالح" }, { status: 400 });
   await ensureSubscriberTicketsTable();
   // العزل: لا تُحدَّث إلا تذكرةٌ تخصّ وكيلَ الجلسة، **وليست بطاقةَ وارده للشركة** (تلك تديرها الشركة)
-  const t = await prisma.subscriberTicket.findFirst({ where: { id, agentId, source: { not: "agent-inbox" } }, select: { id: true } });
+  const t = await prisma.subscriberTicket.findFirst({ where: { id, agentId, source: { not: "agent-inbox" } }, select: { id: true, status: true } });
   if (!t) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
   await prisma.subscriberTicket.update({
     where: { id },
     data: { status, handledById: g.session.userId ?? null, handledAt: new Date() },
   });
-  return NextResponse.json({ ok: true });
+  // 🎁 أوّلُ انتقالٍ إلى «منجزة» يمنح صاحبَ كود الدعوة مبلغَه (إن حمَلت التذكرةُ كوداً)
+  const invite = status === "done" && t.status !== "done"
+    ? await creditInviteForTicket(id, { user: String(g.session.userId ?? ""), name: g.session.fullName ?? g.session.username ?? null })
+    : 0;
+  return NextResponse.json({ ok: true, invite });
 }
