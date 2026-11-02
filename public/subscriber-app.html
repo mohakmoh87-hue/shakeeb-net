@@ -7,8 +7,10 @@
 <meta name="theme-color" content="#081726">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22%D9%83%D8%A7%D8%A8%D9%8A%D9%86%D8%A9%22%2C%22short_name%22%3A%22%D9%83%D8%A7%D8%A8%D9%8A%D9%86%D8%A9%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230c1d31%22%2C%22theme_color%22%3A%22%230c1d31%22%2C%22dir%22%3A%22rtl%22%2C%22lang%22%3A%22ar%22%2C%22start_url%22%3A%22https%3A%2F%2Fshakeebnet.com%2Fapp%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fshakeebnet.com%2Ficons%2Ficon-192.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%2C%7B%22src%22%3A%22https%3A%2F%2Fshakeebnet.com%2Ficons%2Ficon-512.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
-<title>كابينة — تطبيق المشترك</title>
+<link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22%D8%B3%D9%88%D8%A8%D8%B1%D8%B3%D9%8A%D9%84%20%D9%87%D8%A8%22%2C%22short_name%22%3A%22%D8%B3%D9%88%D8%A8%D8%B1%D8%B3%D9%8A%D9%84%20%D9%87%D8%A8%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230c1d31%22%2C%22theme_color%22%3A%22%230c1d31%22%2C%22dir%22%3A%22rtl%22%2C%22lang%22%3A%22ar%22%2C%22start_url%22%3A%22https%3A%2F%2Fshakeebnet.com%2Fapp%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22https%3A%2F%2Fshakeebnet.com%2Fkabina-web%2Ficons%2FIcon-192.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%2C%7B%22src%22%3A%22https%3A%2F%2Fshakeebnet.com%2Fkabina-web%2Ficons%2FIcon-512.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%7D%2C%7B%22src%22%3A%22https%3A%2F%2Fshakeebnet.com%2Fkabina-web%2Ficons%2FIcon-maskable-512.png%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fpng%22%2C%22purpose%22%3A%22maskable%22%7D%5D%7D">
+<title>سوبرسيل هب — تطبيق المشترك</title>
+<link rel="icon" href="/kabina-web/favicon.png">
+<link rel="apple-touch-icon" href="/kabina-web/icons/Icon-192.png">
 <style>
 /* ═══ معاينةُ /app: التطبيقُ كلُّه Flutter (مصدرٌ واحد) داخل إطارِ هاتف ═══
    معاينةٌ — بيانات وهمية (محاكاة) — معزولةٌ تماماً: لا قاعدةَ ولا جلساتٍ ولا نداءَ API،
@@ -40,8 +42,8 @@ body { background:#081726; font-family:'Segoe UI',Tahoma,sans-serif; overflow:hi
 <body>
 <main class="app-shell" dir="rtl">
   <div class="phone-frame">
-    <div class="boot" id="boot"><div style="display:flex;flex-direction:column;align-items:center"><div class="spin"></div>كابينة</div></div>
-    <iframe id="appFrame" src="/kabina-web/index.html" title="تطبيق المشترك — كابينة" allow="geolocation"></iframe>
+    <div class="boot" id="boot"><div style="display:flex;flex-direction:column;align-items:center;gap:12px"><img src="/kabina-web/icons/Icon-192.png" alt="" width="84" height="84" style="border-radius:26px"><div class="spin"></div>سوبرسيل هب</div></div>
+    <iframe id="appFrame" src="/kabina-web/index.html" title="تطبيق المشترك — سوبرسيل هب" allow="geolocation"></iframe>
   </div>
 </main>
 <script>
