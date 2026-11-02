@@ -61,9 +61,9 @@ describe("🏬 متجرُ الوكيل واسمُ المكتب", () => {
     assert.match(STORE, /skip: Math\.max\(0, skip - mineCount\)/, "الترقيمُ لا يمرّ على القائمتَين ⇒ مادّةٌ تسقط بين صفحتَين");
   });
 
-  test("اسمُ المتجر: مكتبُه حين يكون واحداً لا اسمَ الوكيل دائماً", () => {
-    assert.match(STORE, /storeName:/, "المادّةُ بلا اسمِ متجر");
-    assert.match(STORE, /officeName\.has\(t\.agentId\) \? null : t\.name/, "وكيلٌ بعدّة مكاتبَ يُنسَب لمكتبٍ واحدٍ منها");
+  test("اسمُ المتجر اسمُ الوكيل من مصدره الحيّ لا من نسخةٍ قديمة", () => {
+    assert.match(STORE, /storeName: agentName\.get\(i\.agentId\)/, "المادّةُ بلا اسمِ متجر");
+    assert.match(STORE, /prisma\.agent\.findMany/, "الاسمُ من نسخةِ يومِ النشر ⇒ تغييرُ اسم الوكيل لا يظهر");
   });
 });
 

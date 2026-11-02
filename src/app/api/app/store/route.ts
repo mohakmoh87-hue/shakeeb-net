@@ -49,18 +49,13 @@ export async function GET(request: Request) {
     });
     return [...mine, ...rest];
   })();
-  // 🏷️ اسمُ المتجر على كلّ مادّة (طلبُ محمد 2026-11-02): **اسمُ مكتبه** حين يكون للوكيل مكتبٌ
-  //    واحد، وإلّا اسمُ الوكيل — فالمادّةُ تُنشَر للوكيل كلِّه لا لمكتبٍ بعينه، فلا نسمّي مكتباً
-  //    بما لا يخصّه وحدَه.
+  // 🏷️ اسمُ المتجر على كلّ مادّة = **اسمُ الوكيل** (قرارُ محمد 2026-11-02)، ومن جدول الوكلاء
+  //    حيّاً لا من `agentName` المنسوخِ يومَ النشر — فتغييرُ الاسم يظهر على موادّه كلِّها.
   const agentIds = [...new Set(items.map((i) => i.agentId))];
-  const towers = agentIds.length
-    ? await prisma.tower.findMany({ where: { agentId: { in: agentIds }, isDeleted: false }, select: { agentId: true, name: true } })
+  const agents = agentIds.length
+    ? await prisma.agent.findMany({ where: { id: { in: agentIds } }, select: { id: true, name: true } })
     : [];
-  const officeName = new Map<number, string | null>();
-  for (const t of towers) {
-    if (t.agentId == null) continue;
-    officeName.set(t.agentId, officeName.has(t.agentId) ? null : t.name);
-  }
+  const agentName = new Map(agents.map((a) => [a.id, a.name]));
 
   const [live, fees] = await Promise.all([
     liveStockFor(items.map((i) => ({ id: i.id, agentId: i.agentId, itemName: i.itemName }))),
@@ -69,7 +64,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     items: items.map((i) => ({
       id: i.id, agentId: i.agentId, agentName: i.agentName,
-      storeName: officeName.get(i.agentId) ?? i.agentName ?? "",
+      storeName: agentName.get(i.agentId) ?? i.agentName ?? "",
       title: i.title, description: i.description, photo: i.photo, category: i.category, createdAt: i.createdAt,
       price: priceToNum(i.price),
       deliveryFee: fees.get(i.id)?.deliveryFee ?? null, installFee: fees.get(i.id)?.installFee ?? null,
