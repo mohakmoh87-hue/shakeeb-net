@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { priceToNum } from "@/lib/market";
+import { subscriberState } from "@/lib/subscriberLogin";
 
 // إنشاءٌ كسولٌ لجدولَي متجر الوكيل + أعمدةٍ إضافيّة (النشرُ لا يُشغّل migrate) — تحصينٌ للتعافي.
 // 🔴 وحاسبةُ المكتب تُشغّل نفسَ الموقع بدور `agent_N_worker` **غيرِ المالك**، و«IF NOT EXISTS»
@@ -20,6 +21,7 @@ export async function ensureAgentStoreTables(): Promise<void> {
     await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "itemName" TEXT`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "deliveryFee" BIGINT`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "installFee" BIGINT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "subDiscount" INTEGER`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "agent_products_status_createdAt_idx" ON "agent_products" ("status","createdAt")`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "agent_products_agentId_idx" ON "agent_products" ("agentId")`);
     await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "store_orders" (
@@ -106,6 +108,37 @@ export async function subscriberAgentId(subscriberId: number): Promise<number | 
   if (!sub?.towerId) return null;
   const t = await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { agentId: true } });
   return t?.agentId ?? null;
+}
+
+// ═════ 🏷️ خصمُ المشتركين الفعّالين على كلّ منتج (طلبُ محمد 2026-11-04) ═════
+// نسبةٌ يضعها الوكيلُ لكلّ مادّةٍ في «متجري». **الشارةُ تظهر للجميع** دعوةً للاشتراك
+// (قرارُ محمد)، و**الخصمُ لا يُطبَّق إلّا لمشترِكٍ فعّالٍ لدى الوكيل البائع نفسِه** —
+// والخادمُ يحسمها مرّتَين: عند العرض وعند تسجيل الطلب، فسعرُ العميل لا يُصدَّق أبداً.
+export const MAX_SUB_DISCOUNT = 90;
+
+export function discountPct(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(MAX_SUB_DISCOUNT, Math.round(n));
+}
+
+// الخصمُ مقطوعُ الكسر (قسمةُ BigInt) ⇒ فرقٌ لا يتجاوز ديناراً ولمصلحة البائع، وبلا عائمة.
+export function priceAfterDiscount(price: bigint | null, pct: number | null | undefined, eligible: boolean): bigint | null {
+  if (price == null || !eligible) return price;
+  const p = discountPct(pct);
+  if (p == null) return price;
+  return price - (price * BigInt(p)) / BigInt(100);
+}
+
+// شريحةُ المشاهد: وكيلُه، وهل اشتراكُه **فعّالٌ اليوم** (لا المنتهي ولو حديثاً — قرارُ محمد).
+export type StoreViewer = { agentId: number | null; activeSub: boolean };
+export async function storeViewer(subscriberId: number | null | undefined): Promise<StoreViewer> {
+  if (subscriberId == null) return { agentId: null, activeSub: false };
+  const sub = await prisma.subscriber.findUnique({ where: { id: subscriberId }, select: { towerId: true, dateTo: true, isDeleted: true } });
+  if (!sub || sub.isDeleted || !sub.towerId) return { agentId: null, activeSub: false };
+  const t = await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { agentId: true } });
+  return { agentId: t?.agentId ?? null, activeSub: subscriberState(sub.dateTo).state === "active" };
 }
 
 // رسومُ التوصيل/التنصيب لكلّ منتج: رسمُ المنتج نفسِه إن وضعه الوكيل، وإلّا رسمُ الوكيل

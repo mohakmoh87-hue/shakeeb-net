@@ -2050,6 +2050,7 @@ model AgentProduct {
   stock       Int? // كميّةٌ يدويّةٌ للحرّ فقط — المربوطُ يعرض عددَ المخزن حيّاً
   deliveryFee BigInt? // مبلغُ التوصيل (دينار) — يحدّده الوكيل
   installFee  BigInt? // مبلغُ التنصيب/البرمجة (دينار) — اختياريّ؛ وجودُه يُتيح خيارَ «توصيل وتنصيب»
+  subDiscount Int? // نسبةُ خصمٍ (٪) لمشتركي الوكيل **الفعّالين** — الشارةُ للجميع والخصمُ لهم
   status      String   @default("visible") // visible | hidden
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt

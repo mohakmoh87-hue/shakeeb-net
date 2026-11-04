@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
 import { getSubscriberSession } from "@/lib/subscriberAuth";
-import { ensureAgentStoreTables, subscriberAgentId, storeOrderLines, rawFeesForProducts, maxOrderFees } from "@/lib/agentStore";
+import { ensureAgentStoreTables, storeViewer, storeOrderLines, rawFeesForProducts, maxOrderFees, priceAfterDiscount } from "@/lib/agentStore";
 import { priceToNum } from "@/lib/market";
 import { redeemReward, reverseStoreOrderRedeem, sendRewardUsedMessage, STORE_ORDER_CTX } from "@/lib/rewards";
 
@@ -44,23 +44,29 @@ export async function POST(request: Request) {
   if (!address) return NextResponse.json({ error: "عنوانُ التوصيل مطلوب" }, { status: 400 });
   if (!phone.trim()) return NextResponse.json({ error: "رقمُ الهاتف مطلوب" }, { status: 400 });
   const ids = [...new Set(wanted.map((it) => it.productId))];
-  const products = await prisma.agentProduct.findMany({ where: { id: { in: ids }, status: "visible" }, select: { id: true, agentId: true, title: true, price: true, deliveryFee: true, installFee: true } });
+  const products = await prisma.agentProduct.findMany({ where: { id: { in: ids }, status: "visible" }, select: { id: true, agentId: true, title: true, price: true, deliveryFee: true, installFee: true, subDiscount: true } });
   if (products.length !== ids.length) return NextResponse.json({ error: "بعضُ المنتجات لم تعد متاحة" }, { status: 404 });
   if (new Set(products.map((p) => p.agentId)).size > 1) return NextResponse.json({ error: "منتجاتٌ من متاجرَ مختلفة — اطلب من متجرٍ واحدٍ في كلّ مرّة" }, { status: 400 });
   const agentId = products[0].agentId;
   const pById = new Map(products.map((p) => [p.id, p]));
   // رسومُ كلّ مادّةٍ على حدة (وإلّا رسمُ الوكيل بشريحة المشترِي)، ثمّ أعلى توصيلٍ وأعلى
   // تنصيبٍ بين المواد المطلوبة مرّةً واحدةً لكامل الفاتورة — وما دونهما يُهمل.
-  const viewerAgentId = await subscriberAgentId(sub.id);
+  const viewer = await storeViewer(sub.id);
+  const viewerAgentId = viewer.agentId;
   const perProduct = await rawFeesForProducts(products, viewerAgentId);
   const { deliveryFee, installFee } = maxOrderFees(products.map((p) => perProduct.get(p.id)).filter((f): f is NonNullable<typeof f> => !!f));
   const wantInstall = b?.fulfillment === "delivery_install" && installFee != null;
   const fulfillment = wantInstall ? "delivery_install" : "delivery";
+  // 🏷️ سعرُ البند **يُعاد حسابُه هنا من صفّ المنتج** بخصم مشتركي الوكيل الفعّالين — لا
+  //    يُقرَأ سعرٌ من العميل أبداً، فاللقطةُ في البنود هي ما يدفعه فعلاً. والخصمُ على
+  //    البضاعة وحدَها؛ رسومُ التوصيل والتنصيب كما هي.
+  const subPriced = viewer.activeSub && viewerAgentId != null && viewerAgentId === agentId;
   let goods = BigInt(0);
   const lines = wanted.map((it) => {
     const p = pById.get(it.productId)!;
-    if (p.price != null) goods += p.price * BigInt(it.qty);
-    return { productId: p.id, productTitle: p.title, price: p.price, qty: it.qty };
+    const unit = priceAfterDiscount(p.price, p.subDiscount, subPriced);
+    if (unit != null) goods += unit * BigInt(it.qty);
+    return { productId: p.id, productTitle: p.title, price: unit, qty: it.qty };
   });
   const total = goods + (deliveryFee ?? BigInt(0)) + (wantInstall ? (installFee ?? BigInt(0)) : BigInt(0));
   const totalQty = wanted.reduce((s, it) => s + it.qty, 0);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard } from "@/lib/guard";
-import { ensureAgentStoreTables, liveStockFor } from "@/lib/agentStore";
+import { ensureAgentStoreTables, liveStockFor, discountPct } from "@/lib/agentStore";
 import { cleanPhoto, priceToNum } from "@/lib/market";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
       agentId, agentName: agent?.name ?? null, title, itemName,
       price: price != null ? BigInt(price) : null, description: description || null,
       category: category || null, stock, photo, status: "visible",
-      deliveryFee: feeOf(b?.deliveryFee), installFee: feeOf(b?.installFee),
+      deliveryFee: feeOf(b?.deliveryFee), installFee: feeOf(b?.installFee), subDiscount: discountPct(b?.subDiscount),
     },
     select: { id: true },
   });
@@ -93,6 +93,7 @@ export async function PATCH(request: Request) {
   if (b?.photo !== undefined) data.photo = cleanPhoto(b.photo);
   if (b?.deliveryFee !== undefined) data.deliveryFee = feeOf(b.deliveryFee);
   if (b?.installFee !== undefined) data.installFee = feeOf(b.installFee);
+  if (b?.subDiscount !== undefined) data.subDiscount = discountPct(b.subDiscount);
   if (Object.keys(data).length === 0) return NextResponse.json({ error: "لا تغيير" }, { status: 400 });
   await prisma.agentProduct.update({ where: { id }, data });
   return NextResponse.json({ ok: true });

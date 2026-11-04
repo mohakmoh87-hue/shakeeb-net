@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureAgentStoreTables, liveStockFor, feesForProducts, subscriberAgentId } from "@/lib/agentStore";
+import { ensureAgentStoreTables, liveStockFor, feesForProducts, storeViewer, priceAfterDiscount, discountPct } from "@/lib/agentStore";
 import { getSubscriberSession } from "@/lib/subscriberAuth";
 import { priceToNum } from "@/lib/market";
 
@@ -17,11 +17,13 @@ export async function GET(request: Request) {
   const where: { status: string; category?: string; OR?: { title?: { contains: string }; description?: { contains: string }; agentName?: { contains: string } }[] } = { status: "visible" };
   if (cat) where.category = cat;
   if (q) where.OR = [{ title: { contains: q } }, { description: { contains: q } }, { agentName: { contains: q } }];
-  const SELECT = { id: true, agentId: true, agentName: true, title: true, price: true, description: true, photo: true, category: true, stock: true, itemName: true, deliveryFee: true, installFee: true, createdAt: true } as const;
+  const SELECT = { id: true, agentId: true, agentName: true, title: true, price: true, description: true, photo: true, category: true, stock: true, itemName: true, deliveryFee: true, installFee: true, subDiscount: true, createdAt: true } as const;
   // شريحةُ المشترِي: مشتركٌ لدى الوكيل البائع أم لا (الزائرُ ⇒ غيرُ مشترك) — تُحدّد رسومَ الوكيل
   // الاحتياطيّة للمواد التي لم يضع لها الوكيلُ رسماً خاصّاً بها.
   const sess = await getSubscriberSession();
-  const viewerAgentId = sess ? await subscriberAgentId(sess.subscriberId) : null;
+  // 🏷️ ومعها: هل اشتراكُه فعّالٌ — شرطُ تطبيقِ خصم مشتركي الوكيل (الشارةُ تظهر للجميع).
+  const viewer = await storeViewer(sess?.subscriberId);
+  const viewerAgentId = viewer.agentId;
 
   const [total, catRows] = await Promise.all([
     prisma.agentProduct.count({ where }),
@@ -62,14 +64,21 @@ export async function GET(request: Request) {
     feesForProducts(items.map((i) => ({ id: i.id, agentId: i.agentId, deliveryFee: i.deliveryFee, installFee: i.installFee })), viewerAgentId),
   ]);
   return NextResponse.json({
-    items: items.map((i) => ({
+    items: items.map((i) => {
+      // 🏷️ الشارةُ على كلّ منتجٍ لكلّ مشاهد، والسعرُ المخفَّضُ لمشترِكِ هذا الوكيل الفعّال وحدَه
+      const myDiscount = viewer.activeSub && viewer.agentId === i.agentId && discountPct(i.subDiscount) != null;
+      return {
       id: i.id, agentId: i.agentId, agentName: i.agentName,
       storeName: agentName.get(i.agentId) ?? i.agentName ?? "",
       title: i.title, description: i.description, photo: i.photo, category: i.category, createdAt: i.createdAt,
       price: priceToNum(i.price),
+      subDiscount: discountPct(i.subDiscount),
+      myPrice: priceToNum(priceAfterDiscount(i.price, i.subDiscount, myDiscount)),
+      myDiscount,
       deliveryFee: fees.get(i.id)?.deliveryFee ?? null, installFee: fees.get(i.id)?.installFee ?? null,
       stock: i.itemName ? (live.get(i.id) ?? 0) : i.stock,
-    })),
+      };
+    }),
     total, page, pages: Math.ceil(total / PAGE), categories,
     // 🎁 وكيلُ المشترك — تحتاجه السلّةُ لتعرف أنّ المتجرَ متجرُ **وكيله** فتعرض خصمَ
     //    المكافأة (طلبُ محمد 2026-10-26). معرّفُ وكيله هو، لا معرّفَ غيره.

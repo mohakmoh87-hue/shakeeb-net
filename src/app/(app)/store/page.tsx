@@ -6,12 +6,12 @@ import Modal from "@/components/Modal";
 import { usePermission } from "@/lib/usePermission";
 import AppPackagesOffers from "@/components/AppPackagesOffers";
 
-type Product = { id: number; title: string; price: number | null; description: string | null; category: string | null; stock: number | null; photo: string | null; status: string; agentName: string | null; createdAt: string; itemName: string | null; linked: boolean; deliveryFee: number | null; installFee: number | null };
+type Product = { id: number; title: string; price: number | null; description: string | null; category: string | null; stock: number | null; photo: string | null; status: string; agentName: string | null; createdAt: string; itemName: string | null; linked: boolean; deliveryFee: number | null; installFee: number | null; subDiscount: number | null };
 type WhItem = { name: string; price: number | null; category: string | null; count: number };
-type PForm = { title: string; price: string; category: string; description: string; stock: string; photo: string | null; itemName: string | null; deliveryFee: string; installFee: string };
+type PForm = { title: string; price: string; category: string; description: string; stock: string; photo: string | null; itemName: string | null; deliveryFee: string; installFee: string; subDiscount: string };
 type Fees = { deliverySub: string; installSub: string; deliveryOther: string; installOther: string };
 
-const emptyForm = (): PForm => ({ title: "", price: "", category: "", description: "", stock: "", photo: null, itemName: null, deliveryFee: "", installFee: "" });
+const emptyForm = (): PForm => ({ title: "", price: "", category: "", description: "", stock: "", photo: null, itemName: null, deliveryFee: "", installFee: "", subDiscount: "" });
 const fmt = (n: number | null) => (n == null ? "بلا سعر" : `${n.toLocaleString("en-US")} د.ع`);
 const digits = (s: string) => { const d = s.replace(/[^\d]/g, ""); return d ? Number(d) : null; };
 const num2str = (n: number | null | undefined) => (n == null ? "" : String(n));
@@ -76,7 +76,7 @@ export default function StorePage() {
   function openAdd() { setEditId(null); setForm(emptyForm()); setErr(""); setPhotoInfo(null); setModal(true); }
   function openEdit(p: Product) {
     setEditId(p.id);
-    setForm({ title: p.title, price: p.price?.toString() ?? "", category: p.category ?? "", description: p.description ?? "", stock: p.itemName ? "" : (p.stock?.toString() ?? ""), photo: p.photo, itemName: p.itemName, deliveryFee: num2str(p.deliveryFee), installFee: num2str(p.installFee) });
+    setForm({ title: p.title, price: p.price?.toString() ?? "", category: p.category ?? "", description: p.description ?? "", stock: p.itemName ? "" : (p.stock?.toString() ?? ""), photo: p.photo, itemName: p.itemName, deliveryFee: num2str(p.deliveryFee), installFee: num2str(p.installFee), subDiscount: num2str(p.subDiscount) });
     setErr(""); setPhotoInfo(null); setModal(true);
   }
   function pickWh(name: string) {
@@ -98,7 +98,7 @@ export default function StorePage() {
   async function save() {
     if (!form.title.trim()) { setErr("اسمُ المنتج مطلوب"); return; }
     setBusy(true); setErr("");
-    const body = { id: editId ?? undefined, title: form.title.trim(), price: digits(form.price), category: form.category.trim(), description: form.description.trim(), stock: form.itemName ? null : digits(form.stock), photo: form.photo, itemName: form.itemName, deliveryFee: digits(form.deliveryFee), installFee: digits(form.installFee) };
+    const body = { id: editId ?? undefined, title: form.title.trim(), price: digits(form.price), category: form.category.trim(), description: form.description.trim(), stock: form.itemName ? null : digits(form.stock), photo: form.photo, itemName: form.itemName, deliveryFee: digits(form.deliveryFee), installFee: digits(form.installFee), subDiscount: digits(form.subDiscount) };
     const r = await fetch("/api/store/products", { method: editId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     setBusy(false);
     if (!r.ok) { const d = await r.json().catch(() => null); setErr(d?.error || "فشل الحفظ"); return; }
@@ -169,6 +169,7 @@ export default function StorePage() {
                   {p.linked ? <span className="rounded bg-sky-50 px-1.5 py-0.5 font-bold text-sky-700">🔗 مخزن: {p.stock ?? 0}</span> : (p.stock != null && <span>مخزون: {p.stock}</span>)}
                   {p.deliveryFee != null && <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-bold text-emerald-700">🚚 {p.deliveryFee.toLocaleString("en-US")}</span>}
                   {p.installFee != null && <span className="rounded bg-amber-50 px-1.5 py-0.5 font-bold text-amber-700">🔧 {p.installFee.toLocaleString("en-US")}</span>}
+                  {(p.subDiscount ?? 0) > 0 && <span className="rounded bg-rose-50 px-1.5 py-0.5 font-bold text-rose-700">🏷️ خصم مشتركيك {p.subDiscount}%</span>}
                   {p.category && <span className="rounded bg-slate-50 px-1.5 py-0.5">{p.category}</span>}
                   {p.status === "hidden" && <span className="rounded bg-slate-200 px-1.5 py-0.5 font-bold text-slate-600">مخفيّ</span>}
                 </div>
@@ -238,6 +239,12 @@ export default function StorePage() {
                 <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">تنصيب (د.ع)</span>
                   <input value={form.installFee} onChange={(e) => setForm((f) => ({ ...f, installFee: e.target.value }))} dir="ltr" inputMode="numeric" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="اختياري" /></label>
               </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-rose-50/50 p-3">
+              <div className="mb-1 text-xs font-bold text-rose-800">خصمُ مشتركيك الفعّالين</div>
+              <div className="mb-2 text-[11px] leading-5 text-slate-600">نسبةٌ مئويّةٌ (٠–٩٠) تُخصَم من سعر هذه المادّة لمشتركيك الفعّالين وحدَهم. والشارةُ تظهر لكلّ من يتصفّح المتجر في التطبيق دعوةً للاشتراك، أمّا الخصمُ فلا يناله غيرُهم. فارغةٌ = بلا خصم، ولا تشمل رسومَ التوصيل والتنصيب.</div>
+              <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">نسبةُ الخصم %</span>
+                <input value={form.subDiscount} onChange={(e) => setForm((f) => ({ ...f, subDiscount: e.target.value }))} dir="ltr" inputMode="numeric" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="اختياري" /></label>
             </div>
             <label className="block"><span className="mb-1 block text-xs font-semibold text-slate-600">الفئة</span>
               <input value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} maxLength={80} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="مثال: راوترات، إكسسوارات" /></label>
