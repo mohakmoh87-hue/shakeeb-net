@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { hashPassword } from "./auth";
 import { ensureMarketTable } from "./market";
+import { grantReward } from "./rewards";
 
 // ═════ 👤 حساباتُ التجريب في التطبيق — سجلٌّ بلا جدولٍ ولا عمود (طلبُ محمد 2026-11-04) ═════
 //
@@ -136,6 +137,37 @@ export async function seedTestUsers(officeId?: number): Promise<{ ok: boolean; e
 
   await saveTestUsers(list);
   return { ok: true, officeName: office.name, users: list.map((e) => e.user) };
+}
+
+// ═════ 🎁 رصيدُ مكافأةٍ تجريبيٌّ (طلبُ محمد 2026-11-04 لتجربةِ خصمِ المكافأة في المتجر) ═════
+// 🔒 لا يُمنَح إلّا لصفٍّ **مسجَّلٍ في سجلّ التجريب** — فلا يُلمَس رصيدُ إنسانٍ أبداً.
+// 🔑 والمنحُ بالمسار المحروس `grantReward` نفسِه ⇒ يُقيَّد في `reward_log` فيبقى
+//    «المنوحُ − المسحوب = الرصيد» في سجلّ المكافآت، ولا رصيدَ من فراغ.
+// وإعادةُ الضغط تُرجعه إلى ٥٠٠٠ بالضبط (`hadGap` يصفّر القاعدةَ قبل المنح) لا تُراكِم.
+export const TEST_REWARD = 5000;
+
+export async function grantTestReward(user = "test1"): Promise<{
+  ok: boolean; error?: string; balance?: number; code?: string; officeName?: string; rewardsEnabled?: boolean;
+}> {
+  const entry = await resolveTestUser(user);
+  if (entry?.subscriberId == null) return { ok: false, error: "لا حسابَ تجريبيٍّ بهذا الاسم — اضغط «إنشاء / تحديث» أوّلاً" };
+  const sub = await prisma.subscriber.findUnique({
+    where: { id: entry.subscriberId },
+    select: { id: true, name: true, towerId: true, rewardBalance: true, isDeleted: true },
+  });
+  if (!sub || sub.isDeleted) return { ok: false, error: "الحسابُ التجريبيُّ موقوفٌ أو مفقود — اضغط «إنشاء / تحديث»" };
+  const office = sub.towerId
+    ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { name: true, agentId: true, rewardsEnabled: true } })
+    : null;
+  const r = await prisma.$transaction(async (tx) =>
+    grantReward(tx, {
+      subscriberId: sub.id, towerId: sub.towerId, agentId: office?.agentId ?? null, subscriberName: sub.name,
+      currentBalance: sub.rewardBalance ?? 0, hadGap: true, rewardAmount: TEST_REWARD, months: 1,
+      createdByUser: "test", createdByName: "حسابات التجريب",
+    }),
+  );
+  if (!r) return { ok: false, error: "تعذّر المنح" };
+  return { ok: true, balance: r.balance, code: r.code, officeName: office?.name ?? undefined, rewardsEnabled: office?.rewardsEnabled === "1" };
 }
 
 // إيقافٌ ناعم: الصفوفُ تبقى (لا حذفَ نهائيّ) ويعيدها زرُّ الإنشاء كما كانت.

@@ -70,18 +70,24 @@ export default function AppAdminDashboard({ username }: { username: string }) {
   }, []);
   useEffect(() => { const t = setTimeout(() => { loadConfig(); loadSubs("", 1); loadTest(); loadPending(); }, 0); return () => clearTimeout(t); }, [loadConfig, loadSubs, loadTest, loadPending]);
 
-  async function testUsersAction(action: "seed" | "disable") {
+  async function testUsersAction(action: "seed" | "disable" | "reward") {
     if (action === "disable" && !confirm("إيقافُ حسابات التجريب؟ تُخفى ولا تُحذَف، ويعيدها زرُّ الإنشاء.")) return;
     setTBusy(true); setTMsg("");
     try {
       const res = await fetch("/api/app-admin/test-users", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...(action === "seed" && tOffice ? { officeId: Number(tOffice) } : {}) }),
+        body: JSON.stringify({ action, ...(action === "seed" && tOffice ? { officeId: Number(tOffice) } : {}), ...(action === "reward" ? { user: "test1" } : {}) }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) { setTMsg(d.error ?? "تعذّرت العملية"); return; }
       setTUsers(d.users ?? []); setTOffices(d.offices ?? []);
-      setTMsg(action === "seed" ? `✓ جاهزةٌ على ${d.officeName ?? "المكتب"} — كلمةُ المرور 123456` : "✓ أُوقفت");
+      setTMsg(
+        action === "seed" ? `✓ جاهزةٌ على ${d.officeName ?? "المكتب"} — كلمةُ المرور 123456`
+          : action === "reward"
+            ? `✓ رصيدُ مكافأة test1 = ${Number(d.balance ?? 0).toLocaleString("en-US")} د.ع (كود ${d.code ?? "—"})`
+              + (d.rewardsEnabled === false ? ` ⚠️ لكنّ المكافآتَ مطفأةٌ في ${d.officeName ?? "المكتب"} فلا يظهر الرصيدُ في التطبيق` : "")
+            : "✓ أُوقفت",
+      );
     } catch { setTMsg("تعذّر الاتصال بالخادم"); }
     finally { setTBusy(false); }
   }
@@ -248,6 +254,7 @@ export default function AppAdminDashboard({ username }: { username: string }) {
             </select>
           )}
           <button onClick={() => void testUsersAction("seed")} disabled={tBusy} className="rounded-lg bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-200 disabled:opacity-60">🧪 إنشاء / تحديث</button>
+          <button onClick={() => void testUsersAction("reward")} disabled={tBusy || !tUsers.length} className="rounded-lg bg-teal-100 px-3 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-200 disabled:opacity-60">🎁 رصيدُ مكافأة ٥٠٠٠ لـtest1</button>
           <button onClick={() => void testUsersAction("disable")} disabled={tBusy || !tUsers.length} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60">⏸️ إيقاف</button>
           {tMsg && <span className="text-xs text-slate-600">{tMsg}</span>}
         </div>

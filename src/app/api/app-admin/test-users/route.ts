@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAppAdminSession } from "@/lib/appAdminAuth";
-import { seedTestUsers, disableTestUsers, testUsersStatus } from "@/lib/appTestUsers";
+import { seedTestUsers, disableTestUsers, testUsersStatus, grantTestReward, TEST_REWARD } from "@/lib/appTestUsers";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +13,9 @@ export async function GET() {
 }
 
 const schema = z.object({
-  action: z.enum(["seed", "disable"]),
+  action: z.enum(["seed", "disable", "reward"]),
   officeId: z.coerce.number().int().positive().optional(),
+  user: z.string().max(40).optional(),
 });
 
 export async function POST(request: Request) {
@@ -22,6 +23,12 @@ export async function POST(request: Request) {
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
+  // 🎁 رصيدُ مكافأةٍ تجريبيٌّ — لحسابِ تجريبٍ مسجَّلٍ وحدَه (المكتبةُ تحسم ذلك)
+  if (parsed.data.action === "reward") {
+    const r = await grantTestReward(parsed.data.user || "test1");
+    if (!r.ok) return NextResponse.json({ error: r.error ?? "تعذّر المنح" }, { status: 400 });
+    return NextResponse.json({ ...r, amount: TEST_REWARD, ...(await testUsersStatus()) });
+  }
   if (parsed.data.action === "disable") {
     const r = await disableTestUsers();
     return NextResponse.json({ ...r, ...(await testUsersStatus()) });
