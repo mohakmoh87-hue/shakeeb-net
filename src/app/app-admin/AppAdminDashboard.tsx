@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import AdsEditor, { type AppContentT } from "@/components/AdsEditor";
 import MarketModeration from "./MarketModeration";
+import MarketReview from "./MarketReview";
 import PopupAds from "./PopupAds";
 
 type OtpWaInfo = { baseUrl: string; instanceId: string; tokenSet: boolean };
@@ -32,6 +33,9 @@ export default function AppAdminDashboard({ username }: { username: string }) {
   const [tMsg, setTMsg] = useState("");
   const [tBusy, setTBusy] = useState(false);
   // مشتركو التطبيق
+  const [marketPanel, setMarketPanel] = useState(false);
+  const [marketPending, setMarketPending] = useState(0);
+  const [marketToken, setMarketToken] = useState(0);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [subs, setSubs] = useState<Sub[]>([]);
   const [q, setQ] = useState("");
@@ -59,7 +63,12 @@ export default function AppAdminDashboard({ username }: { username: string }) {
       setTOffice((prev) => prev || String(d.offices?.[0]?.id ?? ""));
     });
   }, []);
-  useEffect(() => { const t = setTimeout(() => { loadConfig(); loadSubs("", 1); loadTest(); }, 0); return () => clearTimeout(t); }, [loadConfig, loadSubs, loadTest]);
+  const loadPending = useCallback(() => {
+    fetch("/api/app-admin/market?only=pending&page=1").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) setMarketPending(d.counts?.pending ?? 0);
+    }).catch(() => {});
+  }, []);
+  useEffect(() => { const t = setTimeout(() => { loadConfig(); loadSubs("", 1); loadTest(); loadPending(); }, 0); return () => clearTimeout(t); }, [loadConfig, loadSubs, loadTest, loadPending]);
 
   async function testUsersAction(action: "seed" | "disable") {
     if (action === "disable" && !confirm("إيقافُ حسابات التجريب؟ تُخفى ولا تُحذَف، ويعيدها زرُّ الإنشاء.")) return;
@@ -115,12 +124,21 @@ export default function AppAdminDashboard({ username }: { username: string }) {
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-6" dir="rtl">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-800">📱 أدمن التطبيق</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-slate-800">📱 أدمن التطبيق</h1>
+          <button onClick={() => setMarketPanel((v) => !v)}
+            className={`relative rounded-lg px-3 py-2 text-sm font-semibold ${marketPanel ? "bg-sky-600 text-white hover:bg-sky-700" : "bg-sky-100 text-sky-700 hover:bg-sky-200"}`}>
+            🏷️ فئاتُ السوق
+            {marketPending > 0 && <span className="absolute -left-1.5 -top-1.5 rounded-full bg-amber-500 px-1.5 text-[10px] font-extrabold text-white">{marketPending}</span>}
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-500">👤 {username}</span>
           <button onClick={logout} className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200">خروج</button>
         </div>
       </div>
+
+      {marketPanel && <MarketReview onChanged={() => { loadPending(); setMarketToken((v) => v + 1); }} />}
 
       {/* مشتركو التطبيق: العدّاد + قائمة الحظر */}
       <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -172,7 +190,7 @@ export default function AppAdminDashboard({ username }: { username: string }) {
       {/* سوق المستعمل — الموديريشن */}
       <PopupAds />
 
-      <MarketModeration />
+      <MarketModeration reloadToken={marketToken} />
 
       {/* ربط واتساب OTP */}
       <div className="rounded-xl border border-slate-200 bg-white p-4">
