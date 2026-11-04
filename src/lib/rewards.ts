@@ -89,6 +89,15 @@ export async function reverseRewardGrant(
   return back;
 }
 
+// ═════ 🎁🛒 سياقُ طلبِ متجر الوكيل — معرّفٌ من عائلةٍ أخرى ═════
+// قرارُ محمد 2026-11-04: رصيدُ المكافأة يُخصَم **لحظةَ إرسال الطلب** من إجماليّ السلّة،
+// والطلبُ يصل الوكيلَ بسعرٍ بعد الخصم. و`refId` هنا معرّفُ **طلبِ متجرٍ** لا فاتورةٍ —
+// والرقمان يتقاطعان حتماً (تسلسلان مستقلّان). فلولا السياقُ لعكست `reverseRewardRedeem`
+// خصمَ طلبٍ عند حذف فاتورةٍ رقمُها يساويه، أو لظنّت فاتورةً مُعكَسةً وقد عُكِس طلبٌ.
+// ⇒ كلُّ بحثٍ في عائلةٍ يستثني عائلةَ الأخرى صراحةً، والقديمُ (أيّاً كان سياقُه) يبقى للفاتورة.
+export const STORE_ORDER_CTX = "store-order";
+export const STORE_ORDER_VOID_CTX = "store-order-void";
+
 // ===== استخدام/خصم مكافأة عند الصيانة أو البيع (ضمن معاملة) =====
 // يخصم بحدّ الفاتورة ويُبقي الباقي؛ ويُمسح الكود فقط عند نفاد الرصيد.
 export async function redeemReward(
@@ -96,7 +105,7 @@ export async function redeemReward(
   opts: {
     subscriberId: number;
     billAmount: number;
-    context: "maintenance" | "sale";
+    context: "maintenance" | "sale" | typeof STORE_ORDER_CTX;
     refId?: number | null;
     towerId: number | null;
     agentId: number | null;
@@ -151,12 +160,13 @@ export async function reverseRewardRedeem(
   opts: { invoiceId: number; subscriberId: number; towerId: number | null; agentId: number | null; createdByUser?: string },
 ): Promise<number> {
   const redeem = await tx.rewardLog.findFirst({
-    where: { subscriberId: opts.subscriberId, refId: opts.invoiceId, kind: "redeem" },
+    // 🔑 استثناءُ سياق طلب المتجر: معرّفُه يساوي معرّفَ فاتورةٍ عاجلاً أو آجلاً (STORE_ORDER_CTX)
+    where: { subscriberId: opts.subscriberId, refId: opts.invoiceId, kind: "redeem", NOT: { context: STORE_ORDER_CTX } },
     orderBy: { id: "desc" },
   });
   if (!redeem || redeem.amount <= 0) return 0;
   const already = await tx.rewardLog.findFirst({
-    where: { subscriberId: opts.subscriberId, refId: opts.invoiceId, kind: "redeem-reverse" },
+    where: { subscriberId: opts.subscriberId, refId: opts.invoiceId, kind: "redeem-reverse", NOT: { context: STORE_ORDER_VOID_CTX } },
   });
   if (already) return 0; // عُكِس مسبقاً — لا إرجاعَ مزدوجاً لنفس الفاتورة
 
@@ -178,6 +188,43 @@ export async function reverseRewardRedeem(
       agentId: opts.agentId ?? null, towerId: opts.towerId ?? null, subscriberId: opts.subscriberId,
       kind: "redeem-reverse", amount: redeem.amount, code: redeem.code,
       context: `${redeem.context ?? "?"}-void`, refId: opts.invoiceId,
+      balanceAfter: after?.rewardBalance ?? 0, subscriberName: after?.name ?? null,
+      createdByUser: opts.createdByUser ?? null,
+    },
+  });
+  return redeem.amount;
+}
+
+// ═════ 🛒 إرجاعُ خصمِ طلبِ المتجر عند إلغائه أو رفضه (مرآةُ الخصم اللحظيّ) ═════
+// الخصمُ يقع عند الإرسال، فالطلبُ الذي لم يصل صاحبَه يجب أن يُعيد رصيدَه كاملاً. يُنادى
+// **داخل** معاملةِ تغييرِ الحالة وبعد نجاحِ الانتقال الذرّيّ وحدَه ⇒ انتقالٌ واحدٌ ينجح
+// فإرجاعٌ واحدٌ يقع، ولو تزامن إلغاءٌ ورفضٌ. والصفُّ الموسومُ بـ`redeem-reverse` يحرسه مرّةً أخرى.
+export async function reverseStoreOrderRedeem(
+  tx: Prisma.TransactionClient,
+  opts: { orderId: number; subscriberId: number; towerId: number | null; agentId: number | null; createdByUser?: string },
+): Promise<number> {
+  const redeem = await tx.rewardLog.findFirst({
+    where: { subscriberId: opts.subscriberId, refId: opts.orderId, kind: "redeem", context: STORE_ORDER_CTX },
+    orderBy: { id: "desc" },
+  });
+  if (!redeem || redeem.amount <= 0) return 0;
+  const already = await tx.rewardLog.findFirst({
+    where: { subscriberId: opts.subscriberId, refId: opts.orderId, kind: "redeem-reverse", context: STORE_ORDER_VOID_CTX },
+  });
+  if (already) return 0;
+  await tx.subscriber.update({ where: { id: opts.subscriberId }, data: { rewardBalance: { increment: redeem.amount } } });
+  const after = await tx.subscriber.findUnique({
+    where: { id: opts.subscriberId },
+    select: { rewardBalance: true, rewardCode: true, name: true },
+  });
+  if (after && !after.rewardCode && redeem.code) {
+    await tx.subscriber.update({ where: { id: opts.subscriberId }, data: { rewardCode: redeem.code } });
+  }
+  await tx.rewardLog.create({
+    data: {
+      agentId: opts.agentId ?? null, towerId: opts.towerId ?? null, subscriberId: opts.subscriberId,
+      kind: "redeem-reverse", amount: redeem.amount, code: redeem.code,
+      context: STORE_ORDER_VOID_CTX, refId: opts.orderId,
       balanceAfter: after?.rewardBalance ?? 0, subscriberName: after?.name ?? null,
       createdByUser: opts.createdByUser ?? null,
     },

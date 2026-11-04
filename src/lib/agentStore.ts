@@ -2,38 +2,47 @@ import { prisma } from "@/lib/prisma";
 import { priceToNum } from "@/lib/market";
 
 // إنشاءٌ كسولٌ لجدولَي متجر الوكيل + أعمدةٍ إضافيّة (النشرُ لا يُشغّل migrate) — تحصينٌ للتعافي.
+// 🔴 وحاسبةُ المكتب تُشغّل نفسَ الموقع بدور `agent_N_worker` **غيرِ المالك**، و«IF NOT EXISTS»
+//    تكتم خطأَ التكرار لا فحصَ الملكيّة ⇒ محاولةٌ واحدةٌ مبتلَعةُ الفشل، وإلّا سقطت لوحةُ
+//    إدارة الفنيين عندها (درسُ 2026-10-28). والجداولُ والأعمدةُ تُنشأ من الموقع/الإنتاج.
 let ready = false;
+let tried = false;
 export async function ensureAgentStoreTables(): Promise<void> {
-  if (ready) return;
-  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "agent_products" (
-    "id" SERIAL PRIMARY KEY, "agentId" INTEGER NOT NULL, "agentName" TEXT,
-    "title" TEXT NOT NULL, "price" BIGINT, "description" TEXT, "photo" TEXT,
-    "category" TEXT, "stock" INTEGER, "status" TEXT NOT NULL DEFAULT 'visible',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "itemName" TEXT`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "deliveryFee" BIGINT`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "installFee" BIGINT`);
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "agent_products_status_createdAt_idx" ON "agent_products" ("status","createdAt")`);
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "agent_products_agentId_idx" ON "agent_products" ("agentId")`);
-  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "store_orders" (
-    "id" SERIAL PRIMARY KEY, "agentId" INTEGER NOT NULL, "subscriberId" INTEGER NOT NULL,
-    "subscriberName" TEXT, "productId" INTEGER NOT NULL, "productTitle" TEXT NOT NULL,
-    "price" BIGINT, "qty" INTEGER NOT NULL DEFAULT 1, "phone" TEXT NOT NULL,
-    "address" TEXT NOT NULL, "note" TEXT, "status" TEXT NOT NULL DEFAULT 'new',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "fulfillment" TEXT NOT NULL DEFAULT 'delivery'`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "deliveryFee" BIGINT`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "installFee" BIGINT`);
-  await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "total" BIGINT`);
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "store_orders_agentId_status_idx" ON "store_orders" ("agentId","status")`);
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "store_orders_subscriberId_idx" ON "store_orders" ("subscriberId")`);
-  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "store_order_items" (
-    "id" SERIAL PRIMARY KEY, "orderId" INTEGER NOT NULL, "productId" INTEGER NOT NULL,
-    "productTitle" TEXT NOT NULL, "price" BIGINT, "qty" INTEGER NOT NULL DEFAULT 1 )`);
-  await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "store_order_items_orderId_idx" ON "store_order_items" ("orderId")`);
-  ready = true;
+  if (ready || tried) return;
+  tried = true;
+  try {
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "agent_products" (
+      "id" SERIAL PRIMARY KEY, "agentId" INTEGER NOT NULL, "agentName" TEXT,
+      "title" TEXT NOT NULL, "price" BIGINT, "description" TEXT, "photo" TEXT,
+      "category" TEXT, "stock" INTEGER, "status" TEXT NOT NULL DEFAULT 'visible',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "itemName" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "deliveryFee" BIGINT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "agent_products" ADD COLUMN IF NOT EXISTS "installFee" BIGINT`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "agent_products_status_createdAt_idx" ON "agent_products" ("status","createdAt")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "agent_products_agentId_idx" ON "agent_products" ("agentId")`);
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "store_orders" (
+      "id" SERIAL PRIMARY KEY, "agentId" INTEGER NOT NULL, "subscriberId" INTEGER NOT NULL,
+      "subscriberName" TEXT, "productId" INTEGER NOT NULL, "productTitle" TEXT NOT NULL,
+      "price" BIGINT, "qty" INTEGER NOT NULL DEFAULT 1, "phone" TEXT NOT NULL,
+      "address" TEXT NOT NULL, "note" TEXT, "status" TEXT NOT NULL DEFAULT 'new',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP )`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "fulfillment" TEXT NOT NULL DEFAULT 'delivery'`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "deliveryFee" BIGINT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "installFee" BIGINT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "total" BIGINT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "useReward" BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "store_orders" ADD COLUMN IF NOT EXISTS "rewardUsed" BIGINT`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "store_orders_agentId_status_idx" ON "store_orders" ("agentId","status")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "store_orders_subscriberId_idx" ON "store_orders" ("subscriberId")`);
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "store_order_items" (
+      "id" SERIAL PRIMARY KEY, "orderId" INTEGER NOT NULL, "productId" INTEGER NOT NULL,
+      "productTitle" TEXT NOT NULL, "price" BIGINT, "qty" INTEGER NOT NULL DEFAULT 1 )`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "store_order_items_orderId_idx" ON "store_order_items" ("orderId")`);
+    ready = true;
+  } catch { /* حاسبةُ المكتب ليست مالكةَ الجدول — الـDDL على الإنتاج، والقراءةُ تمضي */ }
 }
 
 export const STORE_ORDER_STATES = ["new", "accepted", "delivered", "declined", "cancelled"] as const;

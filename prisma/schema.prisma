@@ -2180,6 +2180,8 @@ model StoreOrder {
   fulfillment    String   @default("delivery") // delivery | delivery_install — اختيارُ الزبون
   deliveryFee    BigInt? // لقطةُ مبلغ التوصيل (مرّةً لكامل الفاتورة)
   installFee     BigInt? // لقطةُ مبلغ التنصيب (حين اختار «توصيل وتنصيب»)
+  useReward      Boolean  @default(false) // طلبَ المشترك خصمَ رصيد مكافأته من إجماليّ السلّة
+  rewardUsed     BigInt? // المخصومُ فعلاً لحظةَ الإرسال — والمطلوبُ = total − rewardUsed
   phone          String
   address        String
   note           String?

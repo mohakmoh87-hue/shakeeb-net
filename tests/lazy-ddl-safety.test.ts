@@ -34,7 +34,7 @@ function srcFiles(dir: string, out: string[] = []): string[] {
 // فتسقط الصفحةُ كلُّها — ومنها **«الباقات والعروض» في برنامج الوكيل** (`store/offers`).
 // فكلُّ `ensure` تُجرَّب **مرّةً واحدةً** ويُبتلَع فشلُها، والجداولُ منشأةٌ من الموقع.
 describe("🛡️ كلُّ إنشاءٍ كسولٍ يتحمّل غيابَ الملكيّة (حاسبةُ المكتب)", () => {
-  const LIBS = ["market", "agentAppOffers", "appInstall", "officeHours"];
+  const LIBS = ["market", "agentAppOffers", "appInstall", "officeHours", "agentStore"];
   for (const lib of LIBS) {
     test(`${lib}: محاولةٌ واحدةٌ ويُبتلَع فشلُها`, () => {
       const src = fs.readFileSync(path.join(ROOT, `src/lib/${lib}.ts`), "utf8");

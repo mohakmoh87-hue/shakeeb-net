@@ -301,7 +301,7 @@ export default function FieldManagementPage() {
   // 🎫 تذاكرُ المشتركين: طلباتُ اشتراكٍ جديدةٌ من التطبيق، مُوجَّهةٌ لهذا الوكيل بأقرب عامود
   const [subTickets, setSubTickets] = useState<{ id: number; name: string; phone: string; area: string | null; note: string | null; lat: number | null; lng: number | null; nearestPole: string | null; poleDistanceM: number | null; towerId: number | null; type: string | null; status: string; createdAt: string; source: string | null; dueAt: string | null }[]>([]);
   // 🏬 طلباتُ متجر الوكيل الواصلةُ له — عمودٌ خاصٌّ يظهر حين تأتيه طلبات (يختفي حين يفرغ)
-  const [storeOrders, setStoreOrders] = useState<{ id: number; subscriberName: string | null; productTitle: string; price: number | null; qty: number; phone: string; address: string; note: string | null; status: string; createdAt: string; fulfillment: string; deliveryFee: number | null; installFee: number | null; total: number | null; rewardBalance?: number; lines: { productTitle: string; price: number | null; qty: number }[] }[]>([]);
+  const [storeOrders, setStoreOrders] = useState<{ id: number; subscriberName: string | null; productTitle: string; price: number | null; qty: number; phone: string; address: string; note: string | null; status: string; createdAt: string; fulfillment: string; deliveryFee: number | null; installFee: number | null; total: number | null; rewardUsed?: number | null; rewardBalance?: number; lines: { productTitle: string; price: number | null; qty: number }[] }[]>([]);
   const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
@@ -1197,19 +1197,33 @@ export default function FieldManagementPage() {
                       {accepted && <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">مقبول</span>}
                     </div>
                     {o.lines.length > 1 && <div className="mt-1 space-y-0.5">{o.lines.map((l, idx) => <div key={idx} className="text-[11px] text-slate-600">• {l.productTitle} × {l.qty}</div>)}</div>}
-                    {(o.total ?? o.price) != null && <div className="mt-0.5 text-xs font-bold text-[#0d7d94]">الإجمالي {(o.total ?? o.price)!.toLocaleString("en-US")} د.ع</div>}
+                    {/* 🎁 طلبٌ بخصم مكافأة: الإجماليُّ يُشطَب والمطلوبُ هو المبلغُ بعد الخصم —
+                        فالمخصومُ وقع لحظةَ الإرسال (قرارُ محمد 2026-11-04) ولا يُخصَم ثانيةً. */}
+                    {(o.total ?? o.price) != null && (
+                      (o.rewardUsed ?? 0) > 0
+                        ? <div className="mt-0.5 text-xs font-bold text-[#0d7d94]">
+                            <span className="text-slate-400 line-through">{(o.total ?? o.price)!.toLocaleString("en-US")}</span>
+                            {" "}المطلوب {Math.max(0, (o.total ?? o.price)! - (o.rewardUsed ?? 0)).toLocaleString("en-US")} د.ع
+                          </div>
+                        : <div className="mt-0.5 text-xs font-bold text-[#0d7d94]">الإجمالي {(o.total ?? o.price)!.toLocaleString("en-US")} د.ع</div>
+                    )}
                     <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
                       <span className={`rounded px-1.5 py-0.5 font-bold ${o.fulfillment === "delivery_install" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700"}`}>{o.fulfillment === "delivery_install" ? "🚚🔧 توصيل وتنصيب" : "🚚 توصيل"}</span>
                       {o.deliveryFee != null && <span className="text-slate-500">توصيل {o.deliveryFee.toLocaleString("en-US")}</span>}
                       {o.installFee != null && <span className="text-slate-500">· تنصيب {o.installFee.toLocaleString("en-US")}</span>}
                     </div>
                     {o.subscriberName && <div className="mt-0.5 text-[11px] font-semibold text-slate-600">{o.subscriberName}</div>}
-                    {/* 🎁 رصيدُ مكافأة المشترك (طلبُ محمد 2026-10-26): بيانٌ للمكتب لا خصمٌ —
-                        الخصمُ يبقى عند إصدار الفاتورة كما هو، فلا يُستهلَك رصيدٌ على طلبٍ لم يُسلَّم.
-                        ولا يظهر إلّا لمشتركٍ من مكاتب هذا الوكيل (الخادمُ يحسم ذلك). */}
-                    {(o.rewardBalance ?? 0) > 0 && (
+                    {/* 🎁 المخصومُ من مكافأته في هذا الطلب (وقع لحظةَ الإرسال) ثمّ رصيدُه المتبقّي.
+                        ⚠️ ونصُّ «لا تخصمها ثانيةً» مقصود: الفاتورةُ تخصم ما بقي فيُخسَر مرّتَين.
+                        ولا يظهر الرصيدُ إلّا لمشتركٍ من مكاتب هذا الوكيل (الخادمُ يحسم ذلك). */}
+                    {(o.rewardUsed ?? 0) > 0 && (
                       <div className="mt-1 rounded bg-emerald-50 px-1.5 py-1 text-[10px] font-bold text-emerald-700">
-                        🎁 لديه رصيدُ مكافأة {(o.rewardBalance ?? 0).toLocaleString("en-US")} د.ع — يُخصَم عند إصدار الفاتورة
+                        🎁 خُصِم من مكافأته {(o.rewardUsed ?? 0).toLocaleString("en-US")} د.ع في هذا الطلب — لا تخصمها ثانيةً في الفاتورة
+                      </div>
+                    )}
+                    {(o.rewardBalance ?? 0) > 0 && (
+                      <div className="mt-1 rounded bg-emerald-50/60 px-1.5 py-1 text-[10px] font-semibold text-emerald-700">
+                        🎁 رصيدُ مكافأته المتبقّي {(o.rewardBalance ?? 0).toLocaleString("en-US")} د.ع
                       </div>
                     )}
                     <div className="mt-0.5 text-xs font-semibold text-slate-500"><CallPhone phone={o.phone} /></div>
