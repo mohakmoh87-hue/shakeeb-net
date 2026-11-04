@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { hashPassword } from "./auth";
+import { ensureMarketTable } from "./market";
 
 // ═════ 👤 حساباتُ التجريب في التطبيق — سجلٌّ بلا جدولٍ ولا عمود (طلبُ محمد 2026-11-04) ═════
 //
@@ -91,13 +92,14 @@ export async function seedTestUsers(officeId?: number): Promise<{ ok: boolean; e
   const office = officeId != null ? candidates.find((c) => c.id === officeId) : (candidates.length === 1 ? candidates[0] : undefined);
   if (!office) return { ok: false, error: "اختر المكتبَ — أكثرُ من مكتبٍ يحوي «المواصلات»" };
 
+  await ensureMarketTable();
   const existing = await getTestUsers();
   // 🔒 رقمٌ تجريبيٌّ يملكه صفٌّ ليس من السجلّ ⇒ توقّفٌ تامّ: لا نلمس صفَّ إنسان.
   const cores = [...SPEC.map((s) => s.core), ACCOUNT.core];
-  const clash = await prisma.$queryRaw<{ id: number }[]>`
-    SELECT id FROM subscribers
-    WHERE "isDeleted" = false AND "purgedAt" IS NULL
-      AND right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = ANY(${cores}::text[])`;
+  const clash = await prisma.subscriber.findMany({
+    where: { isDeleted: false, purgedAt: null, OR: cores.map((c) => ({ phone: { endsWith: c } })) },
+    select: { id: true },
+  });
   const mine = new Set(existing.map((e) => e.subscriberId).filter((x): x is number => typeof x === "number"));
   if (clash.some((c) => !mine.has(Number(c.id)))) return { ok: false, error: "أحدُ الأرقام التجريبيّة مستعملٌ لمشتركٍ حقيقيّ — أبلِغ كلود" };
 
@@ -147,6 +149,7 @@ export async function disableTestUsers(): Promise<{ ok: boolean; count: number }
 }
 
 export async function testUsersStatus(): Promise<{ users: { user: string; name: string; state: string }[]; offices: { id: number; name: string }[] }> {
+  await ensureMarketTable();
   const list = await getTestUsers();
   const subIds = list.map((e) => e.subscriberId).filter((x): x is number => typeof x === "number");
   const subs = subIds.length
