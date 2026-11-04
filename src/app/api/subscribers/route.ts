@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import { getSession } from "@/lib/auth";
 import { installedSubscriberIds } from "@/lib/appInstall";
+import { testSubscriberIds } from "@/lib/appTestUsers";
 
 const schema = z.object({
   name: z.string().min(1, "اسم المشترك مطلوب"),
@@ -82,9 +83,13 @@ export async function GET(request: Request) {
     matchedTowerIds = towers.map((t) => t.id);
   }
 
+  // 👤 حساباتُ التجريب في التطبيق لا تظهر في مشتركي المكتب (طلبُ محمد 2026-11-04).
+  //    وبسجلٍّ فارغٍ لا شرطَ يُضاف أصلاً ⇒ الاستعلامُ القديمُ كما كان حرفيّاً.
+  const hiddenTest = await testSubscriberIds();
   const where = {
     isDeleted: false,
     ...towerFilter,
+    ...(hiddenTest.length ? { id: { notIn: hiddenTest } } : {}),
     ...(q
       ? {
           OR: [

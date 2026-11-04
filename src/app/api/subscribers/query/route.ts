@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { guard, agentTowerIds } from "@/lib/guard";
 import { decryptSecret } from "@/lib/secretbox";
 import { installedSubscriberIds } from "@/lib/appInstall";
+import { testSubscriberIds } from "@/lib/appTestUsers";
 
 export const dynamic = "force-dynamic";
 
@@ -65,9 +66,13 @@ export async function GET(request: Request) {
     dateWhere = { dateTo: { not: null, lt: now } };
   }
 
+  // 👤 حساباتُ التجريب لا تظهر في «كلّ المشتركين» (طلبُ محمد 2026-11-04) — وبسجلٍّ
+  //    فارغٍ لا شرطَ يُضاف.
+  const hiddenTest = await testSubscriberIds();
   const where = {
     isDeleted: false,
     towerId: { in: towerIds },
+    ...(hiddenTest.length ? { id: { notIn: hiddenTest } } : {}),
     ...dateWhere,
     ...(q
       ? {

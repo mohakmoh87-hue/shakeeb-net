@@ -12,6 +12,9 @@ type Sub = { id: number; name: string | null; phone: string | null; appBanned: b
 
 const STATE_LABEL: Record<string, string> = { active: "فعّال", grace: "مهلة", expired: "منتهٍ" };
 
+type TestUser = { user: string; name: string; state: string };
+type TestOffice = { id: number; name: string };
+
 export default function AppAdminDashboard({ username }: { username: string }) {
   const [s, setS] = useState<State | null>(null);
   const [saving, setSaving] = useState(false);
@@ -22,6 +25,12 @@ export default function AppAdminDashboard({ username }: { username: string }) {
   const [inviteBonus, setInviteBonus] = useState("0");
   const [testPhone, setTestPhone] = useState("");
   const [testMsg, setTestMsg] = useState("");
+  // 👤 حساباتُ التجريب
+  const [tUsers, setTUsers] = useState<TestUser[]>([]);
+  const [tOffices, setTOffices] = useState<TestOffice[]>([]);
+  const [tOffice, setTOffice] = useState("");
+  const [tMsg, setTMsg] = useState("");
+  const [tBusy, setTBusy] = useState(false);
   // مشتركو التطبيق
   const [counts, setCounts] = useState<Counts | null>(null);
   const [subs, setSubs] = useState<Sub[]>([]);
@@ -43,7 +52,30 @@ export default function AppAdminDashboard({ username }: { username: string }) {
       if (d) { setCounts(d.counts); setSubs(d.subscribers ?? []); setPages(d.pages ?? 0); setTotal(d.total ?? 0); setPage(d.page ?? 1); }
     });
   }, []);
-  useEffect(() => { const t = setTimeout(() => { loadConfig(); loadSubs("", 1); }, 0); return () => clearTimeout(t); }, [loadConfig, loadSubs]);
+  const loadTest = useCallback(() => {
+    fetch("/api/app-admin/test-users").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d) return;
+      setTUsers(d.users ?? []); setTOffices(d.offices ?? []);
+      setTOffice((prev) => prev || String(d.offices?.[0]?.id ?? ""));
+    });
+  }, []);
+  useEffect(() => { const t = setTimeout(() => { loadConfig(); loadSubs("", 1); loadTest(); }, 0); return () => clearTimeout(t); }, [loadConfig, loadSubs, loadTest]);
+
+  async function testUsersAction(action: "seed" | "disable") {
+    if (action === "disable" && !confirm("إيقافُ حسابات التجريب؟ تُخفى ولا تُحذَف، ويعيدها زرُّ الإنشاء.")) return;
+    setTBusy(true); setTMsg("");
+    try {
+      const res = await fetch("/api/app-admin/test-users", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...(action === "seed" && tOffice ? { officeId: Number(tOffice) } : {}) }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { setTMsg(d.error ?? "تعذّرت العملية"); return; }
+      setTUsers(d.users ?? []); setTOffices(d.offices ?? []);
+      setTMsg(action === "seed" ? `✓ جاهزةٌ على ${d.officeName ?? "المكتب"} — كلمةُ المرور 123456` : "✓ أُوقفت");
+    } catch { setTMsg("تعذّر الاتصال بالخادم"); }
+    finally { setTBusy(false); }
+  }
 
   async function save() {
     setSaving(true); setMsg("");
@@ -180,6 +212,43 @@ export default function AppAdminDashboard({ username }: { username: string }) {
         <label className="text-xs font-semibold text-slate-600">مبلغُ المكافأة للداعي (دينار)
           <input type="number" min={0} value={inviteBonus} onChange={(e) => setInviteBonus(e.target.value)} dir="ltr" className="mt-1 w-40 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </label>
+      </div>
+
+      {/* 👤 حسابات التجريب */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-1 font-semibold text-slate-800">👤 حساباتُ التجريب</div>
+        <div className="mb-3 text-[11px] leading-5 text-slate-500">
+          أربعةُ حساباتٍ للتجربة من داخل التطبيق: <b>test1</b> مشتركٌ فعّال · <b>test2</b> منتهٍ منذ عشرة أيّام ·
+          <b> test3</b> منتهٍ منذ سنة · <b>test4</b> مسجَّلٌ غيرُ مشترك. كلمةُ المرور <b dir="ltr">123456</b> للأربعة،
+          وتُكتَب في خانة الهاتف نفسِها. لا تظهر في مشتركي المكتب، ولا تصلها رسالةُ واتساب، ولا أثرَ ماليَّ لها.
+          وإعادةُ الضغط تُجدّد التواريخَ (فيبقى <b>test1</b> فعّالاً دائماً).
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {tOffices.length > 1 && (
+            <select value={tOffice} onChange={(e) => setTOffice(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              {tOffices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          )}
+          <button onClick={() => void testUsersAction("seed")} disabled={tBusy} className="rounded-lg bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-200 disabled:opacity-60">🧪 إنشاء / تحديث</button>
+          <button onClick={() => void testUsersAction("disable")} disabled={tBusy || !tUsers.length} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60">⏸️ إيقاف</button>
+          {tMsg && <span className="text-xs text-slate-600">{tMsg}</span>}
+        </div>
+        {tUsers.length > 0 && (
+          <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-500"><tr><th className="px-2 py-1.5 text-right">اليوزر</th><th className="px-2 py-1.5 text-right">الاسم</th><th className="px-2 py-1.5 text-right">الحالة</th></tr></thead>
+              <tbody>
+                {tUsers.map((u) => (
+                  <tr key={u.user} className="border-t border-slate-100">
+                    <td className="px-2 py-1.5 font-semibold text-slate-800" dir="ltr">{u.user}</td>
+                    <td className="px-2 py-1.5 text-slate-600">{u.name}</td>
+                    <td className="px-2 py-1.5 text-slate-600">{u.state}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* الإعلانات والعروض */}
