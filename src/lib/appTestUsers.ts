@@ -173,7 +173,7 @@ export async function grantTestReward(user = "test1"): Promise<{
   });
   if (!sub || sub.isDeleted) return { ok: false, error: "الحسابُ التجريبيُّ موقوفٌ أو مفقود — اضغط «إنشاء / تحديث»" };
   const office = sub.towerId
-    ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { name: true, agentId: true, rewardsEnabled: true } })
+    ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { name: true, agentId: true, rewardsEnabled: true, isDeleted: true } })
     : null;
   const officeAgent = office?.agentId != null ? (await agentNames([office.agentId])).get(office.agentId) ?? null : null;
   const r = await prisma.$transaction(async (tx) =>
@@ -186,7 +186,7 @@ export async function grantTestReward(user = "test1"): Promise<{
   if (!r) return { ok: false, error: "تعذّر المنح" };
   return {
     ok: true, balance: r.balance, code: r.code,
-    officeName: `${office?.name ?? "بلا مكتب"}${officeAgent ? ` — ${officeAgent}` : ""}`,
+    officeName: `${office?.name ?? "بلا مكتب"}${office?.isDeleted ? " (محذوف)" : ""}${officeAgent ? ` — ${officeAgent}` : ""}`,
     rewardsEnabled: office?.rewardsEnabled === "1",
   };
 }
@@ -216,9 +216,11 @@ export async function testUsersStatus(): Promise<{
   const subTowerIds = [...new Set(subs.map((s) => s.towerId).filter((t): t is number => t != null))];
   const subTowers = new Map(
     (subTowerIds.length
-      ? await prisma.tower.findMany({ where: { id: { in: subTowerIds } }, select: { id: true, name: true, rewardsEnabled: true, agentId: true } })
+      ? await prisma.tower.findMany({ where: { id: { in: subTowerIds } }, select: { id: true, name: true, rewardsEnabled: true, agentId: true, isDeleted: true } })
       : []
-    ).map((t) => [t.id, { name: t.name ?? `مكتب ${t.id}`, agentId: t.agentId, rewardsOn: t.rewardsEnabled === "1" }]),
+    // 🗑️ والمكتبُ المحذوفُ يُوسَم: حسابٌ تجريبيٌّ زُرع يومَ كان حيّاً يبقى معلَّقاً به،
+    //    فلا يظهر في المرشَّحين (isDeleted: false) ولا يُشعَل فيه شيءٌ — فيُلبِس التشخيص.
+    ).map((t) => [t.id, { name: `${t.name ?? `مكتب ${t.id}`}${t.isDeleted ? " (محذوف)" : ""}`, agentId: t.agentId, rewardsOn: t.rewardsEnabled === "1" }]),
   );
   const subAgents = await agentNames([...subTowers.values()].map((t) => t.agentId));
   const accIds = list.map((e) => e.accountId).filter((x): x is number => typeof x === "number");
