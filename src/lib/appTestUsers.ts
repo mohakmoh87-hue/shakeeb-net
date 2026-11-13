@@ -78,13 +78,28 @@ const ACCOUNT = { user: "test4", phone: "07000000004", core: "7000000004", name:
 
 const dayShift = (days: number): Date => new Date(Date.now() + days * 86_400_000);
 
-export async function testOfficeCandidates(): Promise<{ id: number; name: string }[]> {
+async function agentNames(ids: (number | null | undefined)[]): Promise<Map<number, string>> {
+  const list = [...new Set(ids.filter((n): n is number => typeof n === "number"))];
+  if (!list.length) return new Map();
+  const rows = await prisma.agent.findMany({ where: { id: { in: list } }, select: { id: true, name: true } });
+  return new Map(rows.map((a) => [a.id, a.name ?? `وكيل #${a.id}`]));
+}
+
+export async function testOfficeCandidates(): Promise<{ id: number; name: string; agentName: string | null; rewardsOn: boolean }[]> {
+  // 🔴 الاسمُ وحدَه لا يميّز: مكاتبُ عدّةِ وكلاءَ تحمل «المواصلات» — فيُعرَض الوكيلُ
+  //    وحالةُ المكافآت مع كلّ مرشّح، وإلّا زُرعت الحساباتُ في مكتبٍ وفُتحت المكافآتُ في آخر.
   const rows = await prisma.tower.findMany({
     where: { isDeleted: false, name: { contains: "المواصلات" } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, rewardsEnabled: true, agentId: true },
     orderBy: { id: "asc" },
   });
-  return rows.map((t) => ({ id: t.id, name: t.name ?? `مكتب ${t.id}` }));
+  const agents = await agentNames(rows.map((t) => t.agentId));
+  return rows.map((t) => ({
+    id: t.id,
+    name: t.name ?? `مكتب ${t.id}`,
+    agentName: (t.agentId != null ? agents.get(t.agentId) : null) ?? null,
+    rewardsOn: t.rewardsEnabled === "1",
+  }));
 }
 
 export async function seedTestUsers(officeId?: number): Promise<{ ok: boolean; error?: string; officeName?: string; users?: string[] }> {
@@ -136,7 +151,7 @@ export async function seedTestUsers(officeId?: number): Promise<{ ok: boolean; e
   list.push({ user: ACCOUNT.user, accountId: acc.id });
 
   await saveTestUsers(list);
-  return { ok: true, officeName: office.name, users: list.map((e) => e.user) };
+  return { ok: true, officeName: `${office.name}${office.agentName ? ` — ${office.agentName}` : ""}`, users: list.map((e) => e.user) };
 }
 
 // ═════ 🎁 رصيدُ مكافأةٍ تجريبيٌّ (طلبُ محمد 2026-11-04 لتجربةِ خصمِ المكافأة في المتجر) ═════
@@ -149,6 +164,7 @@ export const TEST_REWARD = 5000;
 export async function grantTestReward(user = "test1"): Promise<{
   ok: boolean; error?: string; balance?: number; code?: string; officeName?: string; rewardsEnabled?: boolean;
 }> {
+  // الرسالةُ تُسمّي المكتبَ ووكيلَه دائماً — فمكاتبُ وكلاءَ كثيرين تحمل الاسمَ نفسَه
   const entry = await resolveTestUser(user);
   if (entry?.subscriberId == null) return { ok: false, error: "لا حسابَ تجريبيٍّ بهذا الاسم — اضغط «إنشاء / تحديث» أوّلاً" };
   const sub = await prisma.subscriber.findUnique({
@@ -159,6 +175,7 @@ export async function grantTestReward(user = "test1"): Promise<{
   const office = sub.towerId
     ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { name: true, agentId: true, rewardsEnabled: true } })
     : null;
+  const officeAgent = office?.agentId != null ? (await agentNames([office.agentId])).get(office.agentId) ?? null : null;
   const r = await prisma.$transaction(async (tx) =>
     grantReward(tx, {
       subscriberId: sub.id, towerId: sub.towerId, agentId: office?.agentId ?? null, subscriberName: sub.name,
@@ -167,7 +184,11 @@ export async function grantTestReward(user = "test1"): Promise<{
     }),
   );
   if (!r) return { ok: false, error: "تعذّر المنح" };
-  return { ok: true, balance: r.balance, code: r.code, officeName: office?.name ?? undefined, rewardsEnabled: office?.rewardsEnabled === "1" };
+  return {
+    ok: true, balance: r.balance, code: r.code,
+    officeName: `${office?.name ?? "بلا مكتب"}${officeAgent ? ` — ${officeAgent}` : ""}`,
+    rewardsEnabled: office?.rewardsEnabled === "1",
+  };
 }
 
 // إيقافٌ ناعم: الصفوفُ تبقى (لا حذفَ نهائيّ) ويعيدها زرُّ الإنشاء كما كانت.
@@ -180,14 +201,26 @@ export async function disableTestUsers(): Promise<{ ok: boolean; count: number }
   return { ok: true, count: subIds.length + accIds.length };
 }
 
-export async function testUsersStatus(): Promise<{ users: { user: string; name: string; state: string }[]; offices: { id: number; name: string }[] }> {
+export async function testUsersStatus(): Promise<{
+  users: { user: string; name: string; state: string; officeName: string | null; rewardsOn: boolean | null; rewardBalance: number | null }[];
+  offices: { id: number; name: string; agentName: string | null; rewardsOn: boolean }[];
+}> {
   await ensureMarketTable();
   const list = await getTestUsers();
   const subIds = list.map((e) => e.subscriberId).filter((x): x is number => typeof x === "number");
   const subs = subIds.length
-    ? await prisma.subscriber.findMany({ where: { id: { in: subIds } }, select: { id: true, name: true, dateTo: true, isDeleted: true } })
+    ? await prisma.subscriber.findMany({ where: { id: { in: subIds } }, select: { id: true, name: true, dateTo: true, isDeleted: true, towerId: true, rewardBalance: true } })
     : [];
   const subMap = new Map(subs.map((s) => [s.id, s]));
+  // 🔑 مكتبُ الصفّ نفسِه وحالةُ مكافآته — فالزرُّ يقرأ هذا المكتبَ لا المكتبَ المتشابهَ اسمُه
+  const subTowerIds = [...new Set(subs.map((s) => s.towerId).filter((t): t is number => t != null))];
+  const subTowers = new Map(
+    (subTowerIds.length
+      ? await prisma.tower.findMany({ where: { id: { in: subTowerIds } }, select: { id: true, name: true, rewardsEnabled: true, agentId: true } })
+      : []
+    ).map((t) => [t.id, { name: t.name ?? `مكتب ${t.id}`, agentId: t.agentId, rewardsOn: t.rewardsEnabled === "1" }]),
+  );
+  const subAgents = await agentNames([...subTowers.values()].map((t) => t.agentId));
   const accIds = list.map((e) => e.accountId).filter((x): x is number => typeof x === "number");
   const accs = accIds.length
     ? await prisma.appAccount.findMany({ where: { id: { in: accIds } }, select: { id: true, name: true, isBanned: true } })
@@ -196,14 +229,19 @@ export async function testUsersStatus(): Promise<{ users: { user: string; name: 
   const users = list.map((e) => {
     if (e.subscriberId != null) {
       const s = subMap.get(e.subscriberId);
-      if (!s) return { user: e.user, name: "—", state: "مفقود" };
+      if (!s) return { user: e.user, name: "—", state: "مفقود", officeName: null, rewardsOn: null, rewardBalance: null };
       const days = s.dateTo ? Math.round((new Date(s.dateTo).getTime() - Date.now()) / 86_400_000) : null;
       const state = s.isDeleted ? "موقوف" : days == null ? "بلا تاريخ" : days >= 0 ? `فعال (${days} يوما)` : `منتهٍ منذ ${-days} يوما`;
-      return { user: e.user, name: s.name ?? "—", state };
+      const off = s.towerId != null ? subTowers.get(s.towerId) : undefined;
+      return {
+        user: e.user, name: s.name ?? "—", state,
+        officeName: off ? `${off.name}${off.agentId != null && subAgents.get(off.agentId) ? ` — ${subAgents.get(off.agentId)}` : ""}` : null,
+        rewardsOn: off?.rewardsOn ?? null, rewardBalance: s.rewardBalance ?? 0,
+      };
     }
     const a = e.accountId != null ? accMap.get(e.accountId) : null;
-    if (!a) return { user: e.user, name: "—", state: "مفقود" };
-    return { user: e.user, name: a.name, state: a.isBanned ? "موقوف" : "مسجل غير مشترك" };
+    if (!a) return { user: e.user, name: "—", state: "مفقود", officeName: null, rewardsOn: null, rewardBalance: null };
+    return { user: e.user, name: a.name, state: a.isBanned ? "موقوف" : "مسجل غير مشترك", officeName: null, rewardsOn: null, rewardBalance: null };
   });
   return { users, offices: await testOfficeCandidates() };
 }

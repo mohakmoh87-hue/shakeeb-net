@@ -13,8 +13,8 @@ type Sub = { id: number; name: string | null; phone: string | null; appBanned: b
 
 const STATE_LABEL: Record<string, string> = { active: "فعّال", grace: "مهلة", expired: "منتهٍ" };
 
-type TestUser = { user: string; name: string; state: string };
-type TestOffice = { id: number; name: string };
+type TestUser = { user: string; name: string; state: string; officeName?: string | null; rewardsOn?: boolean | null; rewardBalance?: number | null };
+type TestOffice = { id: number; name: string; agentName?: string | null; rewardsOn?: boolean };
 
 export default function AppAdminDashboard({ username }: { username: string }) {
   const [s, setS] = useState<State | null>(null);
@@ -76,7 +76,7 @@ export default function AppAdminDashboard({ username }: { username: string }) {
     try {
       const res = await fetch("/api/app-admin/test-users", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...(action === "seed" && tOffice ? { officeId: Number(tOffice) } : {}), ...(action === "reward" ? { user: "test1" } : {}) }),
+        body: JSON.stringify({ action, ...(action === "seed" && (tOffice || tOffices.length > 1) ? { officeId: Number(tOffice || tOffices[0].id) } : {}), ...(action === "reward" ? { user: "test1" } : {}) }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) { setTMsg(d.error ?? "تعذّرت العملية"); return; }
@@ -84,8 +84,8 @@ export default function AppAdminDashboard({ username }: { username: string }) {
       setTMsg(
         action === "seed" ? `✓ جاهزةٌ على ${d.officeName ?? "المكتب"} — كلمةُ المرور 123456`
           : action === "reward"
-            ? `✓ رصيدُ مكافأة test1 = ${Number(d.balance ?? 0).toLocaleString("en-US")} د.ع (كود ${d.code ?? "—"})`
-              + (d.rewardsEnabled === false ? ` ⚠️ لكنّ المكافآتَ مطفأةٌ في ${d.officeName ?? "المكتب"} فلا يظهر الرصيدُ في التطبيق` : "")
+            ? `✓ رصيدُ مكافأة test1 = ${Number(d.balance ?? 0).toLocaleString("en-US")} د.ع (كود ${d.code ?? "—"}) — مكتبُه: ${d.officeName ?? "؟"}`
+              + (d.rewardsEnabled === false ? " ⚠️ والمكافآتُ مطفأةٌ فيه فلا يظهر الرصيدُ في التطبيق — أشعِلها في هذا المكتب بالذات" : " ✓ والمكافآتُ مفعّلةٌ فيه")
             : "✓ أُوقفت",
       );
     } catch { setTMsg("تعذّر الاتصال بالخادم"); }
@@ -249,8 +249,8 @@ export default function AppAdminDashboard({ username }: { username: string }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {tOffices.length > 1 && (
-            <select value={tOffice} onChange={(e) => setTOffice(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              {tOffices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            <select value={tOffice || String(tOffices[0].id)} onChange={(e) => setTOffice(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              {tOffices.map((o) => <option key={o.id} value={o.id}>{o.name}{o.agentName ? ` — ${o.agentName}` : ""}{o.rewardsOn ? " 🎁" : ""}</option>)}
             </select>
           )}
           <button onClick={() => void testUsersAction("seed")} disabled={tBusy} className="rounded-lg bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-200 disabled:opacity-60">🧪 إنشاء / تحديث</button>
@@ -261,13 +261,20 @@ export default function AppAdminDashboard({ username }: { username: string }) {
         {tUsers.length > 0 && (
           <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50 text-slate-500"><tr><th className="px-2 py-1.5 text-right">اليوزر</th><th className="px-2 py-1.5 text-right">الاسم</th><th className="px-2 py-1.5 text-right">الحالة</th></tr></thead>
+              <thead className="bg-slate-50 text-slate-500"><tr><th className="px-2 py-1.5 text-right">اليوزر</th><th className="px-2 py-1.5 text-right">الاسم</th><th className="px-2 py-1.5 text-right">الحالة</th><th className="px-2 py-1.5 text-right">المكتب</th><th className="px-2 py-1.5 text-right">المكافآت</th></tr></thead>
               <tbody>
                 {tUsers.map((u) => (
                   <tr key={u.user} className="border-t border-slate-100">
                     <td className="px-2 py-1.5 font-semibold text-slate-800" dir="ltr">{u.user}</td>
                     <td className="px-2 py-1.5 text-slate-600">{u.name}</td>
                     <td className="px-2 py-1.5 text-slate-600">{u.state}</td>
+                    <td className="px-2 py-1.5 text-slate-600">{u.officeName ?? "—"}</td>
+                    <td className="px-2 py-1.5">
+                      {u.rewardsOn == null ? <span className="text-slate-400">—</span>
+                        : u.rewardsOn
+                          ? <span className="font-bold text-emerald-700">🎁 مفعّلة · رصيد {Number(u.rewardBalance ?? 0).toLocaleString("en-US")}</span>
+                          : <span className="font-bold text-amber-700">⚠️ مطفأة · رصيد {Number(u.rewardBalance ?? 0).toLocaleString("en-US")}</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
