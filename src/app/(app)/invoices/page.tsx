@@ -137,7 +137,7 @@ export default function NewInvoicePage() {
   }
 
   const total = lines.reduce((s, l) => s + l.count * l.price, 0);
-  const discount = !direct && !masterMode && rewardPulled && reward ? Math.min(reward.balance, total) : 0;
+  const discount = !direct && rewardPulled && reward ? Math.min(reward.balance, total) : 0;
   const netTotal = Math.max(0, total - discount);
   // دفع مختلط للماستر: مبلغ ماستر جزئي والباقي نقدي — يُحسب النقدي تلقائياً ليبقى الوصل بلا دين
   const mixed = masterMode && (Number(masterAmount) || 0) > 0;
@@ -171,7 +171,7 @@ export default function NewInvoicePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          subscriberId: direct || masterMode ? null : sub!.id,
+          subscriberId: direct ? null : sub?.id ?? null,
           direct,
           master: masterMode,
           masterAmount: mixed ? masterPart : 0,
@@ -180,7 +180,7 @@ export default function NewInvoicePage() {
           note,
           // البيع المباشر نقدي: الفارغ = دفع المبلغ كاملاً؛ الماستر: النقدي محسوب تلقائياً
           paid: masterMode ? cashPart : direct && paid === "" ? netTotal : Number(paid) || 0,
-          useReward: !direct && !masterMode && rewardPulled,
+          useReward: !direct && rewardPulled,
         }),
       });
       const data = await res.json();
@@ -357,7 +357,7 @@ export default function NewInvoicePage() {
             </label>
           </div>
           {direct && <div className="hint" style={{ marginBottom: 8 }}>⚡ بيع مباشر: نقدي بلا مشترك — اسم الزبون اختياري.</div>}
-          {masterMode && <div className="hint" style={{ marginBottom: 8 }}>🅜 بيع ماستر: على حساب الماستر المستقل — بلا دين، ويدعم الدفع المختلط.</div>}
+          {masterMode && <div className="hint" style={{ marginBottom: 8 }}>🅜 بيع ماستر: على حساب الماستر المستقل — بلا دين، ويدعم الدفع المختلط. واختَر المشترك إن أردت خصم كود مكافأته.</div>}
           {(direct || masterMode) && (
             <input
               value={customerName}
@@ -367,9 +367,9 @@ export default function NewInvoicePage() {
             />
           )}
 
-          {/* المشترك (إلزامي إلا مع البيع المباشر أو بيع الماستر) */}
-          {!direct && !masterMode && (<>
-          <label className="mb-1 block text-sm font-medium text-slate-700">المشترك (إلزامي)</label>
+          {/* المشترك: إلزاميٌّ في البيع العاديّ، واختياريٌّ في الماستر لاستعمال كود المكافأة */}
+          {!direct && (<>
+          <label className="mb-1 block text-sm font-medium text-slate-700">{masterMode ? "المشترك (اختياري — لاستعمال كود المكافأة)" : "المشترك (إلزامي)"}</label>
           {sub ? (
             <div className="mb-3 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
               <span className="text-sm font-semibold text-emerald-800">{sub.name}{sub.netUser ? ` — ${sub.netUser}` : ""}</span>

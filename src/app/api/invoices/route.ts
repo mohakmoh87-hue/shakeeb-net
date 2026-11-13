@@ -157,16 +157,20 @@ export async function POST(request: Request) {
   const { subscriberId, direct, master, masterAmount, customerName, items, note, paid, useReward } = parsed.data;
 
   if (direct && master) return NextResponse.json({ error: "اختر وضعاً واحداً: بيع مباشر أو بيع ماستر" }, { status: 400 });
-  // المشترك إلزامي إلا في البيع المباشر/الماستر (نقديان بلا مشترك — لا دين ولا مكافأة)
+  // المشتركُ إلزاميٌّ في البيع العاديّ، و**اختياريٌّ في الماستر** (قرارُ محمد 2026-11-13:
+  // مشترٍ أتى المكتبَ ومبلغُه على الماستر يستعمل كودَ خصمه كما لو دفع نقداً)، ولا مشترِكَ
+  // في البيع المباشر. والماسترُ يبقى بلا دَينٍ أيّاً كان (remainder = 0 أدناه).
   let subscriber: Awaited<ReturnType<typeof prisma.subscriber.findUnique>> = null;
-  if (!direct && !master) {
+  if (!direct && (subscriberId || !master)) {
     if (!subscriberId) return NextResponse.json({ error: "اختر المشترك أو فعّل «بيع مباشر»" }, { status: 400 });
     subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
     if (!subscriber || subscriber.isDeleted || !(await sameAgentTower(g.session, subscriber.towerId))) {
       return NextResponse.json({ error: "المشترك غير موجود" }, { status: 404 });
     }
   }
-  const towerId = subscriber?.towerId ?? g.session.towerId ?? null;
+  // 💰 ومكتبُ فاتورة الماستر يبقى **مكتبَ البائع** كما كان قبل ربط المشترك — فمالُ
+  //    الماستر لمن قبضه، ولا يهاجر إلى مكتب المشترك بمجرّد أن صار اسمُه على الوصل.
+  const towerId = (master ? g.session.towerId : subscriber?.towerId) ?? g.session.towerId ?? null;
 
   const actorTowerIds = await agentTowerIds(g.session);
   {
@@ -255,7 +259,7 @@ export async function POST(request: Request) {
     // ب-٠٠ · الحرجة ٥: الزائدُ عن المستحقّ **ليس إيراداً لهذه الفاتورة** بل رصيدٌ للمشترك
     const overpaid = master ? 0 : Math.max(0, paid - netTotal);
 
-    const buyer = master ? (customerName?.trim() || "بيع ماستر") : direct ? (customerName?.trim() || "بيع مباشر") : (subscriber?.name ?? subscriber?.id ?? "");
+    const buyer = master ? (customerName?.trim() || subscriber?.name || "بيع ماستر") : direct ? (customerName?.trim() || "بيع مباشر") : (subscriber?.name ?? subscriber?.id ?? "");
     const inv = await tx.invoice.create({
       data: {
         date: new Date(),
