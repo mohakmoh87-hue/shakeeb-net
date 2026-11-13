@@ -2211,7 +2211,7 @@ function PostponeModal({ card, onClose, onDone, portalOn }: { card: Card; onClos
 }
 
 /* ========== نافذة إنجاز البطاقة ========== */
-type CustodyMat = { itemId: number; name: string; priceSale: number; available: number };
+type CustodyMat = { itemId: number; name: string; priceSale: number; available: number; foreign?: boolean; officeName?: string | null };
 function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; deliveryOnly: boolean; onClose: () => void; onDone: () => void }) {
   const isTransfer = card.kind === "تحويل";
   const isDelivery = deliveryOnly && !isTransfer;
@@ -2430,9 +2430,12 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
                       <option value="">{idx === 0 ? "— اختر مادة أو «بلا مبيع» —" : "— مادة إضافية (اختياري) —"}</option>
                       {idx === 0 && <option value="nosale">🚫 بلا مبيع (لا مادة — المبيع صفر)</option>}
                       {mats.map((m) => (
-                        <option key={m.itemId} value={m.itemId}>{m.name} ({m.priceSale.toLocaleString("en-US")} — متاح {m.available})</option>
+                        <option key={m.itemId} value={m.itemId}>{m.name} ({m.priceSale.toLocaleString("en-US")} — متاح {m.available}){m.foreign ? ` 🔁 من ${m.officeName ?? "مكتب الفنيّ"}` : ""}</option>
                       ))}
                     </select>
+                    {chosen?.foreign && (
+                      <span className="shrink-0 rounded bg-sky-50 px-1.5 py-1 text-[10px] font-bold text-sky-700" title="تُرحَّل آليّاً من مخزن مكتبه إلى مكتب البطاقة ثمّ تُباع منه">🔁 تُرحَّل</span>
+                    )}
                     {chosen && (
                       <input type="number" value={row.qty} min={1} max={chosen.available}
                         onChange={(e) => setRowQty(idx, Number(e.target.value))}

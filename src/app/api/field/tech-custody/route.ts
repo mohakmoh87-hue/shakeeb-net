@@ -22,10 +22,11 @@ export async function GET(request: Request) {
     if (!t || t.agentId !== user!.agentId) return NextResponse.json({ materials: [] });
   }
 
-  // ===== أثناء الدعم المؤقّت: موادّ مكتب الدعم حصراً (قرار محمد 2026-08-09) =====
-  // «ذمّته من مكتبه الأصليّ لا تظهر له أبداً ويظهر له صفر ذمّة مواد» — فالبيع أثناء الدعم يكون
-  // من مخزن مكتب الدعم وحده، فيهبط نقصُ المخزن وإيرادُ الفاتورة على المكتب نفسه. والمخزن مستقلٌّ
-  // لكلّ مكتب (Item.towerId)، فالترشيح بمالك المادّة هو الترشيح الصحيح.
+  // ===== أثناء الدعم: ذمّتُه **كلُّها** تظهر (قرارُ محمد 2026-11-13) =====
+  // كان حصراً على موادّ مكتب الدعم (قرارُ 2026-08-09) فاختفت عن الفنيّ مادّةٌ يحملها
+  // معه فعلاً من مكتبه ولم يستطع بيعَها على بطاقة الدعم. والمحاسبةُ تستقيم بالترحيل
+  // الآليّ عند الإنجاز: مخزنُ مكتبه ينقص، والفاتورةُ والمالُ لمكتب البطاقة، وسطرُ
+  // ترحيلٍ في سجلّ «الترحيلات والذمم» يوثّق انتقالَ البضاعة بين المكتبَين.
   const supOffice = (await prisma.technician.findUnique({
     where: { id: technicianId }, select: { supportTowerId: true },
   }))?.supportTowerId ?? null;
@@ -35,19 +36,31 @@ export async function GET(request: Request) {
     orderBy: { id: "asc" },
   });
   const items = await prisma.item.findMany({
-    where: { id: { in: rows.map((r) => r.itemId) }, ...(supOffice != null ? { towerId: supOffice } : {}) },
-    select: { id: true, name: true, priceSale: true },
+    where: { id: { in: rows.map((r) => r.itemId) } },
+    select: { id: true, name: true, priceSale: true, towerId: true },
   });
   const im = new Map(items.map((i) => [i.id, i]));
+  // اسمُ المكتب المالك — يُعرَض على المادّة الغريبة وحدَها («من مخزن …») لئلّا يبيعها غافلاً
+  const foreignTowers = [...new Set(items.map((i) => i.towerId).filter((t): t is number => t != null && supOffice != null && t !== supOffice))];
+  const towerName = new Map(
+    (foreignTowers.length ? await prisma.tower.findMany({ where: { id: { in: foreignTowers } }, select: { id: true, name: true } }) : [])
+      .map((t) => [t.id, t.name ?? `مكتب #${t.id}`]),
+  );
 
   return NextResponse.json({
-    // ما لا مادّةَ له في `im` = مادّةُ مكتبٍ آخر أثناء الدعم ⇒ **تُحجَب** (لا تظهر بصفر ولا باسمها)
-    materials: rows.filter((r) => im.has(r.itemId)).map((r) => ({
-      itemId: r.itemId,
-      name: im.get(r.itemId)!.name ?? `مادة #${r.itemId}`,
-      priceSale: im.get(r.itemId)!.priceSale ?? 0,
-      available: r.qty,
-    })),
-    supportOnly: supOffice != null, // للواجهة: هذه ذمّة مكتب الدعم وحدها
+    materials: rows.filter((r) => im.has(r.itemId)).map((r) => {
+      const it = im.get(r.itemId)!;
+      const foreign = supOffice != null && it.towerId != null && it.towerId !== supOffice;
+      return {
+        itemId: r.itemId,
+        name: it.name ?? `مادة #${r.itemId}`,
+        priceSale: it.priceSale ?? 0,
+        available: r.qty,
+        // بيعُها على بطاقة الدعم يُرحّلها آليّاً من مكتبها إلى مكتب البطاقة
+        foreign,
+        officeName: foreign && it.towerId != null ? (towerName.get(it.towerId) ?? null) : null,
+      };
+    }),
+    supportOnly: supOffice != null,
   });
 }

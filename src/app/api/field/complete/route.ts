@@ -9,6 +9,7 @@ import { redeemReward, sendRewardUsedMessage } from "@/lib/rewards";
 import { baghdadDayKey } from "@/lib/attendance";
 import { notify } from "@/lib/notify";
 import { consumeFifo } from "@/lib/fifo";
+import { moveTag } from "@/app/api/_lib/inventoryMoveLog";
 
 export const dynamic = "force-dynamic";
 
@@ -194,11 +195,9 @@ export async function POST(request: Request) {
         where: { id: m.itemId, isDeleted: false, towerId: { in: actorTowerIds } },
       });
       if (!item) return NextResponse.json({ error: `مادة #${m.itemId} غير موجودة` }, { status: 404 });
-      // أثناء الدعم: البيع من **مخزن مكتب الدعم حصراً** — فمخزن مكتبه لا يُمَسّ ولا يُعرَض له،
-      // فيهبط نقصُ المخزن وإيرادُ الفاتورة على المكتب نفسه (كان يبيع موادّ مكتبه على بطاقة الدعم).
-      if (supOffice != null && item.towerId !== supOffice) {
-        return NextResponse.json({ error: `«${item.name}» ليست من مخزن مكتب الدعم — لا تُباع أثناء الدعم` }, { status: 400 });
-      }
+      // أثناء الدعم: تُباع **ذمّتُه كلُّها** (قرارُ محمد 2026-11-13) — وما كان من مكتبٍ آخر
+      // يُرحَّل آليّاً إلى مكتب البطاقة ثمّ يُباع منه (أسفلَه في المعاملة). والحدُّ الباقي:
+      // مادّةٌ في ذمّته فعلاً، ومن مكاتب وكيله (الاستعلامُ أعلاه) — لا مخزنَ وكيلٍ آخر.
       const custody = await prisma.custody.findFirst({
         where: { technicianId: card.technicianId, itemId: m.itemId, isDeleted: false },
         orderBy: { id: "asc" }, // حرسٌ حتميّ ضدّ ازدواجِ صفٍّ لنفس (فني،مادّة) — يُخصَم الأقدمُ ثابتاً
@@ -270,6 +269,14 @@ export async function POST(request: Request) {
             },
           });
         }
+        // 🔁 وسطرُ ترحيلٍ في سجلّ «الترحيلات والذمم» — فبضاعةُ مكتبٍ بيعت بفاتورة مكتبٍ
+        //    آخر، وبلا قيدٍ يبقى انتقالُها بلا أثرٍ فلا يتحاسبان عليها. وإدراجٌ خامٌّ بلا
+        //    RETURNING لأنّ الإنجاز يعمل أيضاً بدور حاسبة المكتب («إدراجٌ فقط» على audit_logs).
+        await tx.$executeRaw`INSERT INTO audit_logs (action, entity, "entityId", details)
+          VALUES ('INV_TRANSFER', 'item', ${String(s.itemId)}, ${
+            `بيعُ ذمّةٍ على بطاقة دعم: «${item.name}»×${s.qty} من مخزن المكتب (${item.towerId}) إلى مكتب البطاقة (${towerId}) — فنيّ ${tech?.name ?? card.technicianId}` +
+            moveTag({ kind: "TRANSFER", itemId: s.itemId, qty: s.qty, fromTower: item.towerId, toTower: towerId, techId: card.technicianId, cost: item.priceDinar ?? null })
+          })`;
       }
       const custody = await tx.custody.findFirst({
         where: { technicianId: card.technicianId!, itemId: s.itemId, isDeleted: false },
