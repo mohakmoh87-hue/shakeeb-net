@@ -31,6 +31,7 @@ export default function AppAdminDashboard({ username }: { username: string }) {
   const [tOffices, setTOffices] = useState<TestOffice[]>([]);
   const [tOffice, setTOffice] = useState("");
   const [tMsg, setTMsg] = useState("");
+  const [tDiag, setTDiag] = useState<string[]>([]);
   const [tBusy, setTBusy] = useState(false);
   // مشتركو التطبيق
   const [marketPanel, setMarketPanel] = useState(false);
@@ -70,17 +71,19 @@ export default function AppAdminDashboard({ username }: { username: string }) {
   }, []);
   useEffect(() => { const t = setTimeout(() => { loadConfig(); loadSubs("", 1); loadTest(); loadPending(); }, 0); return () => clearTimeout(t); }, [loadConfig, loadSubs, loadTest, loadPending]);
 
-  async function testUsersAction(action: "seed" | "disable" | "reward") {
+  async function testUsersAction(action: "seed" | "disable" | "reward" | "diag") {
     if (action === "disable" && !confirm("إيقافُ حسابات التجريب؟ تُخفى ولا تُحذَف، ويعيدها زرُّ الإنشاء.")) return;
     setTBusy(true); setTMsg("");
     try {
       const res = await fetch("/api/app-admin/test-users", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...(action === "seed" && (tOffice || tOffices.length > 1) ? { officeId: Number(tOffice || tOffices[0].id) } : {}), ...(action === "reward" ? { user: "test1" } : {}) }),
+        body: JSON.stringify({ action, ...(action === "seed" && (tOffice || tOffices.length > 1) ? { officeId: Number(tOffice || tOffices[0].id) } : {}), ...(action === "reward" || action === "diag" ? { user: "test1" } : {}) }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) { setTMsg(d.error ?? "تعذّرت العملية"); return; }
       setTUsers(d.users ?? []); setTOffices(d.offices ?? []);
+      if (action === "diag") { setTDiag(d.lines ?? []); setTMsg("✓ فحصٌ test1"); return; }
+      setTDiag([]);
       setTMsg(
         action === "seed" ? `✓ جاهزةٌ على ${d.officeName ?? "المكتب"} — كلمةُ المرور 123456`
           : action === "reward"
@@ -255,9 +258,15 @@ export default function AppAdminDashboard({ username }: { username: string }) {
           )}
           <button onClick={() => void testUsersAction("seed")} disabled={tBusy} className="rounded-lg bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-200 disabled:opacity-60">🧪 إنشاء / تحديث</button>
           <button onClick={() => void testUsersAction("reward")} disabled={tBusy || !tUsers.length} className="rounded-lg bg-teal-100 px-3 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-200 disabled:opacity-60">🎁 رصيدُ مكافأة ٥٠٠٠ لـtest1</button>
+          <button onClick={() => void testUsersAction("diag")} disabled={tBusy || !tUsers.length} className="rounded-lg bg-sky-100 px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-200 disabled:opacity-60">🔍 فحص test1</button>
           <button onClick={() => void testUsersAction("disable")} disabled={tBusy || !tUsers.length} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60">⏸️ إيقاف</button>
           {tMsg && <span className="text-xs text-slate-600">{tMsg}</span>}
         </div>
+        {tDiag.length > 0 && (
+          <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-[11px] leading-6 text-slate-700">
+            {tDiag.map((l, i) => <div key={i} dir="auto">{l}</div>)}
+          </div>
+        )}
         {tUsers.length > 0 && (
           <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
             <table className="w-full text-xs">

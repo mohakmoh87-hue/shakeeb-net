@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAppAdminSession } from "@/lib/appAdminAuth";
-import { seedTestUsers, disableTestUsers, testUsersStatus, grantTestReward, TEST_REWARD } from "@/lib/appTestUsers";
+import { seedTestUsers, disableTestUsers, testUsersStatus, grantTestReward, testRewardDiag, TEST_REWARD } from "@/lib/appTestUsers";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export async function GET() {
 }
 
 const schema = z.object({
-  action: z.enum(["seed", "disable", "reward"]),
+  action: z.enum(["seed", "disable", "reward", "diag"]),
   officeId: z.coerce.number().int().positive().optional(),
   user: z.string().max(40).optional(),
 });
@@ -23,6 +23,12 @@ export async function POST(request: Request) {
   if (!s) return NextResponse.json({ error: "غير مصرّح" }, { status: 401 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "بيانات غير صحيحة" }, { status: 400 });
+  // 🔍 فحصٌ قرائيٌّ محض — لا يكتب شيئاً
+  if (parsed.data.action === "diag") {
+    const d = await testRewardDiag(parsed.data.user || "test1");
+    if (!d.ok) return NextResponse.json({ error: d.error ?? "تعذّر الفحص" }, { status: 400 });
+    return NextResponse.json({ ...d, ...(await testUsersStatus()) });
+  }
   // 🎁 رصيدُ مكافأةٍ تجريبيٌّ — لحسابِ تجريبٍ مسجَّلٍ وحدَه (المكتبةُ تحسم ذلك)
   if (parsed.data.action === "reward") {
     const r = await grantTestReward(parsed.data.user || "test1");

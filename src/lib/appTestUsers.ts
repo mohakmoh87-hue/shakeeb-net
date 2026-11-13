@@ -191,6 +191,42 @@ export async function grantTestReward(user = "test1"): Promise<{
   };
 }
 
+// 🔍 فحصٌ قرائيٌّ محضٌ لحساب تجريبٍ: الصفُّ كما هو في القاعدة وآخرُ حركات مكافأته —
+// لأنّه حين لا يظهر الرصيدُ يجب أن نرى **أين انقطع الخيط** لا أن نخمّن.
+export async function testRewardDiag(user = "test1"): Promise<{ ok: boolean; error?: string; lines: string[] }> {
+  const entry = await resolveTestUser(user);
+  if (entry?.subscriberId == null) return { ok: false, error: "لا حسابَ تجريبٍ بهذا الاسم", lines: [] };
+  const sub = await prisma.subscriber.findUnique({
+    where: { id: entry.subscriberId },
+    select: { id: true, name: true, netUser: true, towerId: true, isDeleted: true, state: true, rewardBalance: true, rewardCode: true, rewardGrantCount: true, updatedAt: true },
+  });
+  if (!sub) return { ok: false, error: `الصفُّ #${entry.subscriberId} غيرُ موجود`, lines: [] };
+  const office = sub.towerId ? await prisma.tower.findUnique({ where: { id: sub.towerId }, select: { name: true, rewardsEnabled: true, isDeleted: true, agentId: true } }) : null;
+  const logs = await prisma.rewardLog.findMany({
+    where: { subscriberId: sub.id }, orderBy: { id: "desc" }, take: 6,
+    select: { id: true, kind: true, amount: true, balanceAfter: true, context: true, createdAt: true, createdByName: true },
+  });
+  // صفوفٌ أخرى بنفس اليوزر (تجاربُ قديمةٌ قد تلتبس بالصفّ المسجّل)
+  const twins = sub.netUser
+    ? await prisma.subscriber.findMany({
+        where: { netUser: { contains: sub.netUser.replace(/#.*$/, "") }, id: { not: sub.id } },
+        select: { id: true, netUser: true, towerId: true, isDeleted: true, rewardBalance: true }, take: 5,
+      })
+    : [];
+  const lines = [
+    `الصفّ: #${sub.id} · ${sub.name ?? "—"} · يوزر ${sub.netUser ?? "—"}${sub.isDeleted ? " · ⛔ محذوف" : ""}${sub.state ? ` · ${sub.state}` : ""}`,
+    `المكتب: #${sub.towerId ?? "—"} ${office?.name ?? "—"}${office?.isDeleted ? " (محذوف)" : ""} · المكافآت ${office?.rewardsEnabled === "1" ? "مفعّلة" : "مطفأة"}`,
+    `الرصيد: ${sub.rewardBalance ?? 0} · الكود ${sub.rewardCode ?? "—"} · عدّادُ المنح ${sub.rewardGrantCount ?? 0} · آخرُ تعديل ${sub.updatedAt.toISOString().slice(0, 19).replace("T", " ")}`,
+    logs.length
+      ? `سجلُّ مكافأته (الأحدث أوّلاً): ${logs.map((l) => `${l.kind} ${l.amount} ← ${l.balanceAfter ?? "?"} [${l.context ?? "—"}] ${l.createdAt.toISOString().slice(5, 16).replace("T", " ")}`).join(" · ")}`
+      : "سجلُّ مكافأته: فارغٌ تماماً — لا منحَ ولا سحب",
+    twins.length
+      ? `⚠️ صفوفٌ أخرى بنفس اليوزر: ${twins.map((t) => `#${t.id} (مكتب ${t.towerId ?? "—"}، رصيد ${t.rewardBalance ?? 0}${t.isDeleted ? "، محذوف" : ""})`).join(" · ")}`
+      : "لا صفَّ آخرَ بنفس اليوزر",
+  ];
+  return { ok: true, lines };
+}
+
 // إيقافٌ ناعم: الصفوفُ تبقى (لا حذفَ نهائيّ) ويعيدها زرُّ الإنشاء كما كانت.
 export async function disableTestUsers(): Promise<{ ok: boolean; count: number }> {
   const list = await getTestUsers();
