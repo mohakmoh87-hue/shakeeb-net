@@ -12,8 +12,10 @@ import { BULK_DELETE_GATE } from "../src/lib/bulkDeleteGate";
 
 const ROOT = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+// ⚖️ وقرارُ محمد 2026-11-15: صفحةُ «كروت التفعيل» تحذف **مباشرةً** بتحذيرٍ فقط — فلا
+//   بوّابةَ كلمةِ مرورٍ عليها. وبقيت على «الكروت الوهميّة» وهو مسارُ الحادثة نفسُه،
+//   وبقيت اللقطةُ والسجلُّ على المسارَين (فبهما كُشفت الحادثة لا بالبوّابة).
 const PATHS = [
-  "src/app/api/recharge-cards/bulk-delete/route.ts",
   "src/app/api/manager/phantom-cards/route.ts",
 ];
 
@@ -22,7 +24,7 @@ describe("🛡️ و-٤ · بوّابةُ الحذف الجماعيّ", () => {
     assert.equal(BULK_DELETE_GATE, 50);
   });
 
-  test("🔴 كلا مسارَي الحذف الجماعيِّ مُبوَّبان — ومنهما مسارُ الحادثة", () => {
+  test("🔴 مسارُ الحادثة نفسُه مُبوَّب", () => {
     for (const rel of PATHS) {
       const src = read(rel);
       assert.ok(src.includes("requireOwnerForBulk("), `مسارٌ بلا بوّابة: ${rel}`);
@@ -40,10 +42,14 @@ describe("🛡️ و-٤ · بوّابةُ الحذف الجماعيّ", () => {
     }
   });
 
-  test("والعددُ يُقاس بشرطِ الحذف نفسِه لا بما حدّده المتصفّح", () => {
-    const src = read(PATHS[0]);
-    assert.ok(/prisma\.rechargeCard\.count\(\{ where \}\)/.test(src),
-      "العددُ من العميل — فيُمكن تجاوزُ البوّابة بإرسالِ رقمٍ صغير");
+  test("🧾 وصفحةُ الكروت تحذف مباشرةً — ولكن باللقطة والسجلّ (قرارُ محمد 2026-11-15)", () => {
+    const src = read("src/app/api/recharge-cards/bulk-delete/route.ts");
+    assert.equal(src.includes("requireOwnerForBulk("), false, "البوّابةُ عادت إلى صفحة الكروت");
+    const cap = src.indexOf("captureCardsBeforeDelete(");
+    const del = src.search(/prisma\.rechargeCard\.deleteMany\s*\(/);
+    assert.ok(cap > 0 && cap < del, "حذفٌ بلا لقطةِ حارسِ المال");
+    assert.ok(src.includes("DELETE_CARDS"), "حذفٌ بلا أثرٍ في التدقيق");
+    assert.ok(/doomed\.map\(\(c\) => c\.serial\)/.test(src), "السيريلاتُ لا تُسجَّل قبل الحذف");
   });
 
   test("🔒 والإذنُ بكلمةِ مرور **المالك** لا بصلاحيّةِ الحذف", () => {
@@ -59,12 +65,18 @@ describe("🛡️ و-٤ · بوّابةُ الحذف الجماعيّ", () => {
     assert.ok(g.includes("BULK_DELETE_OWNER_OK"), "الإذنُ يمرّ بلا أثر");
   });
 
-  test("🖥️ والواجهتان تطلبان الكلمةَ وتُعيدان المحاولةَ مرّةً واحدة", () => {
-    for (const rel of ["src/app/(app)/cards/page.tsx", "src/app/(app)/manager-accounts/page.tsx"]) {
+  test("🖥️ وواجهةُ الكروت الوهميّة تطلب الكلمةَ وتُعيد المحاولةَ مرّةً واحدة", () => {
+    for (const rel of ["src/app/(app)/manager-accounts/page.tsx"]) {
       const src = read(rel);
       assert.ok(src.includes("needOwnerPassword"), `واجهةٌ لا تفهم البوّابة: ${rel}`);
       assert.ok(/كلمةُ مرور المالك/.test(src), `واجهةٌ لا تطلب الكلمة: ${rel}`);
     }
+  });
+
+  test("🧾 وصفحةُ الكروت لا تسأل عن كلمةِ مرورٍ بعد قرار محمد — وتُحذّر قبل الحذف", () => {
+    const src = read("src/app/(app)/cards/page.tsx");
+    assert.equal(/needOwnerPassword|window\.prompt/.test(src), false, "سؤالُ الكلمة عاد إلى صفحة الكروت");
+    assert.ok(/confirm\(/.test(src) && /الحذف نهائي ولا يمكن التراجع عنه/.test(src), "حذفٌ بلا تحذير");
   });
 
   test("ولا تُخزَّن كلمةُ المرور في حالةٍ أو تخزينٍ محلّيّ", () => {

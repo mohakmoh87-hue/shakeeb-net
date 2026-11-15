@@ -132,24 +132,18 @@ export default function CardsPage() {
 ` +
       `⚠️ سيُنقص هذا ${fmt(selDebt)} د.ع من «ديون الكارتات».
 ` +
-      `الحذف نهائي ولا يمكن التراجع عنه.`
+      `الحذف نهائي ولا يمكن التراجع عنه.` +
+      (selected.size > 50 ? `
+
+🛑 دفعةٌ كبيرة — راجِع التحديد: الكارت المبيع المقبوض ثمنه يختفي معها.` : "")
     )) return;
     setDeleting(true);
     try {
-      const send = (ownerPassword?: string) => fetch("/api/recharge-cards/bulk-delete", {
+      const res = await fetch("/api/recharge-cards/bulk-delete", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [...selected], ...(ownerPassword ? { ownerPassword } : {}) }),
+        body: JSON.stringify({ ids: [...selected] }),
       });
-      let res = await send();
-      let d = await res.json();
-      // 🛡️ و-٤ · بوّابةُ الدفعة الكبيرة: فوقَ خمسينَ كارتاً تُطلَب كلمةُ مرور المالك
-      //   وتُعاد المحاولةُ مرّةً واحدة. ولا تُخزَّن الكلمةُ ولا تُرسَل إلّا في هذا النداء.
-      if (!res.ok && d?.needOwnerPassword) {
-        const pass = window.prompt(`${d.error}\n\nكلمةُ مرور المالك:`);
-        if (!pass) { setError("أُلغي الحذف — لم تُدخَل كلمةُ مرور المالك"); return; }
-        res = await send(pass);
-        d = await res.json();
-      }
+      const d = await res.json();
       if (!res.ok) { setError(d.error ?? "فشل الحذف"); return; }
       loadAvail(); load();
     } catch { setError("تعذّر الاتصال بالخادم"); }
