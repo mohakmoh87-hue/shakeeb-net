@@ -87,6 +87,7 @@ export async function PUT(
 
   // إعداد القرض للمدير حصراً. loanPass يُشفَّر؛ والفراغ لا يمحو القديم (يُحفظ لإعادة التفعيل).
   const data = { ...parsed.data };
+  delete data.hours;
   if (!g.session?.isAdmin) {
     // غير المدير لا يعدّل إعداد القرض إطلاقاً
     delete data.loanEnabled; delete data.loanUser; delete data.loanPass; delete data.loanMode;
