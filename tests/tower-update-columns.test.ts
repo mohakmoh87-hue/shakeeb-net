@@ -56,9 +56,23 @@ describe("🏢 حفظُ المكتب — مفاتيحُ التحقّق أعمد�
     assert.ok(!towerColumns().has("hours"), "hours صار عموداً — يُراجَع هذا الحارس");
   });
 
-  test("مسارُ الإنشاء لا يُمرِّر hours إلى prisma.tower.create", () => {
+  test("🔴 مسارُ الإنشاء كذلك: ما ليس عموداً يُستخرَج قبل prisma.tower.create", () => {
     const src = read("src/app/api/towers/route.ts");
-    const strayInCreate = schemaKeys(src).filter((k) => !towerColumns().has(k));
-    assert.deepEqual(strayInCreate, [], `مفاتيحُ غيرُ أعمدةٍ في مسار الإنشاء: ${strayInCreate.join(", ")}`);
+    const cols = towerColumns();
+    const destructure = /const \{([^}]*)\.\.\.rest \} = parsed\.data;/.exec(src);
+    assert.ok(destructure, "لم يُعثر على استخراج حمولة الإنشاء");
+    const taken = destructure[1].split(",").map((x) => x.trim());
+    for (const k of schemaKeys(src).filter((x) => !cols.has(x))) {
+      assert.ok(
+        taken.includes(k),
+        `المفتاحُ «${k}» ليس عموداً على towers ويمرّ في ...rest — فكلُّ إنشاءِ مكتبٍ سيفشل بـ٥٠٠`,
+      );
+    }
+  });
+
+  test("أوقاتُ عمل المكتب الجديد تُكتب في جدولها لا تضيع", () => {
+    const src = read("src/app/api/towers/route.ts");
+    assert.ok(src.includes("setTowerHours("), "الإنشاءُ لا يحفظ أوقاتَ العمل إطلاقاً");
+    assert.ok(/hours: z\.string\(\)/.test(src), "تحقّقُ الإنشاء لا يقبل hours فتُستبعَد بصمت");
   });
 });

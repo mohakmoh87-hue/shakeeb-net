@@ -19,6 +19,7 @@ const schema = z.object({
   groupId: z.coerce.number().nullable().optional(),
   activationMode: z.enum(["month", "days30"]).nullable().optional(), // نظام التفعيل
   managerPhone: z.string().nullable().optional(), // رقم مدير المكتب
+  hours: z.string().nullable().optional(), // 🕘 أوقاتُ العمل — جدولٌ جانبيٌّ لا عمودٌ على towers
   mapArea: z.string().nullable().optional(), // رمز منطقة الخريطة
   rewardsEnabled: z.string().nullable().optional(), // 1 = تفعيل نظام المكافآت للمكتب
   silent: z.string().nullable().optional(), // 1 = إرسال صامت
@@ -142,11 +143,20 @@ export async function POST(request: Request) {
   if (sfwErr) return NextResponse.json({ error: sfwErr }, { status: 400 });
 
   // إعداد القرض للمدير حصراً: يُشفَّر loanPass، وتُهمَل حقول القرض من غير المدير
-  const { loanEnabled, loanUser, loanPass, loanMode, ...rest } = parsed.data;
+  const { loanEnabled, loanUser, loanPass, loanMode, hours, ...rest } = parsed.data;
   const loanFields = g.session?.isAdmin
     ? { loanEnabled, loanUser, loanPass: encryptSecret(loanPass), loanMode }
     : {};
   const created = await prisma.tower.create({ data: { ...rest, ...loanFields, agentId } });
+  // 🕘 أوقاتُ العمل في جدولها الجانبيّ — أفضلُ جهدٍ لا يُفشل إنشاءَ المكتب
+  if (hours != null) {
+    try {
+      const { setTowerHours } = await import("@/lib/officeHours");
+      await setTowerHours(created.id, agentId, hours);
+    } catch (e) {
+      console.error(`[towers] تعذّر حفظُ أوقات عمل المكتب الجديد ${created.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
   // كل مدراء الوكيل يحصلون على حساب مصروف/مقبوض في المكتب الجديد تلقائياً —
   // وإلا نسي النظام مكتباً وصار المدير عاجزاً عن الأخذ/الإعطاء فيه
   const { ensureAccountsForNewOffice } = await import("@/lib/managers");
@@ -166,5 +176,5 @@ export async function POST(request: Request) {
       details: `إنشاء مكتب «${created.name ?? created.id}»`,
     },
   }).catch(() => { /* التسجيلُ لا يُفشل الإنشاء */ });
-  return NextResponse.json(created, { status: 201 });
+  return NextResponse.json({ ...created, hours: hours ?? "" }, { status: 201 });
 }
