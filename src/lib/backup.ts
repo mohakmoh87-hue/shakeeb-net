@@ -17,11 +17,17 @@ const EXCLUDE = new Set([
   "wa_relays",       // مؤقّتة
   "install_tokens",  // رموز تنصيب مؤقّتة
   "map_points",      // مرجع عام مشترك (ليس بيانات وكيل)
+  // 📷 صورُ إنجاز البطاقات: كلُّ صورةٍ ~نصفُ ميغا ولا ينضغط JPEG بـgzip ⇒ عشراتُ
+  // الصور تتجاوز حدَّ مرفق البريد (٢٤ ميغا في الكود) فتتوقّف النسخةُ **كلُّها** —
+  // أي يُفقَد شبكةُ الأمان من أجل دليلِ عملٍ يموت مع بطاقته بعد شهرين (قرارُ محمد 2026-11-17).
+  "card_photos",
 ]);
 
 // نسخة النظام الكاملة (للمالك): كل شيء عدا سجل الهجرات (الهيكل يُدار بالهجرات لا البيانات).
 // تختلف عن نسخة الوكيل: تشمل users/agents/كل الجداول ليعود النظام بأكمله تماماً كما وقت النسخ.
-const FULL_EXCLUDE = new Set(["_prisma_migrations"]);
+// واستثناءُ `card_photos` هنا لنفس سبب نسخة الوكيل: النسخةُ الكاملةُ تُرسَل مرفقاً بالبريد
+// (مهمّةُ GitHub) فحجمُ الصور يُسقطها، وهي الشبكةُ الوحيدة لاستعادة النظام كلِّه.
+const FULL_EXCLUDE = new Set(["_prisma_migrations", "card_photos"]);
 
 type Row = Record<string, unknown>;
 
@@ -133,9 +139,8 @@ export async function exportAgentBackupTo(agentId: number, onChunk: (c: Buffer) 
       await emit("task_cards",
         (off) => tx.$queryRawUnsafe<Row[]>(`SELECT c.* FROM task_cards c JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[]) ORDER BY c.id OFFSET ${off} LIMIT ${PAGE}`, towerIds),
         () => count(`SELECT count(*)::bigint AS n FROM task_cards c JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[])`, towerIds));
-      await emit("card_photos",
-        (off) => tx.$queryRawUnsafe<Row[]>(`SELECT p.* FROM card_photos p JOIN task_cards c ON c.id=p."cardId" JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[]) ORDER BY p.id OFFSET ${off} LIMIT ${PAGE}`, towerIds),
-        () => count(`SELECT count(*)::bigint AS n FROM card_photos p JOIN task_cards c ON c.id=p."cardId" JOIN task_lists l ON l.id=c."listId" JOIN task_boards b ON b.id=l."boardId" WHERE b."towerId" = ANY($1::int[])`, towerIds));
+      // 📷 صورُ البطاقات **لا تُنسَخ** (انظر EXCLUDE أعلاه): حجمُها يُسقط مرفقَ البريد
+      //    فتضيع النسخةُ كلُّها، وهي دليلُ عملٍ يموت مع بطاقته لا بياناتٌ ماليّة.
     }
 
     // قالبُ الوصل الخاصّ بالوكيل (صغير — بلا ترقيم)

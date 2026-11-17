@@ -58,6 +58,7 @@ export async function GET() {
       planExpiry: a.planExpiry, isTrial: a.isTrial, approved: a.approved,
       odooSlaSendAllowed: a.odooSlaSendAllowed, // إذن الميزة ٢ من مهلة أودو
       subDealerCheck: a.subDealerCheck, // 🕵️ فحصُ سب-ديلر
+      cardPhotoAllowed: a.cardPhotoAllowed, // 📷 إذنُ صورة إنجاز البطاقة
       multiSasOffices: a.multiSasOffices, // أ-٢٣ · حصّةُ «مكتبٌ بأكثر من لوحة ساس» (٠ = الوضع الحاليّ)
       officeCount: tc.get(a.id) ?? 0, userCount: uc.get(a.id) ?? 0,
       managerCount: mc.get(a.id) ?? 0, techCount: thc.get(a.id) ?? 0,

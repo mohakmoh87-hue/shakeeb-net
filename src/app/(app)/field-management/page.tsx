@@ -130,7 +130,95 @@ const listCatColor = (name: string): string => {
   return "var(--navy-3)";
 };
 
-// (أُلغي رفع صور العمل نهائياً بقرار محمد 2026-07-29)
+// 📷 أقصى حجمٍ للصورة المرفوعة: ٥٠٠ كيلوبايت — أيُّ حجمٍ يُقبل ويُصغَّر آليّاً إليه
+const PHOTO_MAX_BYTES = 500 * 1024;
+
+// حجمُ الـdata URL بالبايت بعد فكّ الترميز (base64 يضخّم النصَّ ثلثاً)
+function dataUrlBytes(dataUrl: string): number {
+  const i = dataUrl.indexOf(",");
+  const b64 = i >= 0 ? dataUrl.slice(i + 1) : dataUrl;
+  return Math.floor((b64.length * 3) / 4);
+}
+
+// ضغطُ الصورة قبل الرفع: يقبل أيَّ حجمٍ ويخفّض الجودةَ أوّلاً (حفاظاً على الأبعاد)
+// ثمّ الأبعادَ حتّى ≤ ٥٠٠ كيلوبايت — فلا يُطلب من الفنيّ تصغيرٌ يدويّ.
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const render = (maxDim: number, quality: number): string => {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+            else { width = Math.round((width * maxDim) / height); height = maxDim; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("no ctx");
+          ctx.drawImage(img, 0, 0, width, height);
+          return canvas.toDataURL("image/jpeg", quality);
+        };
+        try {
+          let dim = 1600;
+          let out = render(dim, 0.8);
+          const qualities = [0.72, 0.64, 0.55, 0.45, 0.38];
+          let qi = 0;
+          while (dataUrlBytes(out) > PHOTO_MAX_BYTES && qi < qualities.length) out = render(dim, qualities[qi++]);
+          const dims = [1280, 1024, 800, 640];
+          let di = 0;
+          while (dataUrlBytes(out) > PHOTO_MAX_BYTES && di < dims.length) { dim = dims[di++]; out = render(dim, 0.55); }
+          // الملاذُ الأخير (صورةٌ عجيبةُ الأبعاد): لا يُسلَّم للخادم ما يرفضه
+          if (dataUrlBytes(out) > PHOTO_MAX_BYTES) out = render(480, 0.4);
+          resolve(out);
+        } catch (e) { reject(e as Error); }
+      };
+      img.onerror = reject;
+      img.src = reader.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// عارضُ صورة الإنجاز: زرٌّ يجلب الصورةَ عند الطلب (لا تُحمَّل مع اللوحة أبداً)
+function CardPhotoViewer({ cardId }: { cardId: number }) {
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [shown, setShown] = useState(false);
+  const [none, setNone] = useState(false);
+  async function toggle() {
+    if (shown) { setShown(false); return; }
+    if (photo) { setShown(true); return; }
+    setBusy(true);
+    const d = await fetch(`/api/field/card-photo?cardId=${cardId}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    setBusy(false);
+    if (!d?.photo) { setNone(true); return; }
+    setPhoto(d.photo); setShown(true);
+  }
+  if (none) return <div className="mt-2 text-[11px] text-slate-400">لا صورةَ لهذه البطاقة</div>;
+  return (
+    <div className="mt-2">
+      <div className="flex gap-1.5">
+        <button onClick={toggle} className="rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100">
+          {busy ? "..." : shown ? "🙈 إخفاء الصورة" : "📷 عرض صورة العمل"}
+        </button>
+        {photo && (
+          <button
+            onClick={() => { const a = document.createElement("a"); a.href = photo; a.download = `card-${cardId}-photo.jpg`; a.click(); }}
+            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200"
+          >
+            ⬇️ تحميل
+          </button>
+        )}
+      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {shown && photo && <img src={photo} alt="صورة العمل" className="mt-2 max-h-80 w-auto rounded-lg border border-slate-200" />}
+    </div>
+  );
+}
 
 // تنسيق مدة بالثواني إلى نص عربي مقروء
 function fmtDuration(sec: number | null): string {
@@ -303,6 +391,7 @@ export default function FieldManagementPage() {
   // 🏬 طلباتُ متجر الوكيل الواصلةُ له — عمودٌ خاصٌّ يظهر حين تأتيه طلبات (يختفي حين يفرغ)
   const [storeOrders, setStoreOrders] = useState<{ id: number; subscriberName: string | null; productTitle: string; price: number | null; qty: number; phone: string; address: string; note: string | null; status: string; createdAt: string; fulfillment: string; deliveryFee: number | null; installFee: number | null; total: number | null; rewardUsed?: number | null; rewardBalance?: number; lines: { productTitle: string; price: number | null; qty: number }[] }[]>([]);
   const [myTechId, setMyTechId] = useState<number | null>(null); // معرّف الفني الحالي (للتحويل على نفسه)
+  const [photoOn, setPhotoOn] = useState(false); // 📷 إذنُ صورة الإنجاز لهذا الوكيل (من whoami)
   const [techModal, setTechModal] = useState(false);
   const [supportModal, setSupportModal] = useState(false);
   const [leaveModal, setLeaveModal] = useState(false);
@@ -424,7 +513,7 @@ export default function FieldManagementPage() {
   }, [load, officeId, sel, completing, postponing, drag, addingTo, role]);
 
   // اسم الدور الحالي (للفني: اسمه ومعرّفه) — لعرضه في الشريط السفلي وللتحويل على نفسه
-  useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.name) setMyName(d.name); if (d?.technicianId != null) setMyTechId(d.technicianId); }); }, []);
+  useEffect(() => { fetch("/api/field/whoami").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.name) setMyName(d.name); if (d?.technicianId != null) setMyTechId(d.technicianId); setPhotoOn(!!d?.cardPhoto); }); }, []);
 
   // فتح نافذة المراجعة من نقر إشعار: (1) نقرة داخل الجرس (حدث bell:open-modal)،
   // (2) نقرة إشعار الهاتف Push تفتح ?open=deductions|leaves — فيصل المدير للموافقة مباشرة
@@ -881,6 +970,14 @@ export default function FieldManagementPage() {
   }
 
   const isDeliveryKind = (name: string) => cardTypes.find((t) => t.name === name)?.deliveryOnly ?? name === "توصيل";
+
+  // 📷 هل هذه البطاقةُ من فئتَي الصورة (صيانة/تحويل)؟ بنفس قاعدة الخادم حرفيّاً:
+  // اسمُ العمود إن كان فئةً لهذا الوكيل، وإلّا فئةُ البطاقة — فلا تختلف الواجهةُ عن الحارس.
+  const isPhotoKind = (c: { listId: number; kind: string }) => {
+    const l = lists.find((x) => x.id === c.listId);
+    const n = l?.name && cardTypes.some((t) => t.name === l.name) ? l.name : c.kind;
+    return !isDeliveryKind(n) && (n === "صيانة" || n === "تحويل");
+  };
 
   // «خريطةُ الكلّ»: يأخذ موقعَك الحاليّ ← يجلب مواقعَ توصيلات العمود ← يرتّبها بأقرب-فأقرب ←
   // نافذةٌ بروابط الملاحة (جوجل للمسار الكامل · Waze للأقرب). الموقعُ لا يُرسَل للخادم.
@@ -1842,6 +1939,8 @@ export default function FieldManagementPage() {
                 {sel.serviceDetails && <div className="text-slate-600">التفاصيل: {sel.serviceDetails}</div>}
                 {sel.durationSec != null && <div className="text-slate-600">⏱ مدة الإنجاز: <b>{fmtDuration(sel.durationSec)}</b></div>}
                 {sel.materialsInfo && (() => { try { const m = JSON.parse(sel.materialsInfo) as { name: string; qty: number }[]; return <div className="text-slate-600">المواد: {m.map((x) => `${x.name}×${x.qty}`).join("، ")}</div>; } catch { return null; } })()}
+                {/* 📷 صورةُ العمل التي رفعها الفنيّ — تُجلَب عند الطلب لا مع اللوحة */}
+                {photoOn && isPhotoKind(sel) && <CardPhotoViewer cardId={sel.id} />}
                 {/* ↩️ إلغاء الإنجاز (طلب محمد 2026-08-05): الخادم كان يقبله منذ زمن ولا زرّ له،
                     فكان الطريق الوحيد: «اكمال» ثم استرجاع من الأرشيف — التفافٌ لا معنى له. */}
                 {canOperate && !isTech && (
@@ -1955,7 +2054,7 @@ export default function FieldManagementPage() {
 
       {/* نافذة الأرشيف: البطاقات المحصَّلة (شهران ثم تُحذف نهائياً) بفلاتر تاريخ/فني/نوع */}
       {archiveModal && (
-        <ArchiveModal cardTypes={cardTypes} offices={offices} onClose={() => setArchiveModal(false)} onChanged={() => load(officeId)} />
+        <ArchiveModal cardTypes={cardTypes} offices={offices} photoOn={photoOn} onClose={() => setArchiveModal(false)} onChanged={() => load(officeId)} />
       )}
 
       {/* «خريطةُ الكلّ»: روابطُ الملاحة بعد حساب المسار — روابطُ <a> ليضغطها المستخدم (لا window.open
@@ -1987,6 +2086,8 @@ export default function FieldManagementPage() {
         <CompletionModal
           card={completing}
           deliveryOnly={isDeliveryKind(completing.kind)}
+          photoOn={photoOn && isPhotoKind(completing)}
+          photoRequired={isTech}
           onClose={() => setCompleting(null)}
           onDone={() => { setCompleting(null); load(officeId); }}
         />
@@ -2212,7 +2313,7 @@ function PostponeModal({ card, onClose, onDone, portalOn }: { card: Card; onClos
 
 /* ========== نافذة إنجاز البطاقة ========== */
 type CustodyMat = { itemId: number; name: string; priceSale: number; available: number; foreign?: boolean; officeName?: string | null };
-function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; deliveryOnly: boolean; onClose: () => void; onDone: () => void }) {
+function CompletionModal({ card, deliveryOnly, photoOn, photoRequired, onClose, onDone }: { card: Card; deliveryOnly: boolean; photoOn: boolean; photoRequired: boolean; onClose: () => void; onDone: () => void }) {
   const isTransfer = card.kind === "تحويل";
   const isDelivery = deliveryOnly && !isTransfer;
   const fullFields = !isDelivery && !isTransfer; // صيانة/تنصيب/اعادة: تفاصيل كاملة
@@ -2221,6 +2322,10 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
   const isOdoo = !!card.viaOdoo; // بطاقة أودو = بطاقة عاديّة (قد يُباع للمشترك) — تُضاف فقط BG عند الإنجاز
   const fullFlow = !isDelivery; // أودو ضمن التدفّق الكامل (مبيع/مواد/اشتراك متاحة كأيّ بطاقة)
   const odooBgRequired = isOdoo && !!card.usernameRequired; // بطاقة أودو تشترط اليوزر
+  // 📷 الصورة: تظهر بإذن المالك في الصيانة/التحويل، وهي **واجبةٌ على الفنيّ** واختياريّةٌ لغيره
+  const photoMandatory = photoOn && photoRequired;
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const [odooBg, setOdooBg] = useState("");
   const [details, setDetails] = useState("");
   const [newUser, setNewUser] = useState("");
@@ -2322,6 +2427,13 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
     });
   }
 
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return;
+    setErr(""); setPreparing(true);
+    try { setPhoto(await compressImage(f)); } catch { setErr("تعذّر قراءةُ الصورة — أعِد المحاولة"); }
+    finally { setPreparing(false); }
+  }
+
   async function submit() {
     setErr("");
     if (isDelivery) {
@@ -2334,6 +2446,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
       if (fullFields) {
         if (!details.trim()) { setErr("تفاصيل الصيانة مطلوبة"); return; }
       }
+      if (photoMandatory && !photo) { setErr("رفعُ صورةٍ مطلوبٌ لإنجاز هذه البطاقة"); return; }
       // بطاقة أودو تشترط اليوزر (BG) — بصيغة bg-x-x-x@x
       if (odooBgRequired && !/^bg-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-?@[a-z0-9]+$/i.test(odooBg.trim())) {
         setErr("أدخل اليوزر (BG) بصيغة bg-x-x-x@x"); return;
@@ -2351,7 +2464,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
     const r = await fetch("/api/field/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        cardId: card.id, serviceDetails: details, newUser, odooBg,
+        cardId: card.id, serviceDetails: details, newUser, odooBg, photo,
         amount: isDelivery ? nAmount : undefined,
         sale: isDelivery ? undefined : nSale,
         // التوصيل يرسل الاشتراك أيضاً — لأن الفني قد يعدّله عمّا حسبته الباقة
@@ -2387,6 +2500,29 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
           <>
             <label className="mb-1 block text-xs font-semibold text-slate-500">{isOdoo ? "ملاحظة الإنجاز (تُرسَل إلى أودو)" : "تفاصيل الصيانة"} <span className="text-red-500">*</span></label>
             <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={3} placeholder="ماذا تمّ من عمل..." className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </>
+        )}
+
+        {/* 📷 صورةُ الإنجاز — مصدران: كاميرا الهاتف مباشرةً، أو الاستوديو/ملفّات الجهاز */}
+        {photoOn && (
+          <>
+            <label className="mb-1 block text-xs font-semibold text-slate-500">
+              صورةُ العمل {photoMandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400">(اختياري)</span>}
+            </label>
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+                📷 الكاميرا
+                <input type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" />
+              </label>
+              <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100">
+                🖼 الاستوديو
+                <input type="file" accept="image/*" onChange={onFile} className="hidden" />
+              </label>
+            </div>
+            <p className="mb-2 text-[11px] text-slate-400">أيُّ حجمٍ مقبول — تُصغَّر آليّاً إلى ٥٠٠ كيلوبايت قبل الرفع.</p>
+            {preparing && <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">جاري تحضيرُ الصورة…</div>}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {photo && <img src={photo} alt="معاينة" className="mb-3 max-h-40 rounded-lg border border-slate-200" />}
           </>
         )}
 
@@ -2526,7 +2662,7 @@ function CompletionModal({ card, deliveryOnly, onClose, onDone }: { card: Card; 
 // نافذة أرشيف البطاقات المحصَّلة: تبقى شهرين بعد التحصيل ثم تُحذف نهائياً.
 // فلاتر: المكتب + تاريخ الإنجاز + الفني + النوع (تُجمع معاً). حذف نهائي يدوي للمدير فقط.
 // قائمة «الفني» تُبنى من الأرشيف نفسه — فتشمل فنيي الدعم/المكاتب الأخرى الذين نفّذوا بطاقات.
-function ArchiveModal({ cardTypes, offices, onClose, onChanged }: { cardTypes: CardType[]; offices: Office[]; onClose: () => void; onChanged?: () => void }) {
+function ArchiveModal({ cardTypes, offices, photoOn, onClose, onChanged }: { cardTypes: CardType[]; offices: Office[]; photoOn: boolean; onClose: () => void; onChanged?: () => void }) {
   type ArchCard = {
     id: number; title: string; description: string | null; kind: string; assignee: string | null;
     technicianId: number | null; amount: number | null; subAmount: number | null; serviceDetails: string | null; durationSec: number | null;
@@ -2661,7 +2797,8 @@ function ArchiveModal({ cardTypes, offices, onClose, onChanged }: { cardTypes: C
                           )}
                         </ul>
                       )}
-                      {/* صورة العمل — محفوظة بالأرشيف وتُعرض هنا حتى الحذف التلقائي */}
+                      {/* صورةُ العمل — تبقى بالأرشيف وتُعرض هنا حتّى حذفِ البطاقة الآليّ */}
+                      {photoOn && (c.kind === "صيانة" || c.kind === "تحويل") && <CardPhotoViewer cardId={c.id} />}
                       <div className="mt-1.5 flex justify-end gap-1.5">
                         <button onClick={() => restore(c)} className="rounded bg-purple-50 px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-100">↩️ استرجاع للّوحة</button>
                         {isMgr && (

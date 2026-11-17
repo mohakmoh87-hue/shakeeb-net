@@ -21,6 +21,8 @@ GRANT SELECT ON db_agent_roles TO agent_worker; -- أعيدت بعد REVOKE ال
 GRANT SELECT (id, name, "officeCap", "planExpiry", "isTrial", approved,
               "backupEmail", "salaryPeriodFrom", "salaryPeriodTo",
               "odooSlaSendAllowed",
+              -- 📷 إذنُ صورة الإنجاز: مسارُ الإنجاز يقرؤه على حاسبة المكتب ليفرض الصورة
+              "cardPhotoAllowed",
               "isDeleted", "createdAt", "updatedAt")
   ON agents TO agent_worker;
 
@@ -89,8 +91,17 @@ GRANT SELECT, DELETE ON push_subscriptions TO agent_worker; -- حذف الاشت
 GRANT SELECT ON packages, tower_info, accounts, subscription_entries, money_tx,
                 invoices, invoice_items, items, custodies, tickets, card_types,
                 sms_templates, reward_logs, salary_statements, leaves,
-                card_photos, maintenance_logs, loan_debts
+                maintenance_logs, loan_debts
   TO agent_worker;
+
+-- ---------- 📷 card_photos: صورةُ إنجاز البطاقة (صيانة/تحويل) ----------
+-- كانت SELECT فقط (للنسخة الاحتياطيّة) حين كان رفعُ الصور ملغىً. وبإعادته صار الفنيُّ
+-- يُنجز بطاقتَه من حاسبة المكتب أيضاً، والإدراجُ **داخل معاملة الإنجاز** (الفاتورة والمخزن
+-- والذمّة) ⇒ غيابُ INSERT يُسقط الإنجازَ كلَّه لا الصورةَ وحدَها. والتنظيفُ الدوريّ
+-- (`purgeOldArchivedCards`) يعمل في العامل كما يعمل في كرون الموقع فيلزمه DELETE.
+-- وسياسةُ rls_card_photos تعزلها بالوكيل (USING + WITH CHECK) فلا توسّع الصلاحيّةُ الرؤية.
+GRANT SELECT, INSERT, UPDATE, DELETE ON card_photos TO agent_worker;
+GRANT USAGE, SELECT ON SEQUENCE card_photos_id_seq TO agent_worker;
 -- ملاحظة: task_boards/task_lists/task_cards نُقلت أعلاه إلى SELECT+INSERT+UPDATE (لبطاقات أودو)
 -- loan_debts: المزامنة تقرؤها لتتجاهل أصحاب القروض (قراءة فقط؛ الكتابة خادميّة بدور المالك)
 

@@ -42,6 +42,7 @@ const schema = z.object({
   sale: z.coerce.number().min(0).optional(), // «المبيع»: مبلغ بيع المواد (قابل للتعديل، يوزَّع نسبياً على الفاتورة)
   subscription: z.coerce.number().min(0).nullish(), // «اشتراك»: إلزامي تمريره (0 جائز) — معلوماتي بلا أثر مالي
   newUser: z.string().nullish(), // اليوزر الجديد (إلزامي لبطاقة التحويل)
+  photo: z.string().max(760_000, "حجم الصورة كبير جداً").nullish(), // data URL — ٥٠٠ك بعد الترميز
   materials: z
     .array(z.object({ itemId: z.coerce.number().int().positive(), qty: z.coerce.number().positive() }))
     .optional()
@@ -50,6 +51,9 @@ const schema = z.object({
   noSale: z.boolean().optional().default(false), // «بلا مبيع»: لا مادة مباعة (المبيع صفر) — خيار وليس مادة
   odooBg: z.string().nullish(), // بطاقات أودو: اليوزر (BG) — إلزاميّ إن كانت usernameRequired
 });
+
+// 📷 أقصى حجمٍ للصورة بعد ضغط العميل: ٥٠٠ كيلوبايت (قرارُ محمد 2026-11-17)
+const PHOTO_MAX_BYTES = 500 * 1024;
 
 // نمط اليوزر (BG) لتذاكر أودو: bg-x-x-x@x (كلّ x رقم/حرف)
 const ODOO_BG_RE = /^bg-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-?@[a-z0-9]+$/i;
@@ -66,7 +70,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" }, { status: 400 });
   }
-  const { cardId, serviceDetails, amount, sale, subscription, newUser, materials: rawMaterials, useReward, noSale, odooBg } = parsed.data;
+  const { cardId, serviceDetails, amount, sale, subscription, newUser, photo, materials: rawMaterials, useReward, noSale, odooBg } = parsed.data;
   // دمج تكرار نفس المادة في أكثر من قائمة منسدلة (تُجمع الكميات)
   const merged = new Map<number, number>();
   for (const m of rawMaterials) merged.set(m.itemId, (merged.get(m.itemId) ?? 0) + m.qty);
@@ -93,6 +97,15 @@ export async function POST(request: Request) {
   const type = typeOfList ?? await prisma.cardType.findFirst({ where: { name: card.kind, isDeleted: false, agentId: actor.agentId ?? -1 } });
   const isDelivery = type?.deliveryOnly ?? (cardList?.name ?? card.kind) === "توصيل";
   const isTransfer = card.kind === "تحويل";
+  // ═════ 📷 صورةُ الإنجاز (صيانة/تحويل) — طلبُ محمد 2026-11-17 ═════
+  // الفئةُ الفعليّة بنفس قاعدة الخصائص أعلاه: اسمُ العمود إن كان فئةً لهذا الوكيل، وإلّا فئةُ
+  // البطاقة. فبطاقةٌ في عمود «مؤجلة» (عمودٌ نظاميٌّ بلا فئة) تُقاس بفئتها لا باسم العمود.
+  const effKind = (typeOfList ? cardList!.name : card.kind).trim();
+  const photoKind = !isDelivery && (effKind === "صيانة" || effKind === "تحويل");
+  const photoAgent = photoKind && actor.agentId != null
+    ? await prisma.agent.findUnique({ where: { id: actor.agentId }, select: { cardPhotoAllowed: true } })
+    : null;
+  const photoOn = !!photoAgent?.cardPhotoAllowed;
 
   // ===== بطاقات أودو (طلب محمد): الملاحظة إلزاميّة (تُرسَل chatter)، واليوزر BG إلزاميّ إن اشترطته أودو =====
   if (card.viaOdoo) {
@@ -148,6 +161,23 @@ export async function POST(request: Request) {
     // «اشتراك»: إلزامي إدخاله صراحةً (0 جائز)، وما فوق الصفر ≥ 1000
     if (subscription == null) return NextResponse.json({ error: "مبلغ «اشتراك» مطلوب — أدخِل 0 إن لم يُستلم اشتراك" }, { status: 400 });
     if (subscription > 0 && subscription < 1000) return NextResponse.json({ error: "مبلغ الاشتراك لا يقل عن 1000 دينار (أو صفر)" }, { status: 400 });
+  }
+
+  // 📷 بلا إذنِ المالك لا تُخزَّن صورةٌ مهما أُرسلت؛ وبالإذن هي **واجبةٌ على الفنيّ**
+  // في الصيانة والتحويل، واختياريّةٌ للمدير ومستخدم المكتب (كما كانت قبل إلغائها).
+  const photoData = photoOn ? photo?.trim() || null : null;
+  if (photoData) {
+    if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(photoData)) {
+      return NextResponse.json({ error: "صيغةُ الصورة غير مقبولة — أعِد التقاطها" }, { status: 400 });
+    }
+    const b64 = photoData.slice(photoData.indexOf(",") + 1);
+    const bytes = Math.floor((b64.length * 3) / 4);
+    if (bytes > PHOTO_MAX_BYTES) {
+      return NextResponse.json({ error: "الصورة أكبر من 500 كيلوبايت" }, { status: 400 });
+    }
+  }
+  if (photoOn && actor.isTech && !photoData) {
+    return NextResponse.json({ error: "رفعُ صورةٍ مطلوبٌ لإنجاز هذه البطاقة" }, { status: 400 });
   }
 
   const tech = await prisma.technician.findUnique({ where: { id: card.technicianId } });
@@ -336,6 +366,11 @@ export async function POST(request: Request) {
           },
         });
       }
+    }
+    // 📷 الصورةُ في نفس المعاملة: فإمّا بطاقةٌ منجزةٌ بصورتها أو لا إنجازَ — ولا تبقى
+    // بطاقةٌ «منجزةٌ بلا دليل». وتُحذف مع بطاقتها في تنظيف الأرشيف.
+    if (photoData) {
+      await tx.cardPhoto.upsert({ where: { cardId }, update: { data: photoData }, create: { cardId, data: photoData } });
     }
     // إنجاز البطاقة — amount = «المبيع» الصافي (وللتوصيل مبلغه)، subAmount = «اشتراك»
     await tx.taskCard.update({
@@ -580,6 +615,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true, sale: netSale, subscription: subAmountVal, rewardDiscount,
-    invoiceId, invoiceNumber, matchedSubscriber, messaged, overrun: overrunResult,
+    invoiceId, invoiceNumber, hasPhoto: !!photoData, matchedSubscriber, messaged, overrun: overrunResult,
   });
 }

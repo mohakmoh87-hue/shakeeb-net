@@ -25,6 +25,7 @@ type Agent = {
   managerPhones: string[]; backupEmail: string | null;
   odooSlaSendAllowed: boolean; // إذن «رسائل أودو التلقائيّة» (الميزة ٢) — بلا هذا الإذن لا يراها الوكيل
   subDealerCheck: boolean; // 🕵️ فحصُ سب-ديلر مفعّلٌ لهذا الوكيل
+  cardPhotoAllowed: boolean; // 📷 صورةُ إنجاز البطاقة (صيانة/تحويل) مسموحةٌ لهذا الوكيل
   // أ-٢٣ · حصّةُ «مكتبٌ بأكثر من لوحة ساس»: **كم مكتباً** يُسمح له. صفر = الوضعُ الحاليّ.
   multiSasOffices?: number;
 };
@@ -448,6 +449,17 @@ export default function OwnerPage() {
                     className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${a.subDealerCheck ? "bg-rose-600 text-white hover:bg-rose-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                   >
                     🕵️ سب-ديلر {a.subDealerCheck ? "مفعّل" : "مطفأ"}
+                  </button>
+                  {/* 📷 صورةُ إنجاز البطاقة: بلا الإذن لا يرى الفنيُّ رافعَ صورةٍ ولا تُطلب منه.
+                      وبالإذن تصير **واجبةً** على الفنيّ في بطاقات الصيانة والتحويل. */}
+                  <button
+                    onClick={() => patch(a.id, { cardPhotoAllowed: !a.cardPhotoAllowed })}
+                    title={a.cardPhotoAllowed
+                      ? "صورةُ الإنجاز واجبةٌ على فنّيي هذا الوكيل في الصيانة والتحويل — اضغط للإطفاء"
+                      : "مطفأ — لا تُطلب صورةٌ ولا يظهر رافعُها. اضغط لإلزام الفنيّ بصورةٍ في الصيانة والتحويل"}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${a.cardPhotoAllowed ? "bg-teal-600 text-white hover:bg-teal-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                  >
+                    📷 صورةُ الإنجاز {a.cardPhotoAllowed ? "مفعّلة" : "مطفأة"}
                   </button>
                   <button onClick={() => regenKey(a)} className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100" title="إعادة توليد مفتاح قاعدة بيانات الوكيل (عند الشك بتسريب)">🔐 مفتاح القاعدة</button>
                   <LimitInput label="مكاتب" value={a.officeCap} onSave={(v) => { if (v !== a.officeCap) patch(a.id, { officeCap: v }); }} />
