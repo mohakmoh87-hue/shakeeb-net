@@ -189,6 +189,8 @@ function CardPhotoViewer({ cardId }: { cardId: number }) {
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState(false);
   const [none, setNone] = useState(false);
+  const [full, setFull] = useState(false); // ملءُ الشاشة
+  const [zoom, setZoom] = useState(false); // بالحجم الأصليّ داخل ملء الشاشة
   async function toggle() {
     if (shown) { setShown(false); return; }
     if (photo) { setShown(true); return; }
@@ -214,8 +216,33 @@ function CardPhotoViewer({ cardId }: { cardId: number }) {
           </button>
         )}
       </div>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      {shown && photo && <img src={photo} alt="صورة العمل" className="mt-2 max-h-80 w-auto rounded-lg border border-slate-200" />}
+      {shown && photo && (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={photo} alt="صورة العمل" onClick={() => { setZoom(false); setFull(true); }}
+          className="mt-2 max-h-80 w-auto cursor-zoom-in rounded-lg border border-slate-200"
+        />
+      )}
+      {/* ملءُ الشاشة: ضغطةٌ على الصورة تكبّرها، وضغطةٌ عليها ثانيةً تُظهرها بحجمها
+          الأصليّ قابلةً للتمرير (لتفاصيل اليوزر والرقم)، والخلفيّةُ أو ✕ تُغلق. */}
+      {full && photo && (
+        <div
+          onClick={() => setFull(false)}
+          className={`fixed inset-0 z-[90] flex overflow-y-auto overflow-x-auto bg-black/95 ${zoom ? "items-start justify-start" : "items-center justify-center"}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={photo} alt="صورة العمل"
+            onClick={(e) => { e.stopPropagation(); setZoom((z) => !z); }}
+            className={zoom ? "max-w-none cursor-zoom-out" : "max-h-[94dvh] max-w-full cursor-zoom-in object-contain"}
+          />
+          <button
+            onClick={(e) => { e.stopPropagation(); setFull(false); }}
+            className="fixed left-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-xl font-bold text-white backdrop-blur hover:bg-white/30"
+            aria-label="إغلاق"
+          >✕</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2778,7 +2805,9 @@ function ArchiveModal({ cardTypes, offices, photoOn, onClose, onChanged }: { car
                       {c.durationSec != null && <span className="rounded bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">⏱ {fmtDuration(c.durationSec)}</span>}
                       <b className="text-emerald-700">مبيع {(c.amount ?? 0).toLocaleString("en-US")}</b>
                       {(c.subAmount ?? 0) > 0 && <b className="text-indigo-700">اشتراك {(c.subAmount ?? 0).toLocaleString("en-US")}</b>}
-                      {c.completedAt && <span dir="ltr">{fmtDateTime(c.completedAt)}</span>}
+                      {c.completedAt
+                        ? <span dir="ltr">{fmtDateTime(c.completedAt)}</span>
+                        : c.archivedAt && <span dir="ltr" title="وقتُ الأرشفة — بلا وقت إنجاز">🗂️ {fmtDateTime(c.archivedAt)}</span>}
                     </span>
                   </button>
                   {openId === c.id && (

@@ -47,7 +47,10 @@ export async function GET(request: Request) {
       ...(kind ? { kind } : {}),
       ...dateWhere,
     },
-    orderBy: [{ completedAt: "desc" }, { id: "desc" }],
+    // 🔴 الأحدثُ أوّلاً فعلاً: `completedAt desc` وحدَه يضع **الفارغَ في الأعلى** (NULLS FIRST
+    // هو افتراضُ بوستغرس في التنازليّ)، فبطاقةٌ مؤرشفةٌ بلا وقتِ إنجازٍ تتصدّر القائمةَ بلا
+    // تاريخٍ أصلاً وتدفع الأحدثَ للأسفل — وقد تملأ حدَّ الـ٣٠٠ فتحجب الحديثَ كلَّه.
+    orderBy: [{ completedAt: { sort: "desc", nulls: "last" } }, { archivedAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
     take: 300,
     select: {
       id: true, listId: true, title: true, description: true, kind: true, assignee: true, technicianId: true,
