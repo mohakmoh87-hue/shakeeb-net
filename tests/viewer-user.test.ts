@@ -24,10 +24,19 @@ describe("🔴 الهاتفُ لا يصل المشاهدَ أصلاً — لا �
     }
   });
 
-  test("القائمةُ تنتقي الاسمَ واليوزرَ والمكتبَ فقط", () => {
+  test("القائمةُ تنتقي الاسمَ واليوزرَ والمكتبَ وتاريخَ الانتهاء فقط", () => {
     const sub = code("src/app/api/watch/subscribers/route.ts");
-    assert.ok(/select: \{ id: true, name: true, netUser: true, towerId: true \}/.test(sub),
+    assert.ok(/select: \{ id: true, name: true, netUser: true, towerId: true, dateTo: true \}/.test(sub),
       "🔴 أعمدةُ القائمة تغيّرت — أيُّ عمودٍ زائدٍ قد يحمل بياناتٍ شخصيّة");
+  });
+
+  test("⏰ المتبقّي يُعرض بنفس صيغة البرنامج وقاعدةِ أيّامه (طلبُ محمد 2026-11-21)", () => {
+    const ui = code("src/components/WatchBoard.tsx");
+    assert.ok(/remainingText\(s\.dateTo\)/.test(ui), "🔴 ضاع «المتبقي» عن صفحة المشاهد");
+    assert.ok(/r\.negative \? -r\.days - 1 : r\.days/.test(ui),
+      "🔴 حسابُ الأيّام فارق صيغةَ البرنامج ⇒ منتهٍ يُعدّ مشتركاً أو يومٌ يضيع");
+    assert.ok(/d < 0 \? "bg-red-600" : d > 7 \? "bg-green-600"/.test(ui),
+      "🔴 تلوينُ المتبقّي فارق قاعدةَ البرنامج (أحمرُ للمنتهي · أخضرُ فوق سبعة)");
   });
 
   test("البحثُ لا يشمل الهاتف ولا العنوان (وإلّا استُنتج الرقمُ بالبحث عنه)", () => {
@@ -142,12 +151,14 @@ describe("رفعُ البطاقة: منطقٌ واحدٌ مشترَكٌ وبلا
     assert.ok(/allowManualTech: true/.test(old), "🔴 مستخدمُ المكتب فقد اختيارَ الفنيّ");
   });
 
-  test("المشاهدُ لا يختار فنيّاً — خادميّاً لا في الواجهة", () => {
+  test("🔁 اختيارُ الفنيّ عاد للمشاهد (قرارُ محمد 2026-11-21 ناقضاً المنع)", () => {
     const w = code("src/app/api/watch/card/route.ts");
-    assert.ok(/allowManualTech: false/.test(w), "🔴 المشاهدُ يستطيع إسنادَ البطاقة لفنيّ");
-    assert.ok(!/technicianId: /.test(w), "🔴 معرّفُ الفنيّ يُمرَّر من طلب المشاهد");
+    assert.ok(/allowManualTech: true/.test(w), "🔴 المشاهدُ فقد اختيارَ الفنيّ");
+    assert.ok(/technicianId: body\?\.technicianId/.test(w), "🔴 معرّفُ الفنيّ لا يُمرَّر من الطلب");
     assert.ok(/actor\.allowManualTech && input\.technicianId/.test(lib),
       "🔴 الدالّةُ تقبل الفنيَّ بلا نظرٍ للعلَم ⇒ العلَمُ زينة");
+    assert.ok(/verifyManualAssignee\(wantedTech, sub\.towerId, agentTowers\)/.test(lib),
+      "🔴 معرّفُ الفنيّ القادمُ من العميل لا يُتحقَّق منه ⇒ إسنادٌ لفنيّ وكيلٍ آخر");
   });
 
   test("حارسُ البطاقة المرفوعة ومبلغُ باقة التوصيل باقيان", () => {
@@ -155,6 +166,51 @@ describe("رفعُ البطاقة: منطقٌ واحدٌ مشترَكٌ وبلا
       "🔴 ضاع حارسُ «بطاقةٌ مرفوعةٌ بالفعل» ⇒ بطاقتان لمشترك");
     assert.ok(/operation === "توصيل"[\s\S]{0,300}priceDinar/.test(lib), "🔴 ضاع مبلغُ باقة التوصيل");
     assert.ok(/agentId: actor\.agentId \?\? -1/.test(lib), "🔴 سعرُ الباقة يُقرأ بلا عزلِ وكيل");
+  });
+});
+
+describe("🆕 البطاقةُ الحرّة — مشتركٌ غيرُ موجودٍ في القاعدة", () => {
+  const lib = code("src/lib/cardFromSubscriber.ts");
+  const route = code("src/app/api/watch/free-card/route.ts");
+
+  test("المكتبُ يُصادَق ضدّ نطاق الرافع لا يُؤخذ من الطلب", () => {
+    assert.ok(/!actor\.ownerTowerIds\.includes\(officeId\)[\s\S]{0,120}status: 403/.test(lib),
+      "🔴 مكتبٌ من الطلب يُقبل بلا فحص ⇒ بطاقةٌ في مكتبٍ لا يراه");
+    assert.ok(/sc\.viewer\.viewAllOffices \? Number\(body\?\.officeId\) : sc\.towerIds\[0\]/.test(route),
+      "🔴 صاحبُ المكتب الواحد يختار مكتباً — أو صاحبُ الكلّ يسقط على مكتبٍ عشوائيّ");
+  });
+
+  test("النوعُ من أعمدة المكتب لا عمودٌ نظاميّ، والنصُّ مطلوب", () => {
+    assert.ok(/isSystemList\(operation\)[\s\S]{0,120}status: 400/.test(lib),
+      "🔴 بطاقةٌ تُرفع في عمودٍ نظاميّ (ملغاة/مكتمل)");
+    assert.ok(/if \(!text\) return \{ ok: false/.test(lib), "🔴 بطاقةٌ بلا تفاصيلَ تُقبل");
+    assert.ok(/slice\(0, 2000\)/.test(lib), "🔴 لا حدَّ لطول النصّ");
+  });
+
+  test("بلا مشتركٍ ⇒ بلا مبلغٍ ولا رسالةِ مشتركٍ ولا كلمةِ مرور", () => {
+    const fn = lib.slice(lib.indexOf("export async function createFreeCard"));
+    assert.ok(!/subscriberId/.test(fn), "🔴 البطاقةُ الحرّة تُربط بمشترك");
+    assert.ok(!/subAmount/.test(fn), "🔴 مبلغٌ ماليٌّ على بطاقةٍ بلا مشترك");
+    assert.ok(!/sendCardRaisedMessage/.test(fn), "🔴 رسالةُ «رُفعت لك بطاقة» بلا مشتركٍ تُرسَل لمن؟");
+    assert.ok(!/fillCardPassword/.test(fn), "🔴 كلمةُ مرورِ يوزرٍ لا يوزرَ له");
+    assert.ok(/officeId, technicianId, assignee/.test(fn), "🔴 مكتبُ البطاقة الماليُّ غيرُ مثبَّت");
+  });
+
+  test("الفنيُّ اختياريٌّ ويُتحقَّق منه، والتوزيعُ التلقائيُّ يعمل بدونه", () => {
+    const fn = lib.slice(lib.indexOf("export async function createFreeCard"));
+    assert.ok(/verifyManualAssignee\(wantedTech, officeId, agentTowers\)/.test(fn),
+      "🔴 فنيٌّ من الطلب يُسنَد بلا تحقّق");
+    assert.ok(/autoAssignOn\(officeId, operation, actor\.agentId\)/.test(fn),
+      "🔴 التوزيعُ التلقائيُّ لا يعمل على البطاقة الحرّة");
+  });
+
+  test("قائمةُ الفنيّين لا تكشف راتباً ولا رمزَ دخول", () => {
+    const t = code("src/app/api/watch/technicians/route.ts");
+    assert.ok(!/salary|plainCode|code|password/i.test(t.replace(/officeId/g, "")),
+      "🔴 مسارُ فنيّي المشاهد يكشف حقولاً حسّاسة");
+    assert.ok(/manualAssigneeOptions\(officeId, agentTowers\)/.test(t),
+      "🔴 الأهليّةُ لا تطابق قاعدةَ قبول الخادم ⇒ اختيارٌ يُرفَض عند الحفظ");
+    assert.ok(/sc\.towerIds\.includes\(officeId\)/.test(t), "🔴 فنيّو مكتبٍ خارجَ النطاق يُكشفون");
   });
 });
 

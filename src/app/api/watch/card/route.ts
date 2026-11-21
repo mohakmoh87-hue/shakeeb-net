@@ -6,8 +6,9 @@ export const dynamic = "force-dynamic";
 
 // 👁️ رفعُ بطاقةٍ من مستخدم المشاهدة — نفسُ منطق `/api/field/from-subscriber` حرفيّاً
 // (حارسُ البطاقة المرفوعة · مبلغُ باقة التوصيل · التوزيعُ التلقائيّ · سجلُّ التغييرات).
-// والفرقان الوحيدان: المِلكيّةُ تُقاس بنطاق المشاهد، و**لا اختيارَ فنيّ** (قرارُ محمد)
-// فأيُّ `technicianId` في الطلب يُهمَل خادميّاً لا في الواجهة وحدَها.
+// والفرقُ الوحيد: المِلكيّةُ تُقاس بنطاق المشاهد لا بمكاتب وكيله.
+// 🔁 واختيارُ الفنيّ **عاد** بقرار محمد 2026-11-21 بعد أن كان ممنوعاً — والمعرّفُ
+//    يُتحقَّق منه خادميّاً بـ`verifyManualAssignee` (وكيلٌ ومكتبٌ ومجموعةُ لوحة).
 export async function POST(request: Request) {
   const sc = await viewerScope();
   if (!sc) return NextResponse.json({ error: "غير مصرّح" }, { status: 403 });
@@ -19,12 +20,13 @@ export async function POST(request: Request) {
       operation: String(body?.operation ?? ""),
       extraPhone: body?.extraPhone,
       note: body?.note,
+      technicianId: body?.technicianId != null ? Number(body.technicianId) : null,
     },
     {
       agentId: sc.viewer.agentId,
       actorName: sc.viewer.name || sc.viewer.username,
       ownerTowerIds: sc.towerIds,
-      allowManualTech: false,
+      allowManualTech: true,
     },
   );
   if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status });

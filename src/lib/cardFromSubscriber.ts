@@ -37,6 +37,22 @@ export type CardOutcome =
   | { ok: true; listName: string; card: { id: number } }
   | { ok: false; error: string; status: number };
 
+// عمودُ اللوحة الذي يحمل اسمَ العمليّة — يُنشأ إن لم يوجد، ويُضمَن نوعُه في «الأنواع والأوقات».
+// مشترَكٌ بين بطاقة المشترك والبطاقة الحرّة فلا يتباعد سلوكُ الإنشاء بينهما.
+async function opList(officeId: number, operation: string, agentId: number | null) {
+  const board = await getOrCreateBoard(officeId);
+  let list = await prisma.taskList.findFirst({
+    where: { boardId: board.id, name: operation, isDeleted: false },
+    orderBy: { position: "asc" },
+  });
+  if (!list) {
+    const count = await prisma.taskList.count({ where: { boardId: board.id, isDeleted: false } });
+    list = await prisma.taskList.create({ data: { boardId: board.id, name: operation, position: count } });
+  }
+  await ensureCardType(agentId, operation);
+  return list;
+}
+
 export async function createCardFromSubscriber(input: CardInput, actor: CardActor): Promise<CardOutcome> {
   const subscriberId = Number(input.subscriberId);
   const operation = String(input.operation ?? "").trim();
@@ -83,16 +99,7 @@ export async function createCardFromSubscriber(input: CardInput, actor: CardActo
     };
   }
 
-  const board = await getOrCreateBoard(sub.towerId);
-  let list = await prisma.taskList.findFirst({
-    where: { boardId: board.id, name: operation, isDeleted: false },
-    orderBy: { position: "asc" },
-  });
-  if (!list) {
-    const count = await prisma.taskList.count({ where: { boardId: board.id, isDeleted: false } });
-    list = await prisma.taskList.create({ data: { boardId: board.id, name: operation, position: count } });
-  }
-  await ensureCardType(actor.agentId ?? null, operation);
+  const list = await opList(sub.towerId, operation, actor.agentId ?? null);
 
   const title = sub.netUser?.trim() || sub.name?.trim() || `مشترك #${sub.id}`;
   const descLines = [
@@ -136,6 +143,66 @@ export async function createCardFromSubscriber(input: CardInput, actor: CardActo
   if (autoNote) await appendCardHistory(card.id, "النظام", autoNote);
   const { sendCardRaisedMessage } = await import("./cardRaisedMessage");
   void sendCardRaisedMessage(card.id);
+
+  return { ok: true, listName: list.name, card };
+}
+
+// ═════ 🆕 بطاقةٌ حرّةٌ بلا مشترك (طلبُ محمد 2026-11-21) ═════
+// «تنصيبُ مشتركٍ جديدٍ غيرِ موجودٍ أصلاً في قاعدة البيانات»: نصٌّ حرٌّ يكتبه الرافع،
+// ونوعٌ من أعمدة مكتبه، وفنيٌّ اختياريّ. بلا مشتركٍ ⇒ بلا حارسِ تكرار، وبلا مبلغِ
+// باقة، وبلا رسالةِ «رُفعت لك بطاقة»، وبلا كلمةِ مرورِ يوزر — فلا شيءَ منها له معنى هنا.
+export type FreeCardInput = {
+  officeId: number;
+  operation: string;
+  text: string;
+  technicianId?: number | null;
+};
+
+export async function createFreeCard(input: FreeCardInput, actor: CardActor): Promise<CardOutcome> {
+  const officeId = Number(input.officeId);
+  const operation = String(input.operation ?? "").trim();
+  const text = String(input.text ?? "").trim().slice(0, 2000);
+  const wantedTech = actor.allowManualTech && input.technicianId != null ? Number(input.technicianId) : null;
+
+  if (!officeId || !actor.ownerTowerIds.includes(officeId)) {
+    return { ok: false, error: "المكتب خارج نطاقك", status: 403 };
+  }
+  if (!operation || isSystemList(operation)) return { ok: false, error: "نوعُ البطاقة غير صالح", status: 400 };
+  if (!text) return { ok: false, error: "اكتب تفاصيلَ الطلب", status: 400 };
+
+  const list = await opList(officeId, operation, actor.agentId ?? null);
+
+  // العنوانُ سطرُ النصّ الأوّل (وجهُ البطاقة)، والنصُّ كاملاً في الوصف
+  const firstLine = text.split("\n")[0]!.trim();
+  const title = (firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine) || operation;
+
+  const agentTowers = actor.agentId != null ? await towerIdsOfAgent(actor.agentId) : [];
+  let technicianId: number | null = null;
+  let assignee: string | null = null;
+  let autoNote: string | null = null;
+  if (wantedTech != null) {
+    const ok = await verifyManualAssignee(wantedTech, officeId, agentTowers);
+    if (!ok) return { ok: false, error: "الفني غير موجود أو لا يتبع هذا المكتب", status: 400 };
+    technicianId = ok.id; assignee = ok.name;
+  } else {
+    try {
+      if (await autoAssignOn(officeId, operation, actor.agentId)) {
+        const picked = await pickAssignee(officeId, agentTowers);
+        if (picked) { technicianId = picked.id; assignee = picked.name; autoNote = `توزيع تلقائي ← ${picked.name}`; }
+        else autoNote = "توزيع تلقائي: لا يوجد فني مؤهّل الآن (حضور/إجازة) — البطاقة بلا فني";
+      }
+    } catch { /* لا يُفشل الإنشاء */ }
+  }
+
+  const position = await prisma.taskCard.count({ where: { listId: list.id, isDeleted: false } });
+  const card = await prisma.taskCard.create({
+    data: {
+      listId: list.id, title, description: text, position, kind: operation,
+      officeId, technicianId, assignee,
+    },
+  });
+  await appendCardHistory(card.id, actor.actorName, "إنشاء البطاقة");
+  if (autoNote) await appendCardHistory(card.id, "النظام", autoNote);
 
   return { ok: true, listName: list.name, card };
 }

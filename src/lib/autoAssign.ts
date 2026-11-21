@@ -200,3 +200,28 @@ export async function verifyManualAssignee(
   if (group.some((o) => offices.has(o))) return { id: t.id, name: t.name };
   return null;
 }
+
+// 👁️ قائمةُ الفنيّين الذين يقبلهم `verifyManualAssignee` لهذا المكتب — **نفسُ القاعدة
+// حرفيّاً** (المكتبُ الأصليُّ + الإضافيّةُ الدائمة + الدعم + مجموعةُ اللوحة)، كي لا تعرض
+// الواجهةُ فنيّاً يرفضه الخادمُ عند الحفظ. وهي **عرضٌ لا تصريح**: كلُّ اختيارٍ يُتحقَّق
+// منه بـ`verifyManualAssignee` عند الإنشاء، فلا أمنَ معلَّقٌ على هذه القائمة.
+export async function manualAssigneeOptions(
+  officeId: number | null, agentTowers: number[],
+): Promise<{ id: number; name: string }[]> {
+  if (officeId == null || !agentTowers.includes(officeId)) return [];
+  const cands = await prisma.technician.findMany({
+    where: { isDeleted: false, towerId: { in: agentTowers } },
+    select: { id: true, name: true, towerId: true, supportTowerId: true, extraTowerIds: true },
+    orderBy: { name: "asc" },
+  });
+  const { parseExtraTowers, fieldGroupOffices } = await import("@/lib/field");
+  const group = await fieldGroupOffices(officeId);
+  const out: { id: number; name: string }[] = [];
+  for (const t of cands) {
+    if (t.towerId == null) continue;
+    const offices = new Set<number>([t.towerId, ...parseExtraTowers(t.extraTowerIds)]);
+    if (t.supportTowerId != null) offices.add(t.supportTowerId);
+    if (offices.has(officeId) || group.some((o) => offices.has(o))) out.push({ id: t.id, name: t.name });
+  }
+  return out;
+}

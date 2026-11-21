@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 // 🔴 **الهاتفُ لا يُسحب من القاعدة إطلاقاً**: ليس في `select`، فلا يُخفى بالعرض بل
 //    لا يوجد في الجواب. والبحثُ بالاسم واليوزر **فقط** — فلا يُستنتَج رقمٌ بالبحث عنه
 //    (مسارُ المشتركين الأصليُّ يبحث بالهاتف والعنوان، وهذا لا).
+// و`dateTo` (تاريخُ انتهاء اشتراك المشترك) مُنتقىً لعرض «المتبقي» كما في البرنامج (طلبُ محمد 2026-11-21).
 const LIMIT = 300;
 
 export async function GET(request: Request) {
@@ -34,17 +35,19 @@ export async function GET(request: Request) {
   const [items, total] = await Promise.all([
     prisma.subscriber.findMany({
       where,
-      select: { id: true, name: true, netUser: true, towerId: true },
+      select: { id: true, name: true, netUser: true, towerId: true, dateTo: true },
       orderBy: { name: "asc" },
       take: LIMIT,
     }),
     prisma.subscriber.count({ where: { isDeleted: false, towerId: { in: sc.towerIds } } }),
   ]);
 
-  // أسماءُ المكاتب تُرسَل مرّةً واحدةً مع القائمة لمن نطاقُه كلُّ المكاتب (خانةُ «المكتب»)
-  const offices = sc.viewer.viewAllOffices
-    ? await prisma.tower.findMany({ where: { id: { in: sc.towerIds } }, select: { id: true, name: true } })
-    : [];
+  // مكاتبُ نطاقه تُرسَل **دائماً** مع القائمة: خانةُ «المكتب» لمن نطاقُه كلُّ المكاتب،
+  // ومكتبُ البطاقة الحرّة لمن نطاقُه مكتبٌ واحد — فلا يُستنتَج المكتبُ من أوّل مشترك
+  // (قائمةٌ فارغةٌ أو بحثٌ لا نتيجةَ له كان سيترك البطاقةَ الحرّة بلا مكتب).
+  const offices = await prisma.tower.findMany({
+    where: { id: { in: sc.towerIds } }, select: { id: true, name: true }, orderBy: { id: "asc" },
+  });
 
   return NextResponse.json(
     { items, offices, allOffices: sc.viewer.viewAllOffices, name: sc.viewer.name },
