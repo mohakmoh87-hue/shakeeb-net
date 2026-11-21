@@ -23,6 +23,7 @@ const COOKIE = "mynet_session";
 const MAX_AGE = 60 * 60 * 24 * 365; // سنة
 
 import type { Permission } from "./rbac";
+import { isAgentBlocked } from "./agentPlan";
 import { ensurePermSplitBackfillOnce } from "./permSplitBackfill";
 
 export interface SessionPayload {
@@ -113,6 +114,8 @@ export async function getTechSession(): Promise<TechSessionPayload | null> {
   // جهاز واحد فقط: رمز الجلسة يجب أن يطابق آخر تسجيل دخول — دخول جهاز جديد يُبطل السابق.
   // (جلسات ما قبل الميزة: صف الفني بلا رمز ⇒ تُقبل حتى أول دخول جديد يثبّت رمزاً)
   if (tech.sessionToken && p.sessionToken !== tech.sessionToken) return null;
+  // اشتراكُ الوكيل: الممنوعُ تُبطَل جلسةُ فنيّيه فوراً — لا عند الدخول وحدَه
+  if (await isAgentBlocked(tech.agentId)) return null;
   return { kind: "technician", technicianId: tech.id, name: tech.name, username: tech.username ?? "", agentId: tech.agentId, towerId: tech.towerId, sessionToken: p.sessionToken };
 }
 
@@ -138,6 +141,9 @@ export async function getSession(): Promise<SessionPayload | null> {
   // (سجّل دخوله من جهاز آخر فحلّ محلّه). يبقى القدماء (بلا رمز) صالحين حتى دخولهم القادم.
   const ptok = (payload as unknown as { sessionToken?: string }).sessionToken;
   if (user.sessionToken && ptok !== user.sessionToken) return null;
+  // اشتراكُ الوكيل: الممنوعُ (منتهٍ بعد مهلة السماح · مسحوبُ الموافقة · محذوف) تُبطَل
+  // جلساتُ فريقه كلِّها فوراً. المالكُ (بلا وكيل) غيرُ معنيٍّ فلا استعلامَ له إطلاقاً.
+  if (await isAgentBlocked(user.agentId)) return null;
   return {
     userId: user.id,
     username: user.username,

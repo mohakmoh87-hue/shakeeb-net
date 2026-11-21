@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { clearAgentBlockCache } from "@/lib/agentPlan";
 import { guardOwner, confirmOwnerPassword } from "@/lib/guard";
 import { hashPassword } from "@/lib/auth";
 import { encryptSecret } from "@/lib/secretbox";
@@ -126,6 +127,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   if (Object.keys(data).length > 0) await prisma.agent.update({ where: { id: agentId }, data });
+
+  // كاشُ حالة الإيقاف (٦٠ث) في getSession — يُبطَل هنا فيسري قرارُك لحظةَ حفظه لا بعد دقيقة
+  clearAgentBlockCache(agentId);
 
   // التجديد/التمديد يصفّر علامة التنبيه — لتعمل تنبيهات الدورة القادمة من جديد
   if (d.clearExpiry || renewedTo) {
