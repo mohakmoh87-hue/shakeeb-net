@@ -47,6 +47,16 @@ describe("🔴 الهاتفُ لا يصل المشاهدَ أصلاً — لا �
       "🔴 البحثُ يشمل الهاتفَ أو العنوان — فيُستنتَج الرقمُ بتجربة أرقامٍ عليه");
   });
 
+  test("🚪 للمشاهد مَخرجٌ — لا يُحبَس في حسابه", () => {
+    const ui = code("src/components/WatchBoard.tsx");
+    assert.ok(/fetch\("\/api\/auth\/logout", \{ method: "POST" \}\)/.test(ui),
+      "🔴 لا زرَّ خروجٍ للمشاهد — مَن دخل على هاتفٍ حُبس في الحساب (لا قائمةَ ولا شريطَ أدوات)");
+    assert.ok(/window\.location\.href = "\/login"/.test(ui), "🔴 الخروجُ لا يُعيده لصفحة الدخول");
+    const proxy = code("src/proxy.ts");
+    assert.ok(/if \(isPublic\) return NextResponse\.next\(\)/.test(proxy),
+      "🔴 صفحةُ الدخول لم تعد متاحةً دائماً — فالمحبوسُ في جلسةٍ لا مَخرجَ له إطلاقاً");
+  });
+
   test("واجهةُ المشاهد لا تعرض هاتفاً ولا تلمس لوحةَ المشتركين الأصليّة", () => {
     const ui = code("src/components/WatchBoard.tsx");
     assert.ok(!/\bphone\b/i.test(ui.replace(/extraPhone/g, "")), "🔴 واجهةُ المشاهد تذكر هاتفَ مشترك");

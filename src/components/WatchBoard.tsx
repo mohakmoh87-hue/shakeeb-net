@@ -150,6 +150,14 @@ export default function WatchBoard() {
     }
   }
 
+  // 🚪 خروجٌ — سهوٌ أُصلح 2026-11-21: صفحةُ المشاهد كانت بلا مَخرجٍ إطلاقاً، فمَن دخل
+  // على هاتفٍ **حُبس** في الحساب (جهازٌ واحدٌ لكلّ جلسة، ولا قائمةَ ولا شريطَ أدوات).
+  // «لا يظهر له أيُّ خيار» يعني لا ميزاتٍ — لا أن يتعذّر الخروج.
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    window.location.href = "/login";
+  }
+
   async function submitFree() {
     if (!op || !freeText.trim() || sending) return;
     if (allOffices && freeOffice === "") { setOpsErr("اختر المكتب أوّلاً"); return; }
@@ -178,11 +186,17 @@ export default function WatchBoard() {
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-4" dir="rtl">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-extrabold text-slate-800">👁️ المشتركون</h1>
-          <p className="text-xs font-semibold text-slate-500">
-            {myName ? `${myName} · ` : ""}مشاهدةٌ فقط{total > 0 ? ` · ${total.toLocaleString("en-US")} مشترك` : ""}
-          </p>
+        <div className="flex items-center gap-2">
+          <button onClick={logout} title="تسجيل الخروج"
+            className="shrink-0 rounded-xl bg-slate-100 px-3 py-2 text-sm font-extrabold text-slate-600 hover:bg-slate-200">
+            🚪 خروج
+          </button>
+          <div>
+            <h1 className="text-lg font-extrabold text-slate-800">👁️ المشتركون</h1>
+            <p className="text-xs font-semibold text-slate-500">
+              {myName ? `${myName} · ` : ""}مشاهدةٌ فقط{total > 0 ? ` · ${total.toLocaleString("en-US")} مشترك` : ""}
+            </p>
+          </div>
         </div>
         {/* 🆕 بطاقةٌ حرّةٌ لمشتركٍ غيرِ موجودٍ في القاعدة (طلبُ محمد 2026-11-21) */}
         <button onClick={openFree}
