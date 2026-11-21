@@ -119,6 +119,51 @@ export async function getTechSession(): Promise<TechSessionPayload | null> {
   return { kind: "technician", technicianId: tech.id, name: tech.name, username: tech.username ?? "", agentId: tech.agentId, towerId: tech.towerId, sessionToken: p.sessionToken };
 }
 
+// ===== 👁️ جلسة مستخدم المشاهدة — نوعٌ ثالثٌ بنفس الكوكي عبر kind (طلبُ محمد 2026-11-21) =====
+// 🔑 **ولماذا نوعٌ مستقلٌّ لا مستخدمٌ بلا صلاحيّات؟** لأنّ أربعين مساراً يستعمل
+// `getSession()` بلا حارسِ صلاحيّة (ومنها `money/summary` و`reports/daily`) ⇒ جلسةُ
+// مستخدمٍ عاديّةٍ كانت ستُجيبه ولو أخفت الواجهةُ أزرارَها. والقائمةُ البيضاء في
+// `getSession` (ترفض كلَّ توكنٍ يحمل `kind`) تُغلق المسارات والصفحات **كلَّها** بصفر تعديل.
+export interface ViewerSessionPayload {
+  kind: "viewer";
+  userId: number;
+  name: string;
+  username: string;
+  agentId: number | null;
+  towerId: number | null;
+  viewAllOffices: boolean; // نطاقُه: مكتبُه وحدَه أو كلُّ مكاتب وكيله
+  sessionToken?: string;
+}
+export async function setViewerSession(payload: ViewerSessionPayload) {
+  const token = await new SignJWT({ ...payload })
+    .setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime(`${MAX_AGE}s`).sign(SECRET);
+  const store = await cookies();
+  store.set(COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: MAX_AGE, path: "/" });
+}
+// يقرأ جلسة المشاهد (وبياناته المحدّثة من القاعدة). null إن لم تكن جلسةَ مشاهد.
+// النطاقُ والمكتبُ يُقرآن من القاعدة لا من التوكن — فتعديلُ المدير يسري فوراً،
+// وسحبُ صفة المشاهدة (`viewOnly=false`) يُبطل الجلسةَ بدل أن يُوسّعها صامتاً.
+export async function getViewerSession(): Promise<ViewerSessionPayload | null> {
+  const store = await cookies();
+  const token = store.get(COOKIE)?.value;
+  if (!token) return null;
+  const payload = await verifyToken(token);
+  if (!payload || (payload as unknown as { kind?: string }).kind !== "viewer") return null;
+  const p = payload as unknown as ViewerSessionPayload;
+  const u = await prisma.user.findUnique({
+    where: { id: p.userId },
+    select: { id: true, fullName: true, username: true, agentId: true, towerId: true, viewOnly: true, viewAllOffices: true, isDeleted: true, isActive: true, isOwner: true, sessionToken: true },
+  });
+  if (!u || u.isDeleted || !u.isActive || u.isOwner || !u.viewOnly) return null;
+  if (u.sessionToken && p.sessionToken !== u.sessionToken) return null;
+  if (await isAgentBlocked(u.agentId)) return null;
+  return {
+    kind: "viewer", userId: u.id, name: u.fullName, username: u.username,
+    agentId: u.agentId, towerId: u.towerId, viewAllOffices: u.viewAllOffices,
+    sessionToken: p.sessionToken,
+  };
+}
+
 export async function getSession(): Promise<SessionPayload | null> {
   const store = await cookies();
   const token = store.get(COOKIE)?.value;

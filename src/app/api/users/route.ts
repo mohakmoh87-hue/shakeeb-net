@@ -20,6 +20,9 @@ const schema = z.object({
   deniedPermissions: z.array(z.string()).default([]),
   // البند ١ · حسابٌ منفصلٌ لمستخدمٍ يشارك مكتباً مع غيره
   separateAccount: z.boolean().optional(),
+  // 👁️ نوعُ المشاهدة فقط + نطاقُه (مكتبُه وحدَه أو كلُّ مكاتب وكيله)
+  viewOnly: z.coerce.boolean().default(false),
+  viewAllOffices: z.coerce.boolean().default(false),
   towerId: z.coerce.number().nullable().optional(),
   isActive: z.coerce.boolean().default(true),
 });
@@ -35,6 +38,7 @@ export async function GET() {
     select: {
       id: true, fullName: true, username: true, isAdmin: true,
       permissions: true, deniedPermissions: true, separateAccount: true, towerId: true, isActive: true,
+      viewOnly: true, viewAllOffices: true,
     },
   });
   return NextResponse.json(users);
@@ -61,6 +65,19 @@ export async function POST(request: Request) {
   const agentId = g.session?.agentId ?? null;
   if (agentId == null) return NextResponse.json({ error: "لا وكيل مرتبط بحسابك" }, { status: 403 });
   const { permissions, deniedPermissions, password, ...rest } = parsed.data;
+  // 👁️ المشاهدُ **بلا صلاحيّةٍ وبلا إدارةٍ أبداً** — يُفرَض خادميّاً لا في النموذج:
+  // فلو أُرسل `isAdmin` أو قائمةُ صلاحيّاتٍ مع نوع المشاهدة لَأُهملت كلُّها هنا.
+  // ونطاقُ «مكتبُه وحدَه» يلزمه مكتبٌ فعليّ، وإلّا بقي بلا نطاقٍ فلا يرى شيئاً.
+  if (rest.viewOnly) {
+    rest.isAdmin = false;
+    permissions.length = 0;
+    deniedPermissions.length = 0;
+    if (!rest.viewAllOffices && rest.towerId == null) {
+      return NextResponse.json({ error: "مستخدمُ المشاهدة بنطاق «مكتبه» يلزمه اختيارُ مكتب" }, { status: 400 });
+    }
+  } else {
+    rest.viewAllOffices = false;
+  }
   if (rest.towerId != null) {
     const t = await prisma.tower.findFirst({ where: { id: rest.towerId, agentId, isDeleted: false }, select: { id: true } });
     if (!t) return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
@@ -83,7 +100,7 @@ export async function POST(request: Request) {
       permissions: permissions.join(","),
       deniedPermissions: deniedPermissions.join(",") || null,
     },
-    select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, isActive: true },
+    select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, isActive: true, viewOnly: true, viewAllOffices: true },
   });
   return NextResponse.json(created, { status: 201 });
 }

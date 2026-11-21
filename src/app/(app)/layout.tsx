@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession, getTechSession } from "@/lib/auth";
+import { getSession, getTechSession, getViewerSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import AppShell from "@/components/shell/AppShell";
 import ReminderPrompt from "@/components/ReminderPrompt";
@@ -28,6 +28,17 @@ export default async function AppLayout({
           <AppBarHandle />
           {/* 📬 الرسائل الداخليّة المنبثقة — تظهر للفنيّ فوق بطاقاته ولا تُغلق إلّا بـX */}
           <InternalMsgHost />
+          <main className="flex-1">{children}</main>
+        </div>
+      );
+    }
+    // 👁️ المشاهد: غلافٌ مجرَّدٌ تماماً — لا قائمةَ تنقّلٍ ولا شريطَ أدواتٍ ولا شريطاً
+    // سفليّاً ولا زرَّ رئيسيّة ولا رسائلَ منبثقة. صفحةٌ واحدةٌ وحدَها كما طلب محمد.
+    const viewer = await getViewerSession();
+    if (viewer) {
+      return (
+        <div className="flex min-h-screen flex-col bg-ground">
+          <ClientErrorReporter />
           <main className="flex-1">{children}</main>
         </div>
       );

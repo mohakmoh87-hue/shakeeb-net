@@ -15,6 +15,8 @@ type User = {
   permissions: string | null;
   deniedPermissions?: string | null;
   separateAccount?: boolean;
+  viewOnly?: boolean;
+  viewAllOffices?: boolean;
   towerId: number | null;
   isActive: boolean;
 };
@@ -23,11 +25,13 @@ type Form = {
   fullName: string; username: string; password: string;
   isAdmin: boolean; permissions: Set<string>; deniedPermissions: Set<string>; towerId: number | "";
   separateAccount: boolean;
+  viewOnly: boolean; viewAllOffices: boolean;
   isActive: boolean;
 };
 const emptyForm = (): Form => ({
   fullName: "", username: "", password: "", isAdmin: false,
   permissions: new Set(), deniedPermissions: new Set(), towerId: "", separateAccount: false, isActive: true,
+  viewOnly: false, viewAllOffices: false,
 });
 
 export default function UsersPage() {
@@ -68,6 +72,7 @@ export default function UsersPage() {
       permissions: new Set<string>(expandLegacyPermissions((u.permissions ?? "").split(",").filter(Boolean))),
       deniedPermissions: new Set<string>((u.deniedPermissions ?? "").split(",").filter(Boolean)),
       towerId: u.towerId ?? "", separateAccount: !!u.separateAccount, isActive: u.isActive,
+      viewOnly: !!u.viewOnly, viewAllOffices: !!u.viewAllOffices,
     });
     setError(""); setModal(true);
   }
@@ -88,6 +93,8 @@ export default function UsersPage() {
         // المنعُ يُرسَل للمدير حصراً — ومربّعاتُه لا تظهر لغيره فلا معنى لإرسالها
         deniedPermissions: form.isAdmin ? [...form.deniedPermissions] : [],
         towerId: form.towerId || null, isActive: form.isActive,
+        // 👁️ نوعُ المشاهدة ونطاقُه — والخادمُ يُفرغ صلاحيّاتَه ويمنع الإدارةَ عنه مهما أُرسل
+        viewOnly: form.viewOnly, viewAllOffices: form.viewOnly ? form.viewAllOffices : false,
         // البند ١ · لا معنى للفصل بلا مكتب (مَن بلا مكتبٍ يرى كلَّ مكاتب وكيله)
         separateAccount: form.towerId ? form.separateAccount : false,
       };
@@ -130,7 +137,11 @@ export default function UsersPage() {
                 <td className="p-3">{u.id}</td>
                 <td className="p-3 font-medium">{u.fullName}</td>
                 <td className="p-3" dir="ltr">{u.username}</td>
-                <td className="p-3">{u.isAdmin ? <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">مدير</span> : "مستخدم"}</td>
+                <td className="p-3">{u.isAdmin
+                  ? <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">مدير</span>
+                  : u.viewOnly
+                    ? <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700" title={u.viewAllOffices ? "يشاهد مشتركي كلّ المكاتب" : "يشاهد مشتركي مكتبه وحدَه"}>👁️ مشاهدة فقط{u.viewAllOffices ? " · كلُّ المكاتب" : ""}</span>
+                    : "مستخدم"}</td>
                 <td className="p-3">{towerName(u.towerId)}</td>
                 <td className="p-3">{u.isActive ? <span className="text-emerald-600">مفعّل</span> : <span className="text-slate-400">موقوف</span>}</td>
                 <td className="p-3"><div className="flex gap-2">
@@ -166,7 +177,7 @@ export default function UsersPage() {
                   وإن لم أضع صحّاً فالاثنان يفعلان بنفس التقرير».
                   ⚠️ والفصلُ كان **إجباريّاً** لكلّ مكتبٍ فيه مستخدمان — فصار اختياريّاً،
                   وردمُ الهجرة حفظ سلوكَ المكتب القائم (ams) حرفيّاً. */}
-              {!form.isAdmin && officeMates.length > 0 && (
+              {!form.isAdmin && !form.viewOnly && officeMates.length > 0 && (
                 <div className="col-span-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
                   <div className="mb-1 text-[12px] font-bold text-amber-900">
                     ℹ️ لهذا المكتب مستخدمٌ سلفاً: {officeMates.map((u) => u.fullName || u.username).join(" · ")}
@@ -189,9 +200,48 @@ export default function UsersPage() {
                 </div>
               )}
               <div className="flex items-end gap-4">
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isAdmin} onChange={(e) => setForm({ ...form, isAdmin: e.target.checked })} /> مدير كامل الصلاحيات</label>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isAdmin} disabled={form.viewOnly}
+                  onChange={(e) => setForm({ ...form, isAdmin: e.target.checked, viewOnly: e.target.checked ? false : form.viewOnly })} /> مدير كامل الصلاحيات</label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> مفعّل</label>
               </div>
+
+              {/* ═════ 👁️ نوعُ المشاهدة فقط (طلبُ محمد 2026-11-21) ═════
+                  «مستخدمٌ للمشاهدة فقط: لا يظهر له أيُّ شيءٍ ولا الصفحةُ الرئيسيّة —
+                   صفحةٌ واحدةٌ فيها المشتركون بلا هاتف، يبحث بالاسم أو اليوزر، ويرى
+                   متصلاً أو غيرَ متصل، وزرُّ عمليّاتٍ يرفع له صيانةً أو تنصيباً أو غيرَه». */}
+              {!form.isAdmin && (
+                <div className="col-span-2 rounded-lg border border-slate-300 bg-slate-50 p-3">
+                  <label className="flex items-start gap-2 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" className="mt-0.5" checked={form.viewOnly}
+                      onChange={(e) => setForm({ ...form, viewOnly: e.target.checked, permissions: new Set(), separateAccount: false })} />
+                    <span>
+                      👁️ مشاهدة فقط
+                      <span className="block text-[11px] font-normal leading-5 text-slate-500">
+                        لا يرى شيئاً من البرنامج — ولا الشاشةَ الرئيسيّة. صفحةٌ واحدةٌ فيها
+                        المشتركون <b>بلا أرقام هواتف</b>، بحثٌ بالاسم أو اليوزر، وحالةُ
+                        «متصل / غير متصل»، وزرُّ عمليّاتٍ يرفع بطاقةَ صيانةٍ أو تنصيبٍ أو أيَّ نوع.
+                        <br />
+                        و<b>بلا أيّ صلاحيّة</b> ولا رفعِ مبالغَ ولا اختيارِ فنيّ.
+                      </span>
+                    </span>
+                  </label>
+                  {form.viewOnly && (
+                    <div className="mt-2 border-t border-slate-200 pt-2">
+                      <div className="mb-1 text-[12px] font-bold text-slate-700">نطاقُ ما يشاهده</div>
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <input type="radio" name="viewScope" checked={!form.viewAllOffices}
+                          onChange={() => setForm({ ...form, viewAllOffices: false })} />
+                        مشتركو <b>مكتبه</b> وحدَه {form.towerId ? "" : <span className="text-[11px] font-bold text-red-600">— اختر المكتبَ أعلاه</span>}
+                      </label>
+                      <label className="mt-1 flex items-center gap-2 text-sm text-slate-700">
+                        <input type="radio" name="viewScope" checked={form.viewAllOffices}
+                          onChange={() => setForm({ ...form, viewAllOffices: true })} />
+                        مشتركو <b>كلِّ مكاتبي</b>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ═════ مديرٌ بصلاحيّاتٍ محدَّدة (طلبُ محمد 2026-08-13) ═════
@@ -225,7 +275,7 @@ export default function UsersPage() {
               </div>
             )}
 
-            {!form.isAdmin && (
+            {!form.isAdmin && !form.viewOnly && (
               <div className="rounded-lg border border-slate-200 p-3">
                 <div className="mb-2 text-sm font-semibold text-slate-700">الصلاحيات</div>
                 {/* مقسّمة إلى الأصناف الثمانية (طلب محمد) — كل مجموعة تحت عنوانها */}

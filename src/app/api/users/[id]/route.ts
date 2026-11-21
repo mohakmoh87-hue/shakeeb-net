@@ -19,6 +19,9 @@ const schema = z.object({
   deniedPermissions: z.array(z.string()).default([]),
   // البند ١ · حسابٌ منفصلٌ لمستخدمٍ يشارك مكتباً مع غيره
   separateAccount: z.boolean().optional(),
+  // 👁️ نوعُ المشاهدة فقط + نطاقُه
+  viewOnly: z.coerce.boolean().default(false),
+  viewAllOffices: z.coerce.boolean().default(false),
   towerId: z.coerce.number().nullable().optional(),
   isActive: z.coerce.boolean().default(true),
 });
@@ -42,7 +45,7 @@ export async function PUT(
   const { password, permissions, deniedPermissions, ...rest } = parsed.data;
 
   // عزل المستأجر: لا يُعدَّل إلا مستخدم يتبع وكيل المدير (وليس مالك النظام)
-  const target = await prisma.user.findUnique({ where: { id: Number(id) }, select: { agentId: true, isOwner: true, username: true } });
+  const target = await prisma.user.findUnique({ where: { id: Number(id) }, select: { agentId: true, isOwner: true, username: true, viewOnly: true } });
   if (!target || target.isOwner || target.agentId !== (g.session?.agentId ?? null)) {
     return NextResponse.json({ error: "المستخدم لا يتبع حسابك" }, { status: 403 });
   }
@@ -54,6 +57,22 @@ export async function PUT(
     if (!t) return NextResponse.json({ error: "المكتب المحدّد لا يتبع حسابك" }, { status: 403 });
   }
 
+  // 👁️ نفسُ حرسِ الإنشاء: المشاهدُ بلا إدارةٍ وبلا صلاحيّةٍ مهما أُرسل، ونطاقُ «مكتبه» يلزمه مكتب
+  if (rest.viewOnly) {
+    rest.isAdmin = false;
+    permissions.length = 0;
+    deniedPermissions.length = 0;
+    if (!rest.viewAllOffices && rest.towerId == null) {
+      return NextResponse.json({ error: "مستخدمُ المشاهدة بنطاق «مكتبه» يلزمه اختيارُ مكتب" }, { status: 400 });
+    }
+  } else {
+    rest.viewAllOffices = false;
+  }
+  // 🔴 تغييرُ النوع يُبطل الجلسةَ القائمة فوراً: جلسةُ المستخدم ليست جلسةَ مشاهدٍ ولا العكس،
+  //    فمستخدمٌ حُوِّل إلى مشاهدٍ كانت كعكتُه القديمة تُبقيه بكامل صلاحيّاته **سنةً**.
+  //    ورمزٌ **جديد** لا تصفيرٌ: الفارغُ يُلغي الفحصَ في `getSession` فيُبقي القديمَ صالحاً.
+  const typeChanged = rest.viewOnly !== target.viewOnly;
+
   const updated = await prisma.user.update({
     where: { id: Number(id) },
     data: {
@@ -61,8 +80,9 @@ export async function PUT(
       permissions: permissions.join(","),
       deniedPermissions: deniedPermissions.join(",") || null,
       ...(password && password.length >= 4 ? { password: await hashPassword(password) } : {}),
+      ...(typeChanged ? { sessionToken: crypto.randomUUID() } : {}),
     },
-    select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, isActive: true },
+    select: { id: true, fullName: true, username: true, isAdmin: true, permissions: true, towerId: true, isActive: true, viewOnly: true, viewAllOffices: true },
   });
   return NextResponse.json(updated);
 }

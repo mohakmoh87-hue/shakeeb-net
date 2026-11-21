@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { verifyPassword, setSession, setTechSession } from "@/lib/auth";
+import { verifyPassword, setSession, setTechSession, setViewerSession } from "@/lib/auth";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { planState } from "@/lib/agentPlan";
 import type { Permission } from "@/lib/rbac";
@@ -105,6 +105,20 @@ export async function POST(request: Request) {
   // جهاز واحد فقط: رمز جلسة جديد بكل دخول — يُبطل جلسة أي جهاز سابق فوراً (+ تصفير عدّاد الفشل)
   const sessionToken = crypto.randomUUID();
   await prisma.user.update({ where: { id: user.id }, data: { sessionToken, failedAttempts: 0, lockedUntil: null } });
+
+  // 👁️ مستخدمُ المشاهدة: جلسةٌ من نوعٍ مستقلٍّ لا جلسةُ مستخدم — فلا يصل مساراً ولا
+  // صفحةً غيرَ `/watch`. ويُفحَص قبل كلّ شيءٍ كي لا تُكتَب له جلسةُ مستخدمٍ أبداً.
+  if (user.viewOnly && !user.isOwner) {
+    await setViewerSession({
+      kind: "viewer", userId: user.id, name: user.fullName, username: user.username,
+      agentId: user.agentId ?? null, towerId: user.towerId ?? null,
+      viewAllOffices: user.viewAllOffices, sessionToken,
+    });
+    await prisma.auditLog.create({ data: { userId: user.id, action: "LOGIN", entity: "viewer" } }).catch(() => {});
+    const vRes = NextResponse.json({ ok: true, redirect: "/watch" });
+    vRes.cookies.set("appSkin", "1", { maxAge: 31536000, path: "/", sameSite: "lax" });
+    return vRes;
+  }
 
   await setSession({
     userId: user.id,

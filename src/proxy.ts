@@ -27,21 +27,22 @@ const SECRET = new TextEncoder().encode(
 const PUBLIC_PATHS = ["/login", "/reset", "/about", "/supercell", "/app-admin", "/app", "/kabina-web", "/cadrdist"];
 
 // يعيد { authed, isTech } من توكن الجلسة (المستخدم أو الفني)
-async function readSession(req: NextRequest): Promise<{ authed: boolean; isTech: boolean }> {
+async function readSession(req: NextRequest): Promise<{ authed: boolean; isTech: boolean; isViewer: boolean }> {
   const token = req.cookies.get("mynet_session")?.value;
-  if (!token) return { authed: false, isTech: false };
+  if (!token) return { authed: false, isTech: false, isViewer: false };
   try {
     const { payload } = await jwtVerify(token, SECRET, { algorithms: ["HS256"] });
-    return { authed: true, isTech: (payload as { kind?: string }).kind === "technician" };
+    const kind = (payload as { kind?: string }).kind;
+    return { authed: true, isTech: kind === "technician", isViewer: kind === "viewer" };
   } catch {
-    return { authed: false, isTech: false };
+    return { authed: false, isTech: false, isViewer: false };
   }
 }
 
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
-  const { authed, isTech } = await readSession(req);
+  const { authed, isTech, isViewer } = await readSession(req);
 
   // الصفحات العامة (دخول/استرجاع/تعريف) متاحة دائماً — حتى لو حمل الطلب توكناً صالحاً شكلياً.
   // حسّاس: بدون هذا الاستثناء المبكر، جلسةٌ مُبطَلة في القاعدة (جلسة واحدة/تعطيل/حذف حساب)
@@ -58,6 +59,11 @@ export default async function proxy(req: NextRequest) {
   // الفني: مقصور على صفحة إدارة الفنيين فقط
   if (isTech && !pathname.startsWith("/field-management")) {
     return NextResponse.redirect(new URL("/field-management", req.nextUrl));
+  }
+  // 👁️ المشاهد: مقصور على صفحة المشاهدة وحدَها. وهذا توجيهٌ لا حارس — الحارسُ الحقيقيُّ
+  // أنّ `getSession` ترفض توكنَه فلا تُجيبه صفحةٌ ولا مسارٌ آخر أصلاً.
+  if (isViewer && !pathname.startsWith("/watch")) {
+    return NextResponse.redirect(new URL("/watch", req.nextUrl));
   }
   return NextResponse.next();
 }
