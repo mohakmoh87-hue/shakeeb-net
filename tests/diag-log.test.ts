@@ -188,7 +188,7 @@ describe("🩺 سببُ فشل البور يُسجَّل لكلّ مشترك (ط
   test("🔒 ومع ذلك يُنقّى ويُقصّ — فهو يأتي من جهاز المشترك", () => {
     const c = code(POST_ROUTE);
     assert.ok(/function cleanDiag/.test(c) && /sanitizeRef\(v\)/.test(c), "🔴 السببُ يُخزَّن خامّاً");
-    assert.ok(/slice\(0, 4000\)/.test(c), "🔴 بلا سقفٍ للطول");
+    assert.ok(/slice\(0, 9000\)/.test(c), "🔴 بلا سقفٍ للطول");
   });
 
   test("والواجهةُ تعرضُه ظاهراً لا مخبوءاً", () => {
