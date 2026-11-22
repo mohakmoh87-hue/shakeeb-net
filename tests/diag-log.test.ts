@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { validIp, isPrivateIp, cacheKey, ispLabel, SUPERCELL_ASN } from "../src/lib/isp";
+import { validIp, isPrivateIp, cacheKey, ispLabel, isSuperCell, SUPERCELL_ASN } from "../src/lib/isp";
 import { sanitizeRef } from "../src/app/api/app/diag/route";
 import { isDiagRef, DEFAULT_DIAG_REF } from "../src/lib/appConfig";
 
@@ -78,6 +78,31 @@ describe("اسمُ المزوّد ورقمُ سوبر سيل", () => {
     assert.equal(ispLabel({ asn: 209193, holder: "SUPER CELL" }), "SUPER CELL");
     assert.equal(ispLabel({ asn: 209193, holder: null }), "AS209193");
     assert.equal(ispLabel({ asn: null, holder: null }), null);
+  });
+});
+
+// 🔴 بلاغُ محمد 2026-11-22: «لستَ على شبكة سوبر سيل» ومزوّدُه سوبر سيل في السطر نفسِه.
+// الجذر: لسوبر سيل أكثرُ من نظامٍ ذاتيّ، والحكمُ كان برقمٍ واحدٍ مثبَّت.
+describe("🔴 الحكمُ على سوبر سيل بالاسم لا برقمٍ واحد", () => {
+  test("كلا الاسمَين المقيسَين على شبكتَي محمد يُحسبان سوبر سيل", () => {
+    assert.equal(isSuperCell(209193, "SuperCell-FTTH SUPER CELL NETWORK FOR INTERNET SERVICES LTD"), true);
+    assert.equal(isSuperCell(999999, "iq-supercell SUPER CELL NETWORK FOR INTERNET SERVICES LTD"), true,
+      "🔴 التناقضُ عاد: نظامٌ ذاتيٌّ آخرُ لسوبر سيل يُحسب غيرَها");
+  });
+
+  test("الرقمُ المعروفُ يكفي وحدَه ولو غاب الاسم", () => {
+    assert.equal(isSuperCell(SUPERCELL_ASN, null), true);
+  });
+
+  test("مزوّدٌ آخرُ ليس سوبر سيل", () => {
+    assert.equal(isSuperCell(8452, "TE-AS TE-AS"), false);
+    assert.equal(isSuperCell(null, "EarthLink Ltd. Communications&Internet Services"), false);
+    assert.equal(isSuperCell(null, null), false);
+  });
+
+  test("🎮 شركةُ الألعاب الفنلنديّة Supercell Oy لا تُحسب شبكتَنا", () => {
+    assert.equal(isSuperCell(null, "SUPERCELL-AS Supercell Oy"), false,
+      "🔴 الاسمُ وحدَه بلا شرطِ شبكةٍ/إنترنت يخلط بشركة الألعاب");
   });
 });
 

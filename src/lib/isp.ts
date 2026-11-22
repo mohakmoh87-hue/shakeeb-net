@@ -7,7 +7,23 @@ import { prisma } from "./prisma";
 // ومالكُه من سجلّات RIPE. ولذلك **لا يُقبَل اسمُ المزوّد من التطبيق إطلاقاً**: لو
 // قُبل لصار المشتركُ قادراً على ادّعاء أيّ شبكة.
 
-export const SUPERCELL_ASN = 209193; // SUPER CELL NETWORK FOR INTERNET SERVICES LTD
+export const SUPERCELL_ASN = 209193; // SuperCell-FTTH — أوّلُ ما قِسناه
+
+// 🔴 **لسوبر سيل أكثرُ من نظامٍ ذاتيٍّ** (بلاغُ محمد 2026-11-22): رأينا
+// `SuperCell-FTTH SUPER CELL NETWORK FOR INTERNET SERVICES LTD` على شبكة، و
+// `iq-supercell SUPER CELL NETWORK FOR INTERNET SERVICES LTD` على أخرى. فالحكمُ برقمٍ
+// واحدٍ مثبّتٍ كان يقول لمشتركٍ على سوبر سيل «لست على شبكة سوبر سيل» **ويعرض اسمَها
+// في السطر نفسِه** — تناقضٌ صريح. فصار الحكمُ باسم المالك المسجّل لا برقمٍ واحد.
+const SUPERCELL_ASNS = new Set<number>([SUPERCELL_ASN]);
+const NAME = /super\s*-?cell/i;
+// شرطٌ ثانٍ يمنع الخلط بشركة الألعاب الفنلنديّة Supercell Oy — ولها نظامٌ ذاتيٌّ أيضاً
+const CONFIRM = /(network|internet|ftth|fttx|\biq\b|iraq)/i;
+
+export function isSuperCell(asn: number | null, holder: string | null): boolean {
+  if (asn != null && SUPERCELL_ASNS.has(asn)) return true;
+  if (!holder) return false;
+  return NAME.test(holder) && CONFIRM.test(holder);
+}
 
 // 🔒 العنوانُ من ترويسة الوسيط (Railway خلف وكيل) — أوّلُ قفزةٍ هي العميل،
 //    كما في `rateLimit.ts` تماماً. وما بعدها وكلاءُ الطريق فلا يُعتدّ بها.
@@ -56,7 +72,7 @@ export async function lookupIsp(ip: string): Promise<IspInfo> {
   try {
     const hit = await prisma.asnCache.findUnique({ where: { prefix } });
     if (hit && Date.now() - hit.fetchedAt.getTime() < FRESH_MS) {
-      return { asn: hit.asn, holder: hit.holder, onSuperCell: hit.asn === SUPERCELL_ASN };
+      return { asn: hit.asn, holder: hit.holder, onSuperCell: isSuperCell(hit.asn, hit.holder) };
     }
   } catch {
     // الكاشُ تحسينٌ لا شرط — يُكمَل بلا كاشٍ لو تعذّر
@@ -74,7 +90,7 @@ export async function lookupIsp(ip: string): Promise<IspInfo> {
     } catch {
       // لا يضرّ: البحثُ يتكرّر في المرّة القادمة
     }
-    return { ...fetched, onSuperCell: fetched.asn === SUPERCELL_ASN };
+    return { ...fetched, onSuperCell: isSuperCell(fetched.asn, fetched.holder) };
   }
   return none;
 }
