@@ -9,8 +9,9 @@ import { isDiagRef, DEFAULT_DIAG_REF } from "../src/lib/appConfig";
 // ═════ 🩺 سجلُّ الفحص — طلبُ محمد 2026-11-22 ═════
 // «آخرُ ١٠ فحوصٍ لكلّ مشترك بجانب سجلّ الوصولات، وفيها مزوّدُ الخدمة. وغيرُ المشترك
 //  لا يظهر في أيّ مكان، فإن اشترك لاحقاً ظهرت فحوصُه، ويُعرَف بهاتفه وهو الأساس.»
+// وطلبٌ لاحق: «في حالة فشل جلب البور ما هو السبب بسجل واضح ونضيف — لأي مشترك».
 // والحرّاسُ هنا تحمي ما يسقط صامتاً: أرقامُ المحاكاة، وانتحالُ المزوّد أو الهويّة،
-// واختلاطُ مشترِكَين يتشاركان رقماً، وتسريبُ سجلّ مكتبٍ آخر.
+// واختلاطُ مشترِكَين يتشاركان رقماً، وتسريبُ سجلّ مكتبٍ آخر، وسقوطُ حاسبة المكتب.
 const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
 const code = (rel: string) => read(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
@@ -80,7 +81,7 @@ describe("اسمُ المزوّد ورقمُ سوبر سيل", () => {
   });
 });
 
-describe("🔒 عيّنةُ الجهاز الخامّة تُنقّى قبل التخزين", () => {
+describe("🔒 ما يأتي من جهاز المشترك يُنقّى قبل التخزين", () => {
   test("كلُّ ما يشبه كلمةَ مرورٍ يُشطَب", () => {
     const raw = 'UserName=telecomadmin&PassWord=admintelecom&x=1 pppoePass:"Sup3rSecret" token = abc123def';
     const out = sanitizeRef(raw) ?? "";
@@ -139,13 +140,36 @@ describe("🔑 الهويّةُ والمزوّدُ من الخادم لا من �
   });
 });
 
-describe("🔬 تفاصيلُ الجهاز للهاتف المرجعيّ وحدَه", () => {
+describe("🔬 عيّنةُ الصفحة الخامّة للهاتف المرجعيّ وحدَه", () => {
   test("الالتقاطُ مشروطٌ بتطابق هاتف الجلسة مع الإعداد", () => {
     const c = code(POST_ROUTE);
     assert.ok(/getDiagRefPhone\(\)/.test(c), "🔴 الرقمُ المرجعيُّ لم يعد إعداداً");
     assert.ok(/refCore && refCore === core/.test(c),
       "🔴 شرطُ المرجع تغيّر — فتُخزَّن صفحةُ جهازِ كلِّ مشترك");
     assert.ok(/refRaw = sanitizeRef/.test(c), "🔴 العيّنةُ تُخزَّن بلا تنقية");
+  });
+});
+
+describe("🩺 سببُ فشل البور يُسجَّل لكلّ مشترك (طلبُ محمد)", () => {
+  test("الخادمُ يخزّن `opticDiag` بلا شرط مرجعٍ", () => {
+    const c = code(POST_ROUTE);
+    assert.ok(/opticDiag: cleanDiag\(body\.opticDiag\)/.test(c),
+      "🔴 سببُ الفشل لم يعد يُحفَظ — وطلبُ محمد أن يُسجّل لكلّ مشترك");
+    const i = c.indexOf("opticDiag: cleanDiag");
+    const j = c.indexOf("refCore === core");
+    assert.ok(i > 0 && j > 0 && i > j ? true : i > 0, "🔴 التخزينُ صار مشروطاً بالمرجع");
+  });
+
+  test("🔒 ومع ذلك يُنقّى ويُقصّ — فهو يأتي من جهاز المشترك", () => {
+    const c = code(POST_ROUTE);
+    assert.ok(/function cleanDiag/.test(c) && /sanitizeRef\(v\)/.test(c), "🔴 السببُ يُخزَّن خامّاً");
+    assert.ok(/slice\(0, 4000\)/.test(c), "🔴 بلا سقفٍ للطول");
+  });
+
+  test("والواجهةُ تعرضُه ظاهراً لا مخبوءاً", () => {
+    const board = read("src/components/SubscribersBoard.tsx");
+    assert.ok(/لماذا لم يُقرأ البور؟/.test(board), "🔴 سببُ الفشل لا يظهر في السجلّ");
+    assert.ok(/d\.opticDiag/.test(board));
   });
 });
 
@@ -188,7 +212,7 @@ describe("🏢 واجهةُ البرنامج: الزرُّ بجانب سجلّ �
   });
 });
 
-describe("🗄️ القاعدة: إضافةٌ محضةٌ وRLS", () => {
+describe("🗄️ القاعدة: إضافةٌ محضةٌ وRLS وإذنُ حاسبة المكتب", () => {
   test("لا DROP ولا RENAME في سكربت الإنشاء", () => {
     const sql = read("scripts/add-diag-checks.mjs");
     assert.ok(!/DROP\s+TABLE|ALTER\s+TABLE\s+\w+\s+DROP|RENAME/i.test(sql), "🔴 أمرٌ هدّامٌ في سكربت القاعدة");
@@ -203,10 +227,23 @@ describe("🗄️ القاعدة: إضافةٌ محضةٌ وRLS", () => {
     assert.ok(/CREATE POLICY rls_diag_checks/.test(pol), "🔴 لا سياسةَ عزلٍ على سجلّ الفحص");
   });
 
-  test("العاملُ لا يُمنَح شيئاً على الجدولَين (لا يقرؤهما ولا يكتبهما)", () => {
+  test("🔑 حاسبةُ المكتب تقرأ السجلّ ولا تكتبُه — «قراءةٌ جديدة = GRANT»", () => {
     const grants = read("prisma/rls/02-grants.sql");
-    assert.ok(!/diag_checks/.test(grants), "🔴 مُنح العاملُ إذناً على سجلّ الفحص بلا حاجة");
-    assert.ok(!/asn_cache/.test(grants), "🔴 مُنح العاملُ إذناً على كاش المزوّد بلا حاجة");
+    assert.ok(/GRANT SELECT ON diag_checks TO agent_worker/.test(grants),
+      "🔴 بلا إذنٍ يسقط «سجل الفحص» على حاسبة المكتب — وهي تُشغّل نفسَ الموقع");
+    assert.ok(!/(INSERT|UPDATE|DELETE)[^;\n]*diag_checks/.test(grants),
+      "🔴 الحاسبةُ تكتب في السجلّ — والكتابةُ من الموقع وحدَه");
+    assert.ok(!/^\s*GRANT[^;]*asn_cache/mi.test(grants), "🔴 مُنح العاملُ إذناً على كاش المزوّد بلا حاجة");
+  });
+
+  test("🛡️ الإنشاءُ الكسولُ يتحمّل غيابَ الملكيّة (نفسُ شرط ensureMarketTable)", () => {
+    const src = read("src/lib/diagLog.ts");
+    assert.ok(/let tried = false;/.test(src), "🔴 لا علَم «جُرِّب» ⇒ حلقةُ فشلٍ في كلّ نداء");
+    assert.ok(/if \(ready \|\| tried\) return;/.test(src), "🔴 الحارسُ لا يمنع التكرار");
+    assert.ok(/\} catch \{ \/\*/.test(src), "🔴 فشلُ الإنشاء غيرُ مبتلَع ⇒ يُسقط صفحةً على حاسبة المكتب");
+    for (const r of [POST_ROUTE, GET_ROUTE]) {
+      assert.ok(/ensureDiagTables\(\)/.test(code(r)), `🔴 ${r} لا يضمن وجودَ الجدول`);
+    }
   });
 });
 

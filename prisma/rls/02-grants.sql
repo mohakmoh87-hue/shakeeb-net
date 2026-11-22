@@ -142,3 +142,9 @@ GRANT USAGE, SELECT ON SEQUENCE contract_installs_id_seq TO agent_worker;
 -- manager_tx     : حركات حساب المدير (تُدار من الموقع فقط)
 -- groups, boxes, box_deps, months, notes, events : جداول قديمة لا يلمسها العامل
 -- (لا حاجة لأي GRANT — الغياب = منع كامل)
+
+-- 🩺 سجلُّ الفحص (2026-11-22): حاسبةُ المكتب تُشغّل نفسَ الموقع، ومستخدمُها يفتح
+-- «سجل الفحص» من لوحة المشتركين ⇒ قراءةٌ جديدةٌ = GRANT (قاعدةُ المستودع).
+-- والكتابةُ من الموقع وحدَه (تطبيقُ المشترك يقصد shakeebnet.com) فلا INSERT.
+-- و`asn_cache` لا تلمسه الحاسبة أبداً ⇒ بلا أيّ إذن.
+GRANT SELECT ON diag_checks TO agent_worker;

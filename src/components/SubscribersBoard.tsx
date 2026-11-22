@@ -41,6 +41,7 @@ type DiagCheck = {
   ip: string | null; asn: number | null; ispName: string | null; onSuperCell: boolean | null;
   pkgMbps: number | null; routerPingMs: number | null; netPingMs: number | null; linkMbps: number | null;
   downMbps: number | null; upMbps: number | null; opticRx: number | null; opticErr: string | null;
+  opticDiag: string | null;
   devices: number | null; deviceDiag: string | null; summary: string | null; verdict: string | null;
   stages: DiagStage[] | null; refRaw: string | null; appVersion: string | null; platform: string | null;
   subscriberId: number | null;
@@ -1002,6 +1003,12 @@ export default function SubscribersBoard() {
                                 {d.subscriberId == null && <div className="mt-1 rounded bg-amber-50 px-2 py-1 font-semibold text-amber-800">فحصٌ قبل الاشتراك — طوبق برقم الهاتف</div>}
                               </div>
                             </div>
+                            {d.opticDiag && (
+                              <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2">
+                                <div className="mb-1 text-[11px] font-bold text-amber-900">لماذا لم يُقرأ البور؟</div>
+                                <pre className="whitespace-pre-wrap break-words text-[11px] leading-5 text-amber-900">{d.opticDiag}</pre>
+                              </div>
+                            )}
                             {d.summary && <div className="mt-2 whitespace-pre-line rounded-lg border border-line bg-surface p-2 text-[11px] text-ink">{d.summary}</div>}
                             {d.refRaw && (
                               <details className="mt-2 rounded-lg border border-line bg-surface p-2">

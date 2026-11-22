@@ -4,6 +4,7 @@ import { getSubscriberSession, getAccountSession } from "@/lib/subscriberAuth";
 import { phoneCore } from "@/lib/subscriberLogin";
 import { clientIp, lookupIsp, ispLabel } from "@/lib/isp";
 import { getDiagRefPhone } from "@/lib/appConfig";
+import { ensureDiagTables } from "@/lib/diagLog";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ function str(v: unknown, max: number): string | null {
 
 export async function POST(request: Request) {
   // هويّةُ صاحب الفحص — من الجلسة وحدَها
+  await ensureDiagTables();
   const subSess = await getSubscriberSession();
   const accSess = subSess ? null : await getAccountSession();
   if (!subSess && !accSess) return NextResponse.json({ saved: false, reason: "guest" });
@@ -109,6 +111,8 @@ export async function POST(request: Request) {
       upMbps: num(body.upMbps, -1, 100000),
       opticRx: num(body.opticRx, -60, 20),
       opticErr: str(body.opticErr, 400),
+      // 🩺 سببُ فشل البور بلغةٍ واضحةٍ — **لكلّ مشترك** (طلبُ محمد)، ميتاداتا بلا محتوى صفحة
+      opticDiag: cleanDiag(body.opticDiag),
       devices: (() => { const n = num(body.devices, -1, 10000); return n == null ? null : Math.round(n); })(),
       deviceDiag: str(body.deviceDiag, 200),
       summary: str(body.summary, 1200),
@@ -125,6 +129,12 @@ export async function POST(request: Request) {
     isp: ispLabel(isp),
     onSuperCell: isp.asn == null ? null : isp.onSuperCell,
   });
+}
+
+// السببُ يُنقّى ويُقصّ كالعيّنة: ميتاداتا فقط، ولا يُنفَخ به الصفُّ
+function cleanDiag(v: unknown): string | null {
+  const s = sanitizeRef(v);
+  return s == null ? null : s.slice(0, 4000);
 }
 
 function cleanStages(v: unknown): Array<{ key: string; value: string; verdict: string; note: string }> | null {

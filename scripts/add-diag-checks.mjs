@@ -38,6 +38,7 @@ try {
     "upMbps" DOUBLE PRECISION,
     "opticRx" DOUBLE PRECISION,
     "opticErr" TEXT,
+    "opticDiag" TEXT,
     "devices" INTEGER,
     "deviceDiag" TEXT,
     "summary" TEXT,
@@ -47,6 +48,7 @@ try {
     "appVersion" TEXT,
     "platform" TEXT
   )`);
+  await c.query(`ALTER TABLE "diag_checks" ADD COLUMN IF NOT EXISTS "opticDiag" TEXT`);
   console.log("✅ diag_checks");
 
   await c.query(`CREATE INDEX IF NOT EXISTS "diag_checks_phoneCore_createdAt_idx" ON "diag_checks" ("phoneCore", "createdAt")`);
@@ -66,7 +68,8 @@ try {
   await c.query(`CREATE POLICY rls_diag_checks ON "diag_checks" TO agent_worker
     USING ("agentId" = current_agent_id()) WITH CHECK ("agentId" = current_agent_id())`);
   await c.query(`ALTER TABLE "asn_cache" ENABLE ROW LEVEL SECURITY`);
-  console.log("✅ RLS على الجدولَين (وبلا أيّ GRANT للعامل)");
+  await c.query(`GRANT SELECT ON "diag_checks" TO agent_worker`);
+  console.log("✅ RLS + GRANT SELECT لحاسبة المكتب (قراءةً فقط)");
 
   const n = await c.query(`SELECT count(*)::int AS n FROM "diag_checks"`);
   console.log(`\nالصفوفُ الآن: ${n.rows[0].n}`);

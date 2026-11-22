@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { guard, sameAgentTower } from "@/lib/guard";
 import { phoneCore } from "@/lib/subscriberLogin";
+import { ensureDiagTables } from "@/lib/diagLog";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  await ensureDiagTables();
   const g = await guard("subscribers.manage");
   if (g.error) return g.error;
   const { id } = await params;

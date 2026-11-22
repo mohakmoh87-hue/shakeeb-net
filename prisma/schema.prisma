@@ -2421,6 +2421,7 @@ model DiagCheck {
   upMbps       Float?
   opticRx      Float?
   opticErr     String?
+  opticDiag    String?
   devices      Int?
   deviceDiag   String?
   summary      String?
