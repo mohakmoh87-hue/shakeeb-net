@@ -565,3 +565,13 @@ ALTER TABLE distributor_cards    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE distributor_targets  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE distributor_transfers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE distributor_payments ENABLE ROW LEVEL SECURITY;
+
+-- 🩺 سجلُّ الفحص (2026-11-22): يكتبه الموقعُ من تطبيق المشترك ويقرؤه مستخدمُ المكتب.
+-- العاملُ لا يلمسه (لا GRANT)؛ والسياسةُ عزلٌ بالوكيل دفاعاً في العمق لو مُنح إذناً يوماً.
+ALTER TABLE diag_checks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_diag_checks ON diag_checks;
+CREATE POLICY rls_diag_checks ON diag_checks TO agent_worker
+  USING ("agentId" = current_agent_id()) WITH CHECK ("agentId" = current_agent_id());
+
+-- كاشُ نظامِ المزوّد: لا عمودَ وكيلٍ فيه (بياناتُ تسجيلٍ عامّةٌ لا تخصّ أحداً) ⇒ بلا سياسة.
+ALTER TABLE asn_cache ENABLE ROW LEVEL SECURITY;

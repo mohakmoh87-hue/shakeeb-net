@@ -7,6 +7,7 @@ import { setAccountSession, getAccountSession } from "@/lib/subscriberAuth";
 import { ensureMarketTable, cleanPhoto } from "@/lib/market";
 import { hashPassword } from "@/lib/auth";
 import crypto from "crypto";
+import { getDiagRefPhone, isDiagRef } from "@/lib/appConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -120,7 +121,7 @@ export async function GET() {
     select: { name: true, phone: true, area: true, nickname: true, photo: true, createdAt: true },
   });
   if (!acc) return NextResponse.json({ error: "غير موجود" }, { status: 404 });
-  return NextResponse.json({ ...acc, kind: "account" });
+  return NextResponse.json({ ...acc, kind: "account", diagRef: isDiagRef(await getDiagRefPhone(), acc.phone) });
 }
 
 // ✏️🖼️ تعديلُ صاحبِ الحساب لبياناته: صورتُه الشخصيّة واسمُه المستعار (طلبُ محمد 2026-10-28).

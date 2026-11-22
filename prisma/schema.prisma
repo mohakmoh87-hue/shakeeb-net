@@ -1203,60 +1203,60 @@ model TaskList {
 }
 
 model TaskCard {
-  id               Int       @id @default(autoincrement())
-  listId           Int // العمود المالك
-  title            String
-  description      String?
-  assignee         String? // اسم الفني/الموظف (للعرض)
-  technicianId     Int? // الفني المسؤول (لتجميع التحصيل)
-  subscriberId     Int? // المشترك المصدر (لبطاقات العمليات) — لمنع بطاقتين فعّالتين لنفس المشترك
+  id                  Int       @id @default(autoincrement())
+  listId              Int // العمود المالك
+  title               String
+  description         String?
+  assignee            String? // اسم الفني/الموظف (للعرض)
+  technicianId        Int? // الفني المسؤول (لتجميع التحصيل)
+  subscriberId        Int? // المشترك المصدر (لبطاقات العمليات) — لمنع بطاقتين فعّالتين لنفس المشترك
   // مكتبُ البطاقة المالي (مجموعةُ اللوحة): يُختَم عند الإنشاء = مكتبُ المشترك/المنشئ/الأودو.
   // على اللوحة المشتركة تفترق البطاقةُ عن مكتبِ اللوحة (board.towerId=الرئيسيّ)، فيوجَّه مالُها/
   // مخزنُها/فاتورتُها إلى مكتبها هي. null = بطاقةٌ قديمة ⇒ يسقط الإكمالُ على board.towerId (سلوكُ اليوم).
-  officeId         Int?
-  userPassword     String? // باسورد يوزر الساس — يُجلَب لحظة الرفع ويظهر داخل البطاقة عند فتحها فقط
-  kind             String    @default("maintenance") // maintenance = صيانة | delivery = توصيل
-  label            String? // لون/تصنيف
-  dueDate          DateTime?
-  position         Int       @default(0)
-  done             Boolean   @default(false)
+  officeId            Int?
+  userPassword        String? // باسورد يوزر الساس — يُجلَب لحظة الرفع ويظهر داخل البطاقة عند فتحها فقط
+  kind                String    @default("maintenance") // maintenance = صيانة | delivery = توصيل
+  label               String? // لون/تصنيف
+  dueDate             DateTime?
+  position            Int       @default(0)
+  done                Boolean   @default(false)
   // دورة حياة البطاقة
-  startedAt        DateTime? // وقت ضغط الفني «بدء» (يُخفى المحتوى قبله ويبدأ احتساب المدة)
-  durationSec      Int? // مدة الإنجاز بالثواني (completedAt − startedAt)
-  postponedTo      DateTime? // موعد التأجيل (عند عدم تواجد المشترك)
+  startedAt           DateTime? // وقت ضغط الفني «بدء» (يُخفى المحتوى قبله ويبدأ احتساب المدة)
+  durationSec         Int? // مدة الإنجاز بالثواني (completedAt − startedAt)
+  postponedTo         DateTime? // موعد التأجيل (عند عدم تواجد المشترك)
   postponedFromListId Int? // العمودُ الأصليّ قبل النقل إلى «مؤجلة» — تعود إليه تلقائيّاً قبل ساعةٍ من الموعد
   // بيانات الإنجاز
-  serviceDetails   String? // تفاصيل الصيانة
-  techNote         String? // ملاحظة يكتبها الفني على البطاقة (تُعرض على وجهها)
-  amount           Float? // «المبيع» الصافي (المالي عبر فاتورة الصيانة) — وللتوصيل: مبلغه المعلوماتي
-  subAmount        Float? // «اشتراك»: استلمه الفني للاشتراك — معلوماتي بلا أثر مالي (يُسجَّل عند التفعيل)
-  materialsInfo    String? // JSON بالمواد المباعة من الذمم (للعرض)
-  completedAt      DateTime?
-  settled          Boolean   @default(false) // تمّ التحصيل (اكمال)
-  archivedAt       DateTime? // وقت الأرشفة (بعد التحصيل) — تبقى بالأرشيف أسبوعاً ثم تُحذف نهائياً
-  history          String? // سجل تغييرات البطاقة JSON [{at,by,text}] (تأجيل/تحويل/نقل…)
-  createdAt        DateTime  @default(now())
-  isDeleted        Boolean   @default(false)
+  serviceDetails      String? // تفاصيل الصيانة
+  techNote            String? // ملاحظة يكتبها الفني على البطاقة (تُعرض على وجهها)
+  amount              Float? // «المبيع» الصافي (المالي عبر فاتورة الصيانة) — وللتوصيل: مبلغه المعلوماتي
+  subAmount           Float? // «اشتراك»: استلمه الفني للاشتراك — معلوماتي بلا أثر مالي (يُسجَّل عند التفعيل)
+  materialsInfo       String? // JSON بالمواد المباعة من الذمم (للعرض)
+  completedAt         DateTime?
+  settled             Boolean   @default(false) // تمّ التحصيل (اكمال)
+  archivedAt          DateTime? // وقت الأرشفة (بعد التحصيل) — تبقى بالأرشيف أسبوعاً ثم تُحذف نهائياً
+  history             String? // سجل تغييرات البطاقة JSON [{at,by,text}] (تأجيل/تحويل/نقل…)
+  createdAt           DateTime  @default(now())
+  isDeleted           Boolean   @default(false)
   // ربط أودو (Helpdesk) — بطاقة مصدرها تذكرة أودو
-  odooTicketId     Int? // رقم تذكرة أودو المصدر (منع تكرار + ربط الدفع العكسيّ)
-  viaOdoo          Boolean   @default(false) // وسم «عبر أودو» — لا يزول عند إسناد فئة
-  viaSubscriber    Boolean   @default(false) // وسم «تذكرة مشترك» — بطاقةٌ من طلب صيانة/توصيل عبر التطبيق
-  usernameRequired Boolean   @default(false) // BG إلزاميّ (قيمة BG في أودو فارغة عند السحب)
-  odooBg           String? // قيمة BG (اليوزر) التي أدخلها الفنيّ — تُدفَع إلى change_bg_field
-  odooPushedAt     DateTime? // وقت دفع الإنجاز/الإلغاء إلى أودو (null = لم يُدفَع بعد)
+  odooTicketId        Int? // رقم تذكرة أودو المصدر (منع تكرار + ربط الدفع العكسيّ)
+  viaOdoo             Boolean   @default(false) // وسم «عبر أودو» — لا يزول عند إسناد فئة
+  viaSubscriber       Boolean   @default(false) // وسم «تذكرة مشترك» — بطاقةٌ من طلب صيانة/توصيل عبر التطبيق
+  usernameRequired    Boolean   @default(false) // BG إلزاميّ (قيمة BG في أودو فارغة عند السحب)
+  odooBg              String? // قيمة BG (اليوزر) التي أدخلها الفنيّ — تُدفَع إلى change_bg_field
+  odooPushedAt        DateTime? // وقت دفع الإنجاز/الإلغاء إلى أودو (null = لم يُدفَع بعد)
   // ب-١/الأصل ٤ · ختمُ **الأثر الذي لا يُسترَدّ** — لحظةُ نشر الملاحظة في محادثة العميل.
   // الحجزُ (`odooPushedAt`) يُفَكّ عند الفشل فتُعاد المحاولة، وهذا صحيحٌ للإغلاق (فهو
   // مُتَحمِّلٌ للتكرار) لكنّه كان **يُعيد نشرَ الملاحظة** في محادثة العميل مرّةً كلَّ دورة.
   // ⇒ فللأثرِ ختمُه الخاصُّ الذي **لا يُفَكّ أبداً**: الإعادةُ تُكمل ما بقي ولا تُكرّره.
   // (عمودٌ إضافيٌّ اختياريّ — نشرةٌ أقدمُ لا تعرفه ولا تتأثّر به.)
-  odooNotedAt      DateTime?
+  odooNotedAt         DateTime?
   // البند ٧ · ختمُ رسالة «رُفعت لك بطاقة» — **يُختَم قبل الإرسال حَجزاً ذرّيّاً**.
   // فأودو تُنشئ البطاقاتَ بمسحٍ شاملٍ كلَّ دورةٍ وتُعيد إنشاءَ ما حُذف وتذكرتُه مفتوحة،
   // فبلا ختمٍ تُرسَل الرسالةُ للمشترك كلَّ دورةٍ (عينُ حادثة تكرار رسائل الشدن).
-  raisedNoticeAt   DateTime?
+  raisedNoticeAt      DateTime?
   // ===== مهلة سوبر سيل (SLA): ساعتان بلا إجراء = غرامة — النافذة ١٠:٠٠←٢٤:٠٠ بغداد =====
-  odooCreatedAt    DateTime? // زمن التذكرة في أودو (assign_date إن وُجد وإلّا create_date، مُطبَّعاً UTC — قاعدة محمد 2026-08-21) — **مرجع العدّاد**
-  odooFetchedAt    DateTime? // لحظة سحبها عندنا (مهلة الرؤية تُحسب منها، وبوّابة التسليح تقارنها)
+  odooCreatedAt       DateTime? // زمن التذكرة في أودو (assign_date إن وُجد وإلّا create_date، مُطبَّعاً UTC — قاعدة محمد 2026-08-21) — **مرجع العدّاد**
+  odooFetchedAt       DateTime? // لحظة سحبها عندنا (مهلة الرؤية تُحسب منها، وبوّابة التسليح تقارنها)
   // ═══ أ-٢٣ · لوحةُ أودو التي جاءت منها التذكرة (طلب محمد 2026-08-13) ═══
   // `null` = أودو المكتب (أعمدتُه = لوحتُه الأولى) · وإلّا لوحةٌ بعينها.
   // 🔴 **ولولا هذا العمود لوقع تنفيذٌ مزدوج**: الدفعُ والمهلةُ يفحصان بطاقاتِ **المكتب**، فلو
@@ -1264,21 +1264,21 @@ model TaskCard {
   // للمشترك مرّتَين** (والشدنُ إرسالُه التلقائيُّ مُشعَلٌ فعلاً). فيُقصَر كلُّ حسابٍ على تذاكره.
   // 📌 والبطاقةُ تبقى على **لوحةِ مكتبٍ واحدة** فتظهر التذاكرُ كلُّها معاً في صفحةٍ واحدة —
   //    شرطُ محمد الصريح: «تظهر التذاكرُ كلُّها معاً بصفحة إدارة فنيّين واحدة».
-  odooPanelId      Int?
-  odooPhone        String? // هاتف التذكرة (partner_phone/mobile) — عمودٌ صريح لا استخراجاً نصّيّاً
-  slaClaimedAt     DateTime? // حجزٌ ذرّيّ قبل الإرسال (يمنع إرسالاً مزدوجاً عند سباق القادة) — يسقط بعد ٥د
+  odooPanelId         Int?
+  odooPhone           String? // هاتف التذكرة (partner_phone/mobile) — عمودٌ صريح لا استخراجاً نصّيّاً
+  slaClaimedAt        DateTime? // حجزٌ ذرّيّ قبل الإرسال (يمنع إرسالاً مزدوجاً عند سباق القادة) — يسقط بعد ٥د
   // ملاحظة التأجيل اليدويّ ⇒ تُدفَع إلى أودو (الربط الثلاثيّ). **عمودٌ صريح** لا استخراجاً بـregex
   // من نصٍّ يملكه المستخدم: ملاحظةٌ بسطرين كانت تسقط فلا يُبلَّغ أودو أصلاً. وبطابعين منفصلين
   // يُدفَع **كلّ** تأجيلٍ لاحق (لا الأوّل وحده).
-  postponeNote     String?
-  postponeNoteAt   DateTime? // وقت كتابة آخر ملاحظة تأجيل
-  postponePushedAt DateTime? // وقت دفع تلك الملاحظة إلى أودو (أقدم منها ⇒ تُدفَع)
-  slaAlertAt       DateTime? // إشعار المدير في الجرس — مرّةً واحدةً عند العتبة
-  slaTechAt        DateTime? // آخر تنبيهٍ للفنيّ (كلّ ١٥ دقيقة حتى إنجاز البطاقة أو إلغائها)
-  slaNoteAt        DateTime? // نجاح ملاحظة التأجيل في أودو ⇒ **خروجٌ نهائيّ من المهلة** (لا إنذار ثانٍ)
-  slaWaQueuedAt    DateTime? // رسالة المشترك في الطابور — تنفّذها حاسبة مكتبها حين تفتح
-  slaWaSentAt      DateTime? // أُرسلت فعلاً إلى واتساب المشترك
-  slaWaError       String? // سبب آخر فشل، أو «أُلغيت بعد يوم»
+  postponeNote        String?
+  postponeNoteAt      DateTime? // وقت كتابة آخر ملاحظة تأجيل
+  postponePushedAt    DateTime? // وقت دفع تلك الملاحظة إلى أودو (أقدم منها ⇒ تُدفَع)
+  slaAlertAt          DateTime? // إشعار المدير في الجرس — مرّةً واحدةً عند العتبة
+  slaTechAt           DateTime? // آخر تنبيهٍ للفنيّ (كلّ ١٥ دقيقة حتى إنجاز البطاقة أو إلغائها)
+  slaNoteAt           DateTime? // نجاح ملاحظة التأجيل في أودو ⇒ **خروجٌ نهائيّ من المهلة** (لا إنذار ثانٍ)
+  slaWaQueuedAt       DateTime? // رسالة المشترك في الطابور — تنفّذها حاسبة مكتبها حين تفتح
+  slaWaSentAt         DateTime? // أُرسلت فعلاً إلى واتساب المشترك
+  slaWaError          String? // سبب آخر فشل، أو «أُلغيت بعد يوم»
 
   updatedAt DateTime @default(now()) @updatedAt // تتبّع التغييرات للمزامنة
 
@@ -1993,18 +1993,18 @@ model MarketPhoto {
 //    مساراتُ المال والمزامنةُ والساس وعدّاداتُ المكاتب، وصفٌّ ليس زبوناً يُفسدها كلَّها.
 // والجلسةُ تحمل `kind` مغايراً، فكلُّ مسارِ مشتركٍ يرفضه تلقائيّاً بلا تعديل.
 model AppAccount {
-  id        Int      @id @default(autoincrement())
-  phoneCore String   @unique // آخرُ ١٠ أرقامٍ من الهاتف (مفتاحُ التطابق)
+  id        Int       @id @default(autoincrement())
+  phoneCore String    @unique // آخرُ ١٠ أرقامٍ من الهاتف (مفتاحُ التطابق)
   phone     String
   name      String // الاسمُ الثلاثيّ (إلزاميّ)
   area      String // المنطقة (إلزاميّة)
   nickname  String? // الاسمُ المستعار (طلبُ محمد 2026-10-28)
   passHash  String? // كلمةُ مرورِه — يدخل بها كالمشترك بدل رمزٍ في كلّ مرّة
   photo     String? // صورتُه الشخصيّة (data:) — كالمشترك تماماً
-  isBanned  Boolean  @default(false)
+  isBanned  Boolean   @default(false)
   lastLogin DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
 
   @@map("app_accounts")
 }
@@ -2314,17 +2314,17 @@ model CardDistributor {
   id                 Int      @id @default(autoincrement())
   distributorAgentId Int      @unique // الوكيل الموزّع
   username           String   @unique
-  password      String // bcrypt
-  plainPassword String? // enc:v1: — يعرضه المالك
-  sessionToken  String?
-  isDeleted     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @default(now()) @updatedAt
+  password           String // bcrypt
+  plainPassword      String? // enc:v1: — يعرضه المالك
+  sessionToken       String?
+  isDeleted          Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
 
   @@map("card_distributors")
 }
 
-model DistributorTier { // فئةُ الموزّع (اسم + سعرُ البيع للوكلاء)
+model DistributorTier {
   id            Int      @id @default(autoincrement())
   distributorId Int
   name          String
@@ -2336,7 +2336,7 @@ model DistributorTier { // فئةُ الموزّع (اسم + سعرُ البيع
   @@map("distributor_tiers")
 }
 
-model DistributorCard { // مخزنُ كروت الموزّع (أكوادٌ متاحةٌ للتحويل)
+model DistributorCard {
   id            Int      @id @default(autoincrement())
   distributorId Int
   tierId        Int?
@@ -2353,7 +2353,7 @@ model DistributorCard { // مخزنُ كروت الموزّع (أكوادٌ مت
   @@map("distributor_cards")
 }
 
-model DistributorTarget { // الوكلاءُ المسموح لهم (المالكُ يضيف) + رقمُ إشعارٍ + اسمٌ مستعارٌ خاصٌّ بالموزّع
+model DistributorTarget {
   id            Int      @id @default(autoincrement())
   distributorId Int
   targetAgentId Int
@@ -2367,7 +2367,7 @@ model DistributorTarget { // الوكلاءُ المسموح لهم (المال�
   @@map("distributor_targets")
 }
 
-model DistributorTransfer { // تعبئة: تحويلُ عددٍ من الكروت لوكيلٍ (دينٌ +total)
+model DistributorTransfer {
   id              Int      @id @default(autoincrement())
   distributorId   Int
   targetAgentId   Int
@@ -2383,7 +2383,7 @@ model DistributorTransfer { // تعبئة: تحويلُ عددٍ من الكرو
   @@map("distributor_transfers")
 }
 
-model DistributorPayment { // تسديدٌ (دينٌ −amount)
+model DistributorPayment {
   id            Int      @id @default(autoincrement())
   distributorId Int
   targetAgentId Int
@@ -2393,4 +2393,55 @@ model DistributorPayment { // تسديدٌ (دينٌ −amount)
 
   @@index([distributorId, targetAgentId])
   @@map("distributor_payments")
+}
+
+// ═════ 🩺 سجلُّ الفحص — فحوصُ المشترك من تطبيق المشتركين (طلبُ محمد 2026-11-22) ═════
+// الهاتفُ المعياريُّ هو الأساس كي تظهر فحوصُ ما قبل الاشتراك حين يشترك صاحبُه لاحقاً،
+// و`subscriberId` يُملأ حين تكون الجلسةُ جلسةَ مشتركٍ فلا يختلط مشتركان يتشاركان رقماً.
+model DiagCheck {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now())
+  phoneCore    String
+  phone        String
+  subscriberId Int?
+  appAccountId Int?
+  towerId      Int?
+  agentId      Int?
+
+  ip          String?
+  asn         Int?
+  ispName     String?
+  onSuperCell Boolean?
+
+  pkgMbps      Float?
+  routerPingMs Float?
+  netPingMs    Float?
+  linkMbps     Float?
+  downMbps     Float?
+  upMbps       Float?
+  opticRx      Float?
+  opticErr     String?
+  devices      Int?
+  deviceDiag   String?
+  summary      String?
+  verdict      String?
+  stages       Json?
+
+  refRaw     String?
+  appVersion String?
+  platform   String?
+
+  @@index([phoneCore, createdAt])
+  @@index([subscriberId, createdAt])
+  @@map("diag_checks")
+}
+
+// كاشُ نظامِ المزوّد لكلّ شريحة /24 — فلا نداءَ خارجيَّ إلّا لشبكةٍ لم تُرَ قبلاً
+model AsnCache {
+  prefix    String   @id
+  asn       Int?
+  holder    String?
+  fetchedAt DateTime @default(now())
+
+  @@map("asn_cache")
 }

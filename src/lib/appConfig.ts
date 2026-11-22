@@ -278,3 +278,25 @@ export async function getPublicAppConfig() {
   ]);
   return { ...content, companyMode: companyMode && portalEnabled, portalEnabled, companyPhone, inviteBonus };
 }
+
+// ═════ 🩺 هاتفُ مرجع الفحص (طلبُ محمد 2026-11-22) ═════
+// فحصُ هذا الرقم وحدَه يُرفَق بتفاصيلِ الجهاز الضوئيّ الخامّ، لأنّ أجهزةَ المشتركين
+// تختلف لهجاتُها فلا يظهر البورُ عند بعضهم — ومن هذه التفاصيل تُبنى لهجةُ كلّ جهاز.
+// 🔒 إعدادٌ لا ثابتٌ في الكود: يُحوَّل المرجعُ لأيّ هاتفٍ بلا نشرة. وفراغُه يُطفئ الالتقاط.
+const DIAG_REF_KEY = "diagRefPhone";
+export const DEFAULT_DIAG_REF = "07726999826";
+
+export async function getDiagRefPhone(): Promise<string> {
+  const row = await prisma.systemSetting.findFirst({ where: { type: DIAG_REF_KEY }, select: { value: true } });
+  return row?.value ?? DEFAULT_DIAG_REF;
+}
+export async function setDiagRefPhone(v: string) {
+  await writeVal(DIAG_REF_KEY, (v ?? "").replace(/[^0-9]/g, "").slice(0, 20));
+}
+
+// مطابقةُ الهاتف بآخر عشرة أرقامٍ — نفسُ قاعدة `phoneCore` في كلّ المشروع
+export function isDiagRef(refPhone: string, phone: string | null | undefined): boolean {
+  const core = (v: string) => { const d = v.replace(/[^0-9]/g, ""); return d.length >= 10 ? d.slice(-10) : ""; };
+  const a = core(refPhone ?? "");
+  return a !== "" && a === core(phone ?? "");
+}

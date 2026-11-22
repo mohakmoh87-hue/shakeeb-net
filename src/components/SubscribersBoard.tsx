@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ActivationModal, { type ActSubscriber } from "@/components/ActivationModal";
@@ -34,6 +34,34 @@ type Pkg = { id: number; name: string | null; priceDinar: number | null };
 type Tower = { id: number; name: string | null; panels?: { id: number; label: string | null }[]; loginUrl: string | null; activationTemplate: string | null; activationMode: string | null; loanEnabled?: string | null; loanMode?: string | null; rewardsEnabled?: string | null };
 type Receipt = { id: number; date: string | null; dateTo: string | null; money: number | null; moneyIn: number | null; moneyCarry: number | null; cardType: string | null; month: string | null; isMaster?: boolean | null };
 type MaintLog = { id: number; details: string; technicianName: string | null; kind: string | null; durationSec: number | null; amount: number | null; date: string };
+// 🩺 صفُّ فحصٍ واحدٍ كما يردُّه `/api/subscribers/[id]/diag`
+type DiagStage = { key: string; value: string; verdict: string; note: string };
+type DiagCheck = {
+  id: number; createdAt: string;
+  ip: string | null; asn: number | null; ispName: string | null; onSuperCell: boolean | null;
+  pkgMbps: number | null; routerPingMs: number | null; netPingMs: number | null; linkMbps: number | null;
+  downMbps: number | null; upMbps: number | null; opticRx: number | null; opticErr: string | null;
+  devices: number | null; deviceDiag: string | null; summary: string | null; verdict: string | null;
+  stages: DiagStage[] | null; refRaw: string | null; appVersion: string | null; platform: string | null;
+  subscriberId: number | null;
+};
+
+// أحكامُ الفحص كما يرسلُها التطبيق (enum V في diag_ui.dart)
+function diagWord(v: string | null): string {
+  return v === "good" ? "ممتاز" : v === "medium" ? "متوسط" : v === "bad" ? "ضعيف" : v === "info" ? "معلومة" : "—";
+}
+function diagColor(v: string | null): string {
+  return v === "good" ? "var(--ok)" : v === "medium" ? "#b45309" : v === "bad" ? "var(--bad)" : "var(--muted)";
+}
+function Kv({ k, v, ltr }: { k: string; v: string; ltr?: boolean }) {
+  return (
+    <div className="flex gap-2 border-b border-line py-0.5 last:border-0">
+      <span className="min-w-[7.5rem] text-ink-2">{k}</span>
+      <span className="text-ink" dir={ltr ? "ltr" : undefined}>{v}</span>
+    </div>
+  );
+}
+
 type InvRow = { id: number; number: number | null; date: string | null; totalMy: number | null; waselHim: number | null; type: string | null; note: string | null; subscriberId: number | null };
 
 // أيقونات العمليّات المعروفة (أيّ نوعٍ إضافيّ يأخذ 🛠️)
@@ -159,7 +187,10 @@ export default function SubscribersBoard() {
     } catch { setLoanBusy(false); setLoanMsg("تعذّر الاتصال بالخادم"); }
   }
   // نوافذ السجلات
-  const [logView, setLogView] = useState<"receipts" | "maintenance" | "invoices" | "debt" | "reward" | null>(null);
+  const [logView, setLogView] = useState<"receipts" | "maintenance" | "invoices" | "debt" | "reward" | "diag" | null>(null);
+  // 🩺 سجلّ الفحص: ما قاسه المشترك بنفسه من التطبيق — ومعه مزوّدُ خدمته لحظتَه
+  const [diagLog, setDiagLog] = useState<DiagCheck[] | null>(null);
+  const [diagOpen, setDiagOpen] = useState<number | null>(null);
   // سجل المكافأة: منح واستخدام وعكس — لم يكن في الواجهة ما يكشف تراكمها
   const [rewardLog, setRewardLog] = useState<{
     subscriber: { code: string | null; balance: number; grants: number };
@@ -352,13 +383,17 @@ export default function SubscribersBoard() {
     fetch(`/api/subscriptions?subscriberId=${selectedId}`).then((r) => { if (r.ok) r.json().then(setReceipts); });
   }, [selectedId]);
 
-  function openLog(view: "receipts" | "maintenance" | "invoices" | "debt" | "reward") {
+  function openLog(view: "receipts" | "maintenance" | "invoices" | "debt" | "reward" | "diag") {
     if (!selected) return;
     setLogView(view); setMoreMenu(false);
     if (view === "receipts") loadReceipts();
     if (view === "reward") {
       setRewardLog(null);
       fetch(`/api/rewards/log?subscriberId=${selected.id}`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setRewardLog(d); }).catch(() => {});
+    }
+    if (view === "diag") {
+      setDiagLog(null); setDiagOpen(null);
+      fetch(`/api/subscribers/${selected.id}/diag`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setDiagLog(d.checks ?? []); }).catch(() => {});
     }
     if (view === "debt") {
       setDebtLog(null);
@@ -745,6 +780,7 @@ export default function SubscribersBoard() {
                             <button className="sb-act" onClick={() => openLog("debt")}>📕 دفتر الدين</button>
                             <button className="sb-act" onClick={() => openLog("reward")}>🎁 سجل المكافأة</button>
                             <button className="sb-act" onClick={() => openLog("maintenance")}>🔧 سجل الصيانات</button>
+                            <button className="sb-act" onClick={() => openLog("diag")}>🩺 سجل الفحص</button>
                             <MapButton subscriberId={s.id} />
                             <button className="sb-act" onClick={() => openLog("invoices")}>🧾 وصولات الفواتير</button>
                             <button className="sb-act" onClick={() => void sendSummary()}>{summaryBusy ? "جارٍ الإرسال..." : "💬 ارسال ملخص"}</button>
@@ -794,7 +830,7 @@ export default function SubscribersBoard() {
       {logView && selected && (
         <Modal onClose={() => setLogView(null)} wide>
           <div className="mb-3 text-center text-base font-extrabold text-ink">
-            {logView === "receipts" ? "سجل وصولات المشترك" : logView === "maintenance" ? "سجل صيانات المشترك" : logView === "debt" ? "دفتر دين المشترك" : logView === "reward" ? "سجل مكافأة المشترك" : "وصولات الفواتير"} — {selected.name}
+            {logView === "diag" ? "سجل فحص الإنترنت" : logView === "receipts" ? "سجل وصولات المشترك" : logView === "maintenance" ? "سجل صيانات المشترك" : logView === "debt" ? "دفتر دين المشترك" : logView === "reward" ? "سجل مكافأة المشترك" : "وصولات الفواتير"} — {selected.name}
           </div>
           <div className="max-h-[62vh] overflow-auto rounded-lg border border-line">
             {logView === "reward" ? (
@@ -908,6 +944,78 @@ export default function SubscribersBoard() {
                     ))}
                 </tbody>
               </table>
+            ) : logView === "diag" ? (
+              !diagLog ? (
+                <div className="p-8 text-center text-muted">جاري التحميل...</div>
+              ) : diagLog.length === 0 ? (
+                <div className="p-8 text-center text-muted">
+                  لا فحوص لهذا المشترك بعد
+                  <div className="mt-2 text-[11px]">الفحصُ يُسجَّل من تطبيق المشتركين المنصَّب على الهاتف — ونسخةُ المتصفّح لا تُسجّل.</div>
+                </div>
+              ) : (
+                <table className="w-full text-right text-xs">
+                  <thead className="sticky top-0 bg-surface-2 text-ink-2"><tr>
+                    <th className="p-2">التاريخ والوقت</th><th className="p-2">الحالة</th><th className="p-2">مزوّد الخدمة</th><th className="p-2">تحميل / رفع</th><th className="p-2">البور</th><th className="p-2"></th>
+                  </tr></thead>
+                  <tbody>
+                    {diagLog.map((d) => (
+                      <Fragment key={d.id}>
+                        <tr className="cursor-pointer border-t border-line hover:bg-surface-2" onClick={() => setDiagOpen(diagOpen === d.id ? null : d.id)}>
+                          <td className="whitespace-nowrap p-2" dir="ltr">{new Date(d.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                          <td className="whitespace-nowrap p-2 font-semibold" style={{ color: diagColor(d.verdict) }}>{diagWord(d.verdict)}</td>
+                          <td className="p-2">
+                            {d.ispName ?? "—"}
+                            {d.onSuperCell === false && <span className="ms-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-bold text-amber-800">ليس على سوبر سيل</span>}
+                          </td>
+                          <td className="whitespace-nowrap p-2 tabular-nums" dir="ltr">{d.downMbps != null && d.downMbps >= 0 ? d.downMbps.toFixed(1) : "—"} / {d.upMbps != null && d.upMbps >= 0 ? d.upMbps.toFixed(1) : "—"}</td>
+                          <td className="whitespace-nowrap p-2 tabular-nums" dir="ltr">{d.opticRx != null ? `${d.opticRx.toFixed(1)} dBm` : "—"}</td>
+                          <td className="p-2 text-muted">{diagOpen === d.id ? "▲" : "▼"}</td>
+                        </tr>
+                        {diagOpen === d.id && (
+                          <tr className="border-t border-line bg-surface-2"><td colSpan={6} className="p-3">
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <div className="rounded-lg border border-line bg-surface p-2">
+                                <div className="mb-1 text-[11px] font-bold text-ink-2">مراحل الفحص</div>
+                                {(d.stages ?? []).length === 0 ? <div className="text-muted">—</div> : (d.stages ?? []).map((st, i) => (
+                                  <div key={i} className="border-b border-line py-1 last:border-0">
+                                    <div className="flex items-center gap-2">
+                                      <b style={{ color: diagColor(st.verdict) }}>{diagWord(st.verdict)}</b>
+                                      <span className="text-ink">{st.value || "—"}</span>
+                                    </div>
+                                    {st.note && <div className="text-[11px] text-ink-2">{st.note}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="rounded-lg border border-line bg-surface p-2 text-[11px]">
+                                <div className="mb-1 text-[11px] font-bold text-ink-2">الشبكة والتفاصيل</div>
+                                <Kv k="مزوّد الخدمة" v={d.ispName ?? "غير معروف"} />
+                                <Kv k="رقم النظام الذاتي" v={d.asn != null ? `AS${d.asn}` : "—"} />
+                                <Kv k="العنوان العام" v={d.ip ?? "—"} ltr />
+                                <Kv k="على شبكة سوبر سيل" v={d.onSuperCell == null ? "غير معروف" : d.onSuperCell ? "نعم" : "لا"} />
+                                <Kv k="استجابة الراوتر" v={d.routerPingMs != null && d.routerPingMs >= 0 ? `${d.routerPingMs.toFixed(0)} ms` : "—"} ltr />
+                                <Kv k="استجابة الإنترنت" v={d.netPingMs != null && d.netPingMs >= 0 ? `${d.netPingMs.toFixed(0)} ms` : "—"} ltr />
+                                <Kv k="ارتباط الواي فاي" v={d.linkMbps != null && d.linkMbps >= 0 ? `${d.linkMbps.toFixed(0)} Mbps` : "—"} ltr />
+                                <Kv k="سرعة الباقة المُدخلة" v={d.pkgMbps != null ? `${d.pkgMbps} Mbps` : "—"} ltr />
+                                <Kv k="الأجهزة المتصلة" v={d.devices != null && d.devices >= 0 ? `${d.devices}${d.deviceDiag ? ` (${d.deviceDiag})` : ""}` : "—"} />
+                                {d.opticErr && <Kv k="تفصيل الجهاز الضوئي" v={d.opticErr} />}
+                                <Kv k="التطبيق" v={`${d.platform ?? "—"}${d.appVersion ? ` · ${d.appVersion}` : ""}`} ltr />
+                                {d.subscriberId == null && <div className="mt-1 rounded bg-amber-50 px-2 py-1 font-semibold text-amber-800">فحصٌ قبل الاشتراك — طوبق برقم الهاتف</div>}
+                              </div>
+                            </div>
+                            {d.summary && <div className="mt-2 whitespace-pre-line rounded-lg border border-line bg-surface p-2 text-[11px] text-ink">{d.summary}</div>}
+                            {d.refRaw && (
+                              <details className="mt-2 rounded-lg border border-line bg-surface p-2">
+                                <summary className="cursor-pointer text-[11px] font-bold text-ink-2">تفاصيل الجهاز الخام (هاتف المرجع)</summary>
+                                <pre className="mt-1 max-h-60 overflow-auto whitespace-pre-wrap break-all text-[10px] text-ink-2" dir="ltr">{d.refRaw}</pre>
+                              </details>
+                            )}
+                          </td></tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              )
             ) : logView === "maintenance" ? (
               <table className="w-full text-right text-xs">
                 <thead className="sticky top-0 bg-surface-2 text-ink-2"><tr>

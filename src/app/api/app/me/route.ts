@@ -6,7 +6,7 @@ import { remaining, formatExpiryDay } from "@/lib/format";
 import { ensureMarketTable, cleanPhoto, defaultAvatar } from "@/lib/market";
 import { towerHoursMap } from "@/lib/officeHours";
 import { inviteCodeFor } from "@/lib/invite";
-import { getInviteBonus } from "@/lib/appConfig";
+import { getInviteBonus, getDiagRefPhone, isDiagRef } from "@/lib/appConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +54,9 @@ export async function GET() {
     dateFrom: sub.dateFrom, startLabel: sub.dateFrom ? formatExpiryDay(sub.dateFrom) : "",
     rewardsEnabled, rewardBalance: rewardsEnabled ? (sub.rewardBalance ?? 0) : null,
     state: st.state, daysExpired: st.daysExpired,
+    // 🩺 هل هذا هاتفُ مرجع الفحص؟ عنده وحدَه يرفع التطبيقُ تفاصيلَ الجهاز الضوئيّ الخامّة،
+    //    فلا تُرسَل صفحةُ جهاز كلّ مشتركٍ عبر الشبكة ثمّ تُرمى.
+    diagRef: isDiagRef(await getDiagRefPhone(), sub.phone),
     // 🎁 كودُ دعوةِ صديق — للمشترك **الفعّال** وحدَه، وما لم يضع أدمنُ التطبيق مبلغاً فلا
     //    كودَ أصلاً: وعدٌ بلا مقابلٍ أسوأُ من غيابِ الميزة (طلبُ محمد 2026-11-02)
     ...(st.state === "active" && (await getInviteBonus()) > 0
