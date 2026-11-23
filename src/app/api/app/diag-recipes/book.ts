@@ -48,6 +48,9 @@ const HUAWEI = {
   user: "telecomadmin",
   pass: "admintelecom",
   anchor: "AMP.Optic",
+  // 🔑 رمزُ الدخول: ٣٢ خانةً على أجهزةٍ و٤٨ على أخرى، وقد يسبقه BOM. `{32,}` يأخذه
+  //    كاملاً ويتخطّى الـBOM (ليس خانةً ستّ عشريّة) — كما يفعل متصفّحُ الجهاز.
+  tokenRe: "[0-9a-fA-F]{32,}",
 } as const;
 
 // نموذجٌ يزيد حقلَ `Language` — كما يفعل كودُ صفحة دخول الجهاز الثالث حرفاً بحرف
@@ -56,7 +59,7 @@ const SSMP = "/html/ssmp/opticinfo/opticinfo.asp";
 const PLAIN_JAR = { Cookie: "body:Language:english:id=-1" };
 
 export const DIAG_BOOK: DiagBook = {
-  v: 4,
+  v: 5,
   hosts: ["192.168.100.1"],
   budgetMs: 20000,
   recipes: [
@@ -66,6 +69,11 @@ export const DIAG_BOOK: DiagBook = {
     //    (جهازُ HS8546V يحتاج `plain`، لكنّ `hw-plain` يطابقه بالطراز فيُقدَّم له وحدَه.)
     // 🔴 النقلُ إلى الكتاب جعل `plain` أوّلاً فانكسر جهازٌ كان يقرأ البور — هذا يصلحه.
     { ...HUAWEI, id: "hw-md5sha", auth: "md5+sha" },
+
+    // 🎯 الجهازُ الثالثُ (2026-11-23): صيغةُ صفحة دخوله حرفاً بحرف — base64 عاديٌّ +
+    //    حقلُ Language + كعكةُ Cookie — مع الرمز الكامل (٤٨ خانة) الذي أصلحه `tokenRe`
+    //    في الأساس أعلاه. مقروءةٌ من `safelogin.js` وسجلّ الرمز الخام، لا مُخمَّنة.
+    { ...HUAWEI, id: "hw-browser", jar: PLAIN_JAR, auth: "none", form: FORM_LANG },
 
     // 🎯 مقيسةٌ على جهاز محمد 2026-11-22: HS8546V **لا يعمّي شيئاً**، والوصفةُ مأخوذةٌ
     //    حرفاً بحرفٍ من كود صفحة دخوله. وطرازُه يُقدّمها عليه قبل أيّ محاولةٍ فاشلة.
@@ -79,14 +87,6 @@ export const DIAG_BOOK: DiagBook = {
     { ...HUAWEI, id: "hw-sha", auth: "sha" },
     { ...HUAWEI, id: "hw-md5", auth: "md5" },
     { ...HUAWEI, id: "hw-plain-any", jar: { Cookie: "body:Language:english:id=-1" }, auth: "none" },
-
-    // ═════ جهازٌ ثالثٌ (2026-11-23): رمزُه ٥١ بايتاً لا ٣٢ خانة ═════
-    // قرأتُ من `safelogin.js` أنّ تشفيرَه base64 عاديٌّ (لا تعمية)، ومن سجلّ التشخيص
-    //    أنّ ردَّ `GetRandCount` طولُه ٥١ — أطولُ من ٣٢ خانة. فاقتطاعُنا ٣٢ خانةً يرسل
-    //    رمزاً مبتوراً، بينما متصفّحُه يرسل الردَّ كاملاً (`cnt = data`). `tokenWhole`
-    //    يحاكيه. وصيغتُه هي صيغةُ صفحة دخوله: base64 عاديٌّ + حقلُ Language + كعكةُ Cookie.
-    { ...HUAWEI, id: "hw-whole", jar: PLAIN_JAR, auth: "none", form: FORM_LANG, tokenWhole: true },
-    { ...HUAWEI, id: "hw-whole-md5sha", auth: "md5+sha", form: FORM_LANG, tokenWhole: true },
 
     // ═════ جهازٌ ثالثٌ (2026-11-23) — ولهجتُه مقروءةٌ من كود صفحة دخوله ═════
     // كودُه يرسل حقلاً ثالثاً لا نرسله: `Form.addParameter('Language', Language)`.
