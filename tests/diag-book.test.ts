@@ -39,8 +39,10 @@ describe("الكتابُ المنشورُ نفسُه", () => {
   });
 
   test("الوصفةُ العاملةُ على HS8145V5 و HG8245Q2 باقيةٌ كما كانت — لا تُكسَر لأجل الجديد", () => {
-    const r = DIAG_BOOK.recipes.find((x) => x.auth === "md5+sha");
+    const r = DIAG_BOOK.recipes.find((x) => x.id === "hw-md5sha");
     assert.ok(r, "اختفت وصفةُ md5+sha");
+    assert.equal(r!.auth, "md5+sha");
+    assert.equal(r!.form, "UserName={user}&PassWord={pass64}&x.X_HW_Token={token}");
     assert.equal(r!.optic, "/html/amp/opticinfo/opticinfo.asp");
     assert.equal(r!.token, "/asp/GetRandCount.asp");
     assert.equal(r!.jar["body:Language:english:id"], "-1");
@@ -48,6 +50,22 @@ describe("الكتابُ المنشورُ نفسُه", () => {
 
   test("وصفةٌ عامّةٌ بلا شرطِ طرازٍ موجودةٌ دائماً — فجهازٌ مجهولُ الطراز لا يبقى بلا محاولة", () => {
     assert.ok(DIAG_BOOK.recipes.some((r) => !r.model));
+  });
+
+  // 🔒 لهجةٌ جديدةٌ تُضاف للأجهزة التي لا تُقرأ، فلا يجوز أن تسبق ما يُقرأ اليوم:
+  //    الجهازُ العاملُ يرجع من إحدى هذه الخمس قبل أن يصل إلى أيّ وصفةٍ تالية.
+  test("الخمسُ الأُوَل بترتيبهنّ — أيُّ وصفةٍ جديدةٍ تُلحَق بعدهنّ لا قبلهنّ", () => {
+    assert.deepEqual(
+      DIAG_BOOK.recipes.slice(0, 5).map((r) => r.id),
+      ["hw-plain", "hw-md5sha", "hw-plain-any", "hw-sha", "hw-md5"],
+    );
+  });
+
+  test("وصفةُ التشخيص لا تقرأ بوراً أبداً — تعبيرُها لا يطابق شيئاً", () => {
+    const r = DIAG_BOOK.recipes.find((x) => x.id === "probe-session");
+    assert.ok(r, "اختفت وصفةُ التشخيص");
+    assert.equal(r!.optic, "/");
+    assert.equal(new RegExp(r!.rx!).test("-19.36"), false);
   });
 });
 

@@ -49,8 +49,13 @@ const HUAWEI = {
   anchor: "AMP.Optic",
 } as const;
 
+// نموذجٌ يزيد حقلَ `Language` — كما يفعل كودُ صفحة دخول الجهاز الثالث حرفاً بحرف
+const FORM_LANG = "UserName={user}&PassWord={pass64}&Language=english&x.X_HW_Token={token}";
+const SSMP = "/html/ssmp/opticinfo/opticinfo.asp";
+const PLAIN_JAR = { Cookie: "body:Language:english:id=-1" };
+
 export const DIAG_BOOK: DiagBook = {
-  v: 1,
+  v: 2,
   hosts: ["192.168.100.1"],
   budgetMs: 20000,
   recipes: [
@@ -68,6 +73,21 @@ export const DIAG_BOOK: DiagBook = {
     { ...HUAWEI, id: "hw-plain-any", jar: { Cookie: "body:Language:english:id=-1" }, auth: "none" },
     { ...HUAWEI, id: "hw-sha", auth: "sha" },
     { ...HUAWEI, id: "hw-md5", auth: "md5" },
+
+    // ═════ جهازٌ ثالثٌ (2026-11-23) — ولهجتُه مقروءةٌ من كود صفحة دخوله ═════
+    // كودُه يرسل حقلاً ثالثاً لا نرسله: `Form.addParameter('Language', Language)`.
+    // وردُّه على صفحة البور `403` لا صفحةَ دخولٍ — أي أنّ هذه النسخةَ تقول «ممنوع»
+    // بدل أن تعيد صفحةَ الدخول. وسكربتاتُه تحت `ssmp` لا `amp`، فجُرّب المساران.
+    // 🔒 وكلُّها **بعد** الخمس أعلاه: ما يعمل اليوم يرجع قبل أن يصلَها فلا يتغيّر له شيء.
+    { ...HUAWEI, id: "hw-lang-amp", jar: PLAIN_JAR, auth: "none", form: FORM_LANG },
+    { ...HUAWEI, id: "hw-lang-ssmp", jar: PLAIN_JAR, auth: "none", form: FORM_LANG, optic: SSMP, anchor: "SSMP.Optic" },
+    { ...HUAWEI, id: "hw-lang-md5sha", auth: "md5+sha", form: FORM_LANG },
+    { ...HUAWEI, id: "hw-ssmp", jar: PLAIN_JAR, auth: "none", optic: SSMP, anchor: "SSMP.Optic" },
+
+    // 🔎 وصفةٌ لا تقرأ بوراً أبداً: تدخل ثمّ تطلب الجذر، فيطبع السجلُّ طولَ ما رجع.
+    //    طولٌ يخالف صفحةَ الدخول ⇒ الجلسةُ قُبِلت والخللُ في المسار؛ وطولٌ مطابقٌ ⇒
+    //    الدخولُ نفسُه لم ينجح. تشخيصٌ يفصل بين الاحتمالَين بلا حزمةٍ جديدة.
+    { ...HUAWEI, id: "probe-session", jar: PLAIN_JAR, auth: "none", form: FORM_LANG, optic: "/", anchor: "", rx: "(?!x)x" },
   ],
 };
 
