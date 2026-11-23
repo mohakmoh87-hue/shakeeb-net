@@ -20,6 +20,7 @@ export type DiagRecipe = {
   tokenRe?: string;
   tokenWhole?: boolean; // يرسل ردَّ الرمز كاملاً كالمتصفّح (`cnt = data`) بدل اقتطاع ٣٢ خانة
   login: string;
+  logout?: string; // مسارُ تسجيل الخروج بعد قراءةٍ ناجحة — يحرّر جلسةَ الأدمن الوحيدة
   form: string; // {user} {pass} {pass64} {token}
   optic: string;
   user: string;
@@ -43,6 +44,7 @@ const HUAWEI = {
   jar: { "body:Language:english:id": "-1" },
   token: "/asp/GetRandCount.asp",
   login: "/login.cgi",
+  logout: "/logout.cgi", // 🔓 يُحرّر جلسةَ الأدمن بعد قراءةٍ ناجحة فلا يعلق الراوتر (طلبُ محمد 2026-11-23)
   form: "UserName={user}&PassWord={pass64}&x.X_HW_Token={token}",
   optic: "/html/amp/opticinfo/opticinfo.asp",
   user: "telecomadmin",
@@ -59,7 +61,7 @@ const SSMP = "/html/ssmp/opticinfo/opticinfo.asp";
 const PLAIN_JAR = { Cookie: "body:Language:english:id=-1" };
 
 export const DIAG_BOOK: DiagBook = {
-  v: 5,
+  v: 6,
   hosts: ["192.168.100.1"],
   budgetMs: 20000,
   recipes: [
