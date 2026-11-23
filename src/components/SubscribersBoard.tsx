@@ -1003,12 +1003,17 @@ export default function SubscribersBoard() {
                                 {d.subscriberId == null && <div className="mt-1 rounded bg-amber-50 px-2 py-1 font-semibold text-amber-800">فحصٌ قبل الاشتراك — طوبق برقم الهاتف</div>}
                               </div>
                             </div>
-                            {d.opticDiag && (
-                              <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2">
-                                <div className="mb-1 text-[11px] font-bold text-amber-900">لماذا لم يُقرأ البور؟</div>
-                                <pre className="whitespace-pre-wrap break-words text-[11px] leading-5 text-amber-900">{d.opticDiag}</pre>
-                              </div>
-                            )}
+                            {d.opticDiag && (() => {
+                              const failed = d.opticRx == null;
+                              return (
+                                <div className={`mt-2 rounded-lg border p-2 ${failed ? "border-amber-300 bg-amber-50" : "border-line bg-surface"}`}>
+                                  <div className={`mb-1 text-[11px] font-bold ${failed ? "text-amber-900" : "text-ink-2"}`}>
+                                    {failed ? "لماذا لم يُقرأ البور؟" : "تفاصيلُ قراءة البور — الوصفةُ التي نجحت"}
+                                  </div>
+                                  <pre className={`whitespace-pre-wrap break-words text-[11px] leading-5 ${failed ? "text-amber-900" : "text-ink-2"}`}>{d.opticDiag}</pre>
+                                </div>
+                              );
+                            })()}
                             {d.summary && <div className="mt-2 whitespace-pre-line rounded-lg border border-line bg-surface p-2 text-[11px] text-ink">{d.summary}</div>}
                             {d.refRaw && (
                               <details className="mt-2 rounded-lg border border-line bg-surface p-2">
