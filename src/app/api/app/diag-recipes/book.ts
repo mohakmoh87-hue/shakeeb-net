@@ -18,6 +18,7 @@ export type DiagRecipe = {
   auth: "none" | "md5+sha" | "sha" | "md5";
   token?: string;
   tokenRe?: string;
+  tokenWhole?: boolean; // يرسل ردَّ الرمز كاملاً كالمتصفّح (`cnt = data`) بدل اقتطاع ٣٢ خانة
   login: string;
   form: string; // {user} {pass} {pass64} {token}
   optic: string;
@@ -55,7 +56,7 @@ const SSMP = "/html/ssmp/opticinfo/opticinfo.asp";
 const PLAIN_JAR = { Cookie: "body:Language:english:id=-1" };
 
 export const DIAG_BOOK: DiagBook = {
-  v: 3,
+  v: 4,
   hosts: ["192.168.100.1"],
   budgetMs: 20000,
   recipes: [
@@ -78,6 +79,14 @@ export const DIAG_BOOK: DiagBook = {
     { ...HUAWEI, id: "hw-sha", auth: "sha" },
     { ...HUAWEI, id: "hw-md5", auth: "md5" },
     { ...HUAWEI, id: "hw-plain-any", jar: { Cookie: "body:Language:english:id=-1" }, auth: "none" },
+
+    // ═════ جهازٌ ثالثٌ (2026-11-23): رمزُه ٥١ بايتاً لا ٣٢ خانة ═════
+    // قرأتُ من `safelogin.js` أنّ تشفيرَه base64 عاديٌّ (لا تعمية)، ومن سجلّ التشخيص
+    //    أنّ ردَّ `GetRandCount` طولُه ٥١ — أطولُ من ٣٢ خانة. فاقتطاعُنا ٣٢ خانةً يرسل
+    //    رمزاً مبتوراً، بينما متصفّحُه يرسل الردَّ كاملاً (`cnt = data`). `tokenWhole`
+    //    يحاكيه. وصيغتُه هي صيغةُ صفحة دخوله: base64 عاديٌّ + حقلُ Language + كعكةُ Cookie.
+    { ...HUAWEI, id: "hw-whole", jar: PLAIN_JAR, auth: "none", form: FORM_LANG, tokenWhole: true },
+    { ...HUAWEI, id: "hw-whole-md5sha", auth: "md5+sha", form: FORM_LANG, tokenWhole: true },
 
     // ═════ جهازٌ ثالثٌ (2026-11-23) — ولهجتُه مقروءةٌ من كود صفحة دخوله ═════
     // كودُه يرسل حقلاً ثالثاً لا نرسله: `Form.addParameter('Language', Language)`.
