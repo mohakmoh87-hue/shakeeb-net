@@ -54,11 +54,20 @@ describe("الكتابُ المنشورُ نفسُه", () => {
 
   // 🔒 لهجةٌ جديدةٌ تُضاف للأجهزة التي لا تُقرأ، فلا يجوز أن تسبق ما يُقرأ اليوم:
   //    الجهازُ العاملُ يرجع من إحدى هذه الخمس قبل أن يصل إلى أيّ وصفةٍ تالية.
-  test("الخمسُ الأُوَل بترتيبهنّ — أيُّ وصفةٍ جديدةٍ تُلحَق بعدهنّ لا قبلهنّ", () => {
-    assert.deepEqual(
-      DIAG_BOOK.recipes.slice(0, 5).map((r) => r.id),
-      ["hw-plain", "hw-md5sha", "hw-plain-any", "hw-sha", "hw-md5"],
-    );
+  // 🔴 درسٌ من انكسارِ جهازٍ كان يقرأ: بعضُ الأجهزة يقفل الدخولَ بعد محاولةٍ فاشلة،
+  //    فأوّلُ وصفةٍ يجب أن تكون `md5+sha` (الدفترُ القديمُ العاملُ بدأ بها). وضعُ `plain`
+  //    أوّلاً هو ما كسر الجهاز. هذا الاختبارُ يمنع عودةَ الخطأ.
+  test("أوّلُ وصفةٍ md5+sha — لا plain — كي لا تُقفِل محاولةٌ فاشلةٌ ما بعدها", () => {
+    assert.equal(DIAG_BOOK.recipes[0].id, "hw-md5sha");
+    assert.equal(DIAG_BOOK.recipes[0].auth, "md5+sha");
+    const plain = DIAG_BOOK.recipes.findIndex((r) => r.id === "hw-plain");
+    const md5sha = DIAG_BOOK.recipes.findIndex((r) => r.id === "hw-md5sha");
+    assert.ok(md5sha < plain, "md5+sha يجب أن تسبق plain في الترتيب العامّ");
+  });
+
+  test("hw-plain تبقى مقيَّدةً بطراز HS8546 — فلا تسبق md5+sha إلّا على جهازها", () => {
+    const r = DIAG_BOOK.recipes.find((x) => x.id === "hw-plain");
+    assert.ok(r?.model && new RegExp(r.model).test("HS8546V"));
   });
 
   test("وصفةُ التشخيص لا تقرأ بوراً أبداً — تعبيرُها لا يطابق شيئاً", () => {

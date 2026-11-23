@@ -55,12 +55,19 @@ const SSMP = "/html/ssmp/opticinfo/opticinfo.asp";
 const PLAIN_JAR = { Cookie: "body:Language:english:id=-1" };
 
 export const DIAG_BOOK: DiagBook = {
-  v: 2,
+  v: 3,
   hosts: ["192.168.100.1"],
   budgetMs: 20000,
   recipes: [
-    // 🎯 مقيسةٌ على جهاز محمد 2026-11-22: هذا الطرازُ **لا يعمّي شيئاً**، والوصفةُ
-    //    مأخوذةٌ حرفاً بحرفٍ من كود صفحة دخوله. فكعكةُ `Cookie` هي النصُّ نفسُه.
+    // ⚠️ الترتيبُ حرِج: بعضُ الأجهزة **يقفل الدخولَ بعد محاولةٍ فاشلة**، فأوّلُ وصفةٍ
+    //    خاطئةٍ تُفسد ما بعدها. فالترتيبُ هنا يطابق ما كان يعمل قبل الكتاب حرفاً:
+    //    `md5+sha` أوّلاً — فالجهازُ الذي يحتاجها ينجح من المحاولة الأولى بلا فشلٍ سابق.
+    //    (جهازُ HS8546V يحتاج `plain`، لكنّ `hw-plain` يطابقه بالطراز فيُقدَّم له وحدَه.)
+    // 🔴 النقلُ إلى الكتاب جعل `plain` أوّلاً فانكسر جهازٌ كان يقرأ البور — هذا يصلحه.
+    { ...HUAWEI, id: "hw-md5sha", auth: "md5+sha" },
+
+    // 🎯 مقيسةٌ على جهاز محمد 2026-11-22: HS8546V **لا يعمّي شيئاً**، والوصفةُ مأخوذةٌ
+    //    حرفاً بحرفٍ من كود صفحة دخوله. وطرازُه يُقدّمها عليه قبل أيّ محاولةٍ فاشلة.
     {
       ...HUAWEI,
       id: "hw-plain",
@@ -68,11 +75,9 @@ export const DIAG_BOOK: DiagBook = {
       jar: { Cookie: "body:Language:english:id=-1" },
       auth: "none",
     },
-    // الوصفةُ القائمةُ منذ البداية والعاملةُ على HS8145V5 و HG8245Q2
-    { ...HUAWEI, id: "hw-md5sha", auth: "md5+sha" },
-    { ...HUAWEI, id: "hw-plain-any", jar: { Cookie: "body:Language:english:id=-1" }, auth: "none" },
     { ...HUAWEI, id: "hw-sha", auth: "sha" },
     { ...HUAWEI, id: "hw-md5", auth: "md5" },
+    { ...HUAWEI, id: "hw-plain-any", jar: { Cookie: "body:Language:english:id=-1" }, auth: "none" },
 
     // ═════ جهازٌ ثالثٌ (2026-11-23) — ولهجتُه مقروءةٌ من كود صفحة دخوله ═════
     // كودُه يرسل حقلاً ثالثاً لا نرسله: `Form.addParameter('Language', Language)`.
