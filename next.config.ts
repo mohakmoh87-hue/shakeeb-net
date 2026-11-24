@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   productionBrowserSourceMaps: false,
   // undici يُحمَّل كحزمة Node خارجية (لتكامل SAS4 مع الشهادات الموقّعة ذاتياً)
-  serverExternalPackages: ["undici", "whatsapp-web.js", "puppeteer", "puppeteer-core", "qrcode"],
+  serverExternalPackages: ["undici", "whatsapp-web.js", "puppeteer", "puppeteer-core", "qrcode", "@whiskeysockets/baileys"],
   // استبعاد مكتبات العامل الثقيلة (واتساب/متصفّح) من حزم دوال الاستضافة (Vercel) —
   // فهي تعمل على حواسيب المكاتب المحلية فقط، وإدراجها يضخّم الدوال ويُفشل النشر.
   outputFileTracingExcludes: {
@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
       "node_modules/puppeteer/**",
       "node_modules/puppeteer-core/**",
       "node_modules/@puppeteer/**",
+      "node_modules/@whiskeysockets/baileys/**",
     ],
   },
   // رؤوس حماية على كل الصفحات عدا بروكسي SAS المضمّن (/sas/*) — حتى لا تُعطّل أصوله
