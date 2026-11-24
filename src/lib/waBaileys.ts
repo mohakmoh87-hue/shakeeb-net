@@ -73,21 +73,14 @@ async function version(): Promise<WAVersion | null> {
   return waVersion;
 }
 
-const SETTING_KEY = "wa_baileys_offices";
-let flagCache: { at: number; ids: Set<number> } | null = null;
-export async function isBaileysOffice(officeId: number): Promise<boolean> {
-  if (!flagCache || Date.now() - flagCache.at > 30_000) {
-    const ids = new Set<number>();
-    try {
-      const row = await prisma.systemSetting.findFirst({ where: { type: SETTING_KEY }, select: { text: true } });
-      for (const part of String(row?.text ?? "").split(/[,\s]+/)) {
-        const n = Number(part.trim());
-        if (Number.isInteger(n) && n > 0) ids.add(n);
-      }
-    } catch { }
-    flagCache = { at: Date.now(), ids };
-  }
-  return flagCache.ids.has(officeId);
+// ═════ اختيارُ المحرّك ═════
+// whatsapp-web.js مكسورٌ عالميّاً (واتساب حذف الوحدةَ التي يحقنها)، فالمحرّكُ الافتراضيُّ
+// صار Baileys لكلّ مكتب. ومنفذُ هروبٍ عبر البيئة `WA_WWEBJS_OFFICES` (قائمةُ أرقام مكاتب)
+// يُبقي مكتباً بعينه على القديم عند الحاجة. متزامنٌ (بيئةٌ لا قاعدة) ليُستدعى من دوالّ
+// الحالة المتزامنة.
+export function isBaileysOffice(officeId: number): boolean {
+  const ex = String(process.env.WA_WWEBJS_OFFICES ?? "").split(/[,\s]+/).map((s) => Number(s.trim()));
+  return !ex.includes(officeId);
 }
 
 export function baileysReadyLocal(officeId: number): boolean {
@@ -102,7 +95,8 @@ export function baileysStatus(officeId: number): { state: WaState; qr: string | 
 
 export async function startBaileys(officeId: number): Promise<WaState> {
   const s = store(officeId);
-  if (s.sock && (s.state === "ready" || s.state === "qr" || s.state === "authenticated" || s.state === "starting")) return s.state;
+  if (s.sock) return s.state;
+  if (s.state === "starting" && s.startedAt && Date.now() - s.startedAt < 90_000) return s.state;
 
   s.stopped = false;
   s.startedAt = Date.now();
@@ -111,6 +105,7 @@ export async function startBaileys(officeId: number): Promise<WaState> {
   s.error = null;
   publish(officeId);
 
+  try {
   const b = await lib();
   const log = await logger();
   fs.mkdirSync(authPath(officeId), { recursive: true });
@@ -155,6 +150,9 @@ export async function startBaileys(officeId: number): Promise<WaState> {
       setTimeout(() => { if (!store(officeId).stopped && !store(officeId).sock) void startBaileys(officeId).catch(() => { }); }, 3000);
     }
   });
+  } catch (e) {
+    s.state = "error"; s.error = e instanceof Error ? e.message : String(e); s.sock = null; publish(officeId);
+  }
   return s.state;
 }
 

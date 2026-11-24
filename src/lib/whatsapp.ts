@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { scrubRelayImage } from "@/lib/relayScrub"; // 🧹 نزعُ الصورة من صفّ الترحيل بعد تنفيذه
 import { withWaTurn, waGapMs, isWaBusy, type WaLane } from "@/lib/waGate"; // 🚦 فاصلُ الرقم الموحَّد
 import { getWaChannel, sendViaUltraMsg, listUltraMsgOffices, ultraMsgConnected } from "@/lib/waChannel";
+import { isBaileysOffice, startBaileys, baileysStatus, baileysReadyLocal, sendBaileys, logoutBaileys, destroyAllBaileys } from "@/lib/waBaileys";
 
 // ═════ 🚦 سقفا انتظار البوّابة — ولماذا رقمان لا رقم ═════
 // **المحلّيّ** ينتظر طويلاً بلا ضرر: لا مهلةَ تحكمه، والرسالةُ في يد صاحبها.
@@ -171,6 +172,7 @@ function publish(officeId: number) {
 const STARTUP_TIMEOUT_MS = 75_000; // إن لم يظهر QR/يجهز خلال هذه المدة نعتبر الإقلاع عالقاً
 
 export async function startWhatsApp(officeId: number): Promise<WaState> {
+  if (isBaileysOffice(officeId)) return startBaileys(officeId);
   const s = store(officeId);
   // جاهز/يعرض QR → أعِد الحالة كما هي
   // 🔑 والرمزُ المتجمّد مستثنى: كانت `qr` تُرجِع فوراً مهما طال جمودُها، فلا يُنعَش أبداً.
@@ -513,6 +515,7 @@ export function startWaRequestPoller() {
 }
 
 export function whatsappStatus(officeId: number): { state: WaState; qr: string | null; error: string | null } {
+  if (isBaileysOffice(officeId)) return baileysStatus(officeId);
   const s = store(officeId);
   return { state: s.state, qr: s.qr, error: s.lastError };
 }
@@ -569,6 +572,7 @@ async function autoResetBrokenSession(officeId: number) {
 // فصل واتساب مكتب: يُلغي الربط على واتساب، يهدم المتصفّح، ويحذف الجلسة المحفوظة
 // فوراً (حتى لا تبقى جلسة قديمة تُسبّب عُلوق "جاري البدء" لاحقاً).
 export async function logoutWhatsApp(officeId: number): Promise<void> {
+  if (isBaileysOffice(officeId)) return logoutBaileys(officeId);
   const s = store(officeId);
   const withTimeout = <T>(p: Promise<T>, ms: number) =>
     Promise.race([p, new Promise((res) => setTimeout(res, ms))]);
@@ -610,6 +614,7 @@ export async function destroyAllWhatsApp(): Promise<void> {
   }
   // حدّ زمني كي لا يعلّق الإطفاء طويلاً (مهلة ويندوز للإغلاق محدودة)
   await Promise.race([Promise.allSettled(tasks), new Promise((r) => setTimeout(r, 6000))]);
+  await destroyAllBaileys().catch(() => { });
 }
 
 // حالة واتساب المكاتب كما نشرها الوكيل في السحابة (Neon) — تقرأها كل مسارات الموقع.
@@ -908,6 +913,7 @@ export const WA_DOWN_MSG = "واتساب المكتب غير متصل — ارب
 export const isWaDown = (e?: string | null): boolean => !!e && e.includes("غير متصل — اربطه");
 /** جاهزيّةُ عميل هذا المكتب **على هذه الحاسبة** — للدفعات كي تترقّب إنعاشَه. */
 export function waReadyLocal(officeId: number): boolean {
+  if (isBaileysOffice(officeId)) return baileysReadyLocal(officeId);
   const s = store(officeId);
   return s.state === "ready" && !!s.client;
 }
@@ -992,11 +998,17 @@ export async function sendWhatsApp(officeId: number | null | undefined, phone: s
   return r0;
 }
 
+async function sendBaileysLocal(officeId: number, phone: string, text: string, image: string | null | undefined, lane: WaLane, maxWaitMs = WA_WAIT_LOCAL): Promise<SendResult> {
+  return withWaTurn(officeId, lane, maxWaitMs, () => sendBaileys(officeId, phone, text, image));
+}
+
 async function sendWhatsAppRouted(officeId: number, phone: string, text: string, image: string | null | undefined, lane: WaLane): Promise<SendResult> {
   const apiChan = await getWaChannel(officeId);
   if (apiChan) return sendViaUltraMsg(apiChan, phone, text, image);
+  const bai = isBaileysOffice(officeId);
   const s = store(officeId);
-  if (s.state === "ready" && s.client) return sendWhatsAppLocal(officeId, phone, text, image, lane);
+  const localReady = bai ? baileysReadyLocal(officeId) : (s.state === "ready" && !!s.client);
+  if (localReady) return bai ? sendBaileysLocal(officeId, phone, text, image, lane) : sendWhatsAppLocal(officeId, phone, text, image, lane);
   // هذه الحاسبة مالكة الجلسة لكنها غير جاهزة الآن ⇒ لا تُمرّر لنفسها
   if (hostsOfficeLocally(officeId)) return { ok: false, error: WA_DOWN_MSG };
   // ليست المالكة ⇒ مرّر الإرسال إلى حاسبة المكتب.
@@ -1139,8 +1151,11 @@ export function startWaRelayPoller() {
           const p = (relayRow.params ? JSON.parse(relayRow.params) : {}) as { chatId?: string; text?: string; phone?: string; image?: string | null; limit?: number; msgId?: string; op?: string; page?: number; count?: number; lane?: WaLane };
           // تأكّد أن واتساب المكتب جاهز فعلاً قبل عمليات الواتساب (لا يلزم لعمليات SAS)
           const st = store(relayRow.towerId);
-          if ((relayRow.kind === "chats" || relayRow.kind === "messages" || relayRow.kind === "send" || relayRow.kind === "media" || relayRow.kind === "sendMsg") && st.state !== "ready") {
-            throw new Error(`واتساب المكتب غير جاهز (الحالة: ${st.state})`);
+          const baiRelay = isBaileysOffice(relayRow.towerId);
+          const relayReady = baiRelay ? baileysReadyLocal(relayRow.towerId) : st.state === "ready";
+          const relayStateLabel = baiRelay ? baileysStatus(relayRow.towerId).state : st.state;
+          if ((relayRow.kind === "chats" || relayRow.kind === "messages" || relayRow.kind === "send" || relayRow.kind === "media" || relayRow.kind === "sendMsg") && !relayReady) {
+            throw new Error(`واتساب المكتب غير جاهز (الحالة: ${relayStateLabel})`);
           }
           let result: unknown = null;
           if (relayRow.kind === "chats") result = await getOfficeChats(relayRow.towerId, p.limit ?? 40);
@@ -1149,7 +1164,7 @@ export function startWaRelayPoller() {
           // 🖼️ ونتيجةُ الصورة تُعاد إلى الموقع (لا تبقى في نافذة الحاسبة) فتُكتب في سجلّ الرسائل
           // 🚦 الممرَّرُ يدخل البوّابةَ بسقفٍ قصير (WA_WAIT_RELAY) — يبقى تحت مهلة المُرحِّل
           //    ولا يُجمّد صفَّ العمليّات خلفه. و«لم يحن دورُه» يعود نصّاً صريحاً لا فشلَ رقم.
-          else if (relayRow.kind === "sendMsg") { const rr = await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null, p.lane ?? "urgent", WA_WAIT_RELAY); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true, build: await workerBuild(), gotImage: !!p.image, ...(rr.imageError ? { imageError: rr.imageError } : {}), ...(rr.withImage ? { withImage: true } : {}) }; }
+          else if (relayRow.kind === "sendMsg") { const rr = baiRelay ? await sendBaileysLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null, p.lane ?? "urgent", WA_WAIT_RELAY) : await sendWhatsAppLocal(relayRow.towerId, p.phone ?? "", p.text ?? "", p.image ?? null, p.lane ?? "urgent", WA_WAIT_RELAY); if (!rr.ok) throw new Error(rr.error ?? "فشل الإرسال"); result = { ok: true, build: await workerBuild(), gotImage: !!p.image, ...(rr.imageError ? { imageError: rr.imageError } : {}), ...(rr.withImage ? { withImage: true } : {}) }; }
           else if (relayRow.kind === "media") result = await downloadOfficeMedia(relayRow.towerId, p.msgId ?? "");
           else if (relayRow.kind === "logout") { await logoutWhatsApp(relayRow.towerId); result = { ok: true }; }
           else if (relayRow.kind === "sas") result = await runSasOp(relayRow.towerId, p.op ?? "", p);
