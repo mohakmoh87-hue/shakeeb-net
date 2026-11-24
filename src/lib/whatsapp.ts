@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { scrubRelayImage } from "@/lib/relayScrub"; // 🧹 نزعُ الصورة من صفّ الترحيل بعد تنفيذه
 import { withWaTurn, waGapMs, isWaBusy, type WaLane } from "@/lib/waGate"; // 🚦 فاصلُ الرقم الموحَّد
 import { getWaChannel, sendViaUltraMsg, listUltraMsgOffices, ultraMsgConnected } from "@/lib/waChannel";
-import { isBaileysOffice, startBaileys, baileysStatus, baileysReadyLocal, sendBaileys, logoutBaileys, destroyAllBaileys } from "@/lib/waBaileys";
+import { isBaileysOffice, startBaileys, baileysStatus, baileysReadyLocal, sendBaileys, logoutBaileys, destroyAllBaileys, baileysChats, baileysMessages, sendBaileysChat, downloadBaileysMedia } from "@/lib/waBaileys";
 
 // ═════ 🚦 سقفا انتظار البوّابة — ولماذا رقمان لا رقم ═════
 // **المحلّيّ** ينتظر طويلاً بلا ضرر: لا مهلةَ تحكمه، والرسالةُ في يد صاحبها.
@@ -726,6 +726,7 @@ function pupEval<T>(client: WAClient, expr: string): Promise<T> {
 // نقرأ من Store مباشرةً بحماية بدل client.getChats() لأن getChatModel في المكتبة
 // يلمس وحدات داخلية تغيّرت في واتساب ويب فيرمي خطأً مُصغّراً ("r").
 export async function getOfficeChats(officeId: number, limit = 40): Promise<WaChat[]> {
+  if (isBaileysOffice(officeId)) return baileysChats(officeId, limit);
   const client = ready(officeId);
   if (!client) return [];
   const lim = Math.max(1, Math.min(200, Math.floor(limit)));
@@ -762,6 +763,7 @@ export async function getOfficeChats(officeId: number, limit = 40): Promise<WaCh
 
 // رسائل محادثة محدّدة — نقرأ رسائل المحادثة المحمَّلة من Store مباشرةً بحماية.
 export async function getOfficeMessages(officeId: number, chatId: string, limit = 40): Promise<WaMessage[]> {
+  if (isBaileysOffice(officeId)) return baileysMessages(officeId, chatId, limit);
   const client = ready(officeId);
   if (!client) return [];
   const lim = Math.max(1, Math.min(200, Math.floor(limit)));
@@ -804,6 +806,7 @@ export async function getOfficeMessages(officeId: number, chatId: string, limit 
 // تنزيل وسائط رسالة محدّدة (صورة/فيديو/صوت/ملف) وإرجاعها base64.
 // نُكرّر منطق المكتبة (WAWebDownloadManager) — وهو مسار غير مكسور.
 export async function downloadOfficeMedia(officeId: number, msgId: string): Promise<WaMedia | null> {
+  if (isBaileysOffice(officeId)) return downloadBaileysMedia(officeId, msgId);
   const client = ready(officeId);
   if (!client) return null;
   const mid = JSON.stringify(String(msgId));
@@ -835,6 +838,7 @@ export async function downloadOfficeMedia(officeId: number, msgId: string): Prom
 
 // إرسال رد في محادثة
 export async function sendOfficeChat(officeId: number, chatId: string, text: string): Promise<SendResult> {
+  if (isBaileysOffice(officeId)) return sendBaileysChat(officeId, chatId, text);
   const client = ready(officeId);
   if (!client) return { ok: false, error: "واتساب المكتب غير متصل" };
   try {

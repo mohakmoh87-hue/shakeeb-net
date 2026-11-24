@@ -1,7 +1,8 @@
 import path from "path";
 import fs from "fs";
 import { prisma } from "@/lib/prisma";
-import type { WaState, SendResult } from "@/lib/whatsapp";
+import type { WaState, SendResult, WaChat, WaMessage, WaMedia } from "@/lib/whatsapp";
+import { ingest as chatIngest, setContact as chatSetContact, chatList, messageList, findRaw, mediaMeta, clearOfficeChat } from "@/lib/waBaileysChat";
 
 type Baileys = typeof import("@whiskeysockets/baileys");
 type WASock = ReturnType<Baileys["default"]>;
@@ -125,6 +126,17 @@ export async function startBaileys(officeId: number): Promise<WaState> {
   });
   s.sock = sock;
   sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("messages.upsert", (up) => {
+    try { for (const m of up.messages ?? []) chatIngest(officeId, m, { historical: up.type === "append" }); } catch { }
+  });
+  sock.ev.on("messaging-history.set", (h) => {
+    try {
+      for (const ct of h.contacts ?? []) chatSetContact(officeId, ct.id, ct.name || ct.notify);
+      for (const m of h.messages ?? []) chatIngest(officeId, m, { historical: true });
+    } catch { }
+  });
+  sock.ev.on("contacts.upsert", (cs) => { try { for (const ct of cs ?? []) chatSetContact(officeId, ct.id, ct.name || ct.notify); } catch { } });
+  sock.ev.on("contacts.update", (cs) => { try { for (const ct of cs ?? []) chatSetContact(officeId, ct.id, ct.name || ct.notify); } catch { } });
   sock.ev.on("connection.update", (u) => {
     if (store(officeId).sock !== sock) return;
     const { connection, lastDisconnect, qr } = u;
@@ -192,12 +204,44 @@ export async function sendBaileys(officeId: number, phone: string, text: string,
   }
 }
 
+export function baileysChats(officeId: number, limit = 40): WaChat[] {
+  return chatList(officeId, limit);
+}
+
+export function baileysMessages(officeId: number, chatId: string, limit = 40): WaMessage[] {
+  return messageList(officeId, chatId, limit);
+}
+
+export async function sendBaileysChat(officeId: number, chatId: string, text: string): Promise<SendResult> {
+  const s = store(officeId);
+  if (s.state !== "ready" || !s.sock) return { ok: false, error: "واتساب المكتب غير متصل" };
+  try { await s.sock.sendMessage(chatId, { text }); return { ok: true }; }
+  catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+}
+
+export async function downloadBaileysMedia(officeId: number, msgId: string): Promise<WaMedia | null> {
+  const s = store(officeId);
+  if (!s.sock) return null;
+  const raw = findRaw(officeId, msgId);
+  if (!raw) return { error: "no-media" };
+  try {
+    const b = await lib();
+    const log = await logger();
+    const out = await b.downloadMediaMessage(raw, "buffer", {}, { logger: log, reuploadRequest: s.sock.updateMediaMessage });
+    const buffer = out as Buffer;
+    if (buffer.length > 8 * 1024 * 1024) return { error: "too-large" };
+    const meta = mediaMeta(raw);
+    return { data: buffer.toString("base64"), mimetype: meta.mimetype, filename: meta.filename, filesize: buffer.length };
+  } catch (e) { return { error: e instanceof Error ? e.message : "failed" }; }
+}
+
 export async function logoutBaileys(officeId: number): Promise<void> {
   const s = store(officeId);
   s.stopped = true;
   try { await s.sock?.logout(); } catch { }
   try { s.sock?.end(undefined); } catch { }
   s.sock = null;
+  clearOfficeChat(officeId);
   try { fs.rmSync(authPath(officeId), { recursive: true, force: true }); } catch { }
   s.state = "disconnected"; s.qr = null; s.error = null;
   publish(officeId);
