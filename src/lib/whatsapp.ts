@@ -285,11 +285,6 @@ export async function startWhatsApp(officeId: number): Promise<WaState> {
   if (sysChrome) console.log(`[whatsapp] مكتب ${officeId}: كروم بوبتير مفقود — استعمالُ كروم النظام ${sysChrome}`);
   const client = new Client({
     authStrategy: new LocalAuth({ clientId: `office-${officeId}`, dataPath: SESSION_DIR }),
-    webVersion: "2.3000.1055640952-alpha",
-    webVersionCache: {
-      type: "remote",
-      remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html",
-    },
     puppeteer: {
       headless: true,
       ...(sysChrome ? { executablePath: sysChrome } : {}),
