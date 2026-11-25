@@ -73,6 +73,11 @@ export default function CrudManager<T extends Row>({
   const [bulkBusy, setBulkBusy] = useState(false);
   const [sort, setSort] = useState<{ i: number; dir: "asc" | "desc" } | null>(null);
 
+  const qIdx = apiBase.indexOf("?");
+  const basePath = qIdx === -1 ? apiBase : apiBase.slice(0, qIdx);
+  const baseQuery = qIdx === -1 ? "" : apiBase.slice(qIdx);
+  const itemUrl = (id: number | string) => `${basePath}/${id}${baseQuery}`;
+
   // ترتيب الصفوف حسب العمود المختار (تصاعدي/تنازلي) — القيم الفارغة تبقى في الأسفل دائماً
   const col = sort ? columns[sort.i] : null;
   const sortedRows = col?.sortValue
@@ -125,8 +130,9 @@ export default function CrudManager<T extends Row>({
   const load = useCallback(
     async (q = "") => {
       setLoading(true);
+      const i = apiBase.indexOf("?");
       const url = searchable
-        ? `${apiBase}?q=${encodeURIComponent(q)}`
+        ? `${i === -1 ? apiBase : apiBase.slice(0, i)}${i === -1 ? "?" : apiBase.slice(i) + "&"}q=${encodeURIComponent(q)}`
         : apiBase;
       const res = await fetch(url);
       if (res.ok) setRows(await res.json());
@@ -171,7 +177,7 @@ export default function CrudManager<T extends Row>({
         else payload[field.name] = raw === "" ? null : raw;
       }
       const res = await fetch(
-        editing ? `${apiBase}/${editing.id}` : apiBase,
+        editing ? itemUrl(editing.id) : apiBase,
         {
           method: editing ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -194,7 +200,7 @@ export default function CrudManager<T extends Row>({
 
   async function remove(row: T) {
     if (!confirm("هل تريد حذف هذا السجل؟")) return;
-    const res = await fetch(`${apiBase}/${row.id}`, { method: "DELETE" });
+    const res = await fetch(itemUrl(row.id), { method: "DELETE" });
     if (res.ok) await load(query);
   }
 
