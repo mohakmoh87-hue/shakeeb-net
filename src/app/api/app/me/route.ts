@@ -7,6 +7,7 @@ import { ensureMarketTable, cleanPhoto, defaultAvatar } from "@/lib/market";
 import { towerHoursMap } from "@/lib/officeHours";
 import { inviteCodeFor } from "@/lib/invite";
 import { getInviteBonus, getDiagRefPhone, isDiagRef } from "@/lib/appConfig";
+import { packageSpeedMbps } from "@/lib/packageSpeed";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export async function GET() {
   return NextResponse.json({
     name: sub.name, netUser: sub.netUser, phone: sub.phone,
     package: pkg?.name ?? null, priceLabel,
+    profileMbps: packageSpeedMbps(pkg?.name),
     dateTo: sub.dateTo, expiryLabel: sub.dateTo ? formatExpiryDay(sub.dateTo) : "",
     daysLeft, expired, carry: sub.carry ?? 0,
     address: sub.address ?? "", sector: sub.sector ?? "",
