@@ -51,12 +51,12 @@ export type TimeLeave = { startMin: number; endMin: number };
 //   لا يُزوَّر)، ويُحاسَب اليومُ على دوامٍ مُقلَّص — فيسقط الخصمُ وحدَه.
 // ⛔ والإجازةُ **وسطَ الدوام** لا تُزيح شيئاً: ألغى محمد «بصمتين في يومٍ واحد» (2026-08-14)،
 //   فلا مقاطعَ حضورٍ — وتبقى للتوثيق ولاستبعاده من التوزيع التلقائيّ وقتَها (autoAssign).
-function shiftWithLeave(startMin: number, endMin: number, leave?: TimeLeave | null): { s: number; e: number } {
+function shiftWithLeave(startMin: number, endMin: number, leave: TimeLeave | null | undefined, ge: number, xg: number): { s: number; e: number } {
   if (!leave || leave.endMin <= leave.startMin) return { s: startMin, e: endMin };
-  // تلامسُ بدايةَ الدوام ⇒ يبدأ دوامُه من نهايتها (ولا يتجاوز نهايةَ الدوام)
-  if (leave.startMin <= startMin && leave.endMin > startMin) return { s: Math.min(leave.endMin, endMin), e: endMin };
-  // تلامسُ نهايةَ الدوام ⇒ ينتهي دوامُه ببدايتها (ولا ينزل تحت بدايته)
-  if (leave.endMin >= endMin && leave.startMin < endMin) return { s: startMin, e: Math.max(leave.startMin, startMin) };
+  // تلامسُ بدايةَ الدوام (ضمن سماحية الدخول) ⇒ يبدأ دوامُه من نهايتها (ولا يتجاوز نهايةَ الدوام)
+  if (leave.startMin <= startMin + ge && leave.endMin > startMin) return { s: Math.min(leave.endMin, endMin), e: endMin };
+  // تلامسُ نهايةَ الدوام (ضمن سماحية الخروج) ⇒ ينتهي دوامُه ببدايتها (ولا ينزل تحت بدايته)
+  if (leave.endMin >= endMin - xg && leave.startMin < endMin) return { s: startMin, e: Math.max(leave.startMin, startMin) };
   return { s: startMin, e: endMin }; // وسطَ الدوام ⇒ بلا إزاحة (الحالةُ ٣ الملغاة)
 }
 
@@ -92,10 +92,10 @@ export function computeAttendance(tech: TechShift, checkIn: Date, checkOut: Date
   const rawStart = parseHHMM(tech.shiftStart);
   const rawEnd = parseHHMM(tech.shiftEnd);
   if (rawStart == null || rawEnd == null) return zero;
-  const { s: startMin, e: endShifted } = shiftWithLeave(rawStart, rawEnd, timeLeave);
-  let endMin = endShifted;
   const ge = Math.max(0, tech.entryGraceMin ?? 0);
   const xg = Math.max(0, tech.exitGraceMin ?? 0);
+  const { s: startMin, e: endShifted } = shiftWithLeave(rawStart, rawEnd, timeLeave, ge, xg);
+  let endMin = endShifted;
   const lr = Math.max(0, tech.lateRatePerMin ?? 0);
   const or = Math.max(0, tech.overtimeRatePerMin ?? 0);
   if (endMin <= startMin) endMin += 1440; // دوام يعبر منتصف الليل

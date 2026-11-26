@@ -30,6 +30,22 @@ describe("الإجازةُ الزمنيّةُ المعتمدة", () => {
     assert.equal(r.earlyMinutes, 0, "خرج بوقته فلا خصمَ خروج");
   });
 
+  test("🩹 حالةُ احمد · إجازةٌ تبدأ بعد الدوام بدقائقَ ضمن السماحية ⇒ ملامِسةٌ للبداية فيسقط الخصم", () => {
+    // ١٦ ت٢: دوام ١٥:٠٠ سماحية ١٠، إجازةٌ معتمدةٌ ١٥:٠٥←١٥:٣٥، بصمةُ دخولٍ ١٥:٣٥ — كانت تُعدّ
+    // «وسطَ دوام» فتُخصَم ٣٥ دقيقةً رغم الموافقة؛ والبدايةُ داخلَ السماحية ⇒ إجازةُ بدايةٍ فعلاً.
+    const ahmad = { shiftStart: "15:00", shiftEnd: "23:00", entryGraceMin: 10, exitGraceMin: 10, lateRatePerMin: 100, overtimeRatePerMin: 50 };
+    const r = computeAttendance(ahmad, at(15, 35), at(23), { startMin: 15 * 60 + 5, endMin: 15 * 60 + 35 });
+    assert.equal(r.lateMinutes, 0, "بدايةُ الإجازة داخلَ السماحية ما زالت تُعدّ وسطاً فيُخصَم");
+    assert.equal(r.lateDeduction, 0);
+  });
+
+  test("⛔ وتبقى «وسطَ الدوام» وسطاً: بدايةٌ بعد السماحية لا تُزيح البداية", () => {
+    const ahmad = { shiftStart: "15:00", shiftEnd: "23:00", entryGraceMin: 10, exitGraceMin: 10, lateRatePerMin: 100, overtimeRatePerMin: 50 };
+    const r = computeAttendance(ahmad, at(15, 35), at(23), { startMin: 15 * 60 + 20, endMin: 15 * 60 + 35 });
+    assert.equal(r.lateMinutes, 35, "إجازةٌ تبدأ بعد السماحية أزاحت البدايةَ خطأً");
+    assert.equal(r.lateDeduction, 3500);
+  });
+
   test("🕐 الحالة ٢ · إجازةٌ ٩←١١ ليلاً تُزيح **نهايةَ** الدوام ⇒ صفرُ خروجٍ مبكّر", () => {
     const r = computeAttendance(TECH, at(12), at(21), { startMin: 21 * 60, endMin: 23 * 60 });
     assert.equal(r.earlyMinutes, 0, "خروجُه ٩ بإذنٍ ما زال يُخصَم");
