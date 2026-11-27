@@ -31,6 +31,16 @@ export type DiagRecipe = {
   min?: number;
   max?: number;
   unescape?: boolean;
+  // 🔎 قراءةُ السيريال واليوزر بعد البور (الأصليُّ وحدَه) — لكشف «يفحص على اشتراكٍ آخر».
+  // السيريال: من استدعاء `new {serialCall}(…, SN عند serialIdx, …, Vendor عند vendorIdx)`.
+  // اليوزر: الاقتباسُ رقم {userIdx} بعد مرساة {userAnchor} في صفحة {userPage}.
+  serialPage?: string;
+  serialCall?: string;
+  serialIdx?: number;
+  vendorIdx?: number;
+  userPage?: string;
+  userAnchor?: string;
+  userIdx?: number;
 };
 
 export type DiagBook = {
@@ -53,6 +63,16 @@ const HUAWEI = {
   // 🔑 رمزُ الدخول: ٣٢ خانةً على أجهزةٍ و٤٨ على أخرى، وقد يسبقه BOM. `{32,}` يأخذه
   //    كاملاً ويتخطّى الـBOM (ليس خانةً ستّ عشريّة) — كما يفعل متصفّحُ الجهاز.
   tokenRe: "[0-9a-fA-F]{32,}",
+  // 🔎 السيريال من صفحة معلومات الجهاز، واليوزر من إعداد الـWAN — مقيسان حيّاً على
+  //    HG8245Q2 (2026-11-27): `new stDeviceInfo(domain, SN, …, Vendor)` ⇒ SN=١ Vendor=٥؛
+  //    و"IP_Routed" يسبق حقولَ الاتّصال ⇒ اليوزرُ هو الاقتباسُ السادسُ بعده (ويسبق كلمةَ المرور).
+  serialPage: "/html/ssmp/deviceinfo/deviceinfo.asp",
+  serialCall: "stDeviceInfo",
+  serialIdx: 1,
+  vendorIdx: 5,
+  userPage: "/html/bbsp/common/wan_list.asp",
+  userAnchor: '"IP_Routed"',
+  userIdx: 6,
 } as const;
 
 // نموذجٌ يزيد حقلَ `Language` — كما يفعل كودُ صفحة دخول الجهاز الثالث حرفاً بحرف
@@ -61,7 +81,7 @@ const SSMP = "/html/ssmp/opticinfo/opticinfo.asp";
 const PLAIN_JAR = { Cookie: "body:Language:english:id=-1" };
 
 export const DIAG_BOOK: DiagBook = {
-  v: 6,
+  v: 7,
   hosts: ["192.168.100.1"],
   budgetMs: 20000,
   recipes: [
@@ -126,7 +146,7 @@ export function validateBook(b: DiagBook): string[] {
     if (!["none", "md5+sha", "sha", "md5"].includes(r.auth)) errs.push(`${at}: تعميةٌ مجهولة`);
     if (r.auth !== "none" && !r.token) errs.push(`${at}: التعميةُ تحتاج مسارَ رمز`);
     if (!r.jar || typeof r.jar !== "object") errs.push(`${at}: كعكاتٌ مفقودة`);
-    for (const p of [r.login, r.optic, r.token]) {
+    for (const p of [r.login, r.optic, r.token, r.serialPage, r.userPage]) {
       if (p != null && !p.startsWith("/")) errs.push(`${at}: المسار «${p}» لا يبدأ بشرطة`);
     }
     if (!r.form.includes("{user}")) errs.push(`${at}: النموذجُ بلا {user}`);

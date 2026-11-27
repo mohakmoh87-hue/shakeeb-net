@@ -42,6 +42,7 @@ type DiagCheck = {
   pkgMbps: number | null; routerPingMs: number | null; netPingMs: number | null; linkMbps: number | null;
   downMbps: number | null; upMbps: number | null; opticRx: number | null; opticErr: string | null;
   opticDiag: string | null;
+  deviceSerial: string | null; deviceUser: string | null; netUser: string | null;
   devices: number | null; deviceDiag: string | null; summary: string | null; verdict: string | null;
   stages: DiagStage[] | null; refRaw: string | null; appVersion: string | null; platform: string | null;
   subscriberId: number | null;
@@ -53,6 +54,13 @@ function diagWord(v: string | null): string {
 }
 function diagColor(v: string | null): string {
   return v === "good" ? "var(--ok)" : v === "medium" ? "#b45309" : v === "bad" ? "var(--bad)" : "var(--muted)";
+}
+// 🔎 يوزرُ الراوتر المقروءُ يختلف عن يوزر اشتراك المشترك (الساس) ⇒ يفحص على اشتراكٍ آخر.
+//    الحكمُ محافظٌ: لا يُطلَق إلّا والقيمتان موجودتان وتختلفان بعد تطبيعٍ — فلا اتّهامَ بلا دليل.
+function diagUserMismatch(d: DiagCheck): boolean {
+  const a = (d.netUser ?? "").trim().toLowerCase();
+  const b = (d.deviceUser ?? "").trim().toLowerCase();
+  return a !== "" && b !== "" && a !== b;
 }
 function Kv({ k, v, ltr }: { k: string; v: string; ltr?: boolean }) {
   return (
@@ -963,7 +971,10 @@ export default function SubscribersBoard() {
                       <Fragment key={d.id}>
                         <tr className="cursor-pointer border-t border-line hover:bg-surface-2" onClick={() => setDiagOpen(diagOpen === d.id ? null : d.id)}>
                           <td className="whitespace-nowrap p-2" dir="ltr">{new Date(d.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
-                          <td className="whitespace-nowrap p-2 font-semibold" style={{ color: diagColor(d.verdict) }}>{diagWord(d.verdict)}</td>
+                          <td className="whitespace-nowrap p-2 font-semibold">
+                            <span style={{ color: diagColor(d.verdict) }}>{diagWord(d.verdict)}</span>
+                            {diagUserMismatch(d) && <span className="ms-1 rounded bg-red-100 px-1 py-0.5 text-[10px] font-bold text-red-700">اشتراك آخر</span>}
+                          </td>
                           <td className="p-2">
                             {d.ispName ?? "—"}
                             {d.onSuperCell === false && <span className="ms-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-bold text-amber-800">ليس على سوبر سيل</span>}
@@ -997,9 +1008,12 @@ export default function SubscribersBoard() {
                                 <Kv k="استجابة الإنترنت" v={d.netPingMs != null && d.netPingMs >= 0 ? `${d.netPingMs.toFixed(0)} ms` : "—"} ltr />
                                 <Kv k="ارتباط الواي فاي" v={d.linkMbps != null && d.linkMbps >= 0 ? `${d.linkMbps.toFixed(0)} Mbps` : "—"} ltr />
                                 <Kv k="سرعة الباقة المُدخلة" v={d.pkgMbps != null ? `${d.pkgMbps} Mbps` : "—"} ltr />
-                                <Kv k="الأجهزة المتصلة" v={d.devices != null && d.devices >= 0 ? `${d.devices}${d.deviceDiag ? ` (${d.deviceDiag})` : ""}` : "—"} />
+                                <Kv k="سيريال الجهاز" v={d.deviceSerial ?? "—"} ltr />
+                                <Kv k="يوزر الراوتر" v={d.deviceUser ?? "—"} ltr />
+                                <Kv k="يوزر الاشتراك (الساس)" v={d.netUser ?? "—"} ltr />
                                 {d.opticErr && <Kv k="تفصيل الجهاز الضوئي" v={d.opticErr} />}
                                 <Kv k="التطبيق" v={`${d.platform ?? "—"}${d.appVersion ? ` · ${d.appVersion}` : ""}`} ltr />
+                                {diagUserMismatch(d) && <div className="mt-1 rounded bg-red-50 px-2 py-1 font-bold text-red-700">⚠️ المشترك يفحص على اشتراكٍ آخر — يوزر الراوتر يختلف عن يوزر اشتراكه</div>}
                                 {d.subscriberId == null && <div className="mt-1 rounded bg-amber-50 px-2 py-1 font-semibold text-amber-800">فحصٌ قبل الاشتراك — طوبق برقم الهاتف</div>}
                               </div>
                             </div>

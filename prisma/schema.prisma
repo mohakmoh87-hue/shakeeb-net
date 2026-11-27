@@ -2424,6 +2424,11 @@ model DiagCheck {
   opticDiag    String?
   devices      Int?
   deviceDiag   String?
+  // 🔎 قراءةٌ من الراوتر (الأصليُّ وحدَه): سيريالُ الجهاز ويوزرُ الـPPPoE المضبوطُ عليه،
+  //    و`netUser` لقطةُ يوزر الساس وقتَ الفحص — اختلافُهما ⇒ «يفحص على اشتراكٍ آخر».
+  deviceSerial String?
+  deviceUser   String?
+  netUser      String?
   summary      String?
   verdict      String?
   stages       Json?

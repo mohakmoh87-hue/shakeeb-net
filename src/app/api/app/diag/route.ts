@@ -44,16 +44,20 @@ export async function POST(request: Request) {
   let appAccountId: number | null = null;
   let towerId: number | null = null;
   let agentId: number | null = null;
+  // 🔎 لقطةُ يوزر الساس وقتَ الفحص — تُقارَن بيوزر الراوتر المقروء. لقطةٌ لا مرجعٌ حيّ:
+  //    فتغييرُ اليوزر لاحقاً لا يقلب حكمَ فحصٍ ماضٍ.
+  let netUser: string | null = null;
 
   if (subSess) {
     const sub = await prisma.subscriber.findUnique({
       where: { id: subSess.subscriberId },
-      select: { id: true, phone: true, towerId: true, appBanned: true },
+      select: { id: true, phone: true, towerId: true, appBanned: true, netUser: true },
     });
     if (!sub || sub.appBanned) return NextResponse.json({ saved: false, reason: "banned" });
     subscriberId = sub.id;
     phone = sub.phone ?? "";
     towerId = sub.towerId;
+    netUser = (sub.netUser ?? "").trim() || null;
     if (towerId != null) {
       const t = await prisma.tower.findUnique({ where: { id: towerId }, select: { agentId: true } });
       agentId = t?.agentId ?? null;
@@ -115,6 +119,10 @@ export async function POST(request: Request) {
       opticDiag: cleanDiag(body.opticDiag),
       devices: (() => { const n = num(body.devices, -1, 10000); return n == null ? null : Math.round(n); })(),
       deviceDiag: str(body.deviceDiag, 200),
+      // 🔎 سيريالُ الجهاز ويوزرُ الراوتر المقروءان، ولقطةُ يوزر الساس — لكشف «اشتراك آخر»
+      deviceSerial: str(body.deviceSerial, 80),
+      deviceUser: str(body.deviceUser, 80),
+      netUser,
       summary: str(body.summary, 1200),
       verdict: str(body.verdict, 10),
       stages: stages ?? undefined,

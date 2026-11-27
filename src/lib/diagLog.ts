@@ -25,9 +25,15 @@ export async function ensureDiagTables(): Promise<void> {
       "pkgMbps" DOUBLE PRECISION, "routerPingMs" DOUBLE PRECISION, "netPingMs" DOUBLE PRECISION,
       "linkMbps" DOUBLE PRECISION, "downMbps" DOUBLE PRECISION, "upMbps" DOUBLE PRECISION,
       "opticRx" DOUBLE PRECISION, "opticErr" TEXT, "opticDiag" TEXT,
-      "devices" INTEGER, "deviceDiag" TEXT, "summary" TEXT, "verdict" TEXT, "stages" JSONB,
+      "devices" INTEGER, "deviceDiag" TEXT,
+      "deviceSerial" TEXT, "deviceUser" TEXT, "netUser" TEXT,
+      "summary" TEXT, "verdict" TEXT, "stages" JSONB,
       "refRaw" TEXT, "appVersion" TEXT, "platform" TEXT )`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "diag_checks" ADD COLUMN IF NOT EXISTS "opticDiag" TEXT`);
+    // 🔎 أعمدةُ قراءةِ الراوتر — إضافةٌ على جدولٍ قائمٍ (ADD COLUMN IF NOT EXISTS، بلا حذف)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "diag_checks" ADD COLUMN IF NOT EXISTS "deviceSerial" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "diag_checks" ADD COLUMN IF NOT EXISTS "deviceUser" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "diag_checks" ADD COLUMN IF NOT EXISTS "netUser" TEXT`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "diag_checks_phoneCore_createdAt_idx" ON "diag_checks" ("phoneCore", "createdAt")`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "diag_checks_subscriberId_createdAt_idx" ON "diag_checks" ("subscriberId", "createdAt")`);
     await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "asn_cache" (
